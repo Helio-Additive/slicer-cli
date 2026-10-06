@@ -17,7 +17,10 @@ BLOCKS=("$@"); [ ${#BLOCKS[@]} = 0 ] && BLOCKS=(F1 F2 F3 F4 F5 F6 F7 F7o F8 F9 F
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 B="$(cd "$(dirname "$B")" && pwd -P)/$(basename "$B")"
 O="$(cd "$(dirname "$O")" && pwd -P)/$(basename "$O")"
-RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
+# The package's resources: beside the binary (the release packages) or one
+# level up (a bin/ layout).
+RES="$(cd "$(dirname "$B")" && pwd -P)/resources"
+[ -d "$RES/profiles" ] || RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
 if [ -n "${KEEP:-}" ]; then WORKDIR="$KEEP"; mkdir -p "$WORKDIR"
 else WORKDIR="$(mktemp -d)"; trap 'rm -rf "$WORKDIR"' EXIT; fi
 cp "$HERE/fixtures/calib_base.3mf" "$WORKDIR/base.3mf"
@@ -167,7 +170,10 @@ fx_settings() {  # fx_settings ENGINE TAG PRINTER
     local e=$1 t=$2 p=$3 v="$RES/profiles/BBL"
     [ $e = orca ] && v="$RES/profiles-orca/BBL"
     [ -s $t-$e-machine.json ] && return 0
-    python3 resolve_preset.py "$v" "$p" $t-$e > /dev/null
+    # A copy in the work folder: python reads it by a relative path (Windows
+    # python cannot read an MSYS absolute path).
+    [ -d vendor-$e ] || cp -R "$v" vendor-$e
+    python3 resolve_preset.py vendor-$e "$p" $t-$e > /dev/null
 }
 
 want() { for b in "${BLOCKS[@]}"; do [ "$b" = "$1" ] && return 0; done; return 1; }
