@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -32,9 +33,9 @@ std::string apply_printer_pick(Slic3r::PresetBundle& bundle);
 
 /// The process preset the desktop app selects when the printer is switched to
 /// `printer_preset_name`: the current process is kept while that printer is
-/// still among its compatible printers, else the best compatible print preset
-/// is taken from the engine's shipped ones, the printer's
-/// `default_print_profile` first (PresetBundle::update_compatible and
+/// still among the printers it says it suits, else the compatible print preset
+/// with the current preset's alias, or the printer's `default_print_profile`,
+/// is taken from the engine's shipped ones (PresetBundle::update_compatible and
 /// PresetCollection::first_compatible_idx with PreferedPrintProfileMatch,
 /// OrcaSlicer PresetBundle.cpp 5295-5330, Preset.hpp 686-709 at 31f6803).
 struct DesktopProcessSwitch {
@@ -44,11 +45,17 @@ struct DesktopProcessSwitch {
 };
 
 /// `profiles_dir` is the tree holding the vendor folders and `<vendor>.json`;
-/// `current_process` the settings the project has now.
+/// `current_process` the project's settings (for their layer height);
+/// `current_compatible_printers` the printers it says it suits (a project 3MF
+/// carries that list as print_compatible_printers); `current_preset_name` the
+/// system preset the project's process was loaded over, whose alias the
+/// selection prefers.
 DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_dir,
                                                     const std::string& vendor,
                                                     const std::string& printer_preset_name,
                                                     const std::string& declared_default,
-                                                    const Slic3r::DynamicPrintConfig& current_process);
+                                                    const Slic3r::DynamicPrintConfig& current_process,
+                                                    const std::vector<std::string>& current_compatible_printers,
+                                                    const std::string& current_preset_name);
 
 } // namespace slicer_cli

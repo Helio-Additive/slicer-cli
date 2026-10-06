@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/algorithm/string/trim.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
@@ -60,8 +61,9 @@ bool offered(const std::vector<Slic3r::BedType>& list, Slic3r::BedType type) {
 /// (load_vendor_configs_from_json: `config = *default_config;
 /// config.apply(config_src)`, OrcaSlicer PresetBundle.cpp 4932-4936 at
 /// 31f6803). `meta` takes the file's own key-values (name, type, from,
-/// instantiation): load_from_json keeps those out of the config
-/// (ConfigBase::load_from_json, Config.cpp 885-922).
+/// instantiation, inherits): load_from_json keeps those out of the config, and
+/// only its substitution-context form leaves "inherits" to the caller
+/// (ConfigBase::load_from_json, Config.cpp 811-822, as parse_subfile calls it).
 bool load_flat_preset(const boost::filesystem::path& folder, const std::string& name,
                       Slic3r::DynamicPrintConfig& out, std::map<std::string, std::string>& meta, int depth = 0) {
     if (depth > 16 || name.empty())
@@ -73,7 +75,8 @@ bool load_flat_preset(const boost::filesystem::path& folder, const std::string& 
     std::map<std::string, std::string> key_values;
     std::string                        reason;
     try {
-        own.load_from_json(file.string(), Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent, key_values, reason);
+        Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+        own.load_from_json(file.string(), substitutions, /*load_inherits_in_config=*/false, key_values, reason);
     } catch (...) {
         return false;
     }
@@ -86,7 +89,11 @@ bool load_flat_preset(const boost::filesystem::path& folder, const std::string& 
         if (!load_flat_preset(folder, inherits->second, parent, parent_meta, depth + 1))
             return false;
         out = std::move(parent);
-        out += own;   // the file's own keys win (DynamicConfig::operator+=)
+        // The file's own keys win, the way the vendor loader merges each preset
+        // over its parent (`config = *default_config; config.apply(config_src)`,
+        // PresetBundle.cpp 4932-4936). DynamicConfig::operator+= cannot be used:
+        // it assigns through the ConfigOption base, which copies nothing.
+        out.apply(own, /*ignore_nonexistent=*/true);
     } else {
         out = std::move(own);
     }
@@ -129,6 +136,20 @@ std::vector<std::string> compatible_printers_of(const Slic3r::DynamicPrintConfig
     if (const auto* list = dynamic_cast<const Slic3r::ConfigOptionStrings*>(config.option("compatible_printers")))
         return list->values;
     return {};
+}
+
+/// The logical name ("alias") of a system preset: the name up to the first "@",
+/// right-trimmed, else the whole name (load_vendor_configs_from_json,
+/// OrcaSlicer PresetBundle.cpp 5013-5027 at 31f6803, which uses a stated
+/// "alias" first -- no preset of the BBL tree states one, so deriving it from
+/// the name is exact for this tree).
+std::string preset_alias_of(const std::string& name) {
+    const size_t at = name.find('@');
+    if (at == std::string::npos)
+        return name;
+    std::string alias = name.substr(0, at);
+    boost::trim_right(alias);
+    return alias;
 }
 
 } // namespace
@@ -226,7 +247,9 @@ std::string apply_printer_pick(Slic3r::PresetBundle& bundle) {
 DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_dir, const std::string& vendor,
                                                     const std::string& printer_preset_name,
                                                     const std::string& declared_default,
-                                                    const Slic3r::DynamicPrintConfig& current_process) {
+                                                    const Slic3r::DynamicPrintConfig& current_process,
+                                                    const std::vector<std::string>& current_compatible_printers,
+                                                    const std::string& current_preset_name) {
     namespace fs = boost::filesystem;
     DesktopProcessSwitch out;
     // PresetBundle::update_compatible(select_other_print_if_incompatible)
@@ -234,25 +257,37 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
     // SelectCompatibleType::Always when the printer was picked on another page
     // (Tab::select_preset, Tab.cpp 6130-6140), so the current process is
     // dropped when the new printer is not among the printers it says it suits
-    // (Preset::is_compatible_with_printer, Preset.cpp 803-813: the printer
-    // preset's own name in compatible_printers, no list meaning all of them)
-    // and kept otherwise.
-    const std::vector<std::string> current_compatible = compatible_printers_of(current_process);
-    if (printer_preset_name.empty() || current_compatible.empty() ||
-        std::find(current_compatible.begin(), current_compatible.end(), printer_preset_name) !=
-            current_compatible.end())
+    // and kept otherwise. The list it checks is the loaded print preset's
+    // "compatible_printers", which a project 3MF carries as
+    // print_compatible_printers and load_config_file_config puts back
+    // (PresetBundle.cpp 4084 and 4129 erase it, 4390-4393 restore it);
+    // Preset::is_compatible_with_printer (Preset.cpp 803-813) takes no list as
+    // "suits every printer", so no list keeps the project's process.
+    if (printer_preset_name.empty() || current_compatible_printers.empty() ||
+        std::find(current_compatible_printers.begin(), current_compatible_printers.end(), printer_preset_name) !=
+            current_compatible_printers.end())
         return out;   // kept: the desktop reselects nothing
 
     // first_compatible_idx over the compatible, visible presets, scored by
     // PreferedPrintProfileMatch(current preset, the printer's
-    // default_print_profile) (Preset.hpp 686-709, PresetBundle.cpp 5215-5240
-    // at 31f6803): the default's name, +1 for a listed preset and +1 for a
-    // visible one, x10 when the layer height is the current process's. Ties
-    // keep the earlier preset in collection order. A template
-    // (instantiation "false") is no preset at all, only a parent
-    // (load_vendor_configs_from_json, PresetBundle.cpp 4893-4898).
-    const double current_layer_height = current_process.opt_float("layer_height");
-    int            best_quality       = -1;
+    // default_print_profile) (Preset.hpp 686-709, PresetBundle.cpp 5215-5247
+    // at 31f6803). A preset whose alias is the current preset's alias wins
+    // outright (PreferedProfileMatch returns INT_MAX for it, PresetBundle.cpp
+    // 5196-5207: "Matching an alias, always take this preset with priority",
+    // and first_compatible_idx stops there). The alias of a system preset is
+    // the name up to the "@", right-trimmed, unless its file states one
+    // (PresetBundle.cpp 5013-5027); the project's current preset is the system
+    // preset it was loaded over, so it keeps that alias. Otherwise the score is
+    // the printer's default name, +1 for a listed preset and +1 for a visible
+    // one, x10 when the layer height is the current process's; ties keep the
+    // earlier preset in collection order. A template (instantiation "false") is
+    // no preset at all, only a parent (load_vendor_configs_from_json,
+    // PresetBundle.cpp 4893-4898).
+    const std::string current_alias = preset_alias_of(current_preset_name);
+    const auto* current_layer_height_option =
+        dynamic_cast<const Slic3r::ConfigOptionFloat*>(current_process.option("layer_height"));
+    const double current_layer_height = current_layer_height_option ? current_layer_height_option->value : 0.;
+    int          best_quality         = -1;
     for (const fs::path& file : vendor_process_files(profiles_dir, vendor)) {
         Slic3r::DynamicPrintConfig      config;
         std::map<std::string, std::string> meta;
@@ -264,8 +299,16 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
         const std::vector<std::string> compatible = compatible_printers_of(config);
         if (std::find(compatible.begin(), compatible.end(), printer_preset_name) == compatible.end())
             continue;
+        if (!current_alias.empty() && preset_alias_of(name) == current_alias) {
+            out.name   = name;
+            out.config = std::move(config);
+            break;   // INT_MAX: no better match exists
+        }
         int quality = (name == declared_default ? 1 : 0) + 2;   // listed and visible
-        if (current_layer_height > 0. && std::abs(config.opt_float("layer_height") - current_layer_height) < 0.0005)
+        const auto* candidate_layer_height =
+            dynamic_cast<const Slic3r::ConfigOptionFloat*>(config.option("layer_height"));
+        if (current_layer_height > 0. && candidate_layer_height != nullptr &&
+            std::abs(candidate_layer_height->value - current_layer_height) < 0.0005)
             quality *= 10;
         if (quality > best_quality) {
             best_quality = quality;
@@ -273,7 +316,7 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
             out.config   = std::move(config);
         }
     }
-    out.replaced = best_quality >= 0;
+    out.replaced = !out.name.empty();
     // With no compatible system preset the desktop falls back to its built-in
     // "- default -" preset (first_compatible_idx returns index 0, Preset.hpp
     // 703-708); this command line keeps the project's own settings instead,

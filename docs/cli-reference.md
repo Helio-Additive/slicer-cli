@@ -197,12 +197,14 @@ binaries. The BambuStudio build keeps the project's own process and only points
 its extruder variants at the new printer, as its official command line does
 (the printer's default process comes from the `process_full` folder its package
 ships). The OrcaSlicer build takes the process the desktop app takes when the
-printer is picked — the printer's `default_print_profile` when that engine ships
-it, else the best other preset the printer is compatible with — with the
-preset's settings resolved over their `inherits` chain. A printer the project's
-own process already suits keeps it. (The OrcaSlicer package ships no
-`process_full` folder, and its own command line refuses every such change with
-`cannot find the settings file .../BBL/process_full/<name>.json`, -3.)
+printer is picked: the preset of the current recipe first (the part of the
+project's process name before its `@`), else the printer's
+`default_print_profile`, else the best other preset the printer is compatible
+with, with the preset's settings resolved over their `inherits` chain, and the
+slice is named for the preset taken. A printer the project's process already
+says it suits keeps it. (The OrcaSlicer package ships no `process_full` folder,
+and its own command line refuses every such change with `cannot find the
+settings file .../BBL/process_full/<name>.json`, -3.)
 
 ### Every print setting
 

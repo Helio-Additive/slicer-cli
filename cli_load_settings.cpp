@@ -1041,16 +1041,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         // package ships process_full.
         if (new_process_name.empty()) {
             const DesktopProcessSwitch picked = desktop_printer_switch_process(
-                profiles_dir, "BBL", new_printer_system_name, new_default_process_name, m_print_config);
+                profiles_dir, "BBL", new_printer_system_name, new_default_process_name, m_print_config,
+                current_print_compatible_printers, facts.current_process_system_name);
             if (picked.replaced) {
-                // The whole preset, less its bookkeeping key: the desktop sets
-                // print_settings_id from the preset it selects
-                // (PresetBundle.cpp 218), so the project's own stays.
+                // The whole preset, less its bookkeeping key.
                 t_config_option_keys keys;
                 for (const t_config_option_key& key : picked.config.keys())
                     if (key != "print_settings_id")
                         keys.push_back(key);
                 m_print_config.apply_only(picked.config, keys, true);
+                // The process is now the selected preset: it names itself, as
+                // the desktop's full config does (PresetBundle.cpp 4106).
+                m_print_config.option<ConfigOptionString>("print_settings_id", true)->value = picked.name;
             }
         }
 #else
