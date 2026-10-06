@@ -663,11 +663,17 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
         for (auto& [key, value] : j.items()) {
             // Skip profile metadata, including identity/version fields handled
             // separately by both engines' ConfigBase::load_from_json.
+            // printer_model is a setting there (Config.cpp 918-960 at
+            // 5873b5f: only the version, name, url, type, setting_id,
+            // filament_id, from, description, instantiation, inherits and
+            // includes are kept aside), and the Bambu printer features are
+            // decided from it (BambuStudio.cpp 7055-7070), so a --machine
+            // file's printer_model is loaded like any other setting.
             if (key == "type" || key == "name" || key == "inherits" ||
                 key == "from" || key == "setting_id" || key == "instantiation" ||
                 key == "description" || key == "compatible_printers" ||
                 key == "compatible_prints" || key == "include" ||
-                key == "upward_compatible_machine" || key == "printer_model" ||
+                key == "upward_compatible_machine" ||
                 key == "printer_variant" || key == "default_filament_profile" ||
                 key == "default_print_profile" || key == "filament_id" ||
                 key == "version" || key == "url" || key == "is_custom_defined") {
@@ -1487,18 +1493,15 @@ size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
 //       covers the roster (below), never beyond it;
 //   filament_map / filament_map_2 — per filament, but 1-based / 0-based
 //       indices rather than plain values (aligned by align_per_filament_maps).
+//
+// Outside the filament_ namespace: the engine's own filament_options_with_variant
+// (PrintConfig.cpp 7241-7290 at 5873b5f, 8187 at 31f6803), the filament
+// settings the engine fans out per filament and variant (nozzle_temperature,
+// long_retractions_when_ec, ...).
 bool is_per_filament_config_key(const std::string& key) {
     static const char* const kSpecialFilamentKeys[] = {
         "filament_extruder_variant", "filament_self_index",
         "filament_map", "filament_map_2",
-    };
-    // Per-filament arrays that live outside the filament_ namespace
-    // (filament_options_with_variant, PrintConfig.cpp:7241).
-    static const char* const kUnprefixedFilamentKeys[] = {
-        "nozzle_temperature", "nozzle_temperature_initial_layer",
-        "volumetric_speed_coefficients", "slow_down_min_speed",
-        "override_process_overhang_speed",
-        "long_retractions_when_ec", "retraction_distances_when_ec",
     };
 
     if (key.rfind("filament_", 0) == 0) {
@@ -1507,10 +1510,34 @@ bool is_per_filament_config_key(const std::string& key) {
                 return false;
         return true;
     }
-    for (const char* extra : kUnprefixedFilamentKeys)
-        if (key == extra)
-            return true;
-    return false;
+    return Slic3r::filament_options_with_variant.count(key) > 0;
+}
+
+// True for every setting a filament preset carries: the keys above plus the
+// rest of the engine's own list of filament settings, Preset::filament_options()
+// (Preset.cpp 1087-1140 at 5873b5f, 1266 at 31f6803): bed temperatures, fan
+// speeds, cooling, hole and counter compensation, ... The desktop writes them
+// one per filament (PresetBundle::full_fff_config), and Preset::normalize sizes
+// them to the filament count (Preset.cpp 457-466) less the two it skips there,
+// compatible_prints and compatible_printers (lists of names). None of them has
+// one value per extruder, so the extruder-count padding leaves them alone; a
+// hand-written list missed most of them, and a one-filament H2D project got
+// hot_plate_temp = 60,0 and fan_max_speed = 100,0. The roster alignment keeps
+// to is_per_filament_config_key: the desktop's own projects carry these the
+// way the official CLI slices them, and it does not extend them either.
+bool is_filament_setting_key(const std::string& key) {
+    if (is_per_filament_config_key(key))
+        return true;
+    static const std::unordered_set<std::string> engine_filament_keys = [] {
+        std::unordered_set<std::string> keys(Slic3r::Preset::filament_options().begin(),
+                                             Slic3r::Preset::filament_options().end());
+        keys.erase("compatible_prints");
+        keys.erase("compatible_printers");
+        for (const char* special : {"filament_extruder_variant", "filament_self_index", "filament_map", "filament_map_2"})
+            keys.erase(special);
+        return keys;
+    }();
+    return engine_filament_keys.count(key) > 0;
 }
 
 // Cardinality of the three per-filament index maps — filament_map, filament_map_2
@@ -6640,6 +6667,63 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // (is_per_filament_config_key), so this is also the count the engine
         // derives once the config is applied.
         project_filaments = project_filament_count(config);
+
+        // extruder_nozzle_stats: how many nozzles of each flow type each
+        // extruder holds; automatic grouping reads it (ToolOrdering.cpp 1321,
+        // 1889). The desktop writes it into every project (full_config,
+        // PresetBundle.cpp 3526; reset on a printer change, Plater.cpp
+        // ~1307-1358 and ExtruderNozzleStat::on_printer_model_change), and a
+        // named preset carries it (desktop_presets.cpp). Input without it
+        // (settings files, an STL with --machine/--process/--filament) gets
+        // the official CLI's: the printer's extruder_max_nozzle_count nozzles
+        // of the nozzle_volume_type flow per extruder
+        // (on_printer_model_change_cli, BambuStudio.cpp 4141-4155), then each
+        // extruder switched to the plate's flow type and written to
+        // m_print_config on a printer with several extruders or nozzles
+        // (BambuStudio.cpp 6668-6692; new_nozzle_volume_type from 3428-3440).
+        // Unlike the official CLI, a value the input carries is never
+        // recomputed (the official also does it on a printer change): the
+        // product writes the value into every 3MF and it is kept as it is.
+        {
+            const auto* stats = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats");
+            const bool carried = stats != nullptr &&
+                std::any_of(stats->values.begin(), stats->values.end(), [](const std::string& s) { return !s.empty(); });
+            const auto* max_opt = config.option<Slic3r::ConfigOptionIntsNullable>("extruder_max_nozzle_count");
+            const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
+            if (!carried && max_opt != nullptr && !max_opt->values.empty() && nozzles != nullptr) {
+                const std::vector<int> max_nozzle_count = max_opt->values;
+                const size_t slot_count = max_nozzle_count.size();
+                const int new_extruder_count = int(nozzles->values.size());
+                const auto* opt_nvt = dynamic_cast<const Slic3r::ConfigOptionEnumsGeneric*>(config.option("nozzle_volume_type"));
+                // BambuStudio.cpp 4144-4155.
+                std::vector<int> curr_volume_map_value(slot_count, static_cast<int>(Slic3r::NozzleVolumeType::nvtStandard));
+                if (opt_nvt && !opt_nvt->values.empty())
+                    for (size_t idx = 0; idx < slot_count; ++idx)
+                        curr_volume_map_value[idx] = idx < opt_nvt->values.size() ? opt_nvt->values[idx] : opt_nvt->values.back();
+                Slic3r::ExtruderNozzleStat nozzle_stats_obj;
+                nozzle_stats_obj.on_printer_model_change_cli(curr_volume_map_value, max_nozzle_count);
+                // BambuStudio.cpp 3428-3440: the flow type per extruder.
+                std::vector<Slic3r::NozzleVolumeType> new_nozzle_volume_type;
+                if (opt_nvt && opt_nvt->values.size() >= static_cast<size_t>(new_extruder_count)) {
+                    for (int i = 0; i < new_extruder_count; i++)
+                        new_nozzle_volume_type.push_back(Slic3r::NozzleVolumeType(opt_nvt->values[i]));
+                } else {
+                    if (!rs.settings_merge.machine_switch)
+                        for (int v : project_facts.current_nozzle_volume_type)
+                            new_nozzle_volume_type.push_back(Slic3r::NozzleVolumeType(v));
+                    new_nozzle_volume_type.resize(new_extruder_count, Slic3r::NozzleVolumeType::nvtStandard);
+                }
+                // BambuStudio.cpp 3412-3413 and 6668-6692.
+                const bool support_multi_nozzle = std::any_of(max_nozzle_count.begin(), max_nozzle_count.end(),
+                                                              [](int v) { return v > 1; });
+                if (new_extruder_count > 1 || support_multi_nozzle) {
+                    for (size_t eid = 0; eid < new_nozzle_volume_type.size(); ++eid)
+                        nozzle_stats_obj.on_volume_type_switch(int(eid), new_nozzle_volume_type[eid]);
+                    config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats", true)->values =
+                        Slic3r::save_extruder_nozzle_stats_to_string(nozzle_stats_obj.get_raw_stat());
+                }
+            }
+        }
 #endif
 
 #ifdef ENGINE_BAMBU
@@ -6744,11 +6828,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (skip_pad.count(key))
                     continue;
 
-                // The predicate shared with the final alignment catches the plain
-                // per-filament arrays, so this pass can never pad an array the
-                // alignment then treats as a roster, or the reverse.  The index
-                // maps the predicate excludes are in skip_pad above.
-                if (is_per_filament_config_key(key))
+                // Every filament setting (is_filament_setting_key, which holds
+                // all the keys the final alignment treats as a roster) is left
+                // alone, so this pass can never pad an array the alignment then
+                // treats as a roster.  The index maps the predicate excludes are
+                // in skip_pad above.
+                if (is_filament_setting_key(key))
                     continue;
 
                 auto* opt = config.option(key, false);
@@ -7698,18 +7783,38 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         std::cout << "\nInitializing print...\n";
         Slic3r::Print print;
 
+        // The plate's own per-layer custom G-code (pauses, colour changes,
+        // custom lines): the loader keys them by plate (plate_id - 1,
+        // bbs_3mf.cpp 3446/3474), --load-custom-gcodes by the plate sliced,
+        // and the Print reads the entry of the model's current plate
+        // (Print.cpp 517-518; PrintApply.cpp 1558-1569 copies the index), so
+        // the official CLI sets it per plate before slicing it
+        // (BambuStudio.cpp 6493; OrcaSlicer.cpp 5617). Left at 0, every plate
+        // took plate 1's. The pressure-advance pattern writes its entry at
+        // the same index (calib.cpp 655).
+        model.curr_plate_index = std::max(0, plate_id - 1);
+
         // Enable BBL printer features (M981 spaghetti detector, M1003 powerlost
-        // recovery, etc.) when the 3MF was generated by BambuStudio.
-        // Matches BackgroundSlicingProcess.cpp:199.
+        // recovery, etc.) for a printer of the Bambu Lab vendor.
 #ifdef ENGINE_BAMBU
         // set_BBL_Printer is a BambuStudio-only Print method (enables M981/M1003
         // BBL printer features).  OrcaSlicer's Print has no such method.
-        if (is_bbl_3mf)
-            print.set_BBL_Printer(true);
-        // Named presets: the official CLI decides from printer_model
-        // (BambuStudio.cpp 7184-7198 at 5873b5f), as the desktop app does.
-        else if (g_preset_config && config.opt_string("printer_model", true).rfind("Bambu Lab", 0) == 0)
-            print.set_BBL_Printer(true);
+        // The desktop decides from the printer preset's vendor
+        // (BackgroundSlicingProcess.cpp:205, Preset::is_bbl_vendor_preset), and
+        // the official CLI from the plate config's printer_model, else the
+        // loaded or the project's printer name (BambuStudio.cpp 7055-7070 at
+        // 5873b5f): the same rule for a 3MF, a named preset or settings files.
+        {
+            const std::string printer_model_string = config.opt_string("printer_model", true);
+            bool is_bbl_vendor_preset = false;
+            if (!printer_model_string.empty())
+                is_bbl_vendor_preset = printer_model_string.compare(0, 9, "Bambu Lab") == 0;
+            else if (!rs.settings_merge.new_printer_name.empty())
+                is_bbl_vendor_preset = rs.settings_merge.new_printer_name.compare(0, 9, "Bambu Lab") == 0;
+            else if (!rs.project_facts.current_printer_system_name.empty())
+                is_bbl_vendor_preset = rs.project_facts.current_printer_system_name.compare(0, 9, "Bambu Lab") == 0;
+            print.set_BBL_Printer(is_bbl_vendor_preset);
+        }
 #endif
 #ifdef ENGINE_ORCA
         // Orca's Print::m_isBBLPrinter (Print.hpp:1143) has NO default initializer and
@@ -7795,9 +7900,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // filament lands on the master extruder. The official CLI gives each
         // extruder one estimated 4-slot AMS ("1#0|4#1") holding the project's
         // filament colours and types in turn (BambuStudio.cpp 6911-6950 at
-        // 5873b5f; estimate_mode is off on this path). OrcaSlicer.cpp
-        // 5914-5951 has the same block; the Orca build is left as it is here,
-        // since its toolchanger grouping (U1) is matched without it.
+        // 5873b5f; estimate_mode is off on this path). The Orca build runs
+        // OrcaSlicer.cpp's own version of the block below.
         {
             const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
             const int extruder_count = nozzles ? int(nozzles->values.size()) : 1;
@@ -7826,6 +7930,50 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
         }
 #endif // ENGINE_BAMBU
+#ifdef ENGINE_ORCA
+        // The same step as the official OrcaSlicer CLI runs it before
+        // automatic grouping (OrcaSlicer.cpp 5914-5951 at 31f6803): on a
+        // printer with more than one extruder and a filament map mode before
+        // Manual (AutoForFlush when the setting is missing), each extruder
+        // gets one estimated 4-slot AMS ("1#0|4#1") whose slots take the
+        // project's filament types in turn. Unlike BambuStudio, Orca leaves
+        // every slot white (its colour copy is commented out) and names no
+        // tray. The types are the project's (m_print_config's; a plate's own
+        // settings do not change them).
+        {
+            const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
+            const int new_extruder_count = nozzles ? int(nozzles->values.size()) : 1;
+            if (new_extruder_count > 1) {
+                Slic3r::FilamentMapMode map_mode = Slic3r::fmmAutoForFlush;
+                if (const auto* mode = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode"))
+                    map_mode = mode->value;
+                if (map_mode < Slic3r::fmmManual) {
+                    std::vector<std::string> extruder_ams_count(new_extruder_count, "");
+                    std::vector<std::vector<Slic3r::DynamicPrintConfig>> extruder_filament_info(new_extruder_count);
+                    int color_count = 0;
+                    const auto* filament_type = dynamic_cast<const Slic3r::ConfigOptionStrings*>(config.option("filament_type"));
+                    std::vector<std::string> types = filament_type ? filament_type->vserialize() : std::vector<std::string>{"PLA"};
+                    for (int e_index = 0; e_index < new_extruder_count; e_index++) {
+                        extruder_ams_count[e_index] = "1#0|4#1";
+                        for (int color_index = 0; color_index < 4; color_index++) {
+                            Slic3r::DynamicPrintConfig temp_config;
+                            std::vector<std::string> temp_colors(1, "#FFFFFFFF");
+                            std::vector<std::string> temp_types(1, "PLA");
+                            if (filament_type && !types.empty())
+                                temp_types[0] = types[color_count % types.size()];
+                            temp_config.option<Slic3r::ConfigOptionStrings>("filament_colour", true)->values = temp_colors;
+                            temp_config.option<Slic3r::ConfigOptionStrings>("filament_type", true)->values = temp_types;
+                            temp_config.option<Slic3r::ConfigOptionBools>("filament_is_support", true)->values = {0};
+                            extruder_filament_info[e_index].push_back(std::move(temp_config));
+                            color_count++;
+                        }
+                    }
+                    config.option<Slic3r::ConfigOptionStrings>("extruder_ams_count", true)->values = extruder_ams_count;
+                    print.set_extruder_filament_info(extruder_filament_info);
+                }
+            }
+        }
+#endif // ENGINE_ORCA
 
         try {
             std::cout << "Applying configuration...\n";

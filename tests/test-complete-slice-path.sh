@@ -2090,3 +2090,279 @@ assert lines and lines[-1].get("message") == "Prepare slicing" and lines[-1]["to
     done
     echo "PASS: --pipe writes the official progress lines, steps 2 and 3 before any plate check, and a reader that leaves does not stop the slice (both engines, Linux)"
 fi
+
+# ---------------------------------------------------------------- Stage D
+# Differences from the desktop app, each checked on both engines. Settings
+# files are the engine's own system presets, flattened (inherits walked) from
+# the package's resources, as the official CLIs read them.
+RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
+# flat_presets ENGINE TAG PRINTER: TAG-ENGINE-machine.json, -process.json and
+# -filament.json (the printer's default process and filament).
+flat_presets() {
+    local vendor="$RES/profiles/BBL"
+    [ "$1" = orca ] && vendor="$RES/profiles-orca/BBL"
+    py '
+import json, os, sys
+vendor, tag, printer = sys.argv[1:4]
+def load(kind):
+    out = {}
+    for root, _, files in os.walk(os.path.join(vendor, kind)):
+        for f in files:
+            if f.endswith(".json"):
+                try:
+                    d = json.load(open(os.path.join(root, f), encoding="utf-8"))
+                except Exception:
+                    continue
+                out[d.get("name", f[:-5])] = d
+    return out
+P = {k: load(k) for k in ("machine", "process", "filament")}
+def resolve(kind, name, seen=()):
+    d = P[kind][name]
+    r = resolve(kind, d["inherits"], seen + (name,)) if d.get("inherits") and name not in seen else {}
+    r.update(d); r.pop("inherits", None)
+    return r
+first = lambda v: v[0] if isinstance(v, list) else v
+m = resolve("machine", printer)
+proc = first(m.get("default_print_profile")); fil = first(m.get("default_filament_profile"))
+for kind, name, d in (("machine", printer, m), ("process", proc, resolve("process", proc)), ("filament", fil, resolve("filament", fil))):
+    d = dict(d); d.update({"type": kind, "from": "system", "name": name, "instantiation": "true"})
+    json.dump(d, open("%s-%s.json" % (tag, kind), "w", encoding="utf-8"), indent=1)
+' "$vendor" "$2-$1" "$3"
+}
+
+# D1: the Bambu printer features (M981 spaghetti detection, M1003 power-loss
+# recovery) follow the printer's vendor, as the desktop decides
+# (BackgroundSlicingProcess.cpp:205 is_bbl_vendor_preset) and the official CLI
+# (printer_model, else the printer name: BambuStudio.cpp 7055-7070). An STL
+# with the A1 mini's settings files gets the named preset's M981/M1003, through
+# --load-settings and through the product's --machine/--filament/--process.
+# The Orca build already decides by printer_model (OrcaSlicer.cpp 5972-5986):
+# its --load-settings run is the control (its --machine route refuses these
+# flattened presets for relative E without G92 E0, which is not this item).
+d1_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    flat_presets $e d1a1m "$A1M"
+    run d1p-$e "$bin" cube.stl --printer-preset "$A1M" --slice 1 --outputdir d1p-$e/out
+    [ "$(rc d1p-$e)" = 0 ] || { show d1p-$e; fail "D1 $e: the named A1 mini preset exit $(rc d1p-$e)"; d1_ok=0; continue; }
+    want="M981=$(grep -c '^M981' d1p-$e/out/plate_1.gcode || true) M1003=$(grep -c '^M1003' d1p-$e/out/plate_1.gcode || true)"
+    [ $e = orca ] || [ "$want" != "M981=0 M1003=0" ] || { fail "D1 $e: the named A1 mini preset has no M981/M1003"; d1_ok=0; }
+    run d1l-$e "$bin" cube.stl --load-settings "d1a1m-$e-machine.json;d1a1m-$e-process.json" \
+        --load-filaments d1a1m-$e-filament.json --slice 1 --outputdir d1l-$e/out
+    routes="l"
+    if [ $e = bambu ]; then
+        run d1m-$e "$bin" cube.stl -o d1m-$e.gcode --machine d1a1m-$e-machine.json \
+            --filament d1a1m-$e-filament.json --process d1a1m-$e-process.json
+        routes="l m"
+    fi
+    for n in $routes; do
+        g=d1l-$e/out/plate_1.gcode; [ $n = m ] && g=d1m-$e.gcode
+        [ "$(rc d1$n-$e)" = 0 ] && [ -s $g ] || { show d1$n-$e; fail "D1 $e: settings files (route $n) exit $(rc d1$n-$e)"; d1_ok=0; continue; }
+        got="M981=$(grep -c '^M981' $g || true) M1003=$(grep -c '^M1003' $g || true)"
+        [ "$got" = "$want" ] || { fail "D1 $e: settings files (route $n) give $got, the named preset $want"; d1_ok=0; }
+    done
+done
+[ $d1_ok = 1 ] && echo "PASS: D1 the Bambu printer features follow the printer's vendor, also for settings files (both engines)"
+
+# D2: no per-filament setting is padded with 0 on a printer with two
+# extruders. Which keys are per filament is the engine's own list of filament
+# settings (Preset::filament_options(), Preset.cpp 1087-1140), not a
+# hand-written one. A one-filament cube on the H2D: every list setting of the
+# filament preset holds only the preset's values, in --export-settings and in
+# the G-code header (on 2a12432 the Bambu build wrote hot_plate_temp = 60,0,
+# fan_max_speed = 100,0 and ~45 more). The Orca build pads no per-filament
+# setting (control).
+d2_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    prof="$RES/profiles/BBL"; [ $e = orca ] && prof="$RES/profiles-orca/BBL"
+    run d2-$e "$bin" cube.stl --printer-preset "Bambu Lab H2D 0.4 nozzle" --slice 1 --export-settings d2-$e.json --outputdir d2-$e/out
+    [ "$(rc d2-$e)" = 0 ] || { show d2-$e; fail "D2 $e: H2D cube exit $(rc d2-$e)"; d2_ok=0; continue; }
+    py '
+import json, os, re, sys
+s = json.load(open(sys.argv[1])); vendor = sys.argv[2]; g = open(sys.argv[3], errors="replace").read()
+profiles = {}
+for root, _, files in os.walk(os.path.join(vendor, "filament")):
+    for f in files:
+        if f.endswith(".json"):
+            try:
+                d = json.load(open(os.path.join(root, f), encoding="utf-8"))
+            except Exception:
+                continue
+            profiles[d.get("name", f[:-5])] = d
+def resolve(n, seen=()):
+    d = profiles.get(n)
+    if d is None or n in seen: return {}
+    r = resolve(d.get("inherits", ""), seen + (n,)) if d.get("inherits") else {}
+    r.update(d); return r
+fil = s["filament_settings_id"][0]
+p = resolve(fil)
+assert p, "no filament preset " + fil
+skip = {"name", "inherits", "from", "type", "instantiation", "setting_id", "filament_id", "compatible_printers",
+        "compatible_printers_condition", "compatible_prints", "compatible_prints_condition", "version", "description"}
+# filament_extruder_variant is the variant-slot table, sized by the extruders
+# of the printer on purpose (see the padding in main.cpp), not one value per filament.
+skip.add("filament_extruder_variant")
+bad = []
+for k, v in p.items():
+    if k in skip or k.endswith("_settings_id") or not isinstance(v, list) or not isinstance(s.get(k), list): continue
+    if all(x == "" for x in v): continue
+    # Padding: more entries than the one filament has, the extra ones not in the preset.
+    if len(s[k]) > len(v) and [x for x in s[k] if x not in v]:
+        bad.append("export %s = %s (preset %s)" % (k, ",".join(s[k]), ",".join(v)))
+    # The header writes number lists comma-separated; only those are compared.
+    if not all(re.fullmatch(r"-?[0-9.]+%?", x) for x in v): continue
+    m = re.search(r"^; " + re.escape(k) + r" = (.*)$", g, re.M)
+    hv = m.group(1).split(",") if m else []
+    if len(hv) > len(v) and [x for x in hv if x not in v]:
+        bad.append("G-code %s = %s (preset %s)" % (k, m.group(1), ",".join(v)))
+assert not bad, "; ".join(bad[:12])
+' d2-$e.json "$prof" d2-$e/out/plate_1.gcode || { fail "D2 $e: per-filament settings padded on the H2D"; d2_ok=0; }
+done
+[ $d2_ok = 1 ] && echo "PASS: D2 no per-filament setting is padded with 0 on the H2D (both engines)"
+
+# D3: the Orca build gives automatic grouping the same estimated AMS slots as
+# the official OrcaSlicer CLI (extruder_ams_count / set_extruder_filament_info,
+# OrcaSlicer.cpp 5914-5951). N cubes in a row, cube k on filament k, auto
+# grouping: the filament_map equals the official CLI's on its own presets
+# (OrcaSlicer 2.4.0-alpha, the version of the pin 31f6803, measured on the
+# Linux AppImage; the 8-filament projects the official refuses are not
+# listed). The Bambu build runs BambuStudio.cpp's own step (6911-6950), so
+# this item is checked on the Orca build only.
+d3_ok=1
+while IFS='|' read -r printer fils official; do
+    n=$(echo "$fils" | tr ';' '\n' | wc -l | tr -d ' ')
+    t="d3-$(printf '%s' "$printer-$n" | tr -c 'A-Za-z0-9' '_')"
+    py '
+import json, sys
+n = int(sys.argv[1])
+json.dump({"plates": [{"plate_name": "d3", "need_arrange": False,
+            "objects": [{"path": "cube.stl", "count": n, "filaments": list(range(1, n + 1)),
+                         "pos_x": [100 + 40 * i for i in range(n)], "pos_y": [150] * n}]}]}, open(sys.argv[2], "w"))
+' $n $t.json
+    fargs=(); IFS=';' read -ra fl <<< "$fils"; for f in "${fl[@]}"; do fargs+=(--filament-preset "$f"); done
+    run $t "$O" --load-assemble-list $t.json --slice 1 --printer-preset "$printer" "${fargs[@]}" --outputdir $t/out
+    [ "$(rc $t)" = 0 ] || { show $t; fail "D3 orca: $printer, $n filaments exit $(rc $t)"; d3_ok=0; continue; }
+    ours=$(sed -n 's/^; filament_map = //p' $t/out/plate_1.gcode | head -n 1)
+    [ "$ours" = "$official" ] || { fail "D3 orca: $printer, $n filaments: filament_map $ours, the official CLI $official"; d3_ok=0; }
+done <<'D3EOF'
+Bambu Lab H2D 0.4 nozzle|Bambu PLA Basic @BBL H2D;Bambu PLA Matte @BBL H2D|2,1
+Bambu Lab H2D 0.4 nozzle|Bambu PLA Basic @BBL H2D;Bambu PLA Matte @BBL H2D;Bambu PETG HF @BBL H2D 0.4 nozzle;Bambu ABS @BBL H2D|1,1,1,2
+Bambu Lab H2D Pro 0.4 nozzle|Bambu PLA Basic @BBL H2DP;Bambu PLA Matte @BBL H2DP|2,1
+Bambu Lab H2D Pro 0.4 nozzle|Bambu PLA Basic @BBL H2DP;Bambu PLA Matte @BBL H2DP;Bambu PETG HF @BBL H2DP 0.4 nozzle;Bambu ABS @BBL H2DP|1,1,1,2
+Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BBL X2D 0.4 nozzle|1,1
+Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BBL X2D 0.4 nozzle;Bambu PETG HF @BBL X2D 0.4 nozzle;Bambu ABS @BBL X2D 0.4 nozzle|1,1,1,1
+D3EOF
+[ $d3_ok = 1 ] && echo "PASS: D3 the Orca build's automatic grouping equals the official OrcaSlicer CLI's on the H2D, H2D Pro and X2D"
+
+# D4 (Bambu build; OrcaSlicer 31f6803 has no such setting): input without
+# extruder_nozzle_stats gets the official CLI's value (BambuStudio.cpp
+# 4141-4155, 6668-6692): an H2D STL with settings files that lack it, through
+# --load-settings and through --machine/--filament/--process, gets what the
+# named preset carries (on 2a12432: ";"). A 3MF that carries a value keeps it
+# byte for byte, here one no computation gives.
+d4_ok=1
+hdr() { py '
+import re, sys
+for line in open(sys.argv[1], errors="replace"):
+    m = re.match(r"^; " + re.escape(sys.argv[2]) + r" = (.*)$", line.rstrip("\r\n"))
+    if m:
+        print(m.group(1).replace("\"", "")); break
+' "$1" "$2"; }
+flat_presets bambu d4h2d "Bambu Lab H2D 0.4 nozzle"
+py '
+import json
+for k in ("machine", "process", "filament"):
+    d = json.load(open("d4h2d-bambu-%s.json" % k)); d.pop("extruder_nozzle_stats", None)
+    json.dump(d, open("d4h2d-bambu-%s.json" % k, "w"), indent=1)
+'
+run d4p "$B" cube.stl --printer-preset "Bambu Lab H2D 0.4 nozzle" --slice 1 --outputdir d4p/out --export-3mf d4.3mf
+cp d4p/out/d4.3mf d4.3mf 2>/dev/null || true
+want=$(hdr d4p/out/plate_1.gcode extruder_nozzle_stats)
+[ "$(rc d4p)" = 0 ] && [ -n "$want" ] && [ "$want" != ";" ] || { show d4p; fail "D4 bambu: the named H2D preset gives extruder_nozzle_stats '$want' (exit $(rc d4p))"; d4_ok=0; }
+run d4l "$B" cube.stl --load-settings "d4h2d-bambu-machine.json;d4h2d-bambu-process.json" \
+    --load-filaments d4h2d-bambu-filament.json --slice 1 --outputdir d4l/out --export-settings d4l.json
+run d4m "$B" cube.stl -o d4m.gcode --machine d4h2d-bambu-machine.json --filament d4h2d-bambu-filament.json \
+    --process d4h2d-bambu-process.json
+for n in l m; do
+    g=d4l/out/plate_1.gcode; [ $n = m ] && g=d4m.gcode
+    [ "$(rc d4$n)" = 0 ] && [ -s $g ] || { show d4$n; fail "D4 bambu: settings files (route $n) exit $(rc d4$n)"; d4_ok=0; continue; }
+    got=$(hdr $g extruder_nozzle_stats)
+    [ "$got" = "$want" ] || { fail "D4 bambu: settings files (route $n) give extruder_nozzle_stats '$got', the named preset '$want'"; d4_ok=0; }
+done
+py '
+import json, sys
+s = json.load(open("d4l.json"))["extruder_nozzle_stats"]
+assert ";".join(s) == sys.argv[1], (s, sys.argv[1])
+' "$want" || { fail "D4 bambu: --export-settings does not hold the computed extruder_nozzle_stats"; d4_ok=0; }
+# The keep guard: the project's own value, which no computation gives.
+py '
+import json, zipfile
+with zipfile.ZipFile("d4.3mf") as zin, zipfile.ZipFile("d4keep.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d["extruder_nozzle_stats"] = ["Standard#1|High Flow#0", "Standard#1"]
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' || { fail "D4 bambu: no exported H2D project for the keep check"; d4_ok=0; }
+run d4k "$B" d4keep.3mf --plate 1 -o d4k.gcode
+got=$(hdr d4k.gcode extruder_nozzle_stats)
+[ "$(rc d4k)" = 0 ] && [ "$got" = "Standard#1|High Flow#0;Standard#1" ] || { show d4k; fail "D4 bambu: a 3MF's own extruder_nozzle_stats became '$got' (exit $(rc d4k))"; d4_ok=0; }
+[ $d4_ok = 1 ] && echo "PASS: D4 input without extruder_nozzle_stats gets the official CLI's value, a 3MF keeps its own (Bambu build)"
+
+# D5: each plate prints its own per-layer custom G-code. The loader keys
+# them by plate (bbs_3mf.cpp 3446/3474) and the Print reads the model's
+# current plate (Print.cpp 517-518), which the official CLI sets per plate
+# (BambuStudio.cpp 6493; OrcaSlicer.cpp 5617). A two-plate project with a
+# custom line on each plate: the product's call (--plate N -o) and --slice 0
+# print plate N's line on plate N only (on 2a12432 plate 2 printed plate 1's).
+d5_ok=1
+py '
+import json
+P = lambda n: {"plate_name": n, "need_arrange": False,
+               "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [118], "pos_y": [118]}]}
+json.dump({"plates": [P("p"), P("q")]}, open("d5.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run d5mk-$e "$bin" --load-assemble-list d5.json --slice 0 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir d5mk-$e/out --export-3mf d5.3mf
+    [ "$(rc d5mk-$e)" = 0 ] || { show d5mk-$e; fail "D5 $e: two-plate project exit $(rc d5mk-$e)"; d5_ok=0; continue; }
+    py '
+import sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+xml = """<?xml version="1.0" encoding="utf-8"?>
+<custom_gcodes_per_layer>
+<plate>
+<plate_info id="1"/>
+<layer top_z="5" type="4" extruder="1" color="" extra="M117 D5 plate one" gcode="custom"/>
+<mode value="SingleExtruder"/>
+</plate>
+<plate>
+<plate_info id="2"/>
+<layer top_z="10" type="4" extruder="1" color="" extra="M117 D5 plate two" gcode="custom"/>
+<mode value="SingleExtruder"/>
+</plate>
+</custom_gcodes_per_layer>
+"""
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        if item.filename == "Metadata/custom_gcode_per_layer.xml":
+            continue
+        zout.writestr(item, zin.read(item.filename))
+    zout.writestr("Metadata/custom_gcode_per_layer.xml", xml)
+' d5mk-$e/out/d5.3mf d5-$e.3mf
+    for p in 1 2; do
+        run d5p$p-$e "$bin" d5-$e.3mf --plate $p -o d5p$p-$e.gcode
+    done
+    run d5s-$e "$bin" d5-$e.3mf --slice 0 --outputdir d5s-$e/out
+    for g in d5p1-$e.gcode:1 d5p2-$e.gcode:2 d5s-$e/out/plate_1.gcode:1 d5s-$e/out/plate_2.gcode:2; do
+        f=${g%:*}; p=${g##*:}
+        [ -s $f ] || { fail "D5 $e: no G-code $f"; d5_ok=0; continue; }
+        own=one; other=two; [ $p = 2 ] && { own=two; other=one; }
+        grep -q "^M117 D5 plate $own" $f || { fail "D5 $e: $f lacks plate $p's own custom G-code"; d5_ok=0; }
+        ! grep -q "^M117 D5 plate $other" $f || { fail "D5 $e: $f prints the other plate's custom G-code"; d5_ok=0; }
+    done
+done
+[ $d5_ok = 1 ] && echo "PASS: D5 each plate prints its own per-layer custom G-code, with --plate N and --slice 0 (both engines)"
