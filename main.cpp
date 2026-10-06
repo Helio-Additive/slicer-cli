@@ -1493,18 +1493,15 @@ size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
 //       covers the roster (below), never beyond it;
 //   filament_map / filament_map_2 — per filament, but 1-based / 0-based
 //       indices rather than plain values (aligned by align_per_filament_maps).
+//
+// Outside the filament_ namespace: the engine's own filament_options_with_variant
+// (PrintConfig.cpp 7241-7290 at 5873b5f, 8187 at 31f6803), the filament
+// settings the engine fans out per filament and variant (nozzle_temperature,
+// long_retractions_when_ec, ...).
 bool is_per_filament_config_key(const std::string& key) {
     static const char* const kSpecialFilamentKeys[] = {
         "filament_extruder_variant", "filament_self_index",
         "filament_map", "filament_map_2",
-    };
-    // Per-filament arrays that live outside the filament_ namespace
-    // (filament_options_with_variant, PrintConfig.cpp:7241).
-    static const char* const kUnprefixedFilamentKeys[] = {
-        "nozzle_temperature", "nozzle_temperature_initial_layer",
-        "volumetric_speed_coefficients", "slow_down_min_speed",
-        "override_process_overhang_speed",
-        "long_retractions_when_ec", "retraction_distances_when_ec",
     };
 
     if (key.rfind("filament_", 0) == 0) {
@@ -1513,10 +1510,34 @@ bool is_per_filament_config_key(const std::string& key) {
                 return false;
         return true;
     }
-    for (const char* extra : kUnprefixedFilamentKeys)
-        if (key == extra)
-            return true;
-    return false;
+    return Slic3r::filament_options_with_variant.count(key) > 0;
+}
+
+// True for every setting a filament preset carries: the keys above plus the
+// rest of the engine's own list of filament settings, Preset::filament_options()
+// (Preset.cpp 1087-1140 at 5873b5f, 1266 at 31f6803): bed temperatures, fan
+// speeds, cooling, hole and counter compensation, ... The desktop writes them
+// one per filament (PresetBundle::full_fff_config), and Preset::normalize sizes
+// them to the filament count (Preset.cpp 457-466) less the two it skips there,
+// compatible_prints and compatible_printers (lists of names). None of them has
+// one value per extruder, so the extruder-count padding leaves them alone; a
+// hand-written list missed most of them, and a one-filament H2D project got
+// hot_plate_temp = 60,0 and fan_max_speed = 100,0. The roster alignment keeps
+// to is_per_filament_config_key: the desktop's own projects carry these the
+// way the official CLI slices them, and it does not extend them either.
+bool is_filament_setting_key(const std::string& key) {
+    if (is_per_filament_config_key(key))
+        return true;
+    static const std::unordered_set<std::string> engine_filament_keys = [] {
+        std::unordered_set<std::string> keys(Slic3r::Preset::filament_options().begin(),
+                                             Slic3r::Preset::filament_options().end());
+        keys.erase("compatible_prints");
+        keys.erase("compatible_printers");
+        for (const char* special : {"filament_extruder_variant", "filament_self_index", "filament_map", "filament_map_2"})
+            keys.erase(special);
+        return keys;
+    }();
+    return engine_filament_keys.count(key) > 0;
 }
 
 // Cardinality of the three per-filament index maps — filament_map, filament_map_2
@@ -6796,11 +6817,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (skip_pad.count(key))
                     continue;
 
-                // The predicate shared with the final alignment catches the plain
-                // per-filament arrays, so this pass can never pad an array the
-                // alignment then treats as a roster, or the reverse.  The index
-                // maps the predicate excludes are in skip_pad above.
-                if (is_per_filament_config_key(key))
+                // Every filament setting (is_filament_setting_key, which holds
+                // all the keys the final alignment treats as a roster) is left
+                // alone, so this pass can never pad an array the alignment then
+                // treats as a roster.  The index maps the predicate excludes are
+                // in skip_pad above.
+                if (is_filament_setting_key(key))
                     continue;
 
                 auto* opt = config.option(key, false);

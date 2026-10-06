@@ -2140,3 +2140,60 @@ for e in bambu orca; do
     done
 done
 [ $d1_ok = 1 ] && echo "PASS: D1 the Bambu printer features follow the printer's vendor, also for settings files (both engines)"
+
+# D2: no per-filament setting is padded with 0 on a printer with two
+# extruders. Which keys are per filament is the engine's own list of filament
+# settings (Preset::filament_options(), Preset.cpp 1087-1140), not a
+# hand-written one. A one-filament cube on the H2D: every list setting of the
+# filament preset holds only the preset's values, in --export-settings and in
+# the G-code header (on 2a12432 the Bambu build wrote hot_plate_temp = 60,0,
+# fan_max_speed = 100,0 and ~45 more). The Orca build pads no per-filament
+# setting (control).
+d2_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    prof="$RES/profiles/BBL"; [ $e = orca ] && prof="$RES/profiles-orca/BBL"
+    run d2-$e "$bin" cube.stl --printer-preset "Bambu Lab H2D 0.4 nozzle" --slice 1 --export-settings d2-$e.json --outputdir d2-$e/out
+    [ "$(rc d2-$e)" = 0 ] || { show d2-$e; fail "D2 $e: H2D cube exit $(rc d2-$e)"; d2_ok=0; continue; }
+    py '
+import json, os, re, sys
+s = json.load(open(sys.argv[1])); vendor = sys.argv[2]; g = open(sys.argv[3], errors="replace").read()
+profiles = {}
+for root, _, files in os.walk(os.path.join(vendor, "filament")):
+    for f in files:
+        if f.endswith(".json"):
+            try:
+                d = json.load(open(os.path.join(root, f), encoding="utf-8"))
+            except Exception:
+                continue
+            profiles[d.get("name", f[:-5])] = d
+def resolve(n, seen=()):
+    d = profiles.get(n)
+    if d is None or n in seen: return {}
+    r = resolve(d.get("inherits", ""), seen + (n,)) if d.get("inherits") else {}
+    r.update(d); return r
+fil = s["filament_settings_id"][0]
+p = resolve(fil)
+assert p, "no filament preset " + fil
+skip = {"name", "inherits", "from", "type", "instantiation", "setting_id", "filament_id", "compatible_printers",
+        "compatible_printers_condition", "compatible_prints", "compatible_prints_condition", "version", "description"}
+# filament_extruder_variant is the variant-slot table, sized by the extruders
+# of the printer on purpose (see the padding in main.cpp), not one value per filament.
+skip.add("filament_extruder_variant")
+bad = []
+for k, v in p.items():
+    if k in skip or k.endswith("_settings_id") or not isinstance(v, list) or not isinstance(s.get(k), list): continue
+    if all(x == "" for x in v): continue
+    # Padding: more entries than the one filament has, the extra ones not in the preset.
+    if len(s[k]) > len(v) and [x for x in s[k] if x not in v]:
+        bad.append("export %s = %s (preset %s)" % (k, ",".join(s[k]), ",".join(v)))
+    # The header writes number lists comma-separated; only those are compared.
+    if not all(re.fullmatch(r"-?[0-9.]+%?", x) for x in v): continue
+    m = re.search(r"^; " + re.escape(k) + r" = (.*)$", g, re.M)
+    hv = m.group(1).split(",") if m else []
+    if len(hv) > len(v) and [x for x in hv if x not in v]:
+        bad.append("G-code %s = %s (preset %s)" % (k, m.group(1), ",".join(v)))
+assert not bad, "; ".join(bad[:12])
+' d2-$e.json "$prof" d2-$e/out/plate_1.gcode || { fail "D2 $e: per-filament settings padded on the H2D"; d2_ok=0; }
+done
+[ $d2_ok = 1 ] && echo "PASS: D2 no per-filament setting is padded with 0 on the H2D (both engines)"
