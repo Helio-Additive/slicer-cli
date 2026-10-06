@@ -65,16 +65,16 @@ std::string file_name(const std::string& path) {
 
 } // namespace
 
-bool is_geometry_only_3mf(const std::string& path) {
+ThreeMfKind classify_3mf(const std::string& path) {
     if (!boost::algorithm::iends_with(path, ".3mf"))
-        return false;
+        return ThreeMfKind::NotA3mf;
     mz_zip_archive zip;
     mz_zip_zero_struct(&zip);
     if (!Slic3r::open_zip_reader(&zip, path))
-        return false;   // unreadable: the 3MF loader reports it
+        return ThreeMfKind::Unreadable;   // missing, or not a readable archive
     const int idx = mz_zip_reader_locate_file(&zip, "Metadata/project_settings.config", nullptr, 0);
     Slic3r::close_zip_reader(&zip);
-    return idx < 0;
+    return idx < 0 ? ThreeMfKind::GeometryOnly : ThreeMfKind::Project;
 }
 
 bool is_loadable_model_file(const std::string& path) {

@@ -1706,6 +1706,67 @@ assert d["return_code"] == -2, d
 done
 echo "PASS: info-only flags with --slice are refused with result.json, and --help with --slice slices (both engines)"
 
+# The two layout modes arrange and return before the slice loop: --layout-plan
+# (the versioned contract) and --layout (the older form) are refused with
+# --slice (-2), in either flag order, so a --slice run never ends without
+# slicing or result.json.
+RES="$(cd "$(dirname "$B")" && pwd -P)/resources"
+[ -d "$RES/profiles" ] || RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
+for e in bambu orca; do
+    bin=$B; prof="$RES/profiles"
+    [ $e = orca ] && { bin=$O; prof="$RES/profiles-orca"; }
+    py '
+import json, sys
+w, e, prof = sys.argv[1], sys.argv[2], sys.argv[3]
+machine = "BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"
+json.dump({"schemaVersion": 1, "engine": e, "profilesDir": prof,
+           "profiles": {"machine": machine}, "spacing": {"minObjectDistanceMm": 10.0},
+           "models": [{"id": "a", "path": w + "/cube.stl"}]}, open("plan-%s.json" % e, "w"))
+json.dump({"profilesDir": prof, "profiles": {"machine": machine},
+           "objects": [{"stl": w + "/cube.stl"}]}, open("old-layout-%s.json" % e, "w"))
+' "$WORKDIR" "$e" "$prof"
+    run rlpa-$e "$bin" --slice 1 --outputdir rlpa-$e/out --layout-plan --input plan-$e.json
+    run rlpb-$e "$bin" --layout-plan --input plan-$e.json --slice 1 --outputdir rlpb-$e/out
+    run rold-$e "$bin" --slice 1 --outputdir rold-$e/out --layout old-layout-$e.json
+    for n in rlpa rlpb rold; do
+        [ -f $n-$e/out/result.json ] || { show $n-$e; fail "$e: $n with --slice wrote no result.json"; }
+        py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+' $n-$e/out/result.json || { show $n-$e; fail "$e: $n with --slice left no result.json with -2"; }
+    done
+done
+echo "PASS: --layout-plan and --layout with --slice are refused with result.json, in either flag order (both engines)"
+
+# A named preset never decides how a 3MF that cannot be read is refused: a
+# missing or unreadable .3mf gives the same code and sentence with and
+# without one (CLI_FILE_NOTFOUND with "No such file: ...", CLI_DATA_FILE_ERROR
+# from the 3MF loader). Reading an unreadable 3MF as a project made the
+# preset refusal answer first (CLI_INVALID_PARAMS, "a 3MF carries its own
+# settings"), which the official command line cannot do: it checks every
+# input's existence before it loads one and leaves a file it cannot open to
+# the loader (BambuStudio.cpp 1855-1860; OrcaSlicer.cpp 1537-1542).
+py 'open("corrupt.3mf", "wb").write(b"PK\x03\x04 this is not a zip archive\n")'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run rmf-$e "$bin" missing.3mf --printer-preset "$A1M" --slice 1 --outputdir rmf-$e/out
+    run rmfn-$e "$bin" missing.3mf --slice 1 --outputdir rmfn-$e/out
+    run rcf-$e "$bin" corrupt.3mf --printer-preset "$A1M" --slice 1 --outputdir rcf-$e/out
+    run rcfn-$e "$bin" corrupt.3mf --slice 1 --outputdir rcfn-$e/out
+    [ "$(rc rmf-$e)" = 253 ] && grep -q 'No such file: missing.3mf' rmf-$e/stderr \
+        || { show rmf-$e; fail "$e: a missing 3MF with a named preset is not CLI_FILE_NOTFOUND: exit $(rc rmf-$e)"; }
+    py '
+import json, sys
+m, mn, c, cn = [json.load(open(p)) for p in sys.argv[1:5]]
+assert m["return_code"] == mn["return_code"] == -3, ("missing", m["return_code"], mn["return_code"])
+assert m["error_string"] == mn["error_string"], (m["error_string"], mn["error_string"])
+assert c["return_code"] == cn["return_code"] == -6, ("corrupt", c["return_code"], cn["return_code"])
+assert c["error_string"] == cn["error_string"], (c["error_string"], cn["error_string"])
+' rmf-$e/out/result.json rmfn-$e/out/result.json rcf-$e/out/result.json rcfn-$e/out/result.json \
+        || { show rcf-$e; fail "$e: an unreadable 3MF with a named preset is not the no-preset refusal"; }
+done
+echo "PASS: a missing or unreadable 3MF gives the same code and sentence with and without a named preset (both engines)"
+
 # The tower an arrange sets is the one the project keeps: with --repetitions
 # on a printer with another bed, the exported tower is the one the copies were
 # arranged with, not the one moved to the new bed (the official exports the

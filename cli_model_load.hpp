@@ -18,9 +18,22 @@
 
 namespace slicer_cli {
 
-/// A 3MF that holds no project settings: geometry only, as the official CLI
-/// treats it (is_bbl_3mf false; BambuStudio.cpp 2075-2131 at 5873b5f).
-bool is_geometry_only_3mf(const std::string& path);
+/// What a .3mf path is, before anything loads it. `Unreadable` is its own
+/// answer, not "geometry only": the official CLI checks that every input
+/// exists before it loads one (BambuStudio.cpp 1855-1860 at 5873b5f;
+/// OrcaSlicer.cpp 1537-1542 at 31f6803) and leaves a file it cannot open to
+/// the loader, so a .3mf that cannot be read is neither a project (which
+/// carries its own settings) nor geometry only.
+enum class ThreeMfKind {
+    NotA3mf,       // not a .3mf at all
+    Project,       // holds Metadata/project_settings.config (is_bbl_3mf true)
+    GeometryOnly,  // holds no project settings, as the official CLI treats it
+                   // (is_bbl_3mf false; BambuStudio.cpp 2075-2131 at 5873b5f)
+    Unreadable,    // missing, or not a readable zip archive
+};
+
+/// Classify `path`. Only a .3mf is opened; every other path is NotA3mf.
+ThreeMfKind classify_3mf(const std::string& path);
 
 /// A model file kind slicer-cli can load on this engine.
 bool is_loadable_model_file(const std::string& path);

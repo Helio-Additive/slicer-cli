@@ -4934,7 +4934,7 @@ struct ProjectPlan {
 /// The product's default call (`file --plate N -o`) keeps loading the model
 /// files into the plate it slices.
 static bool trailing_models_port(const CliOptions& o) {
-    return o.input_files.size() > 1 && input_is_3mf(o.input_file) && !slicer_cli::is_geometry_only_3mf(o.input_file) &&
+    return o.input_files.size() > 1 && slicer_cli::classify_3mf(o.input_file) == slicer_cli::ThreeMfKind::Project &&
            (o.slice_mode || slicer_cli::model_actions_only(o));
 }
 
@@ -5796,7 +5796,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // the bed is known. Any other file keeps the unsupported-format
         // refusal below.
         const bool geometry_input = !input_file.empty() && slicer_cli::is_loadable_model_file(input_file) &&
-            (!input_is_3mf(input_file) || slicer_cli::is_geometry_only_3mf(input_file));
+            (!input_is_3mf(input_file) ||
+             slicer_cli::classify_3mf(input_file) == slicer_cli::ThreeMfKind::GeometryOnly);
         const bool geometry_only_3mf = geometry_input && input_is_3mf(input_file);
         // A project 3MF with model files after it, run as the official CLI
         // runs it (ProjectPlan): the run loads every plate (plate_id 0) and
@@ -8507,7 +8508,8 @@ static int run_info(const std::string& argv0, const std::string& path, const std
         out["filament_presets"] = text("filament_settings_id");
         out["nozzle_diameter"] = text("nozzle_diameter");
         // A geometry-only 3MF is one plate, as the slice takes it.
-        out["plates"] = slicer_cli::is_geometry_only_3mf(path) ? 1 : std::max(1, count_3mf_plates(path));
+        out["plates"] = slicer_cli::classify_3mf(path) == slicer_cli::ThreeMfKind::GeometryOnly
+                            ? 1 : std::max(1, count_3mf_plates(path));
 
         std::map<std::string, std::string> meta;
         if (read_zip_member(path, "3D/3dmodel.model", model_xml))
@@ -8616,7 +8618,8 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         error = "Nothing was sliced to export.";
         return CLI_EXPORT_3MF_ERROR;
     }
-    const bool geometry_input = !input_is_3mf(o.input_file) || slicer_cli::is_geometry_only_3mf(o.input_file);
+    const bool geometry_input = !input_is_3mf(o.input_file) ||
+        slicer_cli::classify_3mf(o.input_file) == slicer_cli::ThreeMfKind::GeometryOnly;
 
     // The plates (PartPlateList::store_to_3mf_structure, BambuStudio.cpp
     // 7483-7484): the file's, with any the arrange added, or one plate for
@@ -8829,7 +8832,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     if (g_assemble) {
         plate_count = int(g_assemble->plates.size());
         per_plate_load = true;
-    } else if (input_is_3mf(o.input_file) && !slicer_cli::is_geometry_only_3mf(o.input_file)) {
+    } else if (slicer_cli::classify_3mf(o.input_file) == slicer_cli::ThreeMfKind::Project) {
         // A geometry-only 3MF (no project settings) loads whole as model
         // geometry, whatever plate tags its model_settings.config keeps.
         const int declared = count_3mf_plates(o.input_file);
@@ -9321,13 +9324,23 @@ int main(int argc, char** argv) {
             o.slice_plate = 0;
         }
     }
-    const bool project_3mf_input = input_is_3mf(input_file) && !slicer_cli::is_geometry_only_3mf(input_file);
+    // What the input is, in one answer: only a .3mf that OPENS and carries
+    // Metadata/project_settings.config is a project. A .3mf that cannot be
+    // read (missing, or not an archive) is its own state, never a project:
+    // upstream checks every input's existence before it loads one, and a
+    // failed load is the loader's to report (BambuStudio.cpp 1855-1860 at
+    // 5873b5f; OrcaSlicer.cpp 1537-1542 at 31f6803). Calling it a project
+    // here would refuse a named preset as CLI_INVALID_PARAMS ("a 3MF carries
+    // its own settings") before the run could report CLI_FILE_NOTFOUND or
+    // CLI_DATA_FILE_ERROR, as the same call does without a preset.
+    const slicer_cli::ThreeMfKind input_3mf = slicer_cli::classify_3mf(input_file);
+    const bool project_3mf_input = input_3mf == slicer_cli::ThreeMfKind::Project;
     // A 3MF with geometry only names no printer: the desktop asks for one,
     // the command line needs it named to slice. A run of model actions only
     // (--info, --export-stl, --export-stls, --export-settings without
     // --slice) needs none, as for an STL: the official runs those actions on
     // the loaded model (BambuStudio.cpp 6366-6401; OrcaSlicer.cpp 5499-5534).
-    if (input_is_3mf(input_file) && !project_3mf_input && !o.uses_presets() &&
+    if (input_3mf == slicer_cli::ThreeMfKind::GeometryOnly && !o.uses_presets() &&
         !slicer_cli::model_actions_only(o) &&
         o.machine_config.empty() && o.bundle_config.empty() &&
         o.cli.option<Slic3r::ConfigOptionStrings>("load_settings")->values.empty())
@@ -9373,6 +9386,17 @@ int main(int argc, char** argv) {
         std::cerr << "Error: --layout-plan and --layout are mutually exclusive\n";
         return 1;
     }
+
+    // Both layout modes arrange and return, before any slice: like
+    // --engine-info and --list-presets they write no result.json, so with
+    // --slice they are refused too, and a --slice run never ends without
+    // slicing or result.json. Without --slice neither line below is reached.
+    if (o.slice_mode && layout_plan_mode)
+        return refuse_run(CLI_INVALID_PARAMS, "--layout-plan arranges the input's objects and slices nothing; give "
+                                              "it without --slice.");
+    if (o.slice_mode && !layout_json_file.empty())
+        return refuse_run(CLI_INVALID_PARAMS, "--layout arranges the model files and slices nothing; give it "
+                                              "without --slice.");
 
     // --layout-plan: versioned headless arrange contract
     if (layout_plan_mode) {
