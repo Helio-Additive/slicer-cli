@@ -2231,3 +2231,59 @@ Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BB
 Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BBL X2D 0.4 nozzle;Bambu PETG HF @BBL X2D 0.4 nozzle;Bambu ABS @BBL X2D 0.4 nozzle|1,1,1,1
 D3EOF
 [ $d3_ok = 1 ] && echo "PASS: D3 the Orca build's automatic grouping equals the official OrcaSlicer CLI's on the H2D, H2D Pro and X2D"
+
+# D4 (Bambu build; OrcaSlicer 31f6803 has no such setting): input without
+# extruder_nozzle_stats gets the official CLI's value (BambuStudio.cpp
+# 4141-4155, 6668-6692): an H2D STL with settings files that lack it, through
+# --load-settings and through --machine/--filament/--process, gets what the
+# named preset carries (on 2a12432: ";"). A 3MF that carries a value keeps it
+# byte for byte, here one no computation gives.
+d4_ok=1
+hdr() { py '
+import re, sys
+for line in open(sys.argv[1], errors="replace"):
+    m = re.match(r"^; " + re.escape(sys.argv[2]) + r" = (.*)$", line.rstrip("\r\n"))
+    if m:
+        print(m.group(1).replace("\"", "")); break
+' "$1" "$2"; }
+flat_presets bambu d4h2d "Bambu Lab H2D 0.4 nozzle"
+py '
+import json
+for k in ("machine", "process", "filament"):
+    d = json.load(open("d4h2d-bambu-%s.json" % k)); d.pop("extruder_nozzle_stats", None)
+    json.dump(d, open("d4h2d-bambu-%s.json" % k, "w"), indent=1)
+'
+run d4p "$B" cube.stl --printer-preset "Bambu Lab H2D 0.4 nozzle" --slice 1 --outputdir d4p/out --export-3mf d4.3mf
+cp d4p/out/d4.3mf d4.3mf 2>/dev/null || true
+want=$(hdr d4p/out/plate_1.gcode extruder_nozzle_stats)
+[ "$(rc d4p)" = 0 ] && [ -n "$want" ] && [ "$want" != ";" ] || { show d4p; fail "D4 bambu: the named H2D preset gives extruder_nozzle_stats '$want' (exit $(rc d4p))"; d4_ok=0; }
+run d4l "$B" cube.stl --load-settings "d4h2d-bambu-machine.json;d4h2d-bambu-process.json" \
+    --load-filaments d4h2d-bambu-filament.json --slice 1 --outputdir d4l/out --export-settings d4l.json
+run d4m "$B" cube.stl -o d4m.gcode --machine d4h2d-bambu-machine.json --filament d4h2d-bambu-filament.json \
+    --process d4h2d-bambu-process.json
+for n in l m; do
+    g=d4l/out/plate_1.gcode; [ $n = m ] && g=d4m.gcode
+    [ "$(rc d4$n)" = 0 ] && [ -s $g ] || { show d4$n; fail "D4 bambu: settings files (route $n) exit $(rc d4$n)"; d4_ok=0; continue; }
+    got=$(hdr $g extruder_nozzle_stats)
+    [ "$got" = "$want" ] || { fail "D4 bambu: settings files (route $n) give extruder_nozzle_stats '$got', the named preset '$want'"; d4_ok=0; }
+done
+py '
+import json, sys
+s = json.load(open("d4l.json"))["extruder_nozzle_stats"]
+assert ";".join(s) == sys.argv[1], (s, sys.argv[1])
+' "$want" || { fail "D4 bambu: --export-settings does not hold the computed extruder_nozzle_stats"; d4_ok=0; }
+# The keep guard: the project's own value, which no computation gives.
+py '
+import json, zipfile
+with zipfile.ZipFile("d4.3mf") as zin, zipfile.ZipFile("d4keep.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d["extruder_nozzle_stats"] = ["Standard#1|High Flow#0", "Standard#1"]
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' || { fail "D4 bambu: no exported H2D project for the keep check"; d4_ok=0; }
+run d4k "$B" d4keep.3mf --plate 1 -o d4k.gcode
+got=$(hdr d4k.gcode extruder_nozzle_stats)
+[ "$(rc d4k)" = 0 ] && [ "$got" = "Standard#1|High Flow#0;Standard#1" ] || { show d4k; fail "D4 bambu: a 3MF's own extruder_nozzle_stats became '$got' (exit $(rc d4k))"; d4_ok=0; }
+[ $d4_ok = 1 ] && echo "PASS: D4 input without extruder_nozzle_stats gets the official CLI's value, a 3MF keeps its own (Bambu build)"

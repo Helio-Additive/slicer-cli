@@ -6713,6 +6713,63 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // (is_per_filament_config_key), so this is also the count the engine
         // derives once the config is applied.
         project_filaments = project_filament_count(config);
+
+        // extruder_nozzle_stats: how many nozzles of each flow type each
+        // extruder holds; automatic grouping reads it (ToolOrdering.cpp 1321,
+        // 1889). The desktop writes it into every project (full_config,
+        // PresetBundle.cpp 3526; reset on a printer change, Plater.cpp
+        // ~1307-1358 and ExtruderNozzleStat::on_printer_model_change), and a
+        // named preset carries it (desktop_presets.cpp). Input without it
+        // (settings files, an STL with --machine/--process/--filament) gets
+        // the official CLI's: the printer's extruder_max_nozzle_count nozzles
+        // of the nozzle_volume_type flow per extruder
+        // (on_printer_model_change_cli, BambuStudio.cpp 4141-4155), then each
+        // extruder switched to the plate's flow type and written to
+        // m_print_config on a printer with several extruders or nozzles
+        // (BambuStudio.cpp 6668-6692; new_nozzle_volume_type from 3428-3440).
+        // Unlike the official CLI, a value the input carries is never
+        // recomputed (the official also does it on a printer change): the
+        // product writes the value into every 3MF and it is kept as it is.
+        {
+            const auto* stats = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats");
+            const bool carried = stats != nullptr &&
+                std::any_of(stats->values.begin(), stats->values.end(), [](const std::string& s) { return !s.empty(); });
+            const auto* max_opt = config.option<Slic3r::ConfigOptionIntsNullable>("extruder_max_nozzle_count");
+            const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
+            if (!carried && max_opt != nullptr && !max_opt->values.empty() && nozzles != nullptr) {
+                const std::vector<int> max_nozzle_count = max_opt->values;
+                const size_t slot_count = max_nozzle_count.size();
+                const int new_extruder_count = int(nozzles->values.size());
+                const auto* opt_nvt = dynamic_cast<const Slic3r::ConfigOptionEnumsGeneric*>(config.option("nozzle_volume_type"));
+                // BambuStudio.cpp 4144-4155.
+                std::vector<int> curr_volume_map_value(slot_count, static_cast<int>(Slic3r::NozzleVolumeType::nvtStandard));
+                if (opt_nvt && !opt_nvt->values.empty())
+                    for (size_t idx = 0; idx < slot_count; ++idx)
+                        curr_volume_map_value[idx] = idx < opt_nvt->values.size() ? opt_nvt->values[idx] : opt_nvt->values.back();
+                Slic3r::ExtruderNozzleStat nozzle_stats_obj;
+                nozzle_stats_obj.on_printer_model_change_cli(curr_volume_map_value, max_nozzle_count);
+                // BambuStudio.cpp 3428-3440: the flow type per extruder.
+                std::vector<Slic3r::NozzleVolumeType> new_nozzle_volume_type;
+                if (opt_nvt && opt_nvt->values.size() >= static_cast<size_t>(new_extruder_count)) {
+                    for (int i = 0; i < new_extruder_count; i++)
+                        new_nozzle_volume_type.push_back(Slic3r::NozzleVolumeType(opt_nvt->values[i]));
+                } else {
+                    if (!rs.settings_merge.machine_switch)
+                        for (int v : project_facts.current_nozzle_volume_type)
+                            new_nozzle_volume_type.push_back(Slic3r::NozzleVolumeType(v));
+                    new_nozzle_volume_type.resize(new_extruder_count, Slic3r::NozzleVolumeType::nvtStandard);
+                }
+                // BambuStudio.cpp 3412-3413 and 6668-6692.
+                const bool support_multi_nozzle = std::any_of(max_nozzle_count.begin(), max_nozzle_count.end(),
+                                                              [](int v) { return v > 1; });
+                if (new_extruder_count > 1 || support_multi_nozzle) {
+                    for (size_t eid = 0; eid < new_nozzle_volume_type.size(); ++eid)
+                        nozzle_stats_obj.on_volume_type_switch(int(eid), new_nozzle_volume_type[eid]);
+                    config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats", true)->values =
+                        Slic3r::save_extruder_nozzle_stats_to_string(nozzle_stats_obj.get_raw_stat());
+                }
+            }
+        }
 #endif
 
 #ifdef ENGINE_BAMBU
