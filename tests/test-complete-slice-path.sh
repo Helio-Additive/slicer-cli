@@ -1555,6 +1555,101 @@ assert len(o) == 2 and abs(x0 - 65) < 0.5 and abs(x1 - 115) < 0.5 and abs(y0 - 8
 done
 echo "PASS: a printer change moves the plate after the setting flags apply (both engines)"
 
+# The Orca build's printer change takes the process the DESKTOP selects for the
+# new printer, not the project's own: OrcaSlicer ships no process_full folder
+# for the branch the official CLI takes here (OrcaSlicer.cpp 3003-3011 reads
+# resources/orca/profiles/BBL/process_full/), while the desktop switches
+# printers from the presets its package ships (PresetBundle::update_compatible,
+# PresetBundle.cpp 5295-5330; Tab::select_preset, Tab.cpp 6130-6140 at
+# 31f6803). The Bambu build keeps the official path: its package ships
+# process_full and no value of its runs is checked here.
+ORCA_PROFILES="$(cd "$(dirname "$O")" && pwd -P)/resources/profiles-orca"
+[ -d "$ORCA_PROFILES/BBL/process" ] || ORCA_PROFILES="$(cd "$(dirname "$O")/.." && pwd -P)/resources/profiles-orca"
+# The shipped presets flattened over their inherits chains the way the desktop
+# loads them (load_vendor_configs_from_json, PresetBundle.cpp 4932-4936; no BBL
+# preset uses "include"): the A1 mini machine preset with printer keys only (a
+# settings file, not an --export-settings dump, which carries the process's
+# keys too), and the two processes the checks below expect.
+py '
+import json, os, sys
+vendor = sys.argv[1]
+def flat(kind, name):
+    profiles = {}
+    for root, _, files in os.walk(os.path.join(vendor, kind)):
+        for f in files:
+            if f.endswith(".json"):
+                d = json.load(open(os.path.join(root, f), encoding="utf-8"))
+                profiles[d.get("name", f[:-5])] = d
+    def resolve(n, seen=()):
+        d = profiles[n]
+        r = resolve(d["inherits"], seen + (n,)) if d.get("inherits") and n not in seen else {}
+        r.update({k: v for k, v in d.items() if k != "inherits"})
+        return r
+    return resolve(name)
+m = flat("machine", "Bambu Lab A1 mini 0.4 nozzle")
+m.update({"type": "machine", "from": "system", "name": "Bambu Lab A1 mini 0.4 nozzle", "instantiation": "true"})
+assert "layer_height" not in m and m["default_print_profile"], sorted(m)
+json.dump(m, open("a1m-machine-orca.json", "w", encoding="utf-8"), indent=1)
+for out, name in (("a1m-p020.json", "0.20mm Standard @BBL A1M"), ("a1m-p016.json", "0.16mm Optimal @BBL A1M")):
+    json.dump(flat("process", name), open(out, "w", encoding="utf-8"), indent=1)
+' "$ORCA_PROFILES/BBL" || fail "orca: the shipped A1 mini presets could not be flattened"
+
+# The fifteen printer-change cases above switch with an --export-settings dump
+# as the machine file; the process must still be the A1 mini's, not the X1
+# Carbon project's.
+py '
+import json, re, sys
+want = json.load(open(sys.argv[2])); g = open(sys.argv[1], errors="replace").read()
+def got(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).split(",")[0].strip()
+def first(v):
+    return re.sub(r"\"", "", str(v[0] if isinstance(v, list) else v))
+bad = []
+for k in ("layer_height", "wall_loops", "sparse_infill_density", "travel_speed",
+          "default_acceleration", "bridge_speed", "elefant_foot_compensation"):
+    if got(k) != first(want[k]):
+        bad.append("%s: G-code %r, the A1 mini process %r" % (k, got(k), first(want[k])))
+assert not bad, "; ".join(bad)
+' sw-orca/out/plate_1.gcode a1m-p020.json || fail "orca: the printer change did not slice with the A1 mini process settings the package ships"
+echo "PASS: the Orca printer change slices with the process the desktop selects for the new printer"
+
+# The desktop's keep-or-replace choice reads the printers the project's process
+# says it suits, which a project 3MF carries as print_compatible_printers
+# (full_fff_config erases compatible_printers, PresetBundle.cpp 4084 and 4129,
+# and load_config_file_config puts that list back, 4390-4393 at 31f6803), and it
+# then takes the preset whose alias is the current preset's before any other
+# (PreferedProfileMatch, PresetBundle.cpp 5196-5207; a system preset's alias is
+# its name up to the "@", 5013-5027), so its layer height survives. An X1
+# Carbon project at 0.16mm Optimal moved to the A1 mini with a machine file
+# holding printer keys only becomes 0.16mm Optimal @BBL A1M: not the printer's
+# default 0.20mm Standard, and not the 0.16mm High Quality the vendor list
+# holds before it.
+run sw16p "$O" cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+    --process-preset "0.16mm Optimal @BBL X1C" --outputdir sw16p/out --export-3mf sw16.3mf
+[ "$(rc sw16p)" = 0 ] || { show sw16p; fail "orca: the 0.16mm Optimal X1 Carbon project exit $(rc sw16p)"; }
+run sw16 "$O" sw16p/out/sw16.3mf --slice 1 --load-settings a1m-machine-orca.json --outputdir sw16/out
+[ "$(rc sw16)" = 0 ] || { show sw16; fail "orca: the 0.16mm printer change with a printer-keys-only machine file exit $(rc sw16)"; }
+py '
+import json, re, sys
+want = json.load(open(sys.argv[2])); g = open(sys.argv[1], errors="replace").read()
+def got(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).split(",")[0].strip()
+def first(v):
+    return re.sub(r"\"", "", str(v[0] if isinstance(v, list) else v))
+bad = []
+for k in ("layer_height", "wall_loops", "sparse_infill_density", "travel_speed",
+          "default_acceleration", "bridge_speed", "elefant_foot_compensation"):
+    if got(k) != first(want[k]):
+        bad.append("%s: G-code %r, the A1 mini process %r" % (k, got(k), first(want[k])))
+# The selected preset names itself (full_fff_config, PresetBundle.cpp 4106).
+if got("print_settings_id") != "0.16mm Optimal @BBL A1M":
+    bad.append("print_settings_id: G-code %r" % got("print_settings_id"))
+assert not bad, "; ".join(bad)
+' sw16/out/plate_1.gcode a1m-p016.json || fail "orca: the printer change did not take the alias-matching A1 mini process"
+echo "PASS: the Orca printer change keeps the project's process recipe (0.16mm Optimal) and names the preset it took"
+
 # A refusal before anything loads still leaves result.json under --slice:
 # named presets on a project 3MF, and --plate with --slice (CLI_INVALID_PARAMS).
 for e in bambu orca; do

@@ -96,8 +96,11 @@ bool wants_settings_merge(const CliOptions& o);
 /// The merge itself, on `print_config` (the official m_print_config), with
 /// `extra_config` the settings given as flags (filament_colour is read and
 /// taken out here, as the official does). `project_presets` are the 3MF's
-/// embedded presets, read to build the "(auto)" process.
-StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts,
+/// embedded presets, read to build the "(auto)" process. `profiles_dir` is
+/// this engine's own profiles tree (the one --printer-preset resolves names
+/// in): the Orca build reads the new printer's process from it, as the desktop
+/// does, since its package ships no process_full folder.
+StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts, const std::string& profiles_dir,
                                  Slic3r::DynamicPrintConfig& print_config, Slic3r::DynamicPrintConfig& extra_config,
                                  const std::vector<Slic3r::Preset*>& project_presets, SettingsMerge& merge);
 

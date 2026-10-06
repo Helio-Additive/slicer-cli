@@ -6548,7 +6548,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // project's print_sequence, not a plate's own (get_print_sequence
             // reads the plate's first, BambuStudio.cpp 4403-4416).
             const slicer_cli::StepResult merged =
-                slicer_cli::merge_loaded_settings(o, project_facts, config, extra, preset_ptrs, settings_merge);
+                slicer_cli::merge_loaded_settings(o, project_facts, this_engine_profiles_dir(o.argv0).string(), config, extra,
+                                                  preset_ptrs, settings_merge);
             if (const Slic3r::ConfigOption* seq = config.option("print_sequence"))
                 merged_print_sequence = seq->serialize();
             if (merged.code != 0) {

@@ -24,6 +24,7 @@
 #include "libslic3r/Utils.hpp"
 
 #include "cli_events.hpp"
+#include "desktop_presets.hpp"
 
 namespace slicer_cli {
 namespace {
@@ -387,9 +388,9 @@ bool wants_settings_merge(const CliOptions& o) {
         ;
 }
 
-StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_in, DynamicPrintConfig& m_print_config,
-                                 DynamicPrintConfig& m_extra_config, const std::vector<Preset*>& project_presets,
-                                 SettingsMerge& out) {
+StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_in, const std::string& profiles_dir,
+                                 DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
+                                 const std::vector<Preset*>& project_presets, SettingsMerge& out) {
     ProjectFacts facts = facts_in;
     const auto& cfg = o.cli;
     const std::vector<std::string>& load_configs       = cfg.option<ConfigOptionStrings>("load_settings")->values;
@@ -1046,6 +1047,38 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         }
         // Another extruder count: the process values follow the new
         // extruders, from the printer's default process (B 3480-3521).
+#ifdef ENGINE_ORCA
+        // OrcaSlicer ships no machine_full/process_full folder, and the branch
+        // the official CLI takes here reads the new printer's default process
+        // from one (OrcaSlicer.cpp 3003-3011: resources/orca/profiles/BBL/
+        // process_full/<default_print_profile>.json), so its own 2.4.0-alpha
+        // build refuses this printer change with "cannot find the settings
+        // file". The desktop app switches printers from the presets its
+        // package ships: PresetBundle::update_compatible keeps the current
+        // process while the new printer is one it suits and otherwise selects
+        // the best compatible system preset, the printer's
+        // default_print_profile first (OrcaSlicer PresetBundle.cpp 5295-5330,
+        // Preset.hpp 686-709, Tab.cpp 6130-6140 at 31f6803), whose settings
+        // then are the process's (PresetBundle::full_config, PresetBundle.cpp
+        // 3858-3862). BambuStudio keeps the official branch below, as its
+        // package ships process_full.
+        if (new_process_name.empty()) {
+            const DesktopProcessSwitch picked = desktop_printer_switch_process(
+                profiles_dir, "BBL", new_printer_system_name, new_default_process_name, m_print_config,
+                current_print_compatible_printers, facts.current_process_system_name);
+            if (picked.replaced) {
+                // The whole preset, less its bookkeeping key.
+                t_config_option_keys keys;
+                for (const t_config_option_key& key : picked.config.keys())
+                    if (key != "print_settings_id")
+                        keys.push_back(key);
+                m_print_config.apply_only(picked.config, keys, true);
+                // The process is now the selected preset: it names itself, as
+                // the desktop's full config does (PresetBundle.cpp 4106).
+                m_print_config.option<ConfigOptionString>("print_settings_id", true)->value = picked.name;
+            }
+        }
+#else
         if (new_process_name.empty() && (facts.current_extruder_count != new_extruder_count ||
                                          current_print_variant_count != new_printer_variant_count)) {
             if (new_default_process_name.empty())
@@ -1067,6 +1100,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             if (ret)
                 return fail(CLI_CONFIG_FILE_ERROR, "Moving the process values to the new extruders failed.");
         }
+#endif
     }
 
     // The filaments into the print settings (B 3524-3757; O 3041-3264).
