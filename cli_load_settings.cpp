@@ -1207,10 +1207,24 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // The flush volumes, when the colours, the nozzles or the matrix change
     // (B 3759-3941; O 3266-3420).
     ConfigOptionStrings* selected_colors_option = m_extra_config.option<ConfigOptionStrings>("filament_colour");
-    ConfigOptionStrings* project_colors_option  = m_print_config.option<ConfigOptionStrings>("filament_colour");
+    // The project's colours are the loaded settings' own only: the engine
+    // default this command line seeds first is not one the official
+    // m_print_config holds here (see SettingsMerge::project_has_filament_colour).
+    // Deliberate difference: with more than one filament and no colours from
+    // anywhere (neither loaded nor given with --filament-colour), the
+    // official CLI goes on with one colour for several filaments and crashes
+    // in automatic grouping (SIGSEGV, OrcaSlicer 2.4.0-alpha and BambuStudio
+    // CLIs, H2D with two settings-file filaments); here the seeded colour is
+    // kept, and the check below refuses the run (CLI_CONFIG_FILE_ERROR) as
+    // before.
+    const bool colours_loaded =
+        out.project_has_filament_colour || (filament_count > 1 && selected_colors_option == nullptr);
+    ConfigOptionStrings* project_colors_option =
+        colours_loaded ? m_print_config.option<ConfigOptionStrings>("filament_colour") : nullptr;
     if ((!project_colors_option || project_colors_option->values.empty()) && selected_colors_option) {
         project_colors_option = m_print_config.option<ConfigOptionStrings>("filament_colour", true);
-        project_colors_option->values.resize(filament_count, "#FFFFFF");
+        // Created empty, then sized (B 3765-3767; O 3272-3274).
+        project_colors_option->values.assign(filament_count, "#FFFFFF");
     }
     bool filament_color_changed = false;
     if (project_colors_option &&
