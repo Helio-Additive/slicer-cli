@@ -8892,9 +8892,13 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    // --help: the flags. With --slice the run goes on: the official prints its
+    // help as one action of its loop and runs the others, --slice among them
+    // (BambuStudio.cpp 6337-6338; OrcaSlicer.cpp 5471-5472).
     if (mode_args.help) {
         print_usage(argv[0]);
-        return 0;
+        if (!o.slice_mode)
+            return 0;
     }
     // A refusal before anything loads: under --slice it leaves result.json
     // in --outputdir too, as every --slice run does (the official records the
@@ -8946,7 +8950,15 @@ int main(int argc, char** argv) {
                                               "engine; use a tower or pressure_advance_line calib mode instead.");
 #endif
 
-    // --info: one JSON document on stdout, nothing sliced.
+    // --engine-info and --list-presets (slicer-cli's own, with no official
+    // counterpart): one JSON document on stdout, nothing sliced. With --slice
+    // they are refused, so a --slice run never ends without slicing or
+    // result.json.
+    if (o.slice_mode && !mode_args.engine_info_file.empty())
+        return refuse_run(CLI_INVALID_PARAMS, "--engine-info describes a file and slices nothing; give it without --slice.");
+    if (o.slice_mode && mode_args.list_presets)
+        return refuse_run(CLI_INVALID_PARAMS, "--list-presets lists this engine's presets and slices nothing; give it "
+                                              "without --slice.");
     if (!mode_args.engine_info_file.empty()) {
         boost::log::core::get()->set_logging_enabled(false);
         return run_info(o.argv0, mode_args.engine_info_file, o.printer_preset);

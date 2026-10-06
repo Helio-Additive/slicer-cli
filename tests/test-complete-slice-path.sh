@@ -1587,6 +1587,25 @@ assert d["return_code"] == int(sys.argv[2]), d
 done
 echo "PASS: a bad --slice value and a project 3MF that is not first are refused with result.json (both engines)"
 
+# A --slice run never ends without slicing or result.json: --engine-info and
+# --list-presets (slicer-cli's own) are refused with it (-2); --help prints
+# the flags and the slice goes on, as the official's help action does
+# (BambuStudio.cpp 6337-6338; OrcaSlicer.cpp 5471-5472).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run rei-$e "$bin" --engine-info cube.stl --slice 1 --outputdir rei-$e/out
+    run rlp-$e "$bin" --list-presets --slice 1 --outputdir rlp-$e/out
+    for n in rei rlp; do
+        py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+' $n-$e/out/result.json || { show $n-$e; fail "$e: $n with --slice left no result.json with -2"; }
+    done
+    run rhp-$e "$bin" cube.stl --help --slice 1 --printer-preset "$A1M" --outputdir rhp-$e/out
+    [ "$(rc rhp-$e)" = 0 ] && [ -s rhp-$e/out/plate_1.gcode ] && grep -q -- '--slice' rhp-$e/stdout || { show rhp-$e; fail "$e: --help with --slice did not print the flags and slice"; }
+done
+echo "PASS: info-only flags with --slice are refused with result.json, and --help with --slice slices (both engines)"
+
 # The tower an arrange sets is the one the project keeps: with --repetitions
 # on a printer with another bed, the exported tower is the one the copies were
 # arranged with, not the one moved to the new bed (the official exports the
