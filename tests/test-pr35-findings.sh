@@ -196,7 +196,7 @@ F1() {
 import json, sys; print(json.dumps([i["printable"] for i in json.load(sys.stdin) if i["identify_id"] == sys.argv[1]]))' "$id1")
         run f1r-$e "$bin" f1-$e/out/x.3mf --plate 1 -o f1r-$e.gcode
         relabels=$(fh labels f1r-$e.gcode 2>/dev/null || echo '?')
-        if echo "$labels" | grep -qw "$id1"; then report F1 $e FAIL "the G-code printed the skipped id $id1 ($labels)"
+        if grep -qw "$id1" <<<"$labels"; then report F1 $e FAIL "the G-code printed the skipped id $id1 ($labels)"
         elif [ "$printable" = "[false]" ] && [ "$relabels" = "$labels" ]; then
             report F1 $e PASS "the exported 3MF marks id $id1 not printable; its re-slice prints $relabels as the run did"
         else
@@ -536,7 +536,7 @@ print([i["identify_id"] for i in json.load(sys.stdin) if i["instance"] == k][0])
             l=$(fh labels f9s$k-$e/out/plate_1.gcode)
             cnt=$(fh label_count f9s$k-$e/out/plate_1.gcode)
             got="$got skip instance $k (id $id) printed $cnt $l;"
-            if [ "$cnt" != 2 ] || echo "$l" | grep -qw "$id"; then bad="$bad skip instance $k (id $id): printed $cnt objects $l, want 2 without $id;"; fi
+            if [ "$cnt" != 2 ] || grep -qw "$id" <<<"$l"; then bad="$bad skip instance $k (id $id): printed $cnt objects $l, want 2 without $id;"; fi
         done
         if [ -z "$bad" ]; then report F9 $e PASS "$got"; else report F9 $e FAIL "$bad"; fi
     done

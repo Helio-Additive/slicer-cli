@@ -37,7 +37,7 @@ check() {
     set -e
 
     local STATUS="PASS"
-    if [ "$ACTUAL_EXIT" -eq "$EXPECTED_EXIT" ] && echo "$OUTPUT" | grep -q "$EXPECTED_OUTPUT"; then
+    if [ "$ACTUAL_EXIT" -eq "$EXPECTED_EXIT" ] && grep -q "$EXPECTED_OUTPUT" <<<"$OUTPUT"; then
         PASS=$((PASS + 1))
     else
         STATUS="FAIL"
@@ -149,7 +149,7 @@ if [ -f "$TOKEN_3MF" ]; then
     GC=$(mktmp_gcode)
     run_slice "$GC" "$TOKEN_3MF"
     if [ "$LAST_EXIT" -eq 0 ] \
-       && echo "$LAST_OUTPUT" | grep -q "LegacyGcodeTokenAliased" \
+       && grep -q "LegacyGcodeTokenAliased" <<<"$LAST_OUTPUT" \
        && ! grep -q "$TOKEN" "$GC"; then
         record "legacy-token-normalized" 1
     else
@@ -170,8 +170,8 @@ if [ -f "$TOKEN_3MF" ]; then
     if [ "$ENGINE" = orca ]; then
         if [ "$LAST_EXIT" -ne 0 ] \
            && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
-           && echo "$LAST_OUTPUT" | grep -q "Not a variable name" \
-           && echo "$LAST_OUTPUT" | grep -q "{$TOKEN}" \
+           && grep -q "Not a variable name" <<<"$LAST_OUTPUT" \
+           && grep -q "{$TOKEN}" <<<"$LAST_OUTPUT" \
            && [ ! -s "$GC" ]; then
             record "legacy-token-unbound-without-normalization-orca" 1
         else
@@ -227,7 +227,7 @@ total_count()    { local n="$(grep -c "$2" "$1" 2>/dev/null)"; echo "${n:-0}"; }
 # the test can't pass for an unrelated reason (e.g. a missing fixture).
 GC=$(mktmp_gcode)
 run_slice "$GC" "$BASE_3MF" --calib-mode bogus
-if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "calib-mode"; then
+if [ "$LAST_EXIT" -ne 0 ] && grep -q "calib-mode" <<<"$LAST_OUTPUT"; then
     record "calib-bogus-rejected" 1
 else
     record "calib-bogus-rejected" 0 "exit=$LAST_EXIT (want non-zero + 'calib-mode' in output)"
@@ -283,7 +283,7 @@ if [ -f "$BASE_3MF" ]; then
         GC=$(mktmp_gcode)
         run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
         if [ "$LAST_EXIT" -ne 0 ] \
-           && echo "$LAST_OUTPUT" | grep -q "pressure_advance_pattern is not yet supported on the OrcaSlicer engine" \
+           && grep -q "pressure_advance_pattern is not yet supported on the OrcaSlicer engine" <<<"$LAST_OUTPUT" \
            && [ ! -s "$GC" ]; then
             record "calib-pa-pattern-refused-on-orca" 1
         else
@@ -305,7 +305,7 @@ if [ -f "$BASE_3MF" ]; then
     # — the engine's unsigned pattern-count loop would otherwise wrap unbounded.
     GC=$(mktmp_gcode)
     run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_pattern --calib-start 0.1 --calib-end 0 --calib-step 0.005
-    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "greater than"; then
+    if [ "$LAST_EXIT" -ne 0 ] && grep -q "greater than" <<<"$LAST_OUTPUT"; then
         record "calib-pa-reversed-rejected" 1
     else
         record "calib-pa-reversed-rejected" 0 "exit=$LAST_EXIT (want non-zero + ascending-sweep error)"
@@ -316,7 +316,7 @@ if [ -f "$BASE_3MF" ]; then
     # misconfiguration and must be rejected.
     GC=$(mktmp_gcode)
     run_slice "$GC" "$BASE_3MF" --calib-mode temp_tower --calib-start 190 --calib-end 240 --calib-step 5
-    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "descends"; then
+    if [ "$LAST_EXIT" -ne 0 ] && grep -q "descends" <<<"$LAST_OUTPUT"; then
         record "calib-temp-ascending-rejected" 1
     else
         record "calib-temp-ascending-rejected" 0 "exit=$LAST_EXIT (want non-zero + descends error)"
@@ -327,7 +327,7 @@ if [ -f "$BASE_3MF" ]; then
     # id on another mode must be rejected (it would calibrate the wrong extruder).
     GC=$(mktmp_gcode)
     run_slice "$GC" "$BASE_3MF" --calib-mode temp_tower --calib-start 240 --calib-end 190 --calib-step 5 --calib-extruder-id 1
-    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "only honored"; then
+    if [ "$LAST_EXIT" -ne 0 ] && grep -q "only honored" <<<"$LAST_OUTPUT"; then
         record "calib-extruder-id-rejected-non-pattern" 1
     else
         record "calib-extruder-id-rejected-non-pattern" 0 "exit=$LAST_EXIT (want non-zero + only-honored error)"
@@ -338,7 +338,7 @@ if [ -f "$BASE_3MF" ]; then
     # a misconfiguration and must be rejected.
     GC=$(mktmp_gcode)
     run_slice "$GC" "$BASE_3MF" --calib-mode retraction_tower --calib-start 2 --calib-end 0 --calib-step 0.1
-    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "ascends"; then
+    if [ "$LAST_EXIT" -ne 0 ] && grep -q "ascends" <<<"$LAST_OUTPUT"; then
         record "calib-retraction-descending-rejected" 1
     else
         record "calib-retraction-descending-rejected" 0 "exit=$LAST_EXIT (want non-zero + ascends error)"
@@ -354,7 +354,7 @@ if [ -f "$BASE_3MF" ]; then
         printf 'solid x\nendsolid x\n' > "$STL_TMP"
         GC=$(mktmp_gcode)
         run_slice "$GC" "$STL_TMP" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
-        if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "requires a .3mf"; then
+        if [ "$LAST_EXIT" -ne 0 ] && grep -q "requires a .3mf" <<<"$LAST_OUTPUT"; then
             record "calib-pa-pattern-stl-rejected" 1
         else
             record "calib-pa-pattern-stl-rejected" 0 "exit=$LAST_EXIT (want non-zero + 3mf-required error)"
