@@ -2067,3 +2067,76 @@ assert lines and lines[-1].get("message") == "Prepare slicing" and lines[-1]["to
     done
     echo "PASS: --pipe writes the official progress lines, steps 2 and 3 before any plate check, and a reader that leaves does not stop the slice (both engines, Linux)"
 fi
+
+# ---------------------------------------------------------------- Stage D
+# Differences from the desktop app, each checked on both engines. Settings
+# files are the engine's own system presets, flattened (inherits walked) from
+# the package's resources, as the official CLIs read them.
+RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
+# flat_presets ENGINE TAG PRINTER: TAG-ENGINE-machine.json, -process.json and
+# -filament.json (the printer's default process and filament).
+flat_presets() {
+    local vendor="$RES/profiles/BBL"
+    [ "$1" = orca ] && vendor="$RES/profiles-orca/BBL"
+    py '
+import json, os, sys
+vendor, tag, printer = sys.argv[1:4]
+def load(kind):
+    out = {}
+    for root, _, files in os.walk(os.path.join(vendor, kind)):
+        for f in files:
+            if f.endswith(".json"):
+                try:
+                    d = json.load(open(os.path.join(root, f), encoding="utf-8"))
+                except Exception:
+                    continue
+                out[d.get("name", f[:-5])] = d
+    return out
+P = {k: load(k) for k in ("machine", "process", "filament")}
+def resolve(kind, name, seen=()):
+    d = P[kind][name]
+    r = resolve(kind, d["inherits"], seen + (name,)) if d.get("inherits") and name not in seen else {}
+    r.update(d); r.pop("inherits", None)
+    return r
+first = lambda v: v[0] if isinstance(v, list) else v
+m = resolve("machine", printer)
+proc = first(m.get("default_print_profile")); fil = first(m.get("default_filament_profile"))
+for kind, name, d in (("machine", printer, m), ("process", proc, resolve("process", proc)), ("filament", fil, resolve("filament", fil))):
+    d = dict(d); d.update({"type": kind, "from": "system", "name": name, "instantiation": "true"})
+    json.dump(d, open("%s-%s.json" % (tag, kind), "w", encoding="utf-8"), indent=1)
+' "$vendor" "$2-$1" "$3"
+}
+
+# D1: the Bambu printer features (M981 spaghetti detection, M1003 power-loss
+# recovery) follow the printer's vendor, as the desktop decides
+# (BackgroundSlicingProcess.cpp:205 is_bbl_vendor_preset) and the official CLI
+# (printer_model, else the printer name: BambuStudio.cpp 7055-7070). An STL
+# with the A1 mini's settings files gets the named preset's M981/M1003, through
+# --load-settings and through the product's --machine/--filament/--process.
+# The Orca build already decides by printer_model (OrcaSlicer.cpp 5972-5986):
+# its --load-settings run is the control (its --machine route refuses these
+# flattened presets for relative E without G92 E0, which is not this item).
+d1_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    flat_presets $e d1a1m "$A1M"
+    run d1p-$e "$bin" cube.stl --printer-preset "$A1M" --slice 1 --outputdir d1p-$e/out
+    [ "$(rc d1p-$e)" = 0 ] || { show d1p-$e; fail "D1 $e: the named A1 mini preset exit $(rc d1p-$e)"; d1_ok=0; continue; }
+    want="M981=$(grep -c '^M981' d1p-$e/out/plate_1.gcode || true) M1003=$(grep -c '^M1003' d1p-$e/out/plate_1.gcode || true)"
+    [ $e = orca ] || [ "$want" != "M981=0 M1003=0" ] || { fail "D1 $e: the named A1 mini preset has no M981/M1003"; d1_ok=0; }
+    run d1l-$e "$bin" cube.stl --load-settings "d1a1m-$e-machine.json;d1a1m-$e-process.json" \
+        --load-filaments d1a1m-$e-filament.json --slice 1 --outputdir d1l-$e/out
+    routes="l"
+    if [ $e = bambu ]; then
+        run d1m-$e "$bin" cube.stl -o d1m-$e.gcode --machine d1a1m-$e-machine.json \
+            --filament d1a1m-$e-filament.json --process d1a1m-$e-process.json
+        routes="l m"
+    fi
+    for n in $routes; do
+        g=d1l-$e/out/plate_1.gcode; [ $n = m ] && g=d1m-$e.gcode
+        [ "$(rc d1$n-$e)" = 0 ] && [ -s $g ] || { show d1$n-$e; fail "D1 $e: settings files (route $n) exit $(rc d1$n-$e)"; d1_ok=0; continue; }
+        got="M981=$(grep -c '^M981' $g || true) M1003=$(grep -c '^M1003' $g || true)"
+        [ "$got" = "$want" ] || { fail "D1 $e: settings files (route $n) give $got, the named preset $want"; d1_ok=0; }
+    done
+done
+[ $d1_ok = 1 ] && echo "PASS: D1 the Bambu printer features follow the printer's vendor, also for settings files (both engines)"
