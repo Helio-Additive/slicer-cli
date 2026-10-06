@@ -4958,6 +4958,27 @@ static Slic3r::DynamicPrintConfig plate_own_settings(const Slic3r::PlateDataPtrs
 /// The model actions run once per run, not once per plate (--slice 0).
 static bool g_model_actions_done = false;
 
+/// --pipe: steps 2 and 3 go out once per run, before any plate is checked
+/// (BambuStudio.cpp 4923-4926 before the transforms, 6455-6458 as the slice
+/// action starts, after pre_check is set at 6441; OrcaSlicer.cpp 4185 and
+/// 5580, after 5565). --slice 0's check pass and the slice pass both run the
+/// plates, so each step is sent by whichever reaches it first.
+static bool g_pipe_files_loaded_sent = false;
+static bool g_pipe_prepare_sent = false;
+static void pipe_files_loaded() {
+    if (!slicer_cli::pipe_started() || g_pipe_files_loaded_sent)
+        return;
+    g_pipe_files_loaded_sent = true;
+    slicer_cli::pipe_update(2, "Loading files finished");
+}
+static void pipe_prepare_slicing() {
+    pipe_files_loaded();
+    if (!slicer_cli::pipe_started() || g_pipe_prepare_sent)
+        return;
+    g_pipe_prepare_sent = true;
+    slicer_cli::pipe_update(3, "Prepare slicing");
+}
+
 /// --skip-objects on the placed objects (BambuStudio.cpp 6541-6581,
 /// CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP when nothing is left; OrcaSlicer.cpp
 /// 5645-5720): inside the slice action, after the model actions. Its caller
@@ -6471,6 +6492,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             g_downward_run.sequence_plate = outcome.sequence_plate;
         }
 
+        // --pipe: the files are loaded (BambuStudio.cpp 4923-4926;
+        // OrcaSlicer.cpp 4185), before the transforms.
+        pipe_files_loaded();
+
         // The transforms on the command line, in its order, then orient
         // (cli_run_steps.cpp). Before any placement, as the official CLI
         // runs them before its arrange.
@@ -6806,6 +6831,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (!run_model_action_step(slicer_cli::ActionPhase::BeforeSlice))
                     return 1;
             }
+            // --pipe: the slice action starts, before the first plate's
+            // checks (BambuStudio.cpp 6455-6458; OrcaSlicer.cpp 5580).
+            pipe_prepare_slicing();
             const int step_plate = plate_id > 0 ? plate_id : std::max(1, o.slice_plate);
             if (!plate_object_steps(o, model, step_plate, outcome))
                 return 1;
@@ -6980,14 +7008,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // (7034-7046: its index and the run's plate count, 4 to begin),
             // and every status the slice reports (cli_status_callback).
             const bool piped = slicer_cli::pipe_started();
-            // The check pass sends nothing: the official reports a plate
+            // The check pass sends no plate step: the official reports a plate
             // only once it slices it (BambuStudio.cpp 7034-7046, after the
             // check pass's continue at 7027).
             if (piped && !outcome.pre_check) {
-                if (outcome.plate_index <= 1) {
-                    slicer_cli::pipe_update(2, "Loading files finished");
-                    slicer_cli::pipe_update(3, "Prepare slicing");
-                }
+                pipe_prepare_slicing();   // once per run: here only for a run that skipped the plate checks
                 slicer_cli::pipe_set_plate_info(std::max(1, outcome.plate_id), std::max(1, outcome.plate_count));
                 slicer_cli::pipe_update(4, "Slicing begins");
             }

@@ -1779,6 +1779,18 @@ assert all(len(r) + 1 <= 511 for r in raw if r), max(len(r) for r in raw)
         run pipeq-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --outputdir pipeq-$e/out --pipe pipeq-$e.fifo
         wait $reader || true
         [ "$(rc pipeq-$e)" = 0 ] && [ -s pipeq-$e/out/plate_1.gcode ] || { show pipeq-$e; fail "$e: --pipe with a reader that left exit $(rc pipeq-$e)"; }
+        # Steps 2 and 3 come before any plate is checked (BambuStudio.cpp
+        # 4923-4926, 6455-6458; OrcaSlicer.cpp 4185, 5580): --slice 0 refused
+        # by its check pass (plate 2 off the bed) ends on step 3.
+        rm -f pipeo-$e.fifo; mkfifo pipeo-$e.fifo
+        timeout 120 cat pipeo-$e.fifo > pipeo-$e.lines & reader=$!
+        run pipeo-$e "$bin" --load-assemble-list offbed.json --slice 0 --printer-preset "$A1M" --outputdir pipeo-$e/out --pipe pipeo-$e.fifo
+        wait $reader || true
+        py '
+import json, sys
+lines = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+assert lines and lines[-1].get("message") == "Prepare slicing" and lines[-1]["total_percent"] == 3, lines
+' pipeo-$e.lines || { show pipeo-$e; fail "$e: --slice 0 refused by its check pass did not send pipe step 3"; }
     done
-    echo "PASS: --pipe writes the official progress lines, and a reader that leaves does not stop the slice (both engines, Linux)"
+    echo "PASS: --pipe writes the official progress lines, steps 2 and 3 before any plate check, and a reader that leaves does not stop the slice (both engines, Linux)"
 fi
