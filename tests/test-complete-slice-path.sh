@@ -1550,6 +1550,22 @@ assert len(o) == 2 and abs(x0 - 65) < 0.5 and abs(x1 - 115) < 0.5 and abs(y0 - 8
 done
 echo "PASS: a printer change moves the plate after the setting flags apply (both engines)"
 
+# A refusal before anything loads still leaves result.json under --slice:
+# named presets on a project 3MF, and --plate with --slice (CLI_INVALID_PARAMS).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run rfp-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --printer-preset "$A1M" --outputdir rfp-$e/out
+    run rfq-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --plate 1 --outputdir rfq-$e/out
+    for n in rfp rfq; do
+        [ "$(rc $n-$e)" != 0 ] || { show $n-$e; fail "$e: $n was not refused"; }
+        py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+' $n-$e/out/result.json || { show $n-$e; fail "$e: the $n refusal left no result.json with -2"; }
+    done
+done
+echo "PASS: early refusals under --slice leave result.json (both engines)"
+
 # The tower an arrange sets is the one the project keeps: with --repetitions
 # on a printer with another bed, the exported tower is the one the copies were
 # arranged with, not the one moved to the new bed (the official exports the

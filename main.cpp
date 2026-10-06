@@ -8310,6 +8310,20 @@ int main(int argc, char** argv) {
         print_usage(argv[0]);
         return 0;
     }
+    // A refusal before anything loads: under --slice it leaves result.json
+    // in --outputdir too, as every --slice run does (the official records the
+    // reason of an early exit the same way, record_exit_reson,
+    // BambuStudio.cpp 1697; OrcaSlicer.cpp 1387). Without --slice: exit 1.
+    auto refuse_run = [&](int code, const std::string& sentence) -> int {
+        std::cerr << "Error: " << sentence << "\n";
+        if (!o.slice_mode)
+            return 1;
+        const std::string dir = o.outputdir.empty() ? "." : o.outputdir;
+        boost::system::error_code mk;
+        boost::filesystem::create_directories(dir, mk);
+        write_result_json(dir, code, o.slice_plate, cli_error_sentence(code) + " " + sentence, {}, 0, 0);
+        return code;
+    };
     if (o.verbose)
         Slic3r::set_logging_level(5);
     // --debug N: the engine's log level (BambuStudio.cpp 1661-1667; OrcaSlicer.cpp 1352-1359).
@@ -8333,8 +8347,7 @@ int main(int argc, char** argv) {
     try {
         calib_params = slicer_cli::build_calib_params(calib_opts);
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n\n";
-        return 1;
+        return refuse_run(CLI_INVALID_PARAMS, e.what());
     }
     const bool calib_self_geometry = slicer_cli::calib_mode_generates_geometry(calib_params.mode);
 
@@ -8342,11 +8355,9 @@ int main(int argc, char** argv) {
     // pressure_advance_pattern's geometry generator is ported only for the Bambu
     // engine (Orca's CalibPressureAdvancePattern API differs); reject it cleanly
     // here so the Orca binary fails fast instead of throwing from apply_pa_pattern.
-    if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern) {
-        std::cerr << "Error: pressure_advance_pattern is not yet supported on the OrcaSlicer "
-                     "engine; use a tower or pressure_advance_line calib mode instead.\n";
-        return 1;
-    }
+    if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern)
+        return refuse_run(CLI_INVALID_PARAMS, "pressure_advance_pattern is not yet supported on the OrcaSlicer "
+                                              "engine; use a tower or pressure_advance_line calib mode instead.");
 #endif
 
     // --info: one JSON document on stdout, nothing sliced.
@@ -8359,17 +8370,6 @@ int main(int argc, char** argv) {
         boost::log::core::get()->set_logging_enabled(false);
         return run_list_presets(o, mode_args.list_printer);
     }
-    // A refusal before anything loads: result.json too under --slice.
-    auto refuse_run = [&](int code, const std::string& sentence) -> int {
-        std::cerr << "Error: " << sentence << "\n";
-        if (!o.slice_mode)
-            return 1;
-        const std::string dir = o.outputdir.empty() ? "." : o.outputdir;
-        boost::system::error_code mk;
-        boost::filesystem::create_directories(dir, mk);
-        write_result_json(dir, code, o.slice_plate, cli_error_sentence(code) + " " + sentence, {}, 0, 0);
-        return code;
-    };
     // --load-assemble-list builds the plates itself: no model files with it
     // (BambuStudio.cpp 1848-1853), and on OrcaSlicer no transforms either
     // (OrcaSlicer.cpp 1530-1535). It is the official plate loop's input, so
@@ -8413,11 +8413,9 @@ int main(int argc, char** argv) {
             "--printer-preset (and optionally --process-preset and --filament-preset), or give settings "
             "files with --load-settings.");
     if (o.uses_presets()) {
-        if (project_3mf_input) {
-            std::cerr << "Error: --printer-preset/--process-preset/--filament-preset apply to an STL; "
-                         "a 3MF carries its own settings\n";
-            return 1;
-        }
+        if (project_3mf_input)
+            return refuse_run(CLI_INVALID_PARAMS, "--printer-preset/--process-preset/--filament-preset apply to "
+                                                  "an STL; a 3MF carries its own settings");
         g_preset_config = std::make_unique<Slic3r::DynamicPrintConfig>();
         int code = 0;
         std::string error;
@@ -8444,10 +8442,8 @@ int main(int argc, char** argv) {
     }
     if (o.slice_mode)
         o.progress = true;   // --slice reports progress like the official --pipe
-    if (o.slice_mode && plate_id > 0) {
-        std::cerr << "Error: --plate and --slice are mutually exclusive; use --slice N for plate N\n";
-        return 1;
-    }
+    if (o.slice_mode && plate_id > 0)
+        return refuse_run(CLI_INVALID_PARAMS, "--plate and --slice are mutually exclusive; use --slice N for plate N");
 
     // Detect conflicting layout flags
     if (layout_plan_mode && !layout_json_file.empty()) {
@@ -8653,6 +8649,8 @@ int main(int argc, char** argv) {
     install_engine_log_bridge();
 
     if (input_file.empty() && !calib_self_geometry && assemble_list_file(o).empty()) {
+        if (o.slice_mode)
+            return refuse_run(CLI_INVALID_PARAMS, "No input file specified");
         std::cerr << "Error: No input file specified\n\n";
         print_usage(argv[0]);
         return 1;
@@ -8669,10 +8667,13 @@ int main(int argc, char** argv) {
         // The loader's own test (input_is_3mf: the final extension), so a
         // path like `part.3mf.stl` — which loads as STL — is NOT a 3MF here.
         if (!input_is_3mf(input_file)) {
-            std::cerr << "Error: pressure_advance_pattern requires a .3mf --input for its "
-                         "printer/filament config (it discards the model geometry but reads the "
-                         "embedded config + plate setup; a profile bundle or STL is not "
-                         "sufficient)\n\n";
+            const std::string why = "pressure_advance_pattern requires a .3mf --input for its "
+                                    "printer/filament config (it discards the model geometry but reads the "
+                                    "embedded config + plate setup; a profile bundle or STL is not "
+                                    "sufficient)";
+            if (o.slice_mode)
+                return refuse_run(CLI_INVALID_PARAMS, why);
+            std::cerr << "Error: " << why << "\n\n";
             print_usage(argv[0]);
             return 1;
         }
