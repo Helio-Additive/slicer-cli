@@ -261,6 +261,7 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
         const size_t eq = t.find('=');
         if (eq != std::string::npos) { v = t.substr(eq + 1); t.erase(eq); }
         if ((t == "--slice" || t == "-slice") ) {
+            o.slice_given = true;
             if (v.empty() && i + 1 < argc) v = argv[i + 1];
             int n = 0;
             if (parse_int_text(v, n)) { o.slice_mode = true; o.slice_plate = n; }

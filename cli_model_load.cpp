@@ -8,6 +8,8 @@
 #include <boost/filesystem.hpp>
 
 #include "libslic3r/BuildVolume.hpp"
+#include "libslic3r/Format/bbs_3mf.hpp"
+#include "libslic3r/Preset.hpp"
 #include "libslic3r/Geometry.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/miniz_extension.hpp"
@@ -144,7 +146,22 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
             } else {
                 Slic3r::DynamicPrintConfig file_config;
                 Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-                loaded = Slic3r::Model::read_from_file(file, &file_config, &subst, strategy);
+                Slic3r::PlateDataPtrs plates;
+                std::vector<Slic3r::Preset*> presets;
+                bool is_bbl_3mf = false;
+                loaded = Slic3r::Model::read_from_file(file, &file_config, &subst, strategy, &plates, &presets,
+                                                       &is_bbl_3mf);
+                Slic3r::release_PlateData_list(plates);
+                for (Slic3r::Preset* p : presets)
+                    delete p;
+                // A project 3MF goes first: one later in the list is refused
+                // (CLI_FILELIST_INVALID_ORDER, BambuStudio.cpp 1890-1897;
+                // OrcaSlicer.cpp 1572-1579), whatever came before it.
+                if (is_bbl_3mf && input_index > 0) {
+                    r.code    = CLI_FILELIST_INVALID_ORDER;
+                    r.message = file_name(file) + " is a project 3MF; give it as the first file.";
+                    return r;
+                }
             }
         } catch (const std::exception& e) {
             r.code    = CLI_DATA_FILE_ERROR;

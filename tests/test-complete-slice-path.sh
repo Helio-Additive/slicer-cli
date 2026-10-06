@@ -1566,6 +1566,27 @@ assert d["return_code"] == -2, d
 done
 echo "PASS: early refusals under --slice leave result.json (both engines)"
 
+# A --slice value that is not a plate (--slice foo, --slice=-1) is refused
+# with result.json too (CLI_INVALID_PARAMS, -2); a project 3MF that is not the
+# first file is refused with CLI_FILELIST_INVALID_ORDER (-4; BambuStudio.cpp
+# 1890-1897; OrcaSlicer.cpp 1572-1579).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run rsf-$e "$bin" cube.stl --slice foo --outputdir rsf-$e/out
+    run rsn-$e "$bin" cube.stl --slice=-1 --outputdir rsn-$e/out
+    run rord-$e "$bin" cube.stl ftow-$e/out/ftow.3mf --slice 1 --printer-preset "$A1M" --outputdir rord-$e/out
+    run rord2-$e "$bin" ftow-$e/out/ftow.3mf ftow-$e/out/ftow.3mf --slice 1 --outputdir rord2-$e/out
+    for n in rsf:-2 rsn:-2 rord:-4 rord2:-4; do
+        name=${n%%:*}; want=${n##*:}
+        [ "$(rc $name-$e)" != 0 ] || { show $name-$e; fail "$e: $name was not refused"; }
+        py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == int(sys.argv[2]), d
+' $name-$e/out/result.json "$want" || { show $name-$e; fail "$e: $name left no result.json with $want"; }
+    done
+done
+echo "PASS: a bad --slice value and a project 3MF that is not first are refused with result.json (both engines)"
+
 # The tower an arrange sets is the one the project keeps: with --repetitions
 # on a printer with another bed, the exported tower is the one the copies were
 # arranged with, not the one moved to the new bed (the official exports the

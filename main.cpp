@@ -8871,19 +8871,21 @@ int main(int argc, char** argv) {
     {
         slicer_cli::ParseRefusal refusal;
         if (!slicer_cli::parse_command_line(argc, argv, o, mode_args, refusal)) {
-            if (refusal.with_usage) {
-                std::cerr << "Error: " << refusal.message << "\n\n";
-                print_usage(argv[0]);
-                return 1;
-            }
             std::cerr << "Error: " << refusal.message << "\n";
-            if (o.slice_mode) {
-                // --slice always leaves result.json (BambuStudio.cpp 1697 writes
-                // the reason for a bad command line the same way).
+            if (refusal.with_usage) {
+                std::cerr << "\n";
+                print_usage(argv[0]);
+            }
+            // --slice always leaves result.json, also when its own value is
+            // the one refused (--slice foo, --slice=-1): the official exits
+            // with CLI_INVALID_PARAMS for a bad command line ("setup params
+            // error", BambuStudio.cpp 1553-1558; OrcaSlicer.cpp 1249-1252),
+            // and records an early exit's reason (BambuStudio.cpp 1697).
+            if (o.slice_mode || o.slice_given) {
                 const std::string dir = o.outputdir.empty() ? "." : o.outputdir;
                 boost::system::error_code mk;
                 boost::filesystem::create_directories(dir, mk);
-                write_result_json(dir, refusal.code, o.slice_plate,
+                write_result_json(dir, refusal.code, o.slice_mode ? std::max(0, o.slice_plate) : 0,
                                   cli_error_sentence(refusal.code) + " " + refusal.message, {}, 0, 0);
                 return refusal.code;
             }

@@ -49,6 +49,9 @@ struct CliOptions {
 
     // --slice / --outputdir: the official CLI's plate loop and output folder.
     bool        slice_mode  = false;
+    // --slice is on the command line, whatever its value (the first pass
+    // of parse_command_line): a refusal of the value still writes result.json.
+    bool        slice_given = false;
     int         slice_plate = 0;   // 0 = every plate
     std::string outputdir;
     // Progress events: on with --slice, or asked for with --progress.
