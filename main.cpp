@@ -8396,8 +8396,12 @@ int main(int argc, char** argv) {
     }
     const bool project_3mf_input = input_is_3mf(input_file) && !slicer_cli::is_geometry_only_3mf(input_file);
     // A 3MF with geometry only names no printer: the desktop asks for one,
-    // the command line needs it named.
+    // the command line needs it named to slice. A run of model actions only
+    // (--info, --export-stl, --export-stls, --export-settings without
+    // --slice) needs none, as for an STL: the official runs those actions on
+    // the loaded model (BambuStudio.cpp 6366-6401; OrcaSlicer.cpp 5499-5534).
     if (input_is_3mf(input_file) && !project_3mf_input && !o.uses_presets() &&
+        !slicer_cli::model_actions_only(o) &&
         o.machine_config.empty() && o.bundle_config.empty() &&
         o.cli.option<Slic3r::ConfigOptionStrings>("load_settings")->values.empty())
         return refuse_run(CLI_INVALID_PARAMS,

@@ -850,8 +850,13 @@ import json, sys; d = json.load(open(sys.argv[1]))
 assert d["return_code"] == -2, d
 ' geo-$e/out/result.json
     grep -q -- '--printer-preset' geo-$e/stderr || fail "$e: the geometry-only refusal does not name --printer-preset"
+    # Model actions only (no --slice) need no printer, as for an STL.
+    run geox-$e "$bin" geo.3mf --export-stl --outputdir geox-$e/out
+    [ "$(rc geox-$e)" = 0 ] && [ "$(ls geox-$e/out/stl | wc -l | tr -d ' ')" = 1 ] || { show geox-$e; fail "$e: --export-stl on a geometry-only 3MF without a printer exit $(rc geox-$e)"; }
+    run geoi-$e "$bin" geo.3mf --info
+    [ "$(rc geoi-$e)" = 0 ] || { show geoi-$e; fail "$e: --info on a geometry-only 3MF without a printer exit $(rc geoi-$e)"; }
 done
-echo "PASS: OBJ, AMF, a geometry-only 3MF and several files at once load and are placed; --arrange 2 is automatic (both engines)"
+echo "PASS: OBJ, AMF, a geometry-only 3MF and several files at once load and are placed; --arrange 2 is automatic; model actions on a geometry-only 3MF need no printer (both engines)"
 
 # A switch takes no separate value, as on the official command lines
 # (DynamicConfig::read_cli, Config.cpp 1719-1726): --normative-check=0 turns
@@ -949,6 +954,29 @@ if [ "$(id -u)" != 0 ]; then
         grep -q "Writing .*$(basename "$f") failed" stlro-$e/stderr || { show stlro-$e; fail "$e: --export-stl onto a read-only target did not name the file"; }
     done
     echo "PASS: --export-stl onto a target it cannot write fails (both engines)"
+fi
+
+# A full disk: the STL writer checks none of its writes, so the file comes
+# out short or empty. The run fails with the export failure (-11) and leaves
+# no STL. Linux with user namespaces only: a 64 KB tmpfs, filled first.
+if [ "$(uname -s)" = Linux ] && unshare -rm true 2>/dev/null; then
+    for e in bambu orca; do
+        bin=$B; [ $e = orca ] && bin=$O
+        mkdir -p full-$e/mnt
+        unshare -rm bash -c '
+            mount -t tmpfs -o size=64k tmpfs "$1/mnt" || exit 9
+            mkdir -p "$1/mnt/out/stl"
+            dd if=/dev/zero of="$1/mnt/fill" bs=1k count=1000 2>/dev/null
+            "$2" cube.stl --export-stl --outputdir "$1/mnt/out" > "$1/stdout" 2> "$1/stderr"
+            echo $? > "$1/rc"
+            ls "$1/mnt/out/stl" > "$1/stls"
+        ' _ full-$e "$bin" || true
+        [ -s full-$e/rc ] && [ "$(rc full-$e)" != 0 ] && [ ! -s full-$e/stls ] || { show full-$e; fail "$e: --export-stl onto a full disk exit $(cat full-$e/rc 2>/dev/null), left: $(cat full-$e/stls 2>/dev/null)"; }
+        if grep '^\[\[SLICER_EVENT\]\]' full-$e/stdout | grep StlExported >/dev/null; then
+            fail "$e: --export-stl reported an STL written to a full disk"
+        fi
+    done
+    echo "PASS: --export-stl onto a full disk fails and leaves no STL (both engines, Linux)"
 fi
 
 # --skip-objects leaves the named object out; skipping all of them is -60.

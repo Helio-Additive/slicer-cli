@@ -10,6 +10,7 @@
 #include <cstdio>
 
 #include "libslic3r/Format/STL.hpp"
+#include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Geometry.hpp"
 #include "libslic3r/Orient.hpp"
 #include "libslic3r/Utils.hpp"
@@ -66,8 +67,8 @@ bool export_stls(const CliOptions& o, Slic3r::Model& model, const std::string& d
         // its_write_stl_binary returns false on a failed fopen "wb"). The
         // official CLI exits 0 then. Here the write is checked: a target that
         // exists must open for writing (the same fopen, without emptying it)
-        // or it would keep its old geometry, and one that did not exist must
-        // exist after. Either failure is the official's export failure
+        // or it would keep its old geometry, and the new file must hold the
+        // whole mesh (below). Either failure is the official's export failure
         // (CLI_EXPORT_STL_ERROR, BambuStudio.cpp 6391-6392, 6399-6400;
         // OrcaSlicer.cpp 5524-5525, 5532-5533).
         boost::system::error_code ec;
@@ -79,7 +80,28 @@ bool export_stls(const CliOptions& o, Slic3r::Model& model, const std::string& d
             }
             std::fclose(probe);
         }
-        if (!Slic3r::store_stl(path.c_str(), object, true) || !boost::filesystem::exists(path, ec)) {
+        // The STL goes to a file next to the target first, and replaces the
+        // target only when it holds the whole mesh: a binary STL is 84 bytes
+        // of header and count plus 50 bytes per facet (its_write_stl_binary,
+        // TriangleMesh.cpp), and the writer checks none of its writes, so a
+        // full disk leaves a short or empty file.
+        Slic3r::TriangleMesh mesh = object->mesh();
+        const uintmax_t expected = 84u + 50u * uintmax_t(mesh.its.indices.size());
+        const std::string part = path + ".writing";
+        boost::filesystem::remove(part, ec);
+        ec.clear();
+        bool written = Slic3r::store_stl(part.c_str(), &mesh, true);
+        if (written) {
+            const uintmax_t size = boost::filesystem::file_size(part, ec);
+            written = !ec && size == expected;
+        }
+        if (written) {
+            boost::filesystem::rename(part, path, ec);
+            written = !ec;
+        }
+        if (!written) {
+            boost::system::error_code ignored;
+            boost::filesystem::remove(part, ignored);
             failed_path = path;
             return false;
         }
