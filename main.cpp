@@ -8367,6 +8367,17 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     using namespace Slic3r;
     const std::string path = (outdir / o.export_3mf).string();
     Model& model = rs.model;
+    // store_bbs_3mf stages the project's files in the model's backup folder
+    // (_add_project_config_file_to_archive writes <backup>/_temp_1.config,
+    // bbs_3mf.cpp). The run's folder (slicer_cli_backup) is shared by every
+    // slicer_cli run on the host, and a run that ends removes it (~Model,
+    // Model.cpp remove_backup), so a run exporting beside another lost its
+    // files. The export stages in a folder of its own, as ba0dcfb's export
+    // model did. "detach" first: set_backup_path removes the folder it
+    // replaces (Model::set_backup_path), which is the shared one.
+    model.set_backup_path("detach");
+    model.set_backup_path((boost::filesystem::temp_directory_path() /
+                           boost::filesystem::unique_path("slicer_cli_export-%%%%%%%%")).string());
     PlateDataPtrs plates;
     struct Release {
         PlateDataPtrs& plates;
