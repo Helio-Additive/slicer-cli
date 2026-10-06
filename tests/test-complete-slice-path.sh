@@ -1834,6 +1834,98 @@ assert c.get("SettingsFilesMerged") == 2 and set(c.values()) == {2}, dict(c)
 done
 echo "PASS: --slice 0's check pass sends no event twice (both engines)"
 
+# A project 3MF with model files after it, as the official CLI runs it: one
+# model of every file, is_bbl_3mf reset per file so --slice N becomes 0
+# (BambuStudio.cpp 1871, 2192-2196; OrcaSlicer.cpp 1553, 1839-1843), and
+# every object arranged across the plates (BambuStudio.cpp 3947-3963,
+# 5627-5722; OrcaSlicer.cpp 3441-3457, 4887-4983). The model file's part is
+# on one plate, once, clear of the project's objects; the whole-project
+# actions see it too.
+py '
+import json
+p = {"plate_name": "p", "need_arrange": False, "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [118], "pos_y": [118]}]}
+json.dump({"plates": [p, dict(p, plate_name="q")]}, open("trail2.json", "w"))
+v = [(x, y, z) for z in (0, 10) for y in (0, 10) for x in (0, 10)]
+f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+with open("extra.stl", "w") as o:
+    o.write("solid extra\n")
+    for t in f:
+        o.write("facet normal 0 0 0\nouter loop\n")
+        for i in t: o.write("vertex %g %g %g\n" % v[i])
+        o.write("endloop\nendfacet\n")
+    o.write("endsolid extra\n")
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run trp-$e "$bin" --load-assemble-list trail2.json --slice 0 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir trp-$e/out --export-3mf trail2.3mf
+    [ "$(rc trp-$e)" = 0 ] || { show trp-$e; fail "$e: two-plate project exit $(rc trp-$e)"; }
+    run tr0-$e "$bin" trp-$e/out/trail2.3mf extra.stl --slice 0 --export-stls tr0-$e/stls --outputdir tr0-$e/out
+    run tr2-$e "$bin" trp-$e/out/trail2.3mf extra.stl --slice 2 --outputdir tr2-$e/out
+    for n in tr0 tr2; do
+        [ "$(rc $n-$e)" = 0 ] || { show $n-$e; fail "$e: project + model file ($n) exit $(rc $n-$e)"; }
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+plates = d["sliced_plates"]
+names = [o["name"] for p in plates for o in p["objects"]]
+assert names.count("extra.stl") == 1, ("the model file part once", names)
+assert len(plates) >= 1 and sorted(p["id"] for p in plates) == list(range(1, len(plates) + 1)), plates
+for p in plates:
+    boxes = [o["bbox"] for o in p["objects"]]
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            a, b = boxes[i], boxes[j]
+            apart = a["x"] + a["width"] <= b["x"] or b["x"] + b["width"] <= a["x"] or \
+                    a["y"] + a["depth"] <= b["y"] or b["y"] + b["depth"] <= a["y"]
+            assert apart, ("objects overlap on plate", p["id"], a, b)
+' $n-$e/out/result.json || { show $n-$e; fail "$e: project + model file ($n): the part is not on one plate, once, clear of the others"; }
+        events $n-$e/stdout arranged | grep -q ProjectArrangedAcrossPlates || fail "$e: $n has no ProjectArrangedAcrossPlates event"
+    done
+    events tr2-$e/stdout config_normalized | grep -q ProjectWithModelsSlicesEveryPlate || fail "$e: --slice 2 with a model file did not say it slices every plate"
+    py '
+import os, sys
+stls = [n for n in os.listdir(sys.argv[1]) if n.endswith(".stl")]
+assert len(stls) == 3 and any("extra" in n for n in stls), stls
+' tr0-$e/stls || { show tr0-$e; fail "$e: --export-stls on project + model file missed the model file part"; }
+done
+echo "PASS: a project 3MF with a model file after it is arranged across the plates, every plate sliced, the part once (both engines)"
+
+# The arrange adds plates when the objects do not fit (create_plate from
+# postprocess_bed_index_for_selected, Bambu PartPlate.cpp 6009-6051): a
+# one-plate project with two 200 mm parts is sliced on two plates.
+py '
+import json
+def box(path, s, h):
+    v = [(x, y, z) for z in (0, h) for y in (0, s) for x in (0, s)]
+    f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+    with open(path, "w") as o:
+        o.write("solid b\n")
+        for t in f:
+            o.write("facet normal 0 0 0\nouter loop\n")
+            for i in t: o.write("vertex %g %g %g\n" % v[i])
+            o.write("endloop\nendfacet\n")
+        o.write("endsolid b\n")
+box("big1.stl", 200, 10); box("big2.stl", 200, 10)
+p = {"plate_name": "p", "need_arrange": False, "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [118], "pos_y": [118]}]}
+json.dump({"plates": [p]}, open("trail1.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run tg1-$e "$bin" --load-assemble-list trail1.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir tg1-$e/out --export-3mf trail1.3mf
+    [ "$(rc tg1-$e)" = 0 ] || { show tg1-$e; fail "$e: one-plate project exit $(rc tg1-$e)"; }
+    run tgr-$e "$bin" tg1-$e/out/trail1.3mf big1.stl big2.stl --slice 0 --outputdir tgr-$e/out
+    [ "$(rc tgr-$e)" = 0 ] && [ -s tgr-$e/out/plate_2.gcode ] || { show tgr-$e; fail "$e: project + two 200 mm parts exit $(rc tgr-$e), no plate 2"; }
+    events tgr-$e/stdout arranged > tgr-$e/arranged.jsonl
+    py '
+import json, sys
+e = [json.loads(l) for l in open(sys.argv[1]) if "ProjectArrangedAcrossPlates" in l][0]
+assert e["file_plate_count"] == 1 and e["plate_count"] == 2, e
+' tgr-$e/arranged.jsonl || { show tgr-$e; fail "$e: the arrange did not add a plate"; }
+done
+echo "PASS: the arrange of a project 3MF with model files adds the plates it needs (both engines)"
+
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then
     for e in bambu orca; do

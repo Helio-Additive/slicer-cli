@@ -2608,6 +2608,10 @@ struct PlateOutcome {
     // --slice 0 on several plates: the check pass, which stops before the
     // slice (run_slice_mode).
     bool                                        pre_check = false;
+    // A project 3MF with model files after it: the pass that loads every
+    // plate and the model files and arranges them (ProjectPlan), before the
+    // plates are sliced.
+    bool                                        plan_pass = false;
     // --load-settings and friends: what the merge decided, for the export.
     std::shared_ptr<slicer_cli::SettingsMerge>  settings_merge;
     // --export-3mf: the plate's Metadata/plate_N.json (first-layer boxes).
@@ -3003,10 +3007,12 @@ static std::vector<Slic3r::BoundingBoxf> arrange_exclude_boxes(const Slic3r::Dyn
 /// Orca PartPlate.cpp 5363-5429, the same code): the wrapping-detection area
 /// when enable_wrapping_detection is on (BambuStudio.cpp 4175-4176;
 /// OrcaSlicer.cpp 3588), then one fixed virtual item per exclusion box. The
-/// official adds a copy for every bed up to the sliced plate; a one-plate
-/// arrange places items on bed 0 only, so only bed 0's copy is added.
+/// official adds a copy for every bed up to the sliced plate (num_plates,
+/// default 16); a one-plate arrange places items on bed 0 only, so it asks
+/// for bed 0's copy alone, and the project-wide arrange for the default 16.
 static void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
-                                      const Slic3r::DynamicPrintConfig& config, double inflation) {
+                                      const Slic3r::DynamicPrintConfig& config, double inflation,
+                                      int num_beds = 1) {
     using namespace Slic3r;
     const auto* wrapping = config.option<ConfigOptionBool>("enable_wrapping_detection");
     if (wrapping != nullptr && wrapping->value) {
@@ -3015,16 +3021,18 @@ static void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
             Slic3r::Polygon ap{};
             for (const Vec2d& p : area->values)
                 ap.append({scale_(p(0)), scale_(p(1))});
-            arrangement::ArrangePolygon ret;
-            ret.poly.contour   = ap;
-            ret.translation    = Vec2crd(0, 0);
-            ret.rotation       = 0.0f;
-            ret.is_virt_object = true;
-            ret.bed_idx        = 0;
-            ret.height         = 1;
-            ret.name           = "WrappingRegion";
-            ret.inflation      = inflation;
-            out.emplace_back(std::move(ret));
+            for (int j = 0; j < num_beds; ++j) {
+                arrangement::ArrangePolygon ret;
+                ret.poly.contour   = ap;
+                ret.translation    = Vec2crd(0, 0);
+                ret.rotation       = 0.0f;
+                ret.is_virt_object = true;
+                ret.bed_idx        = j;
+                ret.height         = 1;
+                ret.name           = "WrappingRegion";
+                ret.inflation      = inflation;
+                out.emplace_back(std::move(ret));
+            }
         }
     }
     const std::vector<BoundingBoxf> boxes = arrange_exclude_boxes(config);
@@ -3036,16 +3044,18 @@ static void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
             {scaled(box.max.x()), scaled(box.max.y())},
             {scaled(box.min.x()), scaled(box.max.y())}
         });
-        arrangement::ArrangePolygon ret;
-        ret.poly.contour   = ap;
-        ret.translation    = Vec2crd(0, 0);
-        ret.rotation       = 0.0f;
-        ret.is_virt_object = true;
-        ret.bed_idx        = 0;
-        ret.height         = 1;
-        ret.name           = "ExcludedRegion" + std::to_string(index);
-        ret.inflation      = inflation;
-        out.emplace_back(std::move(ret));
+        for (int j = 0; j < num_beds; ++j) {
+            arrangement::ArrangePolygon ret;
+            ret.poly.contour   = ap;
+            ret.translation    = Vec2crd(0, 0);
+            ret.rotation       = 0.0f;
+            ret.is_virt_object = true;
+            ret.bed_idx        = j;
+            ret.height         = 1;
+            ret.name           = "ExcludedRegion" + std::to_string(index);
+            ret.inflation      = inflation;
+            out.emplace_back(std::move(ret));
+        }
     }
 }
 
@@ -3868,6 +3878,71 @@ static void assemble_tower_default_corner(Slic3r::DynamicPrintConfig& config, in
     config.option<ConfigOptionFloats>("wipe_tower_y", true)->set_at(&wt_y_opt, plate_index, 0);
 }
 
+/// PartPlate::estimate_wipe_tower_polygon with use_global_objects (Bambu
+/// PartPlate.cpp 2236-2281; Orca 2174-2220): plate_index's tower position
+/// clamped inside a plate of plate_width x plate_depth (the plate list's
+/// size), sized for `filaments_count` filaments and the tallest object of
+/// `global_model`. Returns the fixed tower item (bed 0) and the clamped
+/// position in `pos`; the caller writes it back, as the official callers do.
+static Slic3r::arrangement::ArrangePolygon estimate_tower_polygon_global(const Slic3r::Model& global_model,
+                                                                        const Slic3r::DynamicPrintConfig& config,
+                                                                        int plate_index, int filaments_count,
+                                                                        int plate_width, int plate_depth,
+                                                                        Slic3r::Vec2d& pos) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    float x = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_x"))->get_at(plate_index);
+    float y = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_y"))->get_at(plate_index);
+    const float w = arrange_opt(config, "prime_tower_width")->getFloat();
+#ifdef ENGINE_ORCA
+    const double v = arrange_opt(config, "prime_volume")->getFloat();
+    const float margin = WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_brim_width")->getFloat();
+#else
+    std::vector<double> volumes = dynamic_cast<const ConfigOptionFloats*>(arrange_opt(config, "filament_prime_volume"))->values;
+    if (const auto* pvm = config.option<ConfigOptionEnum<PrimeVolumeMode>>("prime_volume_mode"); pvm && pvm->value == pvmSaving)
+        for (auto& val : volumes)
+            val = 15.f;
+    const double v = volumes.empty() ? 0. : *std::max_element(volumes.begin(), volumes.end());
+    const float margin = WIPE_TOWER_MARGIN;
+#endif
+    const auto* wrapping_opt = config.option<ConfigOptionBool>("enable_wrapping_detection");
+    const bool enable_wrapping_detect = wrapping_opt != nullptr && wrapping_opt->value;
+    int extruder_count = 1;
+    if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+        extruder_count = std::max(1, (int)nozzles->size());
+    // use_global_objects: every object, so the plate box and the exclusion
+    // boxes are not read.
+    const Vec3d wt_size = arrange_estimate_wipe_tower_size(global_model, config, w, v, extruder_count, filaments_count,
+                                                           enable_wrapping_detect, BoundingBoxf3(), {}, &global_model);
+    const float depth = wt_size(1);
+    float wp_brim_width = 0.f;
+    if (const ConfigOption* brim_opt = config.option("prime_tower_brim_width")) {
+        wp_brim_width = brim_opt->getFloat();
+        if (wp_brim_width < 0) wp_brim_width = WipeTower::get_auto_brim_by_height((float) wt_size.z());
+    }
+    // std::clamp(x, margin, plate - w - margin - brim), spelled out.
+    const auto clamp = [](float value, float lo, float hi) { return value < lo ? lo : (hi < value ? hi : value); };
+    x = clamp(x, margin, (float)plate_width - w - margin - wp_brim_width);
+    y = clamp(y, margin, (float)plate_depth - depth - margin - wp_brim_width);
+    pos = Vec2d(x, y);
+
+    ArrangePolygon wipe_tower_ap;
+    Slic3r::Polygon ap({
+        {scaled(x - wp_brim_width), scaled(y - wp_brim_width)},
+        {scaled(x + w + wp_brim_width), scaled(y - wp_brim_width)},
+        {scaled(x + w + wp_brim_width), scaled(y + depth + wp_brim_width)},
+        {scaled(x - wp_brim_width), scaled(y + depth + wp_brim_width)}
+    });
+    wipe_tower_ap.bed_idx = plate_index;
+    wipe_tower_ap.setter = NULL; // do not move wipe tower
+    wipe_tower_ap.poly.contour = std::move(ap);
+    wipe_tower_ap.translation = {scaled(0.f), scaled(0.f)};
+    wipe_tower_ap.name = "WipeTower";
+    wipe_tower_ap.is_virt_object = true;
+    wipe_tower_ap.is_wipe_tower = true;
+    return wipe_tower_ap;
+}
+
 /// One --load-assemble-list plate with need_arrange (BambuStudio.cpp
 /// 5350-5502; OrcaSlicer.cpp 4606-4760). Unlike the general arrange, the
 /// tower starts at the default corner and is sized for the filaments the
@@ -3916,57 +3991,15 @@ static bool arrange_assemble_plate(Slic3r::Model& model, Slic3r::DynamicPrintCon
         const float corner_margin = WIPE_TOWER_MARGIN;
 #endif
         assemble_tower_default_corner(config, plate_index, corner_margin);
-        float x = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_x"))->get_at(plate_index);
-        float y = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_y"))->get_at(plate_index);
-        const float w = arrange_opt(config, "prime_tower_width")->getFloat();
-#ifdef ENGINE_ORCA
-        const double v = arrange_opt(config, "prime_volume")->getFloat();
-        const float margin = WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_brim_width")->getFloat();
-#else
-        std::vector<double> volumes = dynamic_cast<const ConfigOptionFloats*>(arrange_opt(config, "filament_prime_volume"))->values;
-        if (config.option<ConfigOptionEnum<PrimeVolumeMode>>("prime_volume_mode", true)->value == pvmSaving)
-            for (auto& val : volumes)
-                val = 15.f;
-        const double v = volumes.empty() ? 0. : *std::max_element(volumes.begin(), volumes.end());
-        const float margin = WIPE_TOWER_MARGIN;
-#endif
-        int extruder_count = 1;
-        if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
-            extruder_count = std::max(1, (int)nozzles->size());
-        const BoundingBoxf3 plate_box(Vec3d(bed.min.x(), bed.min.y(), 0.), Vec3d(bed.max.x(), bed.max.y(), bed_height));
-        const Vec3d wt_size = arrange_estimate_wipe_tower_size(model, config, w, v, extruder_count, filaments_count,
-                                                               enable_wrapping_detect, plate_box, arrange_exclude_boxes(config),
-                                                               &global_model);
         const int plate_width = area->values.size() >= 4 ? (int)(area->values[2].x() - area->values[0].x()) : (int)bed.size().x();
         const int plate_depth = area->values.size() >= 4 ? (int)(area->values[2].y() - area->values[0].y()) : (int)bed.size().y();
-        const float depth = wt_size(1);
-        float wp_brim_width = 0.f;
-        if (const ConfigOption* brim_opt = config.option("prime_tower_brim_width")) {
-            wp_brim_width = brim_opt->getFloat();
-            if (wp_brim_width < 0) wp_brim_width = WipeTower::get_auto_brim_by_height((float) wt_size.z());
-        }
-        // std::clamp(x, margin, plate - w - margin - brim), spelled out.
-        const auto clamp = [](float value, float lo, float hi) { return value < lo ? lo : (hi < value ? hi : value); };
-        x = clamp(x, margin, (float)plate_width - w - margin - wp_brim_width);
-        y = clamp(y, margin, (float)plate_depth - depth - margin - wp_brim_width);
-        ConfigOptionFloat wt_x_opt(x), wt_y_opt(y);
+        Vec2d pos;
+        ArrangePolygon wipe_tower_ap = estimate_tower_polygon_global(global_model, config, plate_index, filaments_count,
+                                                                     plate_width, plate_depth, pos);
+        ConfigOptionFloat wt_x_opt(pos.x()), wt_y_opt(pos.y());
         config.option<ConfigOptionFloats>("wipe_tower_x", true)->set_at(&wt_x_opt, plate_index, 0);
         config.option<ConfigOptionFloats>("wipe_tower_y", true)->set_at(&wt_y_opt, plate_index, 0);
-
-        ArrangePolygon wipe_tower_ap;
-        Slic3r::Polygon ap({
-            {scaled(x - wp_brim_width), scaled(y - wp_brim_width)},
-            {scaled(x + w + wp_brim_width), scaled(y - wp_brim_width)},
-            {scaled(x + w + wp_brim_width), scaled(y + depth + wp_brim_width)},
-            {scaled(x - wp_brim_width), scaled(y + depth + wp_brim_width)}
-        });
         wipe_tower_ap.bed_idx = 0;
-        wipe_tower_ap.setter = NULL;
-        wipe_tower_ap.poly.contour = std::move(ap);
-        wipe_tower_ap.translation = {scaled(0.f), scaled(0.f)};
-        wipe_tower_ap.name = "WipeTower";
-        wipe_tower_ap.is_virt_object = true;
-        wipe_tower_ap.is_wipe_tower = true;
         unselected.emplace_back(std::move(wipe_tower_ap));
     }
     arrange_add_exclude_areas(unselected, config, 0.);
@@ -4797,6 +4830,426 @@ static Slic3r::BoundingBoxf3 plate_scene_box(const Slic3r::DynamicPrintConfig& f
         Slic3r::Vec3d(origin.x() + first.x() + size.x() + eps, origin.y() + first.y() + size.y() + eps, height + eps));
 }
 
+/// A project 3MF followed by model files (`project.3mf part.stl`): what the
+/// official CLI does with them, for both engines.
+///  - Each file loads into its own model, and is_bbl_3mf is reset for every
+///    file, so it ends false (BambuStudio.cpp 1871; OrcaSlicer.cpp 1553):
+///    --slice N becomes --slice 0 (2192-2196; 1839-1843), and none of the
+///    Bambu-project steps after the load run (the move to a new bed, the
+///    clearance re-arrange, the project's settings rules).
+///  - A model file sets need_arrange (BambuStudio.cpp 2077; OrcaSlicer.cpp
+///    1724), which only --arrange 0 turns off (5066-5081; 4327-4342).
+///  - The models merge into one (BambuStudio.cpp 3947-3963; OrcaSlicer.cpp
+///    3441-3457) and, with need_arrange, every object of every plate is
+///    arranged across the plates (the global arrange, BambuStudio.cpp
+///    5627-5722, 5886-5926, 5946-6006; OrcaSlicer.cpp 4887-4983, 5142-5186,
+///    5189-5262), which adds plates when they are full and drops empty ones
+///    (PartPlateList::rebuild_plates_after_arrangement).
+/// The plan is computed once, before the plates are sliced (run_slice_mode),
+/// and each plate's slice takes its objects from it.
+struct ProjectPlan {
+    bool done = false;
+    int file_plate_count = 0;
+    int plate_count = 0;
+    // Every object at its place in the scene after the arrange (the
+    // whole-project actions read it), in the order the arrange left them.
+    std::shared_ptr<Slic3r::Model> model;
+    // Per plate: its instances in `model`, and its grid origin.
+    std::vector<std::vector<std::pair<int, int>>> members;
+    std::vector<Slic3r::Vec2d> origins;
+    // wipe_tower_x / wipe_tower_y as the arrange left them (empty when the
+    // arrange did not set them).
+    std::vector<double> tower_x, tower_y;
+    // Instances on no plate (left off every plate, or not printable).
+    int off_plates = 0;
+    bool arranged = false;
+};
+static ProjectPlan g_project_plan;
+
+/// A project 3MF with model files after it, under --slice or for model
+/// actions only: the run the official CLI makes of them (see ProjectPlan).
+/// The product's default call (`file --plate N -o`) keeps loading the model
+/// files into the plate it slices.
+static bool trailing_models_port(const CliOptions& o) {
+    return o.input_files.size() > 1 && input_is_3mf(o.input_file) && !slicer_cli::is_geometry_only_3mf(o.input_file) &&
+           (o.slice_mode || slicer_cli::model_actions_only(o));
+}
+
+/// PartPlateList's plate grid for the plan: plate `index` of a list with
+/// `cols` columns sits at (col * width * 1.2, -row * depth * 1.2)
+/// (compute_origin, Bambu PartPlate.cpp 4306-4341; plate_stride_x/y with
+/// LOGICAL_PART_PLATE_GAP 1/5). Unlike plate_grid_origin it also places a bed
+/// past the last plate, as postprocess_arrange_polygon does.
+static Slic3r::Vec2d plan_plate_origin(const Slic3r::Vec2d& plate_size, int index, int cols) {
+    const double gap = 1. / 5.;
+    const int row = index / cols, col = index % cols;
+    return Slic3r::Vec2d(col * plate_size.x() * (1. + gap), -row * plate_size.y() * (1. + gap));
+}
+
+/// compute_colum_count (PartPlate.hpp:38).
+static int plan_plate_cols(int count) {
+    const float value = std::sqrt((float)std::max(1, count));
+    const float round_value = std::round(value);
+    return value > round_value ? (int)round_value + 1 : (int)round_value;
+}
+
+/// The plan of a project 3MF with model files after it (see ProjectPlan).
+/// `model` holds every plate's objects at their scene places followed by the
+/// model files' objects, and the arrange moves them in place; `config` is the
+/// run's settings at the arrange (the setting flags applied), whose
+/// wipe_tower_x / wipe_tower_y the arrange updates; `file_config` and
+/// `file_version` are the project's own, for the plate list's size (the old
+/// printer's, as the plate list keeps it without the Bambu-project resize,
+/// BambuStudio.cpp 4313-4320; OrcaSlicer.cpp 3727-3729).
+static bool plan_project_plates(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
+                                const Slic3r::DynamicPrintConfig& file_config, const Slic3r::Semver& file_version,
+                                const Slic3r::PlateDataPtrs& plate_data, int filament_count, bool need_arrange,
+                                ProjectPlan& plan, PlateOutcome& outcome) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    const int file_plates = std::max(1, (int)plate_data.size());
+    const Vec2d plate_size = plate_logical_size(file_config, file_version);
+    const auto* area = config.option<ConfigOptionPoints>("printable_area");
+    if (!area || area->values.size() < 3 || plate_size.x() <= 0. || plate_size.y() <= 0.) {
+        set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, "The printer states no bed shape (printable_area).");
+        return false;
+    }
+    const Vec2d first_point = area->values.front();
+    const double plate_height = file_config.has("printable_height") ? file_config.opt_float("printable_height") : 0.;
+    // PartPlate::get_build_volume (Bambu PartPlate.cpp 3263-3285): the
+    // plate's origin plus the bed's first point, the plate list's size.
+    const auto plate_box = [&](int index, int count) {
+        const Vec2d origin = plan_plate_origin(plate_size, index, plan_plate_cols(count));
+        const double eps = BuildVolume::SceneEpsilon;
+        return BoundingBoxf3(Vec3d(origin.x() + first_point.x() - eps, origin.y() + first_point.y() - eps, -eps),
+                             Vec3d(origin.x() + first_point.x() + plate_size.x() + eps,
+                                   origin.y() + first_point.y() + plate_size.y() + eps, plate_height + eps));
+    };
+
+    // The plate each instance is on, as the file states it: the plate's
+    // identify ids, else the first plate its box meets (load_plate_objects).
+    std::map<std::pair<int, int>, int> on_plate;
+    for (size_t k = 0; k < plate_data.size(); ++k) {
+        if (plate_data[k] == nullptr) continue;
+        std::set<int> identify_ids;
+        for (const auto& entry : plate_data[k]->obj_inst_map)
+            if (entry.second.second > 0) identify_ids.insert(entry.second.second);
+        for (size_t oi = 0; oi < model.objects.size(); ++oi)
+            for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii) {
+                const int id = model.objects[oi]->instances[ii]->loaded_id;
+                if (id > 0 && identify_ids.count(id))
+                    on_plate.emplace(std::make_pair(int(oi), int(ii)), int(k));
+            }
+    }
+    for (size_t oi = 0; oi < model.objects.size(); ++oi)
+        for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii) {
+            if (on_plate.count({int(oi), int(ii)})) continue;
+            const BoundingBoxf3 box = model.objects[oi]->instance_convex_hull_bounding_box(ii);
+            for (int k = 0; k < file_plates; ++k)
+                if (plate_box(k, file_plates).intersects(box)) {
+                    on_plate.emplace(std::make_pair(int(oi), int(ii)), k);
+                    break;
+                }
+        }
+    std::vector<bool> locked(file_plates, false);
+    for (int k = 0; k < (int)plate_data.size(); ++k)
+        locked[k] = plate_data[k] != nullptr && plate_data[k]->locked;
+
+    int plate_count = file_plates;
+    if (need_arrange) {
+        // Step 1, the global arrange (BambuStudio.cpp 5627-5722; OrcaSlicer.cpp
+        // 4887-4983): every instance, those of a locked plate kept where they
+        // are (PartPlateList::preprocess_arrange_polygon, Bambu PartPlate.cpp
+        // 5831-5871).
+        ArrangePolygons selected, unselected, unprintable, locked_aps;
+        const int file_cols = plan_plate_cols(file_plates);
+        for (size_t oi = 0; oi < model.objects.size(); ++oi) {
+            ModelObject* mo = model.objects[oi];
+            for (size_t ii = 0; ii < mo->instances.size(); ++ii) {
+                ModelInstance* minst = mo->instances[ii];
+                ArrangePolygon ap = get_instance_arrange_poly(minst, config);
+                const auto it = on_plate.find({int(oi), int(ii)});
+                if (it != on_plate.end() && locked[it->second]) {
+                    const int k = it->second;
+                    ap.bed_idx = k;
+                    ap.row = k / file_cols;
+                    ap.col = k % file_cols;
+                    const Vec2d origin = plan_plate_origin(plate_size, k, file_cols);
+                    ap.translation(X) -= scaled<double>(origin.x());
+                    ap.translation(Y) -= scaled<double>(origin.y());
+                    ap.itemid = locked_aps.size();
+                    locked_aps.emplace_back(ap);
+                } else {
+                    // The official numbers the unprintable items in the
+                    // selected list too.
+                    ap.itemid = selected.size();
+                    if (minst->printable)
+                        selected.emplace_back(ap);
+                    else
+                        unprintable.emplace_back(ap);
+                }
+            }
+        }
+        ArrangeParams params;
+        params.progressind = [](unsigned, std::string) {};
+        if (const auto* seq = config.option<ConfigOptionEnum<PrintSequence>>("print_sequence"))
+            params.is_seq_print = seq->value == PrintSequence::ByObject;
+        // The exclusion areas on 16 beds (preprocess_exclude_areas' default).
+        arrange_add_exclude_areas(unselected, config, 0., 16);
+        // The tower on every bed (BambuStudio.cpp 5668-5722; OrcaSlicer.cpp
+        // 4927-4981) when filaments are in use: the default corner on each file
+        // plate, clamped by estimate_wipe_tower_polygon with every object
+        // counted, and the last file plate's tower on the beds after it. The
+        // used filaments: on Bambu the project's and --load-filament-ids'
+        // (BambuStudio.cpp 2041-2046, 2083-2088); on Orca only
+        // --load-filament-ids' (OrcaSlicer.cpp 1734).
+        if (filament_count > 0) {
+            float x = 165.f, y = 250.f;   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
+            if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
+                structure && structure->value == PrinterStructure::psI3) {
+                x = 0.f;     // I3_WIPE_TOWER_DEFAULT_X_POS
+                y = 250.f;   // I3_WIPE_TOWER_DEFAULT_Y_POS
+            }
+#ifdef ENGINE_ORCA
+            const float tower_margin = WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat();
+#else
+            const float tower_margin = WIPE_TOWER_MARGIN;
+#endif
+            if (x < tower_margin) x = tower_margin;
+            if (y < tower_margin) y = tower_margin;
+            ConfigOptionFloat wt_x_opt(x), wt_y_opt(y);
+            auto* wipe_x_option = config.option<ConfigOptionFloats>("wipe_tower_x", true);
+            auto* wipe_y_option = config.option<ConfigOptionFloats>("wipe_tower_y", true);
+            for (int bedid = 0; bedid < 36; bedid++) {   // MAX_PLATE_COUNT
+                const int plate_index_valid = std::min(bedid, file_plates - 1);
+                if (bedid < file_plates) {
+                    wipe_x_option->set_at(&wt_x_opt, plate_index_valid, 0);
+                    wipe_y_option->set_at(&wt_y_opt, plate_index_valid, 0);
+                }
+                Vec2d pos;
+                ArrangePolygon wipe_tower_ap = estimate_tower_polygon_global(
+                    model, config, plate_index_valid, filament_count, (int)plate_size.x(), (int)plate_size.y(), pos);
+                if (bedid < file_plates) {
+                    wt_x_opt.value = pos.x();
+                    wt_y_opt.value = pos.y();
+                    wipe_x_option->set_at(&wt_x_opt, plate_index_valid, 0);
+                    wipe_y_option->set_at(&wt_y_opt, plate_index_valid, 0);
+                }
+                wipe_tower_ap.bed_idx = bedid;
+                unselected.emplace_back(std::move(wipe_tower_ap));
+            }
+        }
+
+        // Step 2 (BambuStudio.cpp 5886-5915; OrcaSlicer.cpp 5142-5172): the
+        // same settings as the one-plate arrange (arrange_on_bed).
+        params.allow_rotations                     = g_arrange_switches.allow_rotations;
+        params.allow_multi_materials_on_same_plate = g_arrange_switches.allow_multicolor_oneplate;
+        params.avoid_extrusion_cali_region         = g_arrange_switches.avoid_extrusion_cali_region;
+        params.clearance_height_to_rod             = arrange_opt(config, "extruder_clearance_height_to_rod")->getFloat();
+        params.clearance_height_to_lid             = arrange_opt(config, "extruder_clearance_height_to_lid")->getFloat();
+#ifdef ENGINE_ORCA
+        params.clearance_radius                    = arrange_opt(config, "extruder_clearance_radius")->getFloat();
+#else
+        params.cleareance_radius                   = arrange_opt(config, "extruder_clearance_max_radius")->getFloat();
+#endif
+        params.printable_height                    = arrange_opt(config, "printable_height")->getFloat();
+        params.min_obj_distance = 0;
+        if (params.is_seq_print) {
+            params.bed_shrink_x = BED_SHRINK_SEQ_PRINT;
+            params.bed_shrink_y = BED_SHRINK_SEQ_PRINT;
+        }
+        if (auto printer_structure_opt = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure"))
+            params.align_to_y_axis = (printer_structure_opt->value == PrinterStructure::psI3);
+#ifdef ENGINE_ORCA
+        update_arrange_params(params, &config, selected);
+        update_selected_items_inflation(selected, &config, params);
+        update_unselected_items_inflation(unselected, &config, params);
+        update_selected_items_axis_align(selected, &config, params);
+        Points beds = get_shrink_bedpts(&config, params);
+#else
+        update_arrange_params(params, config, selected);
+        update_selected_items_inflation(selected, config, params);
+        update_unselected_items_inflation(unselected, config, params);
+        Points beds = get_shrink_bedpts(config, params);
+#endif
+        arrange_add_exclude_areas(params.excluded_regions, config, scale_(1));
+
+        // Step 3.
+        arrangement::arrange(selected, unselected, beds, params);
+        arrangement::arrange(unprintable, {}, beds, params);
+
+        // Step 4 (BambuStudio.cpp 5946-6006; OrcaSlicer.cpp 5189-5262): each
+        // selected item's bed past the locked plates, adding plates while the
+        // bed is past the last one (postprocess_bed_index_for_selected and
+        // create_plate, at most MAX_PLATE_COUNT, Bambu PartPlate.cpp 6009-6051,
+        // 4834-4842).
+        const auto create_plate = [&]() -> int {
+            if (plate_count >= 36)
+                return -1;
+            locked.push_back(false);
+            return plate_count++;
+        };
+        int bed_idx_max = 0;
+        for (ArrangePolygon& ap : selected) {
+            if (ap.bed_idx != -1) {
+                bool placed = false;
+                for (int i = 0; i < plate_count; ++i) {
+                    if (locked[i]) {
+                        ap.bed_idx += 1;
+                    } else if (ap.bed_idx <= i) {
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed) {
+                    int plate_index = create_plate();
+                    while (plate_index != -1) {
+                        if (ap.bed_idx <= plate_index)
+                            break;
+                        plate_index = create_plate();
+                    }
+                }
+            }
+            bed_idx_max = std::max(ap.bed_idx, bed_idx_max);
+        }
+        // postprocess_arrange_polygon (Bambu PartPlate.cpp 6107-6129): onto
+        // its plate in the grid of the plates there are now; an item the
+        // arrange could not place goes past the last plate.
+        const int cols = plan_plate_cols(plate_count);
+        const auto to_grid = [&](ArrangePolygon& ap) {
+            const Vec2d origin = plan_plate_origin(plate_size, ap.bed_idx, cols);
+            ap.translation(X) += scaled<double>(origin.x());
+            ap.translation(Y) += scaled<double>(origin.y());
+        };
+        for (ArrangePolygon& ap : locked_aps) {
+            bed_idx_max = std::max(ap.bed_idx, bed_idx_max);
+            to_grid(ap);
+            ap.apply();
+        }
+        for (ArrangePolygon& ap : selected) {
+            if (ap.bed_idx == -1) {
+                ap.bed_idx = plate_count;
+                const BoundingBox apbox = get_extents(ap.transformed_poly());
+                const auto apbox_size = apbox.size();
+                ap.translation(X) = 0.5 * apbox_size[0];
+                ap.translation(Y) = scaled<double>(static_cast<double>((int)plate_size.y())) - 0.5 * apbox_size[1];
+            }
+            to_grid(ap);
+            ap.apply();
+        }
+        for (ArrangePolygon& ap : unprintable) {
+            ap.bed_idx = bed_idx_max + 1;
+            to_grid(ap);
+            ap.apply();
+        }
+        // rebuild_plates_after_arrangement (Bambu PartPlate.cpp 6803-6860;
+        // Orca 6005-6037): the objects in arrange order (stable here, where the
+        // official's std::sort leaves equal orders in any order).
+        std::stable_sort(model.objects.begin(), model.objects.end(), [](const ModelObject* a, const ModelObject* b) {
+            const int ao = a->instances.empty() ? 0 : a->instances[0]->arrange_order;
+            const int bo = b->instances.empty() ? 0 : b->instances[0]->arrange_order;
+            return ao < bo;
+        });
+        plan.arranged = true;
+    }
+
+    // reload_all_objects (Bambu PartPlate.cpp 5668-5710): each instance on
+    // the first plate its box meets.
+    std::vector<std::vector<std::pair<int, int>>> members(plate_count);
+    int off_plates = 0;
+    for (size_t oi = 0; oi < model.objects.size(); ++oi)
+        for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii) {
+            const BoundingBoxf3 box = model.objects[oi]->instance_convex_hull_bounding_box(ii);
+            int k = 0;
+            for (; k < plate_count; ++k)
+                if (plate_box(k, plate_count).intersects(box)) {
+                    members[k].emplace_back(int(oi), int(ii));
+                    break;
+                }
+            if (k == plate_count)
+                ++off_plates;
+        }
+    // Each instance's place on its plate, which a plate keeps when the plates
+    // before it go (delete_plate moves a plate with its objects).
+    std::vector<std::vector<Vec3d>> on_plate_offset(plate_count);
+    for (int k = 0; k < plate_count; ++k) {
+        const Vec2d origin = plan_plate_origin(plate_size, k, plan_plate_cols(plate_count));
+        for (const auto& [oi, ii] : members[k])
+            on_plate_offset[k].push_back(model.objects[oi]->instances[ii]->get_offset() - Vec3d(origin.x(), origin.y(), 0.));
+    }
+    if (need_arrange) {
+        // Recycle the empty plates (Bambu PartPlate.cpp 6837-6858: every empty
+        // plate after the first; Orca 6018-6037: from the last plate back to the
+        // first that holds a printable object, past locked ones).
+        const auto printable_on = [&](int k) {
+            for (const auto& [oi, ii] : members[k])
+                if (model.objects[oi]->instances[ii]->printable)
+                    return true;
+            return false;
+        };
+        for (int i = plate_count - 1; i > 0; --i) {
+            if (members[i].empty() || !printable_on(i)) {
+                off_plates += (int)members[i].size();
+                members.erase(members.begin() + i);
+                on_plate_offset.erase(on_plate_offset.begin() + i);
+                locked.erase(locked.begin() + i);
+            } else if (locked[i]) {
+                continue;
+            } else {
+#ifdef ENGINE_ORCA
+                break;
+#else
+                continue;
+#endif
+            }
+        }
+        plate_count = (int)members.size();
+    }
+    plan.origins.clear();
+    const int final_cols = plan_plate_cols(plate_count);
+    for (int k = 0; k < plate_count; ++k) {
+        const Vec2d origin = plan_plate_origin(plate_size, k, final_cols);
+        plan.origins.push_back(origin);
+        for (size_t m = 0; m < members[k].size(); ++m) {
+            const auto& [oi, ii] = members[k][m];
+            model.objects[oi]->instances[ii]->set_offset(on_plate_offset[k][m] + Vec3d(origin.x(), origin.y(), 0.));
+        }
+    }
+    plan.file_plate_count = file_plates;
+    plan.plate_count = plate_count;
+    plan.members = std::move(members);
+    plan.off_plates = off_plates;
+    if (plan.arranged && filament_count > 0) {
+        if (const auto* wx = config.option<ConfigOptionFloats>("wipe_tower_x")) plan.tower_x = wx->values;
+        if (const auto* wy = config.option<ConfigOptionFloats>("wipe_tower_y")) plan.tower_y = wy->values;
+    }
+    plan.model = std::make_shared<Model>(model);
+    plan.done = true;
+    return true;
+}
+
+/// The event for a project 3MF's plan: the plates the run slices and the
+/// objects on each.
+static void emit_project_plan_event(const ProjectPlan& plan) {
+    json plates = json::array();
+    for (int k = 0; k < plan.plate_count; ++k) {
+        json objects = json::array();
+        for (const auto& [oi, ii] : plan.members[k])
+            objects.push_back(plan.model->objects[oi]->name);
+        plates.push_back(json{{"plate_id", k + 1}, {"objects", objects}});
+    }
+    std::string message = plan.arranged
+        ? "The project and the model files after it were arranged together over " + std::to_string(plan.plate_count) +
+              " plate(s), as the official command line arranges them"
+        : "The model files after the project keep their places (--arrange 0) over " +
+              std::to_string(plan.plate_count) + " plate(s)";
+    if (plan.off_plates > 0)
+        message += "; " + std::to_string(plan.off_plates) + " object(s) are on no plate and are not printed";
+    emit_event({{"event","arranged"}, {"tag", plan.arranged ? "ProjectArrangedAcrossPlates" : "ProjectPlatesByPosition"},
+                {"plate_count", plan.plate_count}, {"file_plate_count", plan.file_plate_count},
+                {"off_plates", plan.off_plates}, {"plates", plates}, {"message", message}});
+}
+
 /// The command-line setting overrides (--layer-height, --fill-density, ...)
 /// over `config`. The slice reports a rejected value; the --export-3mf
 /// rebuild of the same settings stays quiet (the slice already said it).
@@ -5061,6 +5514,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // Each plate's grid origin in the project (plate_grid_origin), for
         // the plates --downward-check loads alone; empty when not a project.
         std::vector<Slic3r::Vec2d> plate_origins;
+        // A project 3MF with model files after it (ProjectPlan): the file's own
+        // settings and version, for the plate list's size, and its filament
+        // count, the used filaments of the official's tower step.
+        std::optional<Slic3r::DynamicPrintConfig> plan_file_config;
+        Slic3r::Semver plan_file_version;
+        int plan_file_filaments = 0;
         // The project's print_sequence before the sliced plate's own
         // (plate_N.json is_seq_print) is laid over it; empty when the plate
         // has none of its own.
@@ -5090,6 +5549,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         const bool geometry_input = !input_file.empty() && slicer_cli::is_loadable_model_file(input_file) &&
             (!input_is_3mf(input_file) || slicer_cli::is_geometry_only_3mf(input_file));
         const bool geometry_only_3mf = geometry_input && input_is_3mf(input_file);
+        // A project 3MF with model files after it, run as the official CLI
+        // runs it (ProjectPlan): the plan pass loads every plate (plate_id 0)
+        // and the model files and arranges them; each plate's slice then takes
+        // its objects from the plan.
+        const bool trailing_port = !geometry_input && g_assemble == nullptr && trailing_models_port(o);
+        const bool use_plan = trailing_port && g_project_plan.done && plate_id > 0;
+        // A plate the arrange added has no plate of its own in the file: its
+        // slice reads the project's settings through plate 1.
+        const int load_plate_id = use_plan && plate_id > g_project_plan.file_plate_count ? 1 : plate_id;
         // --load-assemble-list: this plate's objects from the list built
         // before the plate loop, and every plate's own settings (plate_params)
         // as its PlateData config, where the official keeps them
@@ -5206,7 +5674,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 nullptr,   // proFn (progress callback)
                 strategy,
                 nullptr,   // BBLProject
-                plate_id   // 0 = all plates, >0 = specific plate
+                load_plate_id   // 0 = all plates, >0 = specific plate
             );
 #else
             bool result = Slic3r::load_bbs_3mf(
@@ -5221,7 +5689,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 nullptr,   // proFn (progress callback)
                 strategy,
                 nullptr,   // BBLProject
-                plate_id   // 0 = all plates, >0 = specific plate
+                load_plate_id   // 0 = all plates, >0 = specific plate
             );
 #endif
             // Surface what the engine silently changed or ignored while
@@ -5365,6 +5833,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #endif
             if (is_bbl_3mf)
                 slicer_cli::read_project_facts(config, project_facts);
+            // is_bbl_3mf ends false once a model file follows the project
+            // (BambuStudio.cpp 1871; OrcaSlicer.cpp 1553): the settings steps
+            // for a Bambu-made project do not run.
+            if (trailing_port)
+                project_facts.is_bbl_3mf = false;
+            // A plate the arrange added: a fresh plate with no settings of its
+            // own (PartPlateList::create_plate).
+            if (use_plan)
+                while ((int)plate_data.size() < plate_id) {
+                    auto* pd = new Slic3r::PlateData();
+                    pd->plate_index = int(plate_data.size());
+                    plate_data.push_back(pd);
+                }
             for (const Slic3r::Preset* p : presets)
                 if (p) project_presets_kept.push_back(*p);
             // Validate --plate against actual plate count
@@ -5403,6 +5884,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (is_bbl_3mf)
                 for (int index = 0; index < (int)plate_data.size(); ++index)
                     plate_origins.push_back(plate_grid_origin(config, file_version, index, (int)plate_data.size()));
+            if (trailing_port && !use_plan) {
+                plan_file_config = config;
+                plan_file_version = file_version;
+                if (const auto* ids = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id"))
+                    plan_file_filaments = (int)ids->values.size();
+            }
             if (plate_id > 0 && is_bbl_3mf && !model.objects.empty()) {
                 bool is_seq_print_plate = false;
                 {
@@ -5648,6 +6135,27 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
         // For pressure_advance_pattern the model is generated later by
         // apply_pa_pattern (before print.apply), so an empty model here is fine.
+        // A plate of the plan: its objects, at their places on the plate.
+        if (use_plan) {
+            model.clear_objects();
+            const ProjectPlan& plan = g_project_plan;
+            const Slic3r::Vec2d origin = plan.origins[plate_id - 1];
+            std::map<int, std::vector<int>> instances_of;
+            for (const auto& [oi, ii] : plan.members[plate_id - 1])
+                instances_of[oi].push_back(ii);
+            for (const auto& [oi, kept] : instances_of) {
+                Slic3r::ModelObject* object = model.add_object(*plan.model->objects[oi]);
+                for (int ii = (int)object->instances.size() - 1; ii >= 0; --ii)
+                    if (std::find(kept.begin(), kept.end(), ii) == kept.end())
+                        object->delete_instance(size_t(ii));
+                for (Slic3r::ModelInstance* inst : object->instances) {
+                    const Slic3r::Vec3d off = inst->get_offset();
+                    inst->set_offset(Slic3r::Vec3d(off.x() - origin.x(), off.y() - origin.y(), off.z()));
+                }
+            }
+            outcome.plate_origin = origin;
+        }
+
         if (model.objects.empty() && !calib_self_geometry) {
             std::cerr << "No objects found in model\n";
             set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS);
@@ -5657,7 +6165,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // Model files after a project 3MF: loaded the same way as geometry
         // (the official CLI reads them after the first file, BambuStudio.cpp
         // 1855-2163) and placed further down with the other new objects.
-        if (!geometry_input && o.input_files.size() > 1) {
+        if (!geometry_input && o.input_files.size() > 1 && !use_plan) {
             const std::vector<std::string> rest(o.input_files.begin() + 1, o.input_files.end());
             const slicer_cli::ModelLoadResult loaded = slicer_cli::load_geometry_files(o, rest, 1, model);
             if (loaded.code != 0) {
@@ -6462,7 +6970,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
             // A Bambu-made 3MF with support on anywhere (BambuStudio.cpp 2197-2210).
             bool has_support = false;
-            if (is_bbl_3mf) {
+            if (is_bbl_3mf && !trailing_port) {
                 const auto* support = config.option<Slic3r::ConfigOptionBool>("enable_support");
                 has_support = support && support->value;
                 for (const DownwardPlate& plate : downward_plates)
@@ -6499,7 +7007,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // The transforms on the command line, in its order, then orient
         // (cli_run_steps.cpp). Before any placement, as the official CLI
         // runs them before its arrange.
-        if (!o.transforms.empty()) {
+        // A plate of the plan has its objects transformed already (the plan
+        // pass ran the transforms on every object, as the official does).
+        if (!o.transforms.empty() && !use_plan) {
             int duplicate_count = 0;
             const int plate_count = std::max<int>(1, (int)plate_data.size());
             const slicer_cli::StepResult t = slicer_cli::apply_transforms(
@@ -6552,6 +7062,34 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // whole run. A failure is recorded with plate 0, as the official records
         // these (record_exit_reson(..., CLI_EXPORT_STL_ERROR, 0, ...),
         // BambuStudio.cpp 6391, 6399).
+        // A project 3MF with model files after it: the plan (ProjectPlan) once
+        // the transforms ran, before any action, as the official arranges
+        // before its action loop. The plan pass stops here; a run of model
+        // actions only goes on with every object at its arranged place.
+        if (trailing_port && !use_plan && !calib_self_geometry) {
+            std::set<int> used_filaments;
+#ifndef ENGINE_ORCA
+            for (int f = 1; f <= plan_file_filaments; ++f)
+                used_filaments.insert(f);
+#endif
+            const auto& filament_ids = o.cli.option<Slic3r::ConfigOptionInts>("load_filament_ids")->values;
+            for (size_t index = 1; index < o.input_files.size() && index < filament_ids.size(); ++index)
+                if (filament_ids[index] > 0)
+                    used_filaments.insert(filament_ids[index]);
+            ProjectPlan plan;
+            const Slic3r::DynamicPrintConfig& file_config = plan_file_config ? *plan_file_config : config;
+            if (!plan_project_plates(model, config, file_config, plan_file_version, plate_data, (int)used_filaments.size(),
+                                     o.arrange != 0, plan, outcome)) {
+                std::cerr << "Error: " << outcome.error_string << "\n";
+                return 1;
+            }
+            if (outcome.plan_pass) {
+                g_project_plan = std::move(plan);
+                return 0;
+            }
+            emit_project_plan_event(plan);
+        }
+
         const auto run_model_action_step = [&](slicer_cli::ActionPhase phase) -> bool {
             // --info, --export-stl, --export-stls with --slice 0 on a project
             // of several plates work on every plate's objects: the official
@@ -6560,7 +7098,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // only its own plate. --slice N loads plate N, as the official does.
             std::unique_ptr<Slic3r::Model> whole;
             slicer_cli::StepResult a;
-            if (o.slice_plate == 0 && outcome.plate_count > 1 && slicer_cli::has_model_wide_actions(o, phase)) {
+            if (use_plan && o.slice_plate == 0 && outcome.plate_count > 1 && slicer_cli::has_model_wide_actions(o, phase)) {
+                // The plan holds every object at its arranged place.
+                whole = std::make_unique<Slic3r::Model>(*g_project_plan.model);
+            } else if (o.slice_plate == 0 && outcome.plate_count > 1 && slicer_cli::has_model_wide_actions(o, phase)) {
                 whole = std::make_unique<Slic3r::Model>();
                 std::vector<std::vector<std::pair<int, int>>> members;
                 Slic3r::DynamicPrintConfig whole_file_config;
@@ -6721,7 +7262,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     rod_distance_changed;
                 // plate_to_slice > 0: one plate named, never --slice 0.
                 const int plate_to_slice = o.slice_mode ? o.slice_plate : plate_id;
-                clearance_arrange = !need_arrange && is_bbl_3mf && shrink_to_new_bed == 0 && plate_to_slice > 0 &&
+                clearance_arrange = !need_arrange && is_bbl_3mf && !trailing_port && shrink_to_new_bed == 0 && plate_to_slice > 0 &&
                                     printer_changed && clearances_changed && is_seq_print;
                 if (clearance_arrange)
                     emit_event({{"event","arranged"}, {"tag","ClearanceArrange"},
@@ -6784,13 +7325,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // Copies the loop left off the plate stand wholly outside it
                 // and are left out by the inside check below.
                 outcome.duplicate_count = reps.copies_kept;
-            } else if ((o.arrange_forced() || auto_arrange_model_files || clearance_arrange) &&
+            } else if ((o.arrange_forced() || auto_arrange_model_files || clearance_arrange) && !use_plan &&
                        !arrange_on_bed(model, config, arrange_plate_index, sliced_filament_count, outcome)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
             }
             // The tower position the arrange settled on (it may clamp it inside
             // the bed), so the exported project states what the slice used.
+            // A plate of the plan: the towers its arrange set, for every plate
+            // (the official's m_print_config after the arrange).
+            if (use_plan && !g_project_plan.tower_x.empty() && !g_project_plan.tower_y.empty()) {
+                config.option<Slic3r::ConfigOptionFloats>("wipe_tower_x", true)->values = g_project_plan.tower_x;
+                config.option<Slic3r::ConfigOptionFloats>("wipe_tower_y", true)->values = g_project_plan.tower_y;
+            }
             const bool plate_moved = o.arrange_forced() || clearance_arrange || !before_new_bed.empty();
             if (plate_moved && !o.export_3mf.empty()) {
                 const auto* wx = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_x");
@@ -8008,7 +8555,39 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             per_plate_load = true;
         }
     }
-    if (o.slice_plate > plate_count) {
+    // A project 3MF with model files after it: the plan pass (ProjectPlan)
+    // loads every plate and the model files and arranges them, before any
+    // plate is checked or sliced; the plates are the plan's. Its events are
+    // held as the check pass's are: each plate's slice sends them again.
+    int plan_code = 0;
+    std::string plan_error;
+    if (per_plate_load && !g_assemble && trailing_models_port(o)) {
+        PlateOutcome plan_outcome;
+        plan_outcome.plan_pass = true;
+        std::vector<std::string> held;
+        slicer_cli::diagnostics::held_events = &held;
+        int rc = 0;
+        try {
+            rc = slice_one_plate(o, calib_params, 0, std::string(), plan_outcome);
+        } catch (...) {
+            slicer_cli::diagnostics::held_events = nullptr;
+            throw;
+        }
+        slicer_cli::diagnostics::held_events = nullptr;
+        if (rc != 0 || plan_outcome.cli_code != 0 || !g_project_plan.done) {
+            for (const std::string& line : held)
+                slicer_cli::diagnostics::write_event_now(line);
+            if (plan_outcome.cli_code == 0)
+                set_outcome_failure(plan_outcome, CLI_SLICING_ERROR);
+            plan_code = plan_outcome.cli_code;
+            plan_error = plan_outcome.error_string.empty() ? cli_error_sentence(plan_code) : plan_outcome.error_string;
+        } else {
+            emit_project_plan_event(g_project_plan);
+            plate_count = g_project_plan.plate_count;
+        }
+    }
+
+    if (plan_code == 0 && o.slice_plate > plate_count) {
         write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
                           cli_error_sentence(CLI_INVALID_PARAMS) + " --slice " + std::to_string(o.slice_plate) +
                           " but the file has only " + std::to_string(plate_count) + " plate(s).",
@@ -8091,7 +8670,12 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // official's check pass reports only the refused plate (record_exit_reson
     // with its index, BambuStudio.cpp 6533, 6579; OrcaSlicer.cpp 5650). The
     // refused plate's events are sent with its result.
-    const bool pre_check = o.slice_plate == 0 && plates.size() > 1;
+    // A plan pass that failed ends the run here, with plate 0.
+    if (plan_code != 0) {
+        code = plan_code;
+        error_string = plan_error;
+    }
+    const bool pre_check = code == 0 && o.slice_plate == 0 && plates.size() > 1;
     for (size_t i = 0; pre_check && i < plates.size(); ++i) {
         PlateOutcome outcome;
         outcome.plate_id    = plates[i];
@@ -8394,6 +8978,22 @@ int main(int argc, char** argv) {
                         {"requested_plate", o.slice_plate},
                         {"message","--load-assemble-list slices every plate of the list, as the official command "
                                    "line does for any input that is not a Bambu-made 3MF; --slice " +
+                                   std::to_string(o.slice_plate) + " is taken as --slice 0"}});
+            o.slice_plate = 0;
+        }
+    }
+    // A project 3MF with model files after it (ProjectPlan): is_bbl_3mf ends
+    // false, so the official slices every plate (plate_to_slice reset to 0,
+    // BambuStudio.cpp 2192-2196; OrcaSlicer.cpp 1839-1843), after arranging
+    // everything across the plates. --repetitions is then refused by its own
+    // step, as for any --slice 0 (BambuStudio.cpp 4960-4964; OrcaSlicer.cpp
+    // 4221-4225).
+    if (assemble_list_file(o).empty() && trailing_models_port(o)) {
+        if (o.slice_mode && o.slice_plate > 0) {
+            emit_event({{"event","config_normalized"}, {"tag","ProjectWithModelsSlicesEveryPlate"},
+                        {"requested_plate", o.slice_plate},
+                        {"message","Model files after a project 3MF: every plate is sliced, as the official command "
+                                   "line does once a file that is not a Bambu-made 3MF is loaded; --slice " +
                                    std::to_string(o.slice_plate) + " is taken as --slice 0"}});
             o.slice_plate = 0;
         }
