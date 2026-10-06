@@ -45,6 +45,11 @@ record() {
     return 0
 }
 skip() { SKIP=$((SKIP + 1)); echo "SKIP [$1] $2"; }
+# native PATH: the path as the engine's own loader must see it. Git Bash
+# converts MSYS paths (/d/..., /tmp/...) in command-line arguments only, never
+# inside a file, so a path written into a request JSON has to be converted by
+# hand (cygpath -m gives D:/...). Elsewhere: unchanged.
+native() { if command -v cygpath > /dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 # Same mktemp caveat as test_excluded_features.sh: the X's must be last on
 # both BSD (macOS) and GNU (Linux).
@@ -193,10 +198,10 @@ PY
 {
   "schemaVersion": 1,
   "engine": "$ENGINE",
-  "profilesDir": "$PROFILES_DIR",
+  "profilesDir": "$(native "$PROFILES_DIR")",
   "profiles": { "machine": "$MACHINE_PROFILE" },
   "spacing": { "minObjectDistanceMm": 10.0 },
-  "models": [ { "id": "a", "path": "$LAYOUT_DIR/cube.stl" } ]
+  "models": [ { "id": "a", "path": "$(native "$LAYOUT_DIR/cube.stl")" } ]
 }
 EOF
     run "$OUT" "$ERR" --layout-plan --input "$PROBLEM"
@@ -212,9 +217,9 @@ EOF
     # Preserve that contract without adding structured slicing events.
     cat > "$PROBLEM" <<EOF
 {
-  "profilesDir": "$PROFILES_DIR",
+  "profilesDir": "$(native "$PROFILES_DIR")",
   "profiles": { "machine": "$MACHINE_PROFILE" },
-  "objects": [ { "stl": "$LAYOUT_DIR/cube.stl" } ]
+  "objects": [ { "stl": "$(native "$LAYOUT_DIR/cube.stl")" } ]
 }
 EOF
     run "$OUT" "$ERR" --layout "$PROBLEM"
