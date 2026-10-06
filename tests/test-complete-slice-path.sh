@@ -2437,44 +2437,85 @@ done
 
 # E4: a setting with one value per plate or per nozzle is not padded with a 0
 # to the extruder count (the official leaves each as given; get_at() reads a
-# short list's first value, Config.hpp 681-685). A two-plate, two-filament H2D
-# project whose wipe_tower_x/y hold one value: plate 2's tower stands where
-# the official CLI puts it, not at (0, 0) (on 933ff72: wipe_tower_x = 165,0
-# and the tower's first move near X21 Y20; the official near X40 Y244).
+# short list's first value, Config.hpp 681-685). A three-plate, two-filament
+# H2D project whose wipe_tower_x/y hold ONE value: every plate's tower stands
+# where the official CLI puts it, not at (0, 0) and not at the one value the
+# list carries. A plate the list holds no entry for stands on the option's own
+# default, wipe_tower_x 15 / wipe_tower_y 220 (PrintConfig.cpp 5979-5993), the
+# front-left corner of the tower, while a plate the list does name uses that
+# value - here 165/250, the arrange default our own export writes per plate
+# (WIPE_TOWER_DEFAULT_X_POS / _Y_POS, PartPlate.cpp 68-69).
+# Measured with the official CLI (BambuStudio 02.08.01.55) on the two-plate
+# form of this fixture with wipe_tower_x/y = [100]/[120]: its plate-2 tower's
+# first layer runs X13.609..193.359 Y248.179..277.006, the corner of 15/220
+# (X13.62 Y218.14), not of 100/120 (which would put it near X98.6 Y118.6) and
+# not of a padded 0 (near X0 Y0). Our build's same corner: X13.624 Y218.139.
+# So the check derives the tower's own footprint offset (its brim) from the
+# full-list control of the same plate, and requires the one-value corner to
+# land on the option default minus that offset. On the pre-E4 build (933ff72)
+# the padded 0 put it at (0.028, 0.046) instead, which is what this fails on.
 e4_ok=1
 py '
 import json
 P = lambda n: {"plate_name": n, "need_arrange": True, "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2]}]}
-json.dump({"plates": [P("p"), P("q")]}, open("e4.json", "w"))
+json.dump({"plates": [P("p"), P("q"), P("r")]}, open("e4.json", "w"))
 '
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
     run e4mk-$e "$bin" --load-assemble-list e4.json --slice 0 --printer-preset "Bambu Lab H2D 0.4 nozzle" \
         --filament-preset "Bambu PLA Basic @BBL H2D" --filament-preset "Bambu PLA Matte @BBL H2D" \
         --filament-colour "#FF0000;#00FF00" --outputdir e4mk-$e/out --export-3mf e4.3mf
-    [ "$(rc e4mk-$e)" = 0 ] && [ -s e4mk-$e/out/e4.3mf ] || { show e4mk-$e; fail "E4 $e: two-plate H2D project exit $(rc e4mk-$e)"; e4_ok=0; continue; }
+    [ "$(rc e4mk-$e)" = 0 ] && [ -s e4mk-$e/out/e4.3mf ] || { show e4mk-$e; fail "E4 $e: three-plate H2D project exit $(rc e4mk-$e)"; e4_ok=0; continue; }
+    # The control, the project's own full per-plate list, for the same plates.
+    for p in 2 3; do
+        run e4c$p-$e "$bin" e4mk-$e/out/e4.3mf --plate $p -o e4c$p-$e.gcode
+        [ "$(rc e4c$p-$e)" = 0 ] && [ -s e4c$p-$e.gcode ] || { show e4c$p-$e; fail "E4 $e: control plate $p exit $(rc e4c$p-$e)"; e4_ok=0; }
+    done
     py '
 import json, sys, zipfile
 with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
     for item in zin.infolist():
         data = zin.read(item.filename)
         if item.filename == "Metadata/project_settings.config":
-            d = json.loads(data); d.update({"wipe_tower_x": ["165"], "wipe_tower_y": ["250"]})
+            d = json.loads(data); d.update({"wipe_tower_x": ["100"], "wipe_tower_y": ["120"]})
             data = json.dumps(d, indent=4).encode()
         if item.filename.startswith("Metadata/plate_") and item.filename.endswith((".gcode", ".md5")):
             continue
         zout.writestr(item, data)
 ' e4mk-$e/out/e4.3mf e4-$e.3mf
-    run e4p2-$e "$bin" e4-$e.3mf --plate 2 -o e4p2-$e.gcode
-    [ "$(rc e4p2-$e)" = 0 ] && [ -s e4p2-$e.gcode ] || { show e4p2-$e; fail "E4 $e: plate 2 exit $(rc e4p2-$e)"; e4_ok=0; continue; }
+    for p in 2 3; do
+        run e4s$p-$e "$bin" e4-$e.3mf --plate $p -o e4s$p-$e.gcode
+        [ "$(rc e4s$p-$e)" = 0 ] && [ -s e4s$p-$e.gcode ] || { show e4s$p-$e; fail "E4 $e: plate $p exit $(rc e4s$p-$e)"; e4_ok=0; }
+    done
+    [ $e4_ok = 1 ] || continue
     py '
 import re, sys
-g = open(sys.argv[1], errors="replace").read()
+def tower_corner(path):
+    g = open(path, errors="replace").read()
+    m = re.search(r"; FEATURE: (?:Prime|Wipe) tower\n", g)
+    assert m, ("no tower", path)
+    j = g.find("\n; FEATURE:", m.end())
+    blk = g[m.end(): j if j > 0 else len(g)]
+    xs = [float(v) for v in re.findall(r"\bX([0-9.]+)", blk)]
+    ys = [float(v) for v in re.findall(r"\bY([0-9.]+)", blk)]
+    assert xs and ys, ("empty tower", path)
+    return min(xs), min(ys)
+c2, c3, s2, s3 = [tower_corner(p) for p in sys.argv[1:5]]
+bad = []
+for n, c, s in (("2", c2, s2), ("3", c3, s3)):
+    if abs(c[0] - 163.62) > 1 or abs(c[1] - 248.14) > 1:
+        bad.append("plate %s: the full-list control is not the 165/250 default, corner (%.3f, %.3f)" % (n, c[0], c[1]))
+        continue
+    bx, by = 165.0 - c[0], 250.0 - c[1]          # the tower footprint offset (brim)
+    ex, ey = 15.0 - bx, 220.0 - by               # the option default, minus that offset
+    if abs(s[0] - ex) > 1 or abs(s[1] - ey) > 1:
+        bad.append("plate %s: one-value corner (%.3f, %.3f), want the option default 15/220 minus the brim (%.3f, %.3f)" % (n, s[0], s[1], ex, ey))
+g = open(sys.argv[3], errors="replace").read()
 for k in ("wipe_tower_x", "wipe_tower_y"):
     for v in re.findall(r"^; " + k + r" = (.*)$", g, re.M):
-        assert "," not in v, (k, v)
-m = re.search(r"; FEATURE: (?:Prime|Wipe) tower\n(?:.*\n)*?G1 +X([0-9.]+) Y([0-9.]+)", g)
-assert m and float(m.group(2)) > 100, ("tower first point", m.groups() if m else None)
-' e4p2-$e.gcode || { fail "E4 $e: plate 2 tower or padded header (one value per plate)"; e4_ok=0; }
+        if "," in v:
+            bad.append("%s = %s in the header (one value per plate)" % (k, v))
+assert not bad, "; ".join(bad)
+' e4c2-$e.gcode e4c3-$e.gcode e4s2-$e.gcode e4s3-$e.gcode || { fail "E4 $e: a plate without its own wipe_tower entry does not stand on the option's default corner"; e4_ok=0; }
 done
-[ $e4_ok = 1 ] && echo "PASS: E4 one-value settings are not padded with 0; plate 2 tower stands where the official CLI puts it (both engines)"
+[ $e4_ok = 1 ] && echo "PASS: E4 one-value settings are not padded with 0; a plate without its entry stands on the option's default tower corner (both engines)"
