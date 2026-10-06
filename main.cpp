@@ -6845,8 +6845,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 return 1;
         } else if (!calib_self_geometry) {
             slicer_cli::ensure_on_bed_if_asked(o, model);
-            if (!plate_object_steps(o, model, std::max(1, plate_id), outcome) ||
-                !plate_triangle_limit(o, model, std::max(1, plate_id), outcome))
+            // --skip-objects and --mtcpp belong to the slice action
+            // (BambuStudio.cpp 6541-6597; OrcaSlicer.cpp 5645-5720): a run of
+            // model actions only never slices, so it skips nothing.
+            if (!slicer_cli::model_actions_only(o) &&
+                (!plate_object_steps(o, model, std::max(1, plate_id), outcome) ||
+                 !plate_triangle_limit(o, model, std::max(1, plate_id), outcome)))
                 return 1;
         }
 

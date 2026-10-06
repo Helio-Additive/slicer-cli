@@ -994,6 +994,29 @@ assert d["return_code"] == -60, d
 '
 echo "PASS: --skip-objects skips by the file's object id; nothing left is -60"
 
+# --skip-objects belongs to the slice action (BambuStudio.cpp 6541-6581;
+# OrcaSlicer.cpp 5645-5720): a run of model actions only skips nothing, so
+# --export-stl writes every object even when all are named.
+py '
+import json
+json.dump({"plates": [{"plate_name": "p", "need_arrange": True, "objects": [{"path": "cube.stl", "count": 2, "filaments": [1]}]}]}, open("skip2.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run skp-$e "$bin" --load-assemble-list skip2.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir skp-$e/out --export-3mf skip2.3mf
+    [ "$(rc skp-$e)" = 0 ] || { show skp-$e; fail "$e: two-cube project exit $(rc skp-$e)"; }
+    ids=$(py '
+import re, sys, zipfile
+t = zipfile.ZipFile(sys.argv[1]).read("Metadata/model_settings.config").decode()
+print(",".join(re.findall(r"key=\"identify_id\" value=\"([0-9]+)\"", t)))
+' skp-$e/out/skip2.3mf)
+    [ -n "$ids" ] || fail "$e: no object ids in the two-cube project"
+    run skpa-$e "$bin" skp-$e/out/skip2.3mf --export-stl --skip-objects "$ids" --outputdir skpa-$e/out
+    [ "$(rc skpa-$e)" = 0 ] && [ "$(ls skpa-$e/out/stl | wc -l | tr -d ' ')" = 2 ] || { show skpa-$e; fail "$e: --export-stl with every object in --skip-objects and no --slice exit $(rc skpa-$e)"; }
+done
+echo "PASS: a run of model actions only skips no object (both engines)"
+
 # --mtcpp: a triangle limit below the cube's 12 is -59.
 run mtcpp "$B" "$FIXTURE" --slice 1 --mtcpp 5 --outputdir mtcpp/out
 py '
