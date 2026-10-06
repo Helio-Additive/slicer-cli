@@ -335,8 +335,8 @@ of either.
 | `--calib-extruder-id` | N | The extruder to calibrate (default 0) | both binaries |
 | `--calib-no-numbers` | | No number labels (`pressure_advance_line`) | both binaries |
 | `--input` | file | The input file (layout modes, or the model file) | both binaries |
-| `--layout` | file | Arrange objects from an older JSON form, no slicing | both binaries |
-| `--layout-plan` | | Arrange objects from a versioned JSON request (stdin or `--input`), no slicing | both binaries |
+| `--layout` | file | Arrange objects from an older JSON form, no slicing; refused with `--slice` | both binaries |
+| `--layout-plan` | | Arrange objects from a versioned JSON request (stdin or `--input`), no slicing; refused with `--slice` | both binaries |
 | `--no-normalize-legacy-gcode` | | Keep unbound legacy placeholders in custom G-code as they are | both binaries |
 
 ## Outputs
