@@ -638,6 +638,21 @@ bool nozzle_map_json_text(const json& value, std::string& text) {
 }
 #endif
 
+// True when the JSON settings file at `filepath` (may be empty) names `key`.
+static bool json_file_has_key(const std::string& filepath, const char* key) {
+    if (filepath.empty())
+        return false;
+    boost::nowide::ifstream f(filepath);
+    if (!f.is_open())
+        return false;
+    try {
+        const json j = json::parse(f);
+        return j.is_object() && j.contains(key);
+    } catch (...) {
+        return false;
+    }
+}
+
 // Load JSON config and record only accepted, usable nozzle-map overlays.
 bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& config,
                       bool verbose = false, const std::string& diagnostic_source = {},
@@ -699,8 +714,16 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
                 std::string value_str;
 
                 if (value.is_array()) {
-                    // Convert array to comma-separated string
-                    // All ConfigOption::deserialize() methods split on ','
+                    // An array becomes the option's serialized form, as the
+                    // engines' ConfigBase::load_from_json writes it
+                    // (parse_str_arr, Config.cpp 863-900 and 1022-1040 at
+                    // 5873b5f): a string list ';'-separated with each entry
+                    // quoted and escaped (escape_strings_cstyle), a list of
+                    // point groups '#'-separated, every other list
+                    // ','-separated. Joined with ',' a string list became one
+                    // string: a printer's seven extruder variants read as one,
+                    // so the second extruder found no variant of its own
+                    // (H2D nozzle_volume 130,130 for 130,145).
                     std::vector<std::string> parts;
                     for (auto& v : value) {
                         if (v.is_string()) {
@@ -709,10 +732,16 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
                             parts.push_back(std::to_string(v.get<double>()));
                         }
                     }
-                    value_str = "";
-                    for (size_t i = 0; i < parts.size(); i++) {
-                        if (i > 0) value_str += ",";
-                        value_str += parts[i];
+                    const Slic3r::ConfigOptionDef* def = Slic3r::print_config_def.get(key);
+                    if (def != nullptr && def->type == Slic3r::coStrings) {
+                        value_str = Slic3r::escape_strings_cstyle(parts);
+                    } else {
+                        const char* sep = def != nullptr && def->type == Slic3r::coPointsGroups ? "#" : ",";
+                        value_str = "";
+                        for (size_t i = 0; i < parts.size(); i++) {
+                            if (i > 0) value_str += sep;
+                            value_str += parts[i];
+                        }
                     }
                 } else if (value.is_string()) {
                     value_str = value.get<std::string>();
@@ -6502,6 +6531,16 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         }
 #endif
         if (slicer_cli::wants_settings_merge(o)) {
+            // Whether the settings loaded so far carry filament_colour (the
+            // official m_print_config holds no engine defaults yet; see
+            // SettingsMerge::project_has_filament_colour): a project 3MF's
+            // own settings, the named presets' full config, or a profile file
+            // that names it.
+            bool has_colours = (!input_file.empty() && input_is_3mf(input_file) && !geometry_input && !assemble_input) ||
+                               g_preset_config != nullptr;
+            for (const std::string* path : {&bundle_config, &machine_config, &process_config, &filament_config})
+                has_colours = has_colours || json_file_has_key(*path, "filament_colour");
+            settings_merge.project_has_filament_colour = has_colours;
             std::vector<Slic3r::Preset*> preset_ptrs;
             for (Slic3r::Preset& p : project_presets_kept)
                 preset_ptrs.push_back(&p);
@@ -6806,6 +6845,27 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // is refused by the official command line's normative check
                 // (BambuStudio.cpp 1948-1956).
                 "post_process",
+
+                // Not one value per extruder either; the official CLI leaves
+                // each as the settings give it, and a padded 0 is read:
+                //  - wipe_tower_x / wipe_tower_y: one entry per plate, read
+                //    with get_at(plate index) (Print.cpp 998, 2213, 2662),
+                //    which falls back to the first entry (Config.hpp 681-685). A 0 put plate
+                //    2's tower at (0, 0).
+                //  - flush_multiplier / flush_multiplier_fast: one per nozzle;
+                //    when the official sizes them it fills 1.0 / 1.2
+                //    (BambuStudio.cpp 3864-3868; OrcaSlicer.cpp 3360-3361),
+                //    and get_at() gives a short list's first value. A 0 is no
+                //    flush on the second nozzle.
+                //  - first_layer_print_sequence / other_layers_print_sequence:
+                //    filament orders; more than one entry is read as a custom
+                //    first-layer order (ToolOrdering.cpp 467-468, 597-610).
+                "wipe_tower_x",
+                "wipe_tower_y",
+                "flush_multiplier",
+                "flush_multiplier_fast",
+                "first_layer_print_sequence",
+                "other_layers_print_sequence",
             };
 
             // Per-filament arrays are excluded from this padding altogether: the

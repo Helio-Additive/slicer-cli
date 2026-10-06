@@ -78,6 +78,16 @@ struct SettingsMerge {
     // Input, set by the caller: the colours of an assemble list's OBJ files,
     // which become the filaments (BambuStudio only, BambuStudio.cpp 2573-2620).
     std::vector<std::array<float, 4>> input_obj_colours;
+    // Input, set by the caller: whether the settings loaded before the merge
+    // (a project's own settings, named presets, --machine/--process/--filament
+    // files) carry filament_colour. The official m_print_config holds only
+    // what was loaded at that point (the engine defaults come later,
+    // BambuStudio.cpp 4115; OrcaSlicer.cpp 3555), so a run of model files
+    // with settings files has no filament_colour when the flush volumes are
+    // considered, and they are not recomputed (BambuStudio.cpp 3760-3771;
+    // OrcaSlicer.cpp 3267-3277). This command line seeds the engine defaults
+    // first, so the option's presence alone does not say it.
+    bool project_has_filament_colour = true;
 };
 
 /// True when the command line asks for any of the merge's inputs.
