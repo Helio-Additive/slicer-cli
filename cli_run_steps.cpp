@@ -6,6 +6,8 @@
 #include <set>
 
 #include <boost/filesystem.hpp>
+#include <boost/nowide/cstdio.hpp>
+#include <cstdio>
 
 #include "libslic3r/Format/STL.hpp"
 #include "libslic3r/Geometry.hpp"
@@ -58,9 +60,25 @@ bool export_stls(const CliOptions& o, Slic3r::Model& model, const std::string& d
     unsigned index = 1;
     for (Slic3r::ModelObject* object : model.objects) {
         const std::string path = object_stl_path(o, *object, index++, dir);
-        // store_stl reports success even when the file cannot be opened,
-        // so the file itself is checked.
+        // store_stl reports success even when the file cannot be opened: it
+        // drops its writer's false ("FIXME returning false even if write
+        // failed", Format/STL.cpp store_stl; TriangleMesh.cpp
+        // its_write_stl_binary returns false on a failed fopen "wb"). The
+        // official CLI exits 0 then. Here the write is checked: a target that
+        // exists must open for writing (the same fopen, without emptying it)
+        // or it would keep its old geometry, and one that did not exist must
+        // exist after. Either failure is the official's export failure
+        // (CLI_EXPORT_STL_ERROR, BambuStudio.cpp 6391-6392, 6399-6400;
+        // OrcaSlicer.cpp 5524-5525, 5532-5533).
         boost::system::error_code ec;
+        if (boost::filesystem::exists(path, ec)) {
+            FILE* probe = boost::nowide::fopen(path.c_str(), "ab");
+            if (probe == nullptr) {
+                failed_path = path;
+                return false;
+            }
+            std::fclose(probe);
+        }
         if (!Slic3r::store_stl(path.c_str(), object, true) || !boost::filesystem::exists(path, ec)) {
             failed_path = path;
             return false;

@@ -931,6 +931,26 @@ assert d.get("printer_model") == "Bambu Lab A1 mini", d.get("printer_model")
 done
 echo "PASS: --export-stl and --export-settings write their files (both engines)"
 
+# An STL target that exists but cannot be written keeps its old content, and
+# the engine's store_stl still reports success: the run fails with the
+# official export failure (CLI_EXPORT_STL_ERROR, -11) instead of reporting the
+# stale file. Not as root, which writes read-only files.
+if [ "$(id -u)" != 0 ]; then
+    for e in bambu orca; do
+        bin=$B; [ $e = orca ] && bin=$O
+        f=$(ls stl-$e/out/stl/*.stl | head -n 1)
+        echo stale > "$f"; chmod 444 "$f"
+        run stlro-$e "$bin" cube.stl cube.obj --export-stl --outputdir stl-$e/out
+        chmod 644 "$f"
+        [ "$(rc stlro-$e)" != 0 ] && [ "$(head -c 5 "$f")" = stale ] || { show stlro-$e; fail "$e: --export-stl onto a read-only target exit $(rc stlro-$e)"; }
+        if grep '^\[\[SLICER_EVENT\]\]' stlro-$e/stdout | grep StlExported | grep -F "$(basename "$f")" >/dev/null; then
+            fail "$e: --export-stl reported the read-only target as exported"
+        fi
+        grep -q "Writing .*$(basename "$f") failed" stlro-$e/stderr || { show stlro-$e; fail "$e: --export-stl onto a read-only target did not name the file"; }
+    done
+    echo "PASS: --export-stl onto a target it cannot write fails (both engines)"
+fi
+
 # --skip-objects leaves the named object out; skipping all of them is -60.
 run skipall "$B" "$FIXTURE" --slice 1 --skip-objects 999999 --outputdir skipall/out
 [ "$(rc skipall)" = 0 ] || { show skipall; fail "--skip-objects of an id the file lacks exit $(rc skipall)"; }
