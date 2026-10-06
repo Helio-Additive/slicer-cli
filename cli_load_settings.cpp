@@ -841,10 +841,33 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         out.new_preset = new_preset;
     }
 
+    // The two lists carry one entry per preset in the project's order — process,
+    // filament 1 .. filament N, printer (B 3208-3210). The desktop collects them
+    // the same way and writes the key only when some entry is non-empty
+    // (PresetBundle.cpp 3490-3523, add_if_some_non_empty).
+    //
+    // filament_count is the count the merge works from: the project 3MF's own
+    // filaments, or the files --load-filaments brings (B 2627-2628). It stays 0
+    // when the roster comes from the named presets (--filament-preset) and no
+    // settings file names the filaments, which is this command line's whole
+    // preset path: the lists were then sized (0 + 2) and carried two empty
+    // entries. The official CLI reads them as N + 2 entries, sizes the filament
+    // system names to size - 2 (B 2001-2040) and then reads
+    // converted_filaments_system_name[f_index] for every filament (B 2043-2046):
+    // a two-entry list is an out-of-bounds read, SIGSEGV (rc 139) on every
+    // --slice N of the exported project. Size them from the roster the settings
+    // already carry instead, exactly as the file-fed path already did.
+    int inherits_count = filament_count;
+    if (inherits_count == 0)
+        for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
+                                "filament_type", "filament_diameter"})
+            if (const auto* vec = dynamic_cast<const ConfigOptionVectorBase*>(m_print_config.option(key, false)))
+                inherits_count = std::max(inherits_count, int(vec->size()));
+
     std::vector<std::string>& different_settings = m_print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
     std::vector<std::string>& inherits_group     = m_print_config.option<ConfigOptionStrings>("inherits_group", true)->values;
-    inherits_group.resize(filament_count + 2, std::string());
-    different_settings.resize(filament_count + 2, std::string());
+    inherits_group.resize(inherits_count + 2, std::string());
+    different_settings.resize(inherits_count + 2, std::string());
     if (!is_bbl_3mf && !different_process_setting.empty())
         different_settings[0] = different_process_setting;
 
@@ -855,10 +878,10 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         std::vector<std::string> different_keys;
         if (new_printer_name.empty()) {
             if (!different_settings.empty())
-                unescape_strings_cstyle(different_settings[filament_count + 1], different_keys);
+                unescape_strings_cstyle(different_settings[inherits_count + 1], different_keys);
         } else {
-            different_settings[filament_count + 1] = "";
-            inherits_group[filament_count + 1] = new_printer_config_is_system ? "" : new_printer_system_name;
+            different_settings[inherits_count + 1] = "";
+            inherits_group[inherits_count + 1] = new_printer_config_is_system ? "" : new_printer_system_name;
         }
         std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
         int ret = 0;
@@ -871,7 +894,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                      printer_options_with_variant_1, printer_options_with_variant_2, new_variant_index, false,
                                      skip_modified_gcodes);
             if (diff_keys_size != different_keys_set.size())
-                different_settings[filament_count + 1] =
+                different_settings[inherits_count + 1] =
                     escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
         } else {
             ret = update_full_config(m_print_config, load_machine_config, different_keys_set, variant_count_changed,

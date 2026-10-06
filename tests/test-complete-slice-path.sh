@@ -2519,3 +2519,48 @@ assert not bad, "; ".join(bad)
 ' e4c2-$e.gcode e4c3-$e.gcode e4s2-$e.gcode e4s3-$e.gcode || { fail "E4 $e: a plate without its own wipe_tower entry does not stand on the option's default corner"; e4_ok=0; }
 done
 [ $e4_ok = 1 ] && echo "PASS: E4 one-value settings are not padded with 0; a plate without its entry stands on the option's default tower corner (both engines)"
+
+# inherits_group and different_settings_to_system carry one entry per preset in
+# the project's order - process, filament 1 .. filament N, printer - or are
+# absent; the desktop writes the key only when some entry is non-empty
+# (PresetBundle::full_config, PresetBundle.cpp 3490-3523, add_if_some_non_empty).
+# The official CLI reads the list as N + 2 entries: it sizes the filament system
+# names to size - 2 and takes each filament's from it (BambuStudio.cpp 2001-2046),
+# so a two-entry list is an out-of-bounds read - SIGSEGV (rc 139) on every
+# --slice N of the exported project. The command line's named-preset path (no
+# settings file and no model file to name the filaments) left the settings merge
+# with filament_count 0 and wrote exactly that two-entry list; on the pre-fix
+# build this fails with inherits_group and different_settings_to_system both
+# ['', ''].
+inh_ok=1
+py '
+import json
+json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
+                       "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2]}]}]}, open("inh.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run inh-$e "$bin" --load-assemble-list inh.json --slice 0 --printer-preset "Bambu Lab H2D 0.4 nozzle" \
+        --filament-preset "Bambu PLA Basic @BBL H2D" --filament-preset "Bambu PLA Matte @BBL H2D" \
+        --filament-colour "#FF0000;#00FF00" --outputdir inh-$e/out --export-3mf inh-$e.3mf
+    [ "$(rc inh-$e)" = 0 ] && [ -s inh-$e/out/inh-$e.3mf ] || { show inh-$e; fail "inherits $e: two-filament H2D project exit $(rc inh-$e)"; inh_ok=0; continue; }
+    py '
+import json, sys, zipfile
+ps = json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config"))
+n = len(ps["filament_settings_id"])
+sizes, bad = {}, []
+for k in ("inherits_group", "different_settings_to_system"):
+    v = ps.get(k)
+    if v is None:
+        continue
+    sizes[k] = len(v)
+    if len(v) != n + 2:
+        bad.append("%s has %d entries, want %d (process, %d filament(s), printer)" % (k, len(v), n + 2, n))
+    elif any(entry != "" for entry in v):
+        bad.append("%s = %r for system presets" % (k, v))
+if len(sizes) == 2 and sizes["inherits_group"] != sizes["different_settings_to_system"]:
+    bad.append("the two lists differ in length: %r" % sizes)
+assert not bad, "; ".join(bad)
+' inh-$e/out/inh-$e.3mf || { fail "inherits $e: the exported project's inherits_group/different_settings_to_system are not one entry per preset"; inh_ok=0; }
+done
+[ $inh_ok = 1 ] && echo "PASS: a two-filament H2D project exports inherits_group and different_settings_to_system as one entry per preset, or absent (both engines)"
