@@ -3855,13 +3855,25 @@ mkfolder() {  # mkfolder NAME [MARKER]
 mkfolder dead 999999        # a PID no process of this program has
 mkfolder damaged not-a-pid  # a marker that does not parse
 mkfolder young              # no marker at all, made now
+# Every other temp folder the run makes (make_owned_temp_dir: the Bambu
+# build's percent line-width copy, the preset stagings, --list-presets) carries
+# the same marker, so a killed run's leftover of each goes too.
+for p in percent named plate list project presets; do
+    mkdir -p "$RACE/slicer_cli_$p-dead"
+    : > "$RACE/slicer_cli_$p-dead/x.3mf"
+    printf '%s' 999999 > "$RACE/slicer_cli_$p-dead.owner"
+done
 run race-rules env TMPDIR="$RACE" TMP="$(winpath "$PWD/$RACE")" TEMP="$(winpath "$PWD/$RACE")" "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-rules/out
 [ "$(rc race-rules)" = 0 ] || { show race-rules; fail "a run beside the stale folders exit $(rc race-rules)"; }
 [ ! -d "$RACE/slicer_cli_load-dead" ] || fail "the sweep kept a folder whose marker names a dead PID"
 [ ! -e "$RACE/slicer_cli_load-dead.owner" ] || fail "the sweep kept the marker of a folder it removed"
 [ ! -d "$RACE/slicer_cli_load-damaged" ] || fail "the sweep kept a folder whose marker does not parse"
 [ -d "$RACE/slicer_cli_load-young" ] || fail "the sweep removed a folder with no marker inside the age window"
-[ "$FAILS" = "$sweep_before" ] && echo "PASS: the sweep reads the marker beside the folder (dead PID and damaged marker go, a marker-less folder stays)"
+for p in percent named plate list project presets; do
+    [ ! -e "$RACE/slicer_cli_$p-dead" ] && [ ! -e "$RACE/slicer_cli_$p-dead.owner" ] ||
+        fail "the sweep kept a slicer_cli_$p- folder whose marker names a dead PID"
+done
+[ "$FAILS" = "$sweep_before" ] && echo "PASS: the sweep reads the marker beside the folder (dead PID and damaged marker go, a marker-less folder stays; every temp folder prefix)"
 
 # ── A live run's ownership marker is out of the extraction folder ─────────
 # A second run sweeping while the first is alive must leave the live run's

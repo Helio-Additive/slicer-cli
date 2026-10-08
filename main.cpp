@@ -2285,6 +2285,43 @@ static std::string preset_name_list(const std::vector<ShippedPrinterPreset>& pre
     return out;
 }
 
+/// The ownership marker of a staging folder: the folder's own path with
+/// ".owner" appended, so the marker sits beside the folder and no archive
+/// member can land on it (add()).
+static boost::filesystem::path staging_owner_marker(const boost::filesystem::path& folder) {
+    boost::filesystem::path marker = folder;
+    marker += ".owner";
+    return marker;
+}
+
+/// A temp folder of this run's own under temp_directory_path(), named
+/// <prefix><8 random characters>, with its ownership marker (<folder>.owner,
+/// this run's PID) written as the folder is made, as RunStagingFolders::add
+/// writes the load's: a run ended by SIGTERM or SIGKILL skips the destructor
+/// that removes the folder, and the next run's sweep
+/// (sweep_stale_staging_folders, whose prefix list holds every prefix this is
+/// called with) reclaims the folder of a PID that is gone. Throws, as
+/// temp_directory_path does on a bad TMPDIR/TMP.
+static boost::filesystem::path make_owned_temp_dir(const char* prefix) {
+    namespace fs = boost::filesystem;
+    const fs::path dir = fs::temp_directory_path() / fs::unique_path(std::string(prefix) + "%%%%%%%%");
+    fs::create_directories(dir);
+    fs::ofstream owner(staging_owner_marker(dir), std::ios::out | std::ios::trunc);
+    owner << Slic3r::get_current_pid();
+    return dir;
+}
+
+/// Removes a folder make_owned_temp_dir made, the marker first, as
+/// ~RunStagingFolders does: a kill between the two removals leaves a folder
+/// with no marker, which the sweep's age rule reclaims, never a bare marker.
+static void remove_owned_temp_dir(const boost::filesystem::path& dir) {
+    if (dir.empty())
+        return;
+    boost::system::error_code ignored;
+    boost::filesystem::remove(staging_owner_marker(dir), ignored);
+    boost::filesystem::remove_all(dir, ignored);
+}
+
 #ifdef ENGINE_BAMBU
 // ── Percent line widths on the Bambu build (cross-engine, same meaning) ──────
 // OrcaSlicer declares the ten line-width options coFloatOrPercent with
@@ -2386,12 +2423,7 @@ struct PercentRewrite {
     std::string temp_path;          // the converted copy, same file name
     json        converted = json::array();
     double      nozzle_mm = 0.;
-    ~PercentRewrite() {
-        if (!temp_dir.empty()) {
-            boost::system::error_code ignored;
-            boost::filesystem::remove_all(temp_dir, ignored);
-        }
-    }
+    ~PercentRewrite() { remove_owned_temp_dir(temp_dir); }
 };
 
 /// One `<metadata key="K" value="V"/>` per line-width key in
@@ -2495,9 +2527,7 @@ static void rewrite_percent_line_widths(const std::string& input, PercentRewrite
     }
 
     // Write the copy: every member as stored, the two settings members rewritten.
-    out.temp_dir = boost::filesystem::temp_directory_path() /
-                   boost::filesystem::unique_path("slicer_cli_percent-%%%%%%%%");
-    boost::filesystem::create_directories(out.temp_dir);
+    out.temp_dir = make_owned_temp_dir("slicer_cli_percent-");
     out.temp_path = (out.temp_dir / boost::filesystem::path(input).filename()).string();
     const std::string new_settings = settings.dump(4);
     mz_zip_archive reader, writer;
@@ -5280,10 +5310,10 @@ static bool stage_named_presets_for_project(CliOptions& o, const std::string& di
         code = CLI_INVALID_PARAMS;
         return false;
     }
-    struct Cleanup { fs::path dir; ~Cleanup() { if (dir.empty()) return; boost::system::error_code e; fs::remove_all(dir, e); } } cleanup;
+    struct Cleanup { fs::path dir; ~Cleanup() { remove_owned_temp_dir(dir); } } cleanup;
     Slic3r::PresetBundle bundle;
     try {
-        const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_named-%%%%%%%%");
+        const fs::path staging = make_owned_temp_dir("slicer_cli_named-");
         cleanup.dir = staging;
         if (!load_system_presets(o.argv0, bundle, staging, error)) { code = CLI_ENVIRONMENT_ERROR; return false; }
     } catch (const std::exception& e) {
@@ -5347,11 +5377,11 @@ static bool desktop_plate_type_for_printer(const CliOptions& o, const std::strin
                                            Slic3r::BedType& out, std::string& why) {
     if (printer_name.empty()) return false;
     namespace fs = boost::filesystem;
-    struct Cleanup { fs::path dir; ~Cleanup() { if (dir.empty()) return; boost::system::error_code e; fs::remove_all(dir, e); } } cleanup;
+    struct Cleanup { fs::path dir; ~Cleanup() { remove_owned_temp_dir(dir); } } cleanup;
     Slic3r::PresetBundle bundle;
     std::string ignored;
     try {
-        const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_plate-%%%%%%%%");
+        const fs::path staging = make_owned_temp_dir("slicer_cli_plate-");
         cleanup.dir = staging;
         if (!load_system_presets(o.argv0, bundle, staging, ignored)) return false;
     } catch (const std::exception&) {
@@ -5373,10 +5403,10 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     namespace fs = boost::filesystem;
     // The temp folder lookup throws on a bad TMPDIR/TMP; it sits inside the
     // try so that is a refusal with a sentence, never an uncaught exception.
-    struct Cleanup { fs::path dir; ~Cleanup() { if (dir.empty()) return; boost::system::error_code e; fs::remove_all(dir, e); } } cleanup;
+    struct Cleanup { fs::path dir; ~Cleanup() { remove_owned_temp_dir(dir); } } cleanup;
     Slic3r::PresetBundle bundle;
     try {
-        const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_named-%%%%%%%%");
+        const fs::path staging = make_owned_temp_dir("slicer_cli_named-");
         cleanup.dir = staging;
         if (!load_system_presets(o.argv0, bundle, staging, error)) { code = CLI_ENVIRONMENT_ERROR; return false; }
     } catch (const std::exception& e) {
@@ -5590,7 +5620,7 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
 /// and its defaults.
 static int run_list_presets(const CliOptions& o, const std::string& printer_name) {
     namespace fs = boost::filesystem;
-    struct Cleanup { fs::path dir; ~Cleanup() { if (dir.empty()) return; boost::system::error_code e; fs::remove_all(dir, e); } } cleanup;
+    struct Cleanup { fs::path dir; ~Cleanup() { remove_owned_temp_dir(dir); } } cleanup;
     Slic3r::PresetBundle bundle;
     std::string error;
     json out;
@@ -5601,7 +5631,7 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
 #endif
     try {
         // Inside the try: the temp folder lookup throws on a bad TMPDIR/TMP.
-        const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_list-%%%%%%%%");
+        const fs::path staging = make_owned_temp_dir("slicer_cli_list-");
         cleanup.dir = staging;
         if (!load_system_presets(o.argv0, bundle, staging, error, /*document_mode=*/true)) {
             out["error"] = error;
@@ -6277,15 +6307,6 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
 /// moment it exists — a run killed before its load reached a backup path
 /// would otherwise leave a folder only the age rule below could reclaim.
 
-/// The ownership marker of a staging folder: the folder's own path with
-/// ".owner" appended, so the marker sits beside the folder and no archive
-/// member can land on it (add()).
-static boost::filesystem::path staging_owner_marker(const boost::filesystem::path& folder) {
-    boost::filesystem::path marker = folder;
-    marker += ".owner";
-    return marker;
-}
-
 struct RunStagingFolders {
     /// The 3MF load's folder and the --export-3mf one, in a fixed array: the
     /// set is bounded by the run's steps, and a fixed size keeps add() off the
@@ -6345,9 +6366,13 @@ static RunStagingFolders run_staging;
 /// the same prefix — it is the folder's path plus ".owner" — so the sweep
 /// takes directories only.
 static bool is_staging_folder_name(const std::string& name) {
-    return boost::algorithm::starts_with(name, "slicer_cli_load-") ||
-           boost::algorithm::starts_with(name, "slicer_cli_preset-") ||
-           boost::algorithm::starts_with(name, "slicer_cli_export-");
+    // RunStagingFolders::add's three, and make_owned_temp_dir's.
+    for (const char* prefix : {"slicer_cli_load-", "slicer_cli_preset-", "slicer_cli_export-", "slicer_cli_percent-",
+                               "slicer_cli_named-", "slicer_cli_plate-", "slicer_cli_list-", "slicer_cli_project-",
+                               "slicer_cli_presets-"})
+        if (boost::algorithm::starts_with(name, prefix))
+            return true;
+    return false;
 }
 
 /// True when `name` is one of the file names this package's two binaries run
@@ -7288,16 +7313,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // staging the named-preset path uses (load_system_presets):
                     // the bundle reads system presets from there and writes
                     // nothing back (load_external_preset saves no file).
-                    const boost::filesystem::path staging = boost::filesystem::temp_directory_path() /
-                                                            boost::filesystem::unique_path("slicer_cli_project-%%%%%%%%");
+                    const boost::filesystem::path staging = make_owned_temp_dir("slicer_cli_project-");
                     struct StagingCleanup {
                         boost::filesystem::path dir;
-                        ~StagingCleanup() {
-                            if (dir.empty())
-                                return;
-                            boost::system::error_code ignored;
-                            boost::filesystem::remove_all(dir, ignored);
-                        }
+                        ~StagingCleanup() { remove_owned_temp_dir(dir); }
                     } staging_cleanup;
                     staging_cleanup.dir = staging;
                     Slic3r::PresetBundle bundle;
@@ -7890,12 +7909,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         boost::filesystem::path sysdir;
                         struct StagingCleanup {
                             boost::filesystem::path dir;
-                            ~StagingCleanup() {
-                                if (dir.empty())
-                                    return;
-                                boost::system::error_code ignored;
-                                boost::filesystem::remove_all(dir, ignored);
-                            }
+                            ~StagingCleanup() { remove_owned_temp_dir(dir); }
                         } staging_cleanup;
                         // A staging step that fails — creating the staging dir
                         // or a copy that even the stream-copy fallback cannot
@@ -7904,8 +7918,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         // stops here instead of running on the flat 3MF config
                         // with no presets at all.
                         try {
-                            tmpdir = boost::filesystem::temp_directory_path()
-                                / boost::filesystem::unique_path("slicer_cli_presets-%%%%%%%%");
+                            tmpdir = make_owned_temp_dir("slicer_cli_presets-");
                             sysdir = tmpdir / "system";
                             staging_cleanup.dir = tmpdir;
                             boost::filesystem::create_directories(sysdir);
