@@ -3056,9 +3056,11 @@ static std::string object_size_text(const Slic3r::BoundingBoxf3& box) {
 /// against the printer's bed, then refuse an object partly over the edge
 /// (CLI_OBJECTS_PARTLY_INSIDE) and a plate with nothing fully inside
 /// (CLI_NO_SUITABLE_OBJECTS). The sentence names the object and its size
-/// against the bed, which the official result leaves out.
+/// against the bed, which the official result leaves out. `arranged` is the
+/// run's own --arrange 1: it has already re-arranged this plate, so the
+/// refusal cannot offer that as the way out.
 static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                                     PlateOutcome& outcome) {
+                                     PlateOutcome& outcome, bool arranged = false) {
     const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
     if (!area || area->values.size() < 3)
         return true;   // no bed to check against
@@ -3088,7 +3090,18 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
                 continue;
             const std::string detail = "Object '" + object->name + "' (" +
                 object_size_text(object->instance_bounding_box(i)) +
-                ") crosses the edge of the " + bed_size_text(config) + " bed.";
+                ") crosses the edge of the " + bed_size_text(config) + " bed."
+                // The verdict says what is wrong; this says what to do with it.
+                // --arrange 1 re-arranges the plate on this bed (--arrange N,
+                // official meaning, BambuStudio.cpp 5066-5081 at 5873b5f /
+                // OrcaSlicer.cpp 4327-4342 at 31f6803, run before this check,
+                // BambuStudio.cpp 5936-5945 / OrcaSlicer.cpp 5196-5205), and
+                // the object as it stands fits a bigger printer's bed. A run
+                // that was given --arrange 1 has taken that advice already, so
+                // it gets the way out that is left.
+                + (arranged
+                       ? std::string(" Use a printer with a bigger bed.")
+                       : std::string(" Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed."));
             set_outcome_failure(outcome, CLI_OBJECTS_PARTLY_INSIDE, detail);
             emit_event({{"event","plate_error"}, {"tag","ObjectPartlyOutsideBed"},
                         {"object", object->name}, {"message", detail}});
@@ -3983,7 +3996,15 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     }
     if (!off_bed.empty()) {
         std::string detail = "These objects do not fit on the " + bed_size_text(config) +
-                             " bed together: " + off_bed + ".";
+                             " bed together: " + off_bed + "."
+                             // The verdict says what is wrong; this says what to
+                             // do with it: the plate's objects can be spread
+                             // over the file's other plates (the official
+                             // command line arranges one plate per --slice,
+                             // BambuStudio.cpp 5936-5945 at 5873b5f /
+                             // OrcaSlicer.cpp 5196-5205 at 31f6803), or a
+                             // bigger printer's bed takes them together.
+                             " Move some objects to another plate in the file, or use a printer with a bigger bed.";
         if (!only_turned.empty())
             detail += " " + only_turned + " fit" + (only_turned.find(',') == std::string::npos ? "s" : "") +
                       " the bed only turned 90 degrees, which this arrange does not do; turn it in the file.";
@@ -9480,7 +9501,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 PlateScope scope(model, run_plate);
                 if (!plate_object_steps(o, model, step_plate, outcome))
                     return 1;
-                if (!check_objects_inside_bed(model, config, outcome)) {
+                if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced())) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
                 }
@@ -9943,6 +9964,60 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                    " layer_change_gcode, so the settings merge wrote it empty. Give a machine settings"
                                    " file that states its layer_change_gcode, or the printer preset"
                                    " (--printer-preset).";
+                }
+                // The engine's own sentence names the plate and the filament
+                // and stops there ("Plate 1: Cool Plate does not support
+                // filament 2"). Its check reads the plate's own bed temperature
+                // key and reads 0 as "not this filament's plate", for every
+                // filament the run prints with (Print.cpp 1700-1726 at 31f6803;
+                // Print.cpp 1650-1672 at 5873b5f; the filament list is
+                // Print::extruders(), Print.cpp 1265 / 1307; get_bed_temp_key,
+                // OrcaSlicer PrintConfig.hpp 466-490 / BambuStudio
+                // PrintConfig.hpp 438-456). Name the plates whose key is not 0
+                // for every one of them — the plates this run can actually
+                // print on — so the refusal says what to give instead.
+                if (validation_result.type == Slic3r::STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE) {
+                    const std::vector<unsigned int> used = print.extruders();
+                    const Slic3r::ConfigOptionDef*    bed_def = Slic3r::print_config_def.get("curr_bed_type");
+                    std::vector<std::string>          plates;
+                    if (!used.empty() && bed_def != nullptr && bed_def->enum_keys_map != nullptr) {
+                        // enum_values is the plate list in the definition's own
+                        // order (PrintConfig.cpp 1049-1053 at 31f6803,
+                        // 1150-1154 at 5873b5f), so the list is stable.
+                        for (const std::string& plate : bed_def->enum_values) {
+                            const auto named = bed_def->enum_keys_map->find(plate);
+                            if (named == bed_def->enum_keys_map->end())
+                                continue;
+                            const std::string temp_key =
+                                Slic3r::get_bed_temp_key(static_cast<Slic3r::BedType>(named->second));
+                            if (temp_key.empty())
+                                continue;
+                            const auto* temps = config.option<Slic3r::ConfigOptionInts>(temp_key);
+                            if (temps == nullptr || temps->values.empty())
+                                continue;
+                            bool every_filament = true;
+                            for (unsigned int filament : used)
+                                if (filament >= temps->values.size() || temps->values[filament] == 0) {
+                                    every_filament = false;
+                                    break;
+                                }
+                            if (every_filament)
+                                plates.push_back(plate);
+                        }
+                    }
+                    if (plates.empty())
+                        message += " No plate this engine knows gives every filament of this run a bed temperature:"
+                                   " check the plate temperatures in the filament presets (--filament-preset).";
+                    else {
+                        message += " Pick a plate this filament supports: --curr-bed-type \"" + plates.front() + "\"";
+                        if (plates.size() > 1) {
+                            message += " (or";
+                            for (size_t i = 1; i < plates.size(); i++)
+                                message += (i > 1 ? ", " : " ") + std::string("\"") + plates[i] + "\"";
+                            message += ")";
+                        }
+                        message += ".";
+                    }
                 }
                 set_outcome_failure(outcome, validate_error, message);
                 return 1;

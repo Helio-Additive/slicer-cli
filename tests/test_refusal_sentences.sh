@@ -78,6 +78,21 @@ lst("junkobj.json", {"path": "junk.obj", "count": 1, "filaments": [1]})
 json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
                        "objects": [{"path": "big200.stl", "count": 2, "filaments": [1, 1]}]}]},
           open("pair.json", "w"))
+# Two cubes, one filament each, for the plate/filament refusal: PLA Basic and
+# PETG HF share no plate the run would print both on at the same temperature.
+json.dump({"plates": [{"plate_name": "p", "need_arrange": False,
+                       "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [100], "pos_y": [150]},
+                                   {"path": "cube.stl", "count": 1, "filaments": [2], "pos_x": [140], "pos_y": [150]}]}]},
+          open("twomix.json", "w"))
+# A plate the A1 mini cannot hold: a 145 mm box clear of the X1 Carbon's
+# exclusion area (18 x 28 mm at the origin) and a 40 mm box near the A1 mini's
+# 180 mm edge, both inside the X1 Carbon's bed, for the -52 and -21 refusals.
+box("bedbig.stl", 145, 10)
+box("bededge.stl", 40, 10)
+json.dump({"plates": [{"plate_name": "p", "need_arrange": False,
+                       "objects": [{"path": "bedbig.stl", "count": 1, "filaments": [1], "pos_x": [20], "pos_y": [32]},
+                                   {"path": "bededge.stl", "count": 1, "filaments": [1], "pos_x": [170], "pos_y": [90]}]}]},
+          open("bedproj.json", "w"))
 json.dump({"plates": []}, open("noplates.json", "w"))
 PY
 # An assemble list whose plate holds no object.
@@ -114,6 +129,14 @@ fx_proj() {  # fx_proj ENGINE NAME PRESET
     run "fx$2-$1" "$(bin_of "$1")" cube.stl --slice 1 --printer-preset "$3" \
         --outputdir "fx$2-$1/out" --export-3mf "$2.3mf"
     cp "fx$2-$1/out/$2.3mf" "$2-$1.3mf" 2>/dev/null
+}
+# bedproj-<e>.3mf: bedproj.json as that engine's own project, made on the X1
+# Carbon (both objects are inside its bed), to slice on the A1 mini.
+fx_bedproj() {  # fx_bedproj ENGINE
+    [ -s "bedproj-$1.3mf" ] && return 0
+    run "fxbed-$1" "$(bin_of "$1")" --load-assemble-list bedproj.json --slice 1 \
+        --printer-preset "$X1C" --outputdir "fxbed-$1/out" --export-3mf bedproj.3mf
+    cp "fxbed-$1/out/bedproj.3mf" "bedproj-$1.3mf" 2>/dev/null || true
 }
 # A copy of the engine's own project with the given project_settings.config
 # keys replaced.
@@ -269,6 +292,44 @@ done
 # The mixed-filament check is BambuStudio's (the OrcaSlicer CLI has none).
 check mixed-filament bambu "*give the project one filament per extruder, or slice it in the desktop app*" \
       "mixed-bambu.3mf" --slice 1
+
+# The plate/filament refusal (-61) names the plates the filaments do share, not
+# only the one they do not. Two filaments of very different temperatures on the
+# Cool Plate, allowed by --allow-mix-temp, are refused for it — Bambu PETG HF
+# @BBL X1C has cool_plate_temp 0 (Print.cpp 1700-1726 at 31f6803; 1650-1672 at
+# 5873b5f). The plates the sentence names are the ones both filaments have a bed
+# temperature on. Both runs place the two-filament prime tower inside the bed:
+# the Orca engine's own default spot for this pair is outside the X1 Carbon's
+# printable area (-104), which is not this sentence's subject.
+both plate-filament-hint  "*Pick a plate this filament supports: --curr-bed-type \"High Temp Plate\" (or*" \
+     --load-assemble-list twomix.json --slice 1 --printer-preset "$X1C" \
+     --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C" \
+     --allow-mix-temp=1 --curr-bed-type "Cool Plate" --wipe-tower-x 30 --wipe-tower-y 220
+# The retry the hint promises: the plate it names first takes both filaments.
+check_slices plate-filament-retry bambu curr_bed_type "High Temp Plate" \
+     --load-assemble-list twomix.json --slice 1 --printer-preset "$X1C" \
+     --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C" \
+     --allow-mix-temp=1 --curr-bed-type "High Temp Plate" --wipe-tower-x 30 --wipe-tower-y 220
+check_slices plate-filament-retry-orca orca curr_bed_type "High Temp Plate" \
+     --load-assemble-list twomix.json --slice 1 --printer-preset "$X1C" \
+     --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C" \
+     --allow-mix-temp=1 --curr-bed-type "High Temp Plate" --wipe-tower-x 30 --wipe-tower-y 220
+
+# The two bed refusals say what to do. A project made on the X1 Carbon (both
+# objects inside its bed) sliced on the A1 mini: one object crosses its 180 mm
+# edge (-52, the official's partly-inside gate at BambuStudio.cpp 6527-6567 /
+# OrcaSlicer.cpp 5645-5697), and with --arrange 1 the two cannot share that bed
+# (-21, the arrange's own verdict at BambuStudio.cpp 5936-5945 /
+# OrcaSlicer.cpp 5196-5205).
+for e in bambu orca; do
+    fx_bedproj "$e"
+    check bed-edge-refusal      "$e" \
+          "*crosses the edge of the 180 x 180 x 180 mm bed.*Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed.*" \
+          "bedproj-$e.3mf" --slice 1 --printer-preset "$A1M"
+    check bed-arrange-refusal   "$e" \
+          "*do not fit on the 180 x 180 x 180 mm bed together:*Move some objects to another plate in the file, or use a printer with a bigger bed.*" \
+          "bedproj-$e.3mf" --slice 1 --printer-preset "$A1M" --arrange 1
+done
 
 # ---------------------------------------------------------------- the assemble list
 both assemble-list-file-missing "*does not exist; check the path given to --load-assemble-list*" \
