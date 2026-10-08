@@ -360,7 +360,7 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
                 }
                 if (ex.id == ref.id) { err.error.code="INVALID_INPUT"; err.error.message="duplicate id '"+ref.id+"'"; err.error.object_ids={ref.id}; return false; }
             }
-            if (ref.path.empty()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' missing path"; err.error.object_ids={ref.id}; return false; }
+            if (ref.path.empty()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' missing path; give the model a path"; err.error.object_ids={ref.id}; return false; }
             // v1 keeps ONLY the original NESTED transform object {x,y,z,rotationZ}.
             // All flat top-level spellings (x/y/z/rotationZ as well as the
             // x_mm/y_mm/z_mm/rotation_rad/rot_z_rad variants) were added in this

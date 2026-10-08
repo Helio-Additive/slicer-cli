@@ -124,7 +124,7 @@ StepResult apply_transforms(const CliOptions& o, Slic3r::Model& model,
             // BambuStudio.cpp 4931-4952; OrcaSlicer.cpp 4192-4213.
             if (!cfg.option<Slic3r::ConfigOptionInts>("clone_objects")->values.empty()) {
                 r.code    = CLI_INVALID_PARAMS;
-                r.message = "--assemble and --clone-objects cannot be used together";
+                r.message = "--assemble and --clone-objects cannot be used together; give one of them, not both";
                 return r;
             }
             Slic3r::Model m;
@@ -200,7 +200,7 @@ StepResult apply_transforms(const CliOptions& o, Slic3r::Model& model,
         } else {
             // BambuStudio.cpp 5203-5207.
             r.code    = CLI_UNSUPPORTED_OPERATION;
-            r.message = "--" + opt_key + " is not implemented";
+            r.message = "--" + opt_key + " is not implemented; no flag of this binary does this, drop it";
             return r;
         }
     }
@@ -342,7 +342,8 @@ StepResult normative_check(const CliOptions& o, const Slic3r::DynamicPrintConfig
     if (const auto* scripts = file_config.option<Slic3r::ConfigOptionStrings>("post_process");
         scripts && !scripts->values.empty()) {
         r.code    = CLI_POSTPROCESS_NOT_SUPPORTED;
-        r.message = "The file names post-processing scripts, which the command line does not run.";
+        r.message = "The file names post-processing scripts, which the command line does not run; "
+                    "clear post_process in the file, or slice it in the desktop app";
         return r;
     }
 #ifndef ENGINE_ORCA
@@ -350,7 +351,8 @@ StepResult normative_check(const CliOptions& o, const Slic3r::DynamicPrintConfig
     if (const auto* mixed = file_config.option<Slic3r::ConfigOptionBools>("filament_is_mixed")) {
         if (std::any_of(mixed->values.begin(), mixed->values.end(), [](unsigned char v) { return v != 0; })) {
             r.code    = CLI_3MF_FEATURE_NOT_SUPPORTED;
-            r.message = "The file uses a mixed filament, which the command line does not slice.";
+            r.message = "The file uses a mixed filament, which the command line does not slice; "
+                        "give the project one filament per extruder, or slice it in the desktop app";
             return r;
         }
     }
@@ -400,7 +402,8 @@ StepResult check_triangle_limit(const CliOptions& o, const Slic3r::Model& model,
                 if (count > limit) {
                     r.code    = CLI_TRIANGLE_COUNT_EXCEEDS_LIMIT;
                     r.message = "Plate " + std::to_string(plate_id) + " has " + std::to_string(count) +
-                                " triangles, more than the --mtcpp limit of " + std::to_string(limit) + ".";
+                                " triangles, more than the --mtcpp limit of " + std::to_string(limit) +
+                                "; raise --mtcpp above " + std::to_string(count) + ", or split the plate";
                     return r;
                 }
             }
@@ -431,13 +434,15 @@ StepResult check_slicedata_flags(const CliOptions& o, int duplicate_count) {
 #ifdef ENGINE_ORCA
     if (o.given_flag("export_slicedata")) {
         r.code    = CLI_INVALID_PARAMS;
-        r.message = "--load-slicedata and --export-slicedata cannot be used together";
+        r.message = "--load-slicedata and --export-slicedata cannot be used together; "
+                    "give one of them: load a saved slicing, or write one";
         return r;
     }
 #endif
     if (duplicate_count > 0) {
         r.code    = CLI_INVALID_PARAMS;
-        r.message = "--load-slicedata cannot be used with --repetitions";
+        r.message = "--load-slicedata cannot be used with --repetitions; "
+                    "drop --repetitions, or slice without --load-slicedata";
     }
     return r;
 }

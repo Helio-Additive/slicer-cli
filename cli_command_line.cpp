@@ -364,7 +364,8 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
             case Legacy::BedTemp:   o.overrides["bed_temperature"] = value; break;
             case Legacy::Plate:
                 if (!parse_int_text(value, o.plate_id) || o.plate_id < 0) {
-                    refusal = refuse("--plate: '" + value + "' is not a plate number");
+                    refusal = refuse("--plate: '" + value + "' is not a plate number; "
+                                     "give 0 for every plate, or a plate number");
                     return false;
                 }
                 break;

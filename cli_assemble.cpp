@@ -237,7 +237,7 @@ constexpr char kDirSeparator = '/';
 
 StepResult load_assemble_plate_list(const std::string& file, std::vector<AssemblePlate>& plates) {
     if (!boost::filesystem::exists(boost::filesystem::path(file)))
-        return fail(CLI_FILE_NOTFOUND, "The assemble list " + file + " does not exist.");
+        return fail(CLI_FILE_NOTFOUND, "The assemble list " + file + " does not exist; check the path given to --load-assemble-list");
     try {
         json root;
         boost::nowide::ifstream ifs(file);
@@ -262,7 +262,7 @@ StepResult load_assemble_plate_list(const std::string& file, std::vector<Assembl
             const json& objects_json = plate_json.at("objects");
             const int object_count = int(objects_json.size());
             if (object_count <= 0)
-                return fail(CLI_CONFIG_FILE_ERROR, "The assemble list's " + where + " has no objects.");
+                return fail(CLI_CONFIG_FILE_ERROR, "The assemble list's " + where + " has no objects; give the plate at least one object");
             plate.objects.resize(object_count);
             for (int object_index = 0; object_index < object_count; object_index++) {
                 AssembleObject& object = plate.objects[object_index];
@@ -320,7 +320,8 @@ StepResult load_assemble_plate_list(const std::string& file, std::vector<Assembl
             }
         }
     } catch (const std::exception& e) {
-        return fail(CLI_CONFIG_FILE_ERROR, "The assemble list " + file + " could not be read: " + e.what());
+        return fail(CLI_CONFIG_FILE_ERROR, "The assemble list " + file + " could not be read: " + e.what() +
+                                               "; check the file");
     }
     return {};
 }
@@ -354,7 +355,7 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
             const std::string what = assemble_object.path + " (" + where + ", object " + std::to_string(obj_index + 1) + ")";
 
             if (!boost::filesystem::exists(boost::filesystem::path(assemble_object.path)))
-                return fail(CLI_FILE_NOTFOUND, "The assemble list names " + what + ", which does not exist.");
+                return fail(CLI_FILE_NOTFOUND, "The assemble list names " + what + ", which does not exist; check the path");
 
             const char* path_str = assemble_object.path.c_str();
             const char* last_slash = std::strrchr(path_str, kDirSeparator);
@@ -362,14 +363,14 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
 
             if (boost::algorithm::iends_with(assemble_object.path, ".stl")) {
                 if (!mesh.ReadSTLFile(path_str, true, nullptr))
-                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be read.");
+                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be read; check the file");
                 if (mesh.empty())
-                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " holds no mesh.");
+                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " holds no mesh; check the file");
                 object_name.erase(object_name.end() - 4, object_name.end());
                 object_1_name = object_name + "_1";
                 object = temp_model.add_object(object_1_name.c_str(), path_str, std::move(mesh));
                 if (!object)
-                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be added.");
+                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be added; check the file");
             }
 #ifdef ENGINE_ORCA
             else if (boost::algorithm::iends_with(assemble_object.path, ".obj"))
@@ -382,10 +383,11 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                 ObjInfo obj_info;
                 bool result = load_obj(path_str, &mesh, obj_info, message);
                 if (!result)
-                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " holds no usable mesh: " + message);
+                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " holds no usable mesh: " + message + "; check the file");
                 if (!obj_info.lost_material_name.empty())
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " uses the material " +
-                                                         obj_info.lost_material_name + ", which its MTL file lacks.");
+                                                         obj_info.lost_material_name +
+                                                         ", which its MTL file lacks; check the file");
                 if (!obj_info.face_colors.empty() && obj_info.face_colors.size() < mesh.facets_count())
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " gives some faces no colour; check its MTL and OBJ files.");
                 object_name.erase(object_name.end() - 4, object_name.end());
@@ -393,7 +395,7 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                 Model obj_temp_model;
                 ModelObject* temp_object = obj_temp_model.add_object(object_1_name.c_str(), path_str, std::move(mesh));
                 if (!temp_object)
-                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added.");
+                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added; check the file");
                 std::vector<unsigned char> output_filament_ids;
                 int first_filament_id = 0;
 #ifdef ENGINE_ORCA
@@ -429,12 +431,13 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                 }
 #endif
                 if (!result)
-                    return fail(CLI_DATA_FILE_ERROR, "The colours of the OBJ " + what + " could not be turned into filaments.");
+                    return fail(CLI_DATA_FILE_ERROR, "The colours of the OBJ " + what +
+                                                         " could not be turned into filaments; check the file");
                 object = temp_model.add_object(*temp_object);
                 obj_temp_model.clear_objects();
                 obj_temp_model.clear_materials();
                 if (!object)
-                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added.");
+                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added; check the file");
             } else {
                 return fail(CLI_INVALID_PARAMS, "The assemble list names " + what +
                                                     "; it takes STL files, and OBJ files as normal parts.");
@@ -442,7 +445,7 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
 
             if (!skip_filament) {
                 if (assemble_object.filaments.empty())
-                    return fail(CLI_CONFIG_FILE_ERROR, "The assemble list gives " + what + " no filament.");
+                    return fail(CLI_CONFIG_FILE_ERROR, "The assemble list gives " + what + " no filament; give a filament for it");
                 object->config.set_key_value("extruder", new ConfigOptionInt(assemble_object.filaments[0]));
                 used_filaments.emplace(assemble_object.filaments[0]);
             } else {
@@ -546,7 +549,8 @@ StepResult load_assemble_list(const std::string& file, AssembleList& list) {
         if (r.code != 0)
             return r;
     } catch (const std::exception& e) {
-        return fail(CLI_DATA_FILE_ERROR, std::string("The assemble list's parts could not be built: ") + e.what());
+        return fail(CLI_DATA_FILE_ERROR, std::string("The assemble list's parts could not be built: ") + e.what() +
+                                              "; check the file");
     }
     list.model.add_default_instances();
     return {};

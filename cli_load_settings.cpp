@@ -425,7 +425,8 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             return fail(ret, why);
         if (config_type == "machine") {
             if (!new_printer_name.empty())
-                return fail(CLI_CONFIG_FILE_ERROR, "--load-settings names two machine files; " + file + " is the second");
+                return fail(CLI_CONFIG_FILE_ERROR, "--load-settings names two machine files; " + file +
+                                                       " is the second; give one machine file");
             new_printer_name = config_name;
             if (config_from == "system") {
                 new_printer_system_name = new_printer_name;
@@ -442,7 +443,8 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             load_machine_config = std::move(config);
         } else if (config_type == "process") {
             if (!new_process_name.empty())
-                return fail(CLI_CONFIG_FILE_ERROR, "--load-settings names two process files; " + file + " is the second");
+                return fail(CLI_CONFIG_FILE_ERROR, "--load-settings names two process files; " + file +
+                                                       " is the second; give one process file");
             new_process_name = config_name;
             if (config_from == "system") {
                 new_process_system_name = new_process_name;
@@ -509,7 +511,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
                     return fail(ret, why);
                 if (config_type != "filament")
-                    return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file");
+                    return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file; give it with --load-filaments");
                 if (config_from == "User" || config_from == "user")
                     default_filament_inherit = config.option<ConfigOptionString>("inherits", true)->value;
                 default_filament_file    = file;
@@ -520,7 +522,8 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             }
         }
         if (load_filament_count > 0 && default_filament_file.empty())
-            return fail(CLI_CONFIG_FILE_ERROR, "--load-defaultfila: none of the --load-filaments files could be loaded");
+            return fail(CLI_CONFIG_FILE_ERROR, "--load-defaultfila: none of the --load-filaments files could be loaded; "
+                                               "check the paths given to --load-filaments");
     }
     for (int index = 0; index < load_filament_count; index++) {
         const std::string& file = load_filaments[index];
@@ -531,7 +534,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
                 return fail(ret, why);
             if (config_type != "filament")
-                return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file");
+                return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file; give it with --load-filaments");
             std::string inherits;
             if (config_from == "User" || config_from == "user") {
                 inherits = config.option<ConfigOptionString>("inherits", true)->value;
@@ -623,7 +626,8 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 if (config_type == "machine") {
                     if (config_name != facts.current_printer_system_name)
                         return fail(CLI_CONFIG_FILE_ERROR, "--uptodate-settings: " + file + " is machine '" + config_name +
-                                                           "', not the project's '" + facts.current_printer_system_name + "'");
+                                                           "', not the project's '" + facts.current_printer_system_name +
+                                                           "'; give the project's own machine file");
                     upward_compatible_printers = config.option<ConfigOptionStrings>("upward_compatible_machine", true)->values;
                     if (new_printer_name.empty() && !facts.current_printer_system_name.empty()) {
                         config.set("printer_settings_id", config_name, true);
@@ -647,14 +651,16 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 } else if (config_type == "process") {
                     if (config_name != facts.current_process_system_name)
                         return fail(CLI_CONFIG_FILE_ERROR, "--uptodate-settings: " + file + " is process '" + config_name +
-                                                           "', not the project's '" + facts.current_process_system_name + "'");
+                                                           "', not the project's '" + facts.current_process_system_name +
+                                                           "'; give the project's own process file");
                     current_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
                     if (new_process_name.empty() && !facts.current_process_system_name.empty()) {
                         config.set("print_settings_id", config_name, true);
                         load_process_config = std::move(config);
                     }
                 } else
-                    return fail(CLI_CONFIG_FILE_ERROR, "--uptodate-settings: " + file + " is not a machine or process file");
+                    return fail(CLI_CONFIG_FILE_ERROR, "--uptodate-settings: " + file +
+                                                           " is not a machine or process file; give a machine or process file");
             }
         } else {
             // The project's own system presets from machine_full / process_full
@@ -698,7 +704,8 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             if (!uptodate_filaments.empty()) {
                 if (uptodate_filaments.size() != (size_t)filament_count)
                     return fail(CLI_INVALID_PARAMS, "--uptodate-filaments gives " + std::to_string(uptodate_filaments.size()) +
-                                                    " file(s) for " + std::to_string(filament_count) + " filament(s)");
+                                                    " file(s) for " + std::to_string(filament_count) +
+                                                    " filament(s); give one file per filament, in the project's order");
                 for (int index = 0; index < filament_count; index++) {
                     const std::string& file = uptodate_filaments[index];
                     DynamicPrintConfig config;
@@ -706,7 +713,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
                         return fail(ret, why);
                     if (config_type != "filament")
-                        return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file");
+                        return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file; give it with --load-filaments");
                     const bool matches = index < int(facts.current_filaments_system_name.size()) &&
                                          (config_name == facts.current_filaments_system_name[index]
 #ifndef ENGINE_ORCA
@@ -715,7 +722,8 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                          );
                     if (!matches)
                         return fail(CLI_CONFIG_FILE_ERROR, "--uptodate-filaments: " + file + " is filament '" + config_name +
-                                                           "', not the project's filament " + std::to_string(index + 1));
+                                                           "', not the project's filament " + std::to_string(index + 1) +
+                                                           "; give the project's own filament files, in the project's order");
                     load_filaments_id.push_back(filament_id);
                     load_filaments_name.push_back(config_name);
                     load_filaments_config.push_back(std::move(config));
@@ -739,7 +747,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     if (int ret = load_config_file(path, config, config_type, config_name, filament_id, config_from, why); ret)
                         return fail(ret, why);
                     if (config_type != "filament")
-                        return fail(CLI_CONFIG_FILE_ERROR, path + " is not a filament file");
+                        return fail(CLI_CONFIG_FILE_ERROR, path + " is not a filament file; give it with --load-filaments");
                     load_filaments_id.push_back(filament_id);
                     load_filaments_name.push_back(config_name);
                     load_filaments_config.push_back(std::move(config));
@@ -800,11 +808,16 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 machine_upwards = true;
             }
             if (!process_compatible)
-                return fail(CLI_3MF_NEW_MACHINE_NOT_SUPPORTED, "The project cannot move to printer '" + new_printer_name + "'.");
+                return fail(CLI_3MF_NEW_MACHINE_NOT_SUPPORTED,
+                            "The project cannot move to printer '" + new_printer_name +
+                                "'; give a process that printer suits (--load-settings or --process-preset), "
+                                "or keep the project's own printer");
         }
     }
     if (!process_compatible)
-        return fail(CLI_PROCESS_NOT_COMPATIBLE, "The process does not suit the printer.");
+        return fail(CLI_PROCESS_NOT_COMPATIBLE,
+                    "The process does not suit the printer; give a process that printer suits "
+                    "(--load-settings or --process-preset)");
 #ifndef ENGINE_ORCA
     if (estimate_mode && (new_printer_name.empty() || facts.current_printer_name.empty() || new_printer_name == facts.current_printer_name))
         return fail(CLI_INVALID_PARAMS, "--estimate-mode needs --load-settings with a different printer");   // B 3041-3045
@@ -1094,14 +1107,17 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (new_process_name.empty() && (facts.current_extruder_count != new_extruder_count ||
                                          current_print_variant_count != new_printer_variant_count)) {
             if (new_default_process_name.empty())
-                return fail(CLI_CONFIG_FILE_ERROR, "The new printer names no default process.");
+                return fail(CLI_CONFIG_FILE_ERROR,
+                            "The new printer names no default process; give a process with --load-settings "
+                            "or --process-preset");
             const std::string file_path = full_preset_path("process_full", new_default_process_name);
             DynamicPrintConfig config;
             std::string config_type, config_name, filament_id, config_from;
             if (int ret = load_config_file(file_path, config, config_type, config_name, filament_id, config_from, why); ret)
                 return fail(ret, why);
             if (config_type != "process" || config_from != "system")
-                return fail(CLI_CONFIG_FILE_ERROR, file_path + " is not a system process file");
+                return fail(CLI_CONFIG_FILE_ERROR, file_path + " is not a system process file; give a system "
+                                                               "process preset from the package's profiles");
             int ret = 0;
             std::set<std::string> keys = print_options_with_variant;
             if (!facts.current_is_multi_extruder && new_is_multi_extruder && current_print_variant_count == 1)
@@ -1505,7 +1521,7 @@ StepResult apply_custom_gcodes(const CliOptions& o, int plate_to_slice, Model& m
     if (o.given_flag("load_custom_gcodes")) {
         const std::string file = o.cli.opt_string("load_custom_gcodes");
         if (!boost::filesystem::exists(file))
-            return fail(CLI_FILE_NOTFOUND, "--load-custom-gcodes: cannot find " + file);
+            return fail(CLI_FILE_NOTFOUND, "--load-custom-gcodes: cannot find " + file + "; check the file's path");
         try {
             json jj;
             boost::nowide::ifstream ifs(file);
@@ -1608,7 +1624,8 @@ StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts
         }
         if (config_type != "machine" || config_from != "system") {
             r.code    = CLI_CONFIG_FILE_ERROR;
-            r.message = "--downward-settings: " + path + " is not a system machine file";
+            r.message = "--downward-settings: " + path + " is not a system machine file; "
+                                                       "give a system machine preset from the package's profiles";
             return r;
         }
         DownwardPrinter printer;
