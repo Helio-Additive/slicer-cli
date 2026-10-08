@@ -2801,6 +2801,7 @@ struct PlateOutcome {
     int         plate_count = 1;   // plates this run slices, for progress
     int         cli_code   = 0;    // CLI_SUCCESS, or the official CLI_* code of the failure
     std::string error_string;      // the official sentence for cli_code, plus specifics
+    std::string refusal_note;      // appended to any refusal of this plate (set_outcome_failure)
     std::string gcode_path;
     bool        exported   = false;
 
@@ -2956,7 +2957,37 @@ static void set_outcome_failure(PlateOutcome& outcome, int code, const std::stri
     outcome.error_string = cli_error_sentence(code);
     if (!detail.empty())
         outcome.error_string += " " + detail;
+    if (!outcome.refusal_note.empty())
+        outcome.error_string += " " + outcome.refusal_note;
 }
+
+#ifdef ENGINE_ORCA
+/// The filament settings PresetBundle::load_config_file_config cannot split:
+/// with more than one filament (counted from filament_colour, as it counts
+/// them) it copies entry i of every vector filament option into filament i's
+/// preset with set_at, which throws on a vector with no entries
+/// (PresetBundle.cpp 4456-4479, Config.hpp 439-440 at 31f6803). A BambuStudio
+/// project reaches that with filament_notes, a single string there (coString)
+/// and a per-filament list here (coStrings): the file's "" deserializes to no
+/// entries. Each key is paired with whether the file states it as a single
+/// value.
+static std::vector<std::pair<std::string, bool>> filament_keys_split_reads_empty(
+    const Slic3r::DynamicPrintConfig& config, const json& file_settings) {
+    std::vector<std::pair<std::string, bool>> keys;
+    const auto* colour = config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+    if (colour == nullptr || colour->values.size() <= 1)
+        return keys;
+    for (const std::string& key : Slic3r::Preset::filament_options()) {
+        if (key == "compatible_printers" || key == "compatible_prints")
+            continue;
+        const Slic3r::ConfigOption* opt = config.option(key);
+        if (opt == nullptr || opt->is_scalar() || static_cast<const Slic3r::ConfigOptionVectorBase*>(opt)->size() != 0)
+            continue;
+        keys.emplace_back(key, file_settings.contains(key) && file_settings[key].is_string());
+    }
+    return keys;
+}
+#endif
 
 /// Formats a length in mm the way a person reads it: no trailing zeros.
 static std::string mm_text(double v) {
@@ -7433,6 +7464,30 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 } catch (const std::exception& e) {
                     unavailable = e.what();
                     rebase      = false;
+                    // A filament setting the preset split cannot read. The
+                    // desktop calls the same load_config_model (Plater.cpp 6391
+                    // at 31f6803) inside a catch that shows the error and skips
+                    // the file (6639-6642), so the project is not widened here:
+                    // the reason is named, and any refusal of the plate says
+                    // which key it is.
+                    const auto empty = filament_keys_split_reads_empty(config, project_settings_json(input_file));
+                    if (!empty.empty()) {
+                        std::string names;
+                        bool        single = true;
+                        for (const auto& key : empty) {
+                            names += (names.empty() ? "" : ", ") + key.first;
+                            single = single && key.second;
+                        }
+                        const bool  one  = empty.size() == 1;
+                        const char* what = single ? (one ? " is a single value" : " are single values")
+                                                  : (one ? " has no entries" : " have no entries");
+                        unavailable += ": the file's " + names + what + " where OrcaSlicer expects one per filament";
+                        outcome.refusal_note =
+                            "This project's " + names + what +
+                            " where OrcaSlicer expects one per filament, so its settings could not be matched to the "
+                            "desktop presets; slice it with slicer_cli (BambuStudio), or re-save it with one " +
+                            names + " entry per filament.";
+                    }
                 }
                 if (rebase) {
                     config = std::move(rebased);
@@ -11095,7 +11150,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         if (outcome.cli_code == 0)
             set_outcome_failure(outcome, CLI_SLICING_ERROR);
         if (outcome.error_string.empty())
-            outcome.error_string = cli_error_sentence(outcome.cli_code);
+            set_outcome_failure(outcome, outcome.cli_code);
         // The refused plate starts without a G-code, as in the slice pass.
         boost::system::error_code ignored;
         fs::remove(outcome.gcode_path, ignored);
@@ -11133,7 +11188,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         if (rc != 0 && outcome.cli_code == 0)
             set_outcome_failure(outcome, CLI_SLICING_ERROR);
         if (outcome.cli_code != 0 && outcome.error_string.empty())
-            outcome.error_string = cli_error_sentence(outcome.cli_code);
+            set_outcome_failure(outcome, outcome.cli_code);
         outcomes.push_back(outcome);
         if (outcome.cli_code != 0) {
             code = outcome.cli_code;
