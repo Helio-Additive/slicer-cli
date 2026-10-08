@@ -2084,20 +2084,6 @@ json.dump(d, open("x1c-machine.json", "w"), indent=1)
 '
 X1C_FILE="$RES/profiles/BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"
 [ -f "$X1C_FILE" ] || fail "the package ships no X1 Carbon machine preset at $X1C_FILE"
-run dwship "$B" bblx1c.3mf --slice 1 --allow-newer-file --downward-check --downward-settings "$X1C_FILE" --outputdir dwship/out
-[ "$(rc dwship)" = 0 ] || { show dwship; fail "bambu: --downward-settings with the shipped machine file exit $(rc dwship)"; }
-run dwfull "$B" bblx1c.3mf --slice 1 --allow-newer-file --downward-check --downward-settings x1c-machine.json --outputdir dwfull/out
-[ "$(rc dwfull)" = 0 ] || { show dwfull; fail "bambu: --downward-settings with the engine's own machine file exit $(rc dwfull)"; }
-py '
-import json, sys
-a = json.load(open(sys.argv[1])); b = json.load(open(sys.argv[2]))
-ka = {k: v for k, v in a.items() if k.startswith("downward")}
-kb = {k: v for k, v in b.items() if k.startswith("downward")}
-assert ka == kb, (ka, kb)
-assert ka, "no downward answer to compare"
-' dwship/out/result.json dwfull/out/result.json ||
-    fail "bambu: the shipped machine file and the engine's own preset gave different --downward-check answers"
-echo "PASS: --downward-settings reads the shipped machine file over its parents (Bambu engine)"
 
 # ── The owner's case: a Bambu Studio project for a Bambu printer, on the Orca
 # build, retargeted to a Snapmaker U1 ────────────────────────────────────────
@@ -2153,6 +2139,20 @@ with zipfile.ZipFile("bblx1c.3mf") as z:
     assert "print_compatible_printers" not in d and d["tree_support_wall_count"] == "-1", sorted(d)
     assert d["print_settings_id"] == "0.20mm Standard @BBL X1C" and d["layer_height"] == "0.2", d
 ' || fail "orca: the Bambu Studio X1C project fixtures could not be written"
+run dwship "$B" bblx1c.3mf --slice 1 --allow-newer-file --downward-check --downward-settings "$X1C_FILE" --outputdir dwship/out
+[ "$(rc dwship)" = 0 ] || { show dwship; fail "bambu: --downward-settings with the shipped machine file exit $(rc dwship)"; }
+run dwfull "$B" bblx1c.3mf --slice 1 --allow-newer-file --downward-check --downward-settings x1c-machine.json --outputdir dwfull/out
+[ "$(rc dwfull)" = 0 ] || { show dwfull; fail "bambu: --downward-settings with the engine's own machine file exit $(rc dwfull)"; }
+py '
+import json, sys
+a = json.load(open(sys.argv[1])); b = json.load(open(sys.argv[2]))
+ka = {k: v for k, v in a.items() if k.startswith("downward")}
+kb = {k: v for k, v in b.items() if k.startswith("downward")}
+assert ka == kb, (ka, kb)
+assert ka, "no downward answer to compare"
+' dwship/out/result.json dwfull/out/result.json ||
+    fail "bambu: the shipped machine file and the engine's own preset gave different --downward-check answers"
+echo "PASS: --downward-settings reads the shipped machine file over its parents (Bambu engine)"
 run bblu1 "$O" bblx1c.3mf --slice 1 --allow-newer-file --load-settings "$U1_MACHINE" --outputdir bblu1/out
 [ "$(rc bblu1)" = 0 ] || { show bblu1; fail "orca: a Bambu Studio X1C project on the Snapmaker U1 exit $(rc bblu1)"; }
 [ -s bblu1/out/plate_1.gcode ] || { show bblu1; fail "orca: the retargeted Bambu Studio project wrote no G-code"; }
