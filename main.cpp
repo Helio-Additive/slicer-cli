@@ -5808,8 +5808,9 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
 /// An engine backup folder is marked as owned by the run's PID, and the
 /// desktop's own test of "this folder still has its owner" is the rule the
 /// sweep follows: the folder is stale once that PID is not a running process
-/// of the same program (has_restore_data, bbs_3mf.cpp 9447-9466 /
-/// OrcaSlicer 9013-9031). The desktop writes the PID inside the folder, as
+/// of a binary of this package — either engine's, see is_engine_binary_name
+/// (the desktop's test, has_restore_data, bbs_3mf.cpp 9447-9466 /
+/// OrcaSlicer 9013-9031, compares with its own one program). The desktop writes the PID inside the folder, as
 /// lock.txt, when it makes the folder for a load that has no backup path yet
 /// (Model.cpp 1123-1130 / OrcaSlicer 986-993); this program's marker is
 /// <folder>.owner beside it instead, for the reason add() gives, and add()
@@ -5889,12 +5890,38 @@ static bool is_staging_folder_name(const std::string& name) {
            boost::algorithm::starts_with(name, "slicer_cli_export-");
 }
 
-/// True when `pid` is a running process of this same program — the desktop's
-/// test for "this backup folder still has its owner, keep it"
+/// True when `name` is one of the file names this package's two binaries run
+/// under: the Bambu engine's slicer_cli and the OrcaSlicer engine's
+/// slicer_cli-orcaslicer, the names the CI package and the updater's engine
+/// convention give them (slicer-cli-ci.yml 1390, 1438-1439), each with the
+/// ".exe" suffix Windows keeps. get_process_name returns the executable's own
+/// base name but stops ON the separator in front of it — the loop advances to
+/// the last '/' ('\\' on Windows) and returns that pointer (utils.cpp
+/// 1189-1221) — so the separator is dropped here; the comparison itself is
+/// case-insensitive, Windows file names being.
+static bool is_engine_binary_name(std::string name) {
+    while (!name.empty() && (name.front() == '/' || name.front() == '\\'))
+        name.erase(name.begin());
+    for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer"}) {
+        const std::string base(binary);
+        if (boost::algorithm::iequals(name, base) || boost::algorithm::iequals(name, base + ".exe"))
+            return true;
+    }
+    return false;
+}
+
+/// True when `pid` is a running process of this package — the desktop's test
+/// for "this backup folder still has its owner, keep it"
 /// (has_restore_data, bbs_3mf.cpp 9447-9466 / OrcaSlicer 9013-9031:
 /// get_process_name(pid) == get_process_name(0); on Windows a live pid of
 /// another program, or a dead one that OpenProcess refuses, gives a different
 /// name or none).
+/// The desktop has one program to compare with; this package ships two
+/// binaries, and one host may run both against the same TMPDIR, so a live run
+/// of EITHER engine owns its folder. Comparing the two names alone made a run
+/// of one remove the live folder of a run of the other: the loader still had
+/// that folder in its hands, and read back a settings file the sweep had
+/// taken away ("parse error at 1:1", rc 255).
 static bool staging_owner_alive(int pid) {
     if (pid <= 0)
         return false;
@@ -5906,7 +5933,12 @@ static bool staging_owner_alive(int pid) {
     if (::kill(pid, 0) != 0 && errno != EPERM)
         return false;
 #endif
-    return Slic3r::get_process_name(pid) == Slic3r::get_process_name(0);
+    const std::string name = Slic3r::get_process_name(pid);
+    // No name at all is not an owner: on Windows OpenProcess refuses a pid
+    // this process may not query, live or not.
+    if (name.empty())
+        return false;
+    return name == Slic3r::get_process_name(0) || is_engine_binary_name(name);
 }
 
 /// How old a marker-less staging folder must be before the sweep removes it.
@@ -5922,8 +5954,9 @@ static constexpr double kLocklessFolderMinAgeSeconds = 3600.0;
 
 /// Removes the staging folders of runs that are gone, so a tmpfs /tmp does not
 /// hold the folders of every killed run. A folder is removed only when its
-/// ownership marker names a PID of this program that is no longer running (the
-/// desktop's own staleness test), or when it has no marker and is over
+/// ownership marker names a PID of no binary of this package that is still
+/// running (the desktop's own staleness test, for either engine's), or when it
+/// has no marker and is over
 /// kLocklessFolderMinAgeSeconds old. A live run's folder is left alone, so a
 /// second run in the same TMPDIR never disturbs the first.
 static void sweep_stale_staging_folders() {
