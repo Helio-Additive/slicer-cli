@@ -5613,6 +5613,68 @@ static void set_run_backup_path(Slic3r::Model& model) {
     model.set_backup_path(run_backup_path());
 }
 
+/// Creates, inside the run's staging folder, the directory of every file the
+/// 3MF holds — nothing else — so the loader's extraction has somewhere to put
+/// them.
+/// The loader writes an archive entry to <backup>/<its own archive path>
+/// (_extract_file_from_archive): the BambuStudio build creates that path's
+/// parents first (bbs_3mf.cpp 2914-2919 at 5873b5f), the OrcaSlicer build does
+/// not (bbs_3mf.cpp 2798-2818 at 31f6803), so on OrcaSlicer an entry nested
+/// below Metadata/ or 3D/Objects/ — a project's Metadata/helio/... files, say —
+/// fails with "Error while extract file to temp directory" (2816). Measured on
+/// the same corpus 40fd25289c325186, --slice 1, per-run folder: 18 of them on
+/// the OrcaSlicer build of 397e505, 0 on the BambuStudio build of the same
+/// commit. The folder itself was never missing — only those parents were.
+static void create_archive_dirs(const std::string& archive, const std::string& backup_root) {
+    mz_zip_archive zip;
+    mz_zip_zero_struct(&zip);
+    if (!Slic3r::open_zip_reader(&zip, archive))
+        return;   // not a 3MF (an STL, a missing file): the load reports it, as before
+    const mz_uint count = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint i = 0; i < count; ++i) {
+        mz_zip_archive_file_stat stat;
+        if (!mz_zip_reader_file_stat(&zip, i, &stat))
+            continue;
+        std::string name(stat.m_filename);
+        std::replace(name.begin(), name.end(), '\\', '/');
+        // the loader refuses a path that leaves the backup folder (bbs_3mf.cpp
+        // 2909-2912 / 2804-2807): never create one here either
+        if (name.empty() || name[0] == '/' || name.find("..") != std::string::npos)
+            continue;
+        const size_t slash = name.find_last_of('/');
+        if (slash == std::string::npos)
+            continue;
+        boost::system::error_code ec;
+        boost::filesystem::create_directories(boost::filesystem::path(backup_root) / name.substr(0, slash), ec);
+    }
+    mz_zip_reader_end(&zip);
+}
+
+/// Takes `model` off the run's staging folder once nothing loads into it any
+/// more.
+/// ~Model removes the folder a model still holds (Slic3r::remove_backup(*this,
+/// true), Model.cpp 203-210 / OrcaSlicer 176-183), and that removal is not
+/// only queued for the desktop: the manager's own worker thread runs it
+/// (_BBS_Backup_Manager starts it in its constructor, bbs_3mf.cpp 9140-9144 /
+/// OrcaSlicer 8715-8719; process_task runs RemoveBackup, 9212-9235 / 8788-8803
+/// — the log shows the task for this run's own folder on that second thread).
+/// Every model of the run holds the one folder of run_backup_path, each
+/// plate's copy of the run's model (std::make_unique<Slic3r::Model>(model))
+/// included, so a model that dies before the run's work ends takes the folder
+/// the run is still using with it. "detach" clears backup_path, so ~Model
+/// queues nothing (Model.cpp 1165-1179 / OrcaSlicer 1028-1042) and the folder
+/// stands until the run removes it at exit.
+static void detach_run_backup_path(Slic3r::Model& model) {
+    model.set_backup_path("detach");
+}
+
+/// Detaches `model` when the scope that loaded into the run's folder ends, on
+/// every path out of it.
+struct RunBackupDetach {
+    Slic3r::Model& model;
+    ~RunBackupDetach() { detach_run_backup_path(model); }
+};
+
 /// One plate's objects, loaded alone from the project 3MF, for
 /// --downward-check: the official sizes every plate of the project
 /// (check_plate_wipe_tower per plate, BambuStudio.cpp 4645-4658; OrcaSlicer.cpp
@@ -5643,8 +5705,13 @@ static bool load_plate_objects(const std::string& input_file, int plate_id, Slic
     const auto strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances;
     // A writable backup folder of this run's own, as the slice's own load
     // sets (never the loader's default /bamboo_model, and never one shared
-    // with another run: run_backup_path).
+    // with another run: run_backup_path), with the archive's directories in it
+    // so the extraction finds them, and detached again when this function
+    // ends: this model is a temporary one, and its destruction must not remove
+    // the folder the run's own load extracts into (detach_run_backup_path).
     set_run_backup_path(model);
+    create_archive_dirs(load_path, run_backup_path());
+    const RunBackupDetach detach_model{model};
     bool loaded = false;
     try {
 #ifdef ENGINE_ORCA
@@ -6084,8 +6151,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // Pre-set backup_path to a writable temp dir of this run's own so the
         // backup manager never touches the read-only /bamboo_model network
         // path, and parallel runs never share the loader's _temp_N.config
-        // files (run_backup_path).
+        // files (run_backup_path), with the input's own directories in it (the
+        // OrcaSlicer loader does not create them: create_archive_dirs).
         set_run_backup_path(model);
+        create_archive_dirs(input_file, run_backup_path());
+        // The run's model is detached when this block ends, so no copy of it
+        // (each plate's own, or any temporary) can take the folder down while
+        // a later load still writes into it (detach_run_backup_path).
+        const RunBackupDetach detach_run_model{model};
         if (assemble_input) {
             // The list's plates the run slices: plate N, or every plate. Each
             // plate's objects go to its place in the plate grid once the bed
@@ -8856,6 +8929,10 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         run_staging.add((boost::filesystem::temp_directory_path() /
                          boost::filesystem::unique_path("slicer_cli_export-%%%%%%%%")).string());
     model.set_backup_path(export_backup);   // removed with the run's other staging folders
+    // Detached again when this function ends, so this model's destruction does
+    // not queue a removal of a folder the run removes itself
+    // (detach_run_backup_path).
+    const RunBackupDetach detach_export_model{model};
     PlateDataPtrs plates;
     struct Release {
         PlateDataPtrs& plates;
