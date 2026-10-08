@@ -24,7 +24,11 @@ A1M="Bambu Lab A1 mini 0.4 nozzle"
 A1M_PROCESS="0.20mm Standard @BBL A1M"
 A1M_FILAMENT="Bambu PLA Basic @BBL A1M"
 
-fail() { echo "FAIL: $*"; exit 1; }
+FAILS=0
+# fail MESSAGE... : a failed check. The run stops there, unless E2E_CONTINUE=1,
+# which records it and goes on -- for a corpus run that must not hide every
+# check behind one known failure.
+fail() { echo "FAIL: $*"; FAILS=$((FAILS + 1)); [ "${E2E_CONTINUE:-0}" = "1" ] || exit 1; }
 # run NAME BINARY ARGS... : stdout/stderr/rc kept under NAME/; never aborts the script.
 run() {
     local name=$1; shift
@@ -2015,19 +2019,33 @@ python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" mac
     "Snapmaker U1 (0.4 nozzle)" u1s/out/plate_1.gcode u1n/out/plate_1.gcode ||
     fail "orca: the shipped Snapmaker U1 machine file did not arrive with its parents' values"
 
-# An STL through the three legacy flags, with the files the package ships.
+# An STL through the three legacy flags, with the files the package ships, and
+# the filament a U1 user has: "Snapmaker PLA @U1". KNOWN FAILURE, kept as the
+# user's own call -- the trio leaves curr_bed_type at the config default (Cool
+# Plate; the printer's own Textured PEI Plate refuses the same way), and the
+# shipped Snapmaker PLA @U1 chain defines no temperature for either plate type
+# (only hot_plate_temp 55), so the engine refuses -103, "Found some filament
+# unprintable at first layer on current Plate". That is audit row 18 (an STL
+# plus settings files gets a plate type that is not the printer's default);
+# lane-shorthand owns it. The rest of this case is what passes today: the same
+# trio with a system filament that names every plate slices, and the preset
+# path picks a plate the shipped filament has a temperature for.
 run u1leg "$O" cube.stl --slice 1 --machine "$U1_MACHINE" --process "$U1_PROCESS" --filament "$U1_FILAMENT" \
     --outputdir u1leg/out
-[ "$(rc u1leg)" = 0 ] || { show u1leg; fail "orca: the shipped Snapmaker trio through --machine/--process/--filament exit $(rc u1leg)"; }
-python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" machine \
-    "Snapmaker U1 (0.4 nozzle)" u1leg/out/plate_1.gcode ||
-    fail "orca: --machine did not read the shipped file over its parents"
-python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" process \
-    "0.20 Standard @Snapmaker U1 (0.4 nozzle)" u1leg/out/plate_1.gcode ||
-    fail "orca: --process did not read the shipped file over its parents"
-python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" filament \
-    "Snapmaker PLA @U1" u1leg/out/plate_1.gcode ||
-    fail "orca: --filament did not read the shipped file over its parents"
+if [ "$(rc u1leg)" != 0 ]; then
+    show u1leg
+    fail "orca: the shipped Snapmaker trio through --machine/--process/--filament exit $(rc u1leg) (row 18: the plate type, not this lane)"
+else
+    python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" machine \
+        "Snapmaker U1 (0.4 nozzle)" u1leg/out/plate_1.gcode ||
+        fail "orca: --machine did not read the shipped file over its parents"
+    python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" process \
+        "0.20 Standard @Snapmaker U1 (0.4 nozzle)" u1leg/out/plate_1.gcode ||
+        fail "orca: --process did not read the shipped file over its parents"
+    python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" filament \
+        "Snapmaker PLA @U1" u1leg/out/plate_1.gcode ||
+        fail "orca: --filament did not read the shipped file over its parents"
+fi
 
 # --load-filaments with a shipped filament, on the printer it belongs to.
 run u1fil "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" \
@@ -3588,3 +3606,10 @@ assert not bad, "; ".join(bad)
 ' inh-$e/out/inh-$e.3mf || { fail "inherits $e: the exported project's inherits_group/different_settings_to_system are not one entry per preset"; inh_ok=0; }
 done
 [ $inh_ok = 1 ] && echo "PASS: a two-filament H2D project exports inherits_group and different_settings_to_system as one entry per preset, or absent (both engines)"
+
+# With E2E_CONTINUE=1 the run reaches here even after a FAIL (see fail()): say
+# how many there were, so the exit status still tells the truth.
+if [ "${E2E_CONTINUE:-0}" = "1" ] && [ "$FAILS" -gt 0 ]; then
+    echo "E2E: $FAILS failed check(s)"
+    exit 1
+fi

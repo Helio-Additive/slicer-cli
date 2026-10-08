@@ -124,6 +124,14 @@ def matches(header_value, flat_value):
     if text == "" or any(c in text for c in "\n{}\""):
         return None
     got = norm(header_value.split(";")[0])
+    if "," in got and "," not in text:
+        # On a printer with more than one extruder the header writes one value
+        # per extruder, and only the slot this filament loaded into carries its
+        # setting -- the rest are whatever the printer defaults to for the
+        # extruders no filament was given for. Compare that slot (the first; a
+        # single --filament/--load-filaments entry loads into extruder 1) and
+        # leave the others out of it.
+        got = got.split(",")[0]
     return got == text or same_number(got, text)
 
 
