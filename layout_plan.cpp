@@ -659,6 +659,15 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         std::cerr << to_json(err).dump() << std::endl; return 5;
     }
 
+    // get_arrange_polygon leaves bed_idx at its UNARRANGED (-1) default, which
+    // the nester skips as BIN_ID_UNFIT. Seed bed 0 the way the desktop and
+    // upstream do: ModelArrange.cpp:98 (`ap.bed_idx = 0;` in get_arrange_poly)
+    // and Orca v2.4.2 src/libslic3r/ModelArrange.cpp:25 (5fafbb59fc, which
+    // seeds get_arrange_polys itself). A locked item is fixed in bin 0 and
+    // preloaded as a real obstacle; a free item is packed normally.
+    for (auto& ap : unlocked_input) ap.bed_idx = 0;
+    for (auto& ap : locked_input)   ap.bed_idx = 0;
+
     // F3: total per-class polygon count must match ref sums (zero-area/dropped
     // polygons are typed errors, not silent drops)
     {

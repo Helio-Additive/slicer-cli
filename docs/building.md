@@ -24,11 +24,14 @@ The two engines are git submodules, pinned to one commit each:
 
 | Engine | Submodule | Pin | Version |
 |-|-|-|-|
-| Bambu Studio | `references/BambuStudio` | `5873b5f` | 02.08.01.55 |
-| OrcaSlicer | `references/OrcaSlicer` | `31f6803` | 2.4.0-alpha |
+| Bambu Studio | `references/BambuStudio` | `926a719` | 02.08.02.61 |
+| OrcaSlicer | `references/OrcaSlicer` | `8500fcd` | 2.4.2 |
 
-Both submodules point at Helio-Additive forks of the upstream projects. The
-engine source is used as it is (see "The override layer" below).
+Both submodules point at the upstream projects' official repositories and are
+pinned to the commit of the release tag: `bambulab/BambuStudio` tag
+`v02.08.02.61` and `OrcaSlicer/OrcaSlicer` tag `v2.4.2`. The engine source is
+used as it is (see "The override layer" below); no Helio commit lives inside
+`references/`.
 
 ## Dependencies
 
@@ -141,6 +144,47 @@ goes under `libslic3r/bambustudio/` or `libslic3r/orcaslicer/`, and CMake
 compiles it in place of the engine's file (the "override layer" section of
 `CMakeLists.txt`). Each override says what it changes and why, citing the
 engine lines it replaces.
+
+An override is a whole-file copy, so it also freezes that file at the commit
+it was taken from: an engine bump does not reach it. Regenerate it from the
+new pinned file with the same change re-applied, or the engine's own fixes to
+that file are lost.
+
+### Files that shadow engine source
+
+| File | What it changes | In the current pin? | Can it move to the front end? |
+|-|-|-|-|
+| `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp` | Five crash/UB fixes: `is_floating` is kept the same length as `points` in both `rebase_at` (write the closure flag in place, never append); the floating-vertical-shell flag is read from the surviving line rather than one just erased; the extracted line's float flags are captured before `erase`/`insert` invalidate it; `prev`/`next` fall back to `curr` at the path ends instead of reading `path[-1]`/`path[size]`; the grid point buffer is owned by a vector that outlives the `EdgeGrid::Grid` query. Plus the engine's local `"../X.hpp"` includes rewritten as `<libslic3r/X.hpp>`. | No. The file is byte-identical between the previous pin and v02.08.02.61, and between v02.08.02.61 and the newest tag v02.08.04.61; no upstream commit has touched it since 2025-05-17. | No. All five are inside the fill path, and there is no front-end call site: the corrupting reads happen while a contour is resampled. The motivating input is `LV_nano_bag_rel_multipart.3mf` plates 2 and 3 (PR #25), where Windows PageHeap reported heap failure `0xC0000374`; the two use-after-frees were measured on a build whose only difference from the pin was elsewhere in the front end. |
+
+The rest of the layer is dependency compatibility, not engine logic:
+`libslic3r/bambustudio/libigl/` (Eigen `DynamicSparseMatrix` API replacements)
+and `libslic3r/bambustudio/cgal_54_compat.hpp` (the Boost.MPL include CGAL 5.4
+used to get transitively).
+
+### The Print.cpp overrides are gone
+
+Both engines' `Print.cpp` used to be shadowed for one hunk in
+`Print::get_physical_unprintable_filaments`, which reads
+`m_config.filament_printable.values[filament_idx]` with no bounds check
+(OrcaSlicer v2.4.2 `Print.cpp:3229`, BambuStudio v02.08.02.61 `Print.cpp:3091`)
+while walking every used filament. The vector is short or empty only on this
+build's flat-config path; the desktop sizes it before slicing.
+
+`filament_printable` is a filament option (`Preset.cpp:1310` at v2.4.2,
+`Preset.cpp:1088` at v02.08.02.61), so the desktop's own rule reaches it:
+`Preset::normalize()` sizes every filament vector to the filament count,
+filling a slot it has to add with that option's definition default
+(`Preset.cpp:444-486` at v2.4.2, `442-487` at v02.08.02.61), and
+`PresetBundle::full_fff_config` then assembles the slicing config out of the
+normalized presets. No vector the engine slices with is ever shorter than the
+roster.
+
+The front end now does the same, so neither override is needed:
+
+| Engine | Where |
+|-|-|
+| Bambu | `align_per_filament_config_vectors()` in `main.cpp`, called before `print.apply()`. It sizes every key `is_per_filament_config_key()` names — `filament_printable` included — to the roster, and `ensure_vector_config_sizes()` gives a missing or empty `filament_printable` its definition default first. |
+| Orca | `normalize_filament_config_vectors()` in `main.cpp`, called immediately before `print.apply()`. It applies the `Preset::normalize` rule over the engine's own `Preset::filament_options()` list. Only a vector shorter than the roster is resized; one already at the roster length keeps every value it holds, so a project's own `filament_printable` is never overwritten. |
 
 The files the build leaves out of each engine, and why:
 
