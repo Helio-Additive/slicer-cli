@@ -144,6 +144,26 @@ except Exception: print("")' "c-$n-$e/out/result.json" 2>/dev/null)
 }
 both() { check "$1" bambu "$2" "${@:3}"; check "$1" orca "$2" "${@:3}"; }
 
+# check_slices NAME ENGINE KEY VALUE ARGS...: the run must SUCCEED (result.json
+# return_code 0) and the G-code header must carry KEY = VALUE. It is what the
+# hint on the range refusal promises: the flag it names, with an in-range
+# value, gets past the check and reaches the slice.
+check_slices() {
+    local n=$1 e=$2 key=$3 val=$4; shift 4
+    local bin; bin=$(bin_of "$e")
+    run "c-$n-$e" "$bin" "$@" --outputdir "c-$n-$e/out"
+    local code got
+    code=$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1]))["return_code"])
+except Exception: print("none")' "c-$n-$e/out/result.json" 2>/dev/null)
+    got=$(sed -n "s/^; $key = //p" "c-$n-$e/out/plate_1.gcode" 2>/dev/null | head -n 1)
+    if [ "$code" = 0 ] && [ "$got" = "$val" ]; then
+        report "$n" "$e" PASS "the hinted override slices: return_code 0, $key = $got"
+    else
+        report "$n" "$e" FAIL "the hinted override did not slice: return_code '$code', $key '$got'; $(why "c-$n-$e")"
+    fi
+}
+
 # ---------------------------------------------------------------- setup
 for e in bambu orca; do
     fx_settings "$e" a1m "$A1M"
@@ -212,6 +232,10 @@ for e in bambu orca; do
           "post-$e.3mf" --slice 1
     check value-out-of-range       "$e" "*Give --support-threshold-angle a value in range to override it.*" \
           "range-$e.3mf" --slice 1
+    # The retry the hint above promises, on the same input: the flag it names,
+    # with a value in range, gets past the check and reaches the slice.
+    check_slices value-out-of-range-retry "$e" support_threshold_angle 45 \
+          "range-$e.3mf" --slice 1 --support-threshold-angle 45
 done
 
 # A settings file of the wrong kind, and --load-defaultfila with no usable file.
