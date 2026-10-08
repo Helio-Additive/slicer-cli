@@ -3747,6 +3747,71 @@ kill $feeder 2>/dev/null || true; wait $feeder 2>/dev/null || true
 echo "PASS: a live run's ownership marker is beside the folder, out of the extraction root (both engines)"
 ;;
 esac
+# ── A live run of the other engine owns its folder too ────────────────────
+# The desktop's staleness test compares the folder owner's process name with
+# its own (has_restore_data, bbs_3mf.cpp 9447-9466 / OrcaSlicer 9013-9031):
+# one program. This package ships two binaries — slicer_cli for the Bambu
+# engine and slicer_cli-orcaslicer for OrcaSlicer (the names the package and
+# the updater's engine convention give them, slicer-cli-ci.yml 1390,
+# 1438-1439) — and one host may run both against the same TMPDIR. Comparing
+# the two names alone made a run of one call the other's LIVE folder stale and
+# remove it, with the loader still holding it: it then read back a settings
+# file the sweep had taken away ("load_from_json: parse
+# <tmp>/slicer_cli_load-.../_temp_3.config got a parse_error", rc 255). A live
+# pid of EITHER binary is an owner now.
+case "$(uname -s)" in
+MINGW*|MSYS*|CYGWIN*) echo "SKIP: the cross-engine owner check (Windows)";;
+*)
+py '
+v = [(x, y, z) for z in (0, 20) for y in (0, 20) for x in (0, 20)]
+f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+with open("objfeed2.obj", "w") as o:
+    for p in v: o.write("v %g %g %g\n" % p)
+    for a, b, c in f: o.write("f %d %d %d\n" % (a + 1, b + 1, c + 1))
+'
+RACE=race-engine; rm -rf "$RACE"; mkdir -p "$RACE" race-orca
+# The OrcaSlicer run holds on a FIFO it reads as its second model file: its
+# staging folder and its marker are there while the Bambu run sweeps.
+mkfifo "$RACE/slow.obj"
+TMPDIR="$RACE" "$O" base.3mf "$RACE/slow.obj" --slice 1 --outputdir race-orca/out > race-orca/stdout 2> race-orca/stderr &
+opid=$!
+folder=""
+for i in $(seq 1 200); do
+    folder=$(ls -d "$RACE"/slicer_cli_load-*/ 2>/dev/null | head -1 || true)
+    folder=${folder%/}
+    if [ -n "$folder" ]; then break; fi
+    sleep 0.05
+done
+[ -n "$folder" ] || { kill -KILL $opid 2>/dev/null || true; fail "the OrcaSlicer run made no staging folder"; }
+run race-engine "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-engine/out
+if [ "$(rc race-engine)" != 0 ]; then kill -KILL $opid 2>/dev/null || true; show race-engine; fail "the Bambu run exit $(rc race-engine)"; fi
+if [ ! -d "$folder" ] || [ ! -f "$folder.owner" ]; then
+    kill -KILL $opid 2>/dev/null || true
+    fail "the Bambu run's sweep removed the live OrcaSlicer run's staging folder"
+fi
+py '
+import sys
+data = open("objfeed2.obj", "rb").read()
+while True:
+    try:
+        with open(sys.argv[1], "wb") as f:
+            f.write(data)
+    except OSError:
+        break
+' "$RACE/slow.obj" &
+feeder=$!
+arc=hung
+for i in $(seq 1 150); do
+    if ! kill -0 $opid 2>/dev/null; then arc=0; wait $opid || arc=$?; break; fi
+    sleep 0.2
+done
+if [ "$arc" = hung ]; then kill -KILL $opid 2>/dev/null || true; wait $opid 2>/dev/null || true; fi
+kill $feeder 2>/dev/null || true; wait $feeder 2>/dev/null || true
+[ "$arc" = 0 ] || { show race-orca; fail "the OrcaSlicer run exit $arc beside the Bambu run"; }
+[ -s race-orca/out/plate_1.gcode ] || fail "the OrcaSlicer run wrote no G-code after the Bambu run's sweep"
+echo "PASS: a live run of the other engine keeps its staging folder (both engines)"
+;;
+esac
 # ---------------------------------------------------------------- Stage F
 # Shorthand flags that must do what the desktop app does, and refusals that
 # name the real cause instead of a symptom (input-path audit: SILENT-WRONG
