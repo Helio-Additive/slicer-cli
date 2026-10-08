@@ -3652,7 +3652,11 @@ if [ $occ_ok = 1 ]; then echo "PASS: a model file after a project 3MF is placed 
 # bbs_3mf.cpp 1463-1471). The three rules lane-tmpkill proved hold on the new
 # marker: a dead PID's folder goes, a damaged marker counts as not-an-owner,
 # and a folder with no marker at all is left alone inside the age window.
+# A Windows build takes its temp folder from TMP/TEMP (GetTempPathW, which
+# boost's temp_directory_path calls), not TMPDIR, and wants it in D:\ form.
+winpath() { case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) cygpath -w "$1";; *) printf '%s' "$1";; esac; }
 RACE=race-rules; rm -rf "$RACE"; mkdir -p "$RACE"
+sweep_before=$FAILS
 mkfolder() {  # mkfolder NAME [MARKER]
     mkdir -p "$RACE/slicer_cli_load-$1"
     : > "$RACE/slicer_cli_load-$1/plate_1.gcode"
@@ -3662,13 +3666,13 @@ mkfolder() {  # mkfolder NAME [MARKER]
 mkfolder dead 999999        # a PID no process of this program has
 mkfolder damaged not-a-pid  # a marker that does not parse
 mkfolder young              # no marker at all, made now
-run race-rules env TMPDIR="$RACE" "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-rules/out
+run race-rules env TMPDIR="$RACE" TMP="$(winpath "$PWD/$RACE")" TEMP="$(winpath "$PWD/$RACE")" "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-rules/out
 [ "$(rc race-rules)" = 0 ] || { show race-rules; fail "a run beside the stale folders exit $(rc race-rules)"; }
 [ ! -d "$RACE/slicer_cli_load-dead" ] || fail "the sweep kept a folder whose marker names a dead PID"
 [ ! -e "$RACE/slicer_cli_load-dead.owner" ] || fail "the sweep kept the marker of a folder it removed"
 [ ! -d "$RACE/slicer_cli_load-damaged" ] || fail "the sweep kept a folder whose marker does not parse"
 [ -d "$RACE/slicer_cli_load-young" ] || fail "the sweep removed a folder with no marker inside the age window"
-echo "PASS: the sweep reads the marker beside the folder (dead PID and damaged marker go, a marker-less folder stays)"
+[ "$FAILS" = "$sweep_before" ] && echo "PASS: the sweep reads the marker beside the folder (dead PID and damaged marker go, a marker-less folder stays)"
 
 # ── A live run's ownership marker is out of the extraction folder ─────────
 # A second run sweeping while the first is alive must leave the live run's
@@ -3702,7 +3706,7 @@ with open("objfeed.obj", "w") as o:
 # the test feeds it one. An OBJ, not an STL: the STL reader opens the file
 # more than once, and the second open reads the tail of the first feed.
 mkfifo "$RACE/slow.obj"
-TMPDIR="$RACE" "$B" tainted.3mf "$RACE/slow.obj" --plate 1 -o race-a/out.gcode > race-a/stdout 2> race-a/stderr &
+TMPDIR="$RACE" TMP="$(winpath "$PWD/$RACE")" TEMP="$(winpath "$PWD/$RACE")" "$B" tainted.3mf "$RACE/slow.obj" --plate 1 -o race-a/out.gcode > race-a/stdout 2> race-a/stderr &
 apid=$!
 folder=""
 for i in $(seq 1 200); do
@@ -3714,7 +3718,7 @@ done
 [ -n "$folder" ] || { kill -KILL $apid 2>/dev/null || true; fail "run A made no staging folder"; }
 [ -f "$folder.owner" ] || { kill -KILL $apid 2>/dev/null || true; fail "run A keeps no ownership marker beside its staging folder"; }
 echo 999999 > "$folder/lock.txt"   # what the marker was, and who else writes it
-run race-b env TMPDIR="$RACE" "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-b/out
+run race-b env TMPDIR="$RACE" TMP="$(winpath "$PWD/$RACE")" TEMP="$(winpath "$PWD/$RACE")" "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-b/out
 [ "$(rc race-b)" = 0 ] || { kill -KILL $apid 2>/dev/null || true; show race-b; fail "run B exit $(rc race-b)"; }
 if [ ! -d "$folder" ]; then
     kill -KILL $apid 2>/dev/null || true
@@ -3776,7 +3780,7 @@ RACE=race-engine; rm -rf "$RACE"; mkdir -p "$RACE" race-orca
 # The OrcaSlicer run holds on a FIFO it reads as its second model file: its
 # staging folder and its marker are there while the Bambu run sweeps.
 mkfifo "$RACE/slow.obj"
-TMPDIR="$RACE" "$O" base.3mf "$RACE/slow.obj" --slice 1 --outputdir race-orca/out > race-orca/stdout 2> race-orca/stderr &
+TMPDIR="$RACE" TMP="$(winpath "$PWD/$RACE")" TEMP="$(winpath "$PWD/$RACE")" "$O" base.3mf "$RACE/slow.obj" --slice 1 --outputdir race-orca/out > race-orca/stdout 2> race-orca/stderr &
 opid=$!
 folder=""
 for i in $(seq 1 200); do

@@ -25,6 +25,9 @@ B="$(cd "$(dirname "$B")" && pwd -P)/$(basename "$B")"
 O="$(cd "$(dirname "$O")" && pwd -P)/$(basename "$O")"
 RES="$(cd "$(dirname "$B")" && pwd -P)/resources"
 [ -d "$RES/profiles" ] || RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
+# On Windows the shell turns a lone /d/... argument into D:\..., but not the
+# paths inside a ';'-joined --load-settings list: give the binary D:/... itself.
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) RES="$(cygpath -m "$RES")";; esac
 BBL="$RES/profiles/BBL"
 OCA="$RES/profiles-orca"
 [ -d "$OCA/Snapmaker" ] || { echo "SKIP: no OrcaSlicer profiles tree beside $O"; exit 0; }
