@@ -6540,7 +6540,16 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             file_wipe_tower_y = *opt;
                             has_wipe_tower_y  = true;
                         }
-                        bundle.load_config_model(input_file, std::move(config), file_version);
+                        // load_config_model takes the config by value and
+                        // consumes it: the bundle keeps what it parsed. Handed
+                        // the caller's own config, an exception part-way (a
+                        // preset this engine cannot resolve) would leave the
+                        // flat path with a moved-from config, and Print::apply
+                        // then reads settings that are no longer there. So the
+                        // load gets a copy, and `config` is replaced only when
+                        // the rebase itself succeeded.
+                        Slic3r::DynamicPrintConfig file_config_for_bundle = config;
+                        bundle.load_config_model(input_file, std::move(file_config_for_bundle), file_version);
                         rebased = bundle.full_config(false);
                         if (has_wipe_tower_x)
                             rebased.set_key_value("wipe_tower_x", new Slic3r::ConfigOptionFloats(file_wipe_tower_x));
@@ -6831,36 +6840,35 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // at 31f6803): a Bambu Studio project is compared with
                 // SLIC3R_VERSION, the Bambu base this Orca release is built on
                 // (version.inc, 02.06.00.51), and only warned about -- a
-                // BambuStudio 02.07 project is not newer than OrcaSlicer 2.4,
-                // it is newer than the base both apps share. An OrcaSlicer
-                // project is compared with this engine's own version, and a
-                // newer one is still refused, as the official CLI refuses it.
+                // BambuStudio 02.05 project is not newer than OrcaSlicer 2.4,
+                // it is newer than the base both apps share, and the desktop
+                // loads it. An OrcaSlicer project is compared with this
+                // engine's own version, and a newer one is still refused, as
+                // the official CLI refuses it.
                 const bool orca_made = meta.count("OrcaSlicer") != 0 ||
                                        (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-"));
-                if (!orca_made && file_newer_than_version(file_version, SLIC3R_VERSION)) {
-                    emit_event({{"event","warning"},
-                                {"tag","FileNewerThanEngineBase"},
-                                {"file_version", file_version.to_string()},
-                                {"application", app != meta.end() ? json(app->second) : json(nullptr)},
-                                {"base_version", SLIC3R_VERSION},
-                                {"unknown_keys", outcome.unknown_settings},
-                                {"message","The file is version " + file_version.to_string() +
-                                           (app != meta.end() ? " (" + app->second + ")" : std::string()) +
-                                           ", newer than the " + SLIC3R_VERSION +
-                                           " Bambu base this engine is built on. It is sliced as it is; the "
-                                           "setting(s) this engine has no definition for are ignored"}});
-                    refuse = false;
+                if (!orca_made) {
+                    refuse = file_newer_than_version(file_version, SLIC3R_VERSION);
+                    if (refuse) {
+                        emit_event({{"event","warning"},
+                                    {"tag","FileNewerThanEngineBase"},
+                                    {"file_version", file_version.to_string()},
+                                    {"application", app != meta.end() ? json(app->second) : json(nullptr)},
+                                    {"base_version", SLIC3R_VERSION},
+                                    {"unknown_keys", outcome.unknown_settings},
+                                    {"message","The file is version " + file_version.to_string() +
+                                               (app != meta.end() ? " (" + app->second + ")" : std::string()) +
+                                               ", newer than the " + SLIC3R_VERSION +
+                                               " Bambu base this engine is built on. It is sliced as it is; the "
+                                               "setting(s) this engine has no definition for are ignored"}});
+                        refuse = false;
+                    }
                 }
 #endif
                 if (refuse) {
                     std::string detail = "The file is version " + file_version.to_string() +
                                          (app != meta.end() ? " (" + app->second + ")" : std::string()) +
                                          "; this engine is " + engine_version_text() + ".";
-#ifdef ENGINE_ORCA
-                    if (meta.count("OrcaSlicer") == 0 && app != meta.end() &&
-                        boost::starts_with(app->second, "BambuStudio-"))
-                        detail += " It was made by Bambu Studio: use slicer_cli (BambuStudio).";
-#endif
                     emit_event({{"event","config_refused"},
                                 {"tag","FileVersionNewerThanEngine"},
                                 {"file_version", file_version.to_string()},
