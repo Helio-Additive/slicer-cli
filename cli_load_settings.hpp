@@ -143,7 +143,11 @@ struct DownwardPrinter {
 /// that is not a system machine file refuses the run with
 /// CLI_CONFIG_FILE_ERROR; a missing machine_full file is skipped with a
 /// preset_warning event (the folder is not part of the open-source apps).
-StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts, std::vector<DownwardPrinter>& printers);
+/// `profiles_dir` is this engine's own profiles tree: a machine file that
+/// holds only its differences from its parents is read over them, as the
+/// desktop reads it.
+StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts, const std::string& profiles_dir,
+                                  std::vector<DownwardPrinter>& printers);
 
 /// The printers `printers` that one plate does not fit: `plate_size` is the
 /// plate's objects with its prime tower, `is_sequence` its print-by-object.

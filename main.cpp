@@ -4449,6 +4449,68 @@ static boost::filesystem::path this_engine_profiles_dir(const std::string& argv0
 #endif
 }
 
+/// --machine, --process, --filament and --config take any settings file,
+/// including the presets this engine ships, which hold only their differences
+/// from their parents (load_vendor_configs_from_json: `config = *default_config;
+/// config.apply(config_src)`, OrcaSlicer PresetBundle.cpp 4894, BambuStudio
+/// 5087). Read as given, such a file leaves every key its parents define at
+/// the engine's default — a 74-key machine preset slices as a mixture of two
+/// machines — so the chain is resolved out of this engine's bundled profiles
+/// and applied over the file's own keys. A file whose parent this engine does
+/// not ship keeps its own keys: these flags accept a person's own file, and
+/// the desktop reads one over its system parent only when its tree holds it
+/// (PresetCollection::load_external_preset, OrcaSlicer Preset.cpp 2445-2456).
+static void apply_file_inherits(const std::string& argv0, const std::string& file, const char* kind,
+                                Slic3r::DynamicPrintConfig& config, bool verbose) {
+    std::string from, parent, stated_type;
+    try {
+        boost::nowide::ifstream f(file);
+        if (!f.is_open())
+            return;
+        const json j = json::parse(f);
+        from        = j.value("from", std::string());
+        parent      = j.value("inherits", std::string());
+        stated_type = j.value("type", std::string());
+    } catch (...) {
+        return;   // load_json_config reports a file that cannot be read
+    }
+    // The file's own "type" first: --config takes a whole settings file, and a
+    // shipped preset says which kind it is. The flag's own kind is the fallback
+    // (--machine, --process, --filament), and --config's "bundle" is no kind at
+    // all, so a bundle file without a "type" is left as it is.
+    std::string type = stated_type;
+    if (type != "machine" && type != "process" && type != "filament")
+        type = std::string(kind) == "bundle" ? std::string() : std::string(kind);
+    if (type != "machine" && type != "process" && type != "filament")
+        return;
+    if (parent.empty())
+        return;
+    Slic3r::DynamicPrintConfig own;
+    std::map<std::string, std::string> key_values;
+    std::string reason;
+    try {
+        Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+        own.load_from_json(file, substitutions, /*load_inherits_in_config=*/false, key_values, reason);
+    } catch (...) {
+        return;
+    }
+    if (!reason.empty())
+        return;
+    // load_from_json takes "inherits" into its key-values and not into the
+    // config; the chain is resolved from the config's own key, so put the name
+    // back (the CLI's loader keeps it: it reads the substitution-context form).
+    own.set("inherits", parent, true);
+    std::string resolved_parent;
+    const slicer_cli::InheritsResolution resolved = slicer_cli::apply_inherited_settings(
+        this_engine_profiles_dir(argv0).string(), type, from.empty() ? std::string("system") : from, own,
+        resolved_parent, file);
+    if (resolved == slicer_cli::InheritsResolution::Resolved) {
+        config.apply(own, /*ignore_nonexistent=*/true);
+        if (verbose)
+            std::cout << "Applied " << resolved_parent << ", the preset " << file << " inherits\n";
+    }
+}
+
 #ifdef ENGINE_ORCA
 /// A string setting of `config`, empty when the key is not there. The project's
 /// preset ids are read this way: a 3MF that states none is not a project this
@@ -4948,6 +5010,137 @@ static std::string default_replaced_note(const char* kind, const std::string& pi
     return std::string(kind) + " '" + picked + "' (" + why + ")";
 }
 
+/// The named system preset of `collection`, made visible the way naming a
+/// preset installs it — a fresh AppConfig has no printer models installed, so
+/// system presets load invisible, and select_preset_by_name skips an invisible
+/// preset (Preset.cpp 3206 at 5873b5f / 3493 at 31f6803) — or a refusal naming
+/// the close matches. Only the presets --list-presets offers are taken, never
+/// a built-in "- default -", which `allow_default` takes solely for the
+/// desktop's own fallback pick.
+static bool find_named_preset(Slic3r::PresetCollection& collection, const std::string& name, const char* kind,
+                              bool allow_default, const std::string& app, int& code, std::string& error) {
+    Slic3r::Preset* preset = name.empty() ? nullptr : collection.find_preset(name, false);
+    if (preset && preset->name == name && (is_listed_preset(*preset) || (allow_default && preset->is_default))) {
+        preset->is_visible = true;
+        return true;
+    }
+    const std::string similar = near_preset_names(collection, name);
+    error = app + " has no " + kind + " preset named '" + name + "'." +
+            (similar.empty() ? std::string() : " Close names: " + similar + ".") + " See --list-presets.";
+    code = CLI_CONFIG_FILE_ERROR;
+    return false;
+}
+
+/// One named system preset written out as a settings file the official merge
+/// reads: its settings with every parent already applied (Preset::config holds
+/// them — the vendor loader builds each preset over its parents,
+/// load_vendor_configs_from_json), plus the keys that make it a system preset
+/// of its own type. save_to_json is the engine's own writer, so the values
+/// keep their encoding; it writes no "type", "instantiation" or "filament_id",
+/// which load_config_file requires, so they are added after it.
+static bool write_named_preset_file(const std::string& dir, const Slic3r::Preset& preset, const char* type,
+                                    const std::string& stem, std::string& path, int& code, std::string& error) {
+    path = dir + "/" + stem + ".json";
+    try {
+        preset.config.save_to_json(path, preset.name, "system", preset.version.to_string());
+        json j;
+        {
+            boost::nowide::ifstream in(path);
+            in >> j;
+        }
+        j["type"]          = type;
+        j["instantiation"] = "true";
+        if (std::string(type) == "filament")
+            j["filament_id"] = preset.filament_id;
+        boost::nowide::ofstream out(path, std::ios::out | std::ios::trunc);
+        out << j.dump(1, '\t') << std::endl;
+        if (!out.good()) {
+            error = "Writing the settings file for preset '" + preset.name + "' failed";
+            code = CLI_ENVIRONMENT_ERROR;
+            return false;
+        }
+    } catch (const std::exception& e) {
+        error = "Writing the settings file for preset '" + preset.name + "' failed: " + e.what();
+        code = CLI_ENVIRONMENT_ERROR;
+        return false;
+    }
+    return true;
+}
+
+/// --printer-preset, with --process-preset / --filament-preset, on a project
+/// 3MF: the desktop app's printer switch. Naming a printer is what the
+/// desktop's printer list does — and what the shipped presets cannot do by
+/// path, since each holds only its differences from its parents — so the named
+/// presets are written out in full into `dir` and given to the same merge
+/// --load-settings runs. The switch then goes through the desktop's own code:
+/// the process the new printer takes (desktop_printer_switch_process), the
+/// plate moved onto the new bed (MovedToNewBed) and the printer's own plate
+/// (desktop_bed_type).
+static bool stage_named_presets_for_project(CliOptions& o, const std::string& dir, int& code, std::string& error) {
+    namespace fs = boost::filesystem;
+    if (o.printer_preset.empty()) {
+        error = "--process-preset and --filament-preset need --printer-preset.";
+        code = CLI_INVALID_PARAMS;
+        return false;
+    }
+    struct Cleanup { fs::path dir; ~Cleanup() { if (dir.empty()) return; boost::system::error_code e; fs::remove_all(dir, e); } } cleanup;
+    Slic3r::PresetBundle bundle;
+    try {
+        const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_named-%%%%%%%%");
+        cleanup.dir = staging;
+        if (!load_system_presets(o.argv0, bundle, staging, error)) { code = CLI_ENVIRONMENT_ERROR; return false; }
+    } catch (const std::exception& e) {
+        error = std::string("Loading the system presets failed: ") + e.what();
+        code = CLI_ENVIRONMENT_ERROR;
+        return false;
+    }
+#ifdef ENGINE_ORCA
+    const std::string app = "OrcaSlicer";
+#else
+    const std::string app = "BambuStudio";
+#endif
+    const auto add_settings_file = [&o](const std::string& path) {
+        o.cli.option<Slic3r::ConfigOptionStrings>("load_settings", true)->values.push_back(path);
+    };
+    std::string path;
+    if (!find_named_preset(bundle.printers, o.printer_preset, "printer", /*allow_default=*/false, app, code, error))
+        return false;
+    if (!write_named_preset_file(dir, *bundle.printers.find_preset(o.printer_preset, false), "machine", "machine",
+                                 path, code, error))
+        return false;
+    add_settings_file(path);
+    // The process is named only when it is given: with none the merge takes
+    // the one the desktop selects for the new printer, or keeps the project's
+    // while that printer is one it suits.
+    if (!o.process_preset.empty()) {
+        if (!find_named_preset(bundle.prints, o.process_preset, "process", /*allow_default=*/false, app, code, error))
+            return false;
+        if (!write_named_preset_file(dir, *bundle.prints.find_preset(o.process_preset, false), "process", "process",
+                                     path, code, error))
+            return false;
+        add_settings_file(path);
+    }
+    for (size_t i = 0; i < o.filament_presets.size(); ++i) {
+        const std::string& name = o.filament_presets[i];
+        if (!find_named_preset(bundle.filaments, name, "filament", /*allow_default=*/false, app, code, error))
+            return false;
+        if (!write_named_preset_file(dir, *bundle.filaments.find_preset(name, false), "filament",
+                                     "filament" + std::to_string(i + 1), path, code, error))
+            return false;
+        o.cli.option<Slic3r::ConfigOptionStrings>("load_filaments", true)->values.push_back(path);
+    }
+    o.preset_switch = true;
+    emit_event({{"event","presets_resolved"},
+                {"tag","ProjectPrinterSwitch"},
+                {"printer", o.printer_preset},
+                {"process", o.process_preset},
+                {"filaments", o.filament_presets},
+                {"message","The project moves to printer '" + o.printer_preset +
+                           "' by name, as the desktop app's printer list does; its presets are read from this "
+                           "engine's own profiles, every parent applied"}});
+    return true;
+}
+
 static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
                                   int& code, std::string& error) {
     namespace fs = boost::filesystem;
@@ -4970,28 +5163,10 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     const std::string app = "BambuStudio";
 #endif
     auto find = [&](Slic3r::PresetCollection& collection, const std::string& name, const char* kind) -> bool {
-        Slic3r::Preset* preset = collection.find_preset(name, false);
-        // Only the system presets --list-presets offers: never a built-in
-        // "- default -" preset, which is no printer's, process's or filament's.
         // The built-in default process is taken only as the desktop's own
-        // fallback (desktop_default_process), never by name.
-        const bool desktop_fallback = preset && preset->is_default && kind == std::string("process") &&
-                                      o.process_preset.empty();
-        if (preset && preset->name == name && (is_listed_preset(*preset) || desktop_fallback)) {
-            // A fresh AppConfig has no printer models installed, so system
-            // presets load invisible, and select_preset_by_name skips an
-            // invisible preset (Preset.cpp 3206 at 5873b5f / 3493 at
-            // 31f6803). Naming a preset is installing it, as the desktop
-            // app's setup wizard does.
-            preset->is_visible = true;
-            return true;
-        }
-        const std::string similar = near_preset_names(collection, name);
-        error = app + " has no " + kind + " preset named '" + name + "'." +
-                (similar.empty() ? std::string() : " Close names: " + similar + ".") +
-                " See --list-presets.";
-        code = CLI_CONFIG_FILE_ERROR;
-        return false;
+        // fallback, never by name on the command line.
+        const bool desktop_fallback = kind == std::string("process") && o.process_preset.empty();
+        return find_named_preset(collection, name, kind, desktop_fallback, app, code, error);
     };
 
     if (o.printer_preset.empty()) {
@@ -5886,6 +6061,7 @@ static RunStagingFolders run_staging;
 /// takes directories only.
 static bool is_staging_folder_name(const std::string& name) {
     return boost::algorithm::starts_with(name, "slicer_cli_load-") ||
+           boost::algorithm::starts_with(name, "slicer_cli_preset-") ||
            boost::algorithm::starts_with(name, "slicer_cli_export-");
 }
 
@@ -7595,7 +7771,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #else
                                  nullptr
 #endif
-                                 )) return;
+                                 )) {
+                // A shipped preset holds only its differences from its
+                // parents: read the rest of the chain in, so the file means
+                // the same here as it does in the desktop app.
+                apply_file_inherits(o.argv0, path, kind, config, verbose);
+                return;
+            }
             emit_event({{"event","config_load_failed"},
                         {"tag","ProfileLoadFailed"},
                         {"kind", kind},
@@ -8461,7 +8643,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 return 1;
             }
             std::vector<slicer_cli::DownwardPrinter> printers;
-            const slicer_cli::StepResult loaded = slicer_cli::load_downward_printers(o, project_facts, printers);
+            const slicer_cli::StepResult loaded =
+                slicer_cli::load_downward_printers(o, project_facts, this_engine_profiles_dir(o.argv0).string(), printers);
             if (loaded.code != 0) {
                 std::cerr << "Error: " << loaded.message << "\n";
                 set_outcome_failure(outcome, loaded.code, loaded.message);
@@ -10595,13 +10778,21 @@ int main(int argc, char** argv) {
             "--printer-preset (and optionally --process-preset and --filament-preset), or give settings "
             "files with --load-settings.");
     if (o.uses_presets()) {
-        if (project_3mf_input)
-            return refuse_run(CLI_INVALID_PARAMS, "--printer-preset/--process-preset/--filament-preset apply to "
-                                                  "an STL; a 3MF carries its own settings");
-        g_preset_config = std::make_unique<Slic3r::DynamicPrintConfig>();
         int code = 0;
         std::string error;
-        if (!resolve_named_presets(o, *g_preset_config, code, error)) {
+        bool resolved = false;
+        if (project_3mf_input) {
+            // --printer-preset on a project 3MF: the desktop app's printer
+            // switch (stage_named_presets_for_project). The presets named are
+            // written out in full for the merge --load-settings already runs.
+            const std::string dir = run_staging.add((boost::filesystem::temp_directory_path() /
+                                                     boost::filesystem::unique_path("slicer_cli_preset-%%%%%%%%")).string());
+            resolved = stage_named_presets_for_project(o, dir, code, error);
+        } else {
+            g_preset_config = std::make_unique<Slic3r::DynamicPrintConfig>();
+            resolved = resolve_named_presets(o, *g_preset_config, code, error);
+        }
+        if (!resolved) {
             emit_event({{"event","preset_error"}, {"tag","NamedPresetRefused"}, {"message", error}});
             std::cerr << "Error: " << error << "\n";
             if (o.slice_mode) {
@@ -10749,11 +10940,16 @@ int main(int argc, char** argv) {
                 std::cerr << "profilesDir is required when profiles is specified\n";
                 return 1;
             }
-            for (auto& [_, path] : lj["profiles"].items()) {
+            for (auto& [kind, path] : lj["profiles"].items()) {
                 if (!load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg)) {
                     std::cerr << "Failed to load profile: " << path.get<std::string>() << "\n";
                     return 1;
                 }
+                // The profile keeps its own "inherits" chain: the arrange reads
+                // the printer's clearances, which a shipped machine preset
+                // leaves to its parents.
+                apply_file_inherits(argv[0] ? argv[0] : "slicer_cli", profiles_dir + "/" + path.get<std::string>(),
+                                    kind.c_str(), cfg, false);
             }
         }
         using namespace Slic3r;

@@ -100,16 +100,24 @@ int load_config_file(const std::string& file, DynamicPrintConfig& config, std::s
         config_name = key_values[BBL_JSON_KEY_NAME];
         if (auto from_iter = key_values.find(BBL_JSON_KEY_FROM); from_iter != key_values.end())
             config_from = from_iter->second;
-        if (config_from != "system" && config_from != "User" && config_from != "user") {
+        // "from" may be empty: the desktop's own "Export current configs"
+        // writes it that way (PresetBundle.cpp 5965 at b0bfca52d), and the file
+        // is then an ordinary settings file, a person's rather than a vendor
+        // bundle's. Anything else it says is refused.
+        if (!config_from.empty() && config_from != "system" && config_from != "User" && config_from != "user") {
             why = file + " says it is from '" + config_from + "'; a settings file must be from \"system\" or \"User\"";
             return CLI_CONFIG_FILE_ERROR;
         }
         if (auto type_iter = key_values.find(BBL_JSON_KEY_TYPE); type_iter != key_values.end())
             config_type = type_iter->second;
+        // "type" may be missing too (a preset the desktop saved from the
+        // panel: Config.cpp 1525-1527, Preset.cpp 690-696 at b0bfca52d write
+        // version, name and from only). Which kind it is then comes from the
+        // keys it states, and from the flag that read it - load_settings_file.
         if (config_type == "filament") {
             if (auto id_iter = key_values.find(BBL_JSON_KEY_FILAMENT_ID); id_iter != key_values.end())
                 filament_id = id_iter->second;
-        } else if (config_type != "machine" && config_type != "process") {
+        } else if (!config_type.empty() && config_type != "machine" && config_type != "process") {
             why = file + " is of type '" + config_type + "'; a settings file is a machine, process or filament";
             return CLI_CONFIG_FILE_ERROR;
         }
@@ -123,6 +131,70 @@ int load_config_file(const std::string& file, DynamicPrintConfig& config, std::s
 
 std::string full_preset_path(const char* folder, const std::string& name) {
     return resources_dir() + "/profiles/BBL/" + folder + "/" + name + ".json";
+}
+
+/// Which kind a settings file is when it states no "type" of its own: the keys
+/// only one kind of preset carries. A printer's file names its model or its
+/// bed, a filament's names its material, a process's its layer height.
+std::string config_type_from_keys(const DynamicPrintConfig& config) {
+    for (const char* key : {"printer_model", "printer_settings_id", "printable_area", "nozzle_diameter",
+                            "machine_start_gcode", "printer_variant"})
+        if (config.has(key))
+            return "machine";
+    for (const char* key : {"filament_type", "filament_settings_id", "nozzle_temperature", "filament_diameter",
+                            "filament_flow_ratio"})
+        if (config.has(key))
+            return "filament";
+    for (const char* key : {"print_settings_id", "layer_height", "wall_loops", "sparse_infill_density"})
+        if (config.has(key))
+            return "process";
+    return {};
+}
+
+/// load_config_file with the file's "inherits" chain resolved out of this
+/// engine's bundled profiles: every settings-file flag reads its files through
+/// this, so a shipped preset — a file that holds its differences from its
+/// parents and nothing more — is read the way the desktop reads it. Read as
+/// given, a machine preset's own 74 keys land on the project and every key its
+/// parents define stays the old printer's, which slices as a hybrid of two
+/// machines with no refusal at all.
+///
+/// A file that states neither "type" nor "from" — the desktop's own exports —
+/// is taken as the kind its keys say, else as the kind `expected_type` names
+/// (the flag that read it).
+int load_settings_file(const std::string& profiles_dir, const std::string& file, DynamicPrintConfig& config,
+                       std::string& config_type, std::string& config_name, std::string& filament_id,
+                       std::string& config_from, std::string& why, const char* expected_type = "") {
+    if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
+        return ret;
+    if (config_from.empty())
+        config_from = "User";
+    if (config_type.empty()) {
+        config_type = config_type_from_keys(config);
+        if (config_type.empty() && expected_type != nullptr)
+            config_type = expected_type;
+        if (config_type.empty()) {
+            why = file + " says no \"type\"; a settings file is a machine, process or filament. Add a \"type\" to "
+                         "the file, or give it with the flag that matches it (--machine, --process, --filament, "
+                         "--load-settings, --load-filaments)";
+            return CLI_CONFIG_FILE_ERROR;
+        }
+    }
+    std::string parent;
+    const InheritsResolution resolved =
+        apply_inherited_settings(profiles_dir, config_type, config_from, config, parent, file);
+    if (resolved == InheritsResolution::NotBundled && config_from == "system") {
+        // A file that says it is a system preset of a parent this engine's
+        // profiles tree does not hold cannot be completed: refuse before
+        // slicing, and name the preset to pass by name instead.
+        const std::string flag = config_type == "filament" ? "--filament-preset"
+                                 : config_type == "process" ? "--process-preset"
+                                                            : "--printer-preset";
+        why = file + " is a partial preset that inherits '" + parent + "'; pass " + flag + " \"" + config_name +
+              "\" instead";
+        return CLI_CONFIG_FILE_ERROR;
+    }
+    return 0;
 }
 
 /// The printer model id of a machine file's printer_model, from
@@ -381,7 +453,9 @@ void read_project_facts(const DynamicPrintConfig& config, ProjectFacts& f) {
 bool wants_settings_merge(const CliOptions& o) {
     auto has = [&](const char* key) { return o.given_flag(key); };
     return has("load_settings") || has("load_filaments") || has("uptodate") || has("uptodate_settings") ||
-           has("uptodate_filaments") || has("load_defaultfila") || o.extra_config.has("filament_colour")
+           has("uptodate_filaments") || has("load_defaultfila") || o.extra_config.has("filament_colour") ||
+           // --printer-preset on a project 3MF: the merge carries the switch.
+           o.preset_switch
 #ifndef ENGINE_ORCA
            || (has("estimate_mode") && o.cli.opt_bool("estimate_mode"))
 #endif
@@ -421,7 +495,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     for (const std::string& file : load_configs) {
         DynamicPrintConfig config;
         std::string config_type, config_name, filament_id, config_from;
-        if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
+        if (int ret = load_settings_file(profiles_dir, file, config, config_type, config_name, filament_id, config_from, why); ret)
             return fail(ret, why);
         if (config_type == "machine") {
             if (!new_printer_name.empty())
@@ -508,7 +582,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             if (default_filament_file.empty() && !file.empty()) {
                 DynamicPrintConfig config;
                 std::string config_type, config_name, filament_id, config_from;
-                if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
+                if (int ret = load_settings_file(profiles_dir, file, config, config_type, config_name, filament_id, config_from, why); ret)
                     return fail(ret, why);
                 if (config_type != "filament")
                     return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file; give it with --load-filaments");
@@ -531,7 +605,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (!file.empty()) {
             DynamicPrintConfig config;
             std::string config_type, config_name, filament_id, config_from;
-            if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
+            if (int ret = load_settings_file(profiles_dir, file, config, config_type, config_name, filament_id, config_from, why); ret)
                 return fail(ret, why);
             if (config_type != "filament")
                 return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file; give it with --load-filaments");
@@ -546,7 +620,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     if (boost::filesystem::exists(parent_path)) {
                         DynamicPrintConfig parent_config;
                         std::string ptype, pname, pid, pfrom, pwhy;
-                        if (!load_config_file(parent_path, parent_config, ptype, pname, pid, pfrom, pwhy) && ptype == "filament") {
+                        if (!load_settings_file(profiles_dir, parent_path, parent_config, ptype, pname, pid, pfrom, pwhy) && ptype == "filament") {
                             for (const auto& opt_key : filament_options_with_variant) {
                                 ConfigOption* opt = config.option(opt_key);
                                 ConfigOption* parent_opt = parent_config.option(opt_key);
@@ -621,7 +695,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             for (const std::string& file : uptodate_configs) {
                 DynamicPrintConfig config;
                 std::string config_type, config_name, filament_id, config_from;
-                if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
+                if (int ret = load_settings_file(profiles_dir, file, config, config_type, config_name, filament_id, config_from, why); ret)
                     return fail(ret, why);
                 if (config_type == "machine") {
                     if (config_name != facts.current_printer_system_name)
@@ -639,7 +713,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                             orig_w = (int)(orig_area[2].x() - orig_area[0].x());
                             orig_d = (int)(orig_area[2].y() - orig_area[0].y());
                         }
-                        orig_h = (int)config.opt_float("printable_height");
+                        orig_h = config.has("printable_height") ? (int)config.opt_float("printable_height") : 0;
                         if (orig_w > 0 && orig_d > 0 && orig_h > 0 &&
                             (facts.old_printable_width > orig_w || facts.old_printable_depth > orig_d || facts.old_printable_height > orig_h))
                             return fail(CLI_MODIFIED_PARAMS_TO_PRINTER,
@@ -670,7 +744,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 if (boost::filesystem::exists(path)) {
                     DynamicPrintConfig config;
                     std::string config_type, config_name, filament_id, config_from;
-                    if (int ret = load_config_file(path, config, config_type, config_name, filament_id, config_from, why); ret)
+                    if (int ret = load_settings_file(profiles_dir, path, config, config_type, config_name, filament_id, config_from, why); ret)
                         return fail(ret, why);
                     upward_compatible_printers = config.option<ConfigOptionStrings>("upward_compatible_machine", true)->values;
                     config.set("printer_settings_id", config_name, true);
@@ -688,7 +762,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 if (boost::filesystem::exists(path)) {
                     DynamicPrintConfig config;
                     std::string config_type, config_name, filament_id, config_from;
-                    if (int ret = load_config_file(path, config, config_type, config_name, filament_id, config_from, why); ret)
+                    if (int ret = load_settings_file(profiles_dir, path, config, config_type, config_name, filament_id, config_from, why); ret)
                         return fail(ret, why);
                     current_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
                     config.set("print_settings_id", config_name, true);
@@ -710,7 +784,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     const std::string& file = uptodate_filaments[index];
                     DynamicPrintConfig config;
                     std::string config_type, config_name, filament_id, config_from;
-                    if (int ret = load_config_file(file, config, config_type, config_name, filament_id, config_from, why); ret)
+                    if (int ret = load_settings_file(profiles_dir, file, config, config_type, config_name, filament_id, config_from, why); ret)
                         return fail(ret, why);
                     if (config_type != "filament")
                         return fail(CLI_CONFIG_FILE_ERROR, file + " is not a filament file; give it with --load-filaments");
@@ -744,7 +818,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         continue;
                     DynamicPrintConfig config;
                     std::string config_type, config_name, filament_id, config_from;
-                    if (int ret = load_config_file(path, config, config_type, config_name, filament_id, config_from, why); ret)
+                    if (int ret = load_settings_file(profiles_dir, path, config, config_type, config_name, filament_id, config_from, why); ret)
                         return fail(ret, why);
                     if (config_type != "filament")
                         return fail(CLI_CONFIG_FILE_ERROR, path + " is not a filament file; give it with --load-filaments");
@@ -766,7 +840,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (boost::filesystem::exists(path)) {
             DynamicPrintConfig config;
             std::string config_type, config_name, filament_id, config_from;
-            if (int ret = load_config_file(path, config, config_type, config_name, filament_id, config_from, why); ret)
+            if (int ret = load_settings_file(profiles_dir, path, config, config_type, config_name, filament_id, config_from, why); ret)
                 return fail(ret, why);
             upward_compatible_printers = config.option<ConfigOptionStrings>("upward_compatible_machine", true)->values;
         }
@@ -776,7 +850,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (boost::filesystem::exists(path)) {
             DynamicPrintConfig config;
             std::string config_type, config_name, filament_id, config_from;
-            if (int ret = load_config_file(path, config, config_type, config_name, filament_id, config_from, why); ret)
+            if (int ret = load_settings_file(profiles_dir, path, config, config_type, config_name, filament_id, config_from, why); ret)
                 return fail(ret, why);
             current_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
         }
@@ -1058,23 +1132,22 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             if (std::find(keys.begin(), keys.end(), "compatible_printers") == keys.end())
                 different_settings[0] = old_setting + ";compatible_printers";
         }
-        // Another extruder count: the process values follow the new
-        // extruders, from the printer's default process (B 3480-3521).
-#ifdef ENGINE_ORCA
-        // OrcaSlicer ships no machine_full/process_full folder, and the branch
-        // the official CLI takes here reads the new printer's default process
-        // from one (OrcaSlicer.cpp 3003-3011: resources/orca/profiles/BBL/
-        // process_full/<default_print_profile>.json), so its own 2.4.0-alpha
-        // build refuses this printer change with "cannot find the settings
-        // file". The desktop app switches printers from the presets its
-        // package ships: PresetBundle::update_compatible keeps the current
-        // process while the new printer is one it suits and otherwise selects
-        // the best compatible system preset, the printer's
-        // default_print_profile first (OrcaSlicer PresetBundle.cpp 5295-5330,
-        // Preset.hpp 686-709, Tab.cpp 6130-6140 at 31f6803), whose settings
-        // then are the process's (PresetBundle::full_config, PresetBundle.cpp
-        // 3858-3862). BambuStudio keeps the official branch below, as its
-        // package ships process_full.
+        // The process the new printer takes. The official CLI reads it from
+        // the package's process_full folder (B 3480-3521; OrcaSlicer.cpp
+        // 3003-3011: resources/orca/profiles/BBL/process_full/
+        // <default_print_profile>.json), which the open-source package does not
+        // ship: the official 2.4.2 build refuses the switch with "cannot find
+        // the settings file" (-3) - and so did this port, with a sentence that
+        // never said to give a process file. The desktop app switches printers
+        // from the presets its package does ship: PresetBundle::update_compatible
+        // keeps the current process while the new printer is one it suits and
+        // otherwise selects the best compatible system preset, the printer's
+        // default_print_profile first (PresetBundle.cpp 5295-5330, Preset.hpp
+        // 686-709, Tab.cpp 6130-6140 at 31f6803), whose settings then are the
+        // process's (PresetBundle::full_config, PresetBundle.cpp 3858-3862).
+        // Both engines run that rule; the process_full file is read only where
+        // the desktop pick found nothing and the extruder count changed, which
+        // is the case the official CLI's own branch is for.
         if (new_process_name.empty()) {
             // The process list to search is the NEW printer's vendor's, not
             // the project's: the desktop tags every loaded preset with the
@@ -1101,34 +1174,58 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 // The process is now the selected preset: it names itself, as
                 // the desktop's full config does (PresetBundle.cpp 4106).
                 m_print_config.option<ConfigOptionString>("print_settings_id", true)->value = picked.name;
+                // The pick, on the record.
+                emit({{"event","presets_resolved"},
+                      {"tag","ProcessSwitched"},
+                      {"printer", new_printer_system_name},
+                      {"process", picked.name},
+                      {"message","The printer '" + new_printer_system_name + "' does not take the project's process; "
+                                 "it takes '" + picked.name + "'"}});
+            }
+#ifdef ENGINE_BAMBU
+            // The official branch reads the new printer's default process out
+            // of the package's process_full folder (B 3480-3521). The
+            // open-source package does not ship that folder, and the branch
+            // used to run whenever the extruder or variant counts differed -
+            // which a project that states no print_extruder_variant makes true
+            // (0 against the printer's 1) - so a machine-only switch refused
+            // with "cannot find the settings file .../process_full/...", a path
+            // inside the package. With no such file the desktop rule stands:
+            // the pick above found no compatible preset of its own, so the
+            // project's process is kept.
+            else if (!new_default_process_name.empty() &&
+                     boost::filesystem::exists(full_preset_path("process_full", new_default_process_name)) &&
+                     (facts.current_extruder_count != new_extruder_count ||
+                      current_print_variant_count != new_printer_variant_count)) {
+                // The official branch: the printer's own default process.
+                const std::string file_path = full_preset_path("process_full", new_default_process_name);
+                DynamicPrintConfig config;
+                std::string config_type, config_name, filament_id, config_from;
+                if (int ret = load_settings_file(profiles_dir, file_path, config, config_type, config_name, filament_id, config_from, why); ret)
+                    return fail(ret, why);
+                if (config_type != "process" || config_from != "system")
+                    return fail(CLI_CONFIG_FILE_ERROR, file_path + " is not a system process file; give a system "
+                                                                   "process preset from the package's profiles");
+                int ret = 0;
+                std::set<std::string> keys = print_options_with_variant;
+                if (!facts.current_is_multi_extruder && new_is_multi_extruder && current_print_variant_count == 1)
+                    ret = m_print_config.update_values_from_single_to_multi(config, keys, "print_extruder_id", "print_extruder_variant");
+                else
+                    ret = m_print_config.update_values_from_multi_to_multi(config, keys, "print_extruder_id", "print_extruder_variant",
+                                                                           new_extruder_variants);
+                if (ret)
+                    return fail(CLI_CONFIG_FILE_ERROR, "Moving the process values to the new extruders failed.");
+            }
+#endif
+            else {
+                emit({{"event","presets_resolved"},
+                      {"tag","ProcessKept"},
+                      {"printer", new_printer_system_name},
+                      {"process", facts.current_process_system_name},
+                      {"message","The printer '" + new_printer_system_name + "' suits the project's process; "
+                                 "it is kept"}});
             }
         }
-#else
-        if (new_process_name.empty() && (facts.current_extruder_count != new_extruder_count ||
-                                         current_print_variant_count != new_printer_variant_count)) {
-            if (new_default_process_name.empty())
-                return fail(CLI_CONFIG_FILE_ERROR,
-                            "The new printer names no default process; give a process with --load-settings "
-                            "or --process-preset");
-            const std::string file_path = full_preset_path("process_full", new_default_process_name);
-            DynamicPrintConfig config;
-            std::string config_type, config_name, filament_id, config_from;
-            if (int ret = load_config_file(file_path, config, config_type, config_name, filament_id, config_from, why); ret)
-                return fail(ret, why);
-            if (config_type != "process" || config_from != "system")
-                return fail(CLI_CONFIG_FILE_ERROR, file_path + " is not a system process file; give a system "
-                                                               "process preset from the package's profiles");
-            int ret = 0;
-            std::set<std::string> keys = print_options_with_variant;
-            if (!facts.current_is_multi_extruder && new_is_multi_extruder && current_print_variant_count == 1)
-                ret = m_print_config.update_values_from_single_to_multi(config, keys, "print_extruder_id", "print_extruder_variant");
-            else
-                ret = m_print_config.update_values_from_multi_to_multi(config, keys, "print_extruder_id", "print_extruder_variant",
-                                                                       new_extruder_variants);
-            if (ret)
-                return fail(CLI_CONFIG_FILE_ERROR, "Moving the process values to the new extruders failed.");
-        }
-#endif
     }
 
     // The filaments into the print settings (B 3524-3757; O 3041-3264).
@@ -1600,7 +1697,8 @@ std::vector<std::string> downward_list_from_cli_config(const std::string& printe
 
 } // namespace
 
-StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts, std::vector<DownwardPrinter>& printers) {
+StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts, const std::string& profiles_dir,
+                                  std::vector<DownwardPrinter>& printers) {
     StepResult r;
     std::vector<std::string> files;
     if (const auto* given = o.cli.option<ConfigOptionStrings>("downward_settings"))
@@ -1617,7 +1715,7 @@ StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts
         }
         DynamicPrintConfig config;
         std::string config_type, config_name, filament_id, config_from, why;
-        if (int ret = load_config_file(path, config, config_type, config_name, filament_id, config_from, why); ret) {
+        if (int ret = load_settings_file(profiles_dir, path, config, config_type, config_name, filament_id, config_from, why); ret) {
             r.code    = ret;
             r.message = "--downward-settings: " + why;
             return r;
@@ -1633,10 +1731,16 @@ StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts
         const Pointfs printable_area = config.option<ConfigOptionPoints>("printable_area", true)->values;
         const Pointfs exclude_area   = config.option<ConfigOptionPoints>("bed_exclude_area", true)->values;
         const Pointfs wrapping_area  = config.option<ConfigOptionPoints>("wrapping_exclude_area", true)->values;
+        // The points option's own default is a full rectangle, so the size
+        // check above passes for a file that states no printable_area at all;
+        // printable_height then is not in the config, and opt_float() has
+        // nothing to read (that was a null dereference: --downward-settings
+        // with the shipped partial machine files exited 139).
         if (printable_area.size() >= 4) {
             printer.printable_width  = (int)(printable_area[2].x() - printable_area[0].x());
             printer.printable_depth  = (int)(printable_area[2].y() - printable_area[0].y());
-            printer.printable_height = (int)(config.opt_float("printable_height"));
+            if (config.has("printable_height"))
+                printer.printable_height = (int)(config.opt_float("printable_height"));
         }
         if (exclude_area.size() >= 4) {
             printer.exclude_width = (int)(exclude_area[2].x() - exclude_area[0].x());

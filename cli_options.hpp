@@ -72,6 +72,10 @@ struct CliOptions {
     std::string printer_preset;
     std::string process_preset;
     std::vector<std::string> filament_presets;
+    // --printer-preset ... on a project 3MF: the named presets are staged as
+    // settings files, so the official merge runs for them exactly as it does
+    // for --load-settings.
+    bool preset_switch = false;
     // --export-3mf NAME: the sliced project, written into --outputdir.
     std::string export_3mf;
     bool uses_presets() const {

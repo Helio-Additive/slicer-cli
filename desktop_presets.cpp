@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -56,6 +57,30 @@ bool offered(const std::vector<Slic3r::BedType>& list, Slic3r::BedType type) {
     return std::find(list.begin(), list.end(), type) != list.end();
 }
 
+/// The file names an "include" key holds: one name, or a JSON array of them
+/// (BambuStudio reads the raw key-value and takes the string between quotes or
+/// the JSON array out of it, PresetBundle.cpp 4839-4861 at 5873b5f).
+std::vector<std::string> included_names(const std::map<std::string, std::string>& key_values) {
+    std::vector<std::string> out;
+    const auto it = key_values.find("include");
+    if (it == key_values.end() || it->second.size() < 2)
+        return out;
+    const std::string& text = it->second;
+    if (text.front() == '"' && text.back() == '"') {
+        out.push_back(text.substr(1, text.size() - 2));
+        return out;
+    }
+    if (text.front() == '[' && text.back() == ']') {
+        try {
+            for (const auto& item : nlohmann::json::parse(text))
+                if (item.is_string())
+                    out.push_back(item.get<std::string>());
+        } catch (...) {
+        }
+    }
+    return out;
+}
+
 /// A system preset's settings over its whole "inherits" chain: the parent's
 /// flattened config, then the file's own keys on top
 /// (load_vendor_configs_from_json: `config = *default_config;
@@ -82,21 +107,39 @@ bool load_flat_preset(const boost::filesystem::path& folder, const std::string& 
     }
     if (!reason.empty())
         return false;
+    Slic3r::DynamicPrintConfig base;
     const auto inherits = key_values.find("inherits");
     if (inherits != key_values.end() && !inherits->second.empty()) {
         Slic3r::DynamicPrintConfig parent;
         std::map<std::string, std::string> parent_meta;
         if (!load_flat_preset(folder, inherits->second, parent, parent_meta, depth + 1))
             return false;
-        out = std::move(parent);
-        // The file's own keys win, the way the vendor loader merges each preset
-        // over its parent (`config = *default_config; config.apply(config_src)`,
-        // PresetBundle.cpp 4932-4936). DynamicConfig::operator+= cannot be used:
-        // it assigns through the ConfigOption base, which copies nothing.
-        out.apply(own, /*ignore_nonexistent=*/true);
-    } else {
-        out = std::move(own);
+        base = std::move(parent);
     }
+    // "include": further files the preset names, each contributing the keys it
+    // states at a value of its own, applied after the parent chain and before
+    // the preset's own keys (BambuStudio PresetBundle.cpp 4845-4881:
+    // `config.apply_only(include_config, include_config.diff(*include_default_config))`
+    // per included file, then `config.apply(config_src)` at 4888). Only the
+    // BBL tree uses it — 29 machine and 1393 filament presets, no process
+    // preset, and no OrcaSlicer preset (its vendor loader reads no such key).
+    // Every included file is a leaf: none of the 1482 names in that tree
+    // states "inherits" or "include" of its own, so it is taken as its own
+    // file, the way the loader stores a gcode template (4866-4870).
+    for (const std::string& included_name : included_names(key_values)) {
+        Slic3r::DynamicPrintConfig included;
+        std::map<std::string, std::string> included_meta;
+        if (!load_flat_preset(folder, included_name, included, included_meta, depth + 1))
+            continue;   // 4883: an include that cannot be found is reported and the rest carry on
+        const Slic3r::DynamicPrintConfig defaults = Slic3r::DynamicPrintConfig::full_print_config();
+        base.apply_only(included, included.diff(defaults), /*ignore_nonexistent=*/true);
+    }
+    // The file's own keys win, the way the vendor loader merges each preset
+    // over its parent (`config = *default_config; config.apply(config_src)`,
+    // PresetBundle.cpp 4932-4936). DynamicConfig::operator+= cannot be used:
+    // it assigns through the ConfigOption base, which copies nothing.
+    base.apply(own, /*ignore_nonexistent=*/true);
+    out = std::move(base);
     meta = std::move(key_values);
     return true;
 }
@@ -137,37 +180,143 @@ vendor_process_files(const boost::filesystem::path& profiles_dir, const std::str
     return out;
 }
 
-/// The system process preset `name` over its whole "inherits" chain, from
-/// whichever vendor tree under `profiles_dir` lists it: that vendor's
-/// process_list names the file's sub_path under the vendor folder, the same
-/// list vendor_process_files() reads. False when no tree lists the name (a user
-/// or external preset), or when its file cannot be read.
-bool find_system_process(const std::string& profiles_dir, const std::string& name,
-                         Slic3r::DynamicPrintConfig& out, std::map<std::string, std::string>& meta) {
+/// The file a vendor bundle's `<type>_list` names for `name`, else the folder of
+/// that kind beside it. Empty when the bundle holds neither.
+boost::filesystem::path preset_file_in_vendor(const std::string& profiles_dir, const std::string& vendor,
+                                              const char* list_key, const std::string& type,
+                                              const std::string& name) {
+    namespace fs = boost::filesystem;
+    if (name.empty() || vendor.empty())
+        return {};
+    const fs::path vendor_dir = fs::path(profiles_dir) / vendor;
+    try {
+        nlohmann::json j;
+        boost::nowide::ifstream ifs((fs::path(profiles_dir) / (vendor + ".json")).string());
+        ifs >> j;
+        if (j.contains(list_key) && j[list_key].is_array())
+            for (const auto& entry : j[list_key]) {
+                if (!entry.is_object() || entry.value("name", std::string()) != name)
+                    continue;
+                const fs::path file = vendor_dir / entry.value("sub_path", std::string());
+                if (fs::exists(file))
+                    return file;
+                break;
+            }
+    } catch (...) {
+    }
+    const fs::path plain = vendor_dir / type / (name + ".json");
+    return fs::exists(plain) ? plain : fs::path();
+}
+
+/// One vendor bundle's preset `name` of `type`, over its whole "inherits" chain,
+/// every hop resolved inside that same bundle: the entry's sub_path under the
+/// vendor folder names each file, the list the desktop reads
+/// (load_vendor_configs_from_json, OrcaSlicer PresetBundle.cpp 4805-4812 at
+/// 31f6803), and a name the bundle's list does not hold is looked for in the
+/// folder of that kind beside it. The chain stays in the bundle because a
+/// preset inherits within it: thirty bundles list an `fdm_filament_pet` of
+/// their own, and only the file's own bundle has the one it means. (Walking it
+/// folder by folder instead loses the vendors that keep parents in a subfolder:
+/// OrcaFilamentLibrary's `filament/base/`, which every Generic filament
+/// inherits from.)
+bool load_flat_preset_in_vendor(const std::string& profiles_dir, const std::string& vendor, const char* list_key,
+                                const std::string& type, const std::string& name, Slic3r::DynamicPrintConfig& out,
+                                std::map<std::string, std::string>& meta, int depth = 0) {
+    namespace fs = boost::filesystem;
+    if (depth > 16 || name.empty())
+        return false;
+    const fs::path file = preset_file_in_vendor(profiles_dir, vendor, list_key, type, name);
+    if (file.empty())
+        return false;
+    Slic3r::DynamicPrintConfig own;
+    std::map<std::string, std::string> key_values;
+    std::string                        reason;
+    try {
+        Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+        own.load_from_json(file.string(), substitutions, /*load_inherits_in_config=*/false, key_values, reason);
+    } catch (...) {
+        return false;
+    }
+    if (!reason.empty())
+        return false;
+    Slic3r::DynamicPrintConfig base;
+    const auto inherits = key_values.find("inherits");
+    if (inherits != key_values.end() && !inherits->second.empty() &&
+        !load_flat_preset_in_vendor(profiles_dir, vendor, list_key, type, inherits->second, base, meta, depth + 1))
+        return false;   // a parent the bundle does not hold: the chain is not this bundle's
+    // "include": further files beside this one, each contributing the keys it
+    // states at a value of its own (BambuStudio PresetBundle.cpp 4845-4881).
+    for (const std::string& included_name : included_names(key_values)) {
+        Slic3r::DynamicPrintConfig included;
+        std::map<std::string, std::string> included_meta;
+        if (!load_flat_preset(file.parent_path(), included_name, included, included_meta, depth + 1))
+            continue;
+        const Slic3r::DynamicPrintConfig defaults = Slic3r::DynamicPrintConfig::full_print_config();
+        base.apply_only(included, included.diff(defaults), /*ignore_nonexistent=*/true);
+    }
+    base.apply(own, /*ignore_nonexistent=*/true);
+    out  = std::move(base);
+    meta = std::move(key_values);
+    return true;
+}
+
+/// The system preset `name` of one vendor bundle.
+bool find_preset_in_vendor(const boost::filesystem::path& profiles_dir, const std::string& vendor,
+                           const char* list_key, const std::string& name, Slic3r::DynamicPrintConfig& out,
+                           std::map<std::string, std::string>& meta) {
+    const std::string key = list_key;
+    const std::string type = key.substr(0, key.find('_'));
+    return load_flat_preset_in_vendor(profiles_dir.string(), vendor, list_key, type, name, out, meta);
+}
+
+/// The bundled system preset of `type` ("machine", "process", "filament") named
+/// `name`. `vendor` is the bundle to read it from when the caller knows it - the
+/// leaf file's own vendor, which is where a preset inherits from: five dozen
+/// vendors ship a file named fdm_machine_common, each its own (OrcaSlicer's
+/// Anker, Anycubic, BBL, Creality ... bundle lists), so a name alone is not
+/// enough to know which one a parent means. With no vendor named the bundles
+/// are read in name order, the order the desktop loads them, where the first
+/// bundle that lists the name owns it (load_vendor_configs_from_json refuses a
+/// second copy: "has already been loaded from another Config Bundle",
+/// OrcaSlicer PresetBundle.cpp 4855 at 31f6803).
+bool find_system_preset(const std::string& profiles_dir, const char* list_key, const std::string& name,
+                        Slic3r::DynamicPrintConfig& out, std::map<std::string, std::string>& meta,
+                        const std::string& vendor = {}) {
     namespace fs = boost::filesystem;
     if (name.empty())
         return false;
+    if (!vendor.empty() && find_preset_in_vendor(profiles_dir, vendor, list_key, name, out, meta))
+        return true;
+    std::vector<fs::path> vendor_jsons;
     try {
-        for (fs::directory_iterator it{fs::path(profiles_dir)}, end; it != end; ++it) {
-            const fs::path vendor_json = it->path();
-            if (vendor_json.extension() != ".json")
-                continue;
-            nlohmann::json j;
-            boost::nowide::ifstream ifs(vendor_json.string());
-            ifs >> j;
-            if (!j.contains("process_list") || !j["process_list"].is_array())
-                continue;
-            for (const auto& entry : j["process_list"]) {
-                if (!entry.is_object() || entry.value("name", std::string()) != name)
-                    continue;
-                const fs::path file = fs::path(profiles_dir) / vendor_json.stem().string() /
-                                      entry.value("sub_path", std::string());
-                return load_flat_preset(file.parent_path(), file.stem().string(), out, meta);
-            }
-        }
+        for (fs::directory_iterator it{fs::path(profiles_dir)}, end; it != end; ++it)
+            if (it->path().extension() == ".json")
+                vendor_jsons.push_back(it->path());
     } catch (...) {
+        return false;
+    }
+    std::sort(vendor_jsons.begin(), vendor_jsons.end(),
+              [](const fs::path& a, const fs::path& b) { return a.filename().string() < b.filename().string(); });
+    for (const fs::path& vendor_json : vendor_jsons) {
+        // The whole chain comes from the bundle that lists the name, not just
+        // its first hop.
+        std::map<std::string, std::string> candidate_meta;
+        Slic3r::DynamicPrintConfig candidate;
+        const std::string key = list_key;
+        if (load_flat_preset_in_vendor(profiles_dir, vendor_json.stem().string(), list_key,
+                                       key.substr(0, key.find('_')), name, candidate, candidate_meta)) {
+            out  = std::move(candidate);
+            meta = std::move(candidate_meta);
+            return true;
+        }
     }
     return false;
+}
+
+/// The system process preset `name`, the list vendor_process_files() reads.
+bool find_system_process(const std::string& profiles_dir, const std::string& name,
+                         Slic3r::DynamicPrintConfig& out, std::map<std::string, std::string>& meta) {
+    return find_system_preset(profiles_dir, "process_list", name, out, meta);
 }
 
 std::vector<std::string> compatible_printers_of(const Slic3r::DynamicPrintConfig& config) {
@@ -191,6 +340,77 @@ std::string preset_alias_of(const std::string& name) {
 }
 
 } // namespace
+
+bool load_bundled_system_preset(const std::string& profiles_dir, const std::string& type, const std::string& name,
+                                Slic3r::DynamicPrintConfig& out, const std::string& vendor) {
+    // The list the desktop reads this type's presets from
+    // (load_vendor_configs_from_json: machine_list, process_list, filament_list;
+    // OrcaSlicer PresetBundle.cpp 4805-4812 at 31f6803).
+    const char* list_key = type == "machine"  ? "machine_list"
+                           : type == "process" ? "process_list"
+                           : type == "filament" ? "filament_list"
+                                                : nullptr;
+    if (list_key == nullptr)
+        return false;
+    std::map<std::string, std::string> meta;
+    return find_system_preset(profiles_dir, list_key, name, out, meta, vendor);
+}
+
+/// The bundle a settings file belongs to, when it sits in one:
+/// `<profiles_dir>/<Vendor>/<type>/<file>.json` gives `<Vendor>`, the folder a
+/// preset's parents come from. Empty for a file of its own (a user preset, an
+/// export), whose parents are searched in every bundle.
+std::string vendor_of_settings_file(const std::string& profiles_dir, const std::string& type,
+                                    const std::string& file) {
+    namespace fs = boost::filesystem;
+    try {
+        const fs::path path = fs::path(file);
+        const std::string kind = path.parent_path().filename().string();
+        if (kind != type)
+            return {};
+        const std::string vendor = path.parent_path().parent_path().filename().string();
+        if (vendor.empty() || !fs::exists(fs::path(profiles_dir) / vendor))
+            return {};
+        return vendor;
+    } catch (...) {
+        return {};
+    }
+}
+
+InheritsResolution apply_inherited_settings(const std::string& profiles_dir, const std::string& type,
+                                           const std::string& from, Slic3r::DynamicPrintConfig& config,
+                                           std::string& parent, const std::string& file) {
+    parent.clear();
+    const auto* inherits = config.option<Slic3r::ConfigOptionString>("inherits");
+    if (inherits == nullptr || inherits->value.empty())
+        return InheritsResolution::None;
+    parent = inherits->value;
+    Slic3r::DynamicPrintConfig full;
+    // The parents come from the file's own bundle when it sits in one.
+    if (!load_bundled_system_preset(profiles_dir, type, parent, full, vendor_of_settings_file(profiles_dir, type, file)))
+        return InheritsResolution::NotBundled;
+    // The parent chain, then the file's own keys:
+    //   * a vendor bundle's file states only its differences from its parents
+    //     and the desktop loads it over them (`config = *default_config;
+    //     config.apply(config_src)`, OrcaSlicer PresetBundle.cpp 4894,
+    //     BambuStudio PresetBundle.cpp 5087);
+    //   * a preset a person saved holds the keys it changed and names the
+    //     system preset it was saved over, which is the base the desktop
+    //     shows its differences against and slices with
+    //     (PresetCollection::load_external_preset, OrcaSlicer Preset.cpp
+    //     2445-2456: every key the file does not list in
+    //     different_settings_to_system takes the parent's value - the same
+    //     result, since the file's own keys are applied last either way).
+    // `from` is therefore only reported, never a reason to skip the merge.
+    (void)from;
+    full.apply(config, /*ignore_nonexistent=*/true);
+    config = std::move(full);
+    // "inherits" and "different_settings_to_system" stay: they are the file's
+    // own record of what it was saved over, and the merge reads both (the
+    // parent's name for the exported project's inherits_group, the key list
+    // for different_settings_to_system).
+    return InheritsResolution::Resolved;
+}
 
 std::string bed_type_name(Slic3r::BedType type) {
     const Slic3r::ConfigOptionDef* def = Slic3r::print_config_def.get("curr_bed_type");
@@ -294,12 +514,20 @@ std::string desktop_printer_vendor(const std::string& profiles_dir, const std::s
     // (load_vendor_configs_from_json, PresetBundle.cpp 4992), and a printer
     // model resolves to its vendor by that list too (PresetBundle.cpp
     // 617-622), so the printer's own vendor is what its process list is read
-    // from.
+    // from. The bundles are read in name order, as the desktop loads them (see
+    // find_system_preset): a name two bundles both list belongs to the first.
+    std::vector<fs::path> vendor_jsons;
     try {
-        for (fs::directory_iterator it{fs::path(profiles_dir)}, end; it != end; ++it) {
-            const fs::path file = it->path();
-            if (file.extension() != ".json")
-                continue;
+        for (fs::directory_iterator it{fs::path(profiles_dir)}, end; it != end; ++it)
+            if (it->path().extension() == ".json")
+                vendor_jsons.push_back(it->path());
+    } catch (...) {
+        return {};
+    }
+    std::sort(vendor_jsons.begin(), vendor_jsons.end(),
+              [](const fs::path& a, const fs::path& b) { return a.filename().string() < b.filename().string(); });
+    for (const fs::path& file : vendor_jsons) {
+        try {
             nlohmann::json j;
             boost::nowide::ifstream ifs(file.string());
             ifs >> j;
@@ -309,8 +537,9 @@ std::string desktop_printer_vendor(const std::string& profiles_dir, const std::s
                 if (entry.is_object() && entry.contains("name") && entry["name"].is_string() &&
                     entry["name"].get<std::string>() == printer_preset_name)
                     return file.stem().string();
+        } catch (...) {
+            continue;
         }
-    } catch (...) {
     }
     return {};
 }

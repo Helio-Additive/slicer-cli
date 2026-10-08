@@ -96,6 +96,18 @@ fx_settings() {  # fx_settings ENGINE TAG PRINTER
     [ -d "vendor-$e" ] || cp -R "$v" "vendor-$e"
     python3 resolve_preset.py "vendor-$e" "$p" "$t-$e" > /dev/null
 }
+# A copy of a preset file the package ships, with its "inherits" renamed to a
+# parent this engine does not have.
+fx_partial() {  # fx_partial ENGINE PRESET
+    python3 - "$1" "$2" <<'PY'
+import json, sys
+engine, name = sys.argv[1], sys.argv[2]
+d = json.load(open("vendor-%s/machine/%s.json" % (engine, name), encoding="utf-8"))
+d["inherits"] = "fdm_no_such_parent"
+json.dump(d, open("partial-%s.json" % engine, "w"), indent=1)
+PY
+}
+
 # proj-<e>.3mf / x1c-proj-<e>.3mf: a 20 mm cube as the engine's own project.
 fx_proj() {  # fx_proj ENGINE NAME PRESET
     [ -s "$2-$1.3mf" ] && return 0
@@ -216,6 +228,14 @@ for e in bambu orca; do
           "$p" --slice 1 --uptodate --uptodate-settings "x1c-$e-machine.json"
     check uptodate-process         "$e" "*give the project's own process file*" \
           "$p" --slice 1 --uptodate --uptodate-settings "x1c-$e-process.json"
+    # A shipped preset file with its parent renamed to one this engine does not
+    # ship: the file holds its differences from a preset that is not there, and
+    # reading it as it stands would put those keys on the project and leave the
+    # rest of the printer at the old one's. It refuses before slicing, and says
+    # which preset to pass by name.
+    fx_partial "$e" "$A1M"
+    check partial-preset           "$e" "*is a partial preset that inherits 'fdm_no_such_parent'; pass --printer-preset \"$A1M\" instead*" \
+          "$p" --slice 1 --load-settings "partial-$e.json"
     check uptodate-fila-count      "$e" "*give one file per filament, in the project's order*" \
           "$p" --slice 1 --uptodate --uptodate-filaments "a1m-$e-filament.json;a1m-$e-filament.json"
     check uptodate-fila-mismatch   "$e" "*give the project's own filament files, in the project's order*" \

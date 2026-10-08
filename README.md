@@ -54,6 +54,14 @@ shows). The process and filament default to the printer's own:
     --process-preset "0.20 Standard @Snapmaker U1 (0.4 nozzle)" -o part.gcode
 ```
 
+Move a saved project to another printer the same way, by the name the desktop
+app shows:
+
+```sh
+./bin/slicer_cli-orcaslicer project.3mf --printer-preset "Snapmaker U1 (0.4 nozzle)" \
+    --slice 1 --outputdir out
+```
+
 Use the official command-line form, which writes `result.json` with the
 outcome of each plate and exports a sliced project:
 
