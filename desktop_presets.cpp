@@ -244,6 +244,39 @@ std::string apply_printer_pick(Slic3r::PresetBundle& bundle) {
 #endif
 }
 
+std::string desktop_printer_vendor(const std::string& profiles_dir, const std::string& printer_preset_name) {
+    namespace fs = boost::filesystem;
+    if (printer_preset_name.empty())
+        return {};
+    // PresetBundle::find_preset_vendor(TYPE_PRINTER) (OrcaSlicer
+    // PresetBundle.cpp 244-318 at 31f6803): every <vendor>.json in the
+    // profiles tree is opened, its machine_list searched for the preset's
+    // name, and the file's own name (the vendor) returned. The desktop tags
+    // each loaded preset with its vendor bundle the same way
+    // (load_vendor_configs_from_json, PresetBundle.cpp 4992), and a printer
+    // model resolves to its vendor by that list too (PresetBundle.cpp
+    // 617-622), so the printer's own vendor is what its process list is read
+    // from.
+    try {
+        for (fs::directory_iterator it{fs::path(profiles_dir)}, end; it != end; ++it) {
+            const fs::path file = it->path();
+            if (file.extension() != ".json")
+                continue;
+            nlohmann::json j;
+            boost::nowide::ifstream ifs(file.string());
+            ifs >> j;
+            if (!j.contains("machine_list") || !j["machine_list"].is_array())
+                continue;
+            for (const auto& entry : j["machine_list"])
+                if (entry.is_object() && entry.contains("name") && entry["name"].is_string() &&
+                    entry["name"].get<std::string>() == printer_preset_name)
+                    return file.stem().string();
+        }
+    } catch (...) {
+    }
+    return {};
+}
+
 DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_dir, const std::string& vendor,
                                                     const std::string& printer_preset_name,
                                                     const std::string& declared_default,

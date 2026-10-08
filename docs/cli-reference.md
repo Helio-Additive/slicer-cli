@@ -200,8 +200,11 @@ ships). The OrcaSlicer build takes the process the desktop app takes when the
 printer is picked: the preset of the current recipe first (the part of the
 project's process name before its `@`), else the printer's
 `default_print_profile`, else the best other preset the printer is compatible
-with, with the preset's settings resolved over their `inherits` chain, and the
-slice is named for the preset taken. A printer the project's process already
+with, searched in the new printer's own vendor bundle (the desktop tags each
+preset with the bundle it came from and resolves a printer model through that
+bundle's `machine_list`; with no bundle naming the preset, the project's is
+searched), with the preset's settings resolved over their `inherits` chain, and
+the slice is named for the preset taken. A printer the project's process already
 says it suits keeps it. (The OrcaSlicer package ships no `process_full` folder,
 and its own command line refuses every such change with `cannot find the
 settings file .../BBL/process_full/<name>.json`, -3.)

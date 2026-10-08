@@ -294,6 +294,66 @@ MINGW*|MSYS*|CYGWIN*) echo "SKIP: export name links (Windows)";;
     echo "PASS: --export-3mf refuses a link to the run's result.json";;
 esac
 
+# The plates a run writes are only known after the global arrange of
+# --slice 0 --arrange 1, which can add one (BambuStudio.cpp 5627-5722;
+# OrcaSlicer.cpp 4887-4983): the collision check must read the final plate
+# plan, or --export-3mf plate_3.gcode passes on a 2-plate project that
+# arranges into three plates and the export overwrites the plate_3.gcode the
+# slice pass wrote (the run's own G-code replaced by 3MF bytes).
+py '
+def box(path, s, h):
+    v = [(x, y, z) for z in (0, h) for y in (0, s) for x in (0, s)]
+    f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+    with open(path, "w") as o:
+        o.write("solid t\n")
+        for a, b, c in f:
+            o.write("facet normal 0 0 0\nouter loop\n")
+            for i in (a, b, c): o.write("vertex %g %g %g\n" % v[i])
+            o.write("endloop\nendfacet\n")
+        o.write("endsolid t\n")
+box("part150.stl", 150, 20)
+import json
+json.dump({"plates": [{"plate_name": "p%d" % i, "need_arrange": True,
+                       "objects": [{"path": "part150.stl", "count": 1, "filaments": [1]}]}
+                      for i in (1, 2, 3)]}, open("grow3.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    # One 150 mm part per plate on the A1 mini: the arrange cannot fit two on
+    # one 180 mm bed, so it keeps three plates.
+    run growfx-$e "$bin" --load-assemble-list grow3.json --slice 0 --printer-preset "$A1M" \
+        --outputdir growfx-$e/out --export-3mf grow3.3mf
+    [ "$(rc growfx-$e)" = 0 ] || { show growfx-$e; fail "$e: the three-plate fixture exit $(rc growfx-$e)"; }
+    # The same project with the third plate's instance moved onto plate 2: two
+    # plates on paper, three after the arrange.
+    py '
+import re, sys, zipfile
+zin = zipfile.ZipFile(sys.argv[1])
+s = zin.read("Metadata/model_settings.config").decode()
+plates = re.findall(r"  <plate>.*?  </plate>\n", s, re.S)
+assert len(plates) == 3, len(plates)
+moved = re.findall(r"    <model_instance>.*?    </model_instance>\n", plates[2], re.S)
+two = s.replace(plates[1], plates[1].replace("  </plate>\n", "".join(moved) + "  </plate>\n")).replace(plates[2], "")
+assert len(re.findall(r"<plate>", two)) == 2 and len(re.findall(r"<model_instance>", two)) == 3, two
+with zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        if item.filename == "Metadata/model_settings.config": data = two.encode()
+        elif item.filename == "Metadata/plate_3.json": continue
+        else: data = zin.read(item.filename)
+        zout.writestr(item, data)
+' growfx-$e/out/grow3.3mf grow2-$e.3mf || fail "$e: the 2-plate fixture could not be built"
+    run grow2-$e "$bin" grow2-$e.3mf --slice 0 --arrange 1 --outputdir grow2-$e/out --export-3mf plate_3.gcode
+    [ "$(rc grow2-$e)" != 0 ] || fail "$e: --export-3mf plate_3.gcode was accepted after the arrange grew the project to three plates"
+    grep -q '"tag":"ExportNameTaken"' grow2-$e/stdout || { show grow2-$e; fail "$e: no ExportNameTaken event"; }
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2 and "plate_3.gcode" in d["error_string"], d
+' grow2-$e/out/result.json || { show grow2-$e; fail "$e: the refusal left no result.json with -2"; }
+    [ ! -e grow2-$e/out/plate_3.gcode ] || fail "$e: the refused run still wrote a plate_3.gcode"
+    grep -q '"plate_count":3' grow2-$e/stdout || { show grow2-$e; fail "$e: the arrange did not grow the 2-plate project to three plates"; }
+done
+echo "PASS: --export-3mf refuses a plate the global arrange adds (both engines)"
+
 # A command-line override is range-checked like the file's values.
 run badlh "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir badlh/out --export-3mf sliced.3mf
 [ "$(rc badlh)" != 0 ] || fail "--layer-height -0.1 was sliced"
@@ -1650,6 +1710,145 @@ assert not bad, "; ".join(bad)
 ' sw16/out/plate_1.gcode a1m-p016.json || fail "orca: the printer change did not take the alias-matching A1 mini process"
 echo "PASS: the Orca printer change keeps the project's process recipe (0.16mm Optimal) and names the preset it took"
 
+# The process list to search is the NEW printer's vendor's: the desktop tags
+# every loaded preset with the vendor bundle it came from (PresetBundle.cpp
+# 4992), a printer model resolves to its vendor through that bundle's
+# machine_list (PresetBundle.cpp 617-622), and PresetBundle::find_preset_vendor
+# reads the same list (OrcaSlicer PresetBundle.cpp 244-318 at 31f6803). With
+# the project's vendor passed instead, an X1 Carbon project switched to a
+# Snapmaker machine preset never looks at the Snapmaker process list, finds no
+# process that suits "Snapmaker U1 (0.4 nozzle)" and keeps the BBL process.
+py '
+import json, os, sys
+vendor = sys.argv[1]
+META = {"name", "inherits", "include", "from", "type", "instantiation",
+        "setting_id", "filament_id", "description"}
+def load(kind):
+    out = {}
+    for root, _, files in os.walk(os.path.join(vendor, kind)):
+        for f in files:
+            if f.endswith(".json"):
+                d = json.load(open(os.path.join(root, f), encoding="utf-8"))
+                out[d.get("name", f[:-5])] = d
+    return out
+P = {k: load(k) for k in ("machine", "process", "filament")}
+def flat(kind, name, seen=()):
+    d = P[kind][name]
+    r = flat(kind, d["inherits"], seen + (name,)) if d.get("inherits") and name not in seen else {}
+    for inc in d.get("include", []) or []:
+        t = flat(kind, inc, seen + (name,))
+        r.update({k: v for k, v in t.items() if k not in META})
+    r.update({k: v for k, v in d.items() if k != "include"})
+    r.pop("inherits", None)
+    return r
+m = flat("machine", "Snapmaker U1 (0.4 nozzle)")
+m.update({"type": "machine", "from": "system", "name": "Snapmaker U1 (0.4 nozzle)", "instantiation": "true"})
+assert "layer_height" not in m, sorted(m)
+json.dump(m, open("u1-machine-orca.json", "w", encoding="utf-8"), indent=1)
+# The pick the desktop makes: first_compatible_idx over the vendor list with
+# PreferedPrintProfileMatch (Preset.hpp 686-709, PresetBundle.cpp 5196-5247),
+# skipping presets a user cannot instantiate (Preset.cpp 1620). The project
+# process is 0.20mm Standard @BBL X1C, layer height 0.2; no Snapmaker process
+# carries that alias, so the first process of the list that suits the U1 at
+# this layer height wins.
+def first(v):
+    return v[0] if isinstance(v, list) else v
+order = json.load(open(os.path.join(vendor, "..", "Snapmaker.json")))["process_list"]
+best, bestq = None, -1
+for entry in order:
+    n = entry["name"]
+    d = P["process"].get(n)
+    if not d or d.get("instantiation") == "false":
+        continue
+    c = flat("process", n)
+    if "Snapmaker U1 (0.4 nozzle)" not in (c.get("compatible_printers") or []):
+        continue
+    q = 10 ** 9 if n.split("@")[0].rstrip() == "0.20mm Standard" else 2
+    lh = c.get("layer_height")
+    if q < 10 ** 9 and lh is not None and abs(float(first(lh)) - 0.2) < 0.0005:
+        q *= 10
+    if q > bestq:
+        bestq, best = q, n
+json.dump({"name": best, "config": flat("process", best)}, open("u1-process-orca.json", "w", encoding="utf-8"), indent=1)
+print(best)
+' "$ORCA_PROFILES/Snapmaker" > u1-pick.txt || fail "orca: the Snapmaker presets could not be flattened"
+U1_PICK="0.20 Bambu Support W @Snapmaker U1 (0.4 nozzle)"
+[ "$(cat u1-pick.txt)" = "$U1_PICK" ] || { cat u1-pick.txt; fail "orca: the desktop pick for the Snapmaker U1 was not $U1_PICK"; }
+run u1p "$O" cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+    --process-preset "0.20mm Standard @BBL X1C" --outputdir u1p/out --export-3mf u1.3mf
+[ "$(rc u1p)" = 0 ] || { show u1p; fail "orca: the X1 Carbon project for the Snapmaker switch exit $(rc u1p)"; }
+run u1s "$O" u1p/out/u1.3mf --slice 1 --load-settings u1-machine-orca.json --outputdir u1s/out
+[ "$(rc u1s)" = 0 ] || { show u1s; fail "orca: the Snapmaker printer change exit $(rc u1s)"; }
+py '
+import json, re, sys
+want = json.load(open(sys.argv[2])); g = open(sys.argv[1], errors="replace").read()
+def got(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).split(",")[0].strip()
+def first(v):
+    return re.sub(r"\"", "", str(v[0] if isinstance(v, list) else v))
+bad = []
+for k in ("layer_height", "wall_loops", "sparse_infill_density", "travel_speed",
+          "default_acceleration", "bridge_speed", "elefant_foot_compensation",
+          "enable_support", "ooze_prevention", "prime_volume"):
+    if k in want["config"] and got(k) != first(want["config"][k]):
+        bad.append("%s: G-code %r, the Snapmaker U1 process %r" % (k, got(k), first(want["config"][k])))
+if got("print_settings_id") != want["name"]:
+    bad.append("print_settings_id: G-code %r" % got("print_settings_id"))
+if got("printer_settings_id") != "Snapmaker U1 (0.4 nozzle)":
+    bad.append("printer_settings_id: G-code %r" % got("printer_settings_id"))
+assert not bad, "; ".join(bad)
+' u1s/out/plate_1.gcode u1-process-orca.json || fail "orca: the Snapmaker printer change did not take the Snapmaker process the desktop selects"
+echo "PASS: the Orca printer change reads the new printer's own vendor process list"
+
+# The engine's 3MF loader extracts Metadata/project_settings.config and the
+# embedded presets as <backup>/_temp_3.config / _temp_2.config and parses them
+# back (bbs_3mf.cpp _extract_project_config_from_archive 2636 and
+# _extract_project_embedded_presets_from_archive 2665 at 31f6803). The shared
+# <tmp>/slicer_cli_backup name let parallel runs read each other's half-written
+# file - "load_from_json: parse <tmp>/slicer_cli_backup/_temp_3.config got a
+# parse_error" - and then slice with the other project's settings; each run
+# stages in a folder of its own now (run_backup_path), as f747602 does for the
+# --export-3mf staging folder.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) echo "SKIP: the private-TMPDIR backup check (Windows)";;
+    *)
+        # A run whose TMPDIR is its own keeps it clear: no shared
+        # slicer_cli_backup, and the folder the load stages in is the run's own
+        # and goes.
+        mkdir -p bkdir-$e/tmp
+        TMPDIR="$PWD/bkdir-$e/tmp" "$bin" cube.stl --slice 1 --printer-preset "$A1M" \
+            --outputdir bkdir-$e/out > bkdir-$e/stdout 2>&1 || { tail -n 3 bkdir-$e/stdout; fail "$e: a run with its own TMPDIR failed"; }
+        [ -s bkdir-$e/out/plate_1.gcode ] || fail "$e: a run with its own TMPDIR wrote no G-code"
+        [ ! -e bkdir-$e/tmp/slicer_cli_backup ] || fail "$e: the 3MF load staged in the shared slicer_cli_backup folder"
+        [ -z "$(ls -A bkdir-$e/tmp)" ] || { ls -A bkdir-$e/tmp; fail "$e: the run left folders in the temp dir it was given"; };;
+    esac
+    # 3 workers x 20 slices of one project 3MF on the default temp dir.
+    run bkproj-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --outputdir bkproj-$e/out --export-3mf bk.3mf
+    [ "$(rc bkproj-$e)" = 0 ] || { show bkproj-$e; fail "$e: the parallel-slice fixture exit $(rc bkproj-$e)"; }
+    rm -rf bkrace-$e-failed bkrace-$e-w
+    bkr() {
+        local n=$1 i
+        for i in $(seq 1 20); do
+            rm -rf "bkrace-$e-w$n-$i"; mkdir -p "bkrace-$e-w$n-$i"
+            "$bin" "bkproj-$e/out/bk.3mf" --slice 1 --outputdir "bkrace-$e-w$n-$i" > "bkrace-$e-$n-$i.log" 2>&1 \
+                || echo 1 >> "bkrace-$e-failed"
+            rm -rf "bkrace-$e-w$n-$i"
+        done
+    }
+    for n in 1 2 3; do bkr "$n" & done
+    wait
+    [ ! -e bkrace-$e-failed ] || { tail -n 3 bkrace-$e-*.log; fail "$e: a parallel slice failed"; }
+    if grep -q "parse_error" bkrace-$e-*.log 2>/dev/null; then
+        grep -l "parse_error" bkrace-$e-*.log | head -2 | xargs -r tail -n 3
+        fail "$e: a parallel run parsed another run's half-written backup config"
+    fi
+    rm -f bkrace-$e-*
+done
+echo "PASS: 3 parallel workers x 20 slices share no 3MF-load backup folder (both engines)"
+
 # A refusal before anything loads still leaves result.json under --slice:
 # named presets on a project 3MF, and --plate with --slice (CLI_INVALID_PARAMS).
 for e in bambu orca; do
@@ -1728,15 +1927,23 @@ json.dump({"profilesDir": prof, "profiles": {"machine": machine},
     run rlpa-$e "$bin" --slice 1 --outputdir rlpa-$e/out --layout-plan --input plan-$e.json
     run rlpb-$e "$bin" --layout-plan --input plan-$e.json --slice 1 --outputdir rlpb-$e/out
     run rold-$e "$bin" --slice 1 --outputdir rold-$e/out --layout old-layout-$e.json
-    for n in rlpa rlpb rold; do
+    # Both flags at once is a refusal of the same kind: under --slice it still
+    # leaves result.json (-2) like each flag alone, not a bare exit 1.
+    run rboth-$e "$bin" --slice 1 --outputdir rboth-$e/out --layout-plan --input plan-$e.json --layout old-layout-$e.json
+    run rbothb-$e "$bin" --layout-plan --input plan-$e.json --layout old-layout-$e.json --slice 1 --outputdir rbothb-$e/out
+    for n in rlpa rlpb rold rboth rbothb; do
         [ -f $n-$e/out/result.json ] || { show $n-$e; fail "$e: $n with --slice wrote no result.json"; }
         py '
 import json, sys; d = json.load(open(sys.argv[1]))
 assert d["return_code"] == -2, d
 ' $n-$e/out/result.json || { show $n-$e; fail "$e: $n with --slice left no result.json with -2"; }
     done
+    # Without --slice the sentence and exit 1 are unchanged.
+    run rbothn-$e "$bin" --layout-plan --input plan-$e.json --layout old-layout-$e.json
+    [ "$(rc rbothn-$e)" = 1 ] && grep -q -- "--layout-plan and --layout are mutually exclusive" rbothn-$e/stderr \
+        || { show rbothn-$e; fail "$e: the mutual exclusion without --slice changed"; }
 done
-echo "PASS: --layout-plan and --layout with --slice are refused with result.json, in either flag order (both engines)"
+echo "PASS: --layout-plan and --layout with --slice are refused with result.json, in either flag order and together (both engines)"
 
 # A named preset never decides how a 3MF that cannot be read is refused: a
 # missing or unreadable .3mf gives the same code and sentence with and

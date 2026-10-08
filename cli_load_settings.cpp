@@ -1063,8 +1063,20 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         // 3858-3862). BambuStudio keeps the official branch below, as its
         // package ships process_full.
         if (new_process_name.empty()) {
+            // The process list to search is the NEW printer's vendor's, not
+            // the project's: the desktop tags every loaded preset with the
+            // vendor bundle it came from (PresetBundle.cpp 4992) and a printer
+            // model resolves to its vendor by that bundle's machine_list
+            // (PresetBundle.cpp 617-622). A Snapmaker machine preset switched
+            // into a BBL project therefore reads the Snapmaker process list
+            // (PresetBundle::find_preset_vendor, OrcaSlicer PresetBundle.cpp
+            // 244-318 at 31f6803). With no bundle naming the preset the
+            // project's vendor list is searched, as before.
+            std::string new_vendor = desktop_printer_vendor(profiles_dir, new_printer_system_name);
+            if (new_vendor.empty())
+                new_vendor = "BBL";
             const DesktopProcessSwitch picked = desktop_printer_switch_process(
-                profiles_dir, "BBL", new_printer_system_name, new_default_process_name, m_print_config,
+                profiles_dir, new_vendor, new_printer_system_name, new_default_process_name, m_print_config,
                 current_print_compatible_printers, facts.current_process_system_name);
             if (picked.replaced) {
                 // The whole preset, less its bookkeeping key.
