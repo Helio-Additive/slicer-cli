@@ -384,8 +384,8 @@ std::vector<std::string> loader_side_files(const std::string& path, bool model_f
     std::vector<std::string> out;
     const fs::path dir = fs::path(path).parent_path();
     if (boost::algorithm::iends_with(path, ".obj")) {
-        Slic3r::ObjParser::ObjData data;
-        if (!Slic3r::ObjParser::objparse(path.c_str(), data))
+        ObjParser::ObjData data;
+        if (!ObjParser::objparse(path.c_str(), data))
             return out;
         for (const std::string& name : data.mtllibs) {
             if (name.empty())
@@ -407,8 +407,8 @@ std::vector<std::string> loader_side_files(const std::string& path, bool model_f
                 continue;
             // obj_to_textured_mesh (OBJ.cpp 342-358): each map_Kd, resolved
             // the same way beside the OBJ (Model.cpp 336-339).
-            Slic3r::ObjParser::MtlData mtl_data;
-            if (!Slic3r::ObjParser::mtlparse(mtl.string().c_str(), mtl_data))
+            ObjParser::MtlData mtl_data;
+            if (!ObjParser::mtlparse(mtl.string().c_str(), mtl_data))
                 continue;
             for (const auto& entry : mtl_data.new_mtl_unmap) {
                 if (!entry.second || entry.second->map_Kd.empty())
@@ -440,10 +440,16 @@ std::vector<std::string> loader_side_files(const std::string& path, bool model_f
         // 225-247, 270-318): the same import, with every file Assimp opens
         // (a glTF's buffers, say) recorded, then each material's external
         // diffuse or base-colour texture as collect_materials resolves it.
-        struct Recorder : Assimp::DefaultIOSystem {
+        // DefaultIOSystem is final: wrap it and forward.
+        struct Recorder : Assimp::IOSystem {
+            Assimp::DefaultIOSystem   io;
             std::vector<std::string>* seen = nullptr;
+            bool Exists(const char* file) const override { return io.Exists(file); }
+            char getOsSeparator() const override { return io.getOsSeparator(); }
+            bool ComparePaths(const char* one, const char* second) const override { return io.ComparePaths(one, second); }
+            void Close(Assimp::IOStream* stream) override { io.Close(stream); }
             Assimp::IOStream* Open(const char* file, const char* mode = "rb") override {
-                Assimp::IOStream* stream = Assimp::DefaultIOSystem::Open(file, mode);
+                Assimp::IOStream* stream = io.Open(file, mode);
                 if (stream)
                     seen->push_back(file);
                 return stream;
