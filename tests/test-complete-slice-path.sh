@@ -1803,13 +1803,18 @@ echo "PASS: the Orca printer change reads the new printer's own vendor process l
 
 # ── The owner's case: a Bambu Studio project for a Bambu printer, on the Orca
 # build, retargeted to a Snapmaker U1 ────────────────────────────────────────
-# Both halves of it are the desktop's, and neither was ported:
+# Three of its parts are the desktop's, and none of them was ported:
 #   * BambuStudio writes its filament indices from 0 (its own range starts
 #     there, BambuStudio PrintConfig.cpp 4359-4361 at 5873b5f) while this
 #     engine's start at 1, so the value check refuses the file -18. The desktop
 #     only warns (Plater.cpp 6259-6272) and slices from full_fff_config, which
 #     resets those keys into [1, N] (PresetBundle.cpp 4090-4105; N =
-#     filament_presets.size(), 3866).
+#     filament_presets.size(), 3866). That clamp is this command line's own:
+#     the CLI path never runs full_fff_config.
+#   * tree_support_wall_count is one setting in two encodings, and the engine
+#     already converts it on every config load -- PrintConfigDef::handle_legacy,
+#     ported from OrcaSlicer 434ff3011f77 in the override layer of
+#     libslic3r/orcaslicer/libslic3r/PrintConfig.cpp.
 #   * BambuStudio writes no print_compatible_printers, and the desktop does not
 #     read the missing list as "suits every printer": the project's process is
 #     loaded over the system preset its print_settings_id names and keeps that
@@ -1817,32 +1822,57 @@ echo "PASS: the Orca printer change reads the new printer's own vendor process l
 #     2446-2500), so a printer outside them re-selects a process
 #     (PresetBundle.cpp 5295-5330).
 # The fixture is a real Bambu Studio X1 Carbon project (base.3mf) with the
-# project_settings a Bambu Studio X1C project carries. Its Bambu-only spellings
-# that the desktop does NOT reset and this engine still refuses by design (the
-# -1 "auto" of tree_support_wall_count and raft_first_layer_expansion, and the
-# 'enabled' of ensure_vertical_shell_thickness) are left out of it, so the run
-# tests those two behaviours and not those refusals.
+# project_settings a Bambu Studio X1C project carries: its filament indices
+# from 0, tree_support_wall_count -1, no print_compatible_printers. Two of its
+# Bambu-only spellings that neither the desktop nor this engine converts are
+# left out (the -1 "auto" of raft_first_layer_expansion and the 'enabled' of
+# ensure_vertical_shell_thickness), so the runs below test those three
+# behaviours and not those refusals.
 py '
-import json, zipfile
-with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("bblx1c.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
-    for item in zin.infolist():
-        data = zin.read(item.filename)
-        if item.filename == "Metadata/project_settings.config":
-            d = json.loads(data)
-            for k in ("wall_filament", "sparse_infill_filament", "solid_infill_filament"):
-                d[k] = "0"
-            d.pop("print_compatible_printers", None)
-            for k in ("raft_first_layer_expansion", "tree_support_wall_count",
-                      "ensure_vertical_shell_thickness"):
-                d.pop(k, None)
-            assert d["print_settings_id"] == "0.20mm Standard @BBL X1C" and d["layer_height"] == "0.2", d
-            data = json.dumps(d, indent=4).encode()
-        zout.writestr(item, data)
-' || fail "orca: the Bambu Studio X1C project fixture could not be written"
+import json, re, zipfile
+def build(src, dst, settings, app=None):
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "Metadata/project_settings.config":
+                d = json.loads(data)
+                for k in ("raft_first_layer_expansion", "ensure_vertical_shell_thickness"):
+                    d.pop(k, None)
+                d.pop("print_compatible_printers", None)
+                d.update(settings)
+                data = json.dumps(d, indent=4).encode()
+            if app and item.filename == "3D/3dmodel.model":
+                data = re.sub(rb"(<metadata name=\"Application\">)[^<]*", rb"\g<1>" + app.encode(), data)
+            zout.writestr(item, data)
+bambu = {"wall_filament": "0", "sparse_infill_filament": "0", "solid_infill_filament": "0",
+         "tree_support_wall_count": "-1"}
+build("base.3mf", "bblx1c.3mf", bambu)
+# The same values from a file OrcaSlicer made: handle_legacy converts by VALUE
+# (PrintConfig.cpp 7942, OrcaSlicer 434ff3011f77), not by the maker of the file.
+build("base.3mf", "orcamade.3mf", bambu, app="OrcaSlicer-2.4.0")
+with zipfile.ZipFile("bblx1c.3mf") as z:
+    d = json.loads(z.read("Metadata/project_settings.config"))
+    assert "print_compatible_printers" not in d and d["tree_support_wall_count"] == "-1", sorted(d)
+    assert d["print_settings_id"] == "0.20mm Standard @BBL X1C" and d["layer_height"] == "0.2", d
+' || fail "orca: the Bambu Studio X1C project fixtures could not be written"
 run bblu1 "$O" bblx1c.3mf --slice 1 --allow-newer-file --load-settings u1-machine-orca.json --outputdir bblu1/out
 [ "$(rc bblu1)" = 0 ] || { show bblu1; fail "orca: a Bambu Studio X1C project on the Snapmaker U1 exit $(rc bblu1)"; }
 [ -s bblu1/out/plate_1.gcode ] || { show bblu1; fail "orca: the retargeted Bambu Studio project wrote no G-code"; }
-# The clamp is reported as its own event, naming every key it reset.
+# The project with no printer switch slices with its own settings, so the
+# converted value is readable in the G-code.
+run bbldirect "$O" bblx1c.3mf --slice 1 --allow-newer-file --outputdir bbldirect/out
+[ "$(rc bbldirect)" = 0 ] || { show bbldirect; fail "orca: a Bambu Studio X1C project with no printer switch exit $(rc bbldirect)"; }
+grep -q "^; tree_support_wall_count = 0$" bbldirect/out/plate_1.gcode || {
+    grep -m1 "tree_support_wall_count" bbldirect/out/plate_1.gcode
+    fail "orca: the BambuStudio -1 of tree_support_wall_count did not reach the slice as this engine's 0"; }
+run orcamade "$O" orcamade.3mf --slice 1 --allow-newer-file --outputdir orcamade/out
+[ "$(rc orcamade)" = 0 ] || { show orcamade; fail "orca: a file OrcaSlicer made with tree_support_wall_count -1 exit $(rc orcamade)"; }
+grep -q "^; tree_support_wall_count = 0$" orcamade/out/plate_1.gcode || {
+    grep -m1 "tree_support_wall_count" orcamade/out/plate_1.gcode
+    fail "orca: the ported legacy conversion skipped a file OrcaSlicer made (it converts by value)"; }
+# The clamp is reported as its own event, and it names only the keys it reset:
+# tree_support_wall_count is converted by the engine's own handle_legacy, not
+# here.
 py '
 import json, sys
 ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
@@ -1855,6 +1885,7 @@ assert all(c["from"] == 0 and c["to"] == 1 for c in e["reset"].values()), e
 assert e["clamped"] == {}, e
 for k in ("wall_filament", "solid_infill_filament", "sparse_infill_filament"):
     assert k in e["message"], e["message"]
+assert "tree_support_wall_count" not in e["message"], e["message"]
 ' bblu1/stdout || fail "orca: the 3MF filament-index reset was not reported as its own event"
 echo "PASS: the Orca 3MF load resets a Bambu Studio project's 0-based filament indices into this engine's range, and reports it"
 # The printer change takes the U1's process, and the values, the pick and the
