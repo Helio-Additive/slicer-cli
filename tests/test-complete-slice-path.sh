@@ -2693,6 +2693,33 @@ run g2ref "$O" neworca.3mf --slice 1 --outputdir g2ref/out
 grep -q 'FileVersionNewerThanEngine' g2ref/stdout || { show g2ref; fail "no FileVersionNewerThanEngine refusal"; }
 echo "PASS: the Bambu base decides for a Bambu Studio file, and this engine's version for an OrcaSlicer one"
 
+# --engine-info's file_newer_than_engine is the slice gate's answer: true only
+# when this binary refuses the file. On the Orca build the real BambuStudio
+# 02.05 fixture is older than the 02.06 Bambu base (it slices, no warning), and
+# a BambuStudio 99.1 project slices with the warning above, so both are false;
+# an OrcaSlicer project newer than this engine is refused, so true. The real
+# OrcaSlicer 2.4.0-alpha fixture is not newer. The Bambu build compares every
+# file with its own version, as before.
+"$O" --engine-info "$FIXTURE" > ei-g2base.json
+"$O" --engine-info newer.3mf > ei-g2warn.json
+"$O" --engine-info neworca.3mf > ei-g2ref.json
+cp "$SCRIPT_DIR/fixtures/calib_base_orca.3mf" g2orca.3mf
+"$O" --engine-info g2orca.3mf > ei-g2orca.json
+"$B" --engine-info "$FIXTURE" > ei-bbase.json
+"$B" --engine-info newer.3mf > ei-bnewer.json
+run g2base "$O" "$FIXTURE" --slice 1 --outputdir g2base/out
+[ "$(rc g2base)" = 0 ] || { show g2base; fail "orca: the BambuStudio 02.05 fixture exit $(rc g2base)"; }
+! grep -q 'FileNewerThanEngineBase\|FileVersionNewerThanEngine' g2base/stdout || fail "orca: the BambuStudio 02.05 fixture was called newer"
+py '
+import json
+def newer(f): return json.load(open(f))["this_engine_reads"]["file_newer_than_engine"]
+want = {"ei-g2base.json": False, "ei-g2warn.json": False, "ei-g2ref.json": True, "ei-g2orca.json": False,
+        "ei-bbase.json": False, "ei-bnewer.json": True}
+bad = {f: newer(f) for f in want if newer(f) is not want[f]}
+assert not bad, bad
+' || fail "--engine-info file_newer_than_engine does not match what the slice does"
+echo "PASS: --engine-info calls a file newer only when the slice refuses it (both engines)"
+
 # G3, G5, G6 in one run: the maker own words.
 run g356 "$O" mkr.3mf --slice 1 --outputdir g356/out
 [ "$(rc g356)" = 0 ] || { show g356; fail "orca: a project with the maker own values exit $(rc g356)"; }

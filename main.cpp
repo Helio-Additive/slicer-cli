@@ -2043,6 +2043,32 @@ static bool file_newer_than_engine(const Slic3r::Semver& file_version) {
     return file_newer_than_version(file_version, engine_version_text());
 }
 
+/// What the slice does with a 3MF of this version (without
+/// --allow-newer-file): the one rule the slice gate and --engine-info share.
+/// On the Orca build the maker decides which number the version is in (G2):
+/// a project not made by OrcaSlicer is compared with SLIC3R_VERSION, the
+/// Bambu base this Orca release is built on (version.inc, 02.06.00.51), and
+/// a newer one is only warned about, as the desktop loads it (Plater.cpp
+/// 6094-6157 at 31f6803); an OrcaSlicer project is compared with this
+/// engine's own version and a newer one is refused, as the official CLI
+/// refuses it. The Bambu build compares every file with its own version.
+enum class FileVersionVerdict { Ok, WarnedNewerThanBase, Refused };
+
+static FileVersionVerdict file_version_verdict(const Slic3r::Semver& file_version,
+                                               const std::map<std::string, std::string>& meta) {
+#ifdef ENGINE_ORCA
+    const auto app = meta.find("Application");
+    const bool orca_made = meta.count("OrcaSlicer") != 0 ||
+                           (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-"));
+    if (!orca_made)
+        return file_newer_than_version(file_version, SLIC3R_VERSION) ? FileVersionVerdict::WarnedNewerThanBase
+                                                                     : FileVersionVerdict::Ok;
+#else
+    (void)meta;
+#endif
+    return file_newer_than_engine(file_version) ? FileVersionVerdict::Refused : FileVersionVerdict::Ok;
+}
+
 // ── Engine resource roots ────────────────────────────────────────────────
 // Both engines read folders that sit beside the profiles tree at slice time:
 // Bambu Print.cpp:2687/2722/2755 (info/*.json), FlushVolPredictor.cpp:413 and
@@ -7681,39 +7707,25 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (read_zip_member(input_file, "3D/3dmodel.model", model_xml))
                     meta = model_metadata(model_xml);
                 const auto app = meta.find("Application");
-                bool refuse = file_newer_than_engine(file_version);
-#ifdef ENGINE_ORCA
-                // G2. Which number a file's version is in depends on who wrote
-                // it, and the desktop reads it that way (Plater.cpp 6094-6157
-                // at 31f6803): a Bambu Studio project is compared with
-                // SLIC3R_VERSION, the Bambu base this Orca release is built on
-                // (version.inc, 02.06.00.51), and only warned about -- a
-                // BambuStudio 02.05 project is not newer than OrcaSlicer 2.4,
-                // it is newer than the base both apps share, and the desktop
-                // loads it. An OrcaSlicer project is compared with this
-                // engine's own version, and a newer one is still refused, as
-                // the official CLI refuses it.
-                const bool orca_made = meta.count("OrcaSlicer") != 0 ||
-                                       (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-"));
-                if (!orca_made) {
-                    refuse = file_newer_than_version(file_version, SLIC3R_VERSION);
-                    if (refuse) {
-                        emit_event({{"event","warning"},
-                                    {"tag","FileNewerThanEngineBase"},
-                                    {"file_version", file_version.to_string()},
-                                    {"application", app != meta.end() ? json(app->second) : json(nullptr)},
-                                    {"base_version", SLIC3R_VERSION},
-                                    {"unknown_keys", outcome.unknown_settings},
-                                    {"message","The file is version " + file_version.to_string() +
-                                               (app != meta.end() ? " (" + app->second + ")" : std::string()) +
-                                               ", newer than the " + SLIC3R_VERSION +
-                                               " Bambu base this engine is built on. It is sliced as it is; the "
-                                               "setting(s) this engine has no definition for are ignored"}});
-                        refuse = false;
-                    }
-                }
-#endif
-                if (refuse) {
+                // G2 (file_version_verdict): a Bambu Studio project on the
+                // Orca build is compared with the Bambu base and only warned
+                // about -- a BambuStudio 02.05 project is not newer than
+                // OrcaSlicer 2.4, it is newer than the base both apps share,
+                // and the desktop loads it.
+                const FileVersionVerdict verdict = file_version_verdict(file_version, meta);
+                if (verdict == FileVersionVerdict::WarnedNewerThanBase)
+                    emit_event({{"event","warning"},
+                                {"tag","FileNewerThanEngineBase"},
+                                {"file_version", file_version.to_string()},
+                                {"application", app != meta.end() ? json(app->second) : json(nullptr)},
+                                {"base_version", SLIC3R_VERSION},
+                                {"unknown_keys", outcome.unknown_settings},
+                                {"message","The file is version " + file_version.to_string() +
+                                           (app != meta.end() ? " (" + app->second + ")" : std::string()) +
+                                           ", newer than the " + SLIC3R_VERSION +
+                                           " Bambu base this engine is built on. It is sliced as it is; the "
+                                           "setting(s) this engine has no definition for are ignored"}});
+                if (verdict == FileVersionVerdict::Refused) {
                     std::string detail = "The file is version " + file_version.to_string() +
                                          (app != meta.end() ? " (" + app->second + ")" : std::string()) +
                                          "; this engine is " + engine_version_text() + ".";
@@ -10530,7 +10542,11 @@ static int run_info(const std::string& argv0, const std::string& path, const std
         json this_engine = {{"version", engine_version_text()}};
         if (const auto v = engine_file_version(meta)) {
             this_engine["file_version"] = v->to_string();
-            this_engine["file_newer_than_engine"] = file_newer_than_engine(*v);
+            // True when the slice refuses the file (the slice gate's rule): a
+            // Bambu Studio project newer than the Orca build's Bambu base is
+            // sliced with a warning, so it is not.
+            this_engine["file_newer_than_engine"] =
+                file_version_verdict(*v, meta) == FileVersionVerdict::Refused;
         }
         out["this_engine_reads"] = this_engine;
     } else {
