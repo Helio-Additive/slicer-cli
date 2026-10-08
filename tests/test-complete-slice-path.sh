@@ -344,6 +344,55 @@ MINGW*|MSYS*|CYGWIN*) echo "SKIP: export name links (Windows)";;
     echo "PASS: --export-3mf refuses a link to the run's result.json";;
 esac
 
+# --export-3mf may not name a file the run reads: the official joins the name
+# onto --outputdir (export_3mf_file = outfile_dir + "/" + export_3mf_file,
+# BambuStudio.cpp 7508-7510 at 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803) and
+# writes wherever that lands, so `--export-3mf ../project.3mf` under a
+# --outputdir inside the input's folder writes over the input project once the
+# plate is sliced. That one name is refused; a name that lands on some other
+# file is left as the official leaves it.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    mkdir -p esc-$e/out/sub
+    cp "$FIXTURE" esc-$e/project.3mf
+    py '
+import hashlib, sys; print(hashlib.md5(open(sys.argv[1], "rb").read()).hexdigest())
+' esc-$e/project.3mf > esc-$e/md5.before
+    run escin-$e "$bin" esc-$e/project.3mf --slice 1 --outputdir esc-$e/out --export-3mf ../project.3mf
+    [ "$(rc escin-$e)" != 0 ] || fail "$e: --export-3mf ../project.3mf was accepted"
+    [ ! -e esc-$e/out/plate_1.gcode ] || fail "$e: the run sliced a plate before refusing the export"
+    grep -q '"tag":"ExportOverwritesInput"' escin-$e/stdout || { show escin-$e; fail "$e: no ExportOverwritesInput event"; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+assert "would overwrite the input file" in d["error_string"], d
+assert "esc-%s/project.3mf" % sys.argv[2] in d["error_string"], d
+' esc-$e/out/result.json "$e" || { show escin-$e; fail "$e: no input-overwrite refusal in result.json"; }
+    py '
+import hashlib, sys
+assert hashlib.md5(open(sys.argv[1], "rb").read()).hexdigest() == open(sys.argv[2]).read().strip()
+' esc-$e/project.3mf esc-$e/md5.before || fail "$e: the refused run wrote over the input project"
+    # A name outside --outputdir that is not an input still writes where the
+    # official writes it (beside the folder it was given).
+    run escout-$e "$bin" esc-$e/project.3mf --slice 1 --outputdir esc-$e/out --export-3mf ../escape.3mf
+    [ "$(rc escout-$e)" = 0 ] || { show escout-$e; fail "$e: --export-3mf ../escape.3mf exit $(rc escout-$e)"; }
+    py '
+import sys, zipfile
+n = zipfile.ZipFile(sys.argv[1]).namelist()
+assert "Metadata/plate_1.gcode" in n, n
+' esc-$e/escape.3mf || fail "$e: escape.3mf is not the sliced project"
+    # ... and a name inside --outputdir still writes.
+    run escok-$e "$bin" esc-$e/project.3mf --slice 1 --outputdir esc-$e/out --export-3mf sub/ok.3mf
+    [ "$(rc escok-$e)" = 0 ] || { show escok-$e; fail "$e: --export-3mf sub/ok.3mf exit $(rc escok-$e)"; }
+    py '
+import sys, zipfile
+n = zipfile.ZipFile(sys.argv[1]).namelist()
+assert "Metadata/plate_1.gcode" in n, n
+' esc-$e/out/sub/ok.3mf || fail "$e: sub/ok.3mf is not the sliced project"
+done
+echo "PASS: --export-3mf refuses a name that would overwrite an input (both engines)"
+
 # The plates a run writes are only known after the global arrange of
 # --slice 0 --arrange 1, which can add one (BambuStudio.cpp 5627-5722;
 # OrcaSlicer.cpp 4887-4983): the collision check must read the final plate

@@ -10896,6 +10896,15 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // plate_<n>.gcode it then writes would be overwritten by the export.
     // `plates` is the set this run slices.
     if (!o.export_3mf.empty()) {
+        // The export may not name a file this run READS: an --export-3mf whose
+        // target resolves to one of the run's own inputs would write over it
+        // once the plate is sliced — the input project itself for
+        // `--export-3mf ../project.3mf` with a --outputdir under its folder.
+        // The official CLI joins the name onto --outputdir (export_3mf_file =
+        // outfile_dir + "/" + export_3mf_file, BambuStudio.cpp 7508-7510 at
+        // 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803) and writes wherever
+        // that lands, so the same name outside --outputdir is left alone here:
+        // only the run's own files are refused.
         const auto key = [](const fs::path& p) {
             // A link whose target does not exist yet (result.json before
             // the run writes it) is not resolved by weakly_canonical: follow
@@ -10912,7 +10921,35 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             return (ec ? q : resolved).lexically_normal().generic_string();
         };
         const fs::path target_path = outdir / o.export_3mf;
+        std::vector<std::string> inputs = o.input_files;
+        if (!o.machine_config.empty())  inputs.push_back(o.machine_config);
+        if (!o.filament_config.empty()) inputs.push_back(o.filament_config);
+        if (!o.process_config.empty())  inputs.push_back(o.process_config);
+        if (!o.bundle_config.empty())   inputs.push_back(o.bundle_config);
+        if (o.given_flag("load_settings"))
+            for (const std::string& file : o.cli.option<Slic3r::ConfigOptionStrings>("load_settings")->values)
+                if (!file.empty()) inputs.push_back(file);
+        if (o.given_flag("load_filaments"))
+            for (const std::string& file : o.cli.option<Slic3r::ConfigOptionStrings>("load_filaments")->values)
+                if (!file.empty()) inputs.push_back(file);
+        if (o.given_flag("load_assemble_list")) {
+            const std::string file = o.cli.opt_string("load_assemble_list");
+            if (!file.empty()) inputs.push_back(file);
+        }
         const std::string target = key(target_path);
+        for (const std::string& input : inputs) {
+            boost::system::error_code ec;
+            const fs::path input_path(input);
+            const bool same_file = fs::equivalent(target_path, input_path, ec) && !ec;
+            if (!same_file && !boost::algorithm::iequals(target, key(input_path))) continue;
+            const std::string detail =
+                "--export-3mf would overwrite the input file '" + input + "'; give it another name.";
+            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
+            std::cerr << "Error: " << detail << "\n";
+            emit_event({{"event","input_error"}, {"tag","ExportOverwritesInput"}, {"message", detail}});
+            return CLI_INVALID_PARAMS;
+        }
         std::vector<std::string> taken = {"result.json"};
         for (int p : plates)
             taken.push_back("plate_" + std::to_string(p) + ".gcode");
