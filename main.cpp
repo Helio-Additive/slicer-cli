@@ -9282,6 +9282,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     !run_model_action_step(slicer_cli::ActionPhase::AfterSlice))
                     return 1;
 
+            } catch (const std::bad_alloc&) {
+                // Out of memory while slicing or exporting. The official CLI has
+                // this outcome of its own -- CLI_OUT_OF_MEMORY (-14, Utils.hpp:39
+                // at 31f6803) with the sentence that says what to do
+                // (OrcaSlicer.cpp 126, BambuStudio.cpp 132) -- and it is not a
+                // slicing failure: a run that ran out of memory must never
+                // report CLI_SLICING_ERROR (-100).
+                emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","bad_alloc"},
+                            {"message","std::bad_alloc"}});
+                std::cerr << "\nOut of memory during slicing.\n";
+                set_outcome_failure(outcome, CLI_OUT_OF_MEMORY);
+                return 1;
             } catch (const Slic3r::RuntimeError& e) {
                 emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
                 std::cerr << "\n❌ G-code export failed (RuntimeError): " << e.what() << "\n";
@@ -9302,6 +9314,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 return 1;
             }
 
+        } catch (const std::bad_alloc&) {
+            // The slicing step ran out of memory (see the export step above):
+            // this engine's own CLI has CLI_OUT_OF_MEMORY for it, never -100.
+            emit_event({{"event","slicing_error"},{"phase","process"},{"kind","bad_alloc"},
+                        {"message","std::bad_alloc"}});
+            std::cerr << "\nOut of memory during slicing.\n";
+            set_outcome_failure(outcome, CLI_OUT_OF_MEMORY);
+            return 1;
         } catch (const Slic3r::RuntimeError& e) {
             emit_event({{"event","slicing_error"},{"phase","process"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
             std::cerr << "Slicing RuntimeError: " << e.what() << "\n";
@@ -9326,6 +9346,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
         return 0;
 
+    } catch (const std::bad_alloc&) {
+        // Out of memory before or around the slicing steps (the load of a large
+        // project, the arrange, the plate cleanup). The official outcome is
+        // CLI_OUT_OF_MEMORY with its sentence (Utils.hpp:39, OrcaSlicer.cpp 126
+        // at 31f6803), never CLI_SLICING_ERROR (-100): this is the run that must
+        // tell the user to lower the geometry resolution, not report a slicing
+        // failure.
+        emit_event({{"event","slicing_error"},{"phase","load_or_prepare"},{"kind","bad_alloc"},
+                    {"message","std::bad_alloc"}});
+        std::cerr << "\nOut of memory during slicing.\n";
+        set_outcome_failure(outcome, CLI_OUT_OF_MEMORY);
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
