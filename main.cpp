@@ -8067,6 +8067,46 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 PlateScope scope(model, rs.plate(plate_id));
                 print.apply(model, config);
             }
+#ifdef ENGINE_ORCA
+            // OrcaSlicer's WipeTowerData::height is read on a path that never
+            // writes it, and a value out of Clipper's range then reaches the
+            // skirt. Nothing in the engine at 31f6803 initialises it: the struct
+            // declares `float height;` with no initialiser (Print.hpp:763) and
+            // its constructor, `WipeTowerData(ToolOrdering &) : tool_ordering(...)
+            // { clear(); }` (Print.hpp:784), calls a clear() that resets depth,
+            // brim_width and rib_offset but not height (Print.hpp:767-778); the
+            // only writer, Print::_make_wipe_tower, sets it in its WipeTower2
+            // (Type-2) branch alone (Print.cpp:3449), and a Bambu Lab printer
+            // always takes the Type-1 branch (wipe_tower_type() is
+            // is_BBL_printer() ? Type1 : m_config.wipe_tower_type.value,
+            // Print.hpp:1072; is_wipe_tower_type2 at Print.cpp:3196, the
+            // `if (!is_wipe_tower_type2)` branch at 3242, which sets depth,
+            // brim_width, bbx and rib_offset at 3338-3342 and nothing else). No
+            // other writer exists: OrcaSlicer.cpp never touches it, and the
+            // desktop only reads it (GLCanvas3D.cpp:2874, 2894).
+            // 0 is the value upstream itself gives this field: OrcaSlicer main's
+            // WipeTowerData::clear() sets `height = 0.f;` beside the other
+            // floats, which is exactly what our pin's clear() is missing. Set
+            // here because the engine submodule cannot be patched.
+            // Print::first_layer_wipe_tower_corners() reads it unconditionally
+            // (Print.cpp:2838) as the height of the stabilization cone — a
+            // WipeTower2-only feature, whose base radius is
+            // tan(deg2rad(wipe_tower_cone_angle/2)) * height
+            // (WipeTower2.cpp:2161-2175) — and adds the ring of points at that
+            // radius to the skirt's hull (Print.cpp:2840-2844, appended at
+            // 2647), so an indeterminate height puts a point past Clipper's
+            // range and Print::_make_skirt's offset() throws
+            // clipperException "Coordinate outside allowed range"
+            // (Print.cpp:2695, ClipperBase::AddPathInternal). The Type-1 tower
+            // (GCode/WipeTower.cpp) has no cone at all, so 0 is also the radius
+            // its path means: the ring collapses onto the tower's centre and the
+            // tower's own bbox, already in the hull, is unchanged. Measured on
+            // the packaged macOS Orca engine of run 37538132874: the E4 project's
+            // plate 2 either slices or dies with that exception run to run, and
+            // setting wipe_tower_cone_angle to 0 makes every failing input slice.
+            if (print.has_wipe_tower() && print.wipe_tower_type() == Slic3r::WipeTowerType::Type1)
+                const_cast<Slic3r::WipeTowerData&>(print.wipe_tower_data()).height = 0.f;
+#endif
 
             // Calibration: install the calibration params after apply (which resets print
             // state) and before validate/process so the engine's per-layer calib
