@@ -4454,9 +4454,7 @@ static std::string config_value_text(const Slic3r::ConfigBase& config, const cha
 /// preset is missing (Preset.cpp 2446-2457 load_external_preset runs with
 /// found = false); this command line keeps the flat file config for the whole
 /// project instead, and says so in an event.
-static bool project_presets_shipped(Slic3r::PresetBundle& bundle, const Slic3r::DynamicPrintConfig& config) {
-    const std::string printer = config_id_text(config, "printer_settings_id");
-    const std::string process = config_id_text(config, "print_settings_id");
+static bool project_presets_shipped(Slic3r::PresetBundle& bundle, const std::string& printer, const std::string& process) {
     return !printer.empty() && !process.empty() &&
            bundle.printers.find_preset(printer, false) != nullptr &&
            bundle.prints.find_preset(process, false) != nullptr;
@@ -6523,11 +6521,28 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     Slic3r::PresetBundle bundle;
                     if (!load_system_presets(o.argv0, bundle, staging, unavailable))
                         rebase = false;
-                    else if (!project_presets_shipped(bundle, config))
-                        unavailable = "this engine ships no '" +
-                                      config_id_text(config, "printer_settings_id") + "' / '" +
-                                      config_id_text(config, "print_settings_id") + "' system preset";
                     else {
+                        // The names the FILE states, not the ones the config
+                        // carries: this engine's own 3MF loader substitutes a
+                        // preset name it does not know with its default before
+                        // the front end sees the config, and a project whose
+                        // preset is not shipped is the one the rebase must skip
+                        // (loading it over the default is a different print, and
+                        // a project whose process preset the bundle cannot
+                        // resolve is loaded as an external preset that
+                        // Print::apply then aborts on).
+                        const json  file_settings  = project_settings_json(input_file);
+                        std::string file_printer   = json_scalar_text(file_settings, "printer_settings_id");
+                        std::string file_process   = json_scalar_text(file_settings, "print_settings_id");
+                        if (file_printer.empty())
+                            file_printer = config_id_text(config, "printer_settings_id");
+                        if (file_process.empty())
+                            file_process = config_id_text(config, "print_settings_id");
+                        if (!project_presets_shipped(bundle, file_printer, file_process)) {
+                            unavailable = "this engine ships no '" + file_printer + "' / '" + file_process +
+                                          "' system preset";
+                            rebase = false;
+                        } else {
                         // The tower's plate positions, as the desktop keeps
                         // them across the load (Plater.cpp 6380-6389).
                         Slic3r::ConfigOptionFloats file_wipe_tower_x, file_wipe_tower_y;
@@ -6551,10 +6566,27 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         Slic3r::DynamicPrintConfig file_config_for_bundle = config;
                         bundle.load_config_model(input_file, std::move(file_config_for_bundle), file_version);
                         rebased = bundle.full_config(false);
+                        // A project whose preset name this bundle cannot
+                        // resolve is loaded as an external preset built from the
+                        // file, and the config that comes back can describe a
+                        // different filament roster than the file does;
+                        // Print::apply then aborts on the mismatch (it derives
+                        // its extruder count from filament_diameter,
+                        // PrintApply.cpp:1504). The rebase is kept only when it
+                        // describes the roster the file states.
+                        const size_t file_filaments    = project_filament_count(config);
+                        const size_t rebased_filaments = project_filament_count(rebased);
+                        if (file_filaments != 0 && rebased_filaments != file_filaments) {
+                            unavailable = "the system presets the project names describe " +
+                                          std::to_string(rebased_filaments) + " filament(s) where the file states " +
+                                          std::to_string(file_filaments);
+                            rebase = false;
+                        }
                         if (has_wipe_tower_x)
                             rebased.set_key_value("wipe_tower_x", new Slic3r::ConfigOptionFloats(file_wipe_tower_x));
                         if (has_wipe_tower_y)
                             rebased.set_key_value("wipe_tower_y", new Slic3r::ConfigOptionFloats(file_wipe_tower_y));
+                        }
                     }
                 } catch (const std::exception& e) {
                     unavailable = e.what();

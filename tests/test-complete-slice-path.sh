@@ -1885,9 +1885,26 @@ run orcamade "$O" orcamade.3mf --slice 1 --allow-newer-file --outputdir orcamade
 grep -q "^; tree_support_wall_count = 0$" orcamade/out/plate_1.gcode || {
     grep -m1 "tree_support_wall_count" orcamade/out/plate_1.gcode
     fail "orca: the ported legacy conversion skipped a file OrcaSlicer made (it converts by value)"; }
-# The clamp is reported as its own event, and it names only the keys it reset:
-# tree_support_wall_count is converted by the engine's own handle_legacy, not
-# here.
+# The clamp is the fallback for a project this bundle cannot load over its own
+# presets: the file's own settings are sliced, so the 0-based indices reach the
+# engine and the clamp is what carries them. It is reported as its own event and
+# names only the keys it reset: tree_support_wall_count is converted by the
+# engine's own handle_legacy, not here. A project whose preset this bundle does
+# ship takes the preset's own values instead, and reports no reset.
+py '
+import json, zipfile
+with zipfile.ZipFile("bblx1c.3mf") as zin, zipfile.ZipFile("bblnosuch.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["print_settings_id"] = "0.20mm Standard @BBL NoSuchProfile"
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' || fail "orca: the no-system-preset fixture could not be written"
+run bblflat "$O" bblnosuch.3mf --slice 1 --allow-newer-file --outputdir bblflat/out
+[ "$(rc bblflat)" = 0 ] || { show bblflat; fail "orca: a project with no shipped system preset exit $(rc bblflat)"; }
+grep -q 'ProjectPresetRebaseSkipped' bblflat/stdout || { show bblflat; fail "the file's own settings were not kept for a project the bundle cannot load over"; }
 py '
 import json, sys
 ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
@@ -1901,7 +1918,12 @@ assert e["clamped"] == {}, e
 for k in ("wall_filament", "solid_infill_filament", "sparse_infill_filament"):
     assert k in e["message"], e["message"]
 assert "tree_support_wall_count" not in e["message"], e["message"]
-' bblu1/stdout || fail "orca: the 3MF filament-index reset was not reported as its own event"
+' bblflat/stdout || fail "orca: the 3MF filament-index reset was not reported as its own event"
+py '
+import json, sys
+ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
+assert not [e for e in ev if e.get("tag") == "FilamentIndexOutOfRangeReset"], "a rebased run reset an index"
+' bblu1/stdout || fail "orca: a project loaded over its shipped presets reported an index reset"
 echo "PASS: the Orca 3MF load resets a Bambu Studio project's 0-based filament indices into this engine's range, and reports it"
 # The printer change takes the U1's process, and the values, the pick and the
 # bed are the ones the desktop's retarget gives (u1-process-orca.json is the
@@ -1989,7 +2011,7 @@ def one(tag):
 shell = one("VerticalShellThicknessWordConverted")
 assert shell["from"] == "enabled" and shell["to"] == "ensure_all", shell
 wall = one("TreeSupportWallCountAutoConverted")
-assert wall["from"] == "-1" and wall["to"] == 0, wall
+assert wall["from"] == "-1" and str(wall["to"]) == "0", wall
 ' objconv/stdout || fail "orca: the object own settings were not converted with the same events as the project's"
 echo "PASS: an object's own tree_support_wall_count -1 and ensure_vertical_shell_thickness \"enabled\" convert like the project's"
 
@@ -2016,14 +2038,16 @@ def proj(dst, settings=None, diff=None, app=None):
                 data = re.sub(rb"(<metadata name=\"Application\">)[^<]*", rb"\g<1>" + app.encode(), data)
             zout.writestr(item, data)
 proj("mkr.3mf", {"raft_first_layer_expansion": "-1", "top_one_wall_type": "not apply",
-                 "ensure_vertical_shell_thickness": "disabled"},
-     "raft_first_layer_expansion;top_one_wall_type;ensure_vertical_shell_thickness")
-proj("mkrtree.3mf", {"raft_first_layer_expansion": "-1", "support_type": "tree"},
+                 "ensure_vertical_shell_thickness": "disabled", "support_type": "normal(auto)"},
+     "raft_first_layer_expansion;top_one_wall_type;ensure_vertical_shell_thickness;support_type")
+proj("mkrtree.3mf", {"raft_first_layer_expansion": "-1", "support_type": "tree(auto)"},
      "raft_first_layer_expansion;support_type")
-proj("mkrg4.3mf", {"tree_support_wall_count": "0", "support_type": "tree"}, "tree_support_wall_count;support_type")
-proj("mkrpartial.3mf", {"ensure_vertical_shell_thickness": "partial"}, "ensure_vertical_shell_thickness")
+proj("mkrg4.3mf", {"tree_support_wall_count": "0", "support_type": "tree(auto)"}, "tree_support_wall_count;support_type")
+proj("mkrpartial.3mf", {"ensure_vertical_shell_thickness": "partial", "support_type": "normal(auto)"},
+     "ensure_vertical_shell_thickness;support_type")
 proj("neworca.3mf", {}, None, app="OrcaSlicer-99.01.00.00")
-json.dump({"type": "machine", "name": "conv-machine", "from": "system", "instantiation": "true"},
+json.dump({"type": "machine", "name": "conv-machine", "from": "system", "instantiation": "true",
+           "use_relative_e_distances": "0"},
           open("g7-machine.json", "w"))
 json.dump({"type": "filament", "name": "conv-filament", "from": "system", "instantiation": "true"},
           open("g7-filament.json", "w"))
@@ -2074,7 +2098,8 @@ echo "PASS: raft_first_layer_expansion -1, top_one_wall_type \"not apply\" and e
 # refusal says what to set instead.
 run g3tree "$O" mkrtree.3mf --slice 1 --outputdir g3tree/out
 [ "$(rc g3tree)" != 0 ] || fail "orca: an automatic expansion was sliced for tree support"
-grep -q 'RaftAutoExpansionUnsupportedForTreeSupport' g3tree/stdout || { show g3tree; fail "no tree-support refusal"; }
+grep -q 'BambuValueNotCarryable' g3tree/stdout || { show g3tree; fail "no tree-support refusal"; }
+grep -q 'with tree support' g3tree/stderr || { show g3tree; fail "the refusal does not say why tree support has no automatic value"; }
 grep -q 'Set it to the expansion you want in mm' g3tree/stderr || { show g3tree; fail "the refusal does not say what to do"; }
 echo "PASS: an automatic first-layer expansion with tree support is refused with what to set instead"
 
