@@ -62,7 +62,9 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
 /// 9151-9166 and 9530-9660 at 5873b5f; OrcaSlicer Plater.cpp 6656-6839 and
 /// 7020-7140 at 31f6803): each object centred on its own origin and dropped
 /// onto the bed, the first at the bed's centre, every next one at the
-/// nearest free 10 mm cell (GLCanvas3D::get_nearest_empty_cell).
+/// nearest free 10 mm cell (GLCanvas3D::get_nearest_empty_cell). "Free" is
+/// outside every object already on the plate, whether the file placed it or
+/// this function did.
 void desktop_place_on_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
                           std::vector<std::string>* notes = nullptr);
 

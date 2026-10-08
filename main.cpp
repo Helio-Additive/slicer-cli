@@ -5801,19 +5801,31 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
 /// folders from signal context, and the process holds ~30 threads: fork()
 /// there runs glibc's atfork handlers and takes the malloc arena locks, so a
 /// signal that lands while any thread holds one blocks the handler on a
-/// futex for ever instead of ending the run ("stale" is judged from lock.txt
-/// below, so the folder the hang would have left is still reclaimed).
+/// futex for ever instead of ending the run ("stale" is judged from the
+/// ownership marker below, so the folder the hang would have left is still
+/// reclaimed).
 ///
-/// An engine backup folder is marked as owned by writing the owner's PID into
-/// lock.txt: the loader reaches Model::get_backup_path() (bbs_3mf.cpp 1474 /
-/// OrcaSlicer 1416, the non-restore branch), and a folder that does not exist
-/// yet is created there together with its lock (Model.cpp 1123-1130 /
-/// OrcaSlicer 986-993). The desktop calls a folder stale when that PID is not
-/// a running process of the same program (has_restore_data, bbs_3mf.cpp
-/// 9453-9466 / OrcaSlicer 9015-9031). add() writes the same lock itself, so
-/// the folder carries its marker from the moment it exists — a run killed
-/// before its load reached get_backup_path() would otherwise leave a folder
-/// only the age rule below could reclaim.
+/// An engine backup folder is marked as owned by the run's PID, and the
+/// desktop's own test of "this folder still has its owner" is the rule the
+/// sweep follows: the folder is stale once that PID is not a running process
+/// of the same program (has_restore_data, bbs_3mf.cpp 9447-9466 /
+/// OrcaSlicer 9013-9031). The desktop writes the PID inside the folder, as
+/// lock.txt, when it makes the folder for a load that has no backup path yet
+/// (Model.cpp 1123-1130 / OrcaSlicer 986-993); this program's marker is
+/// <folder>.owner beside it instead, for the reason add() gives, and add()
+/// writes it as the folder is made, so the folder carries its marker from the
+/// moment it exists — a run killed before its load reached a backup path
+/// would otherwise leave a folder only the age rule below could reclaim.
+
+/// The ownership marker of a staging folder: the folder's own path with
+/// ".owner" appended, so the marker sits beside the folder and no archive
+/// member can land on it (add()).
+static boost::filesystem::path staging_owner_marker(const boost::filesystem::path& folder) {
+    boost::filesystem::path marker = folder;
+    marker += ".owner";
+    return marker;
+}
+
 struct RunStagingFolders {
     /// The 3MF load's folder and the --export-3mf one, in a fixed array: the
     /// set is bounded by the run's steps, and a fixed size keeps add() off the
@@ -5822,22 +5834,26 @@ struct RunStagingFolders {
     char paths[kMax][4096];   ///< TMPDIR + a relative path, well inside 4096
     size_t count = 0;         ///< Paths registered so far.
 
-    /// Creates `path` with this run's lock.txt, registers it, returns it.
-    /// The loader extracts an archive's files under their own names
+    /// Creates `path` with this run's ownership marker, registers it, returns
+    /// it.
+    /// The marker is `<path>.owner` — a SIBLING of the folder, never a member:
+    /// the loader extracts an archive's files under their own names
     /// (_extract_file_from_archive, bbs_3mf.cpp 2904-2919), so a project whose
-    /// root holds an entry named lock.txt would overwrite this marker with a
-    /// PID that is not this run's; no BambuStudio project carries one, and the
-    /// cost of that collision is a stale-looking lock on this run's own
-    /// folder, which the next run may then remove.
+    /// root holds an entry named lock.txt overwrote a marker kept at
+    /// <path>/lock.txt with a PID the archive chose, and the sweep of a second
+    /// run then read a dead PID out of a live run's folder and removed that
+    /// folder under it. An archive member cannot reach a sibling: extraction
+    /// refuses a path that leaves the folder (bbs_3mf.cpp 2909-2912 /
+    /// 2804-2807).
     std::string add(std::string path) {
         boost::system::error_code mk;
         boost::filesystem::create_directories(path, mk);   // the engine would create it itself (_extract_file_from_archive, bbs_3mf.cpp 2914-2919)
         {
             // boost::filesystem streams, as the rest of this file writes files:
             // the UTF-8 path is the global one nowide_filesystem installed.
-            boost::filesystem::ofstream lock(boost::filesystem::path(path) / "lock.txt",
-                                             std::ios::out | std::ios::trunc);
-            lock << Slic3r::get_current_pid();
+            boost::filesystem::ofstream owner(staging_owner_marker(boost::filesystem::path(path)),
+                                              std::ios::out | std::ios::trunc);
+            owner << Slic3r::get_current_pid();
         }
         const size_t n = (size_t)count;
         if (n < kMax) {
@@ -5853,6 +5869,10 @@ struct RunStagingFolders {
     ~RunStagingFolders() {
         for (size_t i = 0; i < (size_t)count; ++i) {
             boost::system::error_code ec;
+            // The marker goes first: a kill between the two removals leaves
+            // the pair for the next run's sweep, never a marker with no folder
+            // whose sweep would never come.
+            boost::filesystem::remove(staging_owner_marker(boost::filesystem::path(paths[i])), ec);
             boost::filesystem::remove_all(paths[i], ec);
         }
     }
@@ -5861,7 +5881,9 @@ static RunStagingFolders run_staging;
 
 /// True for the names this program stages under, and (the sweep's guard)
 /// nothing else: temp_directory_path() is shared, and another program's
-/// folder is never this run's to remove.
+/// folder is never this run's to remove. A folder's ownership marker carries
+/// the same prefix — it is the folder's path plus ".owner" — so the sweep
+/// takes directories only.
 static bool is_staging_folder_name(const std::string& name) {
     return boost::algorithm::starts_with(name, "slicer_cli_load-") ||
            boost::algorithm::starts_with(name, "slicer_cli_export-");
@@ -5887,23 +5909,23 @@ static bool staging_owner_alive(int pid) {
     return Slic3r::get_process_name(pid) == Slic3r::get_process_name(0);
 }
 
-/// How old a lock-less staging folder must be before the sweep removes it.
-/// Every folder this program makes carries a lock.txt, so a folder without one
-/// is either from a build older than this fix or is inside the moment between
-/// add()'s create_directories and its lock write; the age is what separates
-/// the two. An hour is far longer than that window — and than the interval
-/// between a folder appearing and the next run sweeping — so a folder this
-/// recent is left alone, and the alternative (removing every lock-less folder
-/// on sight) is not available: it would delete a live run's folder in that
-/// window, which is the one thing this sweep must never do.
+/// How old a marker-less staging folder must be before the sweep removes it.
+/// Every folder this program makes carries an ownership marker beside it, so a
+/// folder without one is either from a build older than this fix or is inside
+/// the moment between add()'s create_directories and its marker write; the age
+/// is what separates the two. An hour is far longer than that window — and
+/// than the interval between a folder appearing and the next run sweeping — so
+/// a folder this recent is left alone, and the alternative (removing every
+/// marker-less folder on sight) is not available: it would delete a live run's
+/// folder in that window, which is the one thing this sweep must never do.
 static constexpr double kLocklessFolderMinAgeSeconds = 3600.0;
 
 /// Removes the staging folders of runs that are gone, so a tmpfs /tmp does not
-/// hold the folders of every killed run. A folder is removed only when this
-/// program's name is in it and its owner is not a live process of this
-/// program (the desktop's own staleness test), or when it has no lock and is
-/// over kLocklessFolderMinAgeSeconds old. A live run's folder is left alone,
-/// so a second run in the same TMPDIR never disturbs the first.
+/// hold the folders of every killed run. A folder is removed only when its
+/// ownership marker names a PID of this program that is no longer running (the
+/// desktop's own staleness test), or when it has no marker and is over
+/// kLocklessFolderMinAgeSeconds old. A live run's folder is left alone, so a
+/// second run in the same TMPDIR never disturbs the first.
 static void sweep_stale_staging_folders() {
     namespace bfs = boost::filesystem;
     boost::system::error_code ec;
@@ -5923,15 +5945,20 @@ static void sweep_stale_staging_folders() {
         if (!is_staging_folder_name(folder.filename().string()))
             continue;
         boost::system::error_code sub;
-        const bfs::path           lock = folder / "lock.txt";
-        if (bfs::exists(lock, sub) && !sub) {
+        if (!bfs::is_directory(folder, sub) || sub)
+            continue;   // the markers of other runs' folders sit beside them
+        const bfs::path           marker = staging_owner_marker(folder);
+        if (bfs::exists(marker, sub) && !sub) {
             int pid = 0;
             {
-                boost::filesystem::ifstream in(lock);
-                in >> pid;   // a damaged lock leaves pid 0: not an owner, remove
+                boost::filesystem::ifstream in(marker);
+                in >> pid;   // a damaged marker leaves pid 0: not an owner, remove
             }
             if (staging_owner_alive(pid))
                 continue;
+            // The marker goes before the folder: a kill between the two
+            // removals leaves the pair, which the next sweep reclaims.
+            bfs::remove(marker, sub);
             bfs::remove_all(folder, sub);
             continue;
         }
@@ -10384,7 +10411,7 @@ int main(int argc, char** argv) {
     // ever — a plugin that ends a run with SIGTERM would then wait for ever.
     // The default action ends the run with 143/129, the rest of the corpus and
     // leakcheck's SIGTERM row leave the folder to the sweep above, and the
-    // lock.txt PID check reclaims it, exactly as after SIGKILL.
+    // ownership marker's PID check reclaims it, exactly as after SIGKILL.
     sweep_stale_staging_folders();
 
     // Both engines read slice-time resources (info/, flush/, filament_mixing/)
