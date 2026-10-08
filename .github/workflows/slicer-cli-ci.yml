@@ -18,7 +18,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: read
@@ -399,7 +399,6 @@ jobs:
             --prefix "${RUNNER_TEMP}/libnoise-prefix"
           echo "LIBNOISE_ROOT=${RUNNER_TEMP}/libnoise-prefix" >> $GITHUB_ENV
 
-
       # Cache compiled objects across runs. sccache intercepts compiler
       # invocations (MSVC, Clang, GCC) via CMAKE_C(XX)_COMPILER_LAUNCHER
       # and stores results in the GitHub Actions cache.  A warm-cache
@@ -462,7 +461,6 @@ jobs:
             -DCMAKE_PREFIX_PATH="$CMAKE_PREFIXES" \
             "${EXTRA[@]}" \
             ${{ matrix.cmake_preset }}
-
 
       # Ninja is required for sccache cache hits on Windows — the
       # Visual Studio generator does not reliably invoke compiler
@@ -645,7 +643,7 @@ jobs:
         os: [macOS-arm64, Windows-x86_64]
         include:
           - os: macOS-arm64
-            runner: macos-14          # Apple Silicon — primary dev target
+            runner: macos-14 # Apple Silicon — primary dev target
             cmake_preset: ""
           - os: Windows-x86_64
             runner: blacksmith-16vcpu-windows-2025
@@ -750,7 +748,6 @@ jobs:
             sudo chmod 0644 "$MARKER_TMP"
             sudo mv "$MARKER_TMP" "$CGAL_MARKER"
           fi
-
 
       - name: Prepare Linux OpenCASCADE prefix
         if: runner.os == 'Linux'
@@ -947,7 +944,6 @@ jobs:
             --prefix "${RUNNER_TEMP}/libnoise-prefix"
           echo "LIBNOISE_ROOT=${RUNNER_TEMP}/libnoise-prefix" >> $GITHUB_ENV
 
-
       # Cache compiled objects across runs. sccache intercepts compiler
       # invocations (MSVC, Clang, GCC) via CMAKE_C(XX)_COMPILER_LAUNCHER
       # and stores results in the GitHub Actions cache.  A warm-cache
@@ -1010,7 +1006,6 @@ jobs:
             -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade" \
             "${EXTRA[@]}" \
             ${{ matrix.cmake_preset }}
-
 
       # Ninja is required for sccache cache hits on Windows — the
       # Visual Studio generator does not reliably invoke compiler
@@ -1633,10 +1628,180 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
 
+  lambda-worker:
+    name: Build & Smoke Test - Lambda worker
+    needs: package-linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Test Lambda worker
+        run: cargo test --locked --manifest-path lambda-worker/Cargo.toml
+
+      - name: Download portable Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: slicer-cli-release-Linux-x86_64
+          path: dist/release
+
+      - name: Verify and stage portable package
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd dist/release
+            sha256sum --check ./*.sha256
+          )
+          archives=(dist/release/*-linux-x86_64.tar.gz)
+          test "${#archives[@]}" -eq 1
+          rm -rf lambda-worker/.package
+          mkdir -p lambda-worker/.package
+          tar -C lambda-worker/.package -xzf "${archives[0]}"
+
+      - name: Build Lambda image
+        run: docker build --platform linux/amd64 --target local --tag slicer-lambda:test lambda-worker
+
+      - name: Smoke portable slicer in Lambda image
+        run: |
+          docker run --rm --entrypoint /opt/slicer-cli/bin/slicer_cli \
+            slicer-lambda:test --help
+          docker run --rm --entrypoint /opt/slicer-cli/bin/slicer_cli-orcaslicer \
+            slicer-lambda:test --help
+
+      - name: Smoke Lambda Runtime API
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="$(
+            docker run --detach --publish 9000:8080 \
+              --env AWS_ACCESS_KEY_ID=test \
+              --env AWS_SECRET_ACCESS_KEY=test \
+              --env AWS_DEFAULT_REGION=us-east-1 \
+              --env AWS_EC2_METADATA_DISABLED=true \
+              --env INPUT_BUCKET=input \
+              --env OUTPUT_BUCKET=output \
+              --env CALLBACK_URL=http://127.0.0.1:1/callback \
+              --env ALLOW_INSECURE_CALLBACK=true \
+              --env CALLBACK_HMAC_SECRET=0123456789abcdef0123456789abcdef \
+              slicer-lambda:test
+          )"
+          trap 'docker logs "$container"; docker rm --force "$container" >/dev/null' EXIT
+          for _ in {1..30}; do
+            if response="$(
+              curl --fail --silent --show-error \
+                --request POST \
+                --header 'content-type: application/json' \
+                --data '{"Records":[]}' \
+                http://127.0.0.1:9000/2015-03-31/functions/function/invocations
+            )"; then
+              break
+            fi
+            sleep 1
+          done
+          jq -e '.batchItemFailures == []' <<<"${response:?Lambda Runtime API did not respond}"
+
+  deploy-lambda:
+    name: Deploy Lambda - ${{ startsWith(github.ref, 'refs/tags/') && 'production' || 'staging' }}
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_REGION != '' && vars.SLICER_LAMBDA_ECR_REPOSITORY != '' && vars.SLICER_LAMBDA_STACK_NAME != '' && vars.SLICER_CALLBACK_URL != '' }}
+    needs: [package-linux, lambda-worker]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'production' || 'staging' }}
+    concurrency:
+      group: slicer-lambda-${{ startsWith(github.ref, 'refs/tags/') && 'production' || 'staging' }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download portable Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: slicer-cli-release-Linux-x86_64
+          path: dist/release
+
+      - name: Verify and stage portable package
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd dist/release
+            sha256sum --check ./*.sha256
+          )
+          archives=(dist/release/*-linux-x86_64.tar.gz)
+          test "${#archives[@]}" -eq 1
+          rm -rf lambda-worker/.package
+          mkdir -p lambda-worker/.package
+          tar -C lambda-worker/.package -xzf "${archives[0]}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Sign in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push immutable Lambda image
+        id: image
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.SLICER_LAMBDA_ECR_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          tagged_uri="$ECR_REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+          docker build --platform linux/amd64 --target production --tag "$tagged_uri" lambda-worker
+          docker push "$tagged_uri"
+          digest="$(
+            aws ecr describe-images \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-ids "imageTag=$GITHUB_SHA" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text
+          )"
+          test "${digest#sha256:}" != "$digest"
+          echo "uri=$ECR_REGISTRY/$ECR_REPOSITORY@$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Install AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Deploy immutable image
+        shell: bash
+        env:
+          CALLBACK_HMAC_SECRET: ${{ secrets.SLICER_CALLBACK_HMAC_SECRET }}
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          set -euo pipefail
+          test -n "$CALLBACK_HMAC_SECRET"
+          sam deploy \
+            --template-file lambda-worker/template.yaml \
+            --stack-name "${{ vars.SLICER_LAMBDA_STACK_NAME }}" \
+            --region "${{ vars.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "ImageUri=$IMAGE_URI" \
+              "CallbackUrl=${{ vars.SLICER_CALLBACK_URL }}" \
+              "CallbackHmacSecret=$CALLBACK_HMAC_SECRET" \
+              "DeploymentVersion=$GITHUB_SHA"
+
   release:
     name: Publish slicer-cli release assets
-    if: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && needs.package.result == 'success' && needs['package-linux'].result == 'success' }}
-    needs: [package, package-linux]
+    if: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && needs.package.result == 'success' && needs['package-linux'].result == 'success' && needs['lambda-worker'].result == 'success' }}
+    needs: [package, package-linux, lambda-worker]
     runs-on: ubuntu-latest
     permissions:
       contents: write

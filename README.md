@@ -84,6 +84,103 @@ exceptions are recorded in `docs/engine-dependency-contract.md`.
 Package metadata identifies the artefact as `slicer_cli` (not `BambuStudio`).
 A CI assertion fails the build if the metadata regresses.
 
+## AWS Lambda worker
+
+`lambda-worker/` contains a Rust Lambda custom runtime that downloads a queued
+STL/3MF from S3, executes the packaged slicer as a subprocess, uploads G-code
+and a result checkpoint to S3, then calls the regular API. The worker consumes
+SQS with batch size one; the supplied SAM template uses a FIFO queue so a
+duplicate job cannot slice concurrently and a callback retry reuses the stored
+result instead of slicing again.
+
+The API must send each message with `MessageGroupId` set to `jobId` and
+`MessageDeduplicationId` set to a stable hash of the complete request body.
+This serializes retries of one job without serializing unrelated jobs.
+
+The versioned, code-generation-ready contract is exported as
+[`schemas/json/exported/slice-request.schema.json`](schemas/json/exported/slice-request.schema.json).
+The event must validate against that schema before the API enqueues it.
+
+The API places this internal message on the queue after the input upload has
+completed:
+
+```json
+{
+  "schemaVersion": 1,
+  "jobId": "01J9EXAMPLE",
+  "input": {
+    "bucket": "helio-slicer-input-production",
+    "key": "jobs/01J9EXAMPLE/model.3mf",
+    "versionId": "optional-s3-version",
+    "sha256": "64-lowercase-or-uppercase-hex-characters"
+  },
+  "output": {
+    "bucket": "helio-slicer-output-production",
+    "key": "jobs/01J9EXAMPLE/output.gcode"
+  },
+  "engine": "bambu",
+  "profiles": {
+    "mode": "embedded"
+  },
+  "options": {
+    "plate": 1,
+    "overrides": {
+      "layerHeightMm": 0.2,
+      "infillPercent": 20,
+      "perimeters": 3
+    }
+  }
+}
+```
+
+STL jobs use `"mode": "explicit"` and supply `machine`, `filament`, and
+`process` paths relative to the packaged `slicer-cli` directory. The regular
+API must map its public profile IDs to these paths; public callers must never
+submit package paths directly. An optional `config` object uses the same
+`bucket`/`key`/`versionId`/`sha256` shape as `input`, for example an inherited
+Orca configuration resolved by the API. Request bucket names are required and
+must exactly match the worker's configured input and output buckets.
+
+The callback sends `POST $CALLBACK_URL` with the exact stored result JSON and:
+
+- `X-Helio-Event: slice.finished`
+- `Idempotency-Key: <jobId>`
+- `X-Helio-Timestamp: <Unix seconds>`
+- `X-Helio-Signature: v1=<hex HMAC-SHA256>`
+
+The signed bytes are:
+
+```text
+<X-Helio-Timestamp>.<raw request body>
+```
+
+The API must verify the signature in constant time, reject stale timestamps,
+and process `jobId` idempotently. A non-2xx response is retried three times;
+continued callback failure returns the SQS message for retry. Successful and
+permanent-failure results are checkpointed beside the output as
+`<output-key>.result.json`, so callback retries do not rerun the slicer.
+
+To build the image, extract the verified Linux release archive so that
+`lambda-worker/.package/slicer-cli/bin/slicer_cli` exists, then run:
+
+```sh
+docker build --platform linux/amd64 --target production -t slicer-lambda lambda-worker
+```
+
+`lambda-worker/template.yaml` creates private versioned input/output buckets,
+an encrypted FIFO queue and DLQ, the image-based function, least-privilege S3
+access, and baseline alarms. CI smoke-tests the image. Pushes to `main` deploy
+staging and release tags deploy production when their GitHub environments
+provide:
+
+- variables `AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`,
+  `SLICER_LAMBDA_ECR_REPOSITORY`, `SLICER_LAMBDA_STACK_NAME`, and
+  `SLICER_CALLBACK_URL`
+- secret `SLICER_CALLBACK_HMAC_SECRET` (at least 32 bytes)
+
+The ECR repository and OIDC deployment role are bootstrap resources and must
+exist before the first deployment.
+
 ## Using a release package
 
 Choose the engine by choosing its binary: `slicer_cli` uses BambuStudio;

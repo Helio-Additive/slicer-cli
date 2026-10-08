@@ -1,0 +1,207 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Asynchronous slicer-cli Lambda worker with S3 input/output, FIFO SQS delivery, and an authenticated API callback.
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: Immutable ECR image URI including a sha256 digest.
+  CallbackUrl:
+    Type: String
+    AllowedPattern: "^https://.+$"
+    Description: Fixed regular-API endpoint that receives slice.finished callbacks.
+  CallbackHmacSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Shared HMAC-SHA256 secret used to authenticate callbacks.
+  DeploymentVersion:
+    Type: String
+    Default: unknown
+  ReservedConcurrency:
+    Type: Number
+    Default: 5
+    MinValue: 1
+  InputRetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+  OutputRetentionDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+
+Resources:
+  InputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireInputs
+            Status: Enabled
+            ExpirationInDays: !Ref InputRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+
+  OutputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOutputs
+            Status: Enabled
+            ExpirationInDays: !Ref OutputRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+
+  SliceDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  SliceQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 5400
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt SliceDeadLetterQueue.Arn
+        maxReceiveCount: 2
+
+  SliceWorker:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: !Ref ImageUri
+      Architectures:
+        - x86_64
+      MemorySize: 8192
+      Timeout: 900
+      EphemeralStorage:
+        Size: 10240
+      ReservedConcurrentExecutions: !Ref ReservedConcurrency
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          INPUT_BUCKET: !Ref InputBucket
+          OUTPUT_BUCKET: !Ref OutputBucket
+          INPUT_KEY_PREFIX: jobs/
+          OUTPUT_KEY_PREFIX: jobs/
+          CALLBACK_URL: !Ref CallbackUrl
+          CALLBACK_HMAC_SECRET: !Ref CallbackHmacSecret
+          CALLBACK_ATTEMPTS: "3"
+          CALLBACK_TIMEOUT_SECONDS: "10"
+          SLICE_TIMEOUT_SECONDS: "780"
+          DEPLOYMENT_VERSION: !Ref DeploymentVersion
+          RUST_LOG: info
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: ReadSliceInputs
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectVersion
+              Resource: !Sub "${InputBucket.Arn}/jobs/*"
+            - Sid: WriteSliceOutputsAndResults
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub "${OutputBucket.Arn}/jobs/*"
+      Events:
+        SliceQueue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SliceQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
+  WorkerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: slicer Lambda invocation failed or timed out
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SliceWorker
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  QueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: slicer jobs have waited in the queue for more than five minutes
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt SliceQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: a slicer job exhausted retries
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt SliceDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  InputBucketName:
+    Value: !Ref InputBucket
+  OutputBucketName:
+    Value: !Ref OutputBucket
+  SliceQueueUrl:
+    Value: !Ref SliceQueue
+  SliceQueueArn:
+    Value: !GetAtt SliceQueue.Arn
+  SliceWorkerFunctionName:
+    Value: !Ref SliceWorker

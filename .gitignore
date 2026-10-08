@@ -24,7 +24,14 @@ nanosvg_impl.cpp
 *.so
 *.dll
 
+# Rust Lambda build outputs and staged release package
+lambda-worker/target/
+lambda-worker/.package/
+
 # macOS
 .DS_Store
 /bin/
 .worktrees/
+
+# General
+*.log

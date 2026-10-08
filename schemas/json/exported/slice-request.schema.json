@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:helio-additive:slicer-cli:slice-request:v1",
+  "title": "Slicer Lambda Slice Request",
+  "description": "Version 1 request body placed in an SQS message by the API. The Lambda receives this object as the SQS record body.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "jobId", "input", "output", "engine", "profiles"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Contract version."
+    },
+    "jobId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "Stable API job identifier and callback idempotency key."
+    },
+    "input": {
+      "$ref": "#/$defs/modelInput"
+    },
+    "output": {
+      "$ref": "#/$defs/gcodeOutput"
+    },
+    "engine": {
+      "type": "string",
+      "enum": ["bambu", "orca"]
+    },
+    "profiles": {
+      "$ref": "#/$defs/profiles"
+    },
+    "options": {
+      "$ref": "#/$defs/sliceOptions"
+    }
+  },
+  "$comment": "The worker additionally enforces input.key and output.key under jobs/<jobId>/, exact bucket equality with its configured INPUT_BUCKET and OUTPUT_BUCKET, and profiles.config under the same input job prefix. Standard JSON Schema cannot express those deployment-dependent and cross-field equality constraints.",
+  "$defs": {
+    "bucket": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+      "description": "S3 bucket name. It must exactly match the corresponding bucket configured on the worker."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "versionId": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Optional immutable S3 object version. Null and omission both select the current version."
+    },
+    "modelInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "key", "sha256"],
+      "properties": {
+        "bucket": {
+          "$ref": "#/$defs/bucket"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!.*//)(?!.*(?:/)\\.{1,2}(?:/|$))jobs/[A-Za-z0-9_-]+/.+\\.(?:[sS][tT][lL]|3[mM][fF])$",
+          "description": "Normalized S3 key for an STL or 3MF. It must be under jobs/<jobId>/ and contain no empty, dot, or dot-dot path components."
+        },
+        "versionId": {
+          "$ref": "#/$defs/versionId"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "profileConfigInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "key", "sha256"],
+      "properties": {
+        "bucket": {
+          "$ref": "#/$defs/bucket"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!.*//)(?!.*(?:/)\\.{1,2}(?:/|$))jobs/[A-Za-z0-9_-]+/.+\\.[jJ][sS][oO][nN]$",
+          "description": "Normalized S3 key for an API-resolved profile configuration under jobs/<jobId>/."
+        },
+        "versionId": {
+          "$ref": "#/$defs/versionId"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "gcodeOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "key"],
+      "properties": {
+        "bucket": {
+          "$ref": "#/$defs/bucket"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!.*//)(?!.*(?:/)\\.{1,2}(?:/|$))jobs/[A-Za-z0-9_-]+/.+\\.[gG][cC][oO][dD][eE]$",
+          "description": "Normalized destination key under jobs/<jobId>/."
+        }
+      }
+    },
+    "profiles": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/embeddedProfiles"
+        },
+        {
+          "$ref": "#/$defs/explicitProfiles"
+        }
+      ]
+    },
+    "embeddedProfiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "const": "embedded"
+        }
+      },
+      "description": "Use profiles embedded in a 3MF. This mode is invalid for STL input."
+    },
+    "explicitProfiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "machine", "filament", "process"],
+      "properties": {
+        "mode": {
+          "const": "explicit"
+        },
+        "machine": {
+          "$ref": "#/$defs/packagedProfilePath"
+        },
+        "filament": {
+          "$ref": "#/$defs/packagedProfilePath"
+        },
+        "process": {
+          "$ref": "#/$defs/packagedProfilePath"
+        },
+        "config": {
+          "$ref": "#/$defs/profileConfigInput"
+        }
+      }
+    },
+    "packagedProfilePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$)).+\\.[jJ][sS][oO][nN]$",
+      "description": "Relative path to an existing JSON profile inside the packaged slicer directory. Public callers must supply profile IDs; the API resolves those IDs to this internal path."
+    },
+    "sliceOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "plate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "One-based 3MF plate number."
+        },
+        "overrides": {
+          "$ref": "#/$defs/sliceOverrides"
+        }
+      }
+    },
+    "sliceOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layerHeightMm": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 5.0
+        },
+        "infillPercent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "perimeters": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "nozzleDiameterMm": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 2.0
+        },
+        "nozzleTemperatureC": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "bedTemperatureC": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "jobId": "01J9EXAMPLE",
+      "input": {
+        "bucket": "helio-slicer-input-production",
+        "key": "jobs/01J9EXAMPLE/model.3mf",
+        "versionId": "3Lg_example_version",
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "output": {
+        "bucket": "helio-slicer-output-production",
+        "key": "jobs/01J9EXAMPLE/output.gcode"
+      },
+      "engine": "bambu",
+      "profiles": {
+        "mode": "embedded"
+      },
+      "options": {
+        "plate": 1,
+        "overrides": {
+          "layerHeightMm": 0.2,
+          "infillPercent": 20,
+          "perimeters": 3
+        }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "jobId": "01J9STLEXAMPLE",
+      "input": {
+        "bucket": "helio-slicer-input-production",
+        "key": "jobs/01J9STLEXAMPLE/model.stl",
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "output": {
+        "bucket": "helio-slicer-output-production",
+        "key": "jobs/01J9STLEXAMPLE/output.gcode"
+      },
+      "engine": "bambu",
+      "profiles": {
+        "mode": "explicit",
+        "machine": "resources/profiles/BBL/machine/Bambu Lab A1 0.4 nozzle.json",
+        "filament": "resources/profiles/BBL/filament/Bambu PLA Basic @BBL A1.json",
+        "process": "resources/profiles/BBL/process/0.20mm Standard @BBL A1.json"
+      },
+      "options": {
+        "overrides": {
+          "infillPercent": 20
+        }
+      }
+    }
+  ]
+}
