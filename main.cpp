@@ -25,7 +25,6 @@
 #include <fcntl.h>
 #else
 #include <cerrno>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
 #endif
@@ -5780,9 +5779,16 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
 /// takes every model off it, and the run removes it itself as the process
 /// ends. The list is a member, not a function-local static: this object's
 /// destructor must outlive it. A crash or a kill leaves the folders, as it
-/// leaves any temp file — up to the input's embedded G-code, so the two below
-/// exist: the sweep of what dead runs left, and the signals that end a run
-/// without unwinding it.
+/// leaves any temp file — up to the input's embedded G-code, so the sweep
+/// below exists: the folders of runs that are gone go at the start of the
+/// next run. Nothing else removes them on the way out: a SIGTERM or SIGHUP
+/// ends this process through its default action, exactly as SIGKILL does, and
+/// both leave the folder to that sweep. A handler would have to remove the
+/// folders from signal context, and the process holds ~30 threads: fork()
+/// there runs glibc's atfork handlers and takes the malloc arena locks, so a
+/// signal that lands while any thread holds one blocks the handler on a
+/// futex for ever instead of ending the run ("stale" is judged from lock.txt
+/// below, so the folder the hang would have left is still reclaimed).
 ///
 /// An engine backup folder is marked as owned by writing the owner's PID into
 /// lock.txt: the loader reaches Model::get_backup_path() (bbs_3mf.cpp 1474 /
@@ -5795,15 +5801,12 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
 /// before its load reached get_backup_path() would otherwise leave a folder
 /// only the age rule below could reclaim.
 struct RunStagingFolders {
-    /// The 3MF load's folder and the --export-3mf one; the room is fixed
-    /// because the SIGTERM/SIGHUP handler reads the paths below, and reading a
-    /// std::vector that another thread is appending to is a data race. A
-    /// fixed array of paths, each published after its bytes, is race-free to
-    /// read: a handler sees a whole path or none of it.
+    /// The 3MF load's folder and the --export-3mf one, in a fixed array: the
+    /// set is bounded by the run's steps, and a fixed size keeps add() off the
+    /// heap while the run holds its staging folders.
     static constexpr size_t kMax = 4;
     char paths[kMax][4096];   ///< TMPDIR + a relative path, well inside 4096
-    /// Paths published so far. Written last, read first.
-    volatile std::sig_atomic_t count = 0;
+    size_t count = 0;         ///< Paths registered so far.
 
     /// Creates `path` with this run's lock.txt, registers it, returns it.
     /// The loader extracts an archive's files under their own names
@@ -5828,7 +5831,7 @@ struct RunStagingFolders {
             const size_t len  = std::min(path.size(), room);
             std::memcpy(paths[n], path.data(), len);
             paths[n][len] = '\0';
-            count = (std::sig_atomic_t)(n + 1);   // published last
+            count = n + 1;
         }
         return path;
     }
@@ -5925,58 +5928,6 @@ static void sweep_stale_staging_folders() {
             continue;
         bfs::remove_all(folder, sub);
     }
-}
-
-/// The handler for the signals whose default action ends the run without
-/// running ~RunStagingFolders: SIGTERM (how `timeout` and a gate end a slice)
-/// and SIGHUP. Nothing here allocates, takes a lock, or walks a path: SIGTERM
-/// arrives in any thread, including one inside the engine with the allocator's
-/// lock held, where boost::filesystem could deadlock this process instead of
-/// ending it. The removal is done by a child `rm -rf` — fork, execv, _exit and
-/// waitpid are async-signal-safe — and this process waits for the child
-/// (waitpid is too) so the folders are gone before it dies. Then the signal is
-/// re-raised with its default action, which is what the exit status (143 for
-/// SIGTERM, 129 for SIGHUP) has always been.
-#ifndef _WIN32
-static void staging_signal_handler(int sig) {
-    const int n = (int)run_staging.count;
-    if (n > 0) {
-        char* argv[3 + (int)RunStagingFolders::kMax + 1];
-        int   argc = 0;
-        argv[argc++] = const_cast<char*>("rm");
-        argv[argc++] = const_cast<char*>("-rf");
-        for (int i = 0; i < n; ++i)
-            argv[argc++] = run_staging.paths[i];
-        argv[argc] = nullptr;
-        const pid_t child = ::fork();
-        if (child == 0) {
-            ::execv("/bin/rm", argv);
-            ::_exit(127);
-        }
-        if (child > 0) {
-            int status = 0;
-            ::waitpid(child, &status, 0);
-        }
-    }
-    std::signal(sig, SIG_DFL);
-    ::raise(sig);
-}
-#endif
-
-/// Installs the SIGTERM/SIGHUP handler. SIGINT is deliberately not here: it
-/// already ends a run through the normal path, which removes the folders.
-/// Windows has no SIGTERM, so there the start-of-run sweep is the whole fix.
-static void install_staging_signal_handlers() {
-#ifndef _WIN32
-    // no SA_RESTART: a blocking read returns EINTR rather than resuming, the
-    // same as the SIGINT handler the cancellation path installs
-    struct sigaction sa{};
-    sa.sa_handler = staging_signal_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGTERM, &sa, nullptr);
-    sigaction(SIGHUP, &sa, nullptr);
-#endif
 }
 
 /// The folder this run's 3MF loads stage their temporary files in. The
@@ -10379,11 +10330,16 @@ int main(int argc, char** argv) {
     // Metadata/plate_1.gcode into it: 175 MB on the OrcaSlicer build with the
     // corpus 44e597511c7d5abd.3mf). Bound a slice with `timeout` — SIGTERM —
     // or kill it, and on a tmpfs /tmp that is RAM left behind. The folders of
-    // runs that are gone go now, before this run makes its own, and the
-    // signals that would otherwise leave this run's behind are handled from
-    // here on.
+    // runs that are gone go now, before this run makes its own. No SIGTERM or
+    // SIGHUP handler is installed to remove this run's: the run holds ~30
+    // threads, and fork() in a handler (what an `rm -rf` child needs) runs
+    // glibc's atfork handlers and takes the malloc arena locks, so a signal
+    // that lands while any thread holds one blocks the handler on a futex for
+    // ever — a plugin that ends a run with SIGTERM would then wait for ever.
+    // The default action ends the run with 143/129, the rest of the corpus and
+    // leakcheck's SIGTERM row leave the folder to the sweep above, and the
+    // lock.txt PID check reclaims it, exactly as after SIGKILL.
     sweep_stale_staging_folders();
-    install_staging_signal_handlers();
 
     // Both engines read slice-time resources (info/, flush/, filament_mixing/)
     // relative to this root, which depends on no argument: resolve it once here
