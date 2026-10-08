@@ -4260,13 +4260,27 @@ static void record_plate_for_export(const Slic3r::Print& print, const Slic3r::Mo
         pd->nozzle_diameters = nozzles->serialize();
     {
         Slic3r::DynamicPrintConfig types = config;
-        const auto* colours = config.option<Slic3r::ConfigOptionStrings>("filament_colour");
-        const auto* ids     = config.option<Slic3r::ConfigOptionStrings>("filament_ids");
+        const auto* colours        = config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+        const auto* ids            = config.option<Slic3r::ConfigOptionStrings>("filament_ids");
+        const auto* filament_types = config.option<Slic3r::ConfigOptionStrings>("filament_type");
+        // An entry is read at the filament's index only while the list HAS one.
+        // filament_ids' own default is an empty list (PrintConfig.cpp 2851-2852
+        // at 5873b5f, `new ConfigOptionStrings()`), and BambuStudio saves every
+        // project without it — it is a nocli key — so a project that states no
+        // ids carries the option with no entry at all, and get_at() then reads
+        // values.front() of an empty vector (Config.hpp 681-684), a null
+        // dereference. The desktop never meets that shape because its
+        // PresetBundle fans every per-filament array out to the filament count
+        // (PresetBundle::full_fff_config), so filament_ids always has one entry
+        // per filament there. Take upstream's own fallbacks for the empty case:
+        // the empty tray id, "#FFFFFF", and get_filament_type's own empty return
+        // for a project without a filament list of its own.
         for (auto& info : pd->slice_filaments_info) {
             std::string display_type;
-            info.type        = types.get_filament_type(display_type, info.id);
-            info.color       = colours ? colours->get_at(info.id) : "#FFFFFF";
-            info.filament_id = ids ? ids->get_at(info.id) : "";
+            info.type        = filament_types && !filament_types->values.empty()
+                                   ? types.get_filament_type(display_type, info.id) : std::string();
+            info.color       = colours && !colours->values.empty() ? colours->get_at(info.id) : "#FFFFFF";
+            info.filament_id = ids && !ids->values.empty() ? ids->get_at(info.id) : "";
         }
     }
 #ifdef ENGINE_BAMBU

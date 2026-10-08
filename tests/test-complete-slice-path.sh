@@ -246,6 +246,48 @@ assert abs(num("layer_height") - 0.16) < 1e-6, d["layer_height"]
 '
 echo "PASS: the exported project keeps the converted widths and the command-line override"
 
+# A project that states no filament ids at all. filament_ids' own default is an
+# empty list (PrintConfig.cpp 2851-2852 at 5873b5f, `new ConfigOptionStrings()`)
+# and BambuStudio saves every project without it, so the option is there with no
+# entry at all; the export step reads it at each used filament's index, and
+# get_at() then reads values.front() of an empty vector (Config.hpp 681-684) —
+# a null dereference. The desktop never meets that shape (PresetBundle fans
+# every per-filament array out to the filament count), BambuStudio's own CLI
+# segfaults on the crashing corpus project the same way. The four filament
+# lists are that project's own, cut down to this fixture.
+py '
+import json, zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("no-filament-ids.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d.pop("filament_ids", None)
+            d.update({"filament_colour": ["#3A3A3A", "#212721", "#212721", "#FFFFFF"],
+                      "filament_type": ["PLA"] * 4,
+                      "filament_settings_id": ["Bambu PLA Basic @BBL X1C"] * 4,
+                      "filament_vendor": ["Bambu Lab"] * 4,
+                      "filament_is_support": ["0"] * 4,
+                      "filament_map": [1] * 4})
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+'
+run noids "$B" no-filament-ids.3mf --slice 1 --outputdir noids/out --export-3mf sliced.3mf
+[ "$(rc noids)" = 0 ] || { show noids; fail "--export-3mf without filament_ids exit $(rc noids)"; }
+# The plate's filament entry is the step that crashed: the project's own colour
+# and type, and no tray id at all (the project states none).
+py '
+import re, zipfile
+s = zipfile.ZipFile("noids/out/sliced.3mf").read("Metadata/slice_info.config").decode()
+entry = re.search(r"<filament [^>]*/>", s)
+assert entry, s
+entry = entry.group(0)
+assert "color=\"#3A3A3A\"" in entry, entry
+assert "type=\"PLA\"" in entry, entry
+assert "tray_info_idx=\"\"" in entry, entry
+'
+echo "PASS: --export-3mf survives a project that states no filament ids"
+
 # ... and the custom G-code as it ran: the legacy placeholder aliased.
 py '
 import json, zipfile
