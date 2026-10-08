@@ -185,11 +185,15 @@ for e in bambu orca; do
         n=rooted-$kind-$e
         run $n "$bin" rooted-$kind.3mf --slice 1 --outputdir $n/out
         [ "$(rc $n)" = 0 ] && [ -s $n/out/plate_1.gcode ] || { show $n; fail "$e: the 3MF with the rooted member $member did not slice"; }
+        # The member is named inside python from its kind: on Windows git-bash
+        # rewrites a "/x" argument into C:/Program Files/Git/x before python
+        # sees it.
         py '
 import json, sys
+member = {"drive": "C:/slicer-created/x", "unc": "//server/share/x", "root": "/slicer-created-root/x"}[sys.argv[2]]
 events = [json.loads(l[len("[[SLICER_EVENT]] "):]) for l in open(sys.argv[1], errors="replace") if l.startswith("[[SLICER_EVENT]] ")]
-assert any(e.get("tag") == "ThreeMfMemberSkipped" and e.get("member") == sys.argv[2] for e in events), sys.argv[2]
-' $n/stdout "$member" || { show $n; fail "$e: no ThreeMfMemberSkipped event naming $member"; }
+assert any(e.get("tag") == "ThreeMfMemberSkipped" and e.get("member") == member for e in events), member
+' $n/stdout "$kind" || { show $n; fail "$e: no ThreeMfMemberSkipped event naming $member"; }
         py '
 import os, sys, tempfile
 bad = []
