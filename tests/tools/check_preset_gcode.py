@@ -100,6 +100,16 @@ def norm(text):
     return match.group(1) + "," + match.group(2) if match else text
 
 
+def slots(header_value):
+    """The header's value split into its extruder slots. A printer with more
+    than one extruder writes one slot per extruder -- numbers comma-separated
+    ("220,260,260,260"), strings semicolon-separated ("PLA;ABS;ABS;ABS"); a
+    single value has no separator at all. The split comes first and the
+    normalize second, so a point ("267x0") stays one slot."""
+    text = header_value.strip().strip('"')
+    return [norm(part) for part in text.split(";" if ";" in text else ",")]
+
+
 def matches(header_value, flat_value):
     """True when the G-code's value for a key is the flattened preset's, None
     when the two cannot be compared.
@@ -109,12 +119,20 @@ def matches(header_value, flat_value):
     way. A list compares entry by entry; a list whose entries are all the same
     also compares against the value repeated (the engine writes one entry per
     extruder: the U1's two-value bed_mesh_max reaches the header as 267,267).
-    """
+
+    A header with MORE slots than the preset has entries compares on the
+    leading ones: on a printer with several extruders only the slots a filament
+    was loaded into carry its settings, the rest keep whatever the printer
+    defaults to (the U1 has four, and --filament/--load-filaments with one
+    entry loads into the first: nozzle_temperature 220 arrives as
+    220,260,260,260)."""
+    got = slots(header_value)
     if isinstance(flat_value, list):
         want = [norm(first(v)) for v in flat_value]
         if not want or any(w == "" for w in want):
             return None
-        got = [norm(part) for part in header_value.split(",")]
+        if len(got) > len(want):
+            got = got[:len(want)]
         if len(set(want)) == 1:
             return all(g == want[0] or same_number(g, want[0]) for g in got)
         if len(got) != len(want):
@@ -123,16 +141,16 @@ def matches(header_value, flat_value):
     text = norm(first(flat_value))
     if text == "" or any(c in text for c in "\n{}\""):
         return None
-    got = norm(header_value.split(";")[0])
-    if "," in got and "," not in text:
-        # On a printer with more than one extruder the header writes one value
-        # per extruder, and only the slot this filament loaded into carries its
-        # setting -- the rest are whatever the printer defaults to for the
-        # extruders no filament was given for. Compare that slot (the first; a
-        # single --filament/--load-filaments entry loads into extruder 1) and
-        # leave the others out of it.
-        got = got.split(",")[0]
-    return got == text or same_number(got, text)
+    if norm(header_value.strip().strip('"')) == text:
+        # The same text, whatever its shape: a preset value that already holds
+        # commas ("267,267" for bed_mesh_max) against a header that writes the
+        # same, and every plain single value.
+        return True
+    if len(got) > 1:
+        got = got[:1]
+    if not got:
+        return None
+    return got[0] == text or same_number(got[0], text)
 
 
 vendor, kind, name = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
