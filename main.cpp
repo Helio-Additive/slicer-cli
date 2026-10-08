@@ -15,6 +15,8 @@
 #include <cstdlib>
 #include <algorithm>
 #include <chrono>
+#include <cstring>
+#include <ctime>
 #include <iomanip>
 #include <sstream>
 #ifdef _WIN32
@@ -23,12 +25,14 @@
 #include <fcntl.h>
 #else
 #include <cerrno>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
 #endif
 
 // Core libslic3r headers
 #include "libslic3r/libslic3r.h"
+#include "libslic3r/Utils.hpp"   // get_process_name/get_current_pid: the engine's own folder-ownership test
 #include "libslic3r/Model.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -5373,31 +5377,215 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
 }
 
 /// The staging folders this run made: the 3MF load's backup folder and the
-/// --export-3mf one. Both are handed to the engine, which asks the backup
-/// manager to remove the folder a model ends with (Model.cpp ~Model ->
-/// remove_backup), but that removal runs as a UI task the command line never
-/// drains (_BBS_Backup_Manager::process_ui_task, bbs_3mf.cpp 8714-8786 at
-/// 31f6803), so the run removes them itself as the process ends. The list is
-/// a member, not a function-local static: this object's destructor must
-/// outlive it. A crash or a kill leaves the folders, as it leaves any temp
-/// file.
+/// --export-3mf one. Both are handed to the engine, and 397e505's comment here
+/// claimed the engine's removal of them "runs as a UI task the command line
+/// never drains" — it does not: ~Model queues a RemoveBackup task
+/// (Model.cpp 203-210 / OrcaSlicer 176-183, remove_backup at bbs_3mf.cpp 9030
+/// / OrcaSlicer 8604) and the backup manager's worker thread runs it
+/// (bbs_3mf.cpp 9140-9144 / OrcaSlicer 8715-8719 start the thread, 9212-9235 /
+/// 8788-8803 is the RemoveBackup it runs). A model that still holds this
+/// folder when it dies therefore removes it mid-run; detach_run_backup_path
+/// takes every model off it, and the run removes it itself as the process
+/// ends. The list is a member, not a function-local static: this object's
+/// destructor must outlive it. A crash or a kill leaves the folders, as it
+/// leaves any temp file — up to the input's embedded G-code, so the two below
+/// exist: the sweep of what dead runs left, and the signals that end a run
+/// without unwinding it.
+///
+/// An engine backup folder is marked as owned by writing the owner's PID into
+/// lock.txt: the loader reaches Model::get_backup_path() (bbs_3mf.cpp 1474 /
+/// OrcaSlicer 1416, the non-restore branch), and a folder that does not exist
+/// yet is created there together with its lock (Model.cpp 1123-1130 /
+/// OrcaSlicer 986-993). The desktop calls a folder stale when that PID is not
+/// a running process of the same program (has_restore_data, bbs_3mf.cpp
+/// 9453-9466 / OrcaSlicer 9015-9031). add() writes the same lock itself, so
+/// the folder carries its marker from the moment it exists — a run killed
+/// before its load reached get_backup_path() would otherwise leave a folder
+/// only the age rule below could reclaim.
 struct RunStagingFolders {
-    std::vector<std::string> paths;
+    /// The 3MF load's folder and the --export-3mf one; the room is fixed
+    /// because the SIGTERM/SIGHUP handler reads the paths below, and reading a
+    /// std::vector that another thread is appending to is a data race. A
+    /// fixed array of paths, each published after its bytes, is race-free to
+    /// read: a handler sees a whole path or none of it.
+    static constexpr size_t kMax = 4;
+    char paths[kMax][4096];   ///< TMPDIR + a relative path, well inside 4096
+    /// Paths published so far. Written last, read first.
+    volatile std::sig_atomic_t count = 0;
 
-    /// Registers `path`.
+    /// Creates `path` with this run's lock.txt, registers it, returns it.
+    /// The loader extracts an archive's files under their own names
+    /// (_extract_file_from_archive, bbs_3mf.cpp 2904-2919), so a project whose
+    /// root holds an entry named lock.txt would overwrite this marker with a
+    /// PID that is not this run's; no BambuStudio project carries one, and the
+    /// cost of that collision is a stale-looking lock on this run's own
+    /// folder, which the next run may then remove.
     std::string add(std::string path) {
-        paths.push_back(path);
+        boost::system::error_code mk;
+        boost::filesystem::create_directories(path, mk);   // the engine would create it itself (_extract_file_from_archive, bbs_3mf.cpp 2914-2919)
+        {
+            // boost::filesystem streams, as the rest of this file writes files:
+            // the UTF-8 path is the global one nowide_filesystem installed.
+            boost::filesystem::ofstream lock(boost::filesystem::path(path) / "lock.txt",
+                                             std::ios::out | std::ios::trunc);
+            lock << Slic3r::get_current_pid();
+        }
+        const size_t n = (size_t)count;
+        if (n < kMax) {
+            const size_t room = sizeof paths[n] - 1;
+            const size_t len  = std::min(path.size(), room);
+            std::memcpy(paths[n], path.data(), len);
+            paths[n][len] = '\0';
+            count = (std::sig_atomic_t)(n + 1);   // published last
+        }
         return path;
     }
 
     ~RunStagingFolders() {
-        for (const std::string& path : paths) {
+        for (size_t i = 0; i < (size_t)count; ++i) {
             boost::system::error_code ec;
-            boost::filesystem::remove_all(path, ec);
+            boost::filesystem::remove_all(paths[i], ec);
         }
     }
 };
 static RunStagingFolders run_staging;
+
+/// True for the names this program stages under, and (the sweep's guard)
+/// nothing else: temp_directory_path() is shared, and another program's
+/// folder is never this run's to remove.
+static bool is_staging_folder_name(const std::string& name) {
+    return boost::algorithm::starts_with(name, "slicer_cli_load-") ||
+           boost::algorithm::starts_with(name, "slicer_cli_export-");
+}
+
+/// True when `pid` is a running process of this same program — the desktop's
+/// test for "this backup folder still has its owner, keep it"
+/// (has_restore_data, bbs_3mf.cpp 9447-9466 / OrcaSlicer 9013-9031:
+/// get_process_name(pid) == get_process_name(0); on Windows a live pid of
+/// another program, or a dead one that OpenProcess refuses, gives a different
+/// name or none).
+static bool staging_owner_alive(int pid) {
+    if (pid <= 0)
+        return false;
+#ifndef _WIN32
+    // On Linux and macOS get_process_name() reports a PID that is gone with
+    // perror() (utils.cpp 1216-1220 / 1263-1272), which would put engine text
+    // on this run's stderr; a PID that is not running cannot be ours, so the
+    // probe comes first and the call is only made for a live PID.
+    if (::kill(pid, 0) != 0 && errno != EPERM)
+        return false;
+#endif
+    return Slic3r::get_process_name(pid) == Slic3r::get_process_name(0);
+}
+
+/// How old a lock-less staging folder must be before the sweep removes it.
+/// Every folder this program makes carries a lock.txt, so a folder without one
+/// is either from a build older than this fix or is inside the moment between
+/// add()'s create_directories and its lock write; the age is what separates
+/// the two. An hour is far longer than that window — and than the interval
+/// between a folder appearing and the next run sweeping — so a folder this
+/// recent is left alone, and the alternative (removing every lock-less folder
+/// on sight) is not available: it would delete a live run's folder in that
+/// window, which is the one thing this sweep must never do.
+static constexpr double kLocklessFolderMinAgeSeconds = 3600.0;
+
+/// Removes the staging folders of runs that are gone, so a tmpfs /tmp does not
+/// hold the folders of every killed run. A folder is removed only when this
+/// program's name is in it and its owner is not a live process of this
+/// program (the desktop's own staleness test), or when it has no lock and is
+/// over kLocklessFolderMinAgeSeconds old. A live run's folder is left alone,
+/// so a second run in the same TMPDIR never disturbs the first.
+static void sweep_stale_staging_folders() {
+    namespace bfs = boost::filesystem;
+    boost::system::error_code ec;
+    const bfs::path tmp = bfs::temp_directory_path(ec);
+    if (ec)
+        return;
+    const std::string self = Slic3r::get_process_name(0);
+    if (self.empty())   // no name of this program to compare against: remove nothing
+        return;
+    bfs::directory_iterator it(tmp, ec), end;
+    if (ec)
+        return;
+    for (; it != end; it.increment(ec)) {
+        if (ec)
+            break;
+        const bfs::path      folder = it->path();
+        if (!is_staging_folder_name(folder.filename().string()))
+            continue;
+        boost::system::error_code sub;
+        const bfs::path           lock = folder / "lock.txt";
+        if (bfs::exists(lock, sub) && !sub) {
+            int pid = 0;
+            {
+                boost::filesystem::ifstream in(lock);
+                in >> pid;   // a damaged lock leaves pid 0: not an owner, remove
+            }
+            if (staging_owner_alive(pid))
+                continue;
+            bfs::remove_all(folder, sub);
+            continue;
+        }
+        const std::time_t when = bfs::last_write_time(folder, sub);
+        if (sub)
+            continue;
+        if (std::difftime(std::time(nullptr), (std::time_t)when) < kLocklessFolderMinAgeSeconds)
+            continue;
+        bfs::remove_all(folder, sub);
+    }
+}
+
+/// The handler for the signals whose default action ends the run without
+/// running ~RunStagingFolders: SIGTERM (how `timeout` and a gate end a slice)
+/// and SIGHUP. Nothing here allocates, takes a lock, or walks a path: SIGTERM
+/// arrives in any thread, including one inside the engine with the allocator's
+/// lock held, where boost::filesystem could deadlock this process instead of
+/// ending it. The removal is done by a child `rm -rf` — fork, execv, _exit and
+/// waitpid are async-signal-safe — and this process waits for the child
+/// (waitpid is too) so the folders are gone before it dies. Then the signal is
+/// re-raised with its default action, which is what the exit status (143 for
+/// SIGTERM, 129 for SIGHUP) has always been.
+#ifndef _WIN32
+static void staging_signal_handler(int sig) {
+    const int n = (int)run_staging.count;
+    if (n > 0) {
+        char* argv[3 + (int)RunStagingFolders::kMax + 1];
+        int   argc = 0;
+        argv[argc++] = const_cast<char*>("rm");
+        argv[argc++] = const_cast<char*>("-rf");
+        for (int i = 0; i < n; ++i)
+            argv[argc++] = run_staging.paths[i];
+        argv[argc] = nullptr;
+        const pid_t child = ::fork();
+        if (child == 0) {
+            ::execv("/bin/rm", argv);
+            ::_exit(127);
+        }
+        if (child > 0) {
+            int status = 0;
+            ::waitpid(child, &status, 0);
+        }
+    }
+    std::signal(sig, SIG_DFL);
+    ::raise(sig);
+}
+#endif
+
+/// Installs the SIGTERM/SIGHUP handler. SIGINT is deliberately not here: it
+/// already ends a run through the normal path, which removes the folders.
+/// Windows has no SIGTERM, so there the start-of-run sweep is the whole fix.
+static void install_staging_signal_handlers() {
+#ifndef _WIN32
+    // no SA_RESTART: a blocking read returns EINTR rather than resuming, the
+    // same as the SIGINT handler the cancellation path installs
+    struct sigaction sa{};
+    sa.sa_handler = staging_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGHUP, &sa, nullptr);
+#endif
+}
 
 /// The folder this run's 3MF loads stage their temporary files in. The
 /// engine's loader extracts Metadata/project_settings.config to
@@ -5424,6 +5612,68 @@ static void set_run_backup_path(Slic3r::Model& model) {
     model.set_backup_path("detach");
     model.set_backup_path(run_backup_path());
 }
+
+/// Creates, inside the run's staging folder, the directory of every file the
+/// 3MF holds — nothing else — so the loader's extraction has somewhere to put
+/// them.
+/// The loader writes an archive entry to <backup>/<its own archive path>
+/// (_extract_file_from_archive): the BambuStudio build creates that path's
+/// parents first (bbs_3mf.cpp 2914-2919 at 5873b5f), the OrcaSlicer build does
+/// not (bbs_3mf.cpp 2798-2818 at 31f6803), so on OrcaSlicer an entry nested
+/// below Metadata/ or 3D/Objects/ — a project's Metadata/helio/... files, say —
+/// fails with "Error while extract file to temp directory" (2816). Measured on
+/// the same corpus 40fd25289c325186, --slice 1, per-run folder: 18 of them on
+/// the OrcaSlicer build of 397e505, 0 on the BambuStudio build of the same
+/// commit. The folder itself was never missing — only those parents were.
+static void create_archive_dirs(const std::string& archive, const std::string& backup_root) {
+    mz_zip_archive zip;
+    mz_zip_zero_struct(&zip);
+    if (!Slic3r::open_zip_reader(&zip, archive))
+        return;   // not a 3MF (an STL, a missing file): the load reports it, as before
+    const mz_uint count = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint i = 0; i < count; ++i) {
+        mz_zip_archive_file_stat stat;
+        if (!mz_zip_reader_file_stat(&zip, i, &stat))
+            continue;
+        std::string name(stat.m_filename);
+        std::replace(name.begin(), name.end(), '\\', '/');
+        // the loader refuses a path that leaves the backup folder (bbs_3mf.cpp
+        // 2909-2912 / 2804-2807): never create one here either
+        if (name.empty() || name[0] == '/' || name.find("..") != std::string::npos)
+            continue;
+        const size_t slash = name.find_last_of('/');
+        if (slash == std::string::npos)
+            continue;
+        boost::system::error_code ec;
+        boost::filesystem::create_directories(boost::filesystem::path(backup_root) / name.substr(0, slash), ec);
+    }
+    mz_zip_reader_end(&zip);
+}
+
+/// Takes `model` off the run's staging folder once nothing loads into it any
+/// more.
+/// ~Model removes the folder a model still holds (Slic3r::remove_backup(*this,
+/// true), Model.cpp 203-210 / OrcaSlicer 176-183), and that removal is not
+/// only queued for the desktop: the manager's own worker thread runs it
+/// (_BBS_Backup_Manager starts it in its constructor, bbs_3mf.cpp 9140-9144 /
+/// OrcaSlicer 8715-8719; process_task runs RemoveBackup, 9212-9235 / 8788-8803
+/// — the log shows the task for this run's own folder on that second thread).
+/// Every model of the run holds the one folder of run_backup_path, each
+/// plate's copy of the run's model (std::make_unique<Slic3r::Model>(model))
+/// included, so a model that dies before the run's work ends takes the folder
+/// the run is still using with it. "detach" clears backup_path, so ~Model
+/// queues nothing (Model.cpp 1165-1179 / OrcaSlicer 1028-1042) and the folder
+/// stands until the run removes it at exit.
+static void detach_run_backup_path(Slic3r::Model& model) {
+    model.set_backup_path("detach");
+}
+
+/// Detaches `model` when the scope that loaded into the run's folder ends, on
+/// every path out of it.
+struct RunBackupDetach {
+    Slic3r::Model& model;
+    ~RunBackupDetach() { detach_run_backup_path(model); }
+};
 
 /// One plate's objects, loaded alone from the project 3MF, for
 /// --downward-check: the official sizes every plate of the project
@@ -5455,8 +5705,13 @@ static bool load_plate_objects(const std::string& input_file, int plate_id, Slic
     const auto strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances;
     // A writable backup folder of this run's own, as the slice's own load
     // sets (never the loader's default /bamboo_model, and never one shared
-    // with another run: run_backup_path).
+    // with another run: run_backup_path), with the archive's directories in it
+    // so the extraction finds them, and detached again when this function
+    // ends: this model is a temporary one, and its destruction must not remove
+    // the folder the run's own load extracts into (detach_run_backup_path).
     set_run_backup_path(model);
+    create_archive_dirs(load_path, run_backup_path());
+    const RunBackupDetach detach_model{model};
     bool loaded = false;
     try {
 #ifdef ENGINE_ORCA
@@ -5896,8 +6151,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // Pre-set backup_path to a writable temp dir of this run's own so the
         // backup manager never touches the read-only /bamboo_model network
         // path, and parallel runs never share the loader's _temp_N.config
-        // files (run_backup_path).
+        // files (run_backup_path), with the input's own directories in it (the
+        // OrcaSlicer loader does not create them: create_archive_dirs).
         set_run_backup_path(model);
+        create_archive_dirs(input_file, run_backup_path());
+        // The run's model is detached when this block ends, so no copy of it
+        // (each plate's own, or any temporary) can take the folder down while
+        // a later load still writes into it (detach_run_backup_path).
+        const RunBackupDetach detach_run_model{model};
         if (assemble_input) {
             // The list's plates the run slices: plate N, or every plate. Each
             // plate's objects go to its place in the plate grid once the bed
@@ -8708,6 +8969,10 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         run_staging.add((boost::filesystem::temp_directory_path() /
                          boost::filesystem::unique_path("slicer_cli_export-%%%%%%%%")).string());
     model.set_backup_path(export_backup);   // removed with the run's other staging folders
+    // Detached again when this function ends, so this model's destruction does
+    // not queue a removal of a folder the run removes itself
+    // (detach_run_backup_path).
+    const RunBackupDetach detach_export_model{model};
     PlateDataPtrs plates;
     struct Release {
         PlateDataPtrs& plates;
@@ -9270,6 +9535,17 @@ int main(int argc, char** argv) {
         boost::log::core::get()->set_logging_enabled(false);
         return layout_plan::run_capabilities();
     }
+
+    // A run that is killed cannot remove its staging folders, and each holds
+    // up to the input's embedded G-code (the loader extracts
+    // Metadata/plate_1.gcode into it: 175 MB on the OrcaSlicer build with the
+    // corpus 44e597511c7d5abd.3mf). Bound a slice with `timeout` — SIGTERM —
+    // or kill it, and on a tmpfs /tmp that is RAM left behind. The folders of
+    // runs that are gone go now, before this run makes its own, and the
+    // signals that would otherwise leave this run's behind are handled from
+    // here on.
+    sweep_stale_staging_folders();
+    install_staging_signal_handlers();
 
     // Both engines read slice-time resources (info/, flush/, filament_mixing/)
     // relative to this root, which depends on no argument: resolve it once here
