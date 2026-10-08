@@ -1870,7 +1870,42 @@ jobs:
           dist/verify/slicer-cli/bin/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/bin/slicer_cli-orcaslicer --help >/dev/null
           bash tests/test-portable-bundle.sh dist/verify/slicer-cli
+          # A slicer run that crashes (rc 139 / 134) leaves its core in
+          # $RUNNER_TEMP/cores for the backtrace step below.
+          mkdir -p "$RUNNER_TEMP/cores"
+          ulimit -c unlimited
+          sudo sysctl -w kernel.core_pattern="$RUNNER_TEMP/cores/core.%e.%p" || echo "core_pattern not settable; no cores this run"
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/bin/slicer_cli dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
+
+      - name: Backtraces of crashed slicer runs (Linux)
+        if: failure()
+        shell: bash
+        run: |
+          set -u
+          shopt -s nullglob
+          cores=("$RUNNER_TEMP"/cores/core.*)
+          if [ ${#cores[@]} = 0 ]; then echo "no core files"; exit 0; fi
+          command -v gdb >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq gdb; }
+          for c in "${cores[@]}"; do
+            # core.%e: the executable's name, cut to 15 characters by the kernel.
+            case "$(basename "$c")" in
+              core.slicer_cli-orca*) bin=dist/verify/slicer-cli/bin/slicer_cli-orcaslicer ;;
+              core.slicer_cli.*) bin=dist/verify/slicer-cli/bin/slicer_cli ;;
+              *) echo "== $c: not a slicer run"; continue ;;
+            esac
+            echo "::error::crashed slicer run: $c ($bin)"
+            gdb -batch -ex "thread apply all bt" "$bin" "$c" 2>&1 | grep -v "^warning: " | head -n 400
+            cp "$bin" "$RUNNER_TEMP/cores/" || true
+          done
+
+      - name: Upload crashed-run cores (Linux)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-cores-Linux-x86_64
+          path: ${{ runner.temp }}/cores/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload Linux release package artifact
         uses: actions/upload-artifact@v4
