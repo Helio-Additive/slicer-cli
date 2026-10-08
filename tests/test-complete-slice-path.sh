@@ -158,6 +158,56 @@ assert "error" in d and "STL" in d["error"], d
 done
 echo "PASS: --engine-info names the printer and the engine that fits"
 
+# A 3MF member with a rooted path would be extracted outside the run's own
+# folder: boost's path::operator/ drops the folder for a rooted member. The
+# BambuStudio loader checks only for ".." (bbs_3mf.cpp 2906-2912 at 5873b5f)
+# and the OrcaSlicer one skips such a member (2804-2807 at 31f6803); the run
+# refuses the load instead, before any folder of the member's own is made.
+# After the '\' -> '/' replace, "C:/x" and "//server/x" are the two shapes.
+py '
+import zipfile
+def add(src, dst, name):
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            zout.writestr(item, zin.read(item.filename))
+        zout.writestr(name, "<x/>")
+add("base.3mf", "rooted-drive.3mf", "C:/slicer-created/x")
+add("base.3mf", "rooted-unc.3mf", "//server/share/x")
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    for member in "C:/slicer-created/x" "//server/share/x"; do
+        f=rooted-drive.3mf
+        [ "$member" = "//server/share/x" ] && f=rooted-unc.3mf
+        run rooted-$e "$bin" "$f" --slice 1 --outputdir rooted-$e/out
+        [ "$(rc rooted-$e)" != 0 ] || fail "$e: the rooted member $member was opened"
+        [ ! -e rooted-$e/out/plate_1.gcode ] || fail "$e: $member was sliced"
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -6, d
+assert sys.argv[2] in d["error_string"], d
+' rooted-$e/out/result.json "$member" || { show rooted-$e; fail "$e: no refusal naming $member"; }
+        py '
+import os, sys, tempfile
+bad = []
+for root, depth in ((".", 6), (tempfile.gettempdir(), 3)):
+    base = os.path.abspath(root)
+    for dirpath, dirnames, _ in os.walk(base):
+        if dirpath[len(base):].count(os.sep) > depth:
+            dirnames[:] = []
+            continue
+        for d in dirnames:
+            if d.lower() in ("slicer-created", "c:"):
+                bad.append(os.path.join(dirpath, d))
+if sys.platform.startswith("win") and os.path.exists("C:/slicer-created"):
+    bad.append("C:/slicer-created")
+assert not bad, bad
+' || fail "$e: the refused run created a folder of the hostile member"
+    done
+done
+echo "PASS: a rooted 3MF member refuses the load (both engines)"
+
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.
 run slice "$B" "$FIXTURE" --slice 1 --outputdir slice/out
 [ "$(rc slice)" = 0 ] || { show slice; fail "--slice 1 exit $(rc slice)"; }
@@ -343,6 +393,55 @@ MINGW*|MSYS*|CYGWIN*) echo "SKIP: export name links (Windows)";;
     grep -q '"tag":"ExportNameTaken"' alias/stdout || { show alias; fail "no ExportNameTaken event for a link"; }
     echo "PASS: --export-3mf refuses a link to the run's result.json";;
 esac
+
+# --export-3mf may not name a file the run reads: the official joins the name
+# onto --outputdir (export_3mf_file = outfile_dir + "/" + export_3mf_file,
+# BambuStudio.cpp 7508-7510 at 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803) and
+# writes wherever that lands, so `--export-3mf ../project.3mf` under a
+# --outputdir inside the input's folder writes over the input project once the
+# plate is sliced. That one name is refused; a name that lands on some other
+# file is left as the official leaves it.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    mkdir -p esc-$e/out/sub
+    cp "$FIXTURE" esc-$e/project.3mf
+    py '
+import hashlib, sys; print(hashlib.md5(open(sys.argv[1], "rb").read()).hexdigest())
+' esc-$e/project.3mf > esc-$e/md5.before
+    run escin-$e "$bin" esc-$e/project.3mf --slice 1 --outputdir esc-$e/out --export-3mf ../project.3mf
+    [ "$(rc escin-$e)" != 0 ] || fail "$e: --export-3mf ../project.3mf was accepted"
+    [ ! -e esc-$e/out/plate_1.gcode ] || fail "$e: the run sliced a plate before refusing the export"
+    grep -q '"tag":"ExportOverwritesInput"' escin-$e/stdout || { show escin-$e; fail "$e: no ExportOverwritesInput event"; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+assert "would overwrite the input file" in d["error_string"], d
+assert "esc-%s/project.3mf" % sys.argv[2] in d["error_string"], d
+' esc-$e/out/result.json "$e" || { show escin-$e; fail "$e: no input-overwrite refusal in result.json"; }
+    py '
+import hashlib, sys
+assert hashlib.md5(open(sys.argv[1], "rb").read()).hexdigest() == open(sys.argv[2]).read().strip()
+' esc-$e/project.3mf esc-$e/md5.before || fail "$e: the refused run wrote over the input project"
+    # A name outside --outputdir that is not an input still writes where the
+    # official writes it (beside the folder it was given).
+    run escout-$e "$bin" esc-$e/project.3mf --slice 1 --outputdir esc-$e/out --export-3mf ../escape.3mf
+    [ "$(rc escout-$e)" = 0 ] || { show escout-$e; fail "$e: --export-3mf ../escape.3mf exit $(rc escout-$e)"; }
+    py '
+import sys, zipfile
+n = zipfile.ZipFile(sys.argv[1]).namelist()
+assert "Metadata/plate_1.gcode" in n, n
+' esc-$e/escape.3mf || fail "$e: escape.3mf is not the sliced project"
+    # ... and a name inside --outputdir still writes.
+    run escok-$e "$bin" esc-$e/project.3mf --slice 1 --outputdir esc-$e/out --export-3mf sub/ok.3mf
+    [ "$(rc escok-$e)" = 0 ] || { show escok-$e; fail "$e: --export-3mf sub/ok.3mf exit $(rc escok-$e)"; }
+    py '
+import sys, zipfile
+n = zipfile.ZipFile(sys.argv[1]).namelist()
+assert "Metadata/plate_1.gcode" in n, n
+' esc-$e/out/sub/ok.3mf || fail "$e: sub/ok.3mf is not the sliced project"
+done
+echo "PASS: --export-3mf refuses a name that would overwrite an input (both engines)"
 
 # The plates a run writes are only known after the global arrange of
 # --slice 0 --arrange 1, which can add one (BambuStudio.cpp 5627-5722;
@@ -1165,6 +1264,43 @@ assert len(d["sliced_plates"][0]["objects"]) == 3, d["sliced_plates"][0]["object
 ' rep-$e/out/result.json
 done
 echo "PASS: --repetitions copies the plate (both engines)"
+
+# --repetitions on one plate of a multi-plate project. The search for a count
+# that fits retries, and a retry used to put the saved model back with a Model
+# assignment: that frees every object and instance the model holds, while the
+# plate's own scope (main.cpp PlateScope) and the run's plates still name them —
+# the scope wrote through the freed objects on its way out, and the other
+# plates were left with no members. The search now runs on a copy of the model
+# (cli_repetitions.cpp), so nothing the run still names is freed.
+#
+# A real multi-plate project, external like the other corpus case: the run goes
+# where it is, and skips where it is not.
+REPS="${SLICER_CLI_CORPUS:-$HOME/engcheck-plugin/corpus}/feb807b138a8ddfa.3mf"
+if [ ! -f "$REPS" ]; then
+    echo "SKIP: --repetitions on a plate of a multi-plate project (no $REPS)"
+else
+    for e in bambu orca; do
+        bin=$B; [ $e = orca ] && bin=$O
+        # Plate 3 of the project's three (3 objects, with 22 and 6 on the other
+        # two, so the plate is not the whole model and the count cannot fit.
+        # The project states raft_first_layer_expansion: -1, which the OrcaSlicer
+        # engine refuses as out of range (-18, naming the flag); the override is
+        # the flag it asks for.
+        run multirep-$e "$bin" "$REPS" --slice 3 --repetitions 60 --allow-newer-file \
+            --raft-first-layer-expansion 0 --outputdir multirep-$e/out
+        [ "$(rc multirep-$e)" = 0 ] || { show multirep-$e; fail "$e: --repetitions 60 on plate 3 of a three-plate project exit $(rc multirep-$e)"; }
+        grep -q '"tag":"RepetitionsPlaced"' multirep-$e/stdout || { show multirep-$e; fail "$e: no RepetitionsPlaced event"; }
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == 0, d
+plates = d["sliced_plates"]
+assert len(plates) == 1 and plates[0]["id"] == 3, plates
+assert plates[0]["objects"], plates[0]
+' multirep-$e/out/result.json || { show multirep-$e; fail "$e: the plate came out of the repetitions search empty"; }
+    done
+    echo "PASS: --repetitions on one plate of a multi-plate project leaves it whole (both engines)"
+fi
 
 # A project 3MF of each engine's own (the Bambu fixture is too new for the
 # OrcaSlicer engine).

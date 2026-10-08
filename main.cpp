@@ -6502,11 +6502,19 @@ static void set_run_backup_path(Slic3r::Model& model) {
 /// the same corpus 40fd25289c325186, --slice 1, per-run folder: 18 of them on
 /// the OrcaSlicer build of 397e505, 0 on the BambuStudio build of the same
 /// commit. The folder itself was never missing — only those parents were.
-static void create_archive_dirs(const std::string& archive, const std::string& backup_root) {
+///
+/// Returns what to refuse the load with (empty when the archive is fine) for a
+/// member whose path is rooted. The loader writes a member to
+/// <backup_root>/<its archive path>, and boost::filesystem::path::operator/
+/// drops backup_root when the right-hand side is rooted, so such a member lands
+/// outside the run's own folder. The '/' and ".." members below stay skips:
+/// they are what the loaders themselves do with them.
+static std::string create_archive_dirs(const std::string& archive, const std::string& backup_root) {
     mz_zip_archive zip;
     mz_zip_zero_struct(&zip);
     if (!Slic3r::open_zip_reader(&zip, archive))
-        return;   // not a 3MF (an STL, a missing file): the load reports it, as before
+        return {};   // not a 3MF (an STL, a missing file): the load reports it, as before
+    std::vector<std::string> dirs;
     const mz_uint count = mz_zip_reader_get_num_files(&zip);
     for (mz_uint i = 0; i < count; ++i) {
         mz_zip_archive_file_stat stat;
@@ -6514,6 +6522,23 @@ static void create_archive_dirs(const std::string& archive, const std::string& b
             continue;
         std::string name(stat.m_filename);
         std::replace(name.begin(), name.end(), '\\', '/');
+        // A rooted member is not skipped like the two below: the BambuStudio
+        // loader would extract it wherever it says (bbs_3mf.cpp 2906-2912 at
+        // 5873b5f checks only for ".."), and the OrcaSlicer one skips it
+        // (2804-2807 at 31f6803) — either way this run must not create its
+        // folders first. The whole load is refused, by the caller.
+        // After the '\' replace: '//server/x' is a UNC path and 'X:/x' a drive
+        // path; boost on Linux reads neither as rooted (a POSIX path with a
+        // leading "//" and a drive letter are both relative there), so both are
+        // named here, and the boost root checks cover Windows.
+        const boost::filesystem::path member(name);
+        const char c0 = name.empty() ? '\0' : name[0];
+        const bool drive_letter = (c0 >= 'A' && c0 <= 'Z') || (c0 >= 'a' && c0 <= 'z');
+        if (name.compare(0, 2, "//") == 0 || (name.size() >= 2 && name[1] == ':' && drive_letter) ||
+            member.has_root_name() || member.has_root_directory())
+            return "The 3MF holds a member with a rooted path, '" + name +
+                   "', which would be written outside the run's folder; the file is not safe to open. "
+                   "Re-save the project in the desktop app.";
         // the loader refuses a path that leaves the backup folder (bbs_3mf.cpp
         // 2909-2912 / 2804-2807): never create one here either
         if (name.empty() || name[0] == '/' || name.find("..") != std::string::npos)
@@ -6521,10 +6546,16 @@ static void create_archive_dirs(const std::string& archive, const std::string& b
         const size_t slash = name.find_last_of('/');
         if (slash == std::string::npos)
             continue;
-        boost::system::error_code ec;
-        boost::filesystem::create_directories(boost::filesystem::path(backup_root) / name.substr(0, slash), ec);
+        dirs.push_back(name.substr(0, slash));
     }
     mz_zip_reader_end(&zip);
+    // Every member is read before the first folder is made, so a rooted member
+    // anywhere in the archive leaves no folder behind it.
+    for (const std::string& dir : dirs) {
+        boost::system::error_code ec;
+        boost::filesystem::create_directories(boost::filesystem::path(backup_root) / dir, ec);
+    }
+    return {};
 }
 
 /// Takes `model` off the run's staging folder once nothing loads into it any
@@ -6561,7 +6592,8 @@ struct RunBackupDetach {
 /// `file_config` the project's settings as the file holds them.
 static bool load_plate_objects(const std::string& input_file, int plate_id, Slic3r::Model& model,
                                std::vector<std::vector<std::pair<int, int>>>* plate_members = nullptr,
-                               Slic3r::DynamicPrintConfig* file_config = nullptr) {
+                               Slic3r::DynamicPrintConfig* file_config = nullptr,
+                               std::string* archive_refusal = nullptr) {
     using namespace Slic3r;
     DynamicPrintConfig scratch;
     scratch.apply(FullPrintConfig::defaults(), true);
@@ -6587,8 +6619,12 @@ static bool load_plate_objects(const std::string& input_file, int plate_id, Slic
     // ends: this model is a temporary one, and its destruction must not remove
     // the folder the run's own load extracts into (detach_run_backup_path).
     set_run_backup_path(model);
-    create_archive_dirs(load_path, run_backup_path());
     const RunBackupDetach detach_model{model};
+    if (const std::string why = create_archive_dirs(load_path, run_backup_path()); !why.empty()) {
+        if (archive_refusal)
+            *archive_refusal = why;
+        return false;
+    }
     bool loaded = false;
     try {
 #ifdef ENGINE_ORCA
@@ -6785,9 +6821,11 @@ static void pipe_prepare_slicing(RunState& rs) {
 /// exact offset), the other instances come back, and instances or objects
 /// the step added (--repetitions) are kept, on the plate. Instances are known
 /// by their ObjectID, which a copy of the model keeps (Model::assign_copy), so
-/// a step that puts back a saved copy of the model (the repetitions loop)
-/// finds its instances again. Only a scope that holds the whole model may let
-/// its step replace the model's objects.
+/// a step that puts back a saved copy of the model finds its instances again.
+/// Only a scope that holds the whole model may let its step replace the model's
+/// objects: nothing this model reaches through a scope may replace them (the
+/// repetitions search runs on a copy of the model for that reason,
+/// cli_repetitions.cpp).
 class PlateScope {
 public:
     PlateScope(Slic3r::Model& model, const RunPlate& plate) : m_model(model), m_origin(plate.origin) {
@@ -7025,13 +7063,23 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
         // Load model
         std::cout << "Loading model: " << input_file << "\n";
+        // A member the run would write outside its own folder refuses the load
+        // before the engine's loader runs, and before the model is given the
+        // staging folder, with the code an unparseable 3MF gets
+        // (CLI_DATA_FILE_ERROR, BambuStudio.cpp 2156-2157 at 5873b5f).
+        if (const std::string why = create_archive_dirs(input_file, run_backup_path()); !why.empty()) {
+            emit_event({{"event","load_error"}, {"tag","ThreeMfMemberOutsideRunFolder"},
+                        {"path", input_file}, {"message", why}});
+            std::cerr << "Error: " << why << "\n";
+            set_outcome_failure(outcome, CLI_DATA_FILE_ERROR, why);
+            return 1;
+        }
         // Pre-set backup_path to a writable temp dir of this run's own so the
         // backup manager never touches the read-only /bamboo_model network
         // path, and parallel runs never share the loader's _temp_N.config
         // files (run_backup_path), with the input's own directories in it (the
         // OrcaSlicer loader does not create them: create_archive_dirs).
         set_run_backup_path(model);
-        create_archive_dirs(input_file, run_backup_path());
         // The run's model is detached when this block ends, so no copy of it
         // (each plate's own, or any temporary) can take the folder down while
         // a later load still writes into it (detach_run_backup_path).
@@ -9144,14 +9192,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     if (assemble_input) {
                         for (const Slic3r::ModelObject* object : g_assemble->plates[index].loaded_obj_list)
                             plate.loaded->add_object(*object);
-                    } else if (!load_plate_objects(input_file, index + 1, *plate.loaded)) {
-                        const std::string why = "--downward-check could not read plate " + std::to_string(index + 1) +
-                                                " of " + input_file + ".";
-                        std::cerr << "Error: " << why << "\n";
-                        set_outcome_failure(outcome, CLI_DATA_FILE_ERROR, why);
-                        return 1;
-                    } else if (verbose) {
-                        std::cout << "--downward-check: read plate " << index + 1 << " from the project\n";
+                    } else {
+                        std::string why;
+                        if (!load_plate_objects(input_file, index + 1, *plate.loaded, nullptr, nullptr, &why)) {
+                            if (why.empty())
+                                why = "--downward-check could not read plate " + std::to_string(index + 1) +
+                                      " of " + input_file + ".";
+                            std::cerr << "Error: " << why << "\n";
+                            set_outcome_failure(outcome, CLI_DATA_FILE_ERROR, why);
+                            return 1;
+                        }
+                        if (verbose)
+                            std::cout << "--downward-check: read plate " << index + 1 << " from the project\n";
                     }
                     if (!assemble_input && index < (int)plate_origins.size()) {
                         // The plate at its own origin, as the sliced plate is:
@@ -10896,6 +10948,15 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // plate_<n>.gcode it then writes would be overwritten by the export.
     // `plates` is the set this run slices.
     if (!o.export_3mf.empty()) {
+        // The export may not name a file this run READS: an --export-3mf whose
+        // target resolves to one of the run's own inputs would write over it
+        // once the plate is sliced — the input project itself for
+        // `--export-3mf ../project.3mf` with a --outputdir under its folder.
+        // The official CLI joins the name onto --outputdir (export_3mf_file =
+        // outfile_dir + "/" + export_3mf_file, BambuStudio.cpp 7508-7510 at
+        // 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803) and writes wherever
+        // that lands, so the same name outside --outputdir is left alone here:
+        // only the run's own files are refused.
         const auto key = [](const fs::path& p) {
             // A link whose target does not exist yet (result.json before
             // the run writes it) is not resolved by weakly_canonical: follow
@@ -10912,7 +10973,35 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             return (ec ? q : resolved).lexically_normal().generic_string();
         };
         const fs::path target_path = outdir / o.export_3mf;
+        std::vector<std::string> inputs = o.input_files;
+        if (!o.machine_config.empty())  inputs.push_back(o.machine_config);
+        if (!o.filament_config.empty()) inputs.push_back(o.filament_config);
+        if (!o.process_config.empty())  inputs.push_back(o.process_config);
+        if (!o.bundle_config.empty())   inputs.push_back(o.bundle_config);
+        if (o.given_flag("load_settings"))
+            for (const std::string& file : o.cli.option<Slic3r::ConfigOptionStrings>("load_settings")->values)
+                if (!file.empty()) inputs.push_back(file);
+        if (o.given_flag("load_filaments"))
+            for (const std::string& file : o.cli.option<Slic3r::ConfigOptionStrings>("load_filaments")->values)
+                if (!file.empty()) inputs.push_back(file);
+        if (o.given_flag("load_assemble_list")) {
+            const std::string file = o.cli.opt_string("load_assemble_list");
+            if (!file.empty()) inputs.push_back(file);
+        }
         const std::string target = key(target_path);
+        for (const std::string& input : inputs) {
+            boost::system::error_code ec;
+            const fs::path input_path(input);
+            const bool same_file = fs::equivalent(target_path, input_path, ec) && !ec;
+            if (!same_file && !boost::algorithm::iequals(target, key(input_path))) continue;
+            const std::string detail =
+                "--export-3mf would overwrite the input file '" + input + "'; give it another name.";
+            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
+            std::cerr << "Error: " << detail << "\n";
+            emit_event({{"event","input_error"}, {"tag","ExportOverwritesInput"}, {"message", detail}});
+            return CLI_INVALID_PARAMS;
+        }
         std::vector<std::string> taken = {"result.json"};
         for (int p : plates)
             taken.push_back("plate_" + std::to_string(p) + ".gcode");

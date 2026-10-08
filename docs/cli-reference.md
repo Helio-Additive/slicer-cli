@@ -55,7 +55,11 @@ OrcaSlicer or slicer-cli) comes first; other files are added to its plate.
 A project 3MF brings its printer, process, filaments and plates. Any other
 file needs a printer: name one with `--printer-preset`, or give settings files
 with `--load-settings`, `--machine` or `--config`. A 3MF that holds only
-geometry (no `Metadata/project_settings.config`) is treated like an STL.
+geometry (no `Metadata/project_settings.config`) is treated like an STL. A 3MF
+whose archive holds a member with a rooted path (`C:/slicer-created/x`,
+`//server/share/x`, `\server\share\x`) is refused before the load
+(`CLI_DATA_FILE_ERROR`, -6), naming the member: the engine writes a member
+under the run's own folder, and a rooted one would land outside it.
 
 `--printer-preset` on a project 3MF moves the project to that printer, the way
 the desktop app's printer list does: the printer's process is the one the
@@ -310,7 +314,7 @@ Transforms run in the order given, before the objects are placed.
 
 | Flag | Value | What it does | Works in |
 |-|-|-|-|
-| `--export-3mf` | file | With `--slice`: the sliced project, written into `--outputdir` | both binaries |
+| `--export-3mf` | file | With `--slice`: the sliced project, written into `--outputdir`; a name that would overwrite one of the run's own input files (`../project.3mf` onto the input project itself), or a file the run writes (`result.json`, `plate_N.gcode`), is refused (-2) | both binaries |
 | `--min-save` | `=0` or `=1` | Write the 3MF without the model geometry | both binaries |
 | `--metadata-name` | "n1;n2" | Metadata names for the 3MF (pair with `--metadata-value`) | both binaries |
 | `--metadata-value` | "v1;v2" | Metadata values for the 3MF | both binaries |
