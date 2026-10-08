@@ -3899,6 +3899,17 @@ for p in percent named plate list project presets; do
     : > "$RACE/slicer_cli_$p-dead/x.3mf"
     printf '%s' 999999 > "$RACE/slicer_cli_$p-dead.owner"
 done
+# A run killed between writing its marker and renaming it into place leaves
+# <folder>.owner.tmp and no marker: the age rule takes the folder, and the
+# half-written marker with it. Two hours old, past the one-hour window.
+mkdir -p "$RACE/slicer_cli_load-halfmark"
+printf '%s' 999999 > "$RACE/slicer_cli_load-halfmark.owner.tmp"
+py '
+import os, sys, time
+t = time.time() - 7200
+for p in sys.argv[1:]:
+    os.utime(p, (t, t))
+' "$RACE/slicer_cli_load-halfmark" "$RACE/slicer_cli_load-halfmark.owner.tmp"
 run race-rules env TMPDIR="$RACE" TMP="$(winpath "$PWD/$RACE")" TEMP="$(winpath "$PWD/$RACE")" "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-rules/out
 [ "$(rc race-rules)" = 0 ] || { show race-rules; fail "a run beside the stale folders exit $(rc race-rules)"; }
 [ ! -d "$RACE/slicer_cli_load-dead" ] || fail "the sweep kept a folder whose marker names a dead PID"
@@ -3909,7 +3920,41 @@ for p in percent named plate list project presets; do
     [ ! -e "$RACE/slicer_cli_$p-dead" ] && [ ! -e "$RACE/slicer_cli_$p-dead.owner" ] ||
         fail "the sweep kept a slicer_cli_$p- folder whose marker names a dead PID"
 done
-[ "$FAILS" = "$sweep_before" ] && echo "PASS: the sweep reads the marker beside the folder (dead PID and damaged marker go, a marker-less folder stays; every temp folder prefix)"
+[ ! -e "$RACE/slicer_cli_load-halfmark" ] && [ ! -e "$RACE/slicer_cli_load-halfmark.owner.tmp" ] ||
+    fail "the sweep kept an old folder whose marker was left half-written (.owner.tmp)"
+[ "$FAILS" = "$sweep_before" ] && echo "PASS: the sweep reads the marker beside the folder (dead PID and damaged marker go, a marker-less folder stays; every temp folder prefix; a half-written marker goes with its old folder)"
+
+# ── Runs at once in one temp folder ───────────────────────────────────────
+# Every run sweeps the shared temp folder as it starts, while the others make
+# their staging folders (load-, presets-, named-, plate-) and write their
+# markers. A marker is written whole (<folder>.owner.tmp renamed onto
+# <folder>.owner), so a sweep never reads a live run's marker half-written and
+# removes its folder. Six runs at once, twice: every one slices, and nothing of
+# theirs is left behind.
+HAM=hammer-tmp; rm -rf "$HAM"; mkdir -p "$HAM"
+ham_before=$FAILS
+for round in 1 2; do
+    pids=""
+    for k in 1 2 3 4 5 6; do
+        n=ham-$round-$k
+        mkdir -p $n
+        if [ $((k % 2)) = 1 ]; then
+            env TMPDIR="$HAM" TMP="$(winpath "$PWD/$HAM")" TEMP="$(winpath "$PWD/$HAM")" "$B" base.3mf --slice 1 --outputdir $n/out > $n/stdout 2> $n/stderr &
+        else
+            env TMPDIR="$HAM" TMP="$(winpath "$PWD/$HAM")" TEMP="$(winpath "$PWD/$HAM")" "$B" cube.stl --slice 1 --printer-preset "$A1M" --process-preset "$A1M_PROCESS" --filament-preset "$A1M_FILAMENT" --outputdir $n/out > $n/stdout 2> $n/stderr &
+        fi
+        pids="$pids $!"
+    done
+    k=0
+    for p in $pids; do
+        k=$((k + 1)); n=ham-$round-$k
+        r=0; wait $p || r=$?
+        [ "$r" = 0 ] && [ -s $n/out/plate_1.gcode ] || { show $n; fail "run $k of $round in the shared temp folder exit $r"; }
+    done
+done
+left=$(ls "$HAM" 2>/dev/null | grep '^slicer_cli_' || true)
+[ -z "$left" ] || fail "runs at once left in their temp folder: $left"
+[ "$FAILS" = "$ham_before" ] && echo "PASS: six runs at once in one temp folder all slice and leave nothing behind, twice (Bambu build)"
 
 # ── A live run's ownership marker is out of the extraction folder ─────────
 # A second run sweeping while the first is alive must leave the live run's
@@ -3942,6 +3987,11 @@ with open("objfeed.obj", "w") as o:
 # its staging folder and read its project by then, and it stays alive until
 # the test feeds it one. An OBJ, not an STL: the STL reader opens the file
 # more than once, and the second open reads the tail of the first feed.
+# A model read from a pipe is not a path a user's file takes: if run A ever
+# fails here inside the OBJ reader on a partial read of the feed, that is this
+# harness, not the sweep. CI 7c59ddc saw run A exit 139 once, right after it
+# loaded the feed; the case passed 70 of 70 times on the Linux box, and the
+# package job now prints the backtrace of any crashed run (slicer-cli-ci.yml).
 mkfifo "$RACE/slow.obj"
 TMPDIR="$RACE" TMP="$(winpath "$PWD/$RACE")" TEMP="$(winpath "$PWD/$RACE")" "$B" tainted.3mf "$RACE/slow.obj" --plate 1 -o race-a/out.gcode > race-a/stdout 2> race-a/stderr &
 apid=$!

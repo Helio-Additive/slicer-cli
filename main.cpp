@@ -2294,6 +2294,40 @@ static boost::filesystem::path staging_owner_marker(const boost::filesystem::pat
     return marker;
 }
 
+/// Writes this run's PID as `folder`'s ownership marker, all at once: the PID
+/// goes to <folder>.owner.tmp, which is then renamed onto <folder>.owner
+/// (rename(2) on POSIX; MoveFileExW with MOVEFILE_REPLACE_EXISTING on Windows,
+/// boost 1.90 operations.cpp 236). A marker opened and filled in place is
+/// empty for a moment, and another run's sweep reading it then sees no PID,
+/// takes it for a damaged marker and removes a live folder. The sweep reads
+/// directories only, so it never takes the .tmp file itself, and
+/// remove_staging_folder takes a stray one with its folder.
+static void write_owner_marker(const boost::filesystem::path& folder) {
+    boost::filesystem::path tmp = staging_owner_marker(folder);
+    tmp += ".tmp";
+    {
+        boost::filesystem::ofstream out(tmp, std::ios::out | std::ios::trunc);
+        out << Slic3r::get_current_pid();
+    }
+    boost::system::error_code ec;
+    boost::filesystem::rename(tmp, staging_owner_marker(folder), ec);
+    if (ec)
+        boost::filesystem::remove(tmp, ec);
+}
+
+/// Removes a staging folder with its marker and any marker left half-written
+/// (<folder>.owner.tmp), the markers first: a kill between the removals
+/// leaves a folder with no marker, which the sweep's age rule reclaims, never a
+/// bare marker no sweep takes.
+static void remove_staging_folder(const boost::filesystem::path& folder) {
+    boost::system::error_code ignored;
+    boost::filesystem::path tmp = staging_owner_marker(folder);
+    tmp += ".tmp";
+    boost::filesystem::remove(staging_owner_marker(folder), ignored);
+    boost::filesystem::remove(tmp, ignored);
+    boost::filesystem::remove_all(folder, ignored);
+}
+
 /// A temp folder of this run's own under temp_directory_path(), named
 /// <prefix><8 random characters>, with its ownership marker (<folder>.owner,
 /// this run's PID) written as the folder is made, as RunStagingFolders::add
@@ -2306,20 +2340,14 @@ static boost::filesystem::path make_owned_temp_dir(const char* prefix) {
     namespace fs = boost::filesystem;
     const fs::path dir = fs::temp_directory_path() / fs::unique_path(std::string(prefix) + "%%%%%%%%");
     fs::create_directories(dir);
-    fs::ofstream owner(staging_owner_marker(dir), std::ios::out | std::ios::trunc);
-    owner << Slic3r::get_current_pid();
+    write_owner_marker(dir);
     return dir;
 }
 
-/// Removes a folder make_owned_temp_dir made, the marker first, as
-/// ~RunStagingFolders does: a kill between the two removals leaves a folder
-/// with no marker, which the sweep's age rule reclaims, never a bare marker.
+/// Removes a folder make_owned_temp_dir made (remove_staging_folder).
 static void remove_owned_temp_dir(const boost::filesystem::path& dir) {
-    if (dir.empty())
-        return;
-    boost::system::error_code ignored;
-    boost::filesystem::remove(staging_owner_marker(dir), ignored);
-    boost::filesystem::remove_all(dir, ignored);
+    if (!dir.empty())
+        remove_staging_folder(dir);
 }
 
 #ifdef ENGINE_BAMBU
@@ -6329,13 +6357,7 @@ struct RunStagingFolders {
     std::string add(std::string path) {
         boost::system::error_code mk;
         boost::filesystem::create_directories(path, mk);   // the engine would create it itself (_extract_file_from_archive, bbs_3mf.cpp 2914-2919)
-        {
-            // boost::filesystem streams, as the rest of this file writes files:
-            // the UTF-8 path is the global one nowide_filesystem installed.
-            boost::filesystem::ofstream owner(staging_owner_marker(boost::filesystem::path(path)),
-                                              std::ios::out | std::ios::trunc);
-            owner << Slic3r::get_current_pid();
-        }
+        write_owner_marker(boost::filesystem::path(path));   // whole, never empty: write_owner_marker
         const size_t n = (size_t)count;
         if (n < kMax) {
             const size_t room = sizeof paths[n] - 1;
@@ -6348,14 +6370,8 @@ struct RunStagingFolders {
     }
 
     ~RunStagingFolders() {
-        for (size_t i = 0; i < (size_t)count; ++i) {
-            boost::system::error_code ec;
-            // The marker goes first: a kill between the two removals leaves
-            // the pair for the next run's sweep, never a marker with no folder
-            // whose sweep would never come.
-            boost::filesystem::remove(staging_owner_marker(boost::filesystem::path(paths[i])), ec);
-            boost::filesystem::remove_all(paths[i], ec);
-        }
+        for (size_t i = 0; i < (size_t)count; ++i)
+            remove_staging_folder(boost::filesystem::path(paths[i]));   // markers first
     }
 };
 static RunStagingFolders run_staging;
@@ -6474,18 +6490,17 @@ static void sweep_stale_staging_folders() {
             }
             if (staging_owner_alive(pid))
                 continue;
-            // The marker goes before the folder: a kill between the two
-            // removals leaves the pair, which the next sweep reclaims.
-            bfs::remove(marker, sub);
-            bfs::remove_all(folder, sub);
+            remove_staging_folder(folder);   // the markers before the folder
             continue;
         }
+        // No marker, or one a killed run left half-written (<folder>.owner.tmp,
+        // which is taken with the folder): the age rule.
         const std::time_t when = bfs::last_write_time(folder, sub);
         if (sub)
             continue;
         if (std::difftime(std::time(nullptr), (std::time_t)when) < kLocklessFolderMinAgeSeconds)
             continue;
-        bfs::remove_all(folder, sub);
+        remove_staging_folder(folder);
     }
 }
 
