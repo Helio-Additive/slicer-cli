@@ -209,12 +209,18 @@ DesktopBedType desktop_bed_type(Slic3r::PresetBundle& bundle) {
     const Slic3r::BedType first = list.empty() ? Slic3r::btPC : list.front();
 #ifdef ENGINE_ORCA
     // OrcaSlicer, a printer picked with no remembered plate for it
-    // (Sidebar::update_all_preset_comboboxes, Plater.cpp 2527-2556 at
-    // 31f6803): Preset::get_default_bed_type (Preset.cpp 931-958) — the
-    // printer's default_bed_type read as a number, else by printer model id
-    // (BL-P001/BL-P002/C13 Cool Plate, otherwise High Temp Plate) — then
-    // set_bed_type_accord_combox (2798-2806), which takes the list's first
-    // entry when the printer does not offer that plate.
+    // (Sidebar::update_all_preset_comboboxes, Plater.cpp 2527-2563 at
+    // 31f6803, both sides of its `is_bbl_vendor || support_multi_bed_types`
+    // test: with the list rebuilt or without it, the plate comes from
+    // get_default_bed_type). Preset::get_default_bed_type (Preset.cpp 931-958
+    // at 31f6803) — the printer's default_bed_type when it reads as a number
+    // greater than 0 (atoi; a stated NAME, such as the Snapmaker U1's
+    // "Textured PEI Plate", reads as 0, is logged as invalid and gives btPEI),
+    // else by printer model id (BL-P001/BL-P002/C13 Cool Plate, C11 and every
+    // other id btPEI) — then set_bed_type_accord_combox (2798-2806), which
+    // takes the list's first entry when the printer does not offer that plate.
+    // So the U1 slices on btPEI, the High Temp Plate, whatever plate the
+    // desktop's own printer files name.
     Slic3r::Preset& printer = bundle.printers.get_edited_preset();
     const Slic3r::BedType wanted = printer.get_default_bed_type(&bundle);
     if (offered(list, wanted)) {

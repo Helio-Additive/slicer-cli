@@ -2216,6 +2216,75 @@ static std::string engine_mismatch_sentence(const EngineFit& fit, const std::str
     return s;
 }
 
+/// A printer preset this engine ships: the name a user gives to
+/// --printer-preset, and the nozzle variant the preset is built for.
+/// The desktop changes a printer's nozzle by choosing this preset, not by
+/// editing a diameter (Sidebar::update_all_preset_comboboxes rebuilds the
+/// printer list per nozzle variant, BambuStudio Plater.cpp 3340-3414 at
+/// 5873b5f; OrcaSlicer Plater.cpp 2527-2556 at 31f6803).
+struct ShippedPrinterPreset {
+    std::string variant;   ///< printer_variant: "0.4", or "0.4+0.6" on a mixed U1
+    std::string name;      ///< the preset name, e.g. "Bambu Lab X1 Carbon 0.6 nozzle"
+};
+
+/// The printer presets of `printer_model` in a profiles tree: every
+/// <vendor>/machine/<name>.json that states that printer_model. The vendor's
+/// own <vendor>.json machine_list names each preset's sub_path, and the model
+/// file beside them (type "machine_model") is no preset
+/// (load_vendor_configs_from_json, PresetBundle.cpp in both engines).
+static std::vector<ShippedPrinterPreset> shipped_printer_presets(const boost::filesystem::path& profiles_dir,
+                                                                 const std::string& printer_model) {
+    std::vector<ShippedPrinterPreset> out;
+    if (profiles_dir.empty() || printer_model.empty()) return out;
+    try {
+        for (auto& vendor : boost::filesystem::directory_iterator(profiles_dir)) {
+            if (!boost::filesystem::is_directory(vendor.path())) continue;
+            const boost::filesystem::path machine_dir = vendor.path() / "machine";
+            if (!boost::filesystem::exists(machine_dir)) continue;
+            for (auto& entry : boost::filesystem::directory_iterator(machine_dir)) {
+                if (entry.path().extension() != ".json") continue;
+                boost::filesystem::ifstream f(entry.path());
+                if (!f.is_open()) continue;
+                json preset;
+                try { f >> preset; } catch (...) { continue; }
+                if (!preset.is_object() || preset.value("type", std::string()) == "machine_model") continue;
+                if (preset.value("printer_model", std::string()) != printer_model) continue;
+                ShippedPrinterPreset p;
+                p.name    = entry.path().stem().string();
+                p.variant = preset.value("printer_variant", std::string());
+                out.push_back(std::move(p));
+            }
+        }
+    } catch (...) {
+    }
+    std::sort(out.begin(), out.end(), [](const ShippedPrinterPreset& a, const ShippedPrinterPreset& b) {
+        return a.name < b.name;
+    });
+    return out;
+}
+
+/// The shipped printer preset of `printer_model` built for `variant` ("0.4"),
+/// or empty: the preset a nozzle change would have to choose.
+static std::string shipped_printer_preset_of_variant(const std::vector<ShippedPrinterPreset>& presets,
+                                                     const std::string& variant) {
+    if (variant.empty()) return {};
+    for (const ShippedPrinterPreset& p : presets)
+        if (p.variant == variant) return p.name;
+    return {};
+}
+
+/// "a, b and c" of the shipped preset names of a printer model, for a refusal
+/// that names the variants this engine has.
+static std::string preset_name_list(const std::vector<ShippedPrinterPreset>& presets, size_t max_names) {
+    std::string out;
+    const size_t shown = std::min(presets.size(), max_names);
+    for (size_t i = 0; i < shown; ++i) {
+        if (i > 0) out += i + 1 == shown ? " and " : ", ";
+        out += presets[i].name;
+    }
+    return out;
+}
+
 #ifdef ENGINE_BAMBU
 // ── Percent line widths on the Bambu build (cross-engine, same meaning) ──────
 // OrcaSlicer declares the ten line-width options coFloatOrPercent with
@@ -4948,6 +5017,36 @@ static std::string default_replaced_note(const char* kind, const std::string& pi
     return std::string(kind) + " '" + picked + "' (" + why + ")";
 }
 
+/// The plate type the desktop app selects when the printer preset
+/// `printer_name` is picked, for a run whose printer comes from settings files
+/// rather than from --printer-preset: the same rule the named-preset path
+/// applies (desktop_bed_type). False when this engine ships no printer preset
+/// of that name, and nothing is then changed.
+static bool desktop_plate_type_for_printer(const CliOptions& o, const std::string& printer_name,
+                                           Slic3r::BedType& out, std::string& why) {
+    if (printer_name.empty()) return false;
+    namespace fs = boost::filesystem;
+    struct Cleanup { fs::path dir; ~Cleanup() { if (dir.empty()) return; boost::system::error_code e; fs::remove_all(dir, e); } } cleanup;
+    Slic3r::PresetBundle bundle;
+    std::string ignored;
+    try {
+        const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_plate-%%%%%%%%");
+        cleanup.dir = staging;
+        if (!load_system_presets(o.argv0, bundle, staging, ignored)) return false;
+    } catch (const std::exception&) {
+        return false;
+    }
+    Slic3r::Preset* preset = bundle.printers.find_preset(printer_name, false);
+    if (preset == nullptr || preset->name != printer_name || !is_listed_preset(*preset)) return false;
+    preset->is_visible = true;
+    if (!bundle.printers.select_preset_by_name(printer_name, true)) return false;
+    if (bundle.printers.get_edited_preset().name != printer_name) return false;
+    const slicer_cli::DesktopBedType bed = slicer_cli::desktop_bed_type(bundle);
+    out = bed.type;
+    why = bed.why;
+    return true;
+}
+
 static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
                                   int& code, std::string& error) {
     namespace fs = boost::filesystem;
@@ -4990,6 +5089,22 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         error = app + " has no " + kind + " preset named '" + name + "'." +
                 (similar.empty() ? std::string() : " Close names: " + similar + ".") +
                 " See --list-presets.";
+        // A printer preset the other engine of this package ships is refused
+        // naming that binary, as the 3MF engine-fit refusal does
+        // (engine_mismatch_sentence): the name exists, this binary has no such
+        // printer, and the sibling does.
+        if (kind == std::string("printer")) {
+            const boost::filesystem::path exe_dir = engine_executable_dir(o.argv0.c_str());
+#ifdef ENGINE_ORCA
+            const boost::filesystem::path other_dir = engine_profiles_dir(exe_dir);
+            const std::string other_app = "BambuStudio", other_binary = "slicer_cli";
+#else
+            const boost::filesystem::path other_dir = orca_profiles_dir(exe_dir);
+            const std::string other_app = "OrcaSlicer", other_binary = "slicer_cli-orcaslicer";
+#endif
+            if (!preset_printer_model(other_dir, name).empty())
+                error += " This printer is in " + other_binary + " (" + other_app + "); use that binary.";
+        }
         code = CLI_CONFIG_FILE_ERROR;
         return false;
     };
@@ -5759,15 +5874,54 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
                 // Neither engine has a "perimeters" setting; the wall count is
                 // wall_loops (PrintConfig.cpp 4383 at 5873b5f, 4918 at 31f6803).
                 config.set_key_value("wall_loops", new Slic3r::ConfigOptionInt(std::stoi(value)));
-            } else if (key == "nozzle_temperature" || key == "bed_temperature") {
+            } else if (key == "nozzle_temperature") {
                 const int v = std::stoi(value);
-                // A setting the engine defines keeps its own type (BambuStudio's
-                // nozzle_temperature is nullable, and Model::setExtruderParams
-                // reads it as such); a key it does not define is kept as before.
+                // --temp: one temperature for the whole print, so every
+                // filament slot the run uses is set, not just the first. A
+                // printer with several extruders (the Snapmaker U1 has four,
+                // loaded with four identical slots) otherwise slices with 0
+                // on every slot after the first, which prints at no
+                // temperature at all (Slic3r::GCode::_do_export writes each
+                // extruder's own value, GCode.cpp 1430-1500, 3860-3875).
+                // The list's size is the filament count the engine reads it
+                // with (is_per_filament_config_key), so it keeps its size.
+                if (auto* opt = dynamic_cast<Slic3r::ConfigOptionInts*>(config.option(key, true))) {
+                    opt->values.assign(std::max<size_t>(1, opt->values.size()), v);
+                } else if (Slic3r::print_config_def.get(key) != nullptr) {
+                    // A setting the engine defines keeps its own type
+                    // (BambuStudio's nozzle_temperature is nullable, and
+                    // Model::setExtruderParams reads it as such).
+                    config.set_deserialize_strict(key, std::to_string(v));
+                } else {
+                    config.set_key_value(key, new Slic3r::ConfigOptionInts({v}));
+                }
+            } else if (key == "bed_temperature") {
+                const int v = std::stoi(value);
+                // A setting the engine defines keeps its own type; a key it
+                // does not define is kept as before.
                 if (Slic3r::print_config_def.get(key) != nullptr)
                     config.set_deserialize_strict(key, std::to_string(v));
                 else
                     config.set_key_value(key, new Slic3r::ConfigOptionInts({v}));
+                // --bed-temp: the bed heat commands do not read
+                // bed_temperature. They read the active plate type's own keys
+                // (get_bed_temperature -> get_bed_temp_key, GCode.cpp 3866-3876
+                // at 5873b5f / Print.cpp 1245-1260 at 31f6803), and the start
+                // G-code's {bed_temperature} and {bed_temperature_initial_layer}
+                // placeholders are overwritten with the same two keys before
+                // they are expanded (GCode.cpp 2789-2793 at 5873b5f,
+                // GCode.cpp 2384-2388 at 31f6803). So the flag sets the plate
+                // type the printer is on, both phases, exactly as the
+                // desktop's bed temperature setting for that plate type does.
+                const auto* bed = config.option<Slic3r::ConfigOptionEnum<Slic3r::BedType>>("curr_bed_type");
+                if (bed != nullptr) {
+                    for (const std::string& plate_key : {Slic3r::get_bed_temp_key(bed->value),
+                                                         Slic3r::get_bed_temp_1st_layer_key(bed->value)}) {
+                        if (plate_key.empty()) continue;
+                        if (auto* opt = dynamic_cast<Slic3r::ConfigOptionInts*>(config.option(plate_key, true)))
+                            opt->values.assign(std::max<size_t>(1, opt->values.size()), v);
+                    }
+                }
             }
         } catch (const std::exception& e) {
             if (!report_rejections) continue;
@@ -7652,6 +7806,145 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         if (!extra.empty())
             config.apply(extra, true);
 
+        // Two inputs the desktop app decides by choosing a printer preset, not
+        // by editing a value: the nozzle and the plate type. Both are settled
+        // here, once, where the settings files and the flags have landed and
+        // before any plate is sliced.
+        {
+            // A string setting as the file states it, empty when the key is not
+            // there (the engine's own printer_model / printer_variant /
+            // printer_settings_id are plain strings in both engines).
+            const auto id_text = [](const Slic3r::DynamicPrintConfig& c, const char* key) {
+                const auto* opt = c.option<Slic3r::ConfigOptionString>(key);
+                return opt != nullptr ? opt->value : std::string();
+            };
+            const std::string printer_model   = id_text(config, "printer_model");
+            const std::string printer_variant = id_text(config, "printer_variant");
+            const bool nozzle_given = overrides.count("nozzle_diameter") > 0;
+            // The plate type the desktop app sets when a printer is picked
+            // (Sidebar::update_all_preset_comboboxes -> set_bed_type_accord_combox,
+            // BambuStudio Plater.cpp 3340-3414 and 3703-3715 at 5873b5f;
+            // OrcaSlicer Plater.cpp 2527-2556 and 2798-2806 at 31f6803), for a
+            // run whose printer comes from settings files: those state no plate
+            // type, so the printer preset's own is taken. Without this the
+            // engine's own default is used (curr_bed_type's ConfigDef default,
+            // btPC "Cool Plate": BambuStudio PrintConfig.cpp 1162 at 5873b5f),
+            // which is never the printer's. The named-preset path already sets
+            // it (resolve_named_presets -> desktop_bed_type).
+            bool plate_chosen = o.given_flag("curr_bed_type");
+            for (const std::string* path : {&bundle_config, &machine_config, &process_config, &filament_config})
+                plate_chosen = plate_chosen || (!path->empty() && json_file_has_key(*path, "curr_bed_type"));
+            const bool plate_needed = !plate_chosen && g_preset_config == nullptr &&
+                                      (!input_is_3mf(input_file) || geometry_only_3mf);
+            if (nozzle_given || plate_needed) {
+                // The printer preset this run's settings belong to: the name
+                // the settings state, else the preset this engine ships for the
+                // same printer model and nozzle variant. A settings file the
+                // desktop exported (Export current configs) carries no
+                // printer_settings_id at all, and a shipped leaf file carries
+                // one that is empty.
+                const std::vector<ShippedPrinterPreset> shipped =
+                    shipped_printer_presets(this_engine_profiles_dir(o.argv0), printer_model);
+                const std::string printer_settings = id_text(config, "printer_settings_id");
+                std::string       printer_preset   = printer_settings;
+                if (printer_preset.empty() ||
+                    std::none_of(shipped.begin(), shipped.end(),
+                                 [&](const ShippedPrinterPreset& p) { return p.name == printer_preset; }))
+                    if (const std::string by_variant = shipped_printer_preset_of_variant(shipped, printer_variant);
+                        !by_variant.empty())
+                        printer_preset = by_variant;
+
+                // ── --nozzle ────────────────────────────────────────────────
+                // The desktop app changes a printer's nozzle by choosing the
+                // printer variant: the printer list is rebuilt per nozzle
+                // variant and the process, the line widths and the start G-code
+                // come from the chosen preset
+                // (Sidebar::update_all_preset_comboboxes, BambuStudio Plater.cpp
+                // 3340-3414 at 5873b5f; OrcaSlicer Plater.cpp 2527-2556 at
+                // 31f6803). Editing nozzle_diameter alone leaves the 0.4 line
+                // widths and the 0.4 process in place, so a value the printer
+                // preset is not built for is refused, naming the preset to
+                // choose instead; a value it already has is what it already is.
+                if (nozzle_given) {
+                    const std::string& given = overrides.find("nozzle_diameter")->second;
+                    std::vector<double> current;
+                    if (const auto* nd = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter"))
+                        current = nd->values;
+                    double wanted = 0.;
+                    bool   number = false;
+                    try {
+                        size_t used = 0;
+                        wanted = std::stod(given, &used);
+                        number = used == given.size() && std::isfinite(wanted);
+                    } catch (...) {
+                    }
+                    if (number && !current.empty() &&
+                        !std::all_of(current.begin(), current.end(),
+                                     [&](double v) { return std::abs(v - wanted) < 1e-6; })) {
+                        std::ostringstream has;
+                        for (size_t i = 0; i < current.size(); ++i) has << (i ? ", " : "") << current[i];
+                        std::ostringstream variant;
+                        variant << wanted;
+                        const std::string wanted_preset =
+                            shipped_printer_preset_of_variant(shipped, variant.str());
+                        std::string instead;
+                        if (!wanted_preset.empty())
+                            instead = "--printer-preset \"" + wanted_preset + "\"";
+                        else if (!printer_model.empty())
+                            instead = "--printer-preset \"" + printer_model + " " + variant.str() + " nozzle\"";
+                        else
+                            instead = "the printer preset of a " + variant.str() + " mm nozzle";
+                        std::string sentence =
+                            "--nozzle " + given + " does not change the printer: " +
+                            (printer_preset.empty() ? std::string("this printer") : "'" + printer_preset + "'") +
+                            " is built for a " + has.str() + " mm nozzle. The desktop app changes the nozzle by "
+                            "choosing the printer variant, so give the printer preset of that nozzle instead: " +
+                            instead + ".";
+                        if (!shipped.empty())
+                            sentence += " This engine ships " + preset_name_list(shipped, 4) + ".";
+                        emit_event({{"event","config_refused"}, {"tag","NozzleFlagNotAPrinterVariant"},
+                                    {"nozzle", given}, {"printer_variant", printer_variant},
+                                    {"printer_preset", printer_preset}, {"message", sentence}});
+                        std::cerr << "Error: " << sentence << "\n";
+                        set_outcome_failure(outcome, CLI_INVALID_PARAMS, sentence);
+                        return 1;
+                    }
+                }
+
+                // ── the plate type ──────────────────────────────────────────
+                // The same desktop_bed_type the named-preset path applies, so a
+                // run whose printer comes from settings files cannot land on a
+                // different plate than --printer-preset does. The rule it
+                // ports: the desktop sets the plate when a printer is picked
+                // (OrcaSlicer Plater.cpp 2527-2563 at 31f6803, both sides of
+                // its is_bbl_vendor || support_multi_bed_types test, through
+                // Preset::get_default_bed_type, Preset.cpp 931-958 at 31f6803
+                // — for the Snapmaker U1 the file's stated NAME "Textured PEI
+                // Plate" reads as no number, which gives btPEI, the High Temp
+                // Plate — and BambuStudio Plater.cpp 3340-3414, 3703-3715 at
+                // 5873b5f). Without this the engine's own default is used
+                // (curr_bed_type's ConfigDef default, btPC "Cool Plate":
+                // BambuStudio PrintConfig.cpp 1162 at 5873b5f), which is no
+                // printer's — and on the U1 it is a plate whose bed
+                // temperature the shipped filament chain leaves at 0, so the
+                // run is refused as unprintable at the first layer.
+                if (plate_needed && !printer_preset.empty()) {
+                    Slic3r::BedType bed = Slic3r::btPC;
+                    std::string     why;
+                    if (desktop_plate_type_for_printer(o, printer_preset, bed, why)) {
+                        config.set_key_value("curr_bed_type", new Slic3r::ConfigOptionEnum<Slic3r::BedType>(bed));
+                        emit_event({{"event","presets_resolved"}, {"tag","PrinterDefaultPlate"},
+                                    {"printer", printer_preset},
+                                    {"curr_bed_type", slicer_cli::bed_type_name(bed)},
+                                    {"curr_bed_type_reason", why},
+                                    {"message","The plate type is the printer preset's own: '" +
+                                                   slicer_cli::bed_type_name(bed) + "' (" + why +
+                                                   "); give --curr-bed-type to choose another"}});
+                    }
+                }
+            }
+        }
+
         // The official value check (OrcaSlicer.cpp 3574-3581 at 31f6803,
         // BambuStudio.cpp 4134-4141 at 5873b5f): DynamicPrintConfig::validate(true)
         // over the settings as the file and profiles state them, before this
@@ -9389,7 +9682,24 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT:  validate_error = CLI_OBJECT_COLLISION_IN_LAYER_PRINT; break;
                     default: break;
                 }
-                set_outcome_failure(outcome, validate_error, validation_result.string);
+                // The engine's own sentence names the symptom ("Add \"G92 E0\"
+                // to layer_gcode"). When the run has no layer change G-code at
+                // all, the cause is that one: the settings files state none, so
+                // the merge wrote the key empty (load_default_gcodes_to_config,
+                // BambuStudio.cpp 685-745 at 5873b5f / OrcaSlicer.cpp 548-604 at
+                // 31f6803 makes every G-code key the file leaves out an empty
+                // string). Name it, so the refusal says what to give instead of
+                // what to edit in a file the user does not have.
+                std::string message = validation_result.string;
+                if (message.rfind("Relative extruder addressing", 0) == 0) {
+                    const auto* layer_gcode = config.option<Slic3r::ConfigOptionString>("layer_change_gcode");
+                    if (layer_gcode == nullptr || layer_gcode->value.empty())
+                        message += " This run has no layer change G-code at all: the machine settings given state no"
+                                   " layer_change_gcode, so the settings merge wrote it empty. Give a machine settings"
+                                   " file that states its layer_change_gcode, or the printer preset"
+                                   " (--printer-preset).";
+                }
+                set_outcome_failure(outcome, validate_error, message);
                 return 1;
             }
             // --slice 0 on several plates: the check pass ends here for this
