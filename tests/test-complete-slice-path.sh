@@ -16,6 +16,10 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # .exe both read relative paths; MSYS absolute paths they do not).
 B="$(cd "$(dirname "$B")" && pwd -P)/$(basename "$B")"
 O="$(cd "$(dirname "$O")" && pwd -P)/$(basename "$O")"
+# The package's resources: beside the binary (the macOS and Windows release
+# packages) or one level up (a bin/ layout, the box and Linux packages).
+RES="$(cd "$(dirname "$B")" && pwd -P)/resources"
+[ -d "$RES/profiles" ] || RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
 cp "$FIXTURE" "$WORKDIR/base.3mf"
 FIXTURE=base.3mf
 cd "$WORKDIR"
@@ -2564,8 +2568,6 @@ echo "PASS: info-only flags with --slice are refused with result.json, and --hel
 # (the versioned contract) and --layout (the older form) are refused with
 # --slice (-2), in either flag order, so a --slice run never ends without
 # slicing or result.json.
-RES="$(cd "$(dirname "$B")" && pwd -P)/resources"
-[ -d "$RES/profiles" ] || RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
 for e in bambu orca; do
     bin=$B; prof="$RES/profiles"
     [ $e = orca ] && { bin=$O; prof="$RES/profiles-orca"; }
@@ -3158,8 +3160,6 @@ fi
 # packages, slicer_cli and resources/ side by side) or one level up (a bin/
 # layout, the box packages and the Linux release package). Same resolution as
 # test-pr35-findings.sh and test-product-invariants.sh.
-RES="$(cd "$(dirname "$B")" && pwd -P)/resources"
-[ -d "$RES/profiles" ] || RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
 # flat_presets ENGINE TAG PRINTER: TAG-ENGINE-machine.json, -process.json and
 # -filament.json (the printer's default process and filament).
 flat_presets() {
