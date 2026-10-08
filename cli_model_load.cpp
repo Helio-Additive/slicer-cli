@@ -108,7 +108,14 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
     ModelLoadResult r;
     const auto& loaded_filament_ids = o.cli.option<Slic3r::ConfigOptionInts>("load_filament_ids")->values;
     const auto& clone_objects       = o.cli.option<Slic3r::ConfigOptionInts>("clone_objects")->values;
-    const size_t load_filaments     = o.cli.option<Slic3r::ConfigOptionStrings>("load_filaments")->values.size();
+    // The filaments this run has: the files --load-filaments brings, and the
+    // presets --filament-preset names (the named-preset path selects one
+    // filament per preset, resolve_named_presets -> set_num_filaments). The
+    // official CLI counts m_load_filaments alone (BambuStudio.cpp 2078-2130 at
+    // 5873b5f; OrcaSlicer.cpp 1725-1777 at 31f6803): it has no preset path, and
+    // on this command line the presets are filaments 1..N just as the files are.
+    const size_t load_filaments     = o.cli.option<Slic3r::ConfigOptionStrings>("load_filaments")->values.size() +
+                                      o.filament_presets.size();
 
     for (size_t n = 0; n < files.size(); ++n) {
         const std::string& file = files[n];

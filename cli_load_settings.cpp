@@ -462,6 +462,22 @@ bool wants_settings_merge(const CliOptions& o) {
         ;
 }
 
+/// The refusal for --uptodate when this package ships none of the "full"
+/// system presets the step reads. The official step takes the project's own
+/// machine, process and filament presets from machine_full/, process_full/ and
+/// filament_full/ (BambuStudio.cpp 2723-2786 at 5873b5f; OrcaSlicer.cpp
+/// 2350-2420 at 31f6803) and, when a file is not there, leaves those settings
+/// alone: exit 0, nothing updated. Saying so beats letting a run believe the
+/// project was brought up to date, and the flags that do the same thing by
+/// hand are named.
+static std::string uptodate_system_presets_missing() {
+    return "--uptodate: this engine ships no machine_full, process_full or filament_full system presets ("
+           + resources_dir() + "/profiles), so the project's own presets cannot be read and nothing is updated."
+           " Give the presets instead: --uptodate-settings <the project's machine file>;<the project's process file>,"
+           " and --uptodate-filaments <one file per filament, in the project's order>; or load other settings with"
+           " --load-settings/--load-filaments.";
+}
+
 StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_in, const std::string& profiles_dir,
                                  DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
                                  const std::vector<Preset*>& project_presets, SettingsMerge& out) {
@@ -595,9 +611,25 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 break;
             }
         }
-        if (load_filament_count > 0 && default_filament_file.empty())
+        if (load_filament_count > 0 && default_filament_file.empty()) {
+            // The flags the user gave decide the sentence: --load-defaultfila
+            // never was given when --estimate-mode filled this list itself
+            // (BambuStudio.cpp 2408-2444 takes each slot from filament_full), so
+            // blaming that flag would name a flag nobody gave. The cause there
+            // is this package's missing filament_full folder.
+            if (!o.given_flag("load_defaultfila")) {
+                std::string machine;
+                if (const auto* fp = load_machine_config.option<ConfigOptionStrings>("default_filament_profile");
+                    fp && !fp->values.empty())
+                    machine = " (" + fp->values[0] + ")";
+                return fail(CLI_CONFIG_FILE_ERROR,
+                            "--estimate-mode: this engine ships no filament_full profiles for the machine's default"
+                            " filament" + machine + ", so the temperatures cannot be estimated. Give the filaments"
+                            " with --load-filaments.");
+            }
             return fail(CLI_CONFIG_FILE_ERROR, "--load-defaultfila: none of the --load-filaments files could be loaded; "
                                                "check the paths given to --load-filaments");
+        }
     }
     for (int index = 0; index < load_filament_count; index++) {
         const std::string& file = load_filaments[index];
@@ -690,7 +722,22 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 
     // --uptodate (B 2636-2870; O 2258-2420).
     bool fetch_compatible_values = false, fetch_upward_values = false;
+    if (up_config_to_date && !is_bbl_3mf)
+        // The official step is inside its own `is_bbl_3mf` test
+        // (BambuStudio.cpp 2638 at 5873b5f, OrcaSlicer.cpp 2290 at 31f6803): it
+        // updates a Bambu Studio project to this engine's own presets. On
+        // anything else there is nothing to update, and saying so is the only
+        // honest answer.
+        return fail(CLI_INVALID_PARAMS,
+                    "--uptodate updates a Bambu Studio project to this engine's own system presets, and this input is"
+                    " not one. Give the settings to load instead: --load-settings and --load-filaments, or the"
+                    " project's own presets with --uptodate-settings and --uptodate-filaments.");
     if (is_bbl_3mf && up_config_to_date) {
+        // How many of the project's own system preset files this package has:
+        // machine_full, process_full and filament_full. With none of them the
+        // official step updates nothing at all (B 2723-2786; O 2350-2420) and
+        // says nothing, and the refusal below says so instead.
+        int system_files_read = 0;
         if (!uptodate_configs.empty()) {
             for (const std::string& file : uptodate_configs) {
                 DynamicPrintConfig config;
@@ -751,6 +798,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     printer_model = config.option<ConfigOptionString>("printer_model", true)->value;
                     printer_model_id = printer_model_id_for(printer_model);
                     load_machine_config = std::move(config);
+                    ++system_files_read;
                 } else
                     emit({{"event", "preset_warning"}, {"tag", "SystemPresetFileMissing"}, {"path", path},
                           {"message", "--uptodate: no system file for printer '" + facts.current_printer_system_name +
@@ -767,6 +815,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     current_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
                     config.set("print_settings_id", config_name, true);
                     load_process_config = std::move(config);
+                    ++system_files_read;
                 } else
                     emit({{"event", "preset_warning"}, {"tag", "SystemPresetFileMissing"}, {"path", path},
                           {"message", "--uptodate: no system file for process '" + facts.current_process_system_name +
@@ -827,9 +876,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     load_filaments_config.push_back(std::move(config));
                     load_filaments_index.push_back(current_index);
                     load_filaments_inherit.push_back(config_name);
+                    ++system_files_read;
                 }
             }
         }
+        // Nothing at all could be read from the presets this package ships
+        // (machine_full, process_full, filament_full), and no file was given
+        // for the step to read: the official step then updates nothing and
+        // exits 0, which reads as "the project is up to date". Say what is
+        // missing and what to give instead. A run that named its own files
+        // never gets here — the checks above refuse with their own sentences.
+        if (uptodate_configs.empty() && uptodate_filaments.empty() && system_files_read == 0)
+            return fail(CLI_INVALID_PARAMS, uptodate_system_presets_missing());
     } else if (is_bbl_3mf) {
         fetch_upward_values = true;
         fetch_compatible_values = true;

@@ -3747,6 +3747,279 @@ kill $feeder 2>/dev/null || true; wait $feeder 2>/dev/null || true
 echo "PASS: a live run's ownership marker is beside the folder, out of the extraction root (both engines)"
 ;;
 esac
+# ---------------------------------------------------------------- Stage F
+# Shorthand flags that must do what the desktop app does, and refusals that
+# name the real cause instead of a symptom (input-path audit: SILENT-WRONG
+# 18-22, BAD-REFUSAL 3, 7, 8, 9). The settings files are the package's own
+# system presets, flattened over their "inherits" chain (flat_presets above),
+# as the files a user exports are.
+
+# F18: an STL with settings files takes the plate type of the printer preset
+# those settings belong to, as the desktop app does when a printer is picked
+# (Sidebar::update_all_preset_comboboxes -> set_bed_type_accord_combox,
+# BambuStudio Plater.cpp 3340-3414 and 3703-3715 at 5873b5f; OrcaSlicer
+# Plater.cpp 2527-2556 and 2798-2806 at 31f6803). On 2a12432 the engine's own
+# default was used instead (curr_bed_type's ConfigDef default, btPC "Cool
+# Plate", BambuStudio PrintConfig.cpp 1162 at 5873b5f), which is no printer's.
+f18_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    flat_presets $e f18 "$A1M"
+    run f18n-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --outputdir f18n-$e/out
+    [ "$(rc f18n-$e)" = 0 ] || { show f18n-$e; fail "F18 $e: the named printer preset exit $(rc f18n-$e)"; f18_ok=0; continue; }
+    want=$(hdr f18n-$e/out/plate_1.gcode curr_bed_type)
+    [ -n "$want" ] || { fail "F18 $e: the named printer preset states no plate type"; f18_ok=0; continue; }
+    # the file route the product uses
+    run f18l-$e "$bin" cube.stl --slice 1 --load-settings "f18-$e-machine.json;f18-$e-process.json" \
+        --load-filaments f18-$e-filament.json --outputdir f18l-$e/out
+    [ "$(rc f18l-$e)" = 0 ] && [ -s f18l-$e/out/plate_1.gcode ] ||
+        { show f18l-$e; fail "F18 $e: settings files exit $(rc f18l-$e)"; f18_ok=0; continue; }
+    got=$(hdr f18l-$e/out/plate_1.gcode curr_bed_type)
+    [ "$got" = "$want" ] || { fail "F18 $e: an STL with settings files slices on '$got', the printer preset is '$want'"; f18_ok=0; }
+    if [ $e = bambu ]; then
+        run f18m-$e "$bin" cube.stl -o f18m-$e.gcode --machine f18-$e-machine.json \
+            --filament f18-$e-filament.json --process f18-$e-process.json
+        got=$(hdr f18m-$e.gcode curr_bed_type)
+        [ "$(rc f18m-$e)" = 0 ] && [ "$got" = "$want" ] ||
+            { show f18m-$e; fail "F18 bambu: --machine/--process/--filament slice on '$got', the printer preset is '$want' (exit $(rc f18m-$e))"; f18_ok=0; }
+    fi
+done
+[ $f18_ok = 1 ] && echo "PASS: F18 an STL with settings files takes the plate type of the printer preset those settings belong to (both engines)"
+
+# F19: --nozzle changes nozzle_diameter alone, which no desktop flow does: the
+# desktop changes a printer's nozzle by choosing the printer variant, and the
+# line widths, the process and the start G-code come from that variant's
+# preset (Sidebar::update_all_preset_comboboxes). A nozzle the printer preset
+# is not built for is refused, naming the preset to choose instead; the
+# nozzle it already has is what it already is.
+f19_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run f19no-$e "$bin" cube.stl --slice 1 --printer-preset "$X1C" --outputdir f19no-$e/out
+    [ "$(rc f19no-$e)" = 0 ] || { show f19no-$e; fail "F19 $e: the plain run exit $(rc f19no-$e)"; f19_ok=0; continue; }
+    run f19bad-$e "$bin" cube.stl --slice 1 --printer-preset "$X1C" --nozzle 0.6 --outputdir f19bad-$e/out
+    [ "$(rc f19bad-$e)" != 0 ] || { fail "F19 $e: --nozzle 0.6 on a 0.4 printer sliced with 0.4 line widths"; f19_ok=0; continue; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+s = d["error_string"]
+assert "--printer-preset" in s and "0.6" in s, s
+' f19bad-$e/out/result.json || { show f19bad-$e; fail "F19 $e: the --nozzle refusal does not name --printer-preset and the nozzle asked for"; f19_ok=0; }
+    # The nozzle the printer already has: nothing changes, and the run slices
+    # exactly as it does without the flag.
+    run f19ok-$e "$bin" cube.stl --slice 1 --printer-preset "$X1C" --nozzle 0.4 --outputdir f19ok-$e/out
+    [ "$(rc f19ok-$e)" = 0 ] || { show f19ok-$e; fail "F19 $e: --nozzle 0.4 on a 0.4 printer exit $(rc f19ok-$e)"; f19_ok=0; continue; }
+    for k in nozzle_diameter line_width curr_bed_type; do
+        a=$(hdr f19ok-$e/out/plate_1.gcode $k); b=$(hdr f19no-$e/out/plate_1.gcode $k)
+        [ "$a" = "$b" ] || { fail "F19 $e: --nozzle 0.4 changed $k to '$a', without it '$b'"; f19_ok=0; }
+    done
+done
+[ $f19_ok = 1 ] && echo "PASS: F19 --nozzle refuses a nozzle that is not the printer preset's, and is a no-op for the one it has (both engines)"
+
+# F20: --bed-temp sets the bed temperature the print runs at. The bed heat
+# commands do not read bed_temperature: they read the active plate type's own
+# key (GCode::get_bed_temperature -> get_bed_temp_key, GCode.cpp 3866-3876 at
+# 5873b5f; Print.cpp 1245-1260 at 31f6803), and the start G-code's
+# {bed_temperature} and {bed_temperature_initial_layer} placeholders are
+# overwritten with the same two keys (GCode.cpp 2789-2793 at 5873b5f; the same
+# pair at 31f6803). On 2a12432 the flag left M140/M190 at the plate's old
+# value.
+f20_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run f20-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --bed-temp 70 --outputdir f20-$e/out
+    [ "$(rc f20-$e)" = 0 ] && [ -s f20-$e/out/plate_1.gcode ] ||
+        { show f20-$e; fail "F20 $e: --bed-temp 70 exit $(rc f20-$e)"; f20_ok=0; continue; }
+    py '
+import re, sys
+text = open(sys.argv[1], errors="replace").read()
+vals = [int(m.group(1)) for m in re.finditer(r"^M1[49]0 S(\d+)", text, re.M)]
+assert vals, "no M140/M190 in the G-code"
+assert 70 in vals, vals
+bad = sorted({v for v in vals if v not in (0, 70)})
+assert not bad, "the bed is still heated to %s" % bad
+' f20-$e/out/plate_1.gcode || { show f20-$e; fail "F20 $e: --bed-temp 70 does not reach the bed heat commands"; f20_ok=0; }
+done
+[ $f20_ok = 1 ] && echo "PASS: F20 --bed-temp sets the bed temperature the slice runs at, in the G-code (both engines)"
+
+# F21: --temp on a printer with several extruders sets every filament slot the
+# run uses. The Snapmaker U1 has four, and on 2a12432 the flag left
+# nozzle_temperature at 230,0,0,0: three slots printed at no temperature at
+# all.
+f21_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    # Four extruders on the U1; two on the H2D, whose two filaments are both
+    # used so the check covers both slots as well.
+    printer="Snapmaker U1 (0.4 nozzle)"
+    fargs=()
+    if [ $e = bambu ]; then
+        printer="Bambu Lab H2D 0.4 nozzle"
+        fargs=(--filament-preset "Bambu PLA Basic @BBL H2D" --filament-preset "Bambu PLA Matte @BBL H2D")
+    fi
+    run f21-$e "$bin" cube.stl --slice 1 --printer-preset "$printer" "${fargs[@]}" --temp 230 --outputdir f21-$e/out
+    [ "$(rc f21-$e)" = 0 ] && [ -s f21-$e/out/plate_1.gcode ] ||
+        { show f21-$e; fail "F21 $e: --temp 230 on $printer exit $(rc f21-$e)"; f21_ok=0; continue; }
+    py '
+import re, sys
+m = re.search(r"^; nozzle_temperature = (.*)$", open(sys.argv[1], errors="replace").read(), re.M)
+assert m, "no nozzle_temperature in the G-code header"
+vals = [v.strip() for v in m.group(1).split(",")]
+assert len(vals) >= 2, vals
+assert all(v == "230" for v in vals), vals
+' f21-$e/out/plate_1.gcode || { show f21-$e; fail "F21 $e: --temp leaves slots at another temperature"; f21_ok=0; }
+done
+[ $f21_ok = 1 ] && echo "PASS: F21 --temp sets every filament slot of a printer with several extruders (both engines)"
+
+# F22: --uptodate updates a Bambu Studio project to this engine's own system
+# presets, from machine_full/, process_full/ and filament_full/ (BambuStudio.cpp
+# 2638-2786 at 5873b5f; OrcaSlicer.cpp 2258-2420 at 31f6803). This package
+# ships none of those folders and no other input has anything to update, so
+# both cases say so instead of exiting 0 with nothing done.
+f22_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run f22a-$e "$bin" base.3mf --slice 1 --uptodate --outputdir f22a-$e/out
+    run f22b-$e "$bin" cube.stl --slice 1 --uptodate --outputdir f22b-$e/out
+    for n in a b; do
+        [ "$(rc f22$n-$e)" != 0 ] || { fail "F22 $e: --uptodate succeeded ($n) with nothing updated"; f22_ok=0; continue; }
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+s = d["error_string"]
+assert "uptodate" in s and "--load-settings" in s, s
+' f22$n-$e/out/result.json || { show f22$n-$e; fail "F22 $e: the --uptodate refusal ($n) does not name the flags that work"; f22_ok=0; }
+    done
+done
+[ $f22_ok = 1 ] && echo "PASS: F22 --uptodate says what to give instead of exiting 0 with nothing updated (both engines)"
+
+# BR3: a machine settings file that states no layer_change_gcode makes the
+# merge write that key empty (load_default_gcodes_to_config, BambuStudio.cpp
+# 685-745 at 5873b5f; OrcaSlicer.cpp 548-604 at 31f6803), and the engine then
+# refuses the print for relative extruder addressing. The refusal names that
+# cause, not only the symptom.
+br3_ok=1
+u106="$RES/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.6 nozzle).json"
+[ -f "$u106" ] || { fail "BR3: the package ships no U1 0.6 machine preset at $u106"; br3_ok=0; }
+for e in orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run br3-$e "$bin" base.3mf --slice 1 --load-settings "$u106" --outputdir br3-$e/out
+    [ "$(rc br3-$e)" != 0 ] || { fail "BR3 $e: a machine file with no layer_change_gcode sliced"; br3_ok=0; continue; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+s = d["error_string"]
+assert d["return_code"] == -51, d
+assert "Relative extruder addressing" in s, s
+assert "layer_change_gcode" in s, s
+' br3-$e/out/result.json || { show br3-$e; fail "BR3 $e: the refusal does not name the empty layer_change_gcode"; br3_ok=0; }
+done
+[ $br3_ok = 1 ] && echo "PASS: BR3 the relative-extruder refusal names the empty layer_change_gcode (Orca build)"
+
+# BR7: --estimate-mode takes each filament from filament_full (BambuStudio.cpp
+# 2408-2444), and this package ships no such folder. The refusal names the
+# flags the user gave (--estimate-mode, --load-settings), never
+# --load-defaultfila, which was not given.
+br7_ok=1
+flat_presets bambu e7 "$X1C"
+run br7 "$B" base.3mf --slice 1 --estimate-mode --load-settings "e7-bambu-machine.json;e7-bambu-process.json" --outputdir br7/out
+[ "$(rc br7)" != 0 ] || { show br7; fail "BR7: --estimate-mode without filament_full succeeded"; br7_ok=0; }
+py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+s = d["error_string"]
+assert d["return_code"] == -5, d
+assert "--estimate-mode" in s and "--load-filaments" in s, s
+assert "--load-defaultfila" not in s, s
+' br7/out/result.json || { show br7; fail "BR7: the --estimate-mode refusal names a flag the user never gave"; br7_ok=0; }
+[ $br7_ok = 1 ] && echo "PASS: BR7 the --estimate-mode refusal names the flags actually given (Bambu build)"
+
+# BR8: --load-filament-ids counts the filaments the run has, which on this
+# command line are the --filament-preset presets as well as the
+# --load-filaments files (the official CLI counts m_load_filaments alone,
+# BambuStudio.cpp 2078-2130 at 5873b5f; it has no preset path). On 2a12432 two
+# presets with "1,2" were refused as "past the 0 filament(s) loaded".
+br8_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    # Two presets of one temperature series: the pair the audit used (PLA Basic
+    # + PETG HF) trips the engine's own "Selected nozzle temperatures are
+    # incompatible" on the Orca build once the count check no longer stops the
+    # run first, which is a different refusal and not this row.
+    run br8-$e "$bin" cube.stl cube.stl --slice 1 --printer-preset "$X1C" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Matte @BBL X1C" \
+        --load-filament-ids 1,2 --outputdir br8-$e/out
+    [ "$(rc br8-$e)" = 0 ] || { show br8-$e; fail "BR8 $e: two presets with --load-filament-ids 1,2 exit $(rc br8-$e)"; br8_ok=0; continue; }
+    py '
+import re, sys
+text = open(sys.argv[1], errors="replace").read()
+m = re.search(r"^; filament_settings_id = (.*)$", text, re.M)
+assert m, "no filament_settings_id in the G-code header"
+for name in ("Bambu PLA Basic @BBL X1C", "Bambu PLA Matte @BBL X1C"):
+    assert name in m.group(1), (name, m.group(1))
+' br8-$e/out/plate_1.gcode || { show br8-$e; fail "BR8 $e: the two objects did not take the two preset filaments"; br8_ok=0; }
+done
+[ $br8_ok = 1 ] && echo "PASS: BR8 --load-filament-ids counts the --filament-preset filaments (both engines)"
+
+# BR9: a printer preset this engine has not got, which the other engine of the
+# package has, is refused naming that binary, as the 3MF engine-fit refusal
+# does (engine_mismatch_sentence).
+br9_ok=1
+run br9 "$B" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" --outputdir br9/out
+[ "$(rc br9)" != 0 ] || { show br9; fail "BR9: slicer_cli took a Snapmaker printer"; br9_ok=0; }
+py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+s = d["error_string"]
+assert "BambuStudio has no printer preset named" in s, s
+assert "slicer_cli-orcaslicer" in s, s
+' br9/out/result.json || { show br9; fail "BR9: the refusal of a Snapmaker printer does not name slicer_cli-orcaslicer"; br9_ok=0; }
+[ $br9_ok = 1 ] && echo "PASS: BR9 a printer preset of the other engine is refused naming that binary (Bambu build)"
+
+# F18b: the same defect on the real Snapmaker U1 files, where it decides
+# whether the run works at all: on 2a12432 an STL with the shipped U1 machine,
+# process and filament files sliced on the engine's own default Cool Plate
+# (M140/M190 S35), which "Snapmaker PLA @U1" cannot print on — the run is
+# refused -103 "Found some filament unprintable at first layer on current
+# Plate". The U1's own plate (the one the desktop app picks for the printer)
+# slices it. Both routes are checked: the product's --machine/--process/
+# --filament, and --printer-preset/--filament-preset (which already takes it).
+f18b_ok=1
+u1m="$RES/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json"
+u1p="$RES/profiles-orca/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json"
+u1f="$RES/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json"
+for f in "$u1m" "$u1p" "$u1f"; do
+    [ -f "$f" ] || { fail "F18b: the package ships no $f"; f18b_ok=0; }
+done
+if [ $f18b_ok = 1 ]; then
+    run f18bn "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" \
+        --process-preset "0.20 Standard @Snapmaker U1 (0.4 nozzle)" --filament-preset "Snapmaker PLA @U1" \
+        --outputdir f18bn/out
+    run f18bf "$O" cube.stl --slice 1 --machine "$u1m" --process "$u1p" --filament "$u1f" --outputdir f18bf/out
+    for n in f18bn f18bf; do
+        [ "$(rc $n)" = 0 ] && [ -s $n/out/plate_1.gcode ] ||
+            { show $n; fail "F18b orca: $n exit $(rc $n)"; f18b_ok=0; }
+    done
+    want=$(hdr f18bn/out/plate_1.gcode curr_bed_type)
+    got=$(hdr f18bf/out/plate_1.gcode curr_bed_type)
+    [ -n "$want" ] && [ "$want" != "Cool Plate" ] ||
+        { fail "F18b orca: the printer preset slices on '$want', the engine's own default"; f18b_ok=0; }
+    [ "$got" = "$want" ] ||
+        { fail "F18b orca: the shipped U1 files slice on '$got', the printer preset on '$want'"; f18b_ok=0; }
+    py '
+import re, sys
+def beds(path):
+    t = open(path, errors="replace").read()
+    return sorted({int(m.group(1)) for m in re.finditer(r"^M1[49]0 S(\d+)", t, re.M) if int(m.group(1))})
+a, b = beds(sys.argv[1]), beds(sys.argv[2])
+assert a, "no M140/M190 in the printer preset run"
+assert a == b, (a, b)
+' f18bn/out/plate_1.gcode f18bf/out/plate_1.gcode ||
+        { show f18bf; fail "F18b orca: the shipped U1 files do not heat the bed as the printer preset does"; f18b_ok=0; }
+fi
+[ $f18b_ok = 1 ] && echo "PASS: F18b the shipped U1 files slice on the U1's own plate with its bed temperature, through both routes (Orca build)"
 # With E2E_CONTINUE=1 the run reaches here even after a FAIL (see fail()): say
 # how many there were, so the exit status still tells the truth.
 if [ "${E2E_CONTINUE:-0}" = "1" ] && [ "$FAILS" -gt 0 ]; then
