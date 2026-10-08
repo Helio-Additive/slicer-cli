@@ -5372,6 +5372,59 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
     }
 }
 
+/// The staging folders this run made: the 3MF load's backup folder and the
+/// --export-3mf one. Both are handed to the engine, which asks the backup
+/// manager to remove the folder a model ends with (Model.cpp ~Model ->
+/// remove_backup), but that removal runs as a UI task the command line never
+/// drains (_BBS_Backup_Manager::process_ui_task, bbs_3mf.cpp 8714-8786 at
+/// 31f6803), so the run removes them itself as the process ends. The list is
+/// a member, not a function-local static: this object's destructor must
+/// outlive it. A crash or a kill leaves the folders, as it leaves any temp
+/// file.
+struct RunStagingFolders {
+    std::vector<std::string> paths;
+
+    /// Registers `path`.
+    std::string add(std::string path) {
+        paths.push_back(path);
+        return path;
+    }
+
+    ~RunStagingFolders() {
+        for (const std::string& path : paths) {
+            boost::system::error_code ec;
+            boost::filesystem::remove_all(path, ec);
+        }
+    }
+};
+static RunStagingFolders run_staging;
+
+/// The folder this run's 3MF loads stage their temporary files in. The
+/// engine's loader extracts Metadata/project_settings.config to
+/// <backup>/_temp_3.config and the embedded presets to <backup>/_temp_2.config
+/// and then parses them back (bbs_3mf.cpp
+/// _extract_project_config_from_archive 2729 and
+/// _extract_project_embedded_presets_from_archive 2758 at BambuStudio
+/// 5873b5f; the same functions at 2636 and 2665 in OrcaSlicer 31f6803). One
+/// folder for the whole run: the shared $TMPDIR/slicer_cli_backup name let
+/// parallel runs read each other's half-written file ("load_from_json: parse
+/// /tmp/slicer_cli_backup/_temp_3.config got a parse_error"), and a folder per
+/// load would litter the temp dir. "detach" first, so set_backup_path does not
+/// remove the folder it replaces (Model::set_backup_path, Model.cpp 1165-1179
+/// / 1028-1042) — as f747602 does for the --export-3mf staging folder.
+static const std::string& run_backup_path() {
+    static const std::string path =
+        run_staging.add((boost::filesystem::temp_directory_path() /
+                         boost::filesystem::unique_path("slicer_cli_load-%%%%%%%%")).string());
+    return path;
+}
+
+/// Gives `model` this run's own backup folder (run_backup_path).
+static void set_run_backup_path(Slic3r::Model& model) {
+    model.set_backup_path("detach");
+    model.set_backup_path(run_backup_path());
+}
+
 /// One plate's objects, loaded alone from the project 3MF, for
 /// --downward-check: the official sizes every plate of the project
 /// (check_plate_wipe_tower per plate, BambuStudio.cpp 4645-4658; OrcaSlicer.cpp
@@ -5400,9 +5453,10 @@ static bool load_plate_objects(const std::string& input_file, int plate_id, Slic
         load_path = percent_rewrite.temp_path;
 #endif
     const auto strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances;
-    // A writable backup folder, as the slice's own load sets (never the
-    // loader's default /bamboo_model).
-    model.set_backup_path(boost::filesystem::temp_directory_path().string() + "/slicer_cli_backup");
+    // A writable backup folder of this run's own, as the slice's own load
+    // sets (never the loader's default /bamboo_model, and never one shared
+    // with another run: run_backup_path).
+    set_run_backup_path(model);
     bool loaded = false;
     try {
 #ifdef ENGINE_ORCA
@@ -5839,9 +5893,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
         // Load model
         std::cout << "Loading model: " << input_file << "\n";
-        // Pre-set backup_path to a writable temp dir so the backup manager
-        // never touches the read-only /bamboo_model network path.
-        model.set_backup_path(boost::filesystem::temp_directory_path().string() + "/slicer_cli_backup");
+        // Pre-set backup_path to a writable temp dir of this run's own so the
+        // backup manager never touches the read-only /bamboo_model network
+        // path, and parallel runs never share the loader's _temp_N.config
+        // files (run_backup_path).
+        set_run_backup_path(model);
         if (assemble_input) {
             // The list's plates the run slices: plate N, or every plate. Each
             // plate's objects go to its place in the plate grid once the bed
@@ -8640,15 +8696,18 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     Model& model = rs.model;
     // store_bbs_3mf stages the project's files in the model's backup folder
     // (_add_project_config_file_to_archive writes <backup>/_temp_1.config,
-    // bbs_3mf.cpp). The run's folder (slicer_cli_backup) is shared by every
-    // slicer_cli run on the host, and a run that ends removes it (~Model,
-    // Model.cpp remove_backup), so a run exporting beside another lost its
-    // files. The export stages in a folder of its own, as ba0dcfb's export
-    // model did. "detach" first: set_backup_path removes the folder it
-    // replaces (Model::set_backup_path), which is the shared one.
+    // bbs_3mf.cpp). The run's folder (once slicer_cli_backup, shared by every
+    // slicer_cli run on the host, and removed by a run that ends: ~Model,
+    // Model.cpp remove_backup) was not the export's, so a run exporting
+    // beside another lost its files. The export stages in a folder of its
+    // own, as ba0dcfb's export model did. "detach" first: set_backup_path
+    // removes the folder it replaces (Model::set_backup_path), which is the
+    // load's own (run_backup_path).
     model.set_backup_path("detach");
-    model.set_backup_path((boost::filesystem::temp_directory_path() /
-                           boost::filesystem::unique_path("slicer_cli_export-%%%%%%%%")).string());
+    const std::string export_backup =
+        run_staging.add((boost::filesystem::temp_directory_path() /
+                         boost::filesystem::unique_path("slicer_cli_export-%%%%%%%%")).string());
+    model.set_backup_path(export_backup);   // removed with the run's other staging folders
     PlateDataPtrs plates;
     struct Release {
         PlateDataPtrs& plates;
@@ -8929,51 +8988,6 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         return CLI_INVALID_PARAMS;
     }
 
-    // --export-3mf NAME is written into --outputdir next to result.json and
-    // plate_N.gcode; a NAME that is one of them would overwrite it (or be
-    // overwritten). Compared without case: Windows and macOS file systems
-    // treat Result.json and result.json as one file. Links are followed
-    // (the NAME's own link chain, then weakly_canonical for every existing
-    // part),
-    // and two existing names for one file (a hard link) are caught by
-    // fs::equivalent, so a NAME that is another name for one of them is
-    // refused too.
-    if (!o.export_3mf.empty()) {
-        const auto key = [](const fs::path& p) {
-            // A link whose target does not exist yet (result.json before
-            // the run writes it) is not resolved by weakly_canonical: follow
-            // the chain by hand first.
-            fs::path q = fs::absolute(p);
-            boost::system::error_code ec;
-            for (int hops = 0; hops < 40 && fs::is_symlink(q, ec) && !ec; ++hops) {
-                const fs::path link = fs::read_symlink(q, ec);
-                if (ec) break;
-                q = link.is_absolute() ? link : q.parent_path() / link;
-            }
-            ec.clear();
-            const fs::path resolved = fs::weakly_canonical(q, ec);
-            return (ec ? q : resolved).lexically_normal().generic_string();
-        };
-        const fs::path target_path = outdir / o.export_3mf;
-        const std::string target = key(target_path);
-        std::vector<std::string> taken = {"result.json"};
-        for (int p = (o.slice_plate == 0 ? 1 : o.slice_plate);
-             p <= (o.slice_plate == 0 ? plate_count : o.slice_plate); ++p)
-            taken.push_back("plate_" + std::to_string(p) + ".gcode");
-        for (const std::string& name : taken) {
-            boost::system::error_code ec;
-            const bool same_file = fs::equivalent(target_path, outdir / name, ec) && !ec;
-            if (!same_file && !boost::algorithm::iequals(target, key(outdir / name))) continue;
-            const std::string detail = "--export-3mf " + o.export_3mf + " is the run's own " + name +
-                                       " in --outputdir; choose another name.";
-            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
-                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
-            std::cerr << "Error: " << detail << "\n";
-            emit_event({{"event","input_error"}, {"tag","ExportNameTaken"}, {"message", detail}});
-            return CLI_INVALID_PARAMS;
-        }
-    }
-
     const auto run_started = std::chrono::steady_clock::now();
     if (o.progress) {
         PlateOutcome preparing;
@@ -9024,6 +9038,55 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             outcomes.push_back(*prepare_failure);
         }
     }
+    // --export-3mf NAME is written into --outputdir next to result.json and
+    // plate_N.gcode; a NAME that is one of them would overwrite it (or be
+    // overwritten). Compared without case: Windows and macOS file systems
+    // treat Result.json and result.json as one file. Links are followed
+    // (the NAME's own link chain, then weakly_canonical for every existing
+    // part),
+    // and two existing names for one file (a hard link) are caught by
+    // fs::equivalent, so a NAME that is another name for one of them is
+    // refused too.
+    // The check runs here, once the plate plan is final: the global arrange
+    // (--slice 0 --arrange 1) can add plates the pre-arrange count does not
+    // know (BambuStudio.cpp 5627-5722; OrcaSlicer.cpp 4887-4983), and a
+    // plate_<n>.gcode it then writes would be overwritten by the export.
+    // `plates` is the set this run slices.
+    if (!o.export_3mf.empty()) {
+        const auto key = [](const fs::path& p) {
+            // A link whose target does not exist yet (result.json before
+            // the run writes it) is not resolved by weakly_canonical: follow
+            // the chain by hand first.
+            fs::path q = fs::absolute(p);
+            boost::system::error_code ec;
+            for (int hops = 0; hops < 40 && fs::is_symlink(q, ec) && !ec; ++hops) {
+                const fs::path link = fs::read_symlink(q, ec);
+                if (ec) break;
+                q = link.is_absolute() ? link : q.parent_path() / link;
+            }
+            ec.clear();
+            const fs::path resolved = fs::weakly_canonical(q, ec);
+            return (ec ? q : resolved).lexically_normal().generic_string();
+        };
+        const fs::path target_path = outdir / o.export_3mf;
+        const std::string target = key(target_path);
+        std::vector<std::string> taken = {"result.json"};
+        for (int p : plates)
+            taken.push_back("plate_" + std::to_string(p) + ".gcode");
+        for (const std::string& name : taken) {
+            boost::system::error_code ec;
+            const bool same_file = fs::equivalent(target_path, outdir / name, ec) && !ec;
+            if (!same_file && !boost::algorithm::iequals(target, key(outdir / name))) continue;
+            const std::string detail = "--export-3mf " + o.export_3mf + " is the run's own " + name +
+                                       " in --outputdir; choose another name.";
+            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
+            std::cerr << "Error: " << detail << "\n";
+            emit_event({{"event","input_error"}, {"tag","ExportNameTaken"}, {"message", detail}});
+            return CLI_INVALID_PARAMS;
+        }
+    }
+
     const bool pre_check = code == 0 && o.slice_plate == 0 && plates.size() > 1;
     for (size_t i = 0; pre_check && i < plates.size(); ++i) {
         PlateOutcome outcome;
@@ -9421,11 +9484,11 @@ int main(int argc, char** argv) {
     if (o.slice_mode && plate_id > 0)
         return refuse_run(CLI_INVALID_PARAMS, "--plate and --slice are mutually exclusive; use --slice N for plate N");
 
-    // Detect conflicting layout flags
-    if (layout_plan_mode && !layout_json_file.empty()) {
-        std::cerr << "Error: --layout-plan and --layout are mutually exclusive\n";
-        return 1;
-    }
+    // Detect conflicting layout flags. Under --slice this refusal must still
+    // leave result.json like every other early refusal (refuse_run); without
+    // --slice it prints the same sentence and exits 1, unchanged.
+    if (layout_plan_mode && !layout_json_file.empty())
+        return refuse_run(CLI_INVALID_PARAMS, "--layout-plan and --layout are mutually exclusive");
 
     // Both layout modes arrange and return, before any slice: like
     // --engine-info and --list-presets they write no result.json, so with

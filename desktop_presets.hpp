@@ -31,6 +31,12 @@ std::string bed_type_name(Slic3r::BedType type);
 /// for the event log, empty when nothing changed.
 std::string apply_printer_pick(Slic3r::PresetBundle& bundle);
 
+/// The vendor bundle that holds `printer_preset_name`: the `<vendor>.json` in
+/// `profiles_dir` whose machine_list names it (PresetBundle::find_preset_vendor,
+/// OrcaSlicer PresetBundle.cpp 244-318 at 31f6803). Empty when no bundle lists
+/// it. `profiles_dir` is the tree desktop_printer_switch_process reads.
+std::string desktop_printer_vendor(const std::string& profiles_dir, const std::string& printer_preset_name);
+
 /// The process preset the desktop app selects when the printer is switched to
 /// `printer_preset_name`: the current process is kept while that printer is
 /// still among the printers it says it suits, else the compatible print preset
