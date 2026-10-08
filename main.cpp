@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #endif
+#include <functional>
 
 // Core libslic3r headers
 #include "libslic3r/libslic3r.h"
@@ -442,12 +443,14 @@ void emit_validation_event(const Slic3r::StringObjectException& v) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Driver-side normalization for the unbound placeholder `initial_no_support_filament_id`.
 //
-// Neither BambuStudio nor OrcaSlicer bind `initial_no_support_filament_id` in the
-// PlaceholderParser. Both bind only `initial_no_support_tool` /
-// `initial_no_support_extruder` / `initial_no_support_hotend`, and the first two are
-// the SAME int `initial_non_support_extruder_id` (GCode.cpp:2458-2460). Because
-// `_tools` and `_filaments` are aliases of the same filament index, the legacy token
-// is semantically identical to `initial_no_support_extruder`.
+// OrcaSlicer does not bind `initial_no_support_filament_id` in the
+// PlaceholderParser: it binds `initial_no_support_extruder` /
+// `initial_no_support_hotend`, and the first is the SAME int as BambuStudio's
+// `initial_no_support_filament_id` (BambuStudio binds it in GCode.cpp 2657 at
+// 5873b5f, from the same `initial_non_support_extruder_id`, GCode.cpp
+// 2458-2460). Because the `_extruder` and `_filament` names are aliases of the
+// same filament index, the BambuStudio token is semantically identical to
+// OrcaSlicer's `initial_no_support_extruder`.
 //
 // The token is not produced by any stock profile in this repo or upstream master
 // start-gcode; it only arrives via a hand-edited / third-party custom gcode embedded
@@ -460,33 +463,34 @@ void emit_validation_event(const Slic3r::StringObjectException& v) {
 // `initial_no_support_filament_idx` and any identifier that merely embeds the token are
 // never touched. (The separately-bound `initial_filament_id` is a different, shorter
 // string and is never searched for, so it is inherently safe.)
+// Single-string (coString) custom-gcode keys.
+// Every coString custom-gcode key either engine runs through
+// placeholder_parser_process (PrintConfig.cpp `add("*_gcode", coString)`,
+// minus `export_gcode` which is the output-path flag, not a template). This
+// binary builds BOTH engines (ENGINE_BAMBU / ENGINE_ORCA), so the list is the
+// union; keys absent from the active engine's schema are null-guarded no-ops
+// (the `file_*` / `*_extrusion_role_*` keys are Orca-only).
+static const std::vector<std::string> kGcodeStringKeys = {
+    "machine_start_gcode", "machine_end_gcode",
+    "before_layer_change_gcode", "layer_change_gcode",
+    "change_filament_gcode", "time_lapse_gcode",
+    "machine_pause_gcode", "printing_by_object_gcode",
+    "template_custom_gcode", "wrapping_detection_gcode",
+    // Orca-only:
+    "file_start_gcode", "change_extrusion_role_gcode",
+    "process_change_extrusion_role_gcode",
+};
+// Per-filament (coStrings) custom-gcode keys — these ALSO run through the
+// PlaceholderParser (filament_start/end emission), so the unbound token can
+// abort from them too. (`filament_change_extrusion_role_gcode` is Orca-only.)
+static const std::vector<std::string> kGcodeStringsKeys = {
+    "filament_start_gcode", "filament_end_gcode",
+    "filament_change_extrusion_role_gcode",
+};
+
 int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config, bool report_event = true) {
     static const std::string kLegacyToken = "initial_no_support_filament_id";
     static const std::string kBoundToken  = "initial_no_support_extruder";
-    // Single-string (coString) custom-gcode keys.
-    // Every coString custom-gcode key either engine runs through
-    // placeholder_parser_process (PrintConfig.cpp `add("*_gcode", coString)`,
-    // minus `export_gcode` which is the output-path flag, not a template). This
-    // binary builds BOTH engines (ENGINE_BAMBU / ENGINE_ORCA), so the list is the
-    // union; keys absent from the active engine's schema are null-guarded no-ops
-    // (the `file_*` / `*_extrusion_role_*` keys are Orca-only).
-    static const std::vector<std::string> kGcodeStringKeys = {
-        "machine_start_gcode", "machine_end_gcode",
-        "before_layer_change_gcode", "layer_change_gcode",
-        "change_filament_gcode", "time_lapse_gcode",
-        "machine_pause_gcode", "printing_by_object_gcode",
-        "template_custom_gcode", "wrapping_detection_gcode",
-        // Orca-only:
-        "file_start_gcode", "change_extrusion_role_gcode",
-        "process_change_extrusion_role_gcode",
-    };
-    // Per-filament (coStrings) custom-gcode keys — these ALSO run through the
-    // PlaceholderParser (filament_start/end emission), so the unbound token can
-    // abort from them too. (`filament_change_extrusion_role_gcode` is Orca-only.)
-    static const std::vector<std::string> kGcodeStringsKeys = {
-        "filament_start_gcode", "filament_end_gcode",
-        "filament_change_extrusion_role_gcode",
-    };
     const size_t tlen = kLegacyToken.size();
     auto is_ident = [](char c) {
         return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
@@ -677,6 +681,33 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
 
         // Create substitution context for config deserialization
         Slic3r::ConfigSubstitutionContext substitution_context(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+
+        // The file-level conversions the engines run for a settings file
+        // (ConfigBase::load_from_json, Config.cpp 880-1096 at 31f6803): the
+        // special cases at 931-948 (support_type hybrid(auto) -> support_style
+        // tree_hybrid, wall_infill_order -> is_infill_first) and
+        // handle_legacy_composite at 1094 (thumbnails,
+        // wiping_volumes_use_custom_matrix). The per-key loop below runs
+        // handle_legacy only (set_deserialize -> Config.cpp 579), so a
+        // --machine/--process/--filament file skipped them. Loaded into a
+        // scratch and applied, so the loop's own handling (the Bambu build's
+        // nozzle map, the substitution reporting) still runs over it.
+        {
+            Slic3r::DynamicPrintConfig            loaded;
+            std::map<std::string, std::string>    key_values;
+            std::string                           reason;
+            Slic3r::ConfigSubstitutionContext     file_substitutions(
+                Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+            try {
+                loaded.load_from_json(filepath, file_substitutions, /*load_inherits_in_config=*/false,
+                                      key_values, reason);
+                if (reason.empty() && !loaded.empty())
+                    config.apply(loaded, /*ignore_nonexistent=*/true);
+            } catch (const std::exception& e) {
+                if (verbose)
+                    std::cerr << "Warning: config file conversions failed: " << e.what() << "\n";
+            }
+        }
 
         // Iterate through all key-value pairs
         for (auto& [key, value] : j.items()) {
@@ -879,6 +910,28 @@ bool bbs_3mf_config_contains_nozzle_map(const std::string& filepath,
 // the auto-grouping path re-solving an already-constrained dual-nozzle setup
 // into a different logical order than BambuStudio desktop.
 // Returns true if it actually derived and applied a cross-nozzle filament_map.
+// Filament roster the loaded project declares, 0 when unknown.  filament_colour
+// is the authoritative roster (the driver seeds it with one entry, so a longer
+// one can only come from the loaded project); the remaining per-filament
+// identity vectors are taken as a floor too, because Print::apply() derives its
+// own extruder count from filament_diameter (PrintApply.cpp:1504) and every
+// per-region filament index it admits must be inside the arrays extended here.
+// It sizes the per-filament alignment below on the Bambu build, and the 3MF
+// filament-index reset (PresetBundle.cpp 4090-4105, N =
+// filament_presets.size()) on the Orca build, so it is not gated.
+size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
+    size_t count = 0;
+    for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
+                            "filament_type", "filament_diameter"}) {
+        // The vector base covers both the plain and the nullable vector spelling
+        // of these keys (the two are unrelated types in this engine).
+        if (const auto* vec = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(
+                config.option(key, false)))
+            count = std::max(count, vec->size());
+    }
+    return count;
+}
+
 #ifdef ENGINE_BAMBU
 // ── BBS-only config-normalization helpers ───────────────────────────────────
 // These helpers (apply_explicit_nozzle_mapping, set_default_config,
@@ -1482,25 +1535,6 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
 // substituted for a value the project did not have: a populated array only ever
 // propagates a value it already carries.
 
-// Filament roster the loaded project declares, 0 when unknown.  filament_colour
-// is the authoritative roster (the driver seeds it with one entry, so a longer
-// one can only come from the loaded project); the remaining per-filament
-// identity vectors are taken as a floor too, because Print::apply() derives its
-// own extruder count from filament_diameter (PrintApply.cpp:1504) and every
-// per-region filament index it admits must be inside the arrays extended here.
-size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
-    size_t count = 0;
-    for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
-                            "filament_type", "filament_diameter"}) {
-        // The vector base covers both the plain and the nullable vector spelling
-        // of these keys (the two are unrelated types in this engine).
-        if (const auto* vec = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(
-                config.option(key, false)))
-            count = std::max(count, vec->size());
-    }
-    return count;
-}
-
 // True for the config keys whose arrays carry one entry per FILAMENT rather than
 // one per extruder, nozzle or variant slot.  One predicate gates both passes that
 // touch these arrays — the extruder-count padding in the front end and the roster
@@ -1998,12 +2032,16 @@ static std::string engine_version_text() {
 
 /// The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
 /// OrcaSlicer.cpp 1588-1592 at 31f6803): a file whose major.minor is newer
-/// than the engine's.
-static bool file_newer_than_engine(const Slic3r::Semver& file_version) {
-    const auto engine = Slic3r::Semver::parse(engine_version_text());
+/// than the version it is compared against.
+static bool file_newer_than_version(const Slic3r::Semver& file_version, const std::string& version) {
+    const auto engine = Slic3r::Semver::parse(version);
     if (!engine) return false;
     return engine->maj() < file_version.maj() ||
            (engine->maj() == file_version.maj() && engine->min() < file_version.min());
+}
+
+static bool file_newer_than_engine(const Slic3r::Semver& file_version) {
+    return file_newer_than_version(file_version, engine_version_text());
 }
 
 // ── Engine resource roots ────────────────────────────────────────────────
@@ -4398,6 +4436,358 @@ static boost::filesystem::path this_engine_profiles_dir(const std::string& argv0
 #endif
 }
 
+#ifdef ENGINE_ORCA
+/// A string setting of `config`, empty when the key is not there. The project's
+/// preset ids are read this way: a 3MF that states none is not a project this
+/// command line rebases.
+static std::string config_id_text(const Slic3r::DynamicPrintConfig& config, const char* key) {
+    const auto* opt = config.option<Slic3r::ConfigOptionString>(key);
+    return opt != nullptr ? opt->value : std::string();
+}
+
+/// Any setting's value as the engine writes it (`serialize`), empty when the key
+/// is not there: a coEnum such as support_type has no ConfigOptionString behind
+/// it, so the text a decision reads is the serialized one. Takes the config
+/// base, so an object's own settings (ModelConfigObject) read the same way as a
+/// project's.
+static std::string config_value_text(const Slic3r::ConfigBase& config, const char* key) {
+    const Slic3r::ConfigOption* opt = config.option(key);
+    return opt != nullptr ? opt->serialize() : std::string();
+}
+
+/// True when this engine ships the system presets the project names. The
+/// desktop loads the project over the preset it names and only warns when the
+/// preset is missing (Preset.cpp 2446-2457 load_external_preset runs with
+/// found = false); this command line keeps the flat file config for the whole
+/// project instead, and says so in an event.
+static bool project_presets_shipped(Slic3r::PresetBundle& bundle, const std::string& printer, const std::string& process) {
+    return !printer.empty() && !process.empty() &&
+           bundle.printers.find_preset(printer, false) != nullptr &&
+           bundle.prints.find_preset(process, false) != nullptr;
+}
+#endif
+
+#ifdef ENGINE_ORCA
+/// The Bambu Studio placeholder this engine has no value for, empty when there
+/// is none: either of the two names goes unbound in OrcaSlicer -- its
+/// PlaceholderParser sets initial_extruder and reads nozzle_diameter from the
+/// config, and neither binds BambuStudio's nozzle_diameter_at_nozzle_id or
+/// initial_nozzle_id (BambuStudio binds both in GCode.cpp 2656-2660 at
+/// 5873b5f). Upstream main binds them with its multi-nozzle engine (GCode.cpp
+/// 3334-3335 on main), too large to backport. `key_out` names the custom-gcode
+/// key the placeholder was found in.
+static std::string bambu_only_gcode_placeholder(const Slic3r::DynamicPrintConfig& config,
+                                                std::string&                       key_out) {
+    static const std::vector<std::string> kPlaceholders = {"nozzle_diameter_at_nozzle_id",
+                                                           "initial_nozzle_id"};
+    auto scan = [&](const std::string& key, const std::string& text) {
+        for (const std::string& token : kPlaceholders) {
+            if (text.find(token) == std::string::npos)
+                continue;
+            key_out = key;
+            return token;
+        }
+        return std::string();
+    };
+    for (const std::string& key : kGcodeStringKeys) {
+        const Slic3r::ConfigOption* opt = config.option(key);
+        if (opt == nullptr)
+            continue;
+        // The serialized form carries every value of a per-filament key too.
+        if (const std::string found = scan(key, opt->serialize()); !found.empty())
+            return found;
+    }
+    for (const std::string& key : kGcodeStringsKeys) {
+        const Slic3r::ConfigOption* opt = config.option(key);
+        if (opt == nullptr)
+            continue;
+        if (const std::string found = scan(key, opt->serialize()); !found.empty())
+            return found;
+    }
+    return {};
+}
+
+
+/// The raw settings one scope of a project states: the project itself, an
+/// object or a part. Values keep the file's own words (json strings).
+using RawValues = std::map<std::string, std::string>;
+
+/// The settings one object of a project 3MF states, and each of its parts', in
+/// the order the file lists them. bbs_3mf reads the same member into the
+/// model's object and volume configs (bbs_3mf.cpp 2130, 5115, 5263 at 31f6803),
+/// but the 3MF's numeric ids are not kept on the loaded ModelObject or
+/// ModelVolume, so the file's own names are what the loaded model is matched
+/// by (they are the same strings: each metadata "name" is assigned to the
+/// object and to its volume).
+struct FileObjectSettings {
+    std::string                                         name;
+    RawValues                                           values;
+    std::vector<std::pair<std::string, RawValues>>      parts;
+};
+
+/// Every object's settings of a project 3MF, in the order the file lists them.
+static std::vector<FileObjectSettings> project_object_settings(const std::string& path);
+
+/// What the BambuStudio values one scope states ask this engine to do: the keys
+/// to write (this engine's key and value), the values worth a warning, and the
+/// refusal when a value cannot be carried at all. Decides only; the caller
+/// writes, names the scope in its events, and refuses.
+struct BambuValueAction {
+    std::string key;
+    std::string value;
+    std::string from;
+};
+
+static bool bambu_value_actions(const RawValues& raw, const std::string& support_type, bool maker_set_raft,
+                                std::vector<BambuValueAction>& conversions,
+                                std::vector<BambuValueAction>& warnings, std::string& refusal) {
+    const auto raw_value = [&raw](const char* key) {
+        const auto it = raw.find(key);
+        return it == raw.end() ? std::string() : it->second;
+    };
+    const bool tree = boost::starts_with(support_type, "tree");
+    // tree_support_wall_count: -1 is BambuStudio's automatic (BambuStudio
+    // PrintConfig.cpp 5642-5650 at 5873b5f) and 0 is this engine's (OrcaSlicer
+    // PrintConfig.cpp 6389-6396, TreeSupport.cpp 1629), which upstream converts
+    // in 434ff3011f -- a commit the pin (31f6803 = upstream 42cce53) does not
+    // have. BambuStudio's 0 means infill-only walls, which this engine cannot
+    // express: the value is kept and warned about where tree support is in play.
+    const std::string wall_count = raw_value("tree_support_wall_count");
+    if (wall_count == "-1")
+        conversions.push_back({"tree_support_wall_count", "0", "-1"});
+    else if (wall_count == "0" && tree)
+        warnings.push_back({"tree_support_wall_count", "0", "0"});
+    // raft_first_layer_expansion: BambuStudio's -1 is 2 mm of automatic
+    // expansion under normal support (BambuStudio Support/SupportCommon.cpp
+    // 392-394 and 431-437 at 5873b5f), which is this engine's own 2.0, and a
+    // per-branch moment brim under tree support, which it has no value for.
+    if (raw_value("raft_first_layer_expansion") == "-1") {
+        if (tree) {
+            if (maker_set_raft) {
+                refusal = "The settings ask for raft_first_layer_expansion -1, BambuStudio's automatic "
+                          "first-layer expansion, with tree support; this engine has no automatic value for tree "
+                          "support. Set it to the expansion you want in mm (0 disables it), or use normal "
+                          "support, whose automatic expansion is 2 mm.";
+                return false;
+            }
+        } else {
+            conversions.push_back({"raft_first_layer_expansion", "2.0", "-1"});
+        }
+    }
+    // top_one_wall_type "not apply": off in BambuStudio (BambuStudio
+    // PrintConfig.cpp 256-260 and 1375-1382 at 5873b5f). This engine's own
+    // legacy rule turns only_one_wall_top on for every value but "none"
+    // (OrcaSlicer PrintConfig.cpp 8011-8013; main 9315-9317 has the same rule).
+    if (raw_value("top_one_wall_type") == "not apply")
+        conversions.push_back({"only_one_wall_top", "0", "not apply"});
+    // ensure_vertical_shell_thickness words (BambuStudio PrintConfig.cpp
+    // 282-286): "enabled"/"disabled" are "ensure_all"/"none" here (OrcaSlicer
+    // PrintConfig.cpp 369-372; its rule maps only the older "1"/"0",
+    // 7978-7984). "partial" (BambuStudio PrintObject.cpp 1944, 1975) has no
+    // value here at all.
+    const std::string shell = raw_value("ensure_vertical_shell_thickness");
+    if (shell == "enabled")
+        conversions.push_back({"ensure_vertical_shell_thickness", "ensure_all", "enabled"});
+    else if (shell == "disabled")
+        conversions.push_back({"ensure_vertical_shell_thickness", "none", "disabled"});
+    else if (shell == "partial") {
+        refusal = "The settings ask for ensure_vertical_shell_thickness \"partial\", BambuStudio's "
+                  "skip-one-shell-pass mode, which this engine has no value for; pick the shell coverage you "
+                  "want, e.g. ensure_all for BambuStudio's \"enabled\".";
+        return false;
+    }
+    return true;
+}
+
+/// The event tag and message for one action, so every scope reports the same
+/// conversion the same way.
+static std::string bambu_action_tag(const std::string& key) {
+    if (key == "tree_support_wall_count") return "TreeSupportWallCountAutoConverted";
+    if (key == "raft_first_layer_expansion") return "RaftAutoExpansionConverted";
+    if (key == "only_one_wall_top") return "TopOneWallTypeNotApplyConverted";
+    if (key == "ensure_vertical_shell_thickness") return "VerticalShellThicknessWordConverted";
+    return "BambuValueConverted";
+}
+
+static std::string bambu_action_message(const BambuValueAction& action) {
+    if (action.key == "tree_support_wall_count")
+        return "tree_support_wall_count -1 is BambuStudio's automatic wall count and 0 this engine's, which "
+               "upstream converts in 434ff3011f; converted here until this engine's pin has that commit";
+    if (action.key == "raft_first_layer_expansion")
+        return "raft_first_layer_expansion -1 is BambuStudio's automatic expansion, 2 mm under normal support, "
+               "which is this engine's own 2.0";
+    if (action.key == "only_one_wall_top")
+        return "top_one_wall_type is BambuStudio's \"not apply\", which means the feature is off; the engine's "
+               "own rule turns only_one_wall_top on for every value but \"none\"";
+    if (action.key == "ensure_vertical_shell_thickness")
+        return "ensure_vertical_shell_thickness \"" + action.from + "\" is BambuStudio's word for this engine's \"" +
+               action.value + "\"";
+    return "converted " + action.key + " from \"" + action.from + "\" to \"" + action.value + "\"";
+}
+
+/// A value's text as the file states it: a string as it is, a number without
+/// json's own formatting, a boolean as "1"/"0". Empty when the key is not there.
+static std::string json_scalar_text(const json& settings, const char* key) {
+    const auto it = settings.find(key);
+    if (it == settings.end())
+        return {};
+    if (it->is_string())
+        return it->get<std::string>();
+    if (it->is_number_integer())
+        return std::to_string(it->get<long long>());
+    if (it->is_number_float()) {
+        const double number = it->get<double>();
+        if (number == double((long long)number))
+            return std::to_string((long long)number);
+        return it->dump();
+    }
+    if (it->is_boolean())
+        return it->get<bool>() ? "1" : "0";
+    return it->dump();
+}
+
+/// Writes one scope's conversions and reports them, then the values worth a
+/// warning. `write` sets a key in that scope's own config; `drop_substitution`
+/// removes the engine's record of not knowing a key this pass has just written
+/// correctly; `scope`/`scope_name` name the object or part the settings belong
+/// to, and are left empty for the project itself.
+static void apply_bambu_actions(const std::vector<BambuValueAction>& conversions,
+                                const std::vector<BambuValueAction>& warnings,
+                                const std::function<void(const char*, const std::string&)>& write,
+                                const std::function<void(const char*)>&                      drop_substitution,
+                                const std::string& scope, const std::string& scope_name) {
+    for (const BambuValueAction& action : conversions) {
+        write(action.key.c_str(), action.value);
+        drop_substitution(action.key.c_str());
+        json event = {{"event","config_normalized"},
+                      {"tag", bambu_action_tag(action.key)},
+                      {"opt_key", action.key},
+                      {"from", action.from},
+                      {"to", action.value},
+                      {"message", bambu_action_message(action)}};
+        if (!scope_name.empty())
+            event[scope] = scope_name;
+        emit_event(event);
+    }
+    for (const BambuValueAction& action : warnings) {
+        json event = {{"event","warning"},
+                      {"tag","TreeSupportWallCountZeroIsAuto"},
+                      {"opt_key", action.key},
+                      {"value", 0},
+                      {"message","The settings set tree_support_wall_count 0, BambuStudio's infill-only support "
+                                 "walls; this engine reads 0 as automatic, so the supports may come out sturdier. "
+                                 "Set it to 1 or 2 to choose the wall count."}};
+        if (!scope_name.empty())
+            event[scope] = scope_name;
+        emit_event(event);
+    }
+}
+
+/// One attribute's value in an XML start tag ("key=\"value\"").
+static std::string xml_attr(const std::string& tag, const std::string& name) {
+    const std::string needle = name + "=\"";
+    const size_t      at     = tag.find(needle);
+    if (at == std::string::npos)
+        return {};
+    const size_t start = at + needle.size();
+    const size_t end   = tag.find('"', start);
+    return end == std::string::npos ? std::string() : tag.substr(start, end - start);
+}
+
+/// Metadata/model_settings.config of a project 3MF, by object and part id. The
+/// member states each object's and each part's own settings as
+/// <metadata key="…" value="…"/> inside <object id="…"> and <part id="…">
+/// (bbs_3mf.cpp parses the same tags at 2130, 5115, 5263 at 31f6803).
+static std::vector<FileObjectSettings> project_object_settings(const std::string& path) {
+    std::vector<FileObjectSettings> out;
+    std::string                     text;
+    if (!read_zip_member(path, "Metadata/model_settings.config", text))
+        return out;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t lt = text.find('<', pos);
+        if (lt == std::string::npos)
+            break;
+        const size_t gt = text.find('>', lt);
+        if (gt == std::string::npos)
+            break;
+        const std::string tag = text.substr(lt + 1, gt - lt - 1);
+        pos                   = gt + 1;
+        if (tag.rfind("object", 0) == 0) {
+            out.emplace_back();
+        } else if (tag.rfind("/object", 0) == 0) {
+            if (!out.empty())
+                out.back().parts.shrink_to_fit();
+        } else if (tag.rfind("part", 0) == 0) {
+            if (!out.empty())
+                out.back().parts.emplace_back();
+        } else if (tag.rfind("metadata", 0) == 0 && !out.empty()) {
+            const std::string key   = xml_attr(tag, "key");
+            const std::string value = xml_attr(tag, "value");
+            if (key.empty())
+                continue;
+            if (!out.back().parts.empty()) {
+                auto& part = out.back().parts.back();
+                if (key == "name")
+                    part.first = value;
+                else
+                    part.second[key] = value;
+            } else if (key == "name") {
+                out.back().name = value;
+            } else {
+                out.back().values[key] = value;
+            }
+        }
+    }
+    return out;
+}
+
+/// Metadata/project_settings.config of a project 3MF, parsed. A null json when
+/// the file has none or it cannot be read.
+static json project_settings_json(const std::string& path) {
+    std::string text;
+    if (!read_zip_member(path, "Metadata/project_settings.config", text))
+        return json();
+    try {
+        const json settings = json::parse(text);
+        return settings.is_object() ? settings : json();
+    } catch (...) {
+        return json();
+    }
+}
+
+/// True when the maker listed `key` among the keys it changed. The desktop (and
+/// this command line) keep those keys' file values and take the rest from the
+/// system preset (Preset.cpp 2446-2457), so this is the test for "the file
+/// states this value on purpose".
+static bool maker_changed_key(const Slic3r::DynamicPrintConfig& file_config, const char* key) {
+    const auto* diff = file_config.option<Slic3r::ConfigOptionStrings>("different_settings_to_system");
+    if (diff == nullptr || diff->values.empty())
+        return false;
+    std::vector<std::string> keys;
+    Slic3r::unescape_strings_cstyle(diff->values.front(), keys);
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
+/// True when the file states `value` for `key` (as a string or a number).
+static bool file_states_number(const json& settings, const char* key, double value) {
+    const auto it = settings.find(key);
+    if (it == settings.end())
+        return false;
+    if (it->is_string())
+        return it->get<std::string>() == std::to_string(int(value));
+    if (it->is_number())
+        return it->get<double>() == value;
+    return false;
+}
+
+/// True when the file states `text` for `key` (a setting's own word).
+static bool file_states_text(const json& settings, const char* key, const char* text) {
+    const auto it = settings.find(key);
+    return it != settings.end() && it->is_string() && it->get<std::string>() == text;
+}
+#endif
+
 /// Loads this engine's system presets the way the desktop app does: the
 /// profiles tree staged as <data_dir>/system, then
 /// load_system_presets_from_json. `staging` is removed by the caller's guard.
@@ -6332,6 +6722,352 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     return 1;
                 }
             }
+            // The settings exactly as the file states them, and whether they
+            // were kept: the rebase below (Orca build) replaces `config` with
+            // the preset-rebased settings, and the steps that describe the FILE
+            // read these instead (read_project_facts).
+            Slic3r::DynamicPrintConfig project_file_config;
+            bool                       project_file_config_kept = false;
+#ifdef ENGINE_ORCA
+            // ── A Bambu Studio project is rebased onto its system presets ────
+            // The desktop does not slice a project's settings as the file
+            // states them. It loads this engine's system presets
+            // (PresetBundle::load_presets, Plater.cpp 6040-6160 at 31f6803),
+            // hands the file's settings to PresetBundle::load_config_model
+            // (PresetBundle.hpp 388 -> PresetBundle.cpp 4239-4567), which loads
+            // the project's printer, process and filament presets over the ones
+            // this engine ships and, for every key the file does not list in
+            // different_settings_to_system, takes the system preset's value
+            // (Preset.cpp 2446-2457 load_external_preset ->
+            // update_non_diff_values_to_base_config), and slices
+            // PresetBundle::full_config(false) (Plater.cpp 7959-7963). Every
+            // Bambu-only encoding of a key the maker did not touch -- the
+            // 0-based filament indices, tree_support_wall_count -1,
+            // raft_first_layer_expansion -1, ensure_vertical_shell_thickness
+            // "enabled" -- therefore never reaches the engine. Upstream main's
+            // CLI rebases the same way for its --uptodate path (OrcaSlicer
+            // 94266c28, OrcaSlicer.cpp 3075-3108 and 2697-2726 on main).
+            // wipe_tower_x/y are the plate's own positions and are put back
+            // after the load (Plater.cpp 6380-6389).
+            // Only a project Bambu Studio made is rebased; an OrcaSlicer
+            // project already states this engine's own values, and every file
+            // this product writes must keep slicing as it did. This scope test
+            // is the one place the scope is decided.
+            const bool bambu_made_project = is_bbl_3mf && !is_orca_3mf;
+            if (bambu_made_project) {
+                // The settings as the file states them, for read_project_facts
+                // below: the facts describe the file (its printer, bed, plate
+                // membership and the maker's own changed-key list), not the
+                // preset-rebased settings this run slices with.
+                project_file_config      = config;
+                project_file_config_kept = true;
+                Slic3r::DynamicPrintConfig rebased;
+                std::string                unavailable;
+                bool                       rebase = true;
+                try {
+                    // The profiles tree staged as <data_dir>/system, the same
+                    // staging the named-preset path uses (load_system_presets):
+                    // the bundle reads system presets from there and writes
+                    // nothing back (load_external_preset saves no file).
+                    const boost::filesystem::path staging = boost::filesystem::temp_directory_path() /
+                                                            boost::filesystem::unique_path("slicer_cli_project-%%%%%%%%");
+                    struct StagingCleanup {
+                        boost::filesystem::path dir;
+                        ~StagingCleanup() {
+                            if (dir.empty())
+                                return;
+                            boost::system::error_code ignored;
+                            boost::filesystem::remove_all(dir, ignored);
+                        }
+                    } staging_cleanup;
+                    staging_cleanup.dir = staging;
+                    Slic3r::PresetBundle bundle;
+                    if (!load_system_presets(o.argv0, bundle, staging, unavailable))
+                        rebase = false;
+                    else {
+                        // The names the FILE states, not the ones the config
+                        // carries: this engine's own 3MF loader substitutes a
+                        // preset name it does not know with its default before
+                        // the front end sees the config, and a project whose
+                        // preset is not shipped is the one the rebase must skip
+                        // (loading it over the default is a different print, and
+                        // a project whose process preset the bundle cannot
+                        // resolve is loaded as an external preset that
+                        // Print::apply then aborts on).
+                        const json  file_settings  = project_settings_json(input_file);
+                        std::string file_printer   = json_scalar_text(file_settings, "printer_settings_id");
+                        std::string file_process   = json_scalar_text(file_settings, "print_settings_id");
+                        if (file_printer.empty())
+                            file_printer = config_id_text(config, "printer_settings_id");
+                        if (file_process.empty())
+                            file_process = config_id_text(config, "print_settings_id");
+                        if (!project_presets_shipped(bundle, file_printer, file_process)) {
+                            unavailable = "this engine ships no '" + file_printer + "' / '" + file_process +
+                                          "' system preset";
+                            rebase = false;
+                        } else {
+                        // The tower's plate positions, as the desktop keeps
+                        // them across the load (Plater.cpp 6380-6389).
+                        Slic3r::ConfigOptionFloats file_wipe_tower_x, file_wipe_tower_y;
+                        bool                       has_wipe_tower_x = false, has_wipe_tower_y = false;
+                        if (const auto* opt = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_x")) {
+                            file_wipe_tower_x = *opt;
+                            has_wipe_tower_x  = true;
+                        }
+                        if (const auto* opt = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_y")) {
+                            file_wipe_tower_y = *opt;
+                            has_wipe_tower_y  = true;
+                        }
+                        // load_config_model takes the config by value and
+                        // consumes it: the bundle keeps what it parsed. Handed
+                        // the caller's own config, an exception part-way (a
+                        // preset this engine cannot resolve) would leave the
+                        // flat path with a moved-from config, and Print::apply
+                        // then reads settings that are no longer there. So the
+                        // load gets a copy, and `config` is replaced only when
+                        // the rebase itself succeeded.
+                        Slic3r::DynamicPrintConfig file_config_for_bundle = config;
+                        bundle.load_config_model(input_file, std::move(file_config_for_bundle), file_version);
+                        rebased = bundle.full_config(false);
+                        // A project whose preset name this bundle cannot
+                        // resolve is loaded as an external preset built from the
+                        // file, and the config that comes back can describe a
+                        // different filament roster than the file does;
+                        // Print::apply then aborts on the mismatch (it derives
+                        // its extruder count from filament_diameter,
+                        // PrintApply.cpp:1504). The rebase is kept only when it
+                        // describes the roster the file states.
+                        const size_t file_filaments    = project_filament_count(config);
+                        const size_t rebased_filaments = project_filament_count(rebased);
+                        if (file_filaments != 0 && rebased_filaments != file_filaments) {
+                            unavailable = "the system presets the project names describe " +
+                                          std::to_string(rebased_filaments) + " filament(s) where the file states " +
+                                          std::to_string(file_filaments);
+                            rebase = false;
+                        }
+                        if (has_wipe_tower_x)
+                            rebased.set_key_value("wipe_tower_x", new Slic3r::ConfigOptionFloats(file_wipe_tower_x));
+                        if (has_wipe_tower_y)
+                            rebased.set_key_value("wipe_tower_y", new Slic3r::ConfigOptionFloats(file_wipe_tower_y));
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    unavailable = e.what();
+                    rebase      = false;
+                }
+                if (rebase) {
+                    config = std::move(rebased);
+                    emit_event({{"event","config_normalized"},
+                                {"tag","ProjectRebasedOnSystemPresets"},
+                                {"printer_settings_id", config_id_text(config, "printer_settings_id")},
+                                {"print_settings_id", config_id_text(config, "print_settings_id")},
+                                {"message","The project was loaded over this engine's system presets, as the desktop loads it: "
+                                           "every key the maker did not change takes the preset's value"}});
+                } else {
+                    // The engine ships no preset to load the project over, so
+                    // the file's own settings are sliced, as before.
+                    project_file_config.clear();
+                    project_file_config_kept = false;
+                    emit_event({{"event","config_normalized"},
+                                {"tag","ProjectPresetRebaseSkipped"},
+                                {"reason", unavailable},
+                                {"message","The project keeps the values the file states: " + unavailable}});
+                }
+            }
+            // ── The file's own words, in this engine's values ───────────────
+            // The engine's own legacy pass (PrintConfigDef::handle_legacy,
+            // PrintConfig.cpp 7867-8151 at 31f6803) runs per key while a config
+            // loads: it cannot see another key's value, and it knows only some
+            // of BambuStudio's words. The rest are converted here, on the
+            // settings the run slices with, from the words the file states --
+            // for the project and for every object's and part's own settings,
+            // which the file keeps in Metadata/model_settings.config and which
+            // bbs_3mf loads over the same legacy pass (bbs_3mf.cpp 2130, 5115,
+            // 5263 at 31f6803). One set of rules (bambu_value_actions) decides
+            // for all three scopes.
+            {
+                const json project_settings = project_settings_json(input_file);
+                RawValues  project_raw;
+                for (const char* key : {"tree_support_wall_count", "raft_first_layer_expansion", "top_one_wall_type",
+                                        "ensure_vertical_shell_thickness"})
+                    project_raw[key] = json_scalar_text(project_settings, key);
+                std::vector<BambuValueAction> conversions;
+                std::vector<BambuValueAction> warnings;
+                std::string                   refusal;
+                if (!bambu_value_actions(project_raw, config_value_text(config, "support_type"),
+                                         maker_changed_key(project_file_config, "raft_first_layer_expansion"),
+                                         conversions, warnings, refusal)) {
+                    emit_event({{"event","config_refused"},
+                                {"tag","BambuValueNotCarryable"},
+                                {"opt_key", project_raw.count("raft_first_layer_expansion") ? "raft_first_layer_expansion"
+                                                                                           : "ensure_vertical_shell_thickness"},
+                                {"message", refusal}});
+                    std::cerr << "Error: " << refusal << "\n";
+                    set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, refusal);
+                    return 1;
+                }
+                // A word this pass converted is not a substitution: the engine's
+                // record of not knowing it would make --slice mode refuse an
+                // encoding difference. The loader keeps one substitution context
+                // for the whole file, object and part settings included, so the
+                // record names the key, not the scope it came from.
+                const auto drop_substitution = [&](const char* key) {
+                    config_subst.substitutions.erase(
+                        std::remove_if(config_subst.substitutions.begin(), config_subst.substitutions.end(),
+                                       [key](const Slic3r::ConfigSubstitution& s) {
+                                           return s.opt_def != nullptr && s.opt_def->opt_key == key;
+                                       }),
+                        config_subst.substitutions.end());
+                };
+                apply_bambu_actions(
+                    conversions, warnings,
+                    [&](const char* key, const std::string& value) {
+                        Slic3r::ConfigSubstitutionContext context(
+                            Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+                        config.set_deserialize(key, value, context);
+                    },
+                    drop_substitution, "scope", std::string());
+
+                // Each object's and each part's own settings, matched to the
+                // loaded model by the names the file states (the file's numeric
+                // ids are not kept on the loaded objects). An object's settings
+                // are the maker's own words by definition, so the "the maker
+                // changed this key" test the project needs does not apply here.
+                const std::vector<FileObjectSettings>          file_objects = project_object_settings(input_file);
+                std::map<std::string, std::vector<const FileObjectSettings*>> by_name;
+                for (const FileObjectSettings& settings : file_objects)
+                    by_name[settings.name].push_back(&settings);
+                std::map<std::string, size_t> taken;
+                for (Slic3r::ModelObject* object : model.objects) {
+                    if (object == nullptr)
+                        continue;
+                    const auto& candidates = by_name[object->name];
+                    const size_t index     = taken[object->name]++;
+                    if (index >= candidates.size())
+                        continue;
+                    const FileObjectSettings& raw_object = *candidates[index];
+                    const std::string project_support = config_value_text(config, "support_type");
+                    const std::string object_support  = object->config.option("support_type") != nullptr
+                                                            ? object->config.option("support_type")->serialize()
+                                                            : project_support;
+                    auto convert_scope = [&](const RawValues&                            raw,
+                                             const std::string&                          support_type,
+                                             const std::string&                          scope,
+                                             const std::string&                          scope_name,
+                                             const std::function<void(const char*, const std::string&)>& write) {
+                        std::vector<BambuValueAction> scope_conversions;
+                        std::vector<BambuValueAction> scope_warnings;
+                        std::string                   scope_refusal;
+                        if (!bambu_value_actions(raw, support_type, /*maker_set_raft=*/true, scope_conversions,
+                                                 scope_warnings, scope_refusal)) {
+                            const std::string sentence = scope_refusal + " (in " + scope + " \"" + scope_name + "\")";
+                            emit_event({{"event","config_refused"},
+                                        {"tag","BambuValueNotCarryable"},
+                                        {scope, scope_name},
+                                        {"message", sentence}});
+                            std::cerr << "Error: " << sentence << "\n";
+                            set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
+                            return false;
+                        }
+                        apply_bambu_actions(scope_conversions, scope_warnings, write, drop_substitution, scope,
+                                            scope_name);
+                        return true;
+                    };
+                    const bool object_ok = convert_scope(
+                        raw_object.values, object_support, "object", object->name,
+                        [&](const char* key, const std::string& value) {
+                            Slic3r::ConfigSubstitutionContext context(
+                                Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+                            object->config.set_deserialize(key, value, context);
+                        });
+                    if (!object_ok)
+                        return 1;
+                    std::map<std::string, size_t> parts_taken;
+                    for (Slic3r::ModelVolume* volume : object->volumes) {
+                        if (volume == nullptr)
+                            continue;
+                        size_t part_index = 0;
+                        bool   matched    = false;
+                        for (const auto& part : raw_object.parts) {
+                            if (part.first != volume->name)
+                                continue;
+                            if (part_index++ < parts_taken[volume->name])
+                                continue;
+                            parts_taken[volume->name]++;
+                            const std::string part_support = volume->config.option("support_type") != nullptr
+                                                                 ? volume->config.option("support_type")->serialize()
+                                                                 : object_support;
+                            if (!convert_scope(part.second, part_support, "part", volume->name,
+                                               [&](const char* key, const std::string& value) {
+                                                   Slic3r::ConfigSubstitutionContext context(
+                                                       Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+                                                   volume->config.set_deserialize(key, value, context);
+                                               }))
+                                return 1;
+                            matched = true;
+                            break;
+                        }
+                        (void)matched;
+                    }
+                }
+            }
+            // A Bambu Studio project states its filament indices from 0
+            // (BambuStudio PrintConfig.cpp 4359-4361 at 5873b5f) while this
+            // engine's ranges start at 1 (wall_filament PrintConfig.cpp
+            // 4887-4894 at 31f6803), so every one of those projects would be
+            // refused by the value check further down. The desktop reads the
+            // same file: it only warns about the values (Plater.cpp 6259-6272,
+            // "Invalid values found in the 3MF") and slices from
+            // PresetBundle::full_fff_config, which walks the same three 1-based
+            // keys back to 1 when they fall outside [1, N] and clamps
+            // support_filament / support_interface_filament /
+            // wipe_tower_filament to [0, N] (PresetBundle.cpp 4090-4105, with
+            // N = filament_presets.size(), 3866). Ported here, on the settings
+            // the run is sliced with and before that check: a key the file
+            // states in its own app's numbering is not a value this engine
+            // cannot read. Any other out-of-range value is left as it is and
+            // still refuses, exactly as the desktop leaves it (it does not
+            // clamp them either, e.g. a BambuStudio -1, its "auto").
+            {
+                const size_t filament_count = std::max<size_t>(1, project_filament_count(config));
+                json reset = json::object();
+                json clamped = json::object();
+                for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"}) {
+                    auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(config.option(key, false));
+                    if (opt == nullptr || (opt->value >= 1 && opt->value <= int(filament_count)))
+                        continue;
+                    reset[key] = {{"from", opt->value}, {"to", 1}};
+                    opt->value = 1;
+                }
+                for (const char* key : {"support_filament", "support_interface_filament", "wipe_tower_filament"}) {
+                    auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(config.option(key, false));
+                    if (opt == nullptr)
+                        continue;
+                    const int value = std::min(std::max(opt->value, 0), int(filament_count));
+                    if (value == opt->value)
+                        continue;
+                    clamped[key] = {{"from", opt->value}, {"to", value}};
+                    opt->value = value;
+                }
+                if (!reset.empty() || !clamped.empty()) {
+                    std::string names;
+                    for (const auto& [key, change] : reset.items())
+                        names += (names.empty() ? "" : ", ") + key + " " + change["from"].dump() + " -> " +
+                                 change["to"].dump();
+                    for (const auto& [key, change] : clamped.items())
+                        names += (names.empty() ? "" : ", ") + key + " " + change["from"].dump() + " -> " +
+                                 change["to"].dump();
+                    emit_event({{"event","config_normalized"},
+                                {"tag","FilamentIndexOutOfRangeReset"},
+                                {"reset", reset},
+                                {"clamped", clamped},
+                                {"filament_count", int(filament_count)},
+                                {"message","The 3mf states filament index value(s) outside this engine's range for its " +
+                                           std::to_string(filament_count) + " filament(s): " + names +
+                                           " (its indices start at 1; the desktop resets the same keys on load)"}});
+                }
+            }
+#endif
             // Engine fit: a project for a printer this engine does not have is
             // refused before anything is sliced. Without the printer's presets
             // the engine slices the flat file against its own defaults (a
@@ -6380,32 +7116,63 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
             // OrcaSlicer.cpp 1588-1592 at 31f6803): a file saved by a newer
             // major.minor than this engine is refused unless --allow-newer-file.
-            // The sentence adds what the file says about its maker: a Bambu
-            // Studio 02.07 project on the Orca 2.4 build is newer only in the
-            // other app's numbering, and the binary to use is the maker's.
-            if (!o.allow_newer_file && file_version.maj() + file_version.min() > 0 &&
-                file_newer_than_engine(file_version)) {
+            // On the Orca build the maker decides which number the file's
+            // version is in (G2, see below): a Bambu Studio project is only
+            // warned about, an OrcaSlicer project is refused.
+            // The refusal sentence adds what the file says about its maker: a
+            // Bambu Studio 02.07 project on the Orca 2.4 build is newer only in
+            // the other app's numbering, and the binary to use is the maker's.
+            if (!o.allow_newer_file && file_version.maj() + file_version.min() > 0) {
                 std::string model_xml;
                 std::map<std::string, std::string> meta;
                 if (read_zip_member(input_file, "3D/3dmodel.model", model_xml))
                     meta = model_metadata(model_xml);
                 const auto app = meta.find("Application");
-                std::string detail = "The file is version " + file_version.to_string() +
-                                     (app != meta.end() ? " (" + app->second + ")" : std::string()) +
-                                     "; this engine is " + engine_version_text() + ".";
+                bool refuse = file_newer_than_engine(file_version);
 #ifdef ENGINE_ORCA
-                if (meta.count("OrcaSlicer") == 0 && app != meta.end() &&
-                    boost::starts_with(app->second, "BambuStudio-"))
-                    detail += " It was made by Bambu Studio: use slicer_cli (BambuStudio).";
+                // G2. Which number a file's version is in depends on who wrote
+                // it, and the desktop reads it that way (Plater.cpp 6094-6157
+                // at 31f6803): a Bambu Studio project is compared with
+                // SLIC3R_VERSION, the Bambu base this Orca release is built on
+                // (version.inc, 02.06.00.51), and only warned about -- a
+                // BambuStudio 02.05 project is not newer than OrcaSlicer 2.4,
+                // it is newer than the base both apps share, and the desktop
+                // loads it. An OrcaSlicer project is compared with this
+                // engine's own version, and a newer one is still refused, as
+                // the official CLI refuses it.
+                const bool orca_made = meta.count("OrcaSlicer") != 0 ||
+                                       (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-"));
+                if (!orca_made) {
+                    refuse = file_newer_than_version(file_version, SLIC3R_VERSION);
+                    if (refuse) {
+                        emit_event({{"event","warning"},
+                                    {"tag","FileNewerThanEngineBase"},
+                                    {"file_version", file_version.to_string()},
+                                    {"application", app != meta.end() ? json(app->second) : json(nullptr)},
+                                    {"base_version", SLIC3R_VERSION},
+                                    {"unknown_keys", outcome.unknown_settings},
+                                    {"message","The file is version " + file_version.to_string() +
+                                               (app != meta.end() ? " (" + app->second + ")" : std::string()) +
+                                               ", newer than the " + SLIC3R_VERSION +
+                                               " Bambu base this engine is built on. It is sliced as it is; the "
+                                               "setting(s) this engine has no definition for are ignored"}});
+                        refuse = false;
+                    }
+                }
 #endif
-                emit_event({{"event","config_refused"},
-                            {"tag","FileVersionNewerThanEngine"},
-                            {"file_version", file_version.to_string()},
-                            {"engine_version", engine_version_text()},
-                            {"message", cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) + " " + detail}});
-                std::cerr << "Error: " << cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) << " " << detail << "\n";
-                set_outcome_failure(outcome, CLI_FILE_VERSION_NOT_SUPPORTED, detail);
-                return 1;
+                if (refuse) {
+                    std::string detail = "The file is version " + file_version.to_string() +
+                                         (app != meta.end() ? " (" + app->second + ")" : std::string()) +
+                                         "; this engine is " + engine_version_text() + ".";
+                    emit_event({{"event","config_refused"},
+                                {"tag","FileVersionNewerThanEngine"},
+                                {"file_version", file_version.to_string()},
+                                {"engine_version", engine_version_text()},
+                                {"message", cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) + " " + detail}});
+                    std::cerr << "Error: " << cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) << " " << detail << "\n";
+                    set_outcome_failure(outcome, CLI_FILE_VERSION_NOT_SUPPORTED, detail);
+                    return 1;
+                    }
             }
             // A setting whose value this engine has no meaning for is a
             // different print from the one the file states, so it is refused,
@@ -6429,8 +7196,21 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     if (sub.opt_def->enum_keys_map)
                         for (const auto& [name, value] : *sub.opt_def->enum_keys_map)
                             allowed += (allowed.empty() ? "" : ", ") + name;
-                    refused.push_back("'" + sub.opt_def->opt_key + "' is '" + sub.old_value +
-                                      "', which this engine does not have (its values: " + allowed + ")");
+                    // BambuStudio's "partial" skips one shell pass (BambuStudio
+                    // PrintObject.cpp 1944, 1975 at 5873b5f) and this engine has
+                    // no shell pass to skip, so the value is refused with the
+                    // choice to make rather than the engine's generic sentence.
+                    // "enabled"/"disabled" are the same meaning in another
+                    // encoding and are converted by handle_legacy
+                    // (libslic3r/orcaslicer/libslic3r/PrintConfig.cpp).
+                    const bool partial_shell =
+                        sub.opt_def->opt_key == "ensure_vertical_shell_thickness" && sub.old_value == "partial";
+                    refused.push_back(partial_shell
+                        ? "'ensure_vertical_shell_thickness' is 'partial', BambuStudio's skip-one-shell-pass mode, "
+                          "which this engine has no value for (its values: " + allowed +
+                          "); pick the shell coverage you want, e.g. ensure_all for BambuStudio's 'enabled'"
+                        : "'" + sub.opt_def->opt_key + "' is '" + sub.old_value +
+                          "', which this engine does not have (its values: " + allowed + ")");
                     items.push_back(json{{"opt_key", sub.opt_def->opt_key}, {"value", sub.old_value},
                                          {"allowed", allowed}});
                 }
@@ -6442,7 +7222,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             config.set_key_value("filament_nozzle_map", accepted_3mf_nozzle_map.clone());
 #endif
             if (is_bbl_3mf)
-                slicer_cli::read_project_facts(config, project_facts);
+                // The file's own settings when the rebase kept them apart: the
+                // facts describe the file (its printer, bed, plate membership
+                // and the maker's changed-key list), and the printer change
+                // reads them to find the system preset the file's process
+                // inherits from. full_fff_config erases
+                // different_settings_to_system and writes a new inherits_group,
+                // so the rebased settings would answer a different question.
+                slicer_cli::read_project_facts(project_file_config_kept ? project_file_config : config,
+                                               project_facts);
             // is_bbl_3mf ends false once a model file follows the project
             // (BambuStudio.cpp 1871; OrcaSlicer.cpp 1553): the settings steps
             // for a Bambu-made project do not run.
@@ -7557,6 +8345,41 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             config.apply(extra, true);
         // Apply command-line overrides
         apply_command_line_overrides(config, overrides, /*report_rejections=*/true);
+#ifdef ENGINE_ORCA
+        // A Bambu Studio project's own start G-code can carry the maker's
+        // placeholders, and this engine binds no value for two of them: its
+        // PlaceholderParser sets initial_extruder and reads nozzle_diameter
+        // from the config, while BambuStudio also sets
+        // nozzle_diameter_at_nozzle_id and initial_nozzle_id (BambuStudio
+        // GCode.cpp 2656-2660 at 5873b5f; upstream main binds them with its
+        // multi-nozzle engine, GCode.cpp 3334-3335 on main). Unbound, the
+        // parser throws at export, after the whole run has sliced
+        // ("Not a variable name"): refused here, before slicing, naming the
+        // placeholder and the value to use instead. The settings are the ones
+        // the run slices with, overrides and all.
+        {
+            std::string       placeholder_key;
+            const std::string placeholder = bambu_only_gcode_placeholder(config, placeholder_key);
+            if (!placeholder.empty()) {
+                const std::string instead = placeholder == "initial_nozzle_id"
+                                                ? "{initial_extruder}"
+                                                : "{nozzle_diameter[initial_extruder]}";
+                const std::string sentence =
+                    "The project's " + placeholder_key + " uses {" + placeholder +
+                    "}, which this engine has no value for; use " + instead + " instead (OrcaSlicer binds "
+                    "the initial extruder as {initial_extruder} and the nozzle diameters as {nozzle_diameter}).";
+                emit_event({{"event","config_refused"},
+                            {"tag","BambuOnlyGcodePlaceholder"},
+                            {"opt_key", placeholder_key},
+                            {"placeholder", placeholder},
+                            {"replace_with", instead},
+                            {"message", sentence}});
+                std::cerr << "Error: " << sentence << "\n";
+                set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
+                return 1;
+            }
+        }
+#endif
 
         // Display active settings
         std::cout << "\nActive print settings:\n";

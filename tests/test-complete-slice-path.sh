@@ -598,22 +598,37 @@ run newer-ok "$B" newer.3mf --plate 1 --allow-newer-file -o newer-ok/out.gcode
 [ "$(rc newer-ok)" = 0 ] || { show newer-ok; fail "--allow-newer-file exit $(rc newer-ok)"; }
 echo "PASS: a newer file is refused unless --allow-newer-file"
 
-# A Bambu Studio 2.5 file on the Orca build (2.4): refused as newer, naming the Bambu build.
+# A Bambu Studio file is compared with the Bambu base this Orca release is built
+# on (SLIC3R_VERSION, 02.06.00.51), as the desktop does (Plater.cpp 6094-6157),
+# so a Bambu Studio 2.5 project is not "newer" here and slices; only a file
+# OrcaSlicer made is compared with this engine's own version.
 run orca-newer "$O" "$FIXTURE" --plate 1 -o orca-newer/out.gcode
-[ "$(rc orca-newer)" != 0 ] || fail "Orca sliced a newer Bambu Studio file"
-grep -q 'use slicer_cli (BambuStudio)' orca-newer/stderr || { show orca-newer; fail "refusal does not name slicer_cli"; }
-echo "PASS: Orca refuses a newer Bambu Studio file, naming slicer_cli"
+[ "$(rc orca-newer)" = 0 ] || { show orca-newer; fail "Orca refused a Bambu Studio file that is not newer than its Bambu base"; }
+echo "PASS: a Bambu Studio project is measured against the Bambu base, not against the Orca version"
 
-# Cross-engine values on the Orca build: out-of-range and unknown values refused in one sentence.
-# A G-code left from an earlier run in the same --outputdir must not survive a failed plate.
+# Cross-engine values on the Orca build: a value this engine has no meaning for
+# is refused, naming it and what to use instead.
+py '
+import json, zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("partial.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["ensure_vertical_shell_thickness"] = "partial"
+            d["different_settings_to_system"] = ["ensure_vertical_shell_thickness", "", ""]
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' || fail "orca: the partial-shell fixture could not be written"
 mkdir -p orca-values/out
 echo "; stale" > orca-values/out/plate_1.gcode
-run orca-values "$O" "$FIXTURE" --slice 1 --allow-newer-file --outputdir orca-values/out
-[ "$(rc orca-values)" != 0 ] || fail "Orca sliced a file with values it does not have"
+run orca-values "$O" partial.3mf --slice 1 --outputdir orca-values/out
+[ "$(rc orca-values)" != 0 ] || fail "Orca sliced a file with a value it does not have"
+# A G-code left from an earlier run in the same --outputdir must not survive a failed plate.
 [ ! -e orca-values/out/plate_1.gcode ] || fail "a stale plate_1.gcode survived a failed plate"
-grep -q 'tree_support_wall_count: -1 not in range' orca-values/stderr || { show orca-values; fail "no range refusal"; }
-grep -q "'ensure_vertical_shell_thickness' is 'enabled'" orca-values/stderr || { show orca-values; fail "no unknown-value refusal"; }
-echo "PASS: Orca refuses out-of-range and unknown values, naming each"
+grep -q 'ensure_vertical_shell_thickness' orca-values/stderr || { show orca-values; fail "no refusal naming the value"; }
+grep -qi 'pick the shell coverage' orca-values/stderr || { show orca-values; fail "the refusal does not say what to do"; }
+echo "PASS: Orca refuses a value it has no meaning for, naming it and what to use instead"
 
 # A project whose plates carry no identify_id (#31): plate membership comes
 # from position, as the desktop places every instance, and --arrange moves
@@ -1800,6 +1815,325 @@ if got("printer_settings_id") != "Snapmaker U1 (0.4 nozzle)":
 assert not bad, "; ".join(bad)
 ' u1s/out/plate_1.gcode u1-process-orca.json || fail "orca: the Snapmaker printer change did not take the Snapmaker process the desktop selects"
 echo "PASS: the Orca printer change reads the new printer's own vendor process list"
+
+# ── The owner's case: a Bambu Studio project for a Bambu printer, on the Orca
+# build, retargeted to a Snapmaker U1 ────────────────────────────────────────
+# Three of its parts are the desktop's, and none of them was ported:
+#   * BambuStudio writes its filament indices from 0 (its own range starts
+#     there, BambuStudio PrintConfig.cpp 4359-4361 at 5873b5f) while this
+#     engine's start at 1, so the value check refuses the file -18. The desktop
+#     only warns (Plater.cpp 6259-6272) and slices from full_fff_config, which
+#     resets those keys into [1, N] (PresetBundle.cpp 4090-4105; N =
+#     filament_presets.size(), 3866). That clamp is this command line's own:
+#     the CLI path never runs full_fff_config.
+#   * tree_support_wall_count is one setting in two encodings, and the engine
+#     already converts it on every config load -- PrintConfigDef::handle_legacy,
+#     ported from OrcaSlicer 434ff3011f77 in the override layer of
+#     libslic3r/orcaslicer/libslic3r/PrintConfig.cpp.
+#   * BambuStudio writes no print_compatible_printers, and the desktop does not
+#     read the missing list as "suits every printer": the project's process is
+#     loaded over the system preset its print_settings_id names and keeps that
+#     preset's compatible_printers (load_external_preset, Preset.cpp
+#     2446-2500), so a printer outside them re-selects a process
+#     (PresetBundle.cpp 5295-5330).
+# The fixture is a real Bambu Studio X1 Carbon project (base.3mf) with the
+# project_settings a Bambu Studio X1C project carries: its filament indices
+# from 0, tree_support_wall_count -1, no print_compatible_printers. Two of its
+# Bambu-only spellings that neither the desktop nor this engine converts are
+# left out (the -1 "auto" of raft_first_layer_expansion and the 'enabled' of
+# ensure_vertical_shell_thickness), so the runs below test those three
+# behaviours and not those refusals.
+py '
+import json, re, zipfile
+def build(src, dst, settings, app=None):
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "Metadata/project_settings.config":
+                d = json.loads(data)
+                for k in ("raft_first_layer_expansion", "ensure_vertical_shell_thickness"):
+                    d.pop(k, None)
+                d.pop("print_compatible_printers", None)
+                d.update(settings)
+                data = json.dumps(d, indent=4).encode()
+            if app and item.filename == "3D/3dmodel.model":
+                data = re.sub(rb"(<metadata name=\"Application\">)[^<]*", rb"\g<1>" + app.encode(), data)
+            zout.writestr(item, data)
+bambu = {"wall_filament": "0", "sparse_infill_filament": "0", "solid_infill_filament": "0",
+         "tree_support_wall_count": "-1"}
+build("base.3mf", "bblx1c.3mf", bambu)
+# The same values from a file OrcaSlicer made: handle_legacy converts by VALUE
+# (PrintConfig.cpp 7942, OrcaSlicer 434ff3011f77), not by the maker of the file.
+build("base.3mf", "orcamade.3mf", bambu, app="OrcaSlicer-2.4.0")
+with zipfile.ZipFile("bblx1c.3mf") as z:
+    d = json.loads(z.read("Metadata/project_settings.config"))
+    assert "print_compatible_printers" not in d and d["tree_support_wall_count"] == "-1", sorted(d)
+    assert d["print_settings_id"] == "0.20mm Standard @BBL X1C" and d["layer_height"] == "0.2", d
+' || fail "orca: the Bambu Studio X1C project fixtures could not be written"
+run bblu1 "$O" bblx1c.3mf --slice 1 --allow-newer-file --load-settings u1-machine-orca.json --outputdir bblu1/out
+[ "$(rc bblu1)" = 0 ] || { show bblu1; fail "orca: a Bambu Studio X1C project on the Snapmaker U1 exit $(rc bblu1)"; }
+[ -s bblu1/out/plate_1.gcode ] || { show bblu1; fail "orca: the retargeted Bambu Studio project wrote no G-code"; }
+# The project with no printer switch slices with its own settings, so the
+# converted value is readable in the G-code.
+run bbldirect "$O" bblx1c.3mf --slice 1 --allow-newer-file --outputdir bbldirect/out
+[ "$(rc bbldirect)" = 0 ] || { show bbldirect; fail "orca: a Bambu Studio X1C project with no printer switch exit $(rc bbldirect)"; }
+grep -q "^; tree_support_wall_count = 0$" bbldirect/out/plate_1.gcode || {
+    grep -m1 "tree_support_wall_count" bbldirect/out/plate_1.gcode
+    fail "orca: the BambuStudio -1 of tree_support_wall_count did not reach the slice as this engine's 0"; }
+run orcamade "$O" orcamade.3mf --slice 1 --allow-newer-file --outputdir orcamade/out
+[ "$(rc orcamade)" = 0 ] || { show orcamade; fail "orca: a file OrcaSlicer made with tree_support_wall_count -1 exit $(rc orcamade)"; }
+grep -q "^; tree_support_wall_count = 0$" orcamade/out/plate_1.gcode || {
+    grep -m1 "tree_support_wall_count" orcamade/out/plate_1.gcode
+    fail "orca: the ported legacy conversion skipped a file OrcaSlicer made (it converts by value)"; }
+# The clamp is the fallback for a project this bundle cannot load over its own
+# presets: the file's own settings are sliced, so the 0-based indices reach the
+# engine and the clamp is what carries them. It is reported as its own event and
+# names only the keys it reset: tree_support_wall_count is converted by the
+# engine's own handle_legacy, not here. A project whose preset this bundle does
+# ship takes the preset's own values instead, and reports no reset.
+py '
+import json, zipfile
+with zipfile.ZipFile("bblx1c.3mf") as zin, zipfile.ZipFile("bblnosuch.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["print_settings_id"] = "0.20mm Standard @BBL NoSuchProfile"
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' || fail "orca: the no-system-preset fixture could not be written"
+run bblflat "$O" bblnosuch.3mf --slice 1 --allow-newer-file --outputdir bblflat/out
+[ "$(rc bblflat)" = 0 ] || { show bblflat; fail "orca: a project with no shipped system preset exit $(rc bblflat)"; }
+grep -q 'ProjectPresetRebaseSkipped' bblflat/stdout || { show bblflat; fail "the file's own settings were not kept for a project the bundle cannot load over"; }
+py '
+import json, sys
+ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
+ev = [e for e in ev if e.get("tag") == "FilamentIndexOutOfRangeReset"]
+assert len(ev) == 1, [e.get("tag") for e in ev]
+e = ev[0]
+assert e["filament_count"] == 1, e
+assert sorted(e["reset"]) == ["solid_infill_filament", "sparse_infill_filament", "wall_filament"], e
+assert all(c["from"] == 0 and c["to"] == 1 for c in e["reset"].values()), e
+assert e["clamped"] == {}, e
+for k in ("wall_filament", "solid_infill_filament", "sparse_infill_filament"):
+    assert k in e["message"], e["message"]
+assert "tree_support_wall_count" not in e["message"], e["message"]
+' bblflat/stdout || fail "orca: the 3MF filament-index reset was not reported as its own event"
+py '
+import json, sys
+ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
+assert not [e for e in ev if e.get("tag") == "FilamentIndexOutOfRangeReset"], "a rebased run reset an index"
+' bblu1/stdout || fail "orca: a project loaded over its shipped presets reported an index reset"
+echo "PASS: the Orca 3MF load resets a Bambu Studio project's 0-based filament indices into this engine's range, and reports it"
+# The printer change takes the U1's process, and the values, the pick and the
+# bed are the ones the desktop's retarget gives (u1-process-orca.json is the
+# process the desktop selects, flattened from the shipped presets).
+py '
+import json, re, sys
+want = json.load(open(sys.argv[2])); pick = open(sys.argv[3]).read().strip()
+g = open(sys.argv[1], errors="replace").read()
+def got(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).split(",")[0].strip()
+def raw(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).strip()
+def first(v):
+    return re.sub(r"\"", "", str(v[0] if isinstance(v, list) else v))
+bad = []
+for k in ("layer_height", "wall_loops", "sparse_infill_density", "travel_speed",
+          "default_acceleration", "outer_wall_speed"):
+    if k in want["config"] and got(k) != first(want["config"][k]):
+        bad.append("%s: G-code %r, the flattened Snapmaker U1 process %r" % (k, got(k), first(want["config"][k])))
+if got("print_settings_id") != pick:
+    bad.append("print_settings_id: G-code %r, the pick the desktop makes %r" % (got("print_settings_id"), pick))
+if got("printer_settings_id") != "Snapmaker U1 (0.4 nozzle)":
+    bad.append("printer_settings_id: G-code %r" % got("printer_settings_id"))
+# Every extrusion is inside the U1 plate the printer preset states: the objects
+# of the project were laid out for an X1 Carbon bed and moved.
+area = raw("printable_area")
+pts = [tuple(float(v) for v in p.lower().split("x")) for p in area.split(",")] if area else []
+xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+if not pts:
+    bad.append("no printable_area in the G-code")
+else:
+    out = []
+    for line in g.splitlines():
+        if not line.startswith("G1") or " E" not in line:
+            continue
+        mx = re.search(r" X([-\d.]+)", line); my = re.search(r" Y([-\d.]+)", line)
+        if mx and not (min(xs) - 0.001 <= float(mx.group(1)) <= max(xs) + 0.001):
+            out.append("X" + mx.group(1))
+        if my and not (min(ys) - 0.001 <= float(my.group(1)) <= max(ys) + 0.001):
+            out.append("Y" + my.group(1))
+    if out:
+        bad.append("%d extrusion coordinate(s) outside the printer bed %r: %s" % (len(out), area, ", ".join(out[:5])))
+assert not bad, "; ".join(bad)
+' bblu1/out/plate_1.gcode u1-process-orca.json u1-pick.txt || fail "orca: the Bambu Studio project on the Snapmaker U1 did not slice with the desktop's retarget"
+echo "PASS: a Bambu Studio project slices on the Snapmaker U1 with the desktop's process, values and bed"
+
+# The same conversions apply to an object's own settings and to a part's, which
+# the file keeps in Metadata/model_settings.config (bbs_3mf loads them over the
+# same legacy pass, bbs_3mf.cpp 2130, 5115, 5263 at 31f6803). They are matched
+# by the names the file states, because the 3MF's numeric ids are not kept on
+# the loaded objects.
+py '
+import json, zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("objover.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            for k in ("raft_first_layer_expansion", "ensure_vertical_shell_thickness"):
+                d.pop(k, None)
+            d.update({"wall_filament": "0", "sparse_infill_filament": "0", "solid_infill_filament": "0"})
+            data = json.dumps(d, indent=4).encode()
+        if item.filename == "Metadata/model_settings.config":
+            text = data.decode()
+            assert text.count("<metadata key=\"name\" value=\"Cube\"/>") >= 1, text[:200]
+            # The object own settings: a BambuStudio word and an automatic value.
+            text = text.replace("<metadata key=\"name\" value=\"Cube\"/>",
+                                "<metadata key=\"name\" value=\"Cube\"/>\n"
+                                "    <metadata key=\"ensure_vertical_shell_thickness\" value=\"enabled\"/>\n"
+                                "    <metadata key=\"tree_support_wall_count\" value=\"-1\"/>", 1)
+            data = text.encode()
+        zout.writestr(item, data)
+' || fail "orca: the object-override fixture could not be written"
+run objconv "$O" objover.3mf --slice 1 --allow-newer-file --outputdir objconv/out
+[ "$(rc objconv)" = 0 ] || { show objconv; fail "orca: a project whose object states BambuStudio values exit $(rc objconv)"; }
+py '
+import json, sys
+ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
+def one(tag):
+    found = [e for e in ev if e.get("tag") == tag and e.get("object") == "Cube"]
+    assert len(found) == 1, (tag, [e.get("tag") for e in ev])
+    return found[0]
+shell = one("VerticalShellThicknessWordConverted")
+assert shell["from"] == "enabled" and shell["to"] == "ensure_all", shell
+wall = one("TreeSupportWallCountAutoConverted")
+assert wall["from"] == "-1" and str(wall["to"]) == "0", wall
+' objconv/stdout || fail "orca: the object own settings were not converted with the same events as the project's"
+echo "PASS: an object's own tree_support_wall_count -1 and ensure_vertical_shell_thickness \"enabled\" convert like the project's"
+
+# ── The desktop's and upstream's conversions the owner ruled on (G2-G8) ─────
+# Each case states the BambuStudio value on purpose (the maker's own key list,
+# different_settings_to_system), so the rebase keeps it and only the conversion
+# can carry it across.
+py '
+import json, re, zipfile
+def proj(dst, settings=None, diff=None, app=None):
+    with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "Metadata/project_settings.config":
+                d = json.loads(data)
+                for k in ("raft_first_layer_expansion", "ensure_vertical_shell_thickness", "top_one_wall_type",
+                          "tree_support_wall_count", "support_type"):
+                    d.pop(k, None)
+                d.update(settings or {})
+                if diff:
+                    d["different_settings_to_system"] = [diff, "", ""]
+                data = json.dumps(d, indent=4).encode()
+            if app and item.filename == "3D/3dmodel.model":
+                data = re.sub(rb"(<metadata name=\"Application\">)[^<]*", rb"\g<1>" + app.encode(), data)
+            zout.writestr(item, data)
+proj("mkr.3mf", {"raft_first_layer_expansion": "-1", "top_one_wall_type": "not apply",
+                 "ensure_vertical_shell_thickness": "disabled", "support_type": "normal(auto)"},
+     "raft_first_layer_expansion;top_one_wall_type;ensure_vertical_shell_thickness;support_type")
+proj("mkrtree.3mf", {"raft_first_layer_expansion": "-1", "support_type": "tree(auto)"},
+     "raft_first_layer_expansion;support_type")
+proj("mkrg4.3mf", {"tree_support_wall_count": "0", "support_type": "tree(auto)"}, "tree_support_wall_count;support_type")
+proj("mkrpartial.3mf", {"ensure_vertical_shell_thickness": "partial", "support_type": "normal(auto)"},
+     "ensure_vertical_shell_thickness;support_type")
+proj("neworca.3mf", {}, None, app="OrcaSlicer-99.01.00.00")
+json.dump({"type": "machine", "name": "conv-machine", "from": "system", "instantiation": "true",
+           "use_relative_e_distances": "0"},
+          open("g7-machine.json", "w"))
+json.dump({"type": "filament", "name": "conv-filament", "from": "system", "instantiation": "true"},
+          open("g7-filament.json", "w"))
+json.dump({"type": "process", "name": "conv-process", "from": "system", "instantiation": "true",
+           "wall_infill_order": "infill/outer wall/inner wall", "support_type": "hybrid(auto)"},
+          open("g7-process.json", "w"))
+json.dump({"type": "machine", "name": "conv-bad", "from": "system", "instantiation": "true",
+           "machine_start_gcode": "G28\n{if nozzle_diameter_at_nozzle_id[initial_nozzle_id] > 0.4}M900\n{endif}"},
+          open("g8-bad.json", "w"))
+' || fail "orca: the conversion fixtures could not be written"
+
+# G2: a Bambu Studio file newer than the Bambu base this engine is built on
+# slices, with a warning that names the version and the ignored settings; a file
+# OrcaSlicer made and newer than this engine is still refused.
+run g2warn "$O" newer.3mf --slice 1 --outputdir g2warn/out
+[ "$(rc g2warn)" = 0 ] || { show g2warn; fail "orca: a Bambu Studio file newer than the Bambu base exit $(rc g2warn)"; }
+grep -q 'FileNewerThanEngineBase' g2warn/stdout || { show g2warn; fail "no FileNewerThanEngineBase warning"; }
+run g2ref "$O" neworca.3mf --slice 1 --outputdir g2ref/out
+[ "$(rc g2ref)" != 0 ] || fail "orca: an OrcaSlicer file newer than this engine was sliced"
+grep -q 'FileVersionNewerThanEngine' g2ref/stdout || { show g2ref; fail "no FileVersionNewerThanEngine refusal"; }
+echo "PASS: the Bambu base decides for a Bambu Studio file, and this engine's version for an OrcaSlicer one"
+
+# G3, G5, G6 in one run: the maker own words.
+run g356 "$O" mkr.3mf --slice 1 --outputdir g356/out
+[ "$(rc g356)" = 0 ] || { show g356; fail "orca: a project with the maker own values exit $(rc g356)"; }
+py '
+import json, re, sys
+g = open(sys.argv[1], errors="replace").read()
+ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[2], errors="replace") if "[[SLICER_EVENT]]" in l]
+def header(key):
+    m = re.search(r"^; " + key + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).strip()
+bad = []
+assert [e for e in ev if e.get("tag") == "RaftAutoExpansionConverted"], [e.get("tag") for e in ev]
+assert [e for e in ev if e.get("tag") == "TopOneWallTypeNotApplyConverted"], [e.get("tag") for e in ev]
+assert [e for e in ev if e.get("tag") == "VerticalShellThicknessWordConverted"], [e.get("tag") for e in ev]
+if header("raft_first_layer_expansion") != "2":
+    bad.append("raft_first_layer_expansion: G-code %r" % header("raft_first_layer_expansion"))
+if header("only_one_wall_top") != "0":
+    bad.append("only_one_wall_top: G-code %r" % header("only_one_wall_top"))
+if header("ensure_vertical_shell_thickness") != "none":
+    bad.append("ensure_vertical_shell_thickness: G-code %r" % header("ensure_vertical_shell_thickness"))
+assert not bad, "; ".join(bad)
+' g356/out/plate_1.gcode g356/stdout || fail "orca: the maker own BambuStudio values did not reach the slice converted"
+echo "PASS: raft_first_layer_expansion -1, top_one_wall_type \"not apply\" and ensure_vertical_shell_thickness \"disabled\" convert"
+
+# G3 for tree support: this engine has no automatic expansion there, and the
+# refusal says what to set instead.
+run g3tree "$O" mkrtree.3mf --slice 1 --outputdir g3tree/out
+[ "$(rc g3tree)" != 0 ] || fail "orca: an automatic expansion was sliced for tree support"
+grep -q 'BambuValueNotCarryable' g3tree/stdout || { show g3tree; fail "no tree-support refusal"; }
+grep -q 'with tree support' g3tree/stderr || { show g3tree; fail "the refusal does not say why tree support has no automatic value"; }
+grep -q 'Set it to the expansion you want in mm' g3tree/stderr || { show g3tree; fail "the refusal does not say what to do"; }
+echo "PASS: an automatic first-layer expansion with tree support is refused with what to set instead"
+
+# G4: BambuStudio 0 (infill-only walls) is this engine auto, kept and warned
+# about where tree support is in play.
+run g4 "$O" mkrg4.3mf --slice 1 --outputdir g4/out
+[ "$(rc g4)" = 0 ] || { show g4; fail "orca: a project with tree_support_wall_count 0 exit $(rc g4)"; }
+grep -q 'TreeSupportWallCountZeroIsAuto' g4/stdout || { show g4; fail "no warning for the 0 the file means as infill-only"; }
+grep -q '^; tree_support_wall_count = 0$' g4/out/plate_1.gcode || { show g4; fail "the value did not stay 0"; }
+echo "PASS: BambuStudio's tree_support_wall_count 0 is kept and warned about"
+
+# G6 for the word with no twin: refused, with the choice to make.
+run g6ref "$O" mkrpartial.3mf --slice 1 --outputdir g6ref/out
+[ "$(rc g6ref)" != 0 ] || fail "orca: \"partial\" was sliced"
+grep -q 'BambuValueNotCarryable' g6ref/stdout || { show g6ref; fail "no refusal for partial"; }
+grep -qi 'pick the shell coverage' g6ref/stderr || { show g6ref; fail "the refusal does not say what to do"; }
+echo "PASS: ensure_vertical_shell_thickness \"partial\" is refused with the choice to make"
+
+# G7: a --process file runs the file-level conversions the engines run when they
+# read a settings file (Config.cpp 931-948).
+run g7 "$O" cube.stl -o g7.gcode --machine g7-machine.json --filament g7-filament.json --process g7-process.json
+[ "$(rc g7)" = 0 ] || { show g7; fail "orca: a --process file with old words exit $(rc g7)"; }
+grep -q '^; is_infill_first = 1$' g7.gcode || { grep -m1 is_infill_first g7.gcode; fail "wall_infill_order was not converted"; }
+grep -q '^; support_style = tree_hybrid$' g7.gcode || { grep -m1 support_style g7.gcode; fail "support_type hybrid(auto) was not converted"; }
+echo "PASS: a --process file's own words convert the way a settings file's do"
+
+# G8: a Bambu Studio placeholder in the machine's own start G-code is refused
+# before the run slices, naming it and the value to use instead.
+run g8 "$O" cube.stl -o g8.gcode --machine g8-bad.json
+[ "$(rc g8)" != 0 ] || fail "orca: a Bambu-only G-code placeholder was sliced"
+grep -q 'BambuOnlyGcodePlaceholder' g8/stdout || { show g8; fail "no refusal for the placeholder"; }
+grep -q 'nozzle_diameter_at_nozzle_id' g8/stderr || { show g8; fail "the refusal does not name the placeholder"; }
+grep -q '{nozzle_diameter\[initial_extruder\]}' g8/stderr || { show g8; fail "the refusal does not say what to use instead"; }
+echo "PASS: a Bambu-only G-code placeholder is refused before slicing, naming what to use instead"
 
 # The engine's 3MF loader extracts Metadata/project_settings.config and the
 # embedded presets as <backup>/_temp_3.config / _temp_2.config and parses them

@@ -104,8 +104,11 @@ bool load_flat_preset(const boost::filesystem::path& folder, const std::string& 
 /// The vendor's system process presets in the desktop's own order: the list in
 /// the vendor profile beside the tree, each entry's sub_path under the vendor
 /// folder (load_vendor_configs_from_json, OrcaSlicer PresetBundle.cpp
-/// 4606-4632 and 4805-4812 at 31f6803). A tree without that list falls back to
-/// the folder's own files.
+/// 4606-4632 and 4805-4812 at 31f6803). The collection holds them sorted by
+/// name -- load_vendor_configs_from_json calls sort_presets (Preset.hpp
+/// 827-832) over Preset::operator< (Preset.hpp 348) -- so the order here is by
+/// preset name, not by the vendor list, and a pick that ties takes the first
+/// name. A tree without that list falls back to the folder's own files.
 std::vector<boost::filesystem::path>
 vendor_process_files(const boost::filesystem::path& profiles_dir, const std::string& vendor) {
     namespace fs = boost::filesystem;
@@ -120,16 +123,51 @@ vendor_process_files(const boost::filesystem::path& profiles_dir, const std::str
     } catch (...) {
         out.clear();
     }
-    if (!out.empty())
-        return out;
+    if (out.empty()) {
+        try {
+            for (fs::recursive_directory_iterator it(vendor_dir / "process"), end; it != end; ++it)
+                if (it->path().extension() == ".json")
+                    out.push_back(it->path());
+        } catch (...) {
+        }
+    }
+    std::sort(out.begin(), out.end(), [](const fs::path& a, const fs::path& b) {
+        return a.stem().string() < b.stem().string();
+    });
+    return out;
+}
+
+/// The system process preset `name` over its whole "inherits" chain, from
+/// whichever vendor tree under `profiles_dir` lists it: that vendor's
+/// process_list names the file's sub_path under the vendor folder, the same
+/// list vendor_process_files() reads. False when no tree lists the name (a user
+/// or external preset), or when its file cannot be read.
+bool find_system_process(const std::string& profiles_dir, const std::string& name,
+                         Slic3r::DynamicPrintConfig& out, std::map<std::string, std::string>& meta) {
+    namespace fs = boost::filesystem;
+    if (name.empty())
+        return false;
     try {
-        for (fs::recursive_directory_iterator it(vendor_dir / "process"), end; it != end; ++it)
-            if (it->path().extension() == ".json")
-                out.push_back(it->path());
+        for (fs::directory_iterator it{fs::path(profiles_dir)}, end; it != end; ++it) {
+            const fs::path vendor_json = it->path();
+            if (vendor_json.extension() != ".json")
+                continue;
+            nlohmann::json j;
+            boost::nowide::ifstream ifs(vendor_json.string());
+            ifs >> j;
+            if (!j.contains("process_list") || !j["process_list"].is_array())
+                continue;
+            for (const auto& entry : j["process_list"]) {
+                if (!entry.is_object() || entry.value("name", std::string()) != name)
+                    continue;
+                const fs::path file = fs::path(profiles_dir) / vendor_json.stem().string() /
+                                      entry.value("sub_path", std::string());
+                return load_flat_preset(file.parent_path(), file.stem().string(), out, meta);
+            }
+        }
     } catch (...) {
     }
-    std::sort(out.begin(), out.end());
-    return out;
+    return false;
 }
 
 std::vector<std::string> compatible_printers_of(const Slic3r::DynamicPrintConfig& config) {
@@ -295,10 +333,27 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
     // print_compatible_printers and load_config_file_config puts back
     // (PresetBundle.cpp 4084 and 4129 erase it, 4390-4393 restore it);
     // Preset::is_compatible_with_printer (Preset.cpp 803-813) takes no list as
-    // "suits every printer", so no list keeps the project's process.
-    if (printer_preset_name.empty() || current_compatible_printers.empty() ||
-        std::find(current_compatible_printers.begin(), current_compatible_printers.end(), printer_preset_name) !=
-            current_compatible_printers.end())
+    // "suits every printer", so a process with no list at all keeps the
+    // project's.
+    //
+    // A Bambu Studio project states no such list -- BambuStudio writes no
+    // print_compatible_printers -- and the desktop does not read the missing
+    // list as "suits every printer": loading the project selects the system
+    // preset the file names, its print_settings_id (else its inherits), as an
+    // external preset over that parent (load_external_preset, Preset.cpp
+    // 2446-2500), and the edited preset keeps the parent's compatible_printers
+    // -- the X1C family -- so a printer outside them re-selects a process.
+    // Only a process with neither a list nor a system parent keeps the
+    // project's settings.
+    std::vector<std::string> suits = current_compatible_printers;
+    if (suits.empty()) {
+        Slic3r::DynamicPrintConfig            parent;
+        std::map<std::string, std::string>    parent_meta;
+        if (find_system_process(profiles_dir, current_preset_name, parent, parent_meta))
+            suits = compatible_printers_of(parent);
+    }
+    if (printer_preset_name.empty() || suits.empty() ||
+        std::find(suits.begin(), suits.end(), printer_preset_name) != suits.end())
         return out;   // kept: the desktop reselects nothing
 
     // first_compatible_idx over the compatible, visible presets, scored by
