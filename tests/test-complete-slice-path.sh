@@ -1292,6 +1292,56 @@ assert d["return_code"] == int(sys.argv[2]), d
 done
 echo "PASS: --load-assemble-list builds, arranges and slices every plate of its list (both engines)"
 
+# A fixed-layout assemble-list plate of two filaments gets the desktop's own
+# tower position: PartPlateList::set_default_wipe_tower_pos_for_plate clamps
+# the default corner inside the plate, narrowed by the extruder areas, for a
+# tower sized for two extruders (Orca PartPlate.cpp 4115-4190; Bambu
+# PartPlate.cpp 4615-4702). The official CLI's corner alone leaves it at
+# (165, 250) and the tower's own moves go past the 256 bed: the Orca run is
+# refused -104 "Found G-code outside of the printable area ... It comes from
+# the prime tower".
+py '
+import json
+json.dump({"plates": [{"plate_name": "tower", "need_arrange": False,
+                       "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [100], "pos_y": [150]},
+                                   {"path": "cube.stl", "count": 1, "filaments": [2], "pos_x": [140], "pos_y": [150]}]}]},
+          open("altow.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    # Two runs: the command with no tower flag at all, and the same with the
+    # tower asked for, because the Bambu build prints no tower for two
+    # filaments of one colour (PrimeTowerOffOneFilament) and its tower is the
+    # geometry this check measures.
+    for c in "plain:" "tower:--enable-prime-tower"; do
+    n=${c%%:*}; flag=${c#*:}
+    run altow$n-$e "$bin" --load-assemble-list altow.json --slice 1 --printer-preset "$X1C" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Basic @BBL X1C" \
+        $flag --outputdir altow$n-$e/out
+    [ "$(rc altow$n-$e)" = 0 ] || { show altow$n-$e; fail "$e ($n): two filaments on a fixed plate exit $(rc altow$n-$e)"; }
+    [ -s altow$n-$e/out/plate_1.gcode ] || fail "$e ($n): the fixed-layout plate produced no G-code"
+    py '
+import re, sys
+g = open(sys.argv[1], errors="replace").read().replace("\r", "")
+x = float(re.search(r"^; wipe_tower_x = ([\d.eE+-]+)", g, re.M).group(1))
+y = float(re.search(r"^; wipe_tower_y = ([\d.eE+-]+)", g, re.M).group(1))
+assert 0 <= x < 256 and 0 <= y < 256, ("tower corner off the 256 bed", x, y)
+# The tower and its depth, and every object, inside the 256 mm bed: the
+# extrusion moves the G-code prints are the geometry itself.
+moves = [(float(a), float(b)) for a, b in re.findall(r"^G1 X([\d.-]+) Y([\d.-]+) E", g, re.M)]
+assert moves, "no extrusion moves"
+xs = [p[0] for p in moves]; ys = [p[1] for p in moves]
+assert max(xs) <= 256 and max(ys) <= 256, ("printed outside the bed", max(xs), max(ys))
+assert min(xs) >= 0 and min(ys) >= 0, ("printed outside the bed", min(xs), min(ys))
+if re.search(r"^; enable_prime_tower = 1", g, re.M):
+    # The fixture objects stop at y 170, so the moves above it are the tower.
+    tower = [v for v in ys if v > 200]
+    assert tower and min(tower) >= y, ("tower not at its corner", y, min(tower))
+' altow$n-$e/out/plate_1.gcode || { show altow$n-$e; fail "$e ($n): the fixed-layout plate tower is not inside the 256 bed"; }
+    done
+done
+echo "PASS: an assemble-list plate with a fixed layout puts its tower inside the bed (both engines)"
+
 # Coloured OBJs in an assemble list (slicer_cli: their colours become the
 # filaments). The second OBJ repeats 5 of the first's 10 colours and adds 5:
 # a repeated colour keeps its filament and adds none, so the palette holds
@@ -4092,10 +4142,15 @@ assert "slicer_cli-orcaslicer" in s, s
 # --allow-mix-temp=1 gets past the temperature check to this one
 # (BambuStudio.cpp 6979-6982; OrcaSlicer.cpp 5968-5971). The plates the
 # sentence names must be the ones it can actually print on: the run it
-# suggests slices. Two filaments on one plate want a prime tower, and the Orca
-# engine's own default tower spot for this pair falls outside the X1 Carbon's
-# printable area (-104, "Found G-code outside of the printable area") — not
-# this check's subject, so the tower is placed inside the bed on both runs.
+# suggests slices. Two filaments on one plate want a prime tower, and this
+# pair's tower is too big for the plate: the desktop's own clamp puts the
+# tower's corner at (165, 227.972) on the X1 Carbon (the fixed-layout tower
+# check above), and the tower's own G-code still reaches y 258.884 — past the
+# 2 mm the engine's upload check tolerates (GCodeProcessor.cpp 1861-1883: the
+# printable box offset by 2 mm, extrude moves only), so the run is refused
+# -104 on the Orca build. The official CLI is deliberately more conservative
+# than the desktop here, its own sentence says so, so this run gives the
+# tower a position.
 br10_ok=1
 py '
 import json

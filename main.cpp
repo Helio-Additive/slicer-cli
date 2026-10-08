@@ -4031,26 +4031,136 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     return true;
 }
 
-/// The prime tower's starting corner on an assemble-list plate: the
-/// desktop's default (top left; the I3 printers' own), kept a margin from the
-/// edges (BambuStudio.cpp 5382-5395, 5522-5535; OrcaSlicer.cpp 4635-4649,
-/// 4776-4789; the defaults are PartPlate.cpp 68-74 / 66-70 in each engine).
-/// The Orca arrange keeps it 1 mm plus prime_tower_width from the edges, as
-/// its block reads it (OrcaSlicer.cpp 4636-4637); the Orca fixed plate and
-/// both Bambu blocks use WIPE_TOWER_MARGIN (15 mm on Bambu, 1 mm on Orca).
+/// The desktop's default prime-tower corner: the top left of the bed, the I3
+/// printers' own on a psI3 structure (BambuStudio.cpp 5382-5395; OrcaSlicer.cpp
+/// 4635-4649; the defaults are PartPlate.cpp 68-74 / 66-70 in each engine, and
+/// set_default_wipe_tower_pos_for_plate reads the same ones: Orca PartPlate.cpp
+/// 4128-4135, Bambu 4625-4635). Bambu's A2L keeps its own y (model id "N9",
+/// PartPlate.cpp 4637-4642).
+static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& config) {
+    using namespace Slic3r;
+    Vec2d corner(165., 250.);   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
+    if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
+        structure && structure->value == PrinterStructure::psI3)
+        corner = Vec2d(0., 250.);   // I3_WIPE_TOWER_DEFAULT_X_POS / _Y_POS
+#ifdef ENGINE_BAMBU
+    if (g_preset_printer_model_id == "N9")   // N9_WIPE_TOWER_DEFAULT_Y_POS
+        corner.y() = 160.;
+#endif
+    return corner;
+}
+
+/// The prime tower's starting corner on an assemble-list plate, kept a margin
+/// from the edges (BambuStudio.cpp 5382-5395, 5522-5535; OrcaSlicer.cpp
+/// 4635-4649, 4776-4789). The Orca arrange keeps it 1 mm plus
+/// prime_tower_width from the edges, as its block reads it (OrcaSlicer.cpp
+/// 4636-4637); the Orca fixed plate and both Bambu blocks use
+/// WIPE_TOWER_MARGIN (15 mm on Bambu, 1 mm on Orca).
 static void assemble_tower_default_corner(Slic3r::DynamicPrintConfig& config, int plate_index, float margin) {
     using namespace Slic3r;
-    float x = 165.f, y = 250.f;   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
-    if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
-        structure && structure->value == PrinterStructure::psI3) {
-        x = 0.f;     // I3_WIPE_TOWER_DEFAULT_X_POS
-        y = 250.f;   // I3_WIPE_TOWER_DEFAULT_Y_POS
-    }
+    const Vec2d corner = tower_default_corner(config);
+    float x = (float)corner.x(), y = (float)corner.y();
     if (x < margin) x = margin;
     if (y < margin) y = margin;
     ConfigOptionFloat wt_x_opt(x), wt_y_opt(y);
     config.option<ConfigOptionFloats>("wipe_tower_x", true)->set_at(&wt_x_opt, plate_index, 0);
     config.option<ConfigOptionFloats>("wipe_tower_y", true)->set_at(&wt_y_opt, plate_index, 0);
+}
+
+/// The values the tower sizing reads: the tower width, the wipe volume, the
+/// printer's nozzle count and whether wrapping detection is on. Orca takes the
+/// volume from prime_volume; Bambu the largest filament_prime_volume, 15 when
+/// the mode saves (Orca PartPlate.cpp 4150-4155; Bambu PartPlate.cpp
+/// 4666-4673).
+struct TowerWipeParams {
+    float  width          = 0.f;   // prime_tower_width
+    double volume         = 0.;    // prime_volume / max filament_prime_volume
+    int    extruder_count = 1;     // one per nozzle_diameter entry
+    bool   wrapping       = false; // enable_wrapping_detection
+};
+
+static TowerWipeParams tower_wipe_params(const Slic3r::DynamicPrintConfig& config) {
+    using namespace Slic3r;
+    TowerWipeParams p;
+    p.width = arrange_opt(config, "prime_tower_width")->getFloat();
+#ifdef ENGINE_ORCA
+    p.volume = arrange_opt(config, "prime_volume")->getFloat();
+#else
+    std::vector<double> volumes = dynamic_cast<const ConfigOptionFloats*>(arrange_opt(config, "filament_prime_volume"))->values;
+    if (const auto* pvm = config.option<ConfigOptionEnum<PrimeVolumeMode>>("prime_volume_mode"); pvm && pvm->value == pvmSaving)
+        for (auto& val : volumes)
+            val = 15.f;
+    p.volume = volumes.empty() ? 0. : *std::max_element(volumes.begin(), volumes.end());
+#endif
+    if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+        p.extruder_count = std::max(1, (int)nozzles->size());
+    const auto* wrapping_opt = config.option<ConfigOptionBool>("enable_wrapping_detection");
+    p.wrapping = wrapping_opt != nullptr && wrapping_opt->value;
+    return p;
+}
+
+/// PartPlateList::set_default_wipe_tower_pos_for_plate (Orca PartPlate.cpp
+/// 4115-4190; Bambu PartPlate.cpp 4615-4702): the desktop's default corner,
+/// clamped inside the plate's bounding box intersected with the extruder
+/// areas, for a tower sized over the plate's own objects. A new plate sizes it
+/// for two extruders (init_pos: Orca PartPlate.cpp 4300, 4374; Bambu 4814,
+/// 4893), which is why the desktop's own fixed-plate assemble run lands a
+/// tower inside the bed and a copy of the official CLI's corner does not.
+/// `keep_existing` keeps the plate's saved position and only clamps it back
+/// inside the bed, as the 3MF load does (Bambu PartPlate.hpp 840-844,
+/// Plater.cpp 8774).
+static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
+                                        int plate_index, bool keep_existing) {
+    using namespace Slic3r;
+    auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x", true);
+    auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y", true);
+    const Vec2d corner = tower_default_corner(config);
+    float x = (float)corner.x(), y = (float)corner.y();
+    if (keep_existing && plate_index >= 0 && (int)wipe_x->values.size() > plate_index &&
+        (int)wipe_y->values.size() > plate_index) {
+        x = (float)wipe_x->get_at(plate_index);
+        y = (float)wipe_y->get_at(plate_index);
+    }
+    const auto* area = config.option<ConfigOptionPoints>("printable_area");
+    if (!area || area->values.size() < 3)
+        return;
+    // The plate's bounding box, narrowed by every extruder's own area
+    // (PartPlate::get_extruder_areas), at the plate's own origin.
+    BoundingBoxf plate_bbox;
+    for (const Vec2d& pt : area->values) plate_bbox.merge(pt);
+    if (const auto* extruder_areas = config.option<ConfigOptionPointsGroups>("extruder_printable_area"))
+        for (const std::vector<Vec2d>& points : extruder_areas->values) {
+            BoundingBoxf boxf;
+            for (const Vec2d& pt : points) boxf.merge(pt);
+            plate_bbox.min = plate_bbox.min.x() >= boxf.min.x() ? plate_bbox.min : boxf.min;
+            plate_bbox.max = plate_bbox.max.x() <= boxf.max.x() ? plate_bbox.max : boxf.max;
+        }
+    const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+    const BoundingBoxf3 plate_box(Vec3d(plate_bbox.min.x(), plate_bbox.min.y(), 0.),
+                                  Vec3d(plate_bbox.max.x(), plate_bbox.max.y(), height));
+    const TowerWipeParams wipe = tower_wipe_params(config);
+    const Vec3d tower = arrange_estimate_wipe_tower_size(model, config, wipe.width, wipe.volume, wipe.extruder_count,
+                                                         /*plate_extruder_size=*/2, wipe.wrapping, plate_box,
+                                                         arrange_exclude_boxes(config));
+    float margin = WIPE_TOWER_MARGIN;
+#ifdef ENGINE_ORCA
+    // Orca's margin carries the tower's brim, the height rule when negative
+    // (Orca PartPlate.cpp 4162-4169).
+    float brim_width = arrange_opt(config, "prime_tower_brim_width")->getFloat();
+    if (brim_width < 0) brim_width = WipeTower::get_auto_brim_by_height((float) tower.z());
+    margin += brim_width;
+#endif
+    if (x + margin + (float)tower(0) > (float)plate_bbox.max.x())
+        x = (float)plate_bbox.max.x() - (float)tower(0) - margin;
+    else if (x < margin + (float)plate_bbox.min.x())
+        x = margin + (float)plate_bbox.min.x();
+    if (y + margin + (float)tower(1) > (float)plate_bbox.max.y())
+        y = (float)plate_bbox.max.y() - (float)tower(1) - margin;
+    else if (y < margin)
+        y = margin;
+    ConfigOptionFloat wt_x_opt(x), wt_y_opt(y);
+    wipe_x->set_at(&wt_x_opt, plate_index, 0);
+    wipe_y->set_at(&wt_y_opt, plate_index, 0);
 }
 
 /// PartPlate::estimate_wipe_tower_polygon with use_global_objects (Bambu
@@ -4068,23 +4178,16 @@ static Slic3r::arrangement::ArrangePolygon estimate_tower_polygon_global(const S
     using namespace Slic3r::arrangement;
     float x = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_x"))->get_at(plate_index);
     float y = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_y"))->get_at(plate_index);
-    const float w = arrange_opt(config, "prime_tower_width")->getFloat();
+    const TowerWipeParams wipe = tower_wipe_params(config);
+    const float w = wipe.width;
+    const double v = wipe.volume;
+    const int extruder_count = wipe.extruder_count;
+    const bool enable_wrapping_detect = wipe.wrapping;
 #ifdef ENGINE_ORCA
-    const double v = arrange_opt(config, "prime_volume")->getFloat();
     const float margin = WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_brim_width")->getFloat();
 #else
-    std::vector<double> volumes = dynamic_cast<const ConfigOptionFloats*>(arrange_opt(config, "filament_prime_volume"))->values;
-    if (const auto* pvm = config.option<ConfigOptionEnum<PrimeVolumeMode>>("prime_volume_mode"); pvm && pvm->value == pvmSaving)
-        for (auto& val : volumes)
-            val = 15.f;
-    const double v = volumes.empty() ? 0. : *std::max_element(volumes.begin(), volumes.end());
     const float margin = WIPE_TOWER_MARGIN;
 #endif
-    const auto* wrapping_opt = config.option<ConfigOptionBool>("enable_wrapping_detection");
-    const bool enable_wrapping_detect = wrapping_opt != nullptr && wrapping_opt->value;
-    int extruder_count = 1;
-    if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
-        extruder_count = std::max(1, (int)nozzles->size());
     // use_global_objects: every object, so the plate box and the exclusion
     // boxes are not read.
     const Vec3d wt_size = arrange_estimate_wipe_tower_size(global_model, config, w, v, extruder_count, filaments_count,
@@ -9379,7 +9482,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // filaments gets the tower's default corner unless a
                     // position was given (has_wipe_tower_position, BambuStudio.cpp
                     // 4098: wipe_tower_x/y are in no preset, so only a settings
-                    // file or a flag states them for a run without a 3MF).
+                    // file or a flag states them for a run without a 3MF). The
+                    // corner is the desktop's own: clamped inside the plate and
+                    // its extruder areas, as the desktop clamps a new plate's
+                    // (set_default_wipe_tower_pos_for_plate, Orca PartPlate.cpp
+                    // 4115-4190; Bambu PartPlate.cpp 4615-4702) — the official
+                    // CLI's corner alone put the tower off the bed and refused
+                    // this run -104.
                     const auto* seq = config_k.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence");
                     const bool is_seq_print = seq && seq->value == Slic3r::PrintSequence::ByObject;
                     const auto states_tower = [](const Slic3r::DynamicPrintConfig& c) {
@@ -9388,7 +9497,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     const bool has_wipe_tower_position =
                         states_tower(settings_merge.load_process_config) || states_tower(o.extra_config);
                     if (!is_seq_print && plate.filaments_count > 1 && !has_wipe_tower_position)
-                        assemble_tower_default_corner(config_k, arrange_plate_index, WIPE_TOWER_MARGIN);
+                        assemble_tower_inside_plate(config_k, model, arrange_plate_index, /*keep_existing=*/false);
                 }
                 // The plate's tower entry goes into the run's settings.
                 if (plate_id == 0)
