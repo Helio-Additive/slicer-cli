@@ -303,8 +303,22 @@ void desktop_place_on_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig
             }
         }
         object->ensure_on_bed();
-        if (new_instance == nullptr)
-            continue;   // instances the file placed stay where they are
+        if (new_instance == nullptr) {
+            // Instances the file placed stay where they are — but they are on
+            // the plate, so the objects after this one must not land on top
+            // of them. The desktop's plate-empty test is the whole model
+            // (partplate_list.get_curr_plate()->empty(), Plater.cpp 9646),
+            // and the cells it then reads are the ones outside EVERY object
+            // of the model (get_empty_cells walks m_model->objects,
+            // GLCanvas3D.cpp 6744-6778), the retained ones included. Skipping
+            // the push left `placed` holding only the objects this function
+            // gave an instance to, so a model file loaded after a project 3MF
+            // was placed as if the plate were empty and landed on the
+            // project's own geometry at the bed centre.
+            for (const Slic3r::ModelInstance* inst : object->instances)
+                placed.push_back(object->convex_hull_2d(inst->get_matrix()));
+            continue;
+        }
         // Auto-placement on load (9600-9625): the bed centre on an empty
         // plate, else the nearest 10 mm cell outside every object already
         // there (GLCanvas3D::get_empty_cells / get_nearest_empty_cell,

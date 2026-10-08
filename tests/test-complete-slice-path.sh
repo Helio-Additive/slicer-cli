@@ -3366,3 +3366,144 @@ assert not bad, "; ".join(bad)
 ' inh-$e/out/inh-$e.3mf || { fail "inherits $e: the exported project's inherits_group/different_settings_to_system are not one entry per preset"; inh_ok=0; }
 done
 [ $inh_ok = 1 ] && echo "PASS: a two-filament H2D project exports inherits_group and different_settings_to_system as one entry per preset, or absent (both engines)"
+
+# ── A model file loaded after a non-empty plate keeps off that plate ──────
+# The desktop's plate-empty test is the whole model
+# (partplate_list.get_curr_plate()->empty(), BambuStudio Plater.cpp 9646), and
+# the cell a new object gets is empty for EVERY object of the model
+# (GLCanvas3D::get_empty_cells walks m_model->objects, GLCanvas3D.cpp
+# 6744-6778) — the project's own, placed by the file, included. The command
+# line's placement kept only the objects it gave an instance to, so an STL
+# after a project 3MF was placed as if the bed were empty, on the bed centre,
+# on top of the project's geometry: the plate's printed footprint was the
+# project's alone. Both engines.
+occ_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run occ1-$e "$bin" base.3mf --plate 1 -o occ1-$e.gcode
+    [ "$(rc occ1-$e)" = 0 ] || { show occ1-$e; fail "$e: the project alone exit $(rc occ1-$e)"; occ_ok=0; continue; }
+    run occ2-$e "$bin" base.3mf cube.stl --plate 1 -o occ2-$e.gcode
+    [ "$(rc occ2-$e)" = 0 ] || { show occ2-$e; fail "$e: project + STL exit $(rc occ2-$e)"; occ_ok=0; continue; }
+    py '
+import re, sys
+def box(path):
+    g = open(path, errors="replace").read()
+    xs = [float(v) for v in re.findall(r"^G1 [^;\n]*X(-?[0-9.]+)[^;\n]*E[0-9.]", g, re.M)]
+    ys = [float(v) for v in re.findall(r"^G1 [^;\n]*Y(-?[0-9.]+)[^;\n]*E[0-9.]", g, re.M)]
+    assert xs and ys, ("no extrusion in " + path)
+    return min(xs), max(xs), min(ys), max(ys)
+one, two = box(sys.argv[1]), box(sys.argv[2])
+grew = max(one[0] - two[0], two[1] - one[1], one[2] - two[2], two[3] - one[3])
+assert grew >= 5.0, ("the STL did not move the plate footprint: project %r, with the STL %r (grew %.2f mm)" % (one, two, grew))
+' occ1-$e.gcode occ2-$e.gcode || { fail "$e: the STL loaded after the project 3MF is placed on the project's own geometry"; occ_ok=0; }
+done
+if [ $occ_ok = 1 ]; then echo "PASS: a model file after a project 3MF is placed clear of the project's objects (both engines)"; fi
+
+# ── The sweep reads the marker beside the folder, rules unchanged ─────────
+# The desktop judges a staging folder stale from a PID written in the folder
+# itself (has_restore_data, bbs_3mf.cpp 9447-9466 / OrcaSlicer 9013-9031);
+# this program writes that PID into <folder>.owner, beside the folder, and the
+# sweep reads only that — the folder's own lock.txt is the name the engine's
+# backup lock uses (Model::set_backup_path writes it for a folder it creates,
+# Model.cpp 1123-1130 / OrcaSlicer 986-993, and the restore path rewrites it,
+# bbs_3mf.cpp 1463-1471). The three rules lane-tmpkill proved hold on the new
+# marker: a dead PID's folder goes, a damaged marker counts as not-an-owner,
+# and a folder with no marker at all is left alone inside the age window.
+RACE=race-rules; rm -rf "$RACE"; mkdir -p "$RACE"
+mkfolder() {  # mkfolder NAME [MARKER]
+    mkdir -p "$RACE/slicer_cli_load-$1"
+    : > "$RACE/slicer_cli_load-$1/plate_1.gcode"
+    if [ $# -ge 2 ]; then printf '%s' "$2" > "$RACE/slicer_cli_load-$1.owner"; fi
+    return 0
+}
+mkfolder dead 999999        # a PID no process of this program has
+mkfolder damaged not-a-pid  # a marker that does not parse
+mkfolder young              # no marker at all, made now
+run race-rules env TMPDIR="$RACE" "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-rules/out
+[ "$(rc race-rules)" = 0 ] || { show race-rules; fail "a run beside the stale folders exit $(rc race-rules)"; }
+[ ! -d "$RACE/slicer_cli_load-dead" ] || fail "the sweep kept a folder whose marker names a dead PID"
+[ ! -e "$RACE/slicer_cli_load-dead.owner" ] || fail "the sweep kept the marker of a folder it removed"
+[ ! -d "$RACE/slicer_cli_load-damaged" ] || fail "the sweep kept a folder whose marker does not parse"
+[ -d "$RACE/slicer_cli_load-young" ] || fail "the sweep removed a folder with no marker inside the age window"
+echo "PASS: the sweep reads the marker beside the folder (dead PID and damaged marker go, a marker-less folder stays)"
+
+# ── A live run's ownership marker is out of the extraction folder ─────────
+# A second run sweeping while the first is alive must leave the live run's
+# folder alone. The marker sat at <folder>/lock.txt, inside the folder the 3MF
+# is extracted into: a marker there is only as trustworthy as every writer of
+# that path. The loader's extraction is name-filtered — Metadata/*.gcode,
+# *.png, *.md5, the project/model config, Auxiliaries/… (bbs_3mf.cpp
+# 1933-2053 at 5873b5f) — so no archive member reaches <folder>/lock.txt at
+# these pins; this case writes the dead PID itself, standing in for the writer
+# of that path, and holds the first run while the second one starts.
+case "$(uname -s)" in
+MINGW*|MSYS*|CYGWIN*) echo "SKIP: the ownership marker race (Windows)";;
+*)
+py '
+import zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("tainted.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        zout.writestr(item, zin.read(item.filename))
+    zout.writestr("lock.txt", "999999")   # the PID a writer of <folder>/lock.txt leaves
+'
+RACE=race-tmp; rm -rf "$RACE"; mkdir -p "$RACE" race-a
+py '
+v = [(x, y, z) for z in (0, 20) for y in (0, 20) for x in (0, 20)]
+f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+with open("objfeed.obj", "w") as o:
+    for p in v: o.write("v %g %g %g\n" % p)
+    for a, b, c in f: o.write("f %d %d %d\n" % (a + 1, b + 1, c + 1))
+'
+# The first run holds on a FIFO it reads as its second model file: it has made
+# its staging folder and read its project by then, and it stays alive until
+# the test feeds it one. An OBJ, not an STL: the STL reader opens the file
+# more than once, and the second open reads the tail of the first feed.
+mkfifo "$RACE/slow.obj"
+TMPDIR="$RACE" "$B" tainted.3mf "$RACE/slow.obj" --plate 1 -o race-a/out.gcode > race-a/stdout 2> race-a/stderr &
+apid=$!
+folder=""
+for i in $(seq 1 200); do
+    folder=$(ls -d "$RACE"/slicer_cli_load-*/ 2>/dev/null | head -1 || true)
+    folder=${folder%/}
+    if [ -n "$folder" ]; then break; fi
+    sleep 0.05
+done
+[ -n "$folder" ] || { kill -KILL $apid 2>/dev/null || true; fail "run A made no staging folder"; }
+[ -f "$folder.owner" ] || { kill -KILL $apid 2>/dev/null || true; fail "run A keeps no ownership marker beside its staging folder"; }
+echo 999999 > "$folder/lock.txt"   # what the marker was, and who else writes it
+run race-b env TMPDIR="$RACE" "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir race-b/out
+[ "$(rc race-b)" = 0 ] || { kill -KILL $apid 2>/dev/null || true; show race-b; fail "run B exit $(rc race-b)"; }
+if [ ! -d "$folder" ]; then
+    kill -KILL $apid 2>/dev/null || true
+    fail "the second run's sweep removed the staging folder of the live run"
+fi
+# Let the first run finish: every open of the FIFO is served, so it ends the
+# way an ordinary run does — its folder intact, its G-code written. A python
+# feeder, not a shell loop: it dies on the first signal, so no feeder of this
+# case can outlive the script and hold its output pipe open.
+py '
+import sys
+data = open("objfeed.obj", "rb").read()
+while True:
+    try:
+        with open(sys.argv[1], "wb") as f:
+            f.write(data)
+    except OSError:
+        break
+' "$RACE/slow.obj" &
+feeder=$!
+arc=hung
+for i in $(seq 1 150); do
+    if ! kill -0 $apid 2>/dev/null; then arc=0; wait $apid || arc=$?; break; fi
+    sleep 0.2
+done
+if [ "$arc" = hung ]; then kill -KILL $apid 2>/dev/null || true; wait $apid 2>/dev/null || true; fi
+kill $feeder 2>/dev/null || true; wait $feeder 2>/dev/null || true
+# A run's own cleanup on the way out is the private-TMPDIR case's business
+# ("the run left folders in the temp dir it was given") and leakcheck's; this
+# case is about the folder the second run must leave alone.
+[ "$arc" = 0 ] || { show race-a; fail "run A exit $arc after the second run's sweep"; }
+[ -s race-a/out.gcode ] || fail "run A wrote no G-code after the second run's sweep"
+echo "PASS: a live run's ownership marker is beside the folder, out of the extraction root (both engines)"
+;;
+esac
