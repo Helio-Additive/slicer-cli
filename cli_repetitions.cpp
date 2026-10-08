@@ -161,10 +161,16 @@ RepetitionsResult arrange_repetitions(Slic3r::Model& model, Slic3r::DynamicPrint
     }
     // The settled iteration, on the model itself: the same copies (the same
     // add_object order, so the two lists line up) and the arrange's own result
-    // copied over, which is what that iteration left on the copy.
-    if (!result.restored) {
+    // copied over, which is what that iteration left on the copy. `config` is
+    // that iteration's too: it holds the tower the arrange placed the copies
+    // around (arrange_on_bed writes it), so it is kept as it is. With no copy
+    // placed the plate is printed as it was, its own tower included, as the
+    // official puts the saved config back (BambuStudio.cpp 6084-6110,
+    // 6014-6081).
+    if (result.restored) {
+        config = original_config;
+    } else {
         duplicate_all_instance(model, unsigned(chosen), skip_ids);
-        set_tower_entry(config);
         copy_arrange_result(work, model);
     }
     emit({{"event", "arranged"}, {"tag", "RepetitionsPlaced"}, {"copies", result.copies_kept},

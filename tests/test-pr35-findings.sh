@@ -64,6 +64,7 @@ box("cube2.stl", 20, 20, 20)
 box("extra.stl", 10, 10, 10)
 box("slab.stl", 30, 20, 10)
 box("tiny.stl", 1.5, 1.5, 1.5)
+box("plate160.stl", 160, 100, 4)
 import math
 def prism(path, profile, depth):
     n = len(profile)
@@ -93,6 +94,8 @@ json.dump({"plates": [P("p", [C("cube.stl", pos_x=[118], pos_y=[118])]), P("q", 
 json.dump({"plates": [P("p", [C("lean.stl", pos_x=[100], pos_y=[100])]), P("q", [C("lean.stl", pos_x=[100], pos_y=[100])])]}, open("lean2.json", "w"))
 json.dump({"plates": [P(n, [C("cube.stl", pos_x=[128], pos_y=[128])]) for n in "abc"]}, open("three.json", "w"))
 json.dump({"plates": [P("t", [C("cube.stl", 2, [1, 2], pos_x=[195, 30], pos_y=[220, 0])])]}, open("ftow.json", "w"))
+json.dump({"plates": [P("b", [C("plate160.stl", 1, [1], pos_x=[30], pos_y=[30]), C("plate160.stl", 1, [2], pos_x=[30], pos_y=[145])])]},
+          open("bigtow.json", "w"))
 json.dump({"plates": [P("pp", [C("cube.stl")], need_arrange=True,
                         plate_params={"layer_height": "0.28", "wall_loops": "5", "sparse_infill_density": "35%"})]},
           open("pparams.json", "w"))
@@ -163,6 +166,15 @@ fx_ftow() {
         --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Matte @BBL X1C" \
         --enable-prime-tower --wipe-tower-x 20 --wipe-tower-y 20 --outputdir fxftow-$1/out --export-3mf ftow.3mf
     cp fxftow-$1/out/ftow.3mf ftow-$1.3mf 2>/dev/null
+}
+# bigtow-<e>.3mf: two 160 x 100 mm plates on two filaments, laid out by the list, the
+# project's own tower at (210, 40): no --repetitions copy fits beside them on the X1 Carbon.
+fx_bigtow() {
+    [ -s bigtow-$1.3mf ] && return 0
+    run fxbigtow-$1 "$(bin_of $1)" --load-assemble-list bigtow.json --slice 1 --printer-preset "$X1C" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Matte @BBL X1C" \
+        --enable-prime-tower --wipe-tower-x 210 --wipe-tower-y 40 --outputdir fxbigtow-$1/out --export-3mf bigtow.3mf
+    cp fxbigtow-$1/out/bigtow.3mf bigtow-$1.3mf 2>/dev/null
 }
 # Settings files: the engine's own system presets for PRINTER, flattened (inherits walked), as
 # the official CLIs read them: <tag>-<e>-machine.json, -process.json, -filament.json.
@@ -306,7 +318,43 @@ print("ok" if abs(gx - ex) < 0.01 and abs(gy - ey) < 0.01 else "sliced tower (%g
 ' f5$n-$e/out/plate_1.gcode f5$n-$e.json)
             [ "$r" = ok ] || bad="$bad $n: $r;"
         done
-        if [ -z "$bad" ]; then report F5 $e PASS "--export-settings holds the tower the slice used (repetitions and --arrange 1)"
+        # The comparison above holds for any tower both write, the printer's
+        # default corner too. The tower the slice uses must be the one the
+        # repetitions arrange placed the copies around: the engine's own checks
+        # refuse a tower off the printable area (-104) or on a copy (-101), and
+        # the printer's bare default corner (165, 250) runs off this bed. And with
+        # no copy placed the plate keeps its own tower.
+        run f5fit-$e "$bin" ftow-$e.3mf --slice 1 --repetitions 3 --enable-prime-tower --outputdir f5fit-$e/out
+        if [ "$(rc f5fit-$e)" != 0 ]; then bad="$bad fit: $(why f5fit-$e);"
+        else
+            r=$(py '
+import re, sys
+g = open(sys.argv[1], errors="replace").read()
+gx = float(re.search(r"^; wipe_tower_x = (.*)$", g, re.M).group(1).split(",")[0])
+gy = float(re.search(r"^; wipe_tower_y = (.*)$", g, re.M).group(1).split(",")[0])
+print("ok" if (gx, gy) != (165.0, 250.0) else "the tower is the printer default corner (165, 250), not the arrange result")
+' f5fit-$e/out/plate_1.gcode)
+            [ "$r" = ok ] || bad="$bad fit: $r;"
+        fi
+        fx_bigtow $e
+        if [ ! -s bigtow-$e.3mf ]; then bad="$bad nofit fixture: $(why fxbigtow-$e);"
+        else
+            run f5nofit-$e "$bin" bigtow-$e.3mf --slice 1 --repetitions 3 --outputdir f5nofit-$e/out
+            if [ "$(rc f5nofit-$e)" != 0 ]; then bad="$bad nofit: $(why f5nofit-$e);"
+            else
+                r=$(py '
+import json, re, sys
+g = open(sys.argv[1], errors="replace").read()
+gx = float(re.search(r"^; wipe_tower_x = (.*)$", g, re.M).group(1).split(",")[0])
+gy = float(re.search(r"^; wipe_tower_y = (.*)$", g, re.M).group(1).split(",")[0])
+ev = [json.loads(l[len("[[SLICER_EVENT]] "):]) for l in open(sys.argv[2], errors="replace") if l.startswith("[[SLICER_EVENT]] ")]
+kept = [e.get("copies") for e in ev if e.get("tag") == "RepetitionsPlaced"]
+print("ok" if kept == [0] and abs(gx - 210) < 0.01 and abs(gy - 40) < 0.01 else "copies %s, tower (%g, %g), want 0 copies and the project tower (210, 40)" % (kept, gx, gy))
+' f5nofit-$e/out/plate_1.gcode f5nofit-$e/stdout)
+                [ "$r" = ok ] || bad="$bad nofit: $r;"
+            fi
+        fi
+        if [ -z "$bad" ]; then report F5 $e PASS "--export-settings holds the tower the slice used (repetitions and --arrange 1); the repetitions tower is the arrange's, and a plate with no copy placed keeps its own tower"
         else report F5 $e FAIL "$bad"; fi
     done
 }
