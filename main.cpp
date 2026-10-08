@@ -2027,12 +2027,16 @@ static std::string engine_version_text() {
 
 /// The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
 /// OrcaSlicer.cpp 1588-1592 at 31f6803): a file whose major.minor is newer
-/// than the engine's.
-static bool file_newer_than_engine(const Slic3r::Semver& file_version) {
-    const auto engine = Slic3r::Semver::parse(engine_version_text());
+/// than the version it is compared against.
+static bool file_newer_than_version(const Slic3r::Semver& file_version, const std::string& version) {
+    const auto engine = Slic3r::Semver::parse(version);
     if (!engine) return false;
     return engine->maj() < file_version.maj() ||
            (engine->maj() == file_version.maj() && engine->min() < file_version.min());
+}
+
+static bool file_newer_than_engine(const Slic3r::Semver& file_version) {
+    return file_newer_than_version(file_version, engine_version_text());
 }
 
 // ── Engine resource roots ────────────────────────────────────────────────
@@ -4436,8 +4440,10 @@ static std::string config_id_text(const Slic3r::DynamicPrintConfig& config, cons
 
 /// Any setting's value as the engine writes it (`serialize`), empty when the key
 /// is not there: a coEnum such as support_type has no ConfigOptionString behind
-/// it, so the text a decision reads is the serialized one.
-static std::string config_value_text(const Slic3r::DynamicPrintConfig& config, const char* key) {
+/// it, so the text a decision reads is the serialized one. Takes the config
+/// base, so an object's own settings (ModelConfigObject) read the same way as a
+/// project's.
+static std::string config_value_text(const Slic3r::ConfigBase& config, const char* key) {
     const Slic3r::ConfigOption* opt = config.option(key);
     return opt != nullptr ? opt->serialize() : std::string();
 }
@@ -4494,6 +4500,25 @@ static std::string bambu_only_gcode_placeholder(const Slic3r::DynamicPrintConfig
             return found;
     }
     return {};
+}
+
+/// True when tree supports are in play for this run: the project says so, or an
+/// object overrides the project's support type with a tree one (a plate's own
+/// settings can carry it too, and are applied later). G4's warning is about a
+/// value whose meaning only matters then.
+static bool tree_support_enabled(const Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model) {
+    if (boost::starts_with(config_value_text(config, "support_type"), "tree"))
+        return true;
+    for (const Slic3r::ModelObject* object : model.objects) {
+        if (object == nullptr)
+            continue;
+        // An object carries a ModelConfigObject, not a DynamicPrintConfig: its
+        // own ConfigBase accessor answers the same question.
+        const Slic3r::ConfigOption* opt = object->config.option("support_type");
+        if (opt != nullptr && boost::starts_with(opt->serialize(), "tree"))
+            return true;
+    }
+    return false;
 }
 
 /// Metadata/project_settings.config of a project 3MF, parsed. A null json when
@@ -6356,6 +6381,26 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
                     return 1;
                 }
+                // G4. BambuStudio's 0 means the support walls are infill-only
+                // (BambuStudio Support/TreeSupport.cpp 1853-1855 at 5873b5f);
+                // this engine reads 0 as automatic -- one wall where the area
+                // is thin, extra walls where they are needed (OrcaSlicer
+                // Support/TreeSupport.cpp 1623-1630) -- and cannot express
+                // "always infill-only". Upstream keeps the value (434ff301 maps
+                // only -1), and so does this run: the supports may come out
+                // sturdier than the file asked for, which is said once, when
+                // tree supports are in play.
+                if (file_states_number(file_settings, "tree_support_wall_count", 0) &&
+                    tree_support_enabled(config, model)) {
+                    emit_event({{"event","warning"},
+                                {"tag","TreeSupportWallCountZeroIsAuto"},
+                                {"opt_key", "tree_support_wall_count"},
+                                {"value", 0},
+                                {"message","The project sets tree_support_wall_count 0, BambuStudio's "
+                                           "infill-only support walls; this engine reads 0 as automatic, so the "
+                                           "supports may come out sturdier. Set it to 1 or 2 to choose the wall "
+                                           "count."}});
+                }
             }
             // A Bambu Studio project states its filament indices from 0
             // (BambuStudio PrintConfig.cpp 4359-4361 at 5873b5f) while this
@@ -6462,32 +6507,64 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
             // OrcaSlicer.cpp 1588-1592 at 31f6803): a file saved by a newer
             // major.minor than this engine is refused unless --allow-newer-file.
-            // The sentence adds what the file says about its maker: a Bambu
-            // Studio 02.07 project on the Orca 2.4 build is newer only in the
-            // other app's numbering, and the binary to use is the maker's.
-            if (!o.allow_newer_file && file_version.maj() + file_version.min() > 0 &&
-                file_newer_than_engine(file_version)) {
+            // On the Orca build the maker decides which number the file's
+            // version is in (G2, see below): a Bambu Studio project is only
+            // warned about, an OrcaSlicer project is refused.
+            // The refusal sentence adds what the file says about its maker: a
+            // Bambu Studio 02.07 project on the Orca 2.4 build is newer only in
+            // the other app's numbering, and the binary to use is the maker's.
+            if (!o.allow_newer_file && file_version.maj() + file_version.min() > 0) {
                 std::string model_xml;
                 std::map<std::string, std::string> meta;
                 if (read_zip_member(input_file, "3D/3dmodel.model", model_xml))
                     meta = model_metadata(model_xml);
                 const auto app = meta.find("Application");
-                std::string detail = "The file is version " + file_version.to_string() +
-                                     (app != meta.end() ? " (" + app->second + ")" : std::string()) +
-                                     "; this engine is " + engine_version_text() + ".";
+                bool refuse = file_newer_than_engine(file_version);
 #ifdef ENGINE_ORCA
-                if (meta.count("OrcaSlicer") == 0 && app != meta.end() &&
-                    boost::starts_with(app->second, "BambuStudio-"))
-                    detail += " It was made by Bambu Studio: use slicer_cli (BambuStudio).";
+                // G2. Which number a file's version is in depends on who wrote
+                // it, and the desktop reads it that way (Plater.cpp 6094-6157
+                // at 31f6803): a Bambu Studio project is compared with
+                // SLIC3R_VERSION, the Bambu base this Orca release is built on
+                // (version.inc, 02.06.00.51), and only warned about -- a
+                // BambuStudio 02.07 project is not newer than OrcaSlicer 2.4,
+                // it is newer than the base both apps share. An OrcaSlicer
+                // project is compared with this engine's own version, and a
+                // newer one is still refused, as the official CLI refuses it.
+                const bool orca_made = meta.count("OrcaSlicer") != 0 ||
+                                       (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-"));
+                if (!orca_made && file_newer_than_version(file_version, SLIC3R_VERSION)) {
+                    emit_event({{"event","warning"},
+                                {"tag","FileNewerThanEngineBase"},
+                                {"file_version", file_version.to_string()},
+                                {"application", app != meta.end() ? json(app->second) : json(nullptr)},
+                                {"base_version", SLIC3R_VERSION},
+                                {"unknown_keys", outcome.unknown_settings},
+                                {"message","The file is version " + file_version.to_string() +
+                                           (app != meta.end() ? " (" + app->second + ")" : std::string()) +
+                                           ", newer than the " + SLIC3R_VERSION +
+                                           " Bambu base this engine is built on. It is sliced as it is; the "
+                                           "setting(s) this engine has no definition for are ignored"}});
+                    refuse = false;
+                }
 #endif
-                emit_event({{"event","config_refused"},
-                            {"tag","FileVersionNewerThanEngine"},
-                            {"file_version", file_version.to_string()},
-                            {"engine_version", engine_version_text()},
-                            {"message", cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) + " " + detail}});
-                std::cerr << "Error: " << cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) << " " << detail << "\n";
-                set_outcome_failure(outcome, CLI_FILE_VERSION_NOT_SUPPORTED, detail);
-                return 1;
+                if (refuse) {
+                    std::string detail = "The file is version " + file_version.to_string() +
+                                         (app != meta.end() ? " (" + app->second + ")" : std::string()) +
+                                         "; this engine is " + engine_version_text() + ".";
+#ifdef ENGINE_ORCA
+                    if (meta.count("OrcaSlicer") == 0 && app != meta.end() &&
+                        boost::starts_with(app->second, "BambuStudio-"))
+                        detail += " It was made by Bambu Studio: use slicer_cli (BambuStudio).";
+#endif
+                    emit_event({{"event","config_refused"},
+                                {"tag","FileVersionNewerThanEngine"},
+                                {"file_version", file_version.to_string()},
+                                {"engine_version", engine_version_text()},
+                                {"message", cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) + " " + detail}});
+                    std::cerr << "Error: " << cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) << " " << detail << "\n";
+                    set_outcome_failure(outcome, CLI_FILE_VERSION_NOT_SUPPORTED, detail);
+                    return 1;
+                    }
             }
             // A setting whose value this engine has no meaning for is a
             // different print from the one the file states, so it is refused,
