@@ -1265,6 +1265,43 @@ assert len(d["sliced_plates"][0]["objects"]) == 3, d["sliced_plates"][0]["object
 done
 echo "PASS: --repetitions copies the plate (both engines)"
 
+# --repetitions on one plate of a multi-plate project. The search for a count
+# that fits retries, and a retry used to put the saved model back with a Model
+# assignment: that frees every object and instance the model holds, while the
+# plate's own scope (main.cpp PlateScope) and the run's plates still name them —
+# the scope wrote through the freed objects on its way out, and the other
+# plates were left with no members. The search now runs on a copy of the model
+# (cli_repetitions.cpp), so nothing the run still names is freed.
+#
+# A real multi-plate project, external like the other corpus case: the run goes
+# where it is, and skips where it is not.
+REPS="${SLICER_CLI_CORPUS:-$HOME/engcheck-plugin/corpus}/feb807b138a8ddfa.3mf"
+if [ ! -f "$REPS" ]; then
+    echo "SKIP: --repetitions on a plate of a multi-plate project (no $REPS)"
+else
+    for e in bambu orca; do
+        bin=$B; [ $e = orca ] && bin=$O
+        # Plate 3 of the project's three (3 objects, with 22 and 6 on the other
+        # two, so the plate is not the whole model and the count cannot fit.
+        # The project states raft_first_layer_expansion: -1, which the OrcaSlicer
+        # engine refuses as out of range (-18, naming the flag); the override is
+        # the flag it asks for.
+        run multirep-$e "$bin" "$REPS" --slice 3 --repetitions 60 --allow-newer-file \
+            --raft-first-layer-expansion 0 --outputdir multirep-$e/out
+        [ "$(rc multirep-$e)" = 0 ] || { show multirep-$e; fail "$e: --repetitions 60 on plate 3 of a three-plate project exit $(rc multirep-$e)"; }
+        grep -q '"tag":"RepetitionsPlaced"' multirep-$e/stdout || { show multirep-$e; fail "$e: no RepetitionsPlaced event"; }
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == 0, d
+plates = d["sliced_plates"]
+assert len(plates) == 1 and plates[0]["id"] == 3, plates
+assert plates[0]["objects"], plates[0]
+' multirep-$e/out/result.json || { show multirep-$e; fail "$e: the plate came out of the repetitions search empty"; }
+    done
+    echo "PASS: --repetitions on one plate of a multi-plate project leaves it whole (both engines)"
+fi
+
 # A project 3MF of each engine's own (the Bambu fixture is too new for the
 # OrcaSlicer engine).
 for e in bambu orca; do

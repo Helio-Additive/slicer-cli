@@ -6821,9 +6821,11 @@ static void pipe_prepare_slicing(RunState& rs) {
 /// exact offset), the other instances come back, and instances or objects
 /// the step added (--repetitions) are kept, on the plate. Instances are known
 /// by their ObjectID, which a copy of the model keeps (Model::assign_copy), so
-/// a step that puts back a saved copy of the model (the repetitions loop)
-/// finds its instances again. Only a scope that holds the whole model may let
-/// its step replace the model's objects.
+/// a step that puts back a saved copy of the model finds its instances again.
+/// Only a scope that holds the whole model may let its step replace the model's
+/// objects: nothing this model reaches through a scope may replace them (the
+/// repetitions search runs on a copy of the model for that reason,
+/// cli_repetitions.cpp).
 class PlateScope {
 public:
     PlateScope(Slic3r::Model& model, const RunPlate& plate) : m_model(model), m_origin(plate.origin) {
