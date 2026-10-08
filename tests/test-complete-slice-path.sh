@@ -2008,11 +2008,7 @@ echo "PASS: a Bambu A1 mini project switched to the X1 Carbon by name (Bambu eng
 # tests/tools/check_preset_gcode.py measures (the file's own keys taken out of
 # the flattened preset, and the rest read out of the G-code header).
 U1_PROCESS="$ORCA_PROFILES/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json"
-# The Generic filament, not "Snapmaker PLA @U1": that one's chain names plate
-# requirements the U1's own default plate does not meet, and the engine refuses
-# it (-103, "Found some filament unprintable at first layer on current Plate")
-# with the complete file too.
-U1_FILAMENT="$ORCA_PROFILES/OrcaFilamentLibrary/filament/Generic PLA @System.json"
+U1_FILAMENT="$ORCA_PROFILES/Snapmaker/filament/Snapmaker PLA @U1.json"
 
 # The switch through --load-settings, checked key by key against the parents.
 python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" machine \
@@ -2029,16 +2025,16 @@ python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" mac
 python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" process \
     "0.20 Standard @Snapmaker U1 (0.4 nozzle)" u1leg/out/plate_1.gcode ||
     fail "orca: --process did not read the shipped file over its parents"
-python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/OrcaFilamentLibrary" filament \
-    "Generic PLA @System" u1leg/out/plate_1.gcode ||
+python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" filament \
+    "Snapmaker PLA @U1" u1leg/out/plate_1.gcode ||
     fail "orca: --filament did not read the shipped file over its parents"
 
 # --load-filaments with a shipped filament, on the printer it belongs to.
 run u1fil "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" \
     --load-filaments "$U1_FILAMENT" --outputdir u1fil/out
 [ "$(rc u1fil)" = 0 ] || { show u1fil; fail "orca: the shipped Snapmaker filament through --load-filaments exit $(rc u1fil)"; }
-python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/OrcaFilamentLibrary" filament \
-    "Generic PLA @System" u1fil/out/plate_1.gcode ||
+python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" filament \
+    "Snapmaker PLA @U1" u1fil/out/plate_1.gcode ||
     fail "orca: --load-filaments did not read the shipped filament over its parents"
 echo "PASS: the legacy flags and --load-filaments read the shipped Snapmaker presets over their parents"
 
