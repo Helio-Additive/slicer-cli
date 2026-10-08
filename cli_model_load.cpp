@@ -208,7 +208,8 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
                 r.code    = CLI_INVALID_PARAMS;
                 r.message = "--load-filament-ids: filament " + std::to_string(loaded_filament_ids[input_index]) +
                             " for file " + std::to_string(input_index + 1) + " is past the " +
-                            std::to_string(load_filaments) + " filament(s) loaded";
+                            std::to_string(load_filaments) + " filament(s) loaded; give --load-filaments with at least " +
+                            std::to_string(loaded_filament_ids[input_index]) + " file(s)";
                 return r;
             }
             object_extruder_id = loaded_filament_ids[input_index];
@@ -217,7 +218,8 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
             if (clone_objects[input_index] > kMaxCloneableSize) {
                 r.code    = CLI_INVALID_PARAMS;
                 r.message = "--clone-objects: " + std::to_string(clone_objects[input_index]) + " copies for file " +
-                            std::to_string(input_index + 1) + " is more than " + std::to_string(kMaxCloneableSize);
+                            std::to_string(input_index + 1) + " is more than " + std::to_string(kMaxCloneableSize) +
+                            "; give " + std::to_string(kMaxCloneableSize) + " copies or fewer";
                 return r;
             }
             clone_count = clone_objects[input_index];
@@ -248,7 +250,7 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
     }
     if (model.objects.empty()) {
         r.code    = CLI_NO_SUITABLE_OBJECTS;
-        r.message = "The model files hold no object to print";
+        r.message = "The model files hold no object to print; give a file that holds printable objects";
     }
     return r;
 }

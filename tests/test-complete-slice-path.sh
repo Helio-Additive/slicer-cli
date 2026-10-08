@@ -2428,6 +2428,16 @@ else
     fail "PR #35 findings (tests/test-pr35-findings.sh)"
 fi
 
+# Every refusal sentence reworded for the owner rule (the sentence says what
+# is wrong AND what to do) carries its "do" part in result.json's
+# error_string: tests/test_refusal_sentences.sh.
+if bash "$SCRIPT_DIR/test_refusal_sentences.sh" "$B" "$O" > refusals.log 2>&1; then
+    grep -E '^(PASS|SKIP)' refusals.log
+else
+    grep -E '^FAIL' refusals.log
+    fail "refusal sentences (tests/test_refusal_sentences.sh)"
+fi
+
 # The product's contracts a G-code compare cannot see (--layout-plan exit
 # codes and JSON, the by-object collision line): tests/test-product-invariants.sh.
 if bash "$SCRIPT_DIR/test-product-invariants.sh" "$B" "$O" > invariants.log 2>&1; then

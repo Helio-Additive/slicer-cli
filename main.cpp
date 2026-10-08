@@ -3659,7 +3659,8 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
             const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
             if (too_wide || too_tall) {
                 const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
-                                           "; the bed is " + bed_size_text(config) + ".";
+                                           "; the bed is " + bed_size_text(config) +
+                                           ". Scale the object down, split it across plates, or use a bigger printer.";
                 set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
                 emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
                             {"object", object->name}, {"message", detail}});
@@ -4092,7 +4093,8 @@ static bool arrange_assemble_plate(Slic3r::Model& model, Slic3r::DynamicPrintCon
             off_bed += (off_bed.empty() ? "'" : ", '") + ap.name + "'";
     if (!off_bed.empty()) {
         const std::string detail = "These objects of the assemble list's plate " + std::to_string(plate_index + 1) +
-                                   " do not fit on the " + bed_size_text(config) + " bed together: " + off_bed + ".";
+                                   " do not fit on the " + bed_size_text(config) + " bed together: " + off_bed +
+                                   ". Give the plate fewer objects or smaller copies, or use a bigger printer.";
         set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, detail);
         emit_event({{"event","plate_error"}, {"tag","ArrangeFailed"}, {"message", detail}});
         return false;
@@ -6954,6 +6956,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     items[key] = why;
                 }
                 sentence += ".";
+                // The official sentence above stays the first part of the
+                // message, so anything that matches on it still matches; the
+                // caller is told how to get past the refusal (a command-line
+                // override is applied on top of the file's value).
+                if (!items.empty()) {
+                    std::string flags;
+                    for (auto it = items.begin(); it != items.end(); ++it) {
+                        std::string flag = "--" + it.key();
+                        std::replace(flag.begin(), flag.end(), '_', '-');
+                        flags += (flags.empty() ? "" : ", ") + flag;
+                    }
+                    sentence += " Give " + flags + " a value in range to override it.";
+                }
                 emit_event({{"event","config_refused"},
                             {"tag", unknown_values.empty() ? "InvalidValues" : "InvalidOrUnknownValues"},
                             {"settings", items},
@@ -9762,9 +9777,13 @@ int main(int argc, char** argv) {
 
     // Detect conflicting layout flags. Under --slice this refusal must still
     // leave result.json like every other early refusal (refuse_run); without
-    // --slice it prints the same sentence and exits 1, unchanged.
+    // --slice it prints the same sentence and exits 1, unchanged. The owner
+    // rule's "what to do" part goes on the result.json path alone: the
+    // sentence the no---slice call prints is the one that was always there.
     if (layout_plan_mode && !layout_json_file.empty())
-        return refuse_run(CLI_INVALID_PARAMS, "--layout-plan and --layout are mutually exclusive");
+        return refuse_run(CLI_INVALID_PARAMS, o.slice_mode
+                              ? "--layout-plan and --layout are mutually exclusive; give one of them"
+                              : "--layout-plan and --layout are mutually exclusive");
 
     // Both layout modes arrange and return, before any slice: like
     // --engine-info and --list-presets they write no result.json, so with
