@@ -31,6 +31,37 @@ std::string bed_type_name(Slic3r::BedType type);
 /// for the event log, empty when nothing changed.
 std::string apply_printer_pick(Slic3r::PresetBundle& bundle);
 
+/// What applying a settings file's "inherits" chain did.
+enum class InheritsResolution {
+    None,        ///< the file states no parent, or (a saved preset) names no differences from it
+    Resolved,    ///< the parent's values are now in `config`
+    NotBundled,  ///< the file names a parent this engine's profiles tree does not hold
+};
+
+/// Reads a settings file the way the desktop reads a preset: the file's own
+/// values, and the bundled system preset it names in "inherits". `from` is the
+/// file's own "from" ("system" for a vendor bundle's file, else a saved one);
+/// `type` is "machine", "process" or "filament"; `parent` reports the name the
+/// file inherits; `file` is the file's path, whose own vendor bundle holds the
+/// parents (a preset inherits within its bundle). See the definition for the
+/// upstream lines of each rule.
+InheritsResolution apply_inherited_settings(const std::string& profiles_dir, const std::string& type,
+                                           const std::string& from, Slic3r::DynamicPrintConfig& config,
+                                           std::string& parent, const std::string& file);
+
+/// The full settings of a bundled system preset of `type` ("machine",
+/// "process", "filament") named `name`, out of this engine's own profiles
+/// tree: its parents' values with the preset's own keys over them, exactly
+/// what the desktop holds after loading the vendor bundles
+/// (load_vendor_configs_from_json: `config = *default_config;
+/// config.apply(config_src)` — OrcaSlicer PresetBundle.cpp 4894, BambuStudio
+/// PresetBundle.cpp 5087 at the pins; the list a type is read from is
+/// machine_list / process_list / filament_list, 4805-4812 at 31f6803). False
+/// when no vendor list under `profiles_dir` names the preset. `vendor` names
+/// the bundle to read it from; empty searches every bundle.
+bool load_bundled_system_preset(const std::string& profiles_dir, const std::string& type, const std::string& name,
+                                Slic3r::DynamicPrintConfig& out, const std::string& vendor = {});
+
 /// The vendor bundle that holds `printer_preset_name`: the `<vendor>.json` in
 /// `profiles_dir` whose machine_list names it (PresetBundle::find_preset_vendor,
 /// OrcaSlicer PresetBundle.cpp 244-318 at 31f6803). Empty when no bundle lists

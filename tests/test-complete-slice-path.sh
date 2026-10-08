@@ -1682,11 +1682,13 @@ echo "PASS: a printer change moves the plate after the setting flags apply (both
 # process_full and no value of its runs is checked here.
 ORCA_PROFILES="$(cd "$(dirname "$O")" && pwd -P)/resources/profiles-orca"
 [ -d "$ORCA_PROFILES/BBL/process" ] || ORCA_PROFILES="$(cd "$(dirname "$O")/.." && pwd -P)/resources/profiles-orca"
-# The shipped presets flattened over their inherits chains the way the desktop
-# loads them (load_vendor_configs_from_json, PresetBundle.cpp 4932-4936; no BBL
-# preset uses "include"): the A1 mini machine preset with printer keys only (a
-# settings file, not an --export-settings dump, which carries the process's
-# keys too), and the two processes the checks below expect.
+# The shipped presets flattened over their inherits chains, for the EXPECTED
+# values below only: the runs themselves pass the files the package ships, or
+# the preset names, never a flattened copy (a shipped file holds only its
+# differences from its parents, and the engines read it over them). The oracle
+# is the two processes the checks below expect.
+A1M_MACHINE="$ORCA_PROFILES/BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"
+[ -f "$A1M_MACHINE" ] || fail "orca: the package ships no A1 mini machine preset at $A1M_MACHINE"
 py '
 import json, os, sys
 vendor = sys.argv[1]
@@ -1703,13 +1705,9 @@ def flat(kind, name):
         r.update({k: v for k, v in d.items() if k != "inherits"})
         return r
     return resolve(name)
-m = flat("machine", "Bambu Lab A1 mini 0.4 nozzle")
-m.update({"type": "machine", "from": "system", "name": "Bambu Lab A1 mini 0.4 nozzle", "instantiation": "true"})
-assert "layer_height" not in m and m["default_print_profile"], sorted(m)
-json.dump(m, open("a1m-machine-orca.json", "w", encoding="utf-8"), indent=1)
 for out, name in (("a1m-p020.json", "0.20mm Standard @BBL A1M"), ("a1m-p016.json", "0.16mm Optimal @BBL A1M")):
     json.dump(flat("process", name), open(out, "w", encoding="utf-8"), indent=1)
-' "$ORCA_PROFILES/BBL" || fail "orca: the shipped A1 mini presets could not be flattened"
+' "$ORCA_PROFILES/BBL" || fail "orca: the shipped A1 mini processes could not be flattened"
 
 # The fifteen printer-change cases above switch with an --export-settings dump
 # as the machine file; the process must still be the A1 mini's, not the X1
@@ -1745,7 +1743,7 @@ echo "PASS: the Orca printer change slices with the process the desktop selects 
 run sw16p "$O" cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
     --process-preset "0.16mm Optimal @BBL X1C" --outputdir sw16p/out --export-3mf sw16.3mf
 [ "$(rc sw16p)" = 0 ] || { show sw16p; fail "orca: the 0.16mm Optimal X1 Carbon project exit $(rc sw16p)"; }
-run sw16 "$O" sw16p/out/sw16.3mf --slice 1 --load-settings a1m-machine-orca.json --outputdir sw16/out
+run sw16 "$O" sw16p/out/sw16.3mf --slice 1 --load-settings "$A1M_MACHINE" --outputdir sw16/out
 [ "$(rc sw16)" = 0 ] || { show sw16; fail "orca: the 0.16mm printer change with a printer-keys-only machine file exit $(rc sw16)"; }
 py '
 import json, re, sys
@@ -1801,7 +1799,6 @@ def flat(kind, name, seen=()):
 m = flat("machine", "Snapmaker U1 (0.4 nozzle)")
 m.update({"type": "machine", "from": "system", "name": "Snapmaker U1 (0.4 nozzle)", "instantiation": "true"})
 assert "layer_height" not in m, sorted(m)
-json.dump(m, open("u1-machine-orca.json", "w", encoding="utf-8"), indent=1)
 # The pick the desktop makes: first_compatible_idx over the vendor list with
 # PreferedPrintProfileMatch (Preset.hpp 686-709, PresetBundle.cpp 5196-5247),
 # skipping presets a user cannot instantiate (Preset.cpp 1620). The project
@@ -1831,10 +1828,15 @@ print(best)
 ' "$ORCA_PROFILES/Snapmaker" > u1-pick.txt || fail "orca: the Snapmaker presets could not be flattened"
 U1_PICK="0.20 Bambu Support W @Snapmaker U1 (0.4 nozzle)"
 [ "$(cat u1-pick.txt)" = "$U1_PICK" ] || { cat u1-pick.txt; fail "orca: the desktop pick for the Snapmaker U1 was not $U1_PICK"; }
+# The file the PACKAGE ships, not a flattened copy of it: it holds only its
+# differences from its parents (74 keys of a machine preset's several hundred),
+# and both engines read it over its parents out of their own profiles tree.
+U1_MACHINE="$ORCA_PROFILES/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json"
+[ -f "$U1_MACHINE" ] || fail "orca: the package ships no Snapmaker U1 machine preset at $U1_MACHINE"
 run u1p "$O" cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
     --process-preset "0.20mm Standard @BBL X1C" --outputdir u1p/out --export-3mf u1.3mf
 [ "$(rc u1p)" = 0 ] || { show u1p; fail "orca: the X1 Carbon project for the Snapmaker switch exit $(rc u1p)"; }
-run u1s "$O" u1p/out/u1.3mf --slice 1 --load-settings u1-machine-orca.json --outputdir u1s/out
+run u1s "$O" u1p/out/u1.3mf --slice 1 --load-settings "$U1_MACHINE" --outputdir u1s/out
 [ "$(rc u1s)" = 0 ] || { show u1s; fail "orca: the Snapmaker printer change exit $(rc u1s)"; }
 py '
 import json, re, sys
@@ -1857,6 +1859,223 @@ if got("printer_settings_id") != "Snapmaker U1 (0.4 nozzle)":
 assert not bad, "; ".join(bad)
 ' u1s/out/plate_1.gcode u1-process-orca.json || fail "orca: the Snapmaker printer change did not take the Snapmaker process the desktop selects"
 echo "PASS: the Orca printer change reads the new printer's own vendor process list"
+
+# ── The same switch, asked for as a real user or agent would ─────────────────
+# Two ways a caller names a printer, and both must slice the project the same
+# way the desktop app does when its printer list is used:
+#   * --printer-preset "NAME" on a project 3MF (the desktop's printer pick:
+#     PresetBundle::update_compatible re-selects the process, PresetBundle.cpp
+#     5295-5330 at 31f6803), and
+#   * --load-settings "<the file the package ships>", which holds only its
+#     differences from its parents and is now read over them, as the desktop
+#     loads a preset (load_vendor_configs_from_json: `config = *default_config;
+#     config.apply(config_src)`, PresetBundle.cpp 4894).
+run u1n "$O" u1p/out/u1.3mf --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" --outputdir u1n/out
+[ "$(rc u1n)" = 0 ] || { show u1n; fail "orca: --printer-preset on a project 3MF exit $(rc u1n)"; }
+py '
+import json, re, sys
+want = json.load(open(sys.argv[1])); pick = open(sys.argv[2]).read().strip()
+KEYS = ("printable_area", "nozzle_diameter", "printer_settings_id", "print_settings_id", "layer_height",
+        "wall_loops", "sparse_infill_density", "travel_speed", "default_acceleration", "outer_wall_speed",
+        "enable_support", "prime_volume", "retraction_length", "machine_max_acceleration_x",
+        "gcode_flavor", "single_extruder_multi_material", "printer_agent", "bed_mesh_max", "bed_mesh_min",
+        "scan_first_layer", "bed_exclude_area", "default_print_profile", "default_filament_profile")
+def head(path):
+    g = open(path, errors="replace").read()
+    def got(k):
+        m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+        return None if m is None else m.group(1).strip()
+    return g, {k: got(k) for k in KEYS}
+def first(v):
+    return re.sub(r"\"", "", str(v[0] if isinstance(v, list) else v))
+bad = []
+gfile, a = head("u1s/out/plate_1.gcode")
+gname, b = head("u1n/out/plate_1.gcode")
+if a != b:
+    bad.append("the shipped file and --printer-preset sliced differently: " +
+               "; ".join("%s: %r vs %r" % (k, a[k], b[k]) for k in KEYS if a[k] != b[k]))
+for k in ("layer_height", "wall_loops", "sparse_infill_density", "travel_speed", "default_acceleration",
+          "outer_wall_speed", "enable_support", "prime_volume"):
+    if k in want["config"] and b[k] != first(want["config"][k]):
+        bad.append("%s: G-code %r, the flattened Snapmaker U1 process %r" % (k, b[k], first(want["config"][k])))
+if b["print_settings_id"] != pick:
+    bad.append("print_settings_id: G-code %r, the pick the desktop makes %r" % (b["print_settings_id"], pick))
+if b["printer_settings_id"] != "Snapmaker U1 (0.4 nozzle)":
+    bad.append("printer_settings_id: G-code %r" % b["printer_settings_id"])
+# The keys the shipped file leaves to its parents, and what the file read as
+# it stands put there instead: the own dialect of the printer and its tool
+# changer. The U1 is a Klipper tool changer (fdm_U1: gcode_flavor klipper,
+# single_extruder_multi_material 0); the Bambu project values are marlin and 1,
+# which a hybrid slice writes as the printer own.
+for key, want in (("gcode_flavor", "klipper"), ("single_extruder_multi_material", "0")):
+    if b[key] != want:
+        bad.append("%s: G-code %r, the value of the printer own %r" % (key, b[key], want))
+# The U1 has four nozzles on a 0.5..270.5 by 1..271 bed: both come from the
+# parents of the machine preset (fdm_U1 / fdm_toolchanger / fdm_klipper), which
+# the shipped file leaves out.
+if (b["nozzle_diameter"] or "").count(",") != 3:
+    bad.append("nozzle_diameter: G-code %r, the U1 has four nozzles" % b["nozzle_diameter"])
+pts = [tuple(float(v) for v in p.lower().split("x")) for p in (b["printable_area"] or "").split(",")]
+if len(pts) < 4 or (min(p[0] for p in pts), max(p[0] for p in pts), min(p[1] for p in pts),
+                    max(p[1] for p in pts)) != (0.5, 270.5, 1.0, 271.0):
+    bad.append("printable_area: G-code %r, the U1 bed is 0.5..270.5 by 1..271" % b["printable_area"])
+else:
+    out = []
+    for line in gname.splitlines():
+        if not line.startswith("G1") or " E" not in line:
+            continue
+        mx = re.search(r" X([-\d.]+)", line); my = re.search(r" Y([-\d.]+)", line)
+        if mx and not (0.5 <= float(mx.group(1)) <= 270.5):
+            out.append("X" + mx.group(1))
+        if my and not (1.0 <= float(my.group(1)) <= 271.0):
+            out.append("Y" + my.group(1))
+    if out:
+        bad.append("%d extrusion coordinate(s) outside the U1 bed: %s" % (len(out), ", ".join(out[:5])))
+assert not bad, "; ".join(bad)
+' u1-process-orca.json u1-pick.txt || fail "orca: --printer-preset on a project 3MF did not slice the Snapmaker U1 the desktop way"
+echo "PASS: a project 3MF switched to the Snapmaker U1 by name and by the shipped file slices the same"
+
+# An unknown name refuses with the close ones, on this path too.
+run u1bad "$O" u1p/out/u1.3mf --slice 1 --printer-preset "Snapmaker U1" --outputdir u1bad/out
+[ "$(rc u1bad)" != 0 ] || fail "orca: an unknown printer name was taken on a project 3MF"
+grep -q "has no printer preset named 'Snapmaker U1'.*Close names:.*Snapmaker U1 (0.4 nozzle)" u1bad/stderr ||
+    { show u1bad; fail "orca: the unknown-name refusal names no close preset"; }
+py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -5, d
+' u1bad/out/result.json || { show u1bad; fail "orca: the unknown-name refusal left no result.json with -5"; }
+
+# A partial preset whose parent this engine does not ship refuses before
+# slicing, and says which preset to pass instead.
+py '
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+d["inherits"] = "fdm_no_such_parent"
+json.dump(d, open("u1-noparent.json", "w"), indent=1)
+' "$U1_MACHINE"
+run u1np "$O" u1p/out/u1.3mf --slice 1 --load-settings u1-noparent.json --outputdir u1np/out
+[ "$(rc u1np)" != 0 ] || fail "orca: a partial preset with a parent this engine lacks was sliced"
+grep -qF "u1-noparent.json is a partial preset that inherits 'fdm_no_such_parent'; pass --printer-preset \"Snapmaker U1 (0.4 nozzle)\" instead" u1np/stderr ||
+    { show u1np; fail "orca: the partial-preset refusal does not name the parent and the preset to pass"; }
+echo "PASS: a partial preset whose parent is missing refuses with what to do instead"
+
+# The Bambu engine ships the BBL tree, so the same call works there: an A1
+# mini project switched to an X1 Carbon by name. The machine values are the
+# ones the engine's own --printer-preset resolves for that printer (the
+# oracle), and the bed is the X1 Carbon's.
+run bambuproj "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir bambuproj/out --export-3mf a1m.3mf
+[ "$(rc bambuproj)" = 0 ] || { show bambuproj; fail "the A1 mini project fixture exit $(rc bambuproj)"; }
+run x1cset "$B" cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" --export-settings x1c-all.json
+[ "$(rc x1cset)" = 0 ] || { show x1cset; fail "the X1 Carbon oracle run exit $(rc x1cset)"; }
+run x1csw "$B" bambuproj/out/a1m.3mf --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" --outputdir x1csw/out
+[ "$(rc x1csw)" = 0 ] || { show x1csw; fail "bambu: the A1 mini project switched to the X1 Carbon exit $(rc x1csw)"; }
+py '
+import json, re, sys
+def first(v):
+    return re.sub(r"\"", "", str(v[0] if isinstance(v, list) else v))
+want = json.load(open(sys.argv[1]))
+g = open("x1csw/out/plate_1.gcode", errors="replace").read()
+def got(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).strip()
+def got_first(k):
+    v = got(k)
+    return None if v is None else v.split(",")[0].strip()
+bad = []
+if got("printer_settings_id") != "Bambu Lab X1 Carbon 0.4 nozzle":
+    bad.append("printer_settings_id: G-code %r" % got("printer_settings_id"))
+for k in ("printable_area", "printable_height", "nozzle_diameter", "machine_max_acceleration_x",
+          "machine_max_speed_x", "retraction_length", "extruder_clearance_radius"):
+    if k not in want:
+        continue
+    # One entry of a vector key at most: the header writes the engine count of
+    # entries, which is the extruder number, not the file one.
+    if got_first(k) != first(want[k]):
+        bad.append("%s: G-code %r, the printer preset %r" % (k, got(k), first(want[k])))
+# The X1 Carbon bed of 256 mm, not the 180 mm one of the A1 mini.
+pts = [tuple(float(v) for v in p.lower().split("x")) for p in (got("printable_area") or "").split(",")]
+if len(pts) < 4 or max(p[0] for p in pts) != 256.0 or max(p[1] for p in pts) != 256.0:
+    bad.append("printable_area: G-code %r, the X1 Carbon bed is 256 x 256" % got("printable_area"))
+assert not bad, "; ".join(bad)
+' x1c-all.json || fail "bambu: the project switched to the X1 Carbon did not take the printer preset's own values"
+echo "PASS: a Bambu A1 mini project switched to the X1 Carbon by name (Bambu engine)"
+
+# ── The other flags that read a settings file ───────────────────────────────
+# --load-filaments, the legacy --machine / --process / --filament (which take
+# any settings file) and --downward-settings read their files the same way now,
+# and the check below is the point of it: every key a shipped preset leaves to
+# its parents must reach the slice as the parent's value, which is what
+# tests/tools/check_preset_gcode.py measures (the file's own keys taken out of
+# the flattened preset, and the rest read out of the G-code header).
+U1_PROCESS="$ORCA_PROFILES/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json"
+U1_FILAMENT="$ORCA_PROFILES/Snapmaker/filament/Snapmaker PLA @U1.json"
+
+# The switch through --load-settings, checked key by key against the parents.
+python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" machine \
+    "Snapmaker U1 (0.4 nozzle)" u1s/out/plate_1.gcode u1n/out/plate_1.gcode ||
+    fail "orca: the shipped Snapmaker U1 machine file did not arrive with its parents' values"
+
+# An STL through the three legacy flags, with the files the package ships.
+run u1leg "$O" cube.stl --slice 1 --machine "$U1_MACHINE" --process "$U1_PROCESS" --filament "$U1_FILAMENT" \
+    --outputdir u1leg/out
+[ "$(rc u1leg)" = 0 ] || { show u1leg; fail "orca: the shipped Snapmaker trio through --machine/--process/--filament exit $(rc u1leg)"; }
+python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" machine \
+    "Snapmaker U1 (0.4 nozzle)" u1leg/out/plate_1.gcode ||
+    fail "orca: --machine did not read the shipped file over its parents"
+python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" process \
+    "0.20 Standard @Snapmaker U1 (0.4 nozzle)" u1leg/out/plate_1.gcode ||
+    fail "orca: --process did not read the shipped file over its parents"
+python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" filament \
+    "Snapmaker PLA @U1" u1leg/out/plate_1.gcode ||
+    fail "orca: --filament did not read the shipped file over its parents"
+
+# --load-filaments with a shipped filament, on the printer it belongs to.
+run u1fil "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" \
+    --load-filaments "$U1_FILAMENT" --outputdir u1fil/out
+[ "$(rc u1fil)" = 0 ] || { show u1fil; fail "orca: the shipped Snapmaker filament through --load-filaments exit $(rc u1fil)"; }
+python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" filament \
+    "Snapmaker PLA @U1" u1fil/out/plate_1.gcode ||
+    fail "orca: --load-filaments did not read the shipped filament over its parents"
+echo "PASS: the legacy flags and --load-filaments read the shipped Snapmaker presets over their parents"
+
+# The Bambu engine's own filament, whose chain includes a template file
+# ("include", the BBL tree's own spelling): the same check, and the include is
+# part of what the parents hold.
+A1M_FILE="$RES/profiles/BBL/filament/Bambu PLA Basic @BBL A1M.json"
+[ -f "$A1M_FILE" ] || fail "the package ships no Bambu PLA Basic @BBL A1M filament at $A1M_FILE"
+run filb "$B" cube.stl --slice 1 --printer-preset "$A1M" --load-filaments "$A1M_FILE" --outputdir filb/out
+[ "$(rc filb)" = 0 ] || { show filb; fail "bambu: the shipped BBL filament through --load-filaments exit $(rc filb)"; }
+python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$RES/profiles/BBL" filament \
+    "Bambu PLA Basic @BBL A1M" filb/out/plate_1.gcode ||
+    fail "bambu: --load-filaments did not read the shipped filament over its parents and its include"
+echo "PASS: --load-filaments reads a shipped BBL filament over its parents and its include (Bambu engine)"
+
+# --downward-check reads the machine file the same way: the answer must be the
+# one the engine's own view of the preset gives (--export-settings of the same
+# printer by name), not the one a 62-key file alone would give.
+run x1cdwset "$B" cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" --export-settings x1c-all.json
+py '
+import json
+d = json.load(open("x1c-all.json"))
+d.update({"type": "machine", "from": "system", "name": "Bambu Lab X1 Carbon 0.4 nozzle", "instantiation": "true"})
+json.dump(d, open("x1c-machine.json", "w"), indent=1)
+'
+X1C_FILE="$RES/profiles/BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"
+[ -f "$X1C_FILE" ] || fail "the package ships no X1 Carbon machine preset at $X1C_FILE"
+run dwship "$B" bblx1c.3mf --slice 1 --allow-newer-file --downward-check --downward-settings "$X1C_FILE" --outputdir dwship/out
+[ "$(rc dwship)" = 0 ] || { show dwship; fail "bambu: --downward-settings with the shipped machine file exit $(rc dwship)"; }
+run dwfull "$B" bblx1c.3mf --slice 1 --allow-newer-file --downward-check --downward-settings x1c-machine.json --outputdir dwfull/out
+[ "$(rc dwfull)" = 0 ] || { show dwfull; fail "bambu: --downward-settings with the engine's own machine file exit $(rc dwfull)"; }
+py '
+import json, sys
+a = json.load(open(sys.argv[1])); b = json.load(open(sys.argv[2]))
+ka = {k: v for k, v in a.items() if k.startswith("downward")}
+kb = {k: v for k, v in b.items() if k.startswith("downward")}
+assert ka == kb, (ka, kb)
+assert ka, "no downward answer to compare"
+' dwship/out/result.json dwfull/out/result.json ||
+    fail "bambu: the shipped machine file and the engine's own preset gave different --downward-check answers"
+echo "PASS: --downward-settings reads the shipped machine file over its parents (Bambu engine)"
 
 # ── The owner's case: a Bambu Studio project for a Bambu printer, on the Orca
 # build, retargeted to a Snapmaker U1 ────────────────────────────────────────
@@ -1912,7 +2131,7 @@ with zipfile.ZipFile("bblx1c.3mf") as z:
     assert "print_compatible_printers" not in d and d["tree_support_wall_count"] == "-1", sorted(d)
     assert d["print_settings_id"] == "0.20mm Standard @BBL X1C" and d["layer_height"] == "0.2", d
 ' || fail "orca: the Bambu Studio X1C project fixtures could not be written"
-run bblu1 "$O" bblx1c.3mf --slice 1 --allow-newer-file --load-settings u1-machine-orca.json --outputdir bblu1/out
+run bblu1 "$O" bblx1c.3mf --slice 1 --allow-newer-file --load-settings "$U1_MACHINE" --outputdir bblu1/out
 [ "$(rc bblu1)" = 0 ] || { show bblu1; fail "orca: a Bambu Studio X1C project on the Snapmaker U1 exit $(rc bblu1)"; }
 [ -s bblu1/out/plate_1.gcode ] || { show bblu1; fail "orca: the retargeted Bambu Studio project wrote no G-code"; }
 # The project with no printer switch slices with its own settings, so the
@@ -2037,7 +2256,7 @@ else
     # A hard cap makes the outcome deterministic: the load fits, the slice does
     # not, so the engine raises std::bad_alloc inside its slicing step.
     run h2du1 bash -c 'ulimit -v 6291456; exec "$@"' _ "$O" "$H2D" --slice 1 --allow-newer-file \
-        --load-settings u1-machine-orca.json --outputdir h2du1/out
+        --load-settings "$U1_MACHINE" --outputdir h2du1/out
     case "$(rc h2du1)" in
     0)   echo "PASS: the H2D project switched to the Snapmaker U1 slices (this machine had the memory)";;
     242) # 256 - 14: CLI_OUT_OF_MEMORY
@@ -2265,17 +2484,20 @@ done
 echo "PASS: 3 parallel workers x 20 slices share no 3MF-load backup folder (both engines)"
 
 # A refusal before anything loads still leaves result.json under --slice:
-# named presets on a project 3MF, and --plate with --slice (CLI_INVALID_PARAMS).
+# an unknown preset name (CLI_CONFIG_FILE_ERROR, -5), and --plate with --slice
+# (CLI_INVALID_PARAMS, -2). A project 3MF with a preset name this engine has is
+# no longer refused: it is the desktop app's printer switch.
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
-    run rfp-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --printer-preset "$A1M" --outputdir rfp-$e/out
+    run rfp-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --printer-preset "No Such Printer 0.4 nozzle" --outputdir rfp-$e/out
     run rfq-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --plate 1 --outputdir rfq-$e/out
-    for n in rfp rfq; do
-        [ "$(rc $n-$e)" != 0 ] || { show $n-$e; fail "$e: $n was not refused"; }
+    for n in rfp:-5 rfq:-2; do
+        name=${n%%:*}; want=${n##*:}
+        [ "$(rc $name-$e)" != 0 ] || { show $name-$e; fail "$e: $name was not refused"; }
         py '
 import json, sys; d = json.load(open(sys.argv[1]))
-assert d["return_code"] == -2, d
-' $n-$e/out/result.json || { show $n-$e; fail "$e: the $n refusal left no result.json with -2"; }
+assert d["return_code"] == int(sys.argv[2]), d
+' $name-$e/out/result.json "$want" || { show $name-$e; fail "$e: the $name refusal left no result.json with $want"; }
     done
 done
 echo "PASS: early refusals under --slice leave result.json (both engines)"

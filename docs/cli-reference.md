@@ -57,6 +57,22 @@ file needs a printer: name one with `--printer-preset`, or give settings files
 with `--load-settings`, `--machine` or `--config`. A 3MF that holds only
 geometry (no `Metadata/project_settings.config`) is treated like an STL.
 
+`--printer-preset` on a project 3MF moves the project to that printer, the way
+the desktop app's printer list does: the printer's process is the one the
+desktop selects for it (or the project's own, while the printer is one it
+suits), and the plate is moved onto the new bed.
+
+A settings file given to any of these flags is read the way the desktop reads
+a preset: if it states `inherits`, the file's parents are resolved out of this
+engine's own profiles tree and applied under the file's own values, so a file
+the package ships — which holds only its differences from its parents — means
+the same here as it does in the desktop app. A parent this engine does not
+ship refuses the run before slicing, naming the preset to pass instead.
+
+The desktop's own files load too: a preset saved from the settings panel
+carries no `type` (the kind comes from the keys it states, or from the flag
+that read it), and an "Export current configs" file carries an empty `from`.
+
 Model files are placed the way the desktop apps place them when you add a
 file: the first object at the centre of the bed, the next ones in the nearest
 free spot, each lowered onto the bed. With `--slice`, several objects from
@@ -156,7 +172,7 @@ flag takes its value as the next word or after `=`.
 |-|-|-|-|
 | `-o`, `--output` | file | G-code file of the default call (default `output.gcode`) | both binaries |
 | `--plate` | N | Default call: the plate of a 3MF to slice (1-based) | both binaries |
-| `--printer-preset` | name | A printer system preset by name, every parent applied | both binaries |
+| `--printer-preset` | name | A printer system preset by name, every parent applied; on a project 3MF, the printer the project moves to | both binaries |
 | `--process-preset` | name | A process system preset by name (default: the printer's) | both binaries |
 | `--filament-preset` | name | A filament system preset by name; repeat for more filaments | both binaries |
 | `--machine` | file | A printer settings file (JSON) | both binaries |
@@ -470,7 +486,7 @@ The `event` kinds:
 | Kind | When |
 |-|-|
 | `progress` | Progress of the run (`--progress`, on with `--slice`) |
-| `presets_resolved`, `preset_resolution_failed`, `preset_error`, `preset_warning` | Named presets and system preset files |
+| `presets_resolved`, `preset_resolution_failed`, `preset_error`, `preset_warning` | Named presets and system preset files: `ProjectPrinterSwitch` when `--printer-preset` moves a project 3MF, `ProcessSwitched` / `ProcessKept` when the new printer takes another process or keeps the project's |
 | `model_loaded`, `model_warning`, `load_error`, `mesh_repaired` | Reading the model files |
 | `config_normalized`, `config_substituted`, `config_unknown_keys`, `config_value_rejected`, `config_load_failed`, `config_refused`, `override_rejected` | Reading and merging settings |
 | `engine_mismatch` | A file made for the other engine |
