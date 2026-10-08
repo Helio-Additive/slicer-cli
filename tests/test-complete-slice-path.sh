@@ -1972,6 +1972,45 @@ assert not bad, "; ".join(bad)
 ' bblu1/out/plate_1.gcode u1-process-orca.json u1-pick.txt || fail "orca: the Bambu Studio project on the Snapmaker U1 did not slice with the desktop's retarget"
 echo "PASS: a Bambu Studio project slices on the Snapmaker U1 with the desktop's process, values and bed"
 
+# The switch onto a printer with a different nozzle count is the desktop's own:
+# the H2D project states two nozzles, the Snapmaker U1 has four, and the desktop
+# selects the preset and reconciles the config with it (Plater.cpp 9451-9613 at
+# 31f6803: the printer tab's select_preset, then on_config_change(full_config);
+# Plater.cpp 16527-16610: a changed nozzle count runs update_flush_volume_matrix;
+# PresetBundle.cpp 5111-5160: update_multi_material_filament_presets grows the
+# filament presets to the new extruder count and rebuilds the flush matrix).
+# Slicing it needs memory in proportion to the model, and a slice that runs out
+# of memory reports the official out-of-memory outcome (CLI_OUT_OF_MEMORY -14,
+# Utils.hpp:39) with its sentence (OrcaSlicer.cpp 126), never the slicing
+# failure -100. The corpus project is 370 MB and external: the case runs where it
+# is, and skips where it is not.
+H2D="${SLICER_CLI_CORPUS:-$HOME/engcheck-plugin/corpus}/13ab99508c843d4d.3mf"
+case "$(uname -s)" in
+MINGW*|MSYS*|CYGWIN*)
+    echo "SKIP: the H2D project switched to the Snapmaker U1 (Windows has no ulimit cap)";;
+*)
+if [ ! -f "$H2D" ]; then
+    echo "SKIP: the H2D project switched to the Snapmaker U1 (no $H2D)"
+else
+    # A hard cap makes the outcome deterministic: the load fits, the slice does
+    # not, so the engine raises std::bad_alloc inside its slicing step.
+    run h2du1 bash -c 'ulimit -v 6291456; exec "$@"' _ "$O" "$H2D" --slice 1 --allow-newer-file \
+        --load-settings u1-machine-orca.json --outputdir h2du1/out
+    case "$(rc h2du1)" in
+    0)   echo "PASS: the H2D project switched to the Snapmaker U1 slices (this machine had the memory)";;
+    242) # 256 - 14: CLI_OUT_OF_MEMORY
+         grep -q 'Out of memory during slicing' h2du1/stderr || { show h2du1; fail "orca: the out-of-memory run has no sentence"; }
+         grep -q '"return_code": *-14' h2du1/out/result.json || { show h2du1; fail "orca: the out-of-memory run did not record -14"; }
+         echo "PASS: a slice that ran out of memory is reported as such, with what to do";;
+    *)   show h2du1; fail "orca: the H2D project on the Snapmaker U1 exit $(rc h2du1)";;
+    esac
+    if [ -f h2du1/out/result.json ] && grep -q '"return_code": *-100' h2du1/out/result.json; then
+        fail "orca: -100 reached the user for the H2D project on the Snapmaker U1"
+    fi
+fi
+;; 
+esac
+
 # The same conversions apply to an object's own settings and to a part's, which
 # the file keeps in Metadata/model_settings.config (bbs_3mf loads them over the
 # same legacy pass, bbs_3mf.cpp 2130, 5115, 5263 at 31f6803). They are matched
