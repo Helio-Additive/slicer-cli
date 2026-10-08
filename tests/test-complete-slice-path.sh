@@ -3090,6 +3090,38 @@ assert b == [], ("--export-stls after --slice", b)
 done
 echo "PASS: --export-stls before --slice runs before the bed checks, after --slice only once every plate has sliced; --slice 0 checks every plate before slicing any (both engines)"
 
+# A second --export-stl / --export-stls into the same target replaces the
+# first: the STL is written beside the target and renamed over it, and the
+# rename replaces an existing file on every OS (boost::filesystem::rename:
+# rename(2) on POSIX, MoveFileExW with MOVEFILE_REPLACE_EXISTING on Windows,
+# boost 1.90 operations.cpp 236). The second run scales the cube, so its file
+# differs from the first.
+reexp_before=$FAILS
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    for mode in stl stls; do
+        d=reexp-$mode-$e; rm -rf $d
+        for s in 1 2; do
+            if [ $mode = stl ]; then
+                run $d-$s "$bin" cube.stl --printer-preset "$A1M" --scale $s --export-stl --outputdir $d
+            else
+                run $d-$s "$bin" cube.stl --printer-preset "$A1M" --scale $s --export-stls $d/stls --outputdir $d
+            fi
+            [ "$(rc $d-$s)" = 0 ] || { show $d-$s; fail "$e: --export-$mode run $s into the same target exit $(rc $d-$s)"; }
+            py '
+import hashlib, os, sys
+files = [os.path.join(r, n) for r, _, ns in os.walk(sys.argv[1]) for n in ns if n.endswith(".stl")]
+left = [os.path.join(r, n) for r, _, ns in os.walk(sys.argv[1]) for n in ns if n.endswith(".writing")]
+assert len(files) == 1 and not left, (files, left)
+open(sys.argv[2], "w").write(hashlib.sha1(open(files[0], "rb").read()).hexdigest())
+' $d $d-$s.sha || fail "$e: --export-$mode run $s did not leave exactly one STL"
+        done
+        [ -s $d-1.sha ] && [ -s $d-2.sha ] && ! cmp -s $d-1.sha $d-2.sha ||
+            fail "$e: the second --export-$mode did not replace the first STL"
+    done
+done
+[ "$FAILS" = "$reexp_before" ] && echo "PASS: a second --export-stl or --export-stls into the same target replaces the first (both engines)"
+
 # --slice 0's check pass sends no event of its own: the run's settings
 # events come once (the settings merge builds m_print_config once,
 # BambuStudio.cpp 3246, 3384), each plate's own once, from its slice (two
