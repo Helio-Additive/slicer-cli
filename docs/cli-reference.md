@@ -55,7 +55,11 @@ OrcaSlicer or slicer-cli) comes first; other files are added to its plate.
 A project 3MF brings its printer, process, filaments and plates. Any other
 file needs a printer: name one with `--printer-preset`, or give settings files
 with `--load-settings`, `--machine` or `--config`. A 3MF that holds only
-geometry (no `Metadata/project_settings.config`) is treated like an STL.
+geometry (no `Metadata/project_settings.config`) is treated like an STL. A 3MF
+whose archive holds a member with a rooted path (`C:/slicer-created/x`,
+`//server/share/x`, `\server\share\x`) is refused before the load
+(`CLI_DATA_FILE_ERROR`, -6), naming the member: the engine writes a member
+under the run's own folder, and a rooted one would land outside it.
 
 `--printer-preset` on a project 3MF moves the project to that printer, the way
 the desktop app's printer list does: the printer's process is the one the

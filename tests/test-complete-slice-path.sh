@@ -158,6 +158,56 @@ assert "error" in d and "STL" in d["error"], d
 done
 echo "PASS: --engine-info names the printer and the engine that fits"
 
+# A 3MF member with a rooted path would be extracted outside the run's own
+# folder: boost's path::operator/ drops the folder for a rooted member. The
+# BambuStudio loader checks only for ".." (bbs_3mf.cpp 2906-2912 at 5873b5f)
+# and the OrcaSlicer one skips such a member (2804-2807 at 31f6803); the run
+# refuses the load instead, before any folder of the member's own is made.
+# After the '\' -> '/' replace, "C:/x" and "//server/x" are the two shapes.
+py '
+import zipfile
+def add(src, dst, name):
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            zout.writestr(item, zin.read(item.filename))
+        zout.writestr(name, "<x/>")
+add("base.3mf", "rooted-drive.3mf", "C:/slicer-created/x")
+add("base.3mf", "rooted-unc.3mf", "//server/share/x")
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    for member in "C:/slicer-created/x" "//server/share/x"; do
+        f=rooted-drive.3mf
+        [ "$member" = "//server/share/x" ] && f=rooted-unc.3mf
+        run rooted-$e "$bin" "$f" --slice 1 --outputdir rooted-$e/out
+        [ "$(rc rooted-$e)" != 0 ] || fail "$e: the rooted member $member was opened"
+        [ ! -e rooted-$e/out/plate_1.gcode ] || fail "$e: $member was sliced"
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -6, d
+assert sys.argv[2] in d["error_string"], d
+' rooted-$e/out/result.json "$member" || { show rooted-$e; fail "$e: no refusal naming $member"; }
+        py '
+import os, sys, tempfile
+bad = []
+for root, depth in ((".", 6), (tempfile.gettempdir(), 3)):
+    base = os.path.abspath(root)
+    for dirpath, dirnames, _ in os.walk(base):
+        if dirpath[len(base):].count(os.sep) > depth:
+            dirnames[:] = []
+            continue
+        for d in dirnames:
+            if d.lower() in ("slicer-created", "c:"):
+                bad.append(os.path.join(dirpath, d))
+if sys.platform.startswith("win") and os.path.exists("C:/slicer-created"):
+    bad.append("C:/slicer-created")
+assert not bad, bad
+' || fail "$e: the refused run created a folder of the hostile member"
+    done
+done
+echo "PASS: a rooted 3MF member refuses the load (both engines)"
+
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.
 run slice "$B" "$FIXTURE" --slice 1 --outputdir slice/out
 [ "$(rc slice)" = 0 ] || { show slice; fail "--slice 1 exit $(rc slice)"; }
