@@ -68,6 +68,7 @@ struct AssembleList {
     Slic3r::Model                           model;
     std::vector<Slic3r::DynamicPrintConfig> plate_configs;   // each plate's plate_params
     std::vector<Slic3r::RGBA>               colours;         // the OBJ colours, as filaments
+    std::vector<std::string>                sources;         // every object's file, as the list names it
 };
 
 /// load_assemble_plate_list (BambuStudio.cpp 746-905; OrcaSlicer.cpp 609-764):

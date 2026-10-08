@@ -544,6 +544,11 @@ StepResult load_assemble_list(const std::string& file, AssembleList& list) {
     StepResult r = load_assemble_plate_list(file, list.plates);
     if (r.code != 0)
         return r;
+    // The files the objects come from, kept before construct_assemble_list
+    // clears each plate's object entries: the run may not export over them.
+    for (const AssemblePlate& plate : list.plates)
+        for (const AssembleObject& object : plate.objects)
+            list.sources.push_back(object.path);
     try {
         r = construct_assemble_list(list.plates, list.model, list.plate_configs, list.colours);
         if (r.code != 0)

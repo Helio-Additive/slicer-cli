@@ -447,8 +447,34 @@ import sys, zipfile
 n = zipfile.ZipFile(sys.argv[1]).namelist()
 assert "Metadata/plate_1.gcode" in n, n
 ' esc-$e/out/sub/ok.3mf || fail "$e: sub/ok.3mf is not the sliced project"
+    # The parts an assemble list names are inputs too: the list's loader read
+    # them, and an export over one would replace the user's part. A real list
+    # naming esc-<e>/part.stl; the export onto that part is refused, its md5
+    # unchanged, and an export onto any other name still writes.
+    cp cube.stl esc-$e/part.stl
+    py '
+import json, sys
+json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
+                       "objects": [{"path": sys.argv[1], "count": 1, "filaments": [1]}]}]},
+          open(sys.argv[2], "w"))
+' esc-$e/part.stl esc-$e/list.json
+    py '
+import hashlib, sys; print(hashlib.md5(open(sys.argv[1], "rb").read()).hexdigest())
+' esc-$e/part.stl > esc-$e/part.md5
+    run escpart-$e "$bin" --load-assemble-list esc-$e/list.json --slice 1 --printer-preset "$A1M" \
+        --outputdir esc-$e/out --export-3mf ../part.stl
+    [ "$(rc escpart-$e)" != 0 ] || fail "$e: --export-3mf onto the assemble list's part was accepted"
+    py '
+import hashlib, json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2 and "would overwrite the input file" in d["error_string"] and "part.stl" in d["error_string"], d
+assert hashlib.md5(open(sys.argv[2], "rb").read()).hexdigest() == open(sys.argv[3]).read().strip(), "the part changed"
+' esc-$e/out/result.json esc-$e/part.stl esc-$e/part.md5 || { show escpart-$e; fail "$e: the export onto the assemble list's part was not refused, or the part changed"; }
+    run escpartok-$e "$bin" --load-assemble-list esc-$e/list.json --slice 1 --printer-preset "$A1M" \
+        --outputdir esc-$e/out --export-3mf ../listed.3mf
+    [ "$(rc escpartok-$e)" = 0 ] && [ -s esc-$e/listed.3mf ] || { show escpartok-$e; fail "$e: an export beside the assemble list's part exit $(rc escpartok-$e)"; }
 done
-echo "PASS: --export-3mf refuses a name that would overwrite an input (both engines)"
+echo "PASS: --export-3mf refuses a name that would overwrite an input, the parts an assemble list names included (both engines)"
 
 # The plates a run writes are only known after the global arrange of
 # --slice 0 --arrange 1, which can add one (BambuStudio.cpp 5627-5722;

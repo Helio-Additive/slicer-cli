@@ -10988,16 +10988,27 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         if (!o.filament_config.empty()) inputs.push_back(o.filament_config);
         if (!o.process_config.empty())  inputs.push_back(o.process_config);
         if (!o.bundle_config.empty())   inputs.push_back(o.bundle_config);
-        if (o.given_flag("load_settings"))
-            for (const std::string& file : o.cli.option<Slic3r::ConfigOptionStrings>("load_settings")->values)
+        // Every file the run reads through a list option, as the loaders read
+        // them: the settings files, the up-to-date files and the
+        // --downward-check machine files (merge_loaded_settings,
+        // load_downward_printers).
+        for (const char* key : {"load_settings", "load_filaments", "uptodate_settings", "uptodate_filaments",
+                                "downward_settings"})
+            if (o.given_flag(key))
+                if (const auto* files = o.cli.option<Slic3r::ConfigOptionStrings>(key))
+                    for (const std::string& file : files->values)
+                        if (!file.empty()) inputs.push_back(file);
+        for (const char* key : {"load_assemble_list", "load_custom_gcodes"})
+            if (o.given_flag(key)) {
+                const std::string file = o.cli.opt_string(key);
                 if (!file.empty()) inputs.push_back(file);
-        if (o.given_flag("load_filaments"))
-            for (const std::string& file : o.cli.option<Slic3r::ConfigOptionStrings>("load_filaments")->values)
-                if (!file.empty()) inputs.push_back(file);
-        if (o.given_flag("load_assemble_list")) {
-            const std::string file = o.cli.opt_string("load_assemble_list");
-            if (!file.empty()) inputs.push_back(file);
-        }
+            }
+        // The STL and OBJ files the assemble list names, as its loader opens
+        // them (the path as written, construct_assemble_list): they were read
+        // into the model, and an export over one would replace the user's part.
+        if (g_assemble)
+            for (const std::string& file : g_assemble->sources)
+                inputs.push_back(file);
         const std::string target = key(target_path);
         for (const std::string& input : inputs) {
             boost::system::error_code ec;
