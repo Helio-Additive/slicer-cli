@@ -875,6 +875,28 @@ bool bbs_3mf_config_contains_nozzle_map(const std::string& filepath,
 // the auto-grouping path re-solving an already-constrained dual-nozzle setup
 // into a different logical order than BambuStudio desktop.
 // Returns true if it actually derived and applied a cross-nozzle filament_map.
+// Filament roster the loaded project declares, 0 when unknown.  filament_colour
+// is the authoritative roster (the driver seeds it with one entry, so a longer
+// one can only come from the loaded project); the remaining per-filament
+// identity vectors are taken as a floor too, because Print::apply() derives its
+// own extruder count from filament_diameter (PrintApply.cpp:1504) and every
+// per-region filament index it admits must be inside the arrays extended here.
+// It sizes the per-filament alignment below on the Bambu build, and the 3MF
+// filament-index reset (PresetBundle.cpp 4090-4105, N =
+// filament_presets.size()) on the Orca build, so it is not gated.
+size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
+    size_t count = 0;
+    for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
+                            "filament_type", "filament_diameter"}) {
+        // The vector base covers both the plain and the nullable vector spelling
+        // of these keys (the two are unrelated types in this engine).
+        if (const auto* vec = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(
+                config.option(key, false)))
+            count = std::max(count, vec->size());
+    }
+    return count;
+}
+
 #ifdef ENGINE_BAMBU
 // ── BBS-only config-normalization helpers ───────────────────────────────────
 // These helpers (apply_explicit_nozzle_mapping, set_default_config,
@@ -1477,25 +1499,6 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
 // returned.  Nothing is truncated, nothing is emptied, and no synthetic zero is
 // substituted for a value the project did not have: a populated array only ever
 // propagates a value it already carries.
-
-// Filament roster the loaded project declares, 0 when unknown.  filament_colour
-// is the authoritative roster (the driver seeds it with one entry, so a longer
-// one can only come from the loaded project); the remaining per-filament
-// identity vectors are taken as a floor too, because Print::apply() derives its
-// own extruder count from filament_diameter (PrintApply.cpp:1504) and every
-// per-region filament index it admits must be inside the arrays extended here.
-size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
-    size_t count = 0;
-    for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
-                            "filament_type", "filament_diameter"}) {
-        // The vector base covers both the plain and the nullable vector spelling
-        // of these keys (the two are unrelated types in this engine).
-        if (const auto* vec = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(
-                config.option(key, false)))
-            count = std::max(count, vec->size());
-    }
-    return count;
-}
 
 // True for the config keys whose arrays carry one entry per FILAMENT rather than
 // one per extruder, nozzle or variant slot.  One predicate gates both passes that
@@ -6069,6 +6072,64 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     return 1;
                 }
             }
+#ifdef ENGINE_ORCA
+            // A Bambu Studio project states its filament indices from 0
+            // (BambuStudio PrintConfig.cpp 4359-4361 at 5873b5f) while this
+            // engine's ranges start at 1 (wall_filament PrintConfig.cpp
+            // 4887-4894 at 31f6803), so every one of those projects would be
+            // refused by the value check further down. The desktop reads the
+            // same file: it only warns about the values (Plater.cpp 6259-6272,
+            // "Invalid values found in the 3MF") and slices from
+            // PresetBundle::full_fff_config, which walks the same three 1-based
+            // keys back to 1 when they fall outside [1, N] and clamps
+            // support_filament / support_interface_filament /
+            // wipe_tower_filament to [0, N] (PresetBundle.cpp 4090-4105, with
+            // N = filament_presets.size(), 3866). Ported here, on the settings
+            // the run is sliced with and before that check: a key the file
+            // states in its own app's numbering is not a value this engine
+            // cannot read. Any other out-of-range value is left as it is and
+            // still refuses, exactly as the desktop leaves it (it does not
+            // clamp them either, e.g. a BambuStudio -1, its "auto").
+            {
+                const size_t filament_count = std::max<size_t>(1, project_filament_count(config));
+                json reset = json::object();
+                json clamped = json::object();
+                for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"}) {
+                    auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(config.option(key, false));
+                    if (opt == nullptr || (opt->value >= 1 && opt->value <= int(filament_count)))
+                        continue;
+                    reset[key] = {{"from", opt->value}, {"to", 1}};
+                    opt->value = 1;
+                }
+                for (const char* key : {"support_filament", "support_interface_filament", "wipe_tower_filament"}) {
+                    auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(config.option(key, false));
+                    if (opt == nullptr)
+                        continue;
+                    const int value = std::min(std::max(opt->value, 0), int(filament_count));
+                    if (value == opt->value)
+                        continue;
+                    clamped[key] = {{"from", opt->value}, {"to", value}};
+                    opt->value = value;
+                }
+                if (!reset.empty() || !clamped.empty()) {
+                    std::string names;
+                    for (const auto& [key, change] : reset.items())
+                        names += (names.empty() ? "" : ", ") + key + " " + change["from"].dump() + " -> " +
+                                 change["to"].dump();
+                    for (const auto& [key, change] : clamped.items())
+                        names += (names.empty() ? "" : ", ") + key + " " + change["from"].dump() + " -> " +
+                                 change["to"].dump();
+                    emit_event({{"event","config_normalized"},
+                                {"tag","FilamentIndexOutOfRangeReset"},
+                                {"reset", reset},
+                                {"clamped", clamped},
+                                {"filament_count", int(filament_count)},
+                                {"message","The 3mf states filament index value(s) outside this engine's range for its " +
+                                           std::to_string(filament_count) + " filament(s): " + names +
+                                           " (its indices start at 1; the desktop resets the same keys on load)"}});
+                }
+            }
+#endif
             // Engine fit: a project for a printer this engine does not have is
             // refused before anything is sliced. Without the printer's presets
             // the engine slices the flat file against its own defaults (a

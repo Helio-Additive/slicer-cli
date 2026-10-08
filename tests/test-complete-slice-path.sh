@@ -1801,6 +1801,109 @@ assert not bad, "; ".join(bad)
 ' u1s/out/plate_1.gcode u1-process-orca.json || fail "orca: the Snapmaker printer change did not take the Snapmaker process the desktop selects"
 echo "PASS: the Orca printer change reads the new printer's own vendor process list"
 
+# ── The owner's case: a Bambu Studio project for a Bambu printer, on the Orca
+# build, retargeted to a Snapmaker U1 ────────────────────────────────────────
+# Both halves of it are the desktop's, and neither was ported:
+#   * BambuStudio writes its filament indices from 0 (its own range starts
+#     there, BambuStudio PrintConfig.cpp 4359-4361 at 5873b5f) while this
+#     engine's start at 1, so the value check refuses the file -18. The desktop
+#     only warns (Plater.cpp 6259-6272) and slices from full_fff_config, which
+#     resets those keys into [1, N] (PresetBundle.cpp 4090-4105; N =
+#     filament_presets.size(), 3866).
+#   * BambuStudio writes no print_compatible_printers, and the desktop does not
+#     read the missing list as "suits every printer": the project's process is
+#     loaded over the system preset its print_settings_id names and keeps that
+#     preset's compatible_printers (load_external_preset, Preset.cpp
+#     2446-2500), so a printer outside them re-selects a process
+#     (PresetBundle.cpp 5295-5330).
+# The fixture is a real Bambu Studio X1 Carbon project (base.3mf) with the
+# project_settings a Bambu Studio X1C project carries. Its Bambu-only spellings
+# that the desktop does NOT reset and this engine still refuses by design (the
+# -1 "auto" of tree_support_wall_count and raft_first_layer_expansion, and the
+# 'enabled' of ensure_vertical_shell_thickness) are left out of it, so the run
+# tests those two behaviours and not those refusals.
+py '
+import json, zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("bblx1c.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            for k in ("wall_filament", "sparse_infill_filament", "solid_infill_filament"):
+                d[k] = "0"
+            d.pop("print_compatible_printers", None)
+            for k in ("raft_first_layer_expansion", "tree_support_wall_count",
+                      "ensure_vertical_shell_thickness"):
+                d.pop(k, None)
+            assert d["print_settings_id"] == "0.20mm Standard @BBL X1C" and d["layer_height"] == "0.2", d
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' || fail "orca: the Bambu Studio X1C project fixture could not be written"
+run bblu1 "$O" bblx1c.3mf --slice 1 --allow-newer-file --load-settings u1-machine-orca.json --outputdir bblu1/out
+[ "$(rc bblu1)" = 0 ] || { show bblu1; fail "orca: a Bambu Studio X1C project on the Snapmaker U1 exit $(rc bblu1)"; }
+[ -s bblu1/out/plate_1.gcode ] || { show bblu1; fail "orca: the retargeted Bambu Studio project wrote no G-code"; }
+# The clamp is reported as its own event, naming every key it reset.
+py '
+import json, sys
+ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
+ev = [e for e in ev if e.get("tag") == "FilamentIndexOutOfRangeReset"]
+assert len(ev) == 1, [e.get("tag") for e in ev]
+e = ev[0]
+assert e["filament_count"] == 1, e
+assert sorted(e["reset"]) == ["solid_infill_filament", "sparse_infill_filament", "wall_filament"], e
+assert all(c["from"] == 0 and c["to"] == 1 for c in e["reset"].values()), e
+assert e["clamped"] == {}, e
+for k in ("wall_filament", "solid_infill_filament", "sparse_infill_filament"):
+    assert k in e["message"], e["message"]
+' bblu1/stdout || fail "orca: the 3MF filament-index reset was not reported as its own event"
+echo "PASS: the Orca 3MF load resets a Bambu Studio project's 0-based filament indices into this engine's range, and reports it"
+# The printer change takes the U1's process, and the values, the pick and the
+# bed are the ones the desktop's retarget gives (u1-process-orca.json is the
+# process the desktop selects, flattened from the shipped presets).
+py '
+import json, re, sys
+want = json.load(open(sys.argv[2])); pick = open(sys.argv[3]).read().strip()
+g = open(sys.argv[1], errors="replace").read()
+def got(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).split(",")[0].strip()
+def raw(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).strip()
+def first(v):
+    return re.sub(r"\"", "", str(v[0] if isinstance(v, list) else v))
+bad = []
+for k in ("layer_height", "wall_loops", "sparse_infill_density", "travel_speed",
+          "default_acceleration", "outer_wall_speed"):
+    if k in want["config"] and got(k) != first(want["config"][k]):
+        bad.append("%s: G-code %r, the flattened Snapmaker U1 process %r" % (k, got(k), first(want["config"][k])))
+if got("print_settings_id") != pick:
+    bad.append("print_settings_id: G-code %r, the pick the desktop makes %r" % (got("print_settings_id"), pick))
+if got("printer_settings_id") != "Snapmaker U1 (0.4 nozzle)":
+    bad.append("printer_settings_id: G-code %r" % got("printer_settings_id"))
+# Every extrusion is inside the U1 plate the printer preset states: the objects
+# of the project were laid out for an X1 Carbon bed and moved.
+area = raw("printable_area")
+pts = [tuple(float(v) for v in p.lower().split("x")) for p in area.split(",")] if area else []
+xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+if not pts:
+    bad.append("no printable_area in the G-code")
+else:
+    out = []
+    for line in g.splitlines():
+        if not line.startswith("G1") or " E" not in line:
+            continue
+        mx = re.search(r" X([-\d.]+)", line); my = re.search(r" Y([-\d.]+)", line)
+        if mx and not (min(xs) - 0.001 <= float(mx.group(1)) <= max(xs) + 0.001):
+            out.append("X" + mx.group(1))
+        if my and not (min(ys) - 0.001 <= float(my.group(1)) <= max(ys) + 0.001):
+            out.append("Y" + my.group(1))
+    if out:
+        bad.append("%d extrusion coordinate(s) outside the printer bed %r: %s" % (len(out), area, ", ".join(out[:5])))
+assert not bad, "; ".join(bad)
+' bblu1/out/plate_1.gcode u1-process-orca.json u1-pick.txt || fail "orca: the Bambu Studio project on the Snapmaker U1 did not slice with the desktop's retarget"
+echo "PASS: a Bambu Studio project slices on the Snapmaker U1 with the desktop's process, values and bed"
+
 # The engine's 3MF loader extracts Metadata/project_settings.config and the
 # embedded presets as <backup>/_temp_3.config / _temp_2.config and parses them
 # back (bbs_3mf.cpp _extract_project_config_from_archive 2636 and
