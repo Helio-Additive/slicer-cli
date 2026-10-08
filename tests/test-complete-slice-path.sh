@@ -158,12 +158,14 @@ assert "error" in d and "STL" in d["error"], d
 done
 echo "PASS: --engine-info names the printer and the engine that fits"
 
-# A 3MF member with a rooted path would be extracted outside the run's own
-# folder: boost's path::operator/ drops the folder for a rooted member. The
-# BambuStudio loader checks only for ".." (bbs_3mf.cpp 2906-2912 at 5873b5f)
-# and the OrcaSlicer one skips such a member (2804-2807 at 31f6803); the run
-# refuses the load instead, before any folder of the member's own is made.
-# After the '\' -> '/' replace, "C:/x" and "//server/x" are the two shapes.
+# A 3MF member with a rooted path is skipped by the run's staging code: no
+# folder is made for it (boost's path::operator/ drops the run's folder for a
+# rooted member, so one would land outside it), an event names it, and the load
+# goes on, as the desktop's does: both loaders extract only members under
+# Metadata/ and Auxiliaries/ (bbs_3mf.cpp 2036-2054 at 5873b5f), and the
+# OrcaSlicer one also skips an absolute path (is_path_within_root, 104-118 at
+# 31f6803). After the '\' -> '/' replace, "C:/x", "//server/x" and "/x" are the
+# shapes; a hostile archive is the point, so the members are crafted.
 py '
 import zipfile
 def add(src, dst, name):
@@ -173,21 +175,21 @@ def add(src, dst, name):
         zout.writestr(name, "<x/>")
 add("base.3mf", "rooted-drive.3mf", "C:/slicer-created/x")
 add("base.3mf", "rooted-unc.3mf", "//server/share/x")
+add("base.3mf", "rooted-root.3mf", "/slicer-created-root/x")
 '
+rooted_before=$FAILS
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
-    for member in "C:/slicer-created/x" "//server/share/x"; do
-        f=rooted-drive.3mf
-        [ "$member" = "//server/share/x" ] && f=rooted-unc.3mf
-        run rooted-$e "$bin" "$f" --slice 1 --outputdir rooted-$e/out
-        [ "$(rc rooted-$e)" != 0 ] || fail "$e: the rooted member $member was opened"
-        [ ! -e rooted-$e/out/plate_1.gcode ] || fail "$e: $member was sliced"
+    for pair in "drive:C:/slicer-created/x" "unc://server/share/x" "root:/slicer-created-root/x"; do
+        kind=${pair%%:*}; member=${pair#*:}
+        n=rooted-$kind-$e
+        run $n "$bin" rooted-$kind.3mf --slice 1 --outputdir $n/out
+        [ "$(rc $n)" = 0 ] && [ -s $n/out/plate_1.gcode ] || { show $n; fail "$e: the 3MF with the rooted member $member did not slice"; }
         py '
 import json, sys
-d = json.load(open(sys.argv[1]))
-assert d["return_code"] == -6, d
-assert sys.argv[2] in d["error_string"], d
-' rooted-$e/out/result.json "$member" || { show rooted-$e; fail "$e: no refusal naming $member"; }
+events = [json.loads(l[len("[[SLICER_EVENT]] "):]) for l in open(sys.argv[1], errors="replace") if l.startswith("[[SLICER_EVENT]] ")]
+assert any(e.get("tag") == "ThreeMfMemberSkipped" and e.get("member") == sys.argv[2] for e in events), sys.argv[2]
+' $n/stdout "$member" || { show $n; fail "$e: no ThreeMfMemberSkipped event naming $member"; }
         py '
 import os, sys, tempfile
 bad = []
@@ -198,15 +200,16 @@ for root, depth in ((".", 6), (tempfile.gettempdir(), 3)):
             dirnames[:] = []
             continue
         for d in dirnames:
-            if d.lower() in ("slicer-created", "c:"):
+            if d.lower() in ("slicer-created", "slicer-created-root", "c:", "server"):
                 bad.append(os.path.join(dirpath, d))
-if sys.platform.startswith("win") and os.path.exists("C:/slicer-created"):
-    bad.append("C:/slicer-created")
+for p in ("/slicer-created-root", "C:/slicer-created", "C:/slicer-created-root"):
+    if os.path.exists(p):
+        bad.append(p)
 assert not bad, bad
-' || fail "$e: the refused run created a folder of the hostile member"
+' || fail "$e: a folder of the rooted member $member was made"
     done
 done
-echo "PASS: a rooted 3MF member refuses the load (both engines)"
+[ "$FAILS" = "$rooted_before" ] && echo "PASS: a rooted 3MF member is skipped, named in an event, and the project still slices (both engines)"
 
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.
 run slice "$B" "$FIXTURE" --slice 1 --outputdir slice/out
