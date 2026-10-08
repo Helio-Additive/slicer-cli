@@ -41,6 +41,16 @@ bool is_loadable_model_file(const std::string& path);
 /// The model extensions this engine loads, for messages ("stl, obj, ...").
 std::string loadable_model_extensions();
 
+// The files a model loader opens beside the model itself, as that loader
+// resolves them; files it would not find are left out. Both engines' load_obj
+// reads an OBJ's mtllib files. For a model file (not an assemble-list part,
+// which cli_assemble reads with the mesh-only load_obj) BambuStudio's
+// Model::read_from_file also reads the map_Kd textures those name
+// (obj_to_textured_mesh), and for a glTF, GLB or FBX the files Assimp opens
+// plus the external textures (load_assimp_textured_model). STL, 3MF, AMF,
+// STEP and SVG loaders read only the file itself.
+std::vector<std::string> loader_side_files(const std::string& path, bool model_file);
+
 struct ModelLoadResult {
     int         code = 0;        // 0, or the official CLI_* code
     std::string message;         // why, when code != 0

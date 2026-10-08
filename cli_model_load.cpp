@@ -13,6 +13,17 @@
 #include "libslic3r/Geometry.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/miniz_extension.hpp"
+#include "libslic3r/Format/objparser.hpp"
+#ifdef ENGINE_BAMBU
+#include <boost/algorithm/string.hpp>
+#include <boost/locale.hpp>
+#include <assimp/DefaultIOSystem.h>
+#include <assimp/Importer.hpp>
+#include <assimp/config.h>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#include "libslic3r/Format/ResourcePathUtils.hpp"
+#endif
 
 #include "cli_events.hpp"
 
@@ -366,6 +377,118 @@ void desktop_center_geometry_3mf(Slic3r::Model& model, const Slic3r::DynamicPrin
     for (Slic3r::ModelObject* object : model.objects)
         object->ensure_on_bed();
     model.center_instances_around_point(bed_box(config).center());
+}
+
+std::vector<std::string> loader_side_files(const std::string& path, bool model_file) {
+    namespace fs = boost::filesystem;
+    std::vector<std::string> out;
+    const fs::path dir = fs::path(path).parent_path();
+    if (boost::algorithm::iends_with(path, ".obj")) {
+        Slic3r::ObjParser::ObjData data;
+        if (!Slic3r::ObjParser::objparse(path.c_str(), data))
+            return out;
+        for (const std::string& name : data.mtllibs) {
+            if (name.empty())
+                continue;
+#ifdef ENGINE_BAMBU
+            // load_obj (OBJ.cpp 49-76 at 5873b5f): a leading "./" dropped,
+            // then resolved case-insensitively, beside the OBJ when relative.
+            std::wstring wide = boost::locale::conv::to_utf<wchar_t>(name, "UTF-8");
+            if (boost::istarts_with(wide, "./"))
+                boost::replace_first(wide, "./", "");
+            const fs::path requested(wide);
+            const fs::path mtl = requested.is_absolute() ?
+                Slic3r::resource_path::resolve_existing_path_case_insensitive(requested, "export check: mtllib") :
+                Slic3r::resource_path::resolve_existing_relative_path_case_insensitive(dir, requested, "export check: mtllib");
+            if (mtl.empty())
+                continue;
+            out.push_back(mtl.string());
+            if (!model_file)
+                continue;
+            // obj_to_textured_mesh (OBJ.cpp 342-358): each map_Kd, resolved
+            // the same way beside the OBJ (Model.cpp 336-339).
+            Slic3r::ObjParser::MtlData mtl_data;
+            if (!Slic3r::ObjParser::mtlparse(mtl.string().c_str(), mtl_data))
+                continue;
+            for (const auto& entry : mtl_data.new_mtl_unmap) {
+                if (!entry.second || entry.second->map_Kd.empty())
+                    continue;
+                const fs::path tex_requested(entry.second->map_Kd);
+                const fs::path tex = tex_requested.is_absolute() ?
+                    Slic3r::resource_path::resolve_existing_path_case_insensitive(tex_requested, "export check: map_Kd") :
+                    Slic3r::resource_path::resolve_existing_relative_path_case_insensitive(dir, tex_requested, "export check: map_Kd");
+                if (!tex.empty())
+                    out.push_back(tex.string());
+            }
+#else
+            // load_obj (OBJ.cpp 37-66 at 31f6803): the name as given when that
+            // exists, else the OBJ's folder + "/" + the name.
+            const fs::path as_given(name);
+            const fs::path beside(dir.string() + "/" + name);
+            if (fs::exists(as_given))
+                out.push_back(as_given.string());
+            else if (fs::exists(beside))
+                out.push_back(beside.string());
+#endif
+        }
+        return out;
+    }
+#ifdef ENGINE_BAMBU
+    if (model_file && (boost::algorithm::iends_with(path, ".glb") || boost::algorithm::iends_with(path, ".gltf") ||
+                       boost::algorithm::iends_with(path, ".fbx"))) {
+        // load_assimp_textured_model (AssimpImport.cpp 56-82, 154-166,
+        // 225-247, 270-318): the same import, with every file Assimp opens
+        // (a glTF's buffers, say) recorded, then each material's external
+        // diffuse or base-colour texture as collect_materials resolves it.
+        struct Recorder : Assimp::DefaultIOSystem {
+            std::vector<std::string>* seen = nullptr;
+            Assimp::IOStream* Open(const char* file, const char* mode = "rb") override {
+                Assimp::IOStream* stream = Assimp::DefaultIOSystem::Open(file, mode);
+                if (stream)
+                    seen->push_back(file);
+                return stream;
+            }
+        };
+        Assimp::Importer importer;
+        auto* recorder = new Recorder;   // the importer owns it
+        recorder->seen = &out;
+        importer.SetIOHandler(recorder);
+        unsigned int flags = aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_PreTransformVertices |
+                             aiProcess_SortByPType;
+        if (boost::algorithm::iends_with(path, ".fbx") || boost::algorithm::iends_with(path, ".glb"))
+            flags |= aiProcess_FlipUVs;
+        importer.SetPropertyInteger(AI_CONFIG_PP_SBP_REMOVE, aiPrimitiveType_POINT | aiPrimitiveType_LINE);
+        importer.SetPropertyBool(AI_CONFIG_PP_PTV_KEEP_HIERARCHY, true);
+        if (boost::algorithm::iends_with(path, ".fbx")) {
+            importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_READ_ALL_GEOMETRY_LAYERS, true);
+            importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_READ_MATERIALS, true);
+            importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_READ_TEXTURES, true);
+            importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_READ_ANIMATIONS, false);
+            importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_READ_LIGHTS, false);
+            importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_READ_CAMERAS, false);
+        }
+        const aiScene* scene = importer.ReadFile(path, flags);
+        if (!scene)
+            return out;
+        for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
+            const aiMaterial* material = scene->mMaterials[i];
+            if (!material)
+                continue;
+            aiString texture;
+            const bool has = (material->GetTextureCount(aiTextureType_DIFFUSE) > 0 &&
+                              material->GetTexture(aiTextureType_DIFFUSE, 0, &texture) == AI_SUCCESS) ||
+                             (material->GetTextureCount(aiTextureType_BASE_COLOR) > 0 &&
+                              material->GetTexture(aiTextureType_BASE_COLOR, 0, &texture) == AI_SUCCESS);
+            if (!has || scene->GetEmbeddedTexture(texture.C_Str()))
+                continue;
+            const fs::path resolved =
+                Slic3r::resource_path::resolve_external_resource_path(dir, texture.C_Str(), "export check: texture");
+            if (!resolved.empty())
+                out.push_back(resolved.string());
+        }
+    }
+#endif
+    return out;
 }
 
 } // namespace slicer_cli

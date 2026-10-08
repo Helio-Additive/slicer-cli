@@ -11009,6 +11009,20 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         if (g_assemble)
             for (const std::string& file : g_assemble->sources)
                 inputs.push_back(file);
+        // The files the loaders read beside those models (an OBJ's mtllib
+        // file, its textures, a glTF's buffers), as each loader resolves them:
+        // the user's files too, named only inside the model.
+        {
+            std::vector<std::string> side;
+            for (const std::string& file : o.input_files)
+                for (std::string& s : slicer_cli::loader_side_files(file, true))
+                    side.push_back(std::move(s));
+            if (g_assemble)
+                for (const std::string& file : g_assemble->sources)
+                    for (std::string& s : slicer_cli::loader_side_files(file, false))
+                        side.push_back(std::move(s));
+            inputs.insert(inputs.end(), side.begin(), side.end());
+        }
         const std::string target = key(target_path);
         for (const std::string& input : inputs) {
             boost::system::error_code ec;

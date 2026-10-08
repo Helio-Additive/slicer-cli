@@ -473,8 +473,90 @@ assert hashlib.md5(open(sys.argv[2], "rb").read()).hexdigest() == open(sys.argv[
     run escpartok-$e "$bin" --load-assemble-list esc-$e/list.json --slice 1 --printer-preset "$A1M" \
         --outputdir esc-$e/out --export-3mf ../listed.3mf
     [ "$(rc escpartok-$e)" = 0 ] && [ -s esc-$e/listed.3mf ] || { show escpartok-$e; fail "$e: an export beside the assemble list's part exit $(rc escpartok-$e)"; }
+    # The files a loader reads beside a model are inputs too: the .mtl an
+    # OBJ's mtllib names (load_obj, both engines), for an OBJ model file and
+    # for an OBJ the assemble list names. The export onto it is refused and
+    # the .mtl is left as it was.
+    mkdir -p esc-$e/lp/out
+    py '
+import sys
+v = [(x, y, z) for x in (0, 20) for y in (0, 20) for z in (0, 20)]
+f = [(1,3,4),(1,4,2),(5,6,8),(5,8,7),(1,2,6),(1,6,5),(3,7,8),(3,8,4),(1,5,7),(1,7,3),(2,4,8),(2,8,6)]
+for out in sys.argv[1:]:
+    with open(out, "w") as o:
+        o.write("mtllib colors.mtl\n")
+        for p in v: o.write("v %d %d %d\n" % p)
+        for t in f: o.write("f %d %d %d\n" % t)
+' esc-$e/top.obj esc-$e/lp/part.obj
+    for m in esc-$e/colors.mtl esc-$e/lp/colors.mtl; do
+        printf 'newmtl red\nKd 1 0 0\n' > $m
+        py '
+import hashlib, sys; print(hashlib.md5(open(sys.argv[1], "rb").read()).hexdigest())
+' $m > $m.md5
+    done
+    py '
+import json, sys
+json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
+                       "objects": [{"path": sys.argv[1], "count": 1, "filaments": [1]}]}]},
+          open(sys.argv[2], "w"))
+' esc-$e/lp/part.obj esc-$e/lp/list.json
+    run escmtl-$e "$bin" esc-$e/top.obj --slice 1 --printer-preset "$A1M" --outputdir esc-$e/out --export-3mf ../colors.mtl
+    run escmtllist-$e "$bin" --load-assemble-list esc-$e/lp/list.json --slice 1 --printer-preset "$A1M" \
+        --outputdir esc-$e/lp/out --export-3mf ../colors.mtl
+    for c in escmtl:esc-$e escmtllist:esc-$e/lp; do
+        n=${c%%:*}-$e; d=${c#*:}; m=$d/colors.mtl
+        [ "$(rc $n)" != 0 ] || fail "$e: $n: --export-3mf onto $m was accepted"
+        grep -q '"tag":"ExportOverwritesInput"' $n/stdout || { show $n; fail "$e: $n: no ExportOverwritesInput event"; }
+        py '
+import hashlib, json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2 and "would overwrite the input file" in d["error_string"] and "colors.mtl" in d["error_string"], d
+assert hashlib.md5(open(sys.argv[2], "rb").read()).hexdigest() == open(sys.argv[2] + ".md5").read().strip(), "colors.mtl changed"
+' $d/out/result.json $m || { show $n; fail "$e: $n: the export onto $m was not refused, or the .mtl changed"; }
+    done
+    # BambuStudio reads a glTF through Assimp, which opens the buffer file the
+    # glTF names: that file is an input as well.
+    if [ $e = bambu ]; then
+        mkdir -p esc-$e/gl/out
+        py '
+import json, struct, sys
+v = [(x, y, z) for x in (0, 20) for y in (0, 20) for z in (0, 20)]
+f = [(0,2,3),(0,3,1),(4,5,7),(4,7,6),(0,1,5),(0,5,4),(2,6,7),(2,7,3),(0,4,6),(0,6,2),(1,3,7),(1,7,5)]
+pos = b"".join(struct.pack("<3f", *p) for p in v)
+idx = b"".join(struct.pack("<3H", *t) for t in f)
+open(sys.argv[2], "wb").write(pos + idx)
+json.dump({"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
+           "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+           "buffers": [{"uri": "mesh.bin", "byteLength": len(pos) + len(idx)}],
+           "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(pos)},
+                           {"buffer": 0, "byteOffset": len(pos), "byteLength": len(idx)}],
+           "accessors": [{"bufferView": 0, "componentType": 5126, "count": 8, "type": "VEC3",
+                          "min": [0, 0, 0], "max": [20, 20, 20]},
+                         {"bufferView": 1, "componentType": 5123, "count": 36, "type": "SCALAR"}]},
+          open(sys.argv[1], "w"))
+print(__import__("hashlib").md5(pos + idx).hexdigest())
+' esc-$e/gl/cube.gltf esc-$e/gl/mesh.bin > esc-$e/gl/mesh.bin.md5
+        run escbin-$e "$bin" esc-$e/gl/cube.gltf --slice 1 --printer-preset "$A1M" --outputdir esc-$e/gl/out --export-3mf ../mesh.bin
+        [ "$(rc escbin-$e)" != 0 ] || fail "$e: --export-3mf onto the glTF's buffer was accepted"
+        py '
+import hashlib, json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2 and "would overwrite the input file" in d["error_string"] and "mesh.bin" in d["error_string"], d
+assert hashlib.md5(open(sys.argv[2], "rb").read()).hexdigest() == open(sys.argv[2] + ".md5").read().strip(), "mesh.bin changed"
+' esc-$e/gl/out/result.json esc-$e/gl/mesh.bin || { show escbin-$e; fail "$e: the export onto the glTF's buffer was not refused, or the buffer changed"; }
+    fi
+    # Names that are no input still write as the official writes them,
+    # whatever their extension.
+    for x in x.3MF out.gcode; do
+        run escname-$e "$bin" esc-$e/project.3mf --slice 1 --outputdir esc-$e/out --export-3mf ../$x
+        [ "$(rc escname-$e)" = 0 ] || { show escname-$e; fail "$e: --export-3mf ../$x exit $(rc escname-$e)"; }
+        py '
+import sys, zipfile
+assert "Metadata/plate_1.gcode" in zipfile.ZipFile(sys.argv[1]).namelist()
+' esc-$e/$x || fail "$e: ../$x is not the sliced project"
+    done
 done
-echo "PASS: --export-3mf refuses a name that would overwrite an input, the parts an assemble list names included (both engines)"
+echo "PASS: --export-3mf refuses a name that would overwrite an input, the parts an assemble list names and the .mtl an OBJ reads included; other names write as the official writes them (both engines)"
 
 # The plates a run writes are only known after the global arrange of
 # --slice 0 --arrange 1, which can add one (BambuStudio.cpp 5627-5722;
