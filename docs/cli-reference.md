@@ -576,6 +576,19 @@ them as they are.
   - Folgertech i3 0.6: its `printable_area` is not a rectangle
     (0x0, 20x0, 200x200, 0x200). No flag avoids it; without `--arrange 1` the
     part is refused as over the bed edge (-52).
+- **A deep prime tower can be refused -104 at the desktop's own tower spot.**
+  On a plate with a fixed layout (`--load-assemble-list` with
+  `need_arrange: false`) and two or more filaments, slicer_cli-orcaslicer puts
+  the prime tower where the desktop puts it for a new plate
+  (`set_default_wipe_tower_pos_for_plate`, `PartPlate.cpp` 4115-4190). That
+  spot comes from an estimate of the tower's size. Some filament pairs make a
+  deeper tower, for example Bambu PLA Basic with Bambu PETG HF on the X1 Carbon:
+  the tower then runs past the back of the bed by a few mm. The engine's
+  G-code check after slicing allows only 2 mm (`GCodeProcessor.cpp` 1861-1883),
+  and the official OrcaSlicer CLI runs the same check, so the plate is refused
+  -104 and the error names the prime tower. Move the tower with
+  `--wipe-tower-x` and `--wipe-tower-y`, or turn it off with
+  `--enable-prime-tower=0`.
 
 In both engines on Windows, an STL or OBJ object is named from the text after
 the last `\` of its path only (`DIR_SEPARATOR` in `Format/STL.cpp` lines 10-12

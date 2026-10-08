@@ -298,9 +298,10 @@ check mixed-filament bambu "*give the project one filament per extruder, or slic
 # Cool Plate, allowed by --allow-mix-temp, are refused for it — Bambu PETG HF
 # @BBL X1C has cool_plate_temp 0 (Print.cpp 1700-1726 at 31f6803; 1650-1672 at
 # 5873b5f). The plates the sentence names are the ones both filaments have a bed
-# temperature on. Both runs place the two-filament prime tower inside the bed:
-# the Orca engine's own default spot for this pair is outside the X1 Carbon's
-# printable area (-104), which is not this sentence's subject.
+# temperature on. Both runs place the two-filament prime tower by hand: at the
+# desktop's own spot for it this pair's tower runs past the engine's G-code
+# check (-104, GCodeProcessor.cpp 1861-1883; the tower-outside case below),
+# which is not this sentence's subject.
 both plate-filament-hint  "*Pick a plate this filament supports: --curr-bed-type \"High Temp Plate\" (or*" \
      --load-assemble-list twomix.json --slice 1 --printer-preset "$X1C" \
      --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C" \
@@ -314,6 +315,21 @@ check_slices plate-filament-retry-orca orca curr_bed_type "High Temp Plate" \
      --load-assemble-list twomix.json --slice 1 --printer-preset "$X1C" \
      --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C" \
      --allow-mix-temp=1 --curr-bed-type "High Temp Plate" --wipe-tower-x 30 --wipe-tower-y 220
+
+# The prime-tower refusal (-104) says how to move the tower or turn it off. On
+# the Orca build the tower stands where the desktop puts it for a new plate
+# (set_default_wipe_tower_pos_for_plate, PartPlate.cpp 4115-4190), but this
+# pair's tower is deeper than that spot's estimate and runs past the 2 mm the
+# engine's G-code check allows (GCodeProcessor.cpp 1861-1883). Each flag the
+# sentence names gets the same plate to slice.
+TOWER=(--load-assemble-list twomix.json --slice 1 --printer-preset "$X1C"
+       --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C"
+       --allow-mix-temp=1 --curr-bed-type "Textured PEI Plate")
+check tower-outside orca \
+      "*It comes from the prime tower*Move the prime tower with --wipe-tower-x and --wipe-tower-y, or turn it off with --enable-prime-tower=0." \
+      "${TOWER[@]}"
+check_slices tower-moved orca wipe_tower_y 200.000 "${TOWER[@]}" --wipe-tower-x 30 --wipe-tower-y 200
+check_slices tower-off orca enable_prime_tower 0 "${TOWER[@]}" --enable-prime-tower=0
 
 # The two bed refusals say what to do. A project made on the X1 Carbon (both
 # objects inside its bed) sliced on the A1 mini: one object crosses its 180 mm

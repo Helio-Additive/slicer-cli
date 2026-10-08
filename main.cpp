@@ -4599,6 +4599,10 @@ static bool post_slice_checks(const Slic3r::Print& print, const Slic3r::Model& m
             std::string detail = where.empty()
                 ? "The objects themselves are inside the bed, so the cause is the prime tower, a skirt, a brim or support."
                 : "It comes from " + where + ".";
+            // A negative label is the prime tower, skirt or brim (label_names):
+            // say what moves it, after the existing text.
+            if (!labels.empty() && *labels.begin() < 0)
+                detail += " Move the prime tower with --wipe-tower-x and --wipe-tower-y, or turn it off with --enable-prime-tower=0.";
             set_outcome_failure(outcome, CLI_GCODE_PATH_OUTSIDE, detail);
         } else if (code & 0b10000) {
             set_outcome_failure(outcome, CLI_GCODE_IN_WRAPPING_DETECT_AREA,
