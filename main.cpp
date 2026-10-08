@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #endif
+#include <functional>
 
 // Core libslic3r headers
 #include "libslic3r/libslic3r.h"
@@ -4502,23 +4503,239 @@ static std::string bambu_only_gcode_placeholder(const Slic3r::DynamicPrintConfig
     return {};
 }
 
-/// True when tree supports are in play for this run: the project says so, or an
-/// object overrides the project's support type with a tree one (a plate's own
-/// settings can carry it too, and are applied later). G4's warning is about a
-/// value whose meaning only matters then.
-static bool tree_support_enabled(const Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model) {
-    if (boost::starts_with(config_value_text(config, "support_type"), "tree"))
-        return true;
-    for (const Slic3r::ModelObject* object : model.objects) {
-        if (object == nullptr)
-            continue;
-        // An object carries a ModelConfigObject, not a DynamicPrintConfig: its
-        // own ConfigBase accessor answers the same question.
-        const Slic3r::ConfigOption* opt = object->config.option("support_type");
-        if (opt != nullptr && boost::starts_with(opt->serialize(), "tree"))
-            return true;
+
+/// The raw settings one scope of a project states: the project itself, an
+/// object or a part. Values keep the file's own words (json strings).
+using RawValues = std::map<std::string, std::string>;
+
+/// The settings one object of a project 3MF states, and each of its parts', in
+/// the order the file lists them. bbs_3mf reads the same member into the
+/// model's object and volume configs (bbs_3mf.cpp 2130, 5115, 5263 at 31f6803),
+/// but the 3MF's numeric ids are not kept on the loaded ModelObject or
+/// ModelVolume, so the file's own names are what the loaded model is matched
+/// by (they are the same strings: each metadata "name" is assigned to the
+/// object and to its volume).
+struct FileObjectSettings {
+    std::string                                         name;
+    RawValues                                           values;
+    std::vector<std::pair<std::string, RawValues>>      parts;
+};
+
+/// Every object's settings of a project 3MF, in the order the file lists them.
+static std::vector<FileObjectSettings> project_object_settings(const std::string& path);
+
+/// What the BambuStudio values one scope states ask this engine to do: the keys
+/// to write (this engine's key and value), the values worth a warning, and the
+/// refusal when a value cannot be carried at all. Decides only; the caller
+/// writes, names the scope in its events, and refuses.
+struct BambuValueAction {
+    std::string key;
+    std::string value;
+    std::string from;
+};
+
+static bool bambu_value_actions(const RawValues& raw, const std::string& support_type, bool maker_set_raft,
+                                std::vector<BambuValueAction>& conversions,
+                                std::vector<BambuValueAction>& warnings, std::string& refusal) {
+    const auto raw_value = [&raw](const char* key) {
+        const auto it = raw.find(key);
+        return it == raw.end() ? std::string() : it->second;
+    };
+    const bool tree = boost::starts_with(support_type, "tree");
+    // tree_support_wall_count: -1 is BambuStudio's automatic (BambuStudio
+    // PrintConfig.cpp 5642-5650 at 5873b5f) and 0 is this engine's (OrcaSlicer
+    // PrintConfig.cpp 6389-6396, TreeSupport.cpp 1629), which upstream converts
+    // in 434ff3011f -- a commit the pin (31f6803 = upstream 42cce53) does not
+    // have. BambuStudio's 0 means infill-only walls, which this engine cannot
+    // express: the value is kept and warned about where tree support is in play.
+    const std::string wall_count = raw_value("tree_support_wall_count");
+    if (wall_count == "-1")
+        conversions.push_back({"tree_support_wall_count", "0", "-1"});
+    else if (wall_count == "0" && tree)
+        warnings.push_back({"tree_support_wall_count", "0", "0"});
+    // raft_first_layer_expansion: BambuStudio's -1 is 2 mm of automatic
+    // expansion under normal support (BambuStudio Support/SupportCommon.cpp
+    // 392-394 and 431-437 at 5873b5f), which is this engine's own 2.0, and a
+    // per-branch moment brim under tree support, which it has no value for.
+    if (raw_value("raft_first_layer_expansion") == "-1") {
+        if (tree) {
+            if (maker_set_raft) {
+                refusal = "The settings ask for raft_first_layer_expansion -1, BambuStudio's automatic "
+                          "first-layer expansion, with tree support; this engine has no automatic value for tree "
+                          "support. Set it to the expansion you want in mm (0 disables it), or use normal "
+                          "support, whose automatic expansion is 2 mm.";
+                return false;
+            }
+        } else {
+            conversions.push_back({"raft_first_layer_expansion", "2.0", "-1"});
+        }
     }
-    return false;
+    // top_one_wall_type "not apply": off in BambuStudio (BambuStudio
+    // PrintConfig.cpp 256-260 and 1375-1382 at 5873b5f). This engine's own
+    // legacy rule turns only_one_wall_top on for every value but "none"
+    // (OrcaSlicer PrintConfig.cpp 8011-8013; main 9315-9317 has the same rule).
+    if (raw_value("top_one_wall_type") == "not apply")
+        conversions.push_back({"only_one_wall_top", "0", "not apply"});
+    // ensure_vertical_shell_thickness words (BambuStudio PrintConfig.cpp
+    // 282-286): "enabled"/"disabled" are "ensure_all"/"none" here (OrcaSlicer
+    // PrintConfig.cpp 369-372; its rule maps only the older "1"/"0",
+    // 7978-7984). "partial" (BambuStudio PrintObject.cpp 1944, 1975) has no
+    // value here at all.
+    const std::string shell = raw_value("ensure_vertical_shell_thickness");
+    if (shell == "enabled")
+        conversions.push_back({"ensure_vertical_shell_thickness", "ensure_all", "enabled"});
+    else if (shell == "disabled")
+        conversions.push_back({"ensure_vertical_shell_thickness", "none", "disabled"});
+    else if (shell == "partial") {
+        refusal = "The settings ask for ensure_vertical_shell_thickness \"partial\", BambuStudio's "
+                  "skip-one-shell-pass mode, which this engine has no value for; pick the shell coverage you "
+                  "want, e.g. ensure_all for BambuStudio's \"enabled\".";
+        return false;
+    }
+    return true;
+}
+
+/// The event tag and message for one action, so every scope reports the same
+/// conversion the same way.
+static std::string bambu_action_tag(const std::string& key) {
+    if (key == "tree_support_wall_count") return "TreeSupportWallCountAutoConverted";
+    if (key == "raft_first_layer_expansion") return "RaftAutoExpansionConverted";
+    if (key == "only_one_wall_top") return "TopOneWallTypeNotApplyConverted";
+    if (key == "ensure_vertical_shell_thickness") return "VerticalShellThicknessWordConverted";
+    return "BambuValueConverted";
+}
+
+static std::string bambu_action_message(const BambuValueAction& action) {
+    if (action.key == "tree_support_wall_count")
+        return "tree_support_wall_count -1 is BambuStudio's automatic wall count and 0 this engine's, which "
+               "upstream converts in 434ff3011f; converted here until this engine's pin has that commit";
+    if (action.key == "raft_first_layer_expansion")
+        return "raft_first_layer_expansion -1 is BambuStudio's automatic expansion, 2 mm under normal support, "
+               "which is this engine's own 2.0";
+    if (action.key == "only_one_wall_top")
+        return "top_one_wall_type is BambuStudio's \"not apply\", which means the feature is off; the engine's "
+               "own rule turns only_one_wall_top on for every value but \"none\"";
+    if (action.key == "ensure_vertical_shell_thickness")
+        return "ensure_vertical_shell_thickness \"" + action.from + "\" is BambuStudio's word for this engine's \"" +
+               action.value + "\"";
+    return "converted " + action.key + " from \"" + action.from + "\" to \"" + action.value + "\"";
+}
+
+/// A value's text as the file states it: a string as it is, a number without
+/// json's own formatting, a boolean as "1"/"0". Empty when the key is not there.
+static std::string json_scalar_text(const json& settings, const char* key) {
+    const auto it = settings.find(key);
+    if (it == settings.end())
+        return {};
+    if (it->is_string())
+        return it->get<std::string>();
+    if (it->is_number_integer())
+        return std::to_string(it->get<long long>());
+    if (it->is_number_float()) {
+        const double number = it->get<double>();
+        if (number == double((long long)number))
+            return std::to_string((long long)number);
+        return it->dump();
+    }
+    if (it->is_boolean())
+        return it->get<bool>() ? "1" : "0";
+    return it->dump();
+}
+
+/// Writes one scope's conversions and reports them, then the values worth a
+/// warning. `write` sets a key in that scope's own config; `drop_substitution`
+/// removes the engine's record of not knowing a key this pass has just written
+/// correctly; `scope`/`scope_name` name the object or part the settings belong
+/// to, and are left empty for the project itself.
+static void apply_bambu_actions(const std::vector<BambuValueAction>& conversions,
+                                const std::vector<BambuValueAction>& warnings,
+                                const std::function<void(const char*, const std::string&)>& write,
+                                const std::function<void(const char*)>&                      drop_substitution,
+                                const std::string& scope, const std::string& scope_name) {
+    for (const BambuValueAction& action : conversions) {
+        write(action.key.c_str(), action.value);
+        drop_substitution(action.key.c_str());
+        json event = {{"event","config_normalized"},
+                      {"tag", bambu_action_tag(action.key)},
+                      {"opt_key", action.key},
+                      {"from", action.from},
+                      {"to", action.value},
+                      {"message", bambu_action_message(action)}};
+        if (!scope_name.empty())
+            event[scope] = scope_name;
+        emit_event(event);
+    }
+    for (const BambuValueAction& action : warnings) {
+        json event = {{"event","warning"},
+                      {"tag","TreeSupportWallCountZeroIsAuto"},
+                      {"opt_key", action.key},
+                      {"value", 0},
+                      {"message","The settings set tree_support_wall_count 0, BambuStudio's infill-only support "
+                                 "walls; this engine reads 0 as automatic, so the supports may come out sturdier. "
+                                 "Set it to 1 or 2 to choose the wall count."}};
+        if (!scope_name.empty())
+            event[scope] = scope_name;
+        emit_event(event);
+    }
+}
+
+/// One attribute's value in an XML start tag ("key=\"value\"").
+static std::string xml_attr(const std::string& tag, const std::string& name) {
+    const std::string needle = name + "=\"";
+    const size_t      at     = tag.find(needle);
+    if (at == std::string::npos)
+        return {};
+    const size_t start = at + needle.size();
+    const size_t end   = tag.find('"', start);
+    return end == std::string::npos ? std::string() : tag.substr(start, end - start);
+}
+
+/// Metadata/model_settings.config of a project 3MF, by object and part id. The
+/// member states each object's and each part's own settings as
+/// <metadata key="…" value="…"/> inside <object id="…"> and <part id="…">
+/// (bbs_3mf.cpp parses the same tags at 2130, 5115, 5263 at 31f6803).
+static std::vector<FileObjectSettings> project_object_settings(const std::string& path) {
+    std::vector<FileObjectSettings> out;
+    std::string                     text;
+    if (!read_zip_member(path, "Metadata/model_settings.config", text))
+        return out;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t lt = text.find('<', pos);
+        if (lt == std::string::npos)
+            break;
+        const size_t gt = text.find('>', lt);
+        if (gt == std::string::npos)
+            break;
+        const std::string tag = text.substr(lt + 1, gt - lt - 1);
+        pos                   = gt + 1;
+        if (tag.rfind("object", 0) == 0) {
+            out.emplace_back();
+        } else if (tag.rfind("/object", 0) == 0) {
+            if (!out.empty())
+                out.back().parts.shrink_to_fit();
+        } else if (tag.rfind("part", 0) == 0) {
+            if (!out.empty())
+                out.back().parts.emplace_back();
+        } else if (tag.rfind("metadata", 0) == 0 && !out.empty()) {
+            const std::string key   = xml_attr(tag, "key");
+            const std::string value = xml_attr(tag, "value");
+            if (key.empty())
+                continue;
+            if (!out.back().parts.empty()) {
+                auto& part = out.back().parts.back();
+                if (key == "name")
+                    part.first = value;
+                else
+                    part.second[key] = value;
+            } else if (key == "name") {
+                out.back().name = value;
+            } else {
+                out.back().values[key] = value;
+            }
+        }
+    }
+    return out;
 }
 
 /// Metadata/project_settings.config of a project 3MF, parsed. A null json when
@@ -6356,184 +6573,138 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // ── The file's own words, in this engine's values ───────────────
             // The engine's own legacy pass (PrintConfigDef::handle_legacy,
             // PrintConfig.cpp 7867-8151 at 31f6803) runs per key while a config
-            // loads, so it cannot see another key's value, and it knows only
-            // some of BambuStudio's words. The rest are converted here, on the
-            // settings the run slices with, from the words the file states.
+            // loads: it cannot see another key's value, and it knows only some
+            // of BambuStudio's words. The rest are converted here, on the
+            // settings the run slices with, from the words the file states --
+            // for the project and for every object's and part's own settings,
+            // which the file keeps in Metadata/model_settings.config and which
+            // bbs_3mf loads over the same legacy pass (bbs_3mf.cpp 2130, 5115,
+            // 5263 at 31f6803). One set of rules (bambu_value_actions) decides
+            // for all three scopes.
             {
-                // tree_support_wall_count: -1 is BambuStudio's automatic
-                // (BambuStudio PrintConfig.cpp 5642-5650 at 5873b5f) and 0 is
-                // this engine's (OrcaSlicer PrintConfig.cpp 6389-6396),
-                // where TreeSupport.cpp 1629 reads 0 as the automatic wall
-                // count. Upstream added exactly this conversion to its
-                // handle_legacy in 434ff3011f (2026-09-24) -- a commit our pin
-                // (31f6803 = upstream 42cce53 of 2026-05-23) does not have.
-                // Remove this branch once the pin includes that commit.
-                if (auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(
-                        config.option("tree_support_wall_count", false));
-                    opt != nullptr && opt->value == -1) {
-                    opt->value = 0;
-                    emit_event({{"event","config_normalized"},
-                                {"tag","TreeSupportWallCountAutoConverted"},
-                                {"opt_key", "tree_support_wall_count"},
-                                {"from", -1},
-                                {"to", 0},
-                                {"message","tree_support_wall_count -1 is BambuStudio's automatic wall count and 0 "
-                                           "this engine's, which upstream converts in 434ff3011f; converted here "
-                                           "until this engine's pin has that commit"}});
+                const json project_settings = project_settings_json(input_file);
+                RawValues  project_raw;
+                for (const char* key : {"tree_support_wall_count", "raft_first_layer_expansion", "top_one_wall_type",
+                                        "ensure_vertical_shell_thickness"})
+                    project_raw[key] = json_scalar_text(project_settings, key);
+                std::vector<BambuValueAction> conversions;
+                std::vector<BambuValueAction> warnings;
+                std::string                   refusal;
+                if (!bambu_value_actions(project_raw, config_value_text(config, "support_type"),
+                                         maker_changed_key(project_file_config, "raft_first_layer_expansion"),
+                                         conversions, warnings, refusal)) {
+                    emit_event({{"event","config_refused"},
+                                {"tag","BambuValueNotCarryable"},
+                                {"opt_key", project_raw.count("raft_first_layer_expansion") ? "raft_first_layer_expansion"
+                                                                                           : "ensure_vertical_shell_thickness"},
+                                {"message", refusal}});
+                    std::cerr << "Error: " << refusal << "\n";
+                    set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, refusal);
+                    return 1;
                 }
-                // An object's own settings carry the key too: the pin's
-                // handle_legacy covered them because bbs_3mf loads them with
-                // set_deserialize (bbs_3mf.cpp 2130, 5115, 5263 at 31f6803), so
-                // the same conversion runs on the loaded object configs.
+                // A word this pass converted is not a substitution: the engine's
+                // record of not knowing it would make --slice mode refuse an
+                // encoding difference. The loader keeps one substitution context
+                // for the whole file, object and part settings included, so the
+                // record names the key, not the scope it came from.
+                const auto drop_substitution = [&](const char* key) {
+                    config_subst.substitutions.erase(
+                        std::remove_if(config_subst.substitutions.begin(), config_subst.substitutions.end(),
+                                       [key](const Slic3r::ConfigSubstitution& s) {
+                                           return s.opt_def != nullptr && s.opt_def->opt_key == key;
+                                       }),
+                        config_subst.substitutions.end());
+                };
+                apply_bambu_actions(
+                    conversions, warnings,
+                    [&](const char* key, const std::string& value) {
+                        Slic3r::ConfigSubstitutionContext context(
+                            Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+                        config.set_deserialize(key, value, context);
+                    },
+                    drop_substitution, "scope", std::string());
+
+                // Each object's and each part's own settings, matched to the
+                // loaded model by the names the file states (the file's numeric
+                // ids are not kept on the loaded objects). An object's settings
+                // are the maker's own words by definition, so the "the maker
+                // changed this key" test the project needs does not apply here.
+                const std::vector<FileObjectSettings>          file_objects = project_object_settings(input_file);
+                std::map<std::string, std::vector<const FileObjectSettings*>> by_name;
+                for (const FileObjectSettings& settings : file_objects)
+                    by_name[settings.name].push_back(&settings);
+                std::map<std::string, size_t> taken;
                 for (Slic3r::ModelObject* object : model.objects) {
                     if (object == nullptr)
                         continue;
-                    const Slic3r::ConfigOption* opt = object->config.option("tree_support_wall_count");
-                    if (opt == nullptr || opt->getInt() != -1)
+                    const auto& candidates = by_name[object->name];
+                    const size_t index     = taken[object->name]++;
+                    if (index >= candidates.size())
                         continue;
-                    Slic3r::ConfigSubstitutionContext context(
-                        Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
-                    object->config.set_deserialize("tree_support_wall_count", "0", context);
-                    emit_event({{"event","config_normalized"},
-                                {"tag","TreeSupportWallCountAutoConverted"},
-                                {"opt_key", "tree_support_wall_count"},
-                                {"object", object->name},
-                                {"from", -1},
-                                {"to", 0},
-                                {"message","The object states tree_support_wall_count -1, BambuStudio's automatic "
-                                           "wall count; converted to this engine's 0"}});
-                }
-            }
-            // ── A value whose BambuStudio meaning this engine cannot carry ───
-            // The desktop's own load leaves this one alone (it warns and then
-            // slices the -1), so the refusal says what to do instead. It is a
-            // value the file states on purpose: for an unmodified key the
-            // rebase above takes the system preset's value and there is
-            // nothing to decide.
-            if (bambu_made_project) {
-                const json file_settings = project_settings_json(input_file);
-                // raft_first_layer_expansion -1 is BambuStudio's automatic
-                // expansion: 2 mm under normal support (BambuStudio
-                // Support/SupportCommon.cpp 392-394 and 431-437 at 5873b5f),
-                // which is this engine's own default 2.0 (OrcaSlicer
-                // PrintConfig.cpp 5018-5026), the same value by the same
-                // meaning, and a per-branch moment brim under tree support,
-                // which this engine has no value for at all (its own tree
-                // support shrinks the raft area instead, Support/TreeSupport.cpp
-                // 1394).
-                const std::string support_type = config_value_text(config, "support_type");
-                const bool file_auto_raft = file_states_number(file_settings, "raft_first_layer_expansion", -1);
-                if (file_auto_raft && boost::starts_with(support_type, "tree") &&
-                    maker_changed_key(project_file_config, "raft_first_layer_expansion")) {
-                    const std::string sentence =
-                        "The project asks for raft_first_layer_expansion -1, BambuStudio's automatic "
-                        "first-layer expansion, with tree support; this engine has no automatic value "
-                        "for tree support. Set it to the expansion you want in mm (0 disables it), or "
-                        "use normal support, whose automatic expansion is 2 mm.";
-                    emit_event({{"event","config_refused"},
-                                {"tag","RaftAutoExpansionUnsupportedForTreeSupport"},
-                                {"opt_key", "raft_first_layer_expansion"},
-                                {"value", -1},
-                                {"support_type", support_type},
-                                {"message", sentence}});
-                    std::cerr << "Error: " << sentence << "\n";
-                    set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
-                    return 1;
-                }
-                if (file_auto_raft)
-                    if (auto* opt = dynamic_cast<Slic3r::ConfigOptionFloat*>(
-                            config.option("raft_first_layer_expansion", false))) {
-                        const double converted = 2.0;
-                        if (opt->value != converted) {
-                            opt->value = converted;
-                            emit_event({{"event","config_normalized"},
-                                        {"tag","RaftAutoExpansionConverted"},
-                                        {"opt_key", "raft_first_layer_expansion"},
-                                        {"from", -1},
-                                        {"to", converted},
-                                        {"message","raft_first_layer_expansion -1 is BambuStudio's automatic "
-                                                   "expansion, 2 mm under normal support, which is this engine's "
-                                                   "own 2.0"}});
+                    const FileObjectSettings& raw_object = *candidates[index];
+                    const std::string project_support = config_value_text(config, "support_type");
+                    const std::string object_support  = object->config.option("support_type") != nullptr
+                                                            ? object->config.option("support_type")->serialize()
+                                                            : project_support;
+                    auto convert_scope = [&](const RawValues&                            raw,
+                                             const std::string&                          support_type,
+                                             const std::string&                          scope,
+                                             const std::string&                          scope_name,
+                                             const std::function<void(const char*, const std::string&)>& write) {
+                        std::vector<BambuValueAction> scope_conversions;
+                        std::vector<BambuValueAction> scope_warnings;
+                        std::string                   scope_refusal;
+                        if (!bambu_value_actions(raw, support_type, /*maker_set_raft=*/true, scope_conversions,
+                                                 scope_warnings, scope_refusal)) {
+                            const std::string sentence = scope_refusal + " (in " + scope + " \"" + scope_name + "\")";
+                            emit_event({{"event","config_refused"},
+                                        {"tag","BambuValueNotCarryable"},
+                                        {scope, scope_name},
+                                        {"message", sentence}});
+                            std::cerr << "Error: " << sentence << "\n";
+                            set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
+                            return false;
                         }
-                    }
-                // G4. BambuStudio's 0 means the support walls are infill-only
-                // (BambuStudio Support/TreeSupport.cpp 1853-1855 at 5873b5f);
-                // this engine reads 0 as automatic -- one wall where the area
-                // is thin, extra walls where they are needed (OrcaSlicer
-                // Support/TreeSupport.cpp 1623-1630) -- and cannot express
-                // "always infill-only". Upstream keeps the value (434ff301 maps
-                // only -1), and so does this run: the supports may come out
-                // sturdier than the file asked for, which is said once, when
-                // tree supports are in play.
-                if (file_states_number(file_settings, "tree_support_wall_count", 0) &&
-                    tree_support_enabled(config, model)) {
-                    emit_event({{"event","warning"},
-                                {"tag","TreeSupportWallCountZeroIsAuto"},
-                                {"opt_key", "tree_support_wall_count"},
-                                {"value", 0},
-                                {"message","The project sets tree_support_wall_count 0, BambuStudio's "
-                                           "infill-only support walls; this engine reads 0 as automatic, so the "
-                                           "supports may come out sturdier. Set it to 1 or 2 to choose the wall "
-                                           "count."}});
-                }
-                // G5. BambuStudio's top_one_wall_type off value is "not apply"
-                // (BambuStudio PrintConfig.cpp 256-260 and 1375-1382 at
-                // 5873b5f) and the engine's own legacy rule turns
-                // only_one_wall_top ON for every value but "none" (OrcaSlicer
-                // PrintConfig.cpp 8011-8013 at 31f6803; main still has the same
-                // rule, PrintConfig.cpp 9315-9317). The feature is off for that
-                // word, so it is turned off again here. Upstream has no fix to
-                // port -- this is the conversion the rule is missing.
-                if (file_states_text(file_settings, "top_one_wall_type", "not apply")) {
-                    if (auto* opt = dynamic_cast<Slic3r::ConfigOptionBool*>(
-                            config.option("only_one_wall_top", false))) {
-                        if (opt->value) {
-                            opt->value = false;
-                            emit_event({{"event","config_normalized"},
-                                        {"tag","TopOneWallTypeNotApplyConverted"},
-                                        {"opt_key", "only_one_wall_top"},
-                                        {"from", true},
-                                        {"to", false},
-                                        {"message","top_one_wall_type is BambuStudio's \"not apply\", which means "
-                                                   "the feature is off; the engine's own rule turns "
-                                                   "only_one_wall_top on for every value but \"none\""}});
+                        apply_bambu_actions(scope_conversions, scope_warnings, write, drop_substitution, scope,
+                                            scope_name);
+                        return true;
+                    };
+                    const bool object_ok = convert_scope(
+                        raw_object.values, object_support, "object", object->name,
+                        [&](const char* key, const std::string& value) {
+                            Slic3r::ConfigSubstitutionContext context(
+                                Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+                            object->config.set_deserialize(key, value, context);
+                        });
+                    if (!object_ok)
+                        return 1;
+                    std::map<std::string, size_t> parts_taken;
+                    for (Slic3r::ModelVolume* volume : object->volumes) {
+                        if (volume == nullptr)
+                            continue;
+                        size_t part_index = 0;
+                        bool   matched    = false;
+                        for (const auto& part : raw_object.parts) {
+                            if (part.first != volume->name)
+                                continue;
+                            if (part_index++ < parts_taken[volume->name])
+                                continue;
+                            parts_taken[volume->name]++;
+                            const std::string part_support = volume->config.option("support_type") != nullptr
+                                                                 ? volume->config.option("support_type")->serialize()
+                                                                 : object_support;
+                            if (!convert_scope(part.second, part_support, "part", volume->name,
+                                               [&](const char* key, const std::string& value) {
+                                                   Slic3r::ConfigSubstitutionContext context(
+                                                       Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+                                                   volume->config.set_deserialize(key, value, context);
+                                               }))
+                                return 1;
+                            matched = true;
+                            break;
                         }
+                        (void)matched;
                     }
-                }
-                // G6. BambuStudio's ensure_vertical_shell_thickness words
-                // (BambuStudio PrintConfig.cpp 282-286 at 5873b5f): "enabled" is
-                // this engine's "ensure_all" (OrcaSlicer PrintConfig.cpp
-                // 369-372; its own legacy rule maps the older "1"/"0",
-                // 7978-7984) and "disabled" is "none". Left alone, the engine
-                // substitutes the unknown word with its default and reports a
-                // substitution, which --slice mode refuses; the two are the same
-                // meaning in another encoding, so they are converted and the
-                // substitution record is dropped. "partial" has no value here at
-                // all (BambuStudio PrintObject.cpp 1944, 1975 skips one shell
-                // pass) and is left to the refusal below.
-                for (const auto& [word, value] : std::vector<std::pair<std::string, std::string>>{
-                         {"enabled", "ensure_all"}, {"disabled", "none"}}) {
-                    if (!file_states_text(file_settings, "ensure_vertical_shell_thickness", word.c_str()))
-                        continue;
-                    // The word is written through set_deserialize, the way a
-                    // load writes it, so the option's own type and range apply.
-                    Slic3r::ConfigSubstitutionContext context(
-                        Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
-                    config.set_deserialize("ensure_vertical_shell_thickness", value, context);
-                    config_subst.substitutions.erase(
-                        std::remove_if(config_subst.substitutions.begin(), config_subst.substitutions.end(),
-                                       [](const Slic3r::ConfigSubstitution& s) {
-                                           return s.opt_def != nullptr &&
-                                                  s.opt_def->opt_key == "ensure_vertical_shell_thickness";
-                                       }),
-                        config_subst.substitutions.end());
-                    emit_event({{"event","config_normalized"},
-                                {"tag","VerticalShellThicknessWordConverted"},
-                                {"opt_key", "ensure_vertical_shell_thickness"},
-                                {"from", word},
-                                {"to", value},
-                                {"message","ensure_vertical_shell_thickness \"" + word +
-                                           "\" is BambuStudio's word for this engine's \"" + value + "\""}});
                 }
             }
             // A Bambu Studio project states its filament indices from 0

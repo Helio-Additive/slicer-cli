@@ -1935,6 +1935,49 @@ assert not bad, "; ".join(bad)
 ' bblu1/out/plate_1.gcode u1-process-orca.json u1-pick.txt || fail "orca: the Bambu Studio project on the Snapmaker U1 did not slice with the desktop's retarget"
 echo "PASS: a Bambu Studio project slices on the Snapmaker U1 with the desktop's process, values and bed"
 
+# The same conversions apply to an object's own settings and to a part's, which
+# the file keeps in Metadata/model_settings.config (bbs_3mf loads them over the
+# same legacy pass, bbs_3mf.cpp 2130, 5115, 5263 at 31f6803). They are matched
+# by the names the file states, because the 3MF's numeric ids are not kept on
+# the loaded objects.
+py '
+import json, zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("objover.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            for k in ("raft_first_layer_expansion", "ensure_vertical_shell_thickness"):
+                d.pop(k, None)
+            d.update({"wall_filament": "0", "sparse_infill_filament": "0", "solid_infill_filament": "0"})
+            data = json.dumps(d, indent=4).encode()
+        if item.filename == "Metadata/model_settings.config":
+            text = data.decode()
+            assert text.count("<metadata key=\"name\" value=\"Cube\"/>") >= 1, text[:200]
+            # The object own settings: a BambuStudio word and an automatic value.
+            text = text.replace("<metadata key=\"name\" value=\"Cube\"/>",
+                                "<metadata key=\"name\" value=\"Cube\"/>\n"
+                                "    <metadata key=\"ensure_vertical_shell_thickness\" value=\"enabled\"/>\n"
+                                "    <metadata key=\"tree_support_wall_count\" value=\"-1\"/>", 1)
+            data = text.encode()
+        zout.writestr(item, data)
+' || fail "orca: the object-override fixture could not be written"
+run objconv "$O" objover.3mf --slice 1 --allow-newer-file --outputdir objconv/out
+[ "$(rc objconv)" = 0 ] || { show objconv; fail "orca: a project whose object states BambuStudio values exit $(rc objconv)"; }
+py '
+import json, sys
+ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
+def one(tag):
+    found = [e for e in ev if e.get("tag") == tag and e.get("object") == "Cube"]
+    assert len(found) == 1, (tag, [e.get("tag") for e in ev])
+    return found[0]
+shell = one("VerticalShellThicknessWordConverted")
+assert shell["from"] == "enabled" and shell["to"] == "ensure_all", shell
+wall = one("TreeSupportWallCountAutoConverted")
+assert wall["from"] == "-1" and wall["to"] == 0, wall
+' objconv/stdout || fail "orca: the object own settings were not converted with the same events as the project's"
+echo "PASS: an object's own tree_support_wall_count -1 and ensure_vertical_shell_thickness \"enabled\" convert like the project's"
+
 # The engine's 3MF loader extracts Metadata/project_settings.config and the
 # embedded presets as <backup>/_temp_3.config / _temp_2.config and parses them
 # back (bbs_3mf.cpp _extract_project_config_from_archive 2636 and
