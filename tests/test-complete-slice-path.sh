@@ -3160,11 +3160,14 @@ fi
 # packages, slicer_cli and resources/ side by side) or one level up (a bin/
 # layout, the box packages and the Linux release package). Same resolution as
 # test-pr35-findings.sh and test-product-invariants.sh.
-# flat_presets ENGINE TAG PRINTER: TAG-ENGINE-machine.json, -process.json and
-# -filament.json (the printer's default process and filament).
+# flat_presets ENGINE TAG PRINTER [VENDOR]: TAG-ENGINE-machine.json,
+# -process.json and -filament.json (the printer's default process and
+# filament). VENDOR (a directory holding machine/, process/, filament/) picks
+# another vendor's tree than BBL, e.g. $RES/profiles-orca/Snapmaker.
 flat_presets() {
     local vendor="$RES/profiles/BBL"
     [ "$1" = orca ] && vendor="$RES/profiles-orca/BBL"
+    [ -z "${4:-}" ] || vendor="$4"
     py '
 import json, os, sys
 vendor, tag, printer = sys.argv[1:4]
@@ -3960,17 +3963,49 @@ assert "uptodate" in s and "--load-settings" in s, s
 done
 [ $f22_ok = 1 ] && echo "PASS: F22 --uptodate says what to give instead of exiting 0 with nothing updated (both engines)"
 
-# BR3: a machine settings file that states no layer_change_gcode makes the
-# merge write that key empty (load_default_gcodes_to_config, BambuStudio.cpp
-# 685-745 at 5873b5f; OrcaSlicer.cpp 548-604 at 31f6803), and the engine then
-# refuses the print for relative extruder addressing. The refusal names that
-# cause, not only the symptom.
+# BR3: a machine settings file that states no layer_change_gcode, and has no
+# parent that defines one, makes the merge write that key empty
+# (load_default_gcodes_to_config, BambuStudio.cpp 685-745 at 5873b5f;
+# OrcaSlicer.cpp 548-604 at 31f6803), and the engine then refuses the print for
+# relative extruder addressing (Print.cpp 1676-1690 at 31f6803; 1636-1652 at
+# 5873b5f: the check takes a Marlin flavour, relative E, and neither layer
+# G-code resetting the extruder). The refusal names that cause, not only the
+# symptom.
+#
+# Two files. The one the package ships, the Snapmaker U1 0.6 machine preset,
+# states no layer_change_gcode of its own — it is its parents' — and a settings
+# file is read over them (`config = *default_config; config.apply(config_src)`,
+# PresetBundle.cpp 5087 at 5873b5f / OrcaSlicer PresetBundle.cpp 4894 at
+# 31f6803, on the preset the file names). So it slices (rc 0), the first check
+# below. The refusal needs a file with no parent left to restore the key: a
+# machine preset flattened over its parents with the key taken out and no
+# "inherits". It is a Marlin one: the U1 is a Klipper tool changer
+# (fdm_klipper), and the check above skips a Klipper flavour — measured on this
+# build, the flattened U1 slices with both layer G-codes taken out. The Prusa
+# MK4 0.4 nozzle is Marlin and its own before_layer_change_gcode holds the bare
+# "G92 E0.0" line the engine's regex reads as a reset (Print.cpp 1259), so both
+# keys are the ones taken out.
 br3_ok=1
 u106="$RES/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.6 nozzle).json"
 [ -f "$u106" ] || { fail "BR3: the package ships no U1 0.6 machine preset at $u106"; br3_ok=0; }
+if [ $br3_ok = 1 ]; then
+    flat_presets orca br3mk4 "Prusa MK4 0.4 nozzle" "$RES/profiles-orca/Prusa"
+    py '
+import json
+p = "br3mk4-orca-machine.json"
+d = json.load(open(p))
+assert "inherits" not in d, "the flattened preset still inherits"
+for key in ("layer_change_gcode", "before_layer_change_gcode"):
+    assert key in d, "the parents define no " + key
+    d.pop(key)
+json.dump(d, open(p, "w"), indent=1)
+' || { fail "BR3: the MK4 preset flattened over its parents is not one file"; br3_ok=0; }
+fi
 for e in orca; do
     bin=$B; [ $e = orca ] && bin=$O
-    run br3-$e "$bin" base.3mf --slice 1 --load-settings "$u106" --outputdir br3-$e/out
+    run br3s-$e "$bin" base.3mf --slice 1 --load-settings "$u106" --outputdir br3s-$e/out
+    [ "$(rc br3s-$e)" = 0 ] || { show br3s-$e; fail "BR3 $e: the shipped U1 0.6 machine preset no longer slices (exit $(rc br3s-$e))"; br3_ok=0; }
+    run br3-$e "$bin" base.3mf --slice 1 --load-settings br3mk4-orca-machine.json --outputdir br3-$e/out
     [ "$(rc br3-$e)" != 0 ] || { fail "BR3 $e: a machine file with no layer_change_gcode sliced"; br3_ok=0; continue; }
     py '
 import json, sys
@@ -4042,6 +4077,134 @@ assert "BambuStudio has no printer preset named" in s, s
 assert "slicer_cli-orcaslicer" in s, s
 ' br9/out/result.json || { show br9; fail "BR9: the refusal of a Snapmaker printer does not name slicer_cli-orcaslicer"; br9_ok=0; }
 [ $br9_ok = 1 ] && echo "PASS: BR9 a printer preset of the other engine is refused naming that binary (Bambu build)"
+
+# BR10: the plate/filament refusal (-61) names the plates the filament does
+# support, not only the one it does not: the engine's own sentence stops at
+# "Plate 1: Cool Plate does not support filament 2" (Print.cpp 1700-1726 at
+# 31f6803; 1650-1672 at 5873b5f), from a check that reads the plate's own bed
+# temperature key and reads 0 as "not this filament's plate". Two filaments
+# that share no other plate, on the plate given on the command line: Bambu
+# PETG HF @BBL X1C has cool_plate_temp 0, so the run is refused -61 for it.
+# --allow-mix-temp=1 gets past the temperature check to this one
+# (BambuStudio.cpp 6979-6982; OrcaSlicer.cpp 5968-5971). The plates the
+# sentence names must be the ones it can actually print on: the run it
+# suggests slices. Two filaments on one plate want a prime tower, and the Orca
+# engine's own default tower spot for this pair falls outside the X1 Carbon's
+# printable area (-104, "Found G-code outside of the printable area") — not
+# this check's subject, so the tower is placed inside the bed on both runs.
+br10_ok=1
+py '
+import json
+json.dump({"plates": [{"plate_name": "br10", "need_arrange": False,
+                       "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [100], "pos_y": [150]},
+                                   {"path": "cube.stl", "count": 1, "filaments": [2], "pos_x": [140], "pos_y": [150]}]}]},
+          open("br10.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run br10-$e "$bin" --load-assemble-list br10.json --slice 1 --printer-preset "$X1C" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C" \
+        --allow-mix-temp=1 --curr-bed-type "Cool Plate" --wipe-tower-x 30 --wipe-tower-y 220 --outputdir br10-$e/out
+    [ "$(rc br10-$e)" != 0 ] || { show br10-$e; fail "BR10 $e: two filaments that share no Cool Plate sliced"; br10_ok=0; continue; }
+    suggested=$(py '
+import json, re, sys
+d = json.load(open(sys.argv[1]))
+s = d["error_string"]
+assert d["return_code"] == -61, d
+assert "does not support filament" in s, s
+m = re.search(r"Pick a plate this filament supports: --curr-bed-type \"([^\"]+)\"", s)
+assert m, s
+print(m.group(1))
+' br10-$e/out/result.json) || { show br10-$e; fail "BR10 $e: the plate/filament refusal names no plate to give instead"; br10_ok=0; continue; }
+    run br10r-$e "$bin" --load-assemble-list br10.json --slice 1 --printer-preset "$X1C" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C" \
+        --allow-mix-temp=1 --curr-bed-type "$suggested" --wipe-tower-x 30 --wipe-tower-y 220 --outputdir br10r-$e/out
+    [ "$(rc br10r-$e)" = 0 ] && [ -s br10r-$e/out/plate_1.gcode ] ||
+        { show br10r-$e; fail "BR10 $e: the plate the refusal names ($suggested) exit $(rc br10r-$e)"; br10_ok=0; }
+done
+[ $br10_ok = 1 ] && echo "PASS: BR10 the plate/filament refusal names a plate the run slices on (both engines)"
+
+# BR11: the two bed refusals say what to do, not only what is wrong. An object
+# crossing the bed edge is refused -52 with "Object 'X' (…) crosses the edge of
+# the 180 x 180 x 180 mm bed." (the official's partly-inside gate, BambuStudio.cpp
+# 6527-6567 at 5873b5f; OrcaSlicer.cpp 5645-5697 at 31f6803), and a plate whose
+# objects cannot share it is refused -21 with "These objects do not fit on the
+# 180 x 180 x 180 mm bed together: 'X'." (the arrange's own verdict,
+# BambuStudio.cpp 5936-5945 / OrcaSlicer.cpp 5196-5205). Each now ends with the
+# way out. The plate: a 145 mm box clear of the X1 Carbon's exclusion area and
+# a 40 mm box near the A1 mini's 180 mm edge, both inside the X1 Carbon's bed,
+# exported from that printer as a project — so the plate fits one printer and
+# the other. --arrange 1 cannot place both on the A1 mini (145 + 40 > 180 in
+# both directions), which is the -21 half. The third run is the same gate on a
+# plate the run has already re-arranged: --arrange 1 on the assemble list is
+# accepted, the arrange runs, and an object still crosses — the sentence there
+# must not name --arrange 1 again.
+br11_ok=1
+py '
+def box(path, sx, sy, h):
+    v = [(x, y, z) for z in (0, h) for y in (0, sy) for x in (0, sx)]
+    tri = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+    with open(path, "w") as o:
+        o.write("solid t\n")
+        for a, b, c in tri:
+            o.write("facet normal 0 0 0\nouter loop\n")
+            for i in (a, b, c): o.write("vertex %g %g %g\n" % v[i])
+            o.write("endloop\nendfacet\n")
+        o.write("endsolid t\n")
+box("br11big.stl", 145, 145, 10)
+box("br11edge.stl", 40, 40, 10)
+import json
+json.dump({"plates": [{"plate_name": "bed", "need_arrange": False, "objects": [
+    {"path": "br11big.stl", "count": 1, "filaments": [1], "pos_x": [20], "pos_y": [32]},
+    {"path": "br11edge.stl", "count": 1, "filaments": [1], "pos_x": [170], "pos_y": [90]}]}]},
+    open("br11.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run br11p-$e "$bin" --load-assemble-list br11.json --slice 1 --printer-preset "$X1C" \
+        --outputdir br11p-$e/out --export-3mf br11proj.3mf
+    [ "$(rc br11p-$e)" = 0 ] && [ -s br11p-$e/out/br11proj.3mf ] ||
+        { show br11p-$e; fail "BR11 $e: the two-object X1 Carbon project did not export (exit $(rc br11p-$e))"; br11_ok=0; continue; }
+    run br11a-$e "$bin" br11p-$e/out/br11proj.3mf --slice 1 --printer-preset "$A1M" --outputdir br11a-$e/out
+    [ "$(rc br11a-$e)" != 0 ] || { fail "BR11 $e: an object crossing the bed edge sliced"; br11_ok=0; continue; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+s = d["error_string"]
+assert d["return_code"] == -52, d
+assert "crosses the edge of the 180 x 180 x 180 mm bed." in s, s
+assert s.endswith(" Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed."), s
+' br11a-$e/out/result.json || { show br11a-$e; fail "BR11 $e: the bed-edge refusal does not say what to do"; br11_ok=0; }
+    run br11b-$e "$bin" br11p-$e/out/br11proj.3mf --slice 1 --printer-preset "$A1M" --arrange 1 --outputdir br11b-$e/out
+    [ "$(rc br11b-$e)" != 0 ] || { fail "BR11 $e: objects that do not fit the A1 mini together sliced"; br11_ok=0; continue; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+s = d["error_string"]
+assert d["return_code"] == -21, d
+assert "do not fit on the 180 x 180 x 180 mm bed together" in s, s
+assert s.endswith(" Move some objects to another plate in the file, or use a printer with a bigger bed."), s
+' br11b-$e/out/result.json || { show br11b-$e; fail "BR11 $e: the arrange refusal does not say what to do"; br11_ok=0; }
+    # The same gate after the run has already re-arranged the plate: --arrange 1
+    # on the assemble list is accepted by the Bambu build, the arrange runs,
+    # and an object can still cross this bed — so the refusal must not send the
+    # run back to a flag it was already given. (The Orca CLI refuses --arrange
+    # with --load-assemble-list: -2, "give no model files and no transforms with
+    # it", so this run is the Bambu build's.)
+    if [ $e = bambu ]; then
+        run br11c-$e "$bin" --load-assemble-list br11.json --slice 1 --printer-preset "$A1M" --arrange 1 --outputdir br11c-$e/out
+        [ "$(rc br11c-$e)" != 0 ] || { fail "BR11 $e: --arrange 1 on the assemble list sliced"; br11_ok=0; continue; }
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+s = d["error_string"]
+assert d["return_code"] == -52, d
+assert "crosses the edge of the 180 x 180 x 180 mm bed." in s, s
+assert s.endswith(" Use a printer with a bigger bed."), s
+' br11c-$e/out/result.json || { show br11c-$e; fail "BR11 $e: the refusal after --arrange 1 names the flag again"; br11_ok=0; }
+    fi
+done
+[ $br11_ok = 1 ] && echo "PASS: BR11 the bed refusals say what to do (both engines; the re-arranged plate on the Bambu build)"
 
 # F18b: the same defect on the real Snapmaker U1 files, where it decides
 # whether the run works at all: on 2a12432 an STL with the shipped U1 machine,
