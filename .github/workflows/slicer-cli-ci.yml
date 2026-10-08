@@ -1393,6 +1393,8 @@ jobs:
     name: Package — ${{ matrix.os }}
     needs: build-nonlinux
     runs-on: ${{ matrix.runner }}
+    # Backstop: a hung test fails the job instead of holding it for hours.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -1541,6 +1543,31 @@ jobs:
           test -f dist/verify/slicer-cli/resources/profiles/BBL.json
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
+          # Hang watchdog for the tests below: every 60 s, any slicer_cli or
+          # slicer_cli-orcaslicer process running for 20 min or more is sampled
+          # to $RUNNER_TEMP/hang-<pid>.txt (uploaded on failure), its command
+          # line and the first 80 lines of the sample are printed, and it is
+          # killed, so a hung case fails instead of walling the job for hours.
+          # bash 3.2 (the runner's /bin/bash): no wait -n, no associative arrays.
+          hang_watchdog() {
+            set +e +o pipefail   # a failed probe must not end the watchdog
+            while sleep 60; do
+              ps -axo pid=,etime=,command= | while read -r pid etime cmd; do
+                exe="${cmd%% *}"; exe="${exe##*/}"
+                case "$exe" in slicer_cli|slicer_cli-orcaslicer) ;; *) continue ;; esac
+                secs=$(echo "$etime" | awk -F'[-:]' '{n=NF; s=$n+60*$(n-1); if (n>=3) s+=3600*$(n-2); if (n==4) s+=86400*$1; print s}')
+                [ "$secs" -ge 1200 ] || continue
+                echo "::error::hang watchdog: $exe (pid $pid) has run for $etime; sampling and killing it"
+                ps -o command= -p "$pid" || true
+                sample "$pid" 10 -file "$RUNNER_TEMP/hang-$pid.txt" >/dev/null 2>&1 || true
+                head -n 80 "$RUNNER_TEMP/hang-$pid.txt" 2>/dev/null || true
+                kill -KILL "$pid" 2>/dev/null || true
+              done
+            done
+          }
+          hang_watchdog &
+          HANG_WATCHDOG=$!
+          trap 'kill "$HANG_WATCHDOG" 2>/dev/null || true' EXIT
           # A packaged slice must resolve presets from the package and read the
           # resource folders without a swallowed parse error (libslic3r logs
           # "parse info/…" and continues on its hardcoded tables).
@@ -1548,6 +1575,15 @@ jobs:
           # The complete slice path (--slice, --arrange, presets by name, --export-3mf,
           # --info, --list-presets) and the default-path checks, on both engines.
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          kill "$HANG_WATCHDOG" 2>/dev/null || true
+
+      - name: Upload hang samples (macOS)
+        if: failure() && matrix.os == 'macOS-arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hang-samples-${{ matrix.os }}
+          path: ${{ runner.temp }}/hang-*.txt
+          if-no-files-found: ignore
 
       - name: Assemble + validate package (Windows x86_64)
         if: matrix.os == 'Windows-x86_64'
@@ -1670,6 +1706,8 @@ jobs:
     name: Package - Linux x86_64
     needs: build-linux
     runs-on: ubuntu-22.04
+    # Backstop: a hung test fails the job instead of holding it for hours.
+    timeout-minutes: 90
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
