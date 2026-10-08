@@ -1753,8 +1753,17 @@ for e in bambu orca; do
     run rmfn-$e "$bin" missing.3mf --slice 1 --outputdir rmfn-$e/out
     run rcf-$e "$bin" corrupt.3mf --printer-preset "$A1M" --slice 1 --outputdir rcf-$e/out
     run rcfn-$e "$bin" corrupt.3mf --slice 1 --outputdir rcfn-$e/out
-    [ "$(rc rmf-$e)" = 253 ] && grep -q 'No such file: missing.3mf' rmf-$e/stderr \
-        || { show rmf-$e; fail "$e: a missing 3MF with a named preset is not CLI_FILE_NOTFOUND: exit $(rc rmf-$e)"; }
+    grep -q 'No such file: missing.3mf' rmf-$e/stderr \
+        || { show rmf-$e; fail "$e: a missing 3MF with a named preset does not name the file"; }
+    # result.json is the record, as for every other refusal: the shell's own view
+    # of a native status is not portable (Git Bash reports -3, 0xFFFFFFFD, as 127
+    # where a POSIX shell reports 253), so the 0..255 view is compared only where
+    # the shell is a POSIX one.
+    case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) [ "$(rc rmf-$e)" = 253 ] || { show rmf-$e; fail "$e: a missing 3MF with a named preset exit $(rc rmf-$e), want 253 (-3)"; }
+       [ "$(rc rcf-$e)" = 250 ] || { show rcf-$e; fail "$e: an unreadable 3MF with a named preset exit $(rc rcf-$e), want 250 (-6)"; };;
+    esac
     py '
 import json, sys
 m, mn, c, cn = [json.load(open(p)) for p in sys.argv[1:5]]
