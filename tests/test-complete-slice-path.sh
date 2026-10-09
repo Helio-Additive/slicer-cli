@@ -442,8 +442,10 @@ echo "PASS: --export-settings onto the run's own result.json is refused without 
 # --export-slicedata into the folder --load-slicedata reads (or one inside the
 # other) would write over the cache the run loads from; --export-stl and
 # --export-stls into one folder write the same object STL files, the later
-# action over the earlier.
-run sdsame "$B" "$FIXTURE" --slice 1 --outputdir sdsame/out --load-slicedata sdsame/cache --export-slicedata sdsame/cache/sub
+# action over the earlier. Both flags name a parent folder with one folder per
+# plate under it: --export-slicedata sdsame/cache/1 writes plate 1 to
+# sdsame/cache/1/1, inside sdsame/cache/1 that --load-slicedata reads.
+run sdsame "$B" "$FIXTURE" --slice 1 --outputdir sdsame/out --load-slicedata sdsame/cache --export-slicedata sdsame/cache/1
 [ "$(rc sdsame)" != 0 ] || fail "--export-slicedata inside the --load-slicedata folder was accepted"
 grep -q '"tag":"ExportOverwritesInput"' sdsame/stdout || { show sdsame; fail "no ExportOverwritesInput event for --export-slicedata inside --load-slicedata"; }
 grep -q 'would overwrite the folder --load-slicedata' sdsame/stderr || { show sdsame; fail "the refusal does not name --load-slicedata"; }
@@ -4292,7 +4294,10 @@ fi
 # Let the first run finish: every open of the FIFO is served, so it ends the
 # way an ordinary run does — its folder intact, its G-code written. A python
 # feeder, not a shell loop: it dies on the first signal, so no feeder of this
-# case can outlive the script and hold its output pipe open.
+# case can outlive the script and hold its output pipe open. A reader that
+# closes while the feeder still writes (the loader reads its feeds, the next
+# write finds it gone) is a broken pipe, not the end: run A opens the OBJ again
+# (the output check reads its mtllib names), and that open must be served too.
 py '
 import sys
 data = open("objfeed.obj", "rb").read()
@@ -4300,6 +4305,8 @@ while True:
     try:
         with open(sys.argv[1], "wb") as f:
             f.write(data)
+    except BrokenPipeError:
+        continue
     except OSError:
         break
 ' "$RACE/slow.obj" &
