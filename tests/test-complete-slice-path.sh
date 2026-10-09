@@ -450,9 +450,34 @@ grep -q 'would overwrite the folder --load-slicedata' sdsame/stderr || { show sd
 run stlboth "$B" cube.stl --printer-preset "$A1M" --outputdir stlboth --export-stl --export-stls stlboth/stl
 [ "$(rc stlboth)" != 0 ] || fail "--export-stl and --export-stls into one folder were accepted"
 grep -q '"tag":"ExportNameTaken"' stlboth/stdout || { show stlboth; fail "no ExportNameTaken event for --export-stl with --export-stls"; }
-grep -q -- '--export-stl and --export-stls stlboth/stl write the same object STL files' stlboth/stderr ||
+grep -q -- '--export-stl and --export-stls stlboth/stl write the same object STL file' stlboth/stderr ||
     { show stlboth; fail "the refusal does not name both STL flags"; }
 echo "PASS: --export-slicedata over the --load-slicedata folder, and --export-stl with --export-stls into one folder, are refused"
+
+# The outputs are checked once the model is loaded and before the first one is
+# written: an action given before --slice that would write over the input
+# project is refused with the project untouched, and the object STL files are
+# the loaded objects' own names (a one-object cube writes only obj_1_*.stl, so
+# another file in that folder is no clash; obj_1_cube.stl is).
+cp "$FIXTURE" pre.3mf
+py '
+import hashlib; print(hashlib.md5(open("pre.3mf", "rb").read()).hexdigest())
+' > pre.md5
+run preset "$B" pre.3mf --export-settings pre.3mf --slice 1 --outputdir preset/out
+[ "$(rc preset)" != 0 ] || fail "--export-settings onto the input project before --slice was accepted"
+grep -q '"tag":"ExportOverwritesInput"' preset/stdout || { show preset; fail "no ExportOverwritesInput event for --export-settings onto the input project"; }
+py '
+import hashlib; assert hashlib.md5(open("pre.3mf", "rb").read()).hexdigest() == open("pre.md5").read().strip(), "pre.3mf changed"
+' || fail "--export-settings before --slice wrote over the input project before refusing"
+run stlnote "$B" cube.stl --printer-preset "$A1M" --outputdir stlnote --export-stl --export-settings stlnote/stl/obj_999_notes.stl
+[ "$(rc stlnote)" = 0 ] || { show stlnote; fail "--export-stl with --export-settings stl/obj_999_notes.stl exit $(rc stlnote)"; }
+ls stlnote/stl/obj_1_*.stl > /dev/null 2>&1 && [ -s stlnote/stl/obj_999_notes.stl ] ||
+    fail "--export-stl and --export-settings stl/obj_999_notes.stl did not both write"
+run stlclash "$B" cube.stl --printer-preset "$A1M" --outputdir stlclash --export-stl --export-settings stlclash/stl/obj_1_cube.stl
+[ "$(rc stlclash)" != 0 ] || fail "--export-settings onto the object STL --export-stl writes was accepted"
+grep -q '"tag":"ExportNameTaken"' stlclash/stdout || { show stlclash; fail "no ExportNameTaken event for the object STL clash"; }
+[ ! -e stlclash/stl/obj_1_cube.stl ] || fail "the object STL clash was written before it was refused"
+echo "PASS: the outputs are checked before the first write, with the loaded objects' own STL names"
 
 # ... and a NAME that is a link to one of them (POSIX only: Git Bash on
 # Windows makes copies, not links).

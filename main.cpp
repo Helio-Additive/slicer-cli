@@ -6865,6 +6865,8 @@ struct RunState {
     bool pipe_prepare_sent = false;
     // The model actions run once per run (BambuStudio.cpp 6336; OrcaSlicer.cpp 5470).
     bool actions_done = false;
+    // The outputs were checked before the first write (check_run_outputs).
+    bool outputs_checked = false;
     // Plate `plate_id` of the run; a run of one plate (model files, a 3MF
     // without plates) answers with that plate whatever the id.
     RunPlate& plate(int plate_id) {
@@ -7058,6 +7060,9 @@ static bool plate_triangle_limit(const CliOptions& o, const Slic3r::Model& model
 /// call (outcome.prepare_pass, which stops before the plate checks) and then
 /// one call per plate. The return value is the process exit code of the
 /// default call; `outcome` carries what `--slice` mode reports on top.
+static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
+                             std::string* detail);
+
 static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
     const std::string& input_file      = o.input_file;
@@ -9495,6 +9500,31 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
             return true;
         };
+        // Every output of the run, checked once the model is loaded (the
+        // object STL names are known) and before the first write: the
+        // actions, then the slice (check_run_outputs). The plates are the
+        // ones already known; --slice checks them all again once its plan is
+        // final (run_slice_mode).
+        const auto outputs_ok = [&]() -> bool {
+            if (rs.outputs_checked)
+                return true;
+            rs.outputs_checked = true;
+            std::vector<int> known_plates;
+            if (o.slice_mode) {
+                if (rs.plan.done)
+                    for (int p = 1; p <= rs.plan.plate_count; ++p)
+                        known_plates.push_back(p);
+                else if (o.slice_plate > 0)
+                    known_plates.push_back(o.slice_plate);
+            }
+            std::string detail;
+            if (const int refused = check_run_outputs(o, known_plates, &model, &detail)) {
+                set_outcome_failure(outcome, refused, detail);
+                outcome.run_step_failed = true;
+                return false;
+            }
+            return true;
+        };
 
         // --slice: the official per-plate gate before apply (BambuStudio.cpp
         // 6527-6567 at 5873b5f; OrcaSlicer.cpp 5645-5697 at 31f6803). An
@@ -9706,6 +9736,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
             if (slicer_cli::has_model_actions(o))
                 project_settings = rs.base;
+            if (!outputs_ok())
+                return 1;
             if (slicer_cli::has_model_actions(o) && !rs.actions_done) {
                 rs.actions_done = true;
                 if (!run_model_action_step(o.slice_mode ? slicer_cli::ActionPhase::BeforeSlice
@@ -9783,7 +9815,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
         // Without --slice, or for the calibration prints that make their own
         // model, the actions run here; with --slice those before it ran before
-        // the bed check above.
+        // the bed check above. The outputs are checked first (without --slice
+        // this is the check before the actions and the -o G-code).
+        if (!outputs_ok())
+            return 1;
         if (slicer_cli::has_model_actions(o) && !rs.actions_done) {
             rs.actions_done = true;
             if (!run_model_action_step(o.slice_mode ? slicer_cli::ActionPhase::BeforeSlice : slicer_cli::ActionPhase::All))
@@ -10850,15 +10885,10 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     return 0;
 }
 
-/// --slice: every plate (0) or plate N of the input, one G-code each as
-/// <outputdir>/plate_N.gcode, through the same single-plate path the default
-/// call runs. The official loop stops at the first plate that fails
-/// (flush_and_exit inside the plate loop, BambuStudio.cpp 6533-7240), and so
-/// does this one. The exit status is the official CLI_* code of that failure.
-/// Every file this run writes, checked once before anything is sliced or
-/// exported, whatever flags are given: no two of them may be one file (the
-/// one written last would replace the other, and the run would report success
-/// with a requested output lost), and none may be a file the run reads.
+/// Every file this run writes, checked before the run writes any of them,
+/// whatever flags are given: no two of them may be one file (the one written
+/// last would replace the other, and the run would report success with a
+/// requested output lost), and none may be a file the run reads.
 ///
 /// The outputs: result.json and each sliced plate's plate_<n>.gcode in
 /// --outputdir (--slice), the G-code of -o (the single-plate call),
@@ -10866,8 +10896,15 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
 /// export_3mf_file = outfile_dir + "/" + export_3mf_file, BambuStudio.cpp
 /// 7508-7510 at 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803), the
 /// --export-settings file, the object STL files of --export-stl /
-/// --export-stls ("<folder>/obj_<n>_<name>.stl", object_stl_path) and the
-/// plate folders under --export-slicedata.
+/// --export-stls (each object's own name, object_stl_file, read from the
+/// loaded `model`) and the plate folders under --export-slicedata.
+///
+/// It runs twice in a --slice run: once the model is loaded and before the
+/// first action writes a file (every output but the plates', whose plan may
+/// not be final yet; `plates` holds the ones already known), and again once
+/// the plate plan is final, before the first plate is sliced, with every
+/// plate. A run without --slice checks once, before its actions and its -o
+/// G-code.
 ///
 /// Two outputs are compared by name, the link chain followed and without
 /// case on every system (they may not exist yet; a name that differs from
@@ -10878,8 +10915,11 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
 /// case rule); an output that does not exist overwrites nothing.
 ///
 /// Returns 0, or CLI_INVALID_PARAMS once the refusal is reported (-2:
-/// ExportOverwritesInput for an input, ExportNameTaken for two outputs).
-static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates) {
+/// ExportOverwritesInput for an input, ExportNameTaken for two outputs). With
+/// `detail` the sentence is handed back for the caller's result; without it,
+/// result.json is written here.
+static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
+                             std::string* detail) {
     namespace fs = boost::filesystem;
     const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
     const auto key = [](const fs::path& p) {
@@ -10901,54 +10941,65 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
 
     // ── What the run writes ─────────────────────────────────────────────
     struct Output {
-        enum Kind { File, StlFiles, Folder } kind;
-        std::string flag;       // "--export-3mf NAME"; empty for the run's own files
-        fs::path    path;       // the file; the STL folder; the folder
-        std::string what;       // "the run's own result.json in --outputdir"
-        std::string is_what;    // what follows "is" in the same-name sentence
+        bool        folder = false;   // a folder the run writes into (--export-slicedata)
+        bool        stl    = false;   // an object STL file of --export-stl / --export-stls
+        std::string flag;             // "--export-3mf NAME"; empty for the run's own files
+        fs::path    path;
+        std::string what;             // "the run's own result.json in --outputdir"
+        std::string is_what;          // what follows "is" in the same-name sentence
     };
     std::vector<Output> outputs;
+    const auto add = [&](bool folder, bool stl, const std::string& flag, const fs::path& path,
+                         const std::string& what, const std::string& is_what) {
+        Output out;
+        out.folder  = folder;
+        out.stl     = stl;
+        out.flag    = flag;
+        out.path    = path;
+        out.what    = what;
+        out.is_what = is_what;
+        outputs.push_back(std::move(out));
+    };
     // The outputs a flag names come first: a clash is told from that flag.
     if (!o.export_3mf.empty() && o.slice_mode)
-        outputs.push_back({Output::File, "--export-3mf " + o.export_3mf, outdir / o.export_3mf,
-                           "the project --export-3mf " + o.export_3mf + " writes",
-                           "the project --export-3mf " + o.export_3mf + " writes"});
+        add(false, false, "--export-3mf " + o.export_3mf, outdir / o.export_3mf,
+            "the project --export-3mf " + o.export_3mf + " writes", "the project --export-3mf " + o.export_3mf + " writes");
     for (const std::string& action : o.actions) {
         if (action == "export_settings") {
             const std::string file = o.cli.opt_string("export_settings");
             if (!file.empty())
-                outputs.push_back({Output::File, "--export-settings " + file, fs::path(file),
-                                   "the file --export-settings " + file + " writes",
-                                   "the file --export-settings " + file + " writes"});
-        } else if (action == "export_stl" || action == "export_stls") {
-            std::string folder = action == "export_stls" ? o.cli.opt_string("export_stls") : std::string();
-            if (folder.empty())
-                folder = o.outputdir.empty() ? std::string("stl") : o.outputdir + "/stl";
-            const std::string flag = action == "export_stls" ? "--export-stls" : "--export-stl";
-            const std::string what = "one of the object STL files " + flag + " writes in " + folder;
-            outputs.push_back({Output::StlFiles, action == "export_stls" ? flag + " " + folder : flag,
-                               fs::path(folder), what, what});
+                add(false, false, "--export-settings " + file, fs::path(file),
+                    "the file --export-settings " + file + " writes", "the file --export-settings " + file + " writes");
+        } else if ((action == "export_stl" || action == "export_stls") && model != nullptr) {
+            const std::string dir  = action == "export_stls" ? o.cli.opt_string("export_stls") : std::string();
+            const std::string flag = action == "export_stls" ? "--export-stls " + dir : std::string("--export-stl");
+            unsigned index = 1;
+            for (const Slic3r::ModelObject* object : model->objects) {
+                const std::string file = slicer_cli::object_stl_file(o, *object, index++, dir);
+                const std::string what = "the object STL file " + file + " " + flag + " writes";
+                add(false, true, flag, fs::path(file), what, what);
+            }
         }
     }
     if (o.slice_mode)
         for (int p : plates) {
             const std::string folder = slicer_cli::slicedata_dir(o, "export_slicedata", p);
             if (!folder.empty())
-                outputs.push_back({Output::Folder, "--export-slicedata " + folder, fs::path(folder),
-                                   "the folder --export-slicedata writes (" + folder + ")",
-                                   "inside the folder --export-slicedata writes (" + folder + ")"});
+                add(true, false, "--export-slicedata " + folder, fs::path(folder),
+                    "the folder --export-slicedata writes (" + folder + ")",
+                    "inside the folder --export-slicedata writes (" + folder + ")");
         }
     if (o.slice_mode) {
-        outputs.push_back({Output::File, "", outdir / "result.json", "the run's own result.json in --outputdir",
-                           "the run's own result.json in --outputdir"});
+        add(false, false, "", outdir / "result.json", "the run's own result.json in --outputdir",
+            "the run's own result.json in --outputdir");
         for (int p : plates) {
             const std::string name = "plate_" + std::to_string(p) + ".gcode";
-            outputs.push_back({Output::File, "", outdir / name, "the run's own " + name + " in --outputdir",
-                               "the run's own " + name + " in --outputdir"});
+            add(false, false, "", outdir / name, "the run's own " + name + " in --outputdir",
+                "the run's own " + name + " in --outputdir");
         }
     } else if (!slicer_cli::model_actions_only(o) && !o.output_file.empty()) {
-        outputs.push_back({Output::File, "-o " + o.output_file, fs::path(o.output_file),
-                           "the G-code -o " + o.output_file + " writes", "the G-code -o " + o.output_file + " writes"});
+        add(false, false, "-o " + o.output_file, fs::path(o.output_file), "the G-code -o " + o.output_file + " writes",
+            "the G-code -o " + o.output_file + " writes");
     }
 
     // ── What the run reads ──────────────────────────────────────────────
@@ -10993,21 +11044,15 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
     }
 
     // ── The checks ──────────────────────────────────────────────────────
-    const auto refuse = [&](const char* tag, const std::string& detail) {
-        if (o.slice_mode)
+    const auto refuse = [&](const char* tag, const std::string& sentence) {
+        if (detail != nullptr)
+            *detail = sentence;
+        else if (o.slice_mode)
             write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
-                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
-        std::cerr << "Error: " << detail << "\n";
-        emit_event({{"event","input_error"}, {"tag", tag}, {"message", detail}});
+                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + sentence, {}, 0, 0);
+        std::cerr << "Error: " << sentence << "\n";
+        emit_event({{"event","input_error"}, {"tag", tag}, {"message", sentence}});
         return CLI_INVALID_PARAMS;
-    };
-    // An object STL file name: obj_<n>_<name>.stl, read without case.
-    const auto stl_name = [&](const fs::path& p) {
-        const std::string file = lower(p.filename().string());
-        size_t digits = 4;
-        while (digits < file.size() && std::isdigit(static_cast<unsigned char>(file[digits]))) ++digits;
-        return boost::algorithm::starts_with(file, "obj_") && digits > 4 && digits < file.size() &&
-               file[digits] == '_' && boost::algorithm::ends_with(file, ".stl");
     };
     // 0: apart; 1: one name, or two names of one file; 2: names that differ
     // only by letter case.
@@ -11028,36 +11073,24 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
     };
     // How two outputs meet (0, 1 or 2 as above).
     const auto meet = [&](const Output& a, const Output& b) -> int {
-        if (a.kind == Output::Folder && b.kind == Output::Folder)
+        if (a.folder && b.folder)
             return 0;   // --export-slicedata's own plate folders, one per plate
-        if (a.kind == Output::Folder || b.kind == Output::Folder) {
-            const Output& folder = a.kind == Output::Folder ? a : b;
-            const Output& other  = a.kind == Output::Folder ? b : a;
+        if (a.folder || b.folder) {
+            const Output& folder = a.folder ? a : b;
+            const Output& other  = a.folder ? b : a;
             if (const int c = same(other.path, folder.path))
                 return c;
             return inside(other.path, folder.path);
         }
-        if (a.kind == Output::File && b.kind == Output::File)
-            return same(a.path, b.path);
-        if (a.kind == Output::StlFiles && b.kind == Output::StlFiles)
-            // --export-stl and --export-stls into one folder write the same
-            // obj_<n>_<name>.stl files, each action in its turn (before or
-            // after --slice, so from a model the arrange may have moved): the
-            // later one replaces the earlier.
-            return same(a.path, b.path);
-        const Output& stls  = a.kind == Output::StlFiles ? a : b;
-        const Output& other = a.kind == Output::StlFiles ? b : a;
-        return stl_name(other.path) ? same(other.path.parent_path(), stls.path) : 0;
+        return same(a.path, b.path);
     };
     for (const Output& out : outputs)
         for (const std::string& input : inputs) {
             boost::system::error_code ec;
             const fs::path in(input);
             bool hit = false;
-            if (out.kind == Output::File)
+            if (!out.folder)
                 hit = fs::exists(out.path, ec) && fs::equivalent(out.path, in, ec) && !ec;
-            else if (out.kind == Output::StlFiles)
-                hit = stl_name(in) && fs::exists(out.path, ec) && fs::equivalent(in.parent_path(), out.path, ec) && !ec;
             else   // the cache files of a plate folder: any input in it
                 hit = fs::exists(out.path, ec) && fs::exists(in, ec) && inside(in, out.path) != 0;
             if (!hit)
@@ -11089,17 +11122,21 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
             const Output& b = outputs[j];
             if (a.flag.empty())
                 continue;   // two of the run's own files never clash (result.json, plate_<n>.gcode)
-            if (a.kind == b.kind && a.flag == b.flag)
-                continue;
+            if (a.flag == b.flag)
+                continue;   // one flag's own files: one object STL each, one folder per plate
             const int c = meet(a, b);
             if (c == 0)
                 continue;
-            if (a.kind == Output::StlFiles && b.kind == Output::StlFiles)
-                return refuse("ExportNameTaken", a.flag + " and " + b.flag + " write the same object STL files in " +
+            if (a.stl && b.stl)
+                // --export-stl and --export-stls into one folder write the same
+                // obj_<n>_<name>.stl files, each action in its turn (before or
+                // after --slice, so from a model the arrange may have moved):
+                // the later one replaces the earlier.
+                return refuse("ExportNameTaken", a.flag + " and " + b.flag + " write the same object STL file " +
                                                      b.path.generic_string() +
-                                                     (c == 1 ? "" : " (the folder names differ only by letter case)") +
+                                                     (c == 1 ? "" : " (the names differ only by letter case)") +
                                                      "; give --export-stls another folder.");
-            if (a.kind == Output::Folder)   // a folder that would hold one of the run's own files
+            if (a.folder)   // a folder that would hold one of the run's own files
                 return refuse("ExportNameTaken", a.flag + (c == 1 ? " holds " : " differs only by letter case from ") +
                                                      b.what + "; choose another folder.");
             return refuse("ExportNameTaken", c == 1 ? a.flag + " is " + b.is_what + "; choose another name."
@@ -11109,6 +11146,11 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
     return 0;
 }
 
+/// --slice: every plate (0) or plate N of the input, one G-code each as
+/// <outputdir>/plate_N.gcode, through the same single-plate path the default
+/// call runs. The official loop stops at the first plate that fails
+/// (flush_and_exit inside the plate loop, BambuStudio.cpp 6533-7240), and so
+/// does this one. The exit status is the official CLI_* code of that failure.
 static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_params) {
     namespace fs = boost::filesystem;
     const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
@@ -11290,7 +11332,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // add plates the pre-arrange count does not know (BambuStudio.cpp
     // 5627-5722; OrcaSlicer.cpp 4887-4983), and a plate_<n>.gcode it then
     // writes would be overwritten. `plates` is the set this run slices.
-    if (const int refused = check_run_outputs(o, plates))
+    if (const int refused = check_run_outputs(o, plates, &rs.model, nullptr))
         return refused;
 
     const bool pre_check = code == 0 && o.slice_plate == 0 && plates.size() > 1;
@@ -11705,13 +11747,6 @@ int main(int argc, char** argv) {
         std::cerr << "Error: --export-3mf needs --slice\n";
         return 1;
     }
-    // The single-plate call (-o) and a run of model actions only write no
-    // result.json and no plate files; their outputs (-o, --export-settings,
-    // the object STL files) are checked here, before anything loads. --slice
-    // checks its own once its plate plan is final (run_slice_mode).
-    if (!o.slice_mode)
-        if (const int refused = check_run_outputs(o, {}))
-            return refused;
     if (o.arrange_forced() && !o.slice_mode) {
         std::cerr << "Error: --arrange needs --slice (the official CLI arranges inside its plate loop)\n";
         return 1;
