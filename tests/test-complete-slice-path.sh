@@ -375,18 +375,16 @@ assert "{initial_no_support_extruder}" in g and "initial_no_support_filament_id"
 [ "$(grep -c '"tag":"LegacyGcodeTokenAliased"' legacy-export/stdout)" = 1 ] || fail "the placeholder alias was reported more than once"
 echo "PASS: the exported project states the custom G-code the slice ran (reported once)"
 
-# --export-3mf may not name the run's own result.json or plate G-code; a name
-# that differs only in case is the same file on Windows and macOS only.
-case "$(uname -s)" in
-MINGW*|MSYS*|CYGWIN*|Darwin) case_names="PLATE_1.gcode";;
-*)
-    case_names=""
-    run caseok "$B" "$FIXTURE" --slice 1 --outputdir caseok/out --export-3mf PLATE_1.gcode
-    [ "$(rc caseok)" = 0 ] && [ -s caseok/out/plate_1.gcode ] && [ -s caseok/out/PLATE_1.gcode ] ||
-        { show caseok; fail "--export-3mf PLATE_1.gcode beside plate_1.gcode on a case-sensitive file system exit $(rc caseok)"; }
-    echo "PASS: --export-3mf PLATE_1.gcode is another file than plate_1.gcode on a case-sensitive file system";;
-esac
-for name in result.json $case_names; do
+# --export-3mf may not name the run's own result.json or plate G-code, nor a
+# name that differs from one only by letter case (on every system: two
+# outputs of one run are not left to the file system's case rule).
+run caseclash "$B" "$FIXTURE" --slice 1 --outputdir caseclash/out --export-3mf PLATE_1.gcode
+[ "$(rc caseclash)" != 0 ] || fail "--export-3mf PLATE_1.gcode beside plate_1.gcode was accepted"
+py '
+import json; d = json.load(open("caseclash/out/result.json"))
+assert d["return_code"] == -2 and "differs only by letter case from the run'"'"'s own plate_1.gcode" in d["error_string"], d
+' || { show caseclash; fail "PLATE_1.gcode: no letter-case refusal"; }
+for name in result.json PLATE_1.gcode; do
     run clash "$B" "$FIXTURE" --slice 1 --outputdir clash/out --export-3mf "$name"
     [ "$(rc clash)" != 0 ] || fail "--export-3mf $name was accepted"
     grep -q '"tag":"ExportNameTaken"' clash/stdout || { show clash; fail "no ExportNameTaken event for $name"; }

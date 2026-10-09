@@ -224,6 +224,11 @@ void compute_variant_index(DynamicPrintConfig& full_config, const DynamicPrintCo
         return;
     }
     const int new_variant_count = int(new_variant_opt->size());
+    // A settings file may state one extruder id for several variants: that
+    // id is every variant's, as get_at reads it (none: no id matches).
+    const auto new_id_at = [new_id_opt](int i) {
+        return new_id_opt->values.empty() ? -1 : new_id_opt->get_at(size_t(i));
+    };
     int curr_variant_count = 0;
     new_index.clear();
     new_index.resize(new_variant_count, -1);
@@ -239,11 +244,11 @@ void compute_variant_index(DynamicPrintConfig& full_config, const DynamicPrintCo
     for (int i = 0; i < new_variant_count; i++) {
         if (curr_variant_count > 0) {
             for (int j = 0; j < curr_variant_count; j++)
-                if (curr_variant_opt->values[j] == new_variant_opt->values[i] && curr_id_opt->values[j] == new_id_opt->values[i]) {
+                if (curr_variant_opt->values[j] == new_variant_opt->values[i] && curr_id_opt->values[j] == new_id_at(i)) {
                     new_index[i] = j;
                     break;
                 }
-        } else if (new_variant_opt->values[i] == "Direct Drive Standard" && new_id_opt->values[i] == 1)
+        } else if (new_variant_opt->values[i] == "Direct Drive Standard" && new_id_at(i) == 1)
             new_index[i] = 0;
     }
 }
@@ -323,17 +328,30 @@ bool parse_color4(const std::string& scolor, unsigned char* rgba_out) {
 /// get_min_flush_volumes (BambuStudio slic3r/GUI/Plater.cpp 1121-1185;
 /// OrcaSlicer slic3r/GUI/Plater.cpp 752-816): the nozzle volume less what a
 /// long retraction when cutting already removed, per filament.
-std::vector<int> get_min_flush_volumes(const DynamicPrintConfig& full_config, size_t nozzle_id) {
+std::vector<int> get_min_flush_volumes(const DynamicPrintConfig& full_config, size_t nozzle_id, size_t filament_count) {
     std::vector<int> extra_flush_volumes;
     const auto* nozzle_volume_opt = full_config.option<ConfigOptionFloatsNullable>("nozzle_volume");
     const int nozzle_volume_val = nozzle_volume_opt ? (int)nozzle_volume_opt->get_at(nozzle_id) : 0;
     int machine_enabled_level = 0;
     if (const auto* opt = full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut"))
         machine_enabled_level = opt->value;
+    // The lists are read as the desktop reads them, one entry per filament
+    // (and per nozzle); one a settings file states as a single value, or
+    // leaves at its single default, is that value for every filament, as
+    // ConfigOptionVector::get_at reads it, never a read past its end.
+    const auto broadcast = [](auto& values, size_t count, auto fallback) {
+        if (values.empty())
+            values.assign(count, fallback);
+        else if (values.size() < count)
+            values.resize(count, values.front());
+    };
     bool machine_activated = false;
-    if (const auto* opt = full_config.option<BoolsN>("long_retractions_when_cut"))
-        machine_activated = opt->values[nozzle_id] == 1;
-    const size_t filament_size = full_config.option<ConfigOptionFloats>("filament_diameter")->values.size();
+    if (const auto* opt = full_config.option<BoolsN>("long_retractions_when_cut"); opt && !opt->values.empty())
+        machine_activated = opt->get_at(nozzle_id) == 1;
+    // One entry per filament the caller indexes (its colour count), also
+    // when filament_diameter states a single value.
+    const size_t filament_size =
+        std::max(full_config.option<ConfigOptionFloats>("filament_diameter")->values.size(), filament_count);
     std::vector<double> filament_retraction_distance_when_cut(filament_size, 18.0f), printer_retraction_distance_when_cut(filament_size, 18.0f);
     std::vector<unsigned char> filament_long_retractions_when_cut(filament_size, 0);
     if (const auto* opt = full_config.option<FloatsN>("filament_retraction_distances_when_cut"))
@@ -342,6 +360,9 @@ std::vector<int> get_min_flush_volumes(const DynamicPrintConfig& full_config, si
         printer_retraction_distance_when_cut = opt->values;
     if (const auto* opt = full_config.option<BoolsN>("filament_long_retractions_when_cut"))
         filament_long_retractions_when_cut = opt->values;
+    broadcast(filament_retraction_distance_when_cut, filament_size, 18.0);
+    broadcast(filament_long_retractions_when_cut, filament_size, (unsigned char)0);
+    broadcast(printer_retraction_distance_when_cut, std::max(filament_size, nozzle_id + 1), 18.0);
     for (size_t idx = 0; idx < filament_size; ++idx) {
         int extra_flush_volume = nozzle_volume_val;
         int retract_length = machine_enabled_level && machine_activated ? printer_retraction_distance_when_cut[nozzle_id] : 0;
@@ -1497,7 +1518,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 }
             }
             ConfigOptionBools* filament_is_support = m_print_config.option<ConfigOptionBools>("filament_is_support", true);
-            const std::vector<int> min_flush_volumes = get_min_flush_volumes(m_print_config, 0);
+            const std::vector<int> min_flush_volumes = get_min_flush_volumes(m_print_config, 0, project_filament_count);
             if (filament_is_support->size() != project_filament_count)
                 return fail(CLI_CONFIG_FILE_ERROR, "filament_is_support has " + std::to_string(filament_is_support->size()) +
                                                    " values for " + std::to_string(project_filament_count) + " filament colours.");
