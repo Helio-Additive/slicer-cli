@@ -11548,11 +11548,16 @@ int main(int argc, char** argv) {
     // so the ENGINE_ORCA build gets it too, and so STL and calibration slices
     // stop falling back to the hardcoded tables.
     {
-        bool layout_plan_json = false;
-        for (int i = 1; i < argc; ++i)
-            if (std::string(argv[i]) == "--layout-plan")
-                layout_plan_json = true;
-        configure_engine_resources(argv[0], layout_plan_json);
+        // --layout-plan owns stderr as JSON documents, so the resources line
+        // is left out there. Whether the command line asks for it is the
+        // parser's own answer -- every spelling it takes (-layout-plan,
+        // --layout-plan, an inline =value) -- from a dry parse; the parse the
+        // run uses follows, and reports any refusal.
+        CliOptions               probe;
+        slicer_cli::ModeArgs     probe_mode;
+        slicer_cli::ParseRefusal probe_refusal;
+        (void) slicer_cli::parse_command_line(argc, argv, probe, probe_mode, probe_refusal);
+        configure_engine_resources(argv[0], probe_mode.layout_plan_mode);
     }
 
     {
