@@ -3088,8 +3088,11 @@ static std::vector<std::string> named_input_files(const CliOptions& o) {
 }
 
 /// The run's command line, for result.json never to write over a file it
-/// reads (set once parsing starts).
+/// reads (set once parsing starts), and its words as typed: a refused command
+/// line may stop parsing before it reaches the flag that names the file.
 static const CliOptions* g_result_json_options = nullptr;
+static std::vector<std::string> g_command_line_words;
+static bool g_command_line_parsed = false;   // the whole command line was read
 
 static bool write_result_json(const std::string& outputdir, int code, int plate_id,
                               const std::string& error_string,
@@ -3098,19 +3101,33 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
     // result.json never replaces a file the run reads (an input given as
     // <outputdir>/result.json): the run is refused for that clash, and the
     // user's file stays as it was.
-    if (g_result_json_options != nullptr) {
+    {
         const boost::filesystem::path target = boost::filesystem::path(outputdir) / "result.json";
-        for (const std::string& input : named_input_files(*g_result_json_options)) {
+        const auto keep = [&](const std::string& named, const std::string& why) {
             boost::system::error_code ec;
-            if (boost::filesystem::exists(target, ec) && boost::filesystem::equivalent(target, input, ec) && !ec) {
-                const std::string shown = target.string();
-                std::cerr << "Error: " << shown << " is the input file '" << input
-                          << "'; result.json is not written over it\n";
-                emit_event({{"event","output_error"}, {"tag","ResultIsInput"}, {"path", shown},
-                            {"message", shown + " is the input file '" + input + "'; result.json is not written over it"}});
+            if (!(boost::filesystem::exists(target, ec) && boost::filesystem::equivalent(target, named, ec) && !ec))
                 return false;
+            const std::string shown = target.string();
+            std::cerr << "Error: " << shown << why << "; result.json is not written over it\n";
+            emit_event({{"event","output_error"}, {"tag","ResultIsInput"}, {"path", shown},
+                        {"message", shown + why + "; result.json is not written over it"}});
+            return true;
+        };
+        if (g_result_json_options != nullptr)
+            for (const std::string& input : named_input_files(*g_result_json_options))
+                if (keep(input, " is the input file '" + input + "'"))
+                    return false;
+        // A command line refused before it was all read: what it names after
+        // the refusal is not in the options, so every word of it counts (and
+        // the value of a --flag=value).
+        if (!g_command_line_parsed)
+            for (const std::string& word : g_command_line_words) {
+                std::string named = word;
+                if (const size_t eq = word.find('='); word.rfind("-", 0) == 0 && eq != std::string::npos)
+                    named = word.substr(eq + 1);
+                if (keep(named, " is named on the command line ('" + word + "')"))
+                    return false;
             }
-        }
     }
     json j;
     j["plate_index"]  = plate_id;
@@ -7216,7 +7233,7 @@ static bool plate_triangle_limit(const CliOptions& o, const Slic3r::Model& model
 /// one call per plate. The return value is the process exit code of the
 /// default call; `outcome` carries what `--slice` mode reports on top.
 static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
-                             std::string* detail);
+                             std::string* detail, bool after_slice_actions_only = false);
 
 /// The settings check's warnings (InvalidValuesNoted) of the plate this
 /// result is for, once: any the outcome already holds (a carry from another
@@ -9755,7 +9772,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // actions, then the slice (check_run_outputs). The plates are the
         // ones already known; --slice checks them all again once its plan is
         // final (run_slice_mode).
-        const auto outputs_ok = [&]() -> bool {
+        const auto outputs_ok = [&](bool after_slice_actions_only = false) -> bool {
             if (rs.outputs_checked)
                 return true;
             rs.outputs_checked = true;
@@ -9773,7 +9790,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         known_plates.push_back(p);
             }
             std::string detail;
-            if (const int refused = check_run_outputs(o, known_plates, &model, &detail)) {
+            if (const int refused = check_run_outputs(o, known_plates, &model, &detail, after_slice_actions_only)) {
                 set_outcome_failure(outcome, refused, detail);
                 outcome.run_step_failed = true;
                 return false;
@@ -10185,11 +10202,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern) {
             std::cout << "Generating pressure-advance pattern geometry...\n";
             slicer_cli::apply_pa_pattern(calib_params, config, model, calib_is_bbl_machine);
-            // The pattern replaced the model, so the object STL files
-            // --export-stl writes now carry its object's name
-            // (obj_1_pa_pattern_handle.stl): the outputs are checked again.
+            // The pattern replaced the model, so the object STL files an
+            // --export-stl after --slice writes carry its object's name
+            // (obj_1_pa_pattern_handle.stl): the outputs still to be written
+            // are checked again. One given before --slice has written the
+            // loaded model's files already.
             rs.outputs_checked = false;
-            if (!outputs_ok())
+            if (!outputs_ok(/*after_slice_actions_only=*/true))
                 return 1;
         }
 
@@ -11224,7 +11243,7 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
 /// `detail` the sentence is handed back for the caller's result; without it,
 /// result.json is written here.
 static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
-                             std::string* detail) {
+                             std::string* detail, bool after_slice_actions_only) {
     namespace fs = boost::filesystem;
     const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
     const auto key = [](const fs::path& p) {
@@ -11269,7 +11288,15 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
     if (!o.export_3mf.empty() && o.slice_mode)
         add(false, false, "--export-3mf " + o.export_3mf, outdir / o.export_3mf,
             "the project --export-3mf " + o.export_3mf + " writes", "the project --export-3mf " + o.export_3mf + " writes");
-    for (const std::string& action : o.actions) {
+    // With after_slice_actions_only, the actions given before --slice have
+    // run already (their files are written): only those after it are still
+    // to write.
+    const size_t slice_index = size_t(std::find(o.actions.begin(), o.actions.end(), std::string("slice")) -
+                                      o.actions.begin());
+    for (size_t action_index = 0; action_index < o.actions.size(); ++action_index) {
+        const std::string& action = o.actions[action_index];
+        if (after_slice_actions_only && !(slice_index < o.actions.size() && action_index > slice_index))
+            continue;
         if (action == "export_settings") {
             const std::string file = o.cli.opt_string("export_settings");
             if (!file.empty())
@@ -11793,6 +11820,9 @@ int main(int argc, char** argv) {
     const bool& layout_plan_mode = mode_args.layout_plan_mode;
     slicer_cli::CalibOptions& calib_opts = mode_args.calib;
 
+    for (int i = 1; i < argc; ++i)
+        g_command_line_words.emplace_back(argv[i]);
+
     // subcommand: slicer_cli layout capabilities --json
     if (argc >= 3 && std::string(argv[1]) == "layout" && std::string(argv[2]) == "capabilities") {
         if (argc != 4 || std::string(argv[3]) != "--json") {
@@ -11801,9 +11831,11 @@ int main(int argc, char** argv) {
             // result.json, as every refused --slice command line does (the
             // parse refusal below): the parser's own first pass finds --slice
             // and --outputdir in the words after the subcommand.
+            // The subcommand's own --json is not a flag of the slice.
             std::vector<char*> rest{argv[0]};
             for (int i = 3; i < argc; ++i)
-                rest.push_back(argv[i]);
+                if (!(i == 3 && std::string(argv[i]) == "--json"))
+                    rest.push_back(argv[i]);
             CliOptions probe;
             slicer_cli::ModeArgs probe_mode;
             slicer_cli::ParseRefusal probe_refusal;
@@ -11883,6 +11915,7 @@ int main(int argc, char** argv) {
             }
             return 1;
         }
+        g_command_line_parsed = true;
     }
     // --help: the flags. With --slice the run goes on: the official prints its
     // help as one action of its loop and runs the others, --slice among them

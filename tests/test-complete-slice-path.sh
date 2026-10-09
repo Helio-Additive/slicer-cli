@@ -511,6 +511,13 @@ import json; d = json.load(open("lcap/out/result.json"))
 assert d["return_code"] != 0 and "layout capabilities takes --json and nothing else" in d["error_string"], d
 ' || { show lcap; fail "layout capabilities with --slice left no result.json naming the refusal"; }
 echo "PASS: layout capabilities with --slice leaves result.json"
+# ... and never over a file the same command line names to read.
+mkdir -p lcapin/out
+printf 'keep me\n' > lcapin/out/result.json
+run lcapin "$B" layout capabilities --json --slice 1 --outputdir lcapin/out --machine lcapin/out/result.json
+[ "$(rc lcapin)" != 0 ] || fail "layout capabilities with --slice and --machine was accepted"
+[ "$(cat lcapin/out/result.json 2>/dev/null)" = "keep me" ] || { show lcapin; fail "layout capabilities wrote result.json over the --machine file"; }
+echo "PASS: layout capabilities with --slice keeps a settings file named as result.json"
 
 # The pressure-advance pattern replaces the model with its own object: the
 # object STL files --export-stl writes take that object's name, and an
@@ -521,6 +528,14 @@ run pastl "$B" "$FIXTURE" --calib-mode pressure_advance_pattern --calib-start 0 
 [ "$(rc pastl)" != 0 ] || fail "--export-3mf onto the pattern's own STL was accepted"
 grep -q '"tag":"ExportNameTaken"' pastl/stdout || { show pastl; fail "no ExportNameTaken for --export-3mf onto the pattern's STL"; }
 [ ! -e pastl/out/plate_1.gcode ] || fail "the run sliced before refusing the pattern's STL name"
+# --export-stl before --slice writes the loaded model's STL files before the
+# pattern replaces the model: the pattern's STL name is free for --export-3mf.
+run pastl2 "$B" "$FIXTURE" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005 \
+    --export-stl --slice 1 --outputdir pastl2/out --export-3mf stl/obj_1_pa_pattern_handle.stl
+[ "$(rc pastl2)" = 0 ] || { show pastl2; fail "--export-stl before --slice with the pattern's STL name for --export-3mf exit $(rc pastl2)"; }
+py '
+import zipfile; zipfile.ZipFile("pastl2/out/stl/obj_1_pa_pattern_handle.stl").namelist()
+' || fail "--export-3mf did not write the project under the pattern's STL name"
 echo "PASS: the pressure-advance pattern's object STL name is checked against the other outputs (Bambu build)"
 
 # The check before the first write reserves every plate G-code the run could
