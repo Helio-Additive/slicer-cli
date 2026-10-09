@@ -3453,27 +3453,32 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
                     obj_support |= obj_raft_opt->getInt() > 0;
             } else
                 obj_support = glb_support;
-            if (!obj_support)
-                continue;
+            if (obj_support) {
+                int obj_support_intf_extr = 0;
+                if (const ConfigOption* opt = object->config.option("support_interface_filament"))
+                    obj_support_intf_extr = opt->getInt();
+                if (obj_support_intf_extr != 0)
+                    plate_extruders.push_back(obj_support_intf_extr);
+                else if (glb_support_intf_extr != 0)
+                    plate_extruders.push_back(glb_support_intf_extr);
 
-            int obj_support_intf_extr = 0;
-            if (const ConfigOption* opt = object->config.option("support_interface_filament"))
-                obj_support_intf_extr = opt->getInt();
-            if (obj_support_intf_extr != 0)
-                plate_extruders.push_back(obj_support_intf_extr);
-            else if (glb_support_intf_extr != 0)
-                plate_extruders.push_back(glb_support_intf_extr);
-
-            int obj_support_extr = 0;
-            if (const ConfigOption* opt = object->config.option("support_filament"))
-                obj_support_extr = opt->getInt();
-            if (obj_support_extr != 0)
-                plate_extruders.push_back(obj_support_extr);
-            else if (glb_support_extr != 0)
-                plate_extruders.push_back(glb_support_extr);
+                int obj_support_extr = 0;
+                if (const ConfigOption* opt = object->config.option("support_filament"))
+                    obj_support_extr = opt->getInt();
+                if (obj_support_extr != 0)
+                    plate_extruders.push_back(obj_support_extr);
+                else if (glb_support_extr != 0)
+                    plate_extruders.push_back(glb_support_extr);
+            }
 #ifdef ENGINE_ORCA
-            // Orca also lists wall / infill / surface filaments (PartPlate.cpp
-            // 1744-1800, v2.4.2): every key is `*_id` and 0 is "Default".
+            // Orca also lists wall / infill / surface filaments, with or
+            // without support: the desktop's PartPlate::get_extruders, which
+            // decides the plate's wipe tower (GLCanvas3D.cpp 2880), lists them
+            // after its `if (obj_support)` block (PartPlate.cpp 1563-1640,
+            // v2.4.2). The official CLI's get_extruders_under_cli puts them
+            // behind `if (!obj_support) continue;` (1723-1801), so an object
+            // without support would count one filament for the tower and the
+            // arrange. Every key is `*_id` and 0 is "Default".
             int obj_outer_wall_extr = 0;
             if (const ConfigOption* opt = object->config.option("outer_wall_filament_id"))
                 obj_outer_wall_extr = opt->getInt();
@@ -6941,6 +6946,8 @@ struct RunState {
     ProjectPlan plan;
     // What the load and the run-level steps record for every plate's result.
     PlateOutcome carry;
+    // The settings check's warnings, per plate (InvalidValuesNoted).
+    std::map<int, json> noted;
     // Load-time facts every later step reads.
     bool is_bbl_3mf = false;
     Slic3r::Semver file_version;
@@ -7164,6 +7171,20 @@ static bool plate_triangle_limit(const CliOptions& o, const Slic3r::Model& model
 static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
                              std::string* detail);
 
+/// The settings check's warnings (InvalidValuesNoted) of the plate this
+/// result is for, once: any the outcome already holds (a carry from another
+/// plate's call) are replaced.
+static void take_noted_warnings(PlateOutcome& outcome, const std::map<int, json>& noted, int plate_id) {
+    json& warnings = outcome.warnings;
+    warnings.erase(std::remove_if(warnings.begin(), warnings.end(),
+                                  [](const json& w) { return w.value("tag", "") == "InvalidValuesNoted"; }),
+                   warnings.end());
+    const int plate = outcome.plate_id > 0 ? outcome.plate_id : (plate_id > 0 ? plate_id : 1);
+    if (const auto it = noted.find(plate); it != noted.end())
+        for (const json& w : it->second)
+            warnings.push_back(w);
+}
+
 static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
     const std::string& input_file      = o.input_file;
@@ -7194,6 +7215,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             carried.derived_filament_map_mode.clear();
         }
         outcome = carried;
+        // The carry is the prepare call's outcome, with that plate's settings
+        // warnings: this plate gets its own instead.
+        take_noted_warnings(outcome, rs.noted, plate_id);
     }
     try {
         // Create configuration BEFORE model loading so load_bbs_3mf can populate it
@@ -8428,6 +8452,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // Every setting given as a flag, over the loaded settings: the
         // official m_print_config.apply(m_extra_config, true)
         // (BambuStudio.cpp 4091 at 5873b5f; OrcaSlicer.cpp 3542 at 31f6803).
+        // The settings before any flag: the settings check's desktop baseline.
+        const Slic3r::DynamicPrintConfig settings_before_flags = config;
         if (!extra.empty())
             config.apply(extra, true);
 
@@ -8573,9 +8599,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // The official value check (OrcaSlicer.cpp 3574-3581 at 31f6803,
         // BambuStudio.cpp 4134-4141 at 5873b5f): DynamicPrintConfig::validate(true)
         // over the settings as the file and profiles state them, before this
-        // driver pads any vector. Out-of-range values are refused, each named
-        // with the engine's own sentence ("tree_support_wall_count: -1 not in
-        // range [0,2]").
+        // driver pads any vector. Out-of-range values are named with the
+        // engine's own sentence ("tree_support_wall_count: -1 not in range
+        // [0,2]"); which of them refuse and which only warn is below.
         // The official check runs after the command line is applied
         // (m_print_config.apply(m_extra_config) at BambuStudio.cpp 4091,
         // OrcaSlicer.cpp 3542), so a command-line override is range-checked
@@ -8605,8 +8631,70 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 with_overrides->apply(extra, true);
                 apply_command_line_overrides(*with_overrides, overrides, /*report_rejections=*/false);
             }
-            const std::map<std::string, std::string> validity =
+            const std::map<std::string, std::string> found =
                 (with_overrides ? *with_overrides : config).validate(true);
+            // The desktop app runs the same check on the settings a 3MF
+            // brings (config.validate(), not under the CLI) and only shows a
+            // notice, "Invalid values found in the 3MF" (OrcaSlicer
+            // Plater.cpp 6283-6297 at v2.4.2; BambuStudio Plater.cpp
+            // 8627-8640 at 926a719); its slice is gated by Print::validate,
+            // which checks each region against its own nozzle (OrcaSlicer
+            // Print.cpp 1676-1690). Those findings are a warning here too, and
+            // the slice's own Print::validate below stays the gate. Still
+            // refused: what only the CLI check finds (the spiral-vase checks,
+            // under_cli only: OrcaSlicer PrintConfig.cpp 10456-10458,
+            // BambuStudio PrintConfig.cpp 9574-9576; the desktop asks the user
+            // there), and what a command-line value brings (the desktop's
+            // own fields refuse a value out of range as it is typed). The
+            // baseline is the settings before any flag or override, with the
+            // plate's own laid over: a finding there is the file's and only
+            // warned; a finding the command line brings (on the flag's own
+            // setting or another, as --nozzle-diameter makes a file's
+            // bridge_line_width too wide) is refused.
+            std::map<std::string, std::string> validity;   // refused
+            std::map<std::string, std::string> noted;      // warned, as the desktop notice
+            if (!found.empty()) {
+                Slic3r::DynamicPrintConfig file_only(settings_before_flags);
+                file_only.apply(plate_settings, true);
+                const std::map<std::string, std::string> desktop = file_only.validate(false);
+                for (const auto& [key, why] : found) {
+                    const auto it = desktop.find(key);
+                    (it != desktop.end() && it->second == why ? noted : validity)[key] = why;
+                }
+            }
+            // Each plate's findings are its own: recorded once per plate
+            // (every call of a --slice 0 run checks the plates again) and
+            // given to that plate's result below.
+            const int noted_plate = checked > 0 ? checked : 1;
+            const bool noted_first_time = rs.noted.count(noted_plate) == 0;
+            json& noted_warnings = rs.noted[noted_plate];
+            noted_warnings = json::array();
+            if (!noted.empty()) {
+                std::string sentence = "Invalid values found in the 3MF/config: ";
+                json items = json::object();
+                std::string flags;
+                for (const auto& [key, why] : noted) {
+                    sentence += (items.empty() ? "" : "; ") + key + ": " + why;
+                    items[key] = why;
+                    std::string flag = "--" + key;
+                    std::replace(flag.begin(), flag.end(), '_', '-');
+                    flags += (flags.empty() ? "" : ", ") + flag;
+                }
+                sentence += ". The run slices with them as they are, and the slice's own check of each "
+                            "object against its nozzle and plate still applies. Give " + flags +
+                            " a value in range to change it.";
+                if (noted_first_time) {
+                    emit_event({{"event","warning"},
+                                {"tag","InvalidValuesNoted"},
+                                {"plate_id", noted_plate},
+                                {"settings", items},
+                                {"message", sentence}});
+                    std::cerr << "Warning: " << sentence << "\n";
+                }
+                noted_warnings.push_back(json{{"message", sentence},
+                                              {"level", "warning"},
+                                              {"tag", "InvalidValuesNoted"}});
+            }
             if (!validity.empty() || !unknown_values.empty()) {
                 // One refusal naming every value at once: unknown enum
                 // values first, then the engine's range findings.
@@ -8650,6 +8738,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 return 1;
             }
             }
+            // This result's plate gets its own findings, once.
+            take_noted_warnings(outcome, rs.noted, plate_id);
         }
 
         // A project on a printer with another bed: each plate's objects and
@@ -10156,6 +10246,40 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // the scene.
                 PlateScope scope(model, rs.plate(plate_id));
                 print.apply(model, config);
+#ifdef ENGINE_ORCA
+                // The Orca desktop applies again before Slice (Plater.cpp 15855/15893 at v2.4.2).
+                // On Bambu a second apply moves the output away from the desktop's own G-code (7
+                // corpus files with the desktop's G-code keep enable_prime_tower=1), so not there.
+                // Applied again, as the desktop does before every slice: its
+                // background-process timer applies (OrcaSlicer Plater.cpp
+                // 5035-5038, 7983 at v2.4.2), then Slice applies once more
+                // (reslice, 15855 -> 15893). Print::apply counts the used
+                // filaments (PrintApply.cpp 1131, 1620) before it builds the
+                // regions (1730), so on the first apply a filament used only
+                // through a feature setting (top_surface_filament_id and the
+                // like, PrintRegion.cpp 89-90) is not counted and
+                // normalize_fdm_2 turns the prime tower off (PrintConfig.cpp
+                // 8692); on the second the regions exist and the tower stays
+                // as the settings state it. The official CLI applies once
+                // (OrcaSlicer.cpp 6040) and drops the tower. Nothing else of
+                // the model or the settings changes between the two calls.
+                // What the second call changes in the settings the print runs
+                // with is told (PrintReapplied); when it changes nothing, the
+                // print is the one the first call made.
+                const Slic3r::PrintConfig first_config = print.config();
+                print.apply(model, config);
+                const Slic3r::t_config_option_keys reapplied = first_config.diff(print.config());
+                if (!reapplied.empty()) {
+                    json values = json::object();
+                    for (const std::string& key : reapplied)
+                        values[key] = print.config().opt_serialize(key);
+                    emit_event({{"event","config_normalized"}, {"tag","PrintReapplied"},
+                                {"plate_id", plate_id}, {"settings", values},
+                                {"message","The settings applied a second time before slicing, as the desktop "
+                                           "app does, changed " + boost::algorithm::join(reapplied, ", ") +
+                                           ": the plate's filaments are counted with its regions"}});
+                }
+#endif
             }
 #ifdef ENGINE_ORCA
             // OrcaSlicer's WipeTowerData::height is read on a path that never

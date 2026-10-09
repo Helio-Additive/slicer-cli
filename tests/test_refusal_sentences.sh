@@ -205,14 +205,22 @@ for e in bambu orca; do
     fx_settings "$e" x1c "$X1C"
     fx_proj "$e" proj "$A1M"
     fx_proj "$e" x1c-proj "$X1C"
+    fx_proj "$e" p02 "Bambu Lab A1 mini 0.2 nozzle"
+    fx_proj "$e" p08 "Bambu Lab A1 mini 0.8 nozzle"
     [ -s "proj-$e.3mf" ] || { echo "FAIL: fixture proj-$e.3mf: $(why "fxproj-$e")"; exit 1; }
+    [ -s "p02-$e.3mf" ] || { echo "FAIL: fixture p02-$e.3mf: $(why "fxp02-$e")"; exit 1; }
+    [ -s "p08-$e.3mf" ] || { echo "FAIL: fixture p08-$e.3mf: $(why "fxp08-$e")"; exit 1; }
     [ -s "x1c-proj-$e.3mf" ] || { echo "FAIL: fixture x1c-proj-$e.3mf: $(why "fxx1c-proj-$e")"; exit 1; }
 done
 for e in bambu orca; do
     fx_rewrite "proj-$e.3mf" "post-$e.3mf" 'post_process=["/bin/true"]'
     fx_rewrite "proj-$e.3mf" "mixed-$e.3mf" 'filament_is_mixed=["1"]'
     fx_rewrite "proj-$e.3mf" "range-$e.3mf" 'support_threshold_angle="999"'
+    fx_rewrite "proj-$e.3mf" "spiral-$e.3mf" 'spiral_mode="1"'
 done
+# The 0.8 nozzle projects with a line width that fits 0.8 and not 0.4.
+fx_rewrite "p08-orca.3mf" "p08w-orca.3mf" 'bridge_line_width="0.6"'
+fx_rewrite "p08-bambu.3mf" "p08w-bambu.3mf" 'outer_wall_line_width="1.6"'
 
 # ---------------------------------------------------------------- option combinations
 both assemble-clone           "*give one of them, not both*" \
@@ -273,12 +281,48 @@ for e in bambu orca; do
           "$x" --slice 1 --load-settings "x1c-$e-machine.json;a1m-$e-process.json"
     check post-process             "$e" "*clear post_process in the file, or slice it in the desktop app*" \
           "post-$e.3mf" --slice 1
-    check value-out-of-range       "$e" "*Give --support-threshold-angle a value in range to override it.*" \
+    # A finding only the CLI check gives is refused, with the flags to give:
+    # spiral vase mode with more than one wall (under_cli only; the desktop
+    # asks the user in a dialog there). A value out of range in the file is
+    # only noted (the desktop app's notice on load) and the run slices with it.
+    check value-out-of-range       "$e" "*wall_loops: Invalid value when spiral vase mode is enabled*--wall-loops a value in range to override it.*" \
+          "spiral-$e.3mf" --slice 1
+    check_slices value-out-of-range-file "$e" support_threshold_angle 999 \
           "range-$e.3mf" --slice 1
-    # The retry the hint above promises, on the same input: the flag it names,
-    # with a value in range, gets past the check and reaches the slice.
+    if grep '"tag":"InvalidValuesNoted"' "c-value-out-of-range-file-$e/stdout" | grep -q support_threshold_angle; then
+        report value-out-of-range-noted "$e" PASS "InvalidValuesNoted names support_threshold_angle"
+    else
+        report value-out-of-range-noted "$e" FAIL "no InvalidValuesNoted warning naming support_threshold_angle"
+    fi
+    # The hint the warning gives: the flag it names, with a value in range,
+    # slices with that value.
     check_slices value-out-of-range-retry "$e" support_threshold_angle 45 \
           "range-$e.3mf" --slice 1 --support-threshold-angle 45
+    # A flag whose value the command line alone accepts (the check against
+    # the default 0.4 nozzle) but the project's 0.2 nozzle does not: a
+    # command-line value, so refused with its hint, not noted. The same
+    # project without the flag slices.
+    if [ "$e" = orca ]; then
+        check flag-over-nozzle     "$e" "*bridge_line_width: Bridge line width must not exceed nozzle diameter*Give --bridge-line-width a value in range to override it.*" \
+              "p02-$e.3mf" --slice 1 --bridge-line-width 0.3
+    else
+        check flag-over-nozzle     "$e" "*outer_wall_line_width: too large line width*Give --outer-wall-line-width a value in range to override it.*" \
+              "p02-$e.3mf" --slice 1 --outer-wall-line-width 0.8
+    fi
+    check_slices flag-over-nozzle-without "$e" nozzle_diameter 0.2 "p02-$e.3mf" --slice 1
+    # A flag that makes another setting of the file out of range: the 0.8
+    # nozzle project's line width fits 0.8, and --nozzle-diameter 0.4 makes it
+    # too wide. The command line brought the finding, so it is refused; the
+    # same project without the flag slices.
+    if [ "$e" = orca ]; then
+        check flag-cross-key       "$e" "*bridge_line_width: Bridge line width must not exceed nozzle diameter*" \
+              "p08w-$e.3mf" --slice 1 --nozzle-diameter 0.4
+        check_slices flag-cross-key-without "$e" bridge_line_width 0.6 "p08w-$e.3mf" --slice 1
+    else
+        check flag-cross-key       "$e" "*outer_wall_line_width: too large line width*" \
+              "p08w-$e.3mf" --slice 1 --nozzle-diameter 0.4
+        check_slices flag-cross-key-without "$e" outer_wall_line_width 1.6 "p08w-$e.3mf" --slice 1
+    fi
 done
 
 # A settings file of the wrong kind, and --load-defaultfila with no usable file.
