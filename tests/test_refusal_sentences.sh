@@ -217,10 +217,14 @@ for e in bambu orca; do
     fx_rewrite "proj-$e.3mf" "mixed-$e.3mf" 'filament_is_mixed=["1"]'
     fx_rewrite "proj-$e.3mf" "range-$e.3mf" 'support_threshold_angle="999"'
     fx_rewrite "proj-$e.3mf" "spiral-$e.3mf" 'spiral_mode="1"'
+    fx_rewrite "proj-$e.3mf" "spiralr-$e.3mf" 'spiral_mode="1"' 'support_threshold_angle="999"'
 done
 # The 0.8 nozzle projects with a line width that fits 0.8 and not 0.4.
 fx_rewrite "p08-orca.3mf" "p08w-orca.3mf" 'bridge_line_width="0.6"'
 fx_rewrite "p08-bambu.3mf" "p08w-bambu.3mf" 'outer_wall_line_width="1.6"'
+# The 0.2 nozzle projects with a line width already too wide for 0.2.
+fx_rewrite "p02-orca.3mf" "p02w-orca.3mf" 'bridge_line_width="0.3"'
+fx_rewrite "p02-bambu.3mf" "p02w-bambu.3mf" 'outer_wall_line_width="0.8"'
 
 # ---------------------------------------------------------------- option combinations
 both assemble-clone           "*give one of them, not both*" \
@@ -322,6 +326,33 @@ for e in bambu orca; do
         check flag-cross-key       "$e" "*outer_wall_line_width: too large line width*" \
               "p08w-$e.3mf" --slice 1 --nozzle-diameter 0.4
         check_slices flag-cross-key-without "$e" outer_wall_line_width 1.6 "p08w-$e.3mf" --slice 1
+    fi
+    # The file's value is already out of range for its nozzle, and the flag
+    # gives the same setting the same value: the command line's value, so
+    # refused by the settings check. The file alone is only noted there (the
+    # slice's own check, Print::validate, then gates it as the desktop does).
+    if [ "$e" = orca ]; then
+        check flag-same-as-file    "$e" "*bridge_line_width: Bridge line width must not exceed nozzle diameter*Give --bridge-line-width a value in range to override it.*" \
+              "p02w-$e.3mf" --slice 1 --bridge-line-width 0.3
+    else
+        check flag-same-as-file    "$e" "*outer_wall_line_width: too large line width*Give --outer-wall-line-width a value in range to override it.*" \
+              "p02w-$e.3mf" --slice 1 --outer-wall-line-width 0.8
+    fi
+    run "c-flag-same-as-file-without-$e" "$(bin_of "$e")" "p02w-$e.3mf" --slice 1 --outputdir "c-flag-same-as-file-without-$e/out"
+    if grep -q '"tag":"InvalidValuesNoted"' "c-flag-same-as-file-without-$e/stdout"; then
+        report flag-same-as-file-without "$e" PASS "the file's own value is noted, not refused by the settings check"
+    else
+        report flag-same-as-file-without "$e" FAIL "no InvalidValuesNoted for the file's own value; $(why "c-flag-same-as-file-without-$e")"
+    fi
+    # A refused finding (spiral vase with two walls) beside a noted one (a
+    # value out of range in the file): refused, and the noted one is not
+    # announced as sliced.
+    check refused-with-noted       "$e" "*wall_loops: Invalid value when spiral vase mode is enabled*" \
+          "spiralr-$e.3mf" --slice 1
+    if grep -q '"tag":"InvalidValuesNoted"' "c-refused-with-noted-$e/stdout"; then
+        report refused-with-noted-quiet "$e" FAIL "InvalidValuesNoted announced on a refused run"
+    else
+        report refused-with-noted-quiet "$e" PASS "no InvalidValuesNoted on a refused run"
     fi
 done
 

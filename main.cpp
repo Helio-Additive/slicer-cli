@@ -3061,10 +3061,57 @@ static std::string mm_text(double v) {
 /// official ones: "engine", per-plate "gcode_file" and "warnings" (every
 /// slicing warning, where "warning_message" keeps only the last, as the
 /// official one does).
+/// The files the command line names for the run to read: the inputs, the
+/// settings files and every file of a list option, as the loaders read them
+/// (merge_loaded_settings, load_downward_printers).
+static std::vector<std::string> named_input_files(const CliOptions& o) {
+    std::vector<std::string> inputs = o.input_files;
+    if (!o.machine_config.empty())  inputs.push_back(o.machine_config);
+    if (!o.filament_config.empty()) inputs.push_back(o.filament_config);
+    if (!o.process_config.empty())  inputs.push_back(o.process_config);
+    if (!o.bundle_config.empty())   inputs.push_back(o.bundle_config);
+    for (const char* option : {"load_settings", "load_filaments", "uptodate_settings", "uptodate_filaments",
+                               "downward_settings"})
+        if (o.given_flag(option))
+            if (const auto* files = o.cli.option<Slic3r::ConfigOptionStrings>(option))
+                for (const std::string& file : files->values)
+                    if (!file.empty()) inputs.push_back(file);
+    for (const char* option : {"load_assemble_list", "load_custom_gcodes"})
+        if (o.given_flag(option)) {
+            const std::string file = o.cli.opt_string(option);
+            if (!file.empty()) inputs.push_back(file);
+        }
+    if (g_assemble)
+        for (const std::string& file : g_assemble->sources)
+            inputs.push_back(file);
+    return inputs;
+}
+
+/// The run's command line, for result.json never to write over a file it
+/// reads (set once parsing starts).
+static const CliOptions* g_result_json_options = nullptr;
+
 static bool write_result_json(const std::string& outputdir, int code, int plate_id,
                               const std::string& error_string,
                               const std::vector<PlateOutcome>& outcomes,
                               long long prepare_time_ms, long long export_time_ms) {
+    // result.json never replaces a file the run reads (an input given as
+    // <outputdir>/result.json): the run is refused for that clash, and the
+    // user's file stays as it was.
+    if (g_result_json_options != nullptr) {
+        const boost::filesystem::path target = boost::filesystem::path(outputdir) / "result.json";
+        for (const std::string& input : named_input_files(*g_result_json_options)) {
+            boost::system::error_code ec;
+            if (boost::filesystem::exists(target, ec) && boost::filesystem::equivalent(target, input, ec) && !ec) {
+                const std::string shown = target.string();
+                std::cerr << "Error: " << shown << " is the input file '" << input
+                          << "'; result.json is not written over it\n";
+                emit_event({{"event","output_error"}, {"tag","ResultIsInput"}, {"path", shown},
+                            {"message", shown + " is the input file '" + input + "'; result.json is not written over it"}});
+                return false;
+            }
+        }
+    }
     json j;
     j["plate_index"]  = plate_id;
     j["return_code"]  = code;
@@ -8659,7 +8706,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const std::map<std::string, std::string> desktop = file_only.validate(false);
                 for (const auto& [key, why] : found) {
                     const auto it = desktop.find(key);
-                    (it != desktop.end() && it->second == why ? noted : validity)[key] = why;
+                    // A setting given on the command line is the command
+                    // line's value even when the file's own was out of range
+                    // the same way: refused, as the desktop's field refuses it.
+                    const bool given_as_flag = extra.has(key) || overrides.count(key) > 0;
+                    (!given_as_flag && it != desktop.end() && it->second == why ? noted : validity)[key] = why;
                 }
             }
             // Each plate's findings are its own: recorded once per plate
@@ -8669,7 +8720,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             const bool noted_first_time = rs.noted.count(noted_plate) == 0;
             json& noted_warnings = rs.noted[noted_plate];
             noted_warnings = json::array();
-            if (!noted.empty()) {
+            // Noted only when the run goes on: a refusal below says why it
+            // does not, and the warning's "the run slices" would not hold.
+            if (!noted.empty() && validity.empty() && unknown_values.empty()) {
                 std::string sentence = "Invalid values found in the 3MF/config: ";
                 json items = json::object();
                 std::string flags;
@@ -10132,6 +10185,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern) {
             std::cout << "Generating pressure-advance pattern geometry...\n";
             slicer_cli::apply_pa_pattern(calib_params, config, model, calib_is_bbl_machine);
+            // The pattern replaced the model, so the object STL files
+            // --export-stl writes now carry its object's name
+            // (obj_1_pa_pattern_handle.stl): the outputs are checked again.
+            rs.outputs_checked = false;
+            if (!outputs_ok())
+                return 1;
         }
 
 #ifdef ENGINE_BAMBU
@@ -11249,31 +11308,10 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
     }
 
     // ── What the run reads ──────────────────────────────────────────────
-    std::vector<std::string> inputs = o.input_files;
-    if (!o.machine_config.empty())  inputs.push_back(o.machine_config);
-    if (!o.filament_config.empty()) inputs.push_back(o.filament_config);
-    if (!o.process_config.empty())  inputs.push_back(o.process_config);
-    if (!o.bundle_config.empty())   inputs.push_back(o.bundle_config);
-    // Every file the run reads through a list option, as the loaders read
-    // them: the settings files, the up-to-date files and the --downward-check
-    // machine files (merge_loaded_settings, load_downward_printers).
-    for (const char* option : {"load_settings", "load_filaments", "uptodate_settings", "uptodate_filaments",
-                               "downward_settings"})
-        if (o.given_flag(option))
-            if (const auto* files = o.cli.option<Slic3r::ConfigOptionStrings>(option))
-                for (const std::string& file : files->values)
-                    if (!file.empty()) inputs.push_back(file);
-    for (const char* option : {"load_assemble_list", "load_custom_gcodes"})
-        if (o.given_flag(option)) {
-            const std::string file = o.cli.opt_string(option);
-            if (!file.empty()) inputs.push_back(file);
-        }
-    // The STL and OBJ files the assemble list names, as its loader opens them
-    // (the path as written, construct_assemble_list): they were read into the
-    // model, and an output over one would replace the user's part.
-    if (g_assemble)
-        for (const std::string& file : g_assemble->sources)
-            inputs.push_back(file);
+    // With the STL and OBJ files the assemble list names, as its loader opens
+    // them (the path as written, construct_assemble_list): they were read into
+    // the model, and an output over one would replace the user's part.
+    std::vector<std::string> inputs = named_input_files(o);
     // The files the loaders read beside those models (an OBJ's mtllib file,
     // its textures, a glTF's buffers), as each loader resolves them: the
     // user's files too, named only inside the model.
@@ -11759,6 +11797,28 @@ int main(int argc, char** argv) {
     if (argc >= 3 && std::string(argv[1]) == "layout" && std::string(argv[2]) == "capabilities") {
         if (argc != 4 || std::string(argv[3]) != "--json") {
             std::cerr << "Usage: " << argv[0] << " layout capabilities --json\n";
+            // With --slice among the other words the refusal still leaves
+            // result.json, as every refused --slice command line does (the
+            // parse refusal below): the parser's own first pass finds --slice
+            // and --outputdir in the words after the subcommand.
+            std::vector<char*> rest{argv[0]};
+            for (int i = 3; i < argc; ++i)
+                rest.push_back(argv[i]);
+            CliOptions probe;
+            slicer_cli::ModeArgs probe_mode;
+            slicer_cli::ParseRefusal probe_refusal;
+            (void) slicer_cli::parse_command_line((int)rest.size(), rest.data(), probe, probe_mode, probe_refusal);
+            if (probe.slice_mode || probe.slice_given) {
+                const std::string dir = probe.outputdir.empty() ? "." : probe.outputdir;
+                boost::system::error_code mk;
+                boost::filesystem::create_directories(dir, mk);
+                g_result_json_options = &probe;
+                write_result_json(dir, CLI_INVALID_PARAMS, probe.slice_mode ? std::max(0, probe.slice_plate) : 0,
+                                  cli_error_sentence(CLI_INVALID_PARAMS) +
+                                      " layout capabilities takes --json and nothing else; run the slice without it.",
+                                  {}, 0, 0);
+                return CLI_INVALID_PARAMS;
+            }
             return 1;
         }
         layout_plan::install_cancellation_handler();  // ignore SIGPIPE so write failures surface as errors
@@ -11801,6 +11861,7 @@ int main(int argc, char** argv) {
 
     {
         slicer_cli::ParseRefusal refusal;
+        g_result_json_options = &o;
         if (!slicer_cli::parse_command_line(argc, argv, o, mode_args, refusal)) {
             std::cerr << "Error: " << refusal.message << "\n";
             if (refusal.with_usage) {

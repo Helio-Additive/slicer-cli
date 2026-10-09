@@ -492,6 +492,37 @@ run stlkeep "$B" cube.stl --printer-preset "$A1M" --outputdir stlkeep --export-s
 [ "$(ls stlkeep/stl | grep -c '\.writing$')" = 1 ] || fail "--export-stl left a staging file behind: $(ls stlkeep/stl)"
 echo "PASS: --export-stl stages under its own name and leaves a kept .writing file alone"
 
+# A settings file named as the run's own result.json: the run is refused, and
+# result.json is not written over the file.
+mkdir -p rjin/out
+printf 'keep me\n' > rjin/out/result.json
+run rjin "$B" cube.stl --slice 1 --printer-preset "$A1M" --machine rjin/out/result.json --outputdir rjin/out
+[ "$(rc rjin)" != 0 ] || fail "a run whose settings file is its own result.json was accepted"
+[ "$(cat rjin/out/result.json 2>/dev/null)" = "keep me" ] || { show rjin; fail "result.json was written over the input file"; }
+grep -q '"tag":"ResultIsInput"' rjin/stdout || { show rjin; fail "no ResultIsInput event"; }
+echo "PASS: result.json is never written over a file the run reads"
+
+# layout capabilities with --slice among its words: refused with result.json,
+# as every refused --slice command line is.
+run lcap "$B" layout capabilities --json --slice 1 --outputdir lcap/out
+[ "$(rc lcap)" != 0 ] || fail "layout capabilities with --slice was accepted"
+py '
+import json; d = json.load(open("lcap/out/result.json"))
+assert d["return_code"] != 0 and "layout capabilities takes --json and nothing else" in d["error_string"], d
+' || { show lcap; fail "layout capabilities with --slice left no result.json naming the refusal"; }
+echo "PASS: layout capabilities with --slice leaves result.json"
+
+# The pressure-advance pattern replaces the model with its own object: the
+# object STL files --export-stl writes take that object's name, and an
+# --export-3mf of the same name (with --slice, a name in --outputdir) is
+# refused (Bambu build; the Orca build refuses the mode).
+run pastl "$B" "$FIXTURE" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005 \
+    --slice 1 --outputdir pastl/out --export-stl --export-3mf stl/obj_1_pa_pattern_handle.stl
+[ "$(rc pastl)" != 0 ] || fail "--export-3mf onto the pattern's own STL was accepted"
+grep -q '"tag":"ExportNameTaken"' pastl/stdout || { show pastl; fail "no ExportNameTaken for --export-3mf onto the pattern's STL"; }
+[ ! -e pastl/out/plate_1.gcode ] || fail "the run sliced before refusing the pattern's STL name"
+echo "PASS: the pressure-advance pattern's object STL name is checked against the other outputs (Bambu build)"
+
 # The check before the first write reserves every plate G-code the run could
 # write: for --slice 0, every plate of the project before its plan is final,
 # so an action given before --slice that names one is refused before it runs.
