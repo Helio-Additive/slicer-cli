@@ -1648,11 +1648,12 @@ size_t align_per_filament_maps(Slic3r::DynamicPrintConfig& config, size_t filame
     // overlay in the driver and PrintApply.cpp:2707).  Existing entries are kept;
     // the entries added here mirror the map that was just aligned.
     auto* filament_map_2 = config.option<Slic3r::ConfigOptionInts>("filament_map_2", false);
-    if (filament_map_2 && filament_map && filament_map_2->values.size() < filament_count) {
+    if (filament_map_2 && filament_map && !filament_map->values.empty() &&
+        filament_map_2->values.size() < filament_count) {
         const size_t known = filament_map_2->values.size();
         filament_map_2->values.resize(filament_count, 0);
         for (size_t i = known; i < filament_count; ++i)
-            filament_map_2->values[i] = std::max(0, filament_map->values[i] - 1);
+            filament_map_2->values[i] = std::max(0, filament_map->get_at(i) - 1);
         ++extended;
     }
 
