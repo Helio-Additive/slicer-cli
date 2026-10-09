@@ -12,7 +12,10 @@ on:
       - ".github/workflows/slicer-cli-*.yml"
   pull_request:
     # A draft PR runs no CI; marking it ready (ready_for_review) starts it.
-    types: [opened, synchronize, reopened, ready_for_review]
+    # converted_to_draft starts a run whose jobs all skip: it shares the
+    # concurrency group (workflow + ref, the same for every PR activity) and
+    # so cancels a run still going on the PR.
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "**"
       - "libslic3r/bambustudio/**"
