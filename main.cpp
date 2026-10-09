@@ -11017,9 +11017,8 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     }
     // --export-3mf NAME is written into --outputdir next to result.json and
     // plate_N.gcode; a NAME that is one of them would overwrite it (or be
-    // overwritten). Compared without case on Windows and macOS, whose file
-    // systems treat Result.json and result.json as one file, and exactly on
-    // other systems. Links are followed
+    // overwritten). Compared without case on every system (a name that
+    // differs only by letter case is refused too). Links are followed
     // (the NAME's own link chain, then weakly_canonical for every existing
     // part),
     // and two existing names for one file (a hard link) are caught by
@@ -11115,20 +11114,23 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
                 return CLI_INVALID_PARAMS;
             }
         // The files this run writes may not exist yet, so they are compared
-        // by name, the link chain followed (key): without case on Windows and
-        // macOS, whose file systems treat Result.json and result.json as one
-        // file, and exactly elsewhere.
-        const auto name_key = [&key](const fs::path& p) {
-#if defined(_WIN32) || defined(__APPLE__)
-            return boost::algorithm::to_lower_copy(key(p));
-#else
-            return key(p);
-#endif
-        };
-        const std::string target = name_key(target_path);
-        const auto same_name = [&](const fs::path& p) {
+        // by name, the link chain followed (key), and without case on every
+        // system: whether a file system tells Result.json from result.json
+        // is a property of the volume, not of the OS, and two outputs of one
+        // run whose names differ only by letter case are refused rather than
+        // left to the file system.
+        const std::string target_exact = key(target_path);
+        const std::string target       = boost::algorithm::to_lower_copy(target_exact);
+        // 0: another file; 1: this name or another name for this file; 2: a
+        // name that differs from it only by letter case.
+        const auto clash = [&](const fs::path& p) {
             boost::system::error_code ec;
-            return (fs::equivalent(target_path, p, ec) && !ec) || target == name_key(p);
+            if (fs::equivalent(target_path, p, ec) && !ec)
+                return 1;
+            const std::string k = key(p);
+            if (k == target_exact)
+                return 1;
+            return boost::algorithm::to_lower_copy(k) == target ? 2 : 0;
         };
         const auto refuse_taken = [&](const std::string& detail) {
             write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
@@ -11137,13 +11139,20 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             emit_event({{"event","input_error"}, {"tag","ExportNameTaken"}, {"message", detail}});
             return CLI_INVALID_PARAMS;
         };
+        // `what` names the other output; `same` is the sentence for the same name.
+        const auto refuse_clash = [&](int c, const std::string& what, const std::string& same) {
+            return refuse_taken(c == 1 ? same
+                                       : "--export-3mf " + o.export_3mf + " differs only by letter case from " + what +
+                                             "; choose another name.");
+        };
         std::vector<std::string> taken = {"result.json"};
         for (int p : plates)
             taken.push_back("plate_" + std::to_string(p) + ".gcode");
         for (const std::string& name : taken)
-            if (same_name(outdir / name))
-                return refuse_taken("--export-3mf " + o.export_3mf + " is the run's own " + name +
-                                    " in --outputdir; choose another name.");
+            if (const int c = clash(outdir / name))
+                return refuse_clash(c, "the run's own " + name + " in --outputdir",
+                                    "--export-3mf " + o.export_3mf + " is the run's own " + name +
+                                        " in --outputdir; choose another name.");
         // The files the run's other actions write: --export-settings' file,
         // the STL files of --export-stl / --export-stls
         // ("<folder>/obj_<n>_<name>.stl", object_stl_path) and the plate
@@ -11152,36 +11161,44 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         for (const std::string& action : o.actions) {
             if (action == "export_settings") {
                 const std::string file = o.cli.opt_string("export_settings");
-                if (!file.empty() && same_name(fs::path(file)))
-                    return refuse_taken("--export-3mf " + o.export_3mf + " is the file --export-settings " + file +
-                                        " writes; choose another name.");
+                if (file.empty())
+                    continue;
+                if (const int c = clash(fs::path(file)))
+                    return refuse_clash(c, "the file --export-settings " + file + " writes",
+                                        "--export-3mf " + o.export_3mf + " is the file --export-settings " + file +
+                                            " writes; choose another name.");
             } else if (action == "export_stl" || action == "export_stls") {
                 std::string folder = action == "export_stls" ? o.cli.opt_string("export_stls") : std::string();
                 if (folder.empty())
                     folder = o.outputdir.empty() ? std::string("stl") : o.outputdir + "/stl";
-                std::string file = target_path.filename().string();
-#if defined(_WIN32) || defined(__APPLE__)
-                boost::algorithm::to_lower(file);
-#endif
+                const std::string file = boost::algorithm::to_lower_copy(target_path.filename().string());
                 size_t digits = 4;
                 while (digits < file.size() && std::isdigit(static_cast<unsigned char>(file[digits]))) ++digits;
                 const bool stl_name = boost::algorithm::starts_with(file, "obj_") && digits > 4 &&
                                       digits < file.size() && file[digits] == '_' &&
                                       boost::algorithm::ends_with(file, ".stl");
-                if (stl_name && same_name(fs::path(folder) / target_path.filename()))
-                    return refuse_taken("--export-3mf " + o.export_3mf + " is one of the object STL files --" +
-                                        (action == "export_stls" ? "export-stls" : "export-stl") + " writes in " +
-                                        folder + "; choose another name.");
+                if (!stl_name)
+                    continue;
+                const std::string flag = action == "export_stls" ? "export-stls" : "export-stl";
+                if (const int c = clash(fs::path(folder) / target_path.filename()))
+                    return refuse_clash(c, "one of the object STL files --" + flag + " writes in " + folder,
+                                        "--export-3mf " + o.export_3mf + " is one of the object STL files --" + flag +
+                                            " writes in " + folder + "; choose another name.");
             }
         }
         for (int p : plates) {
             const std::string folder = slicer_cli::slicedata_dir(o, "export_slicedata", p);
             if (folder.empty())
                 continue;
-            const std::string prefix = name_key(fs::path(folder)) + "/";
-            if (boost::algorithm::starts_with(target, prefix) || same_name(fs::path(folder)))
-                return refuse_taken("--export-3mf " + o.export_3mf + " is inside the folder --export-slicedata writes (" +
-                                    folder + "); choose another name.");
+            const std::string folder_exact = key(fs::path(folder));
+            const std::string folder_lower = boost::algorithm::to_lower_copy(folder_exact);
+            int c = clash(fs::path(folder));
+            if (c == 0 && boost::algorithm::starts_with(target, folder_lower + "/"))
+                c = boost::algorithm::starts_with(target_exact, folder_exact + "/") ? 1 : 2;
+            if (c)
+                return refuse_clash(c, "the folder --export-slicedata writes (" + folder + ")",
+                                    "--export-3mf " + o.export_3mf + " is inside the folder --export-slicedata writes (" +
+                                        folder + "); choose another name.");
         }
     }
 
