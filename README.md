@@ -7,8 +7,8 @@ A release package holds two programs:
 
 | Program | Engine |
 |-|-|
-| `slicer_cli` | Bambu Studio 02.08.01.55 (source pin `5873b5f`) |
-| `slicer_cli-orcaslicer` | OrcaSlicer 2.4.0-alpha (source pin `31f6803`) |
+| `slicer_cli` | Bambu Studio 02.08.02.61 (source pin `926a719`) |
+| `slicer_cli-orcaslicer` | OrcaSlicer 2.4.2 (source pin `8500fcd`) |
 
 Each program slices with its engine's own code and its own printer, process
 and filament profiles, so a file sliced here gives the G-code the desktop app

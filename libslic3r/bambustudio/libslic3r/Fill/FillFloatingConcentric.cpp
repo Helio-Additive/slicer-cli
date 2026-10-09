@@ -1,3 +1,7 @@
+// slicer-cli override layer. A copy of the engine's
+// src/libslic3r/Fill/FillFloatingConcentric.cpp at BambuStudio v02.08.02.61
+// (926a719). Upstream does not carry these fixes; the file is otherwise
+// unchanged. See docs/building.md, "The override layer".
 #include <libslic3r/ClipperUtils.hpp>
 #include <libslic3r/Clipper2Utils.hpp>
 #include <libslic3r/ClipperZUtils.hpp>

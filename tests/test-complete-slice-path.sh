@@ -2574,7 +2574,7 @@ def build(src, dst, settings, app=None):
             if app and item.filename == "3D/3dmodel.model":
                 data = re.sub(rb"(<metadata name=\"Application\">)[^<]*", rb"\g<1>" + app.encode(), data)
             zout.writestr(item, data)
-bambu = {"wall_filament": "0", "sparse_infill_filament": "0", "solid_infill_filament": "0",
+bambu = {"wall_filament": "7", "sparse_infill_filament": "7", "solid_infill_filament": "7",
          "tree_support_wall_count": "-1"}
 build("base.3mf", "bblx1c.3mf", bambu)
 # The same values from a file OrcaSlicer made: handle_legacy converts by VALUE
@@ -2614,12 +2614,15 @@ run orcamade "$O" orcamade.3mf --slice 1 --allow-newer-file --outputdir orcamade
 grep -q "^; tree_support_wall_count = 0$" orcamade/out/plate_1.gcode || {
     grep -m1 "tree_support_wall_count" orcamade/out/plate_1.gcode
     fail "orca: the ported legacy conversion skipped a file OrcaSlicer made (it converts by value)"; }
-# The clamp is the fallback for a project this bundle cannot load over its own
-# presets: the file's own settings are sliced, so the 0-based indices reach the
-# engine and the clamp is what carries them. It is reported as its own event and
-# names only the keys it reset: tree_support_wall_count is converted by the
-# engine's own handle_legacy, not here. A project whose preset this bundle does
-# ship takes the preset's own values instead, and reports no reset.
+# The reset is the fallback for a project this bundle cannot load over its own
+# presets: the file's own settings are sliced, so an index this engine cannot
+# read reaches it and falls back to 0 the way the desktop's own load does. It
+# is reported as its own event and names only the keys it reset:
+# tree_support_wall_count is converted by the engine's own handle_legacy, not
+# here. A project whose preset this bundle does ship takes the preset's own
+# values instead, and reports no reset. OrcaSlicer v2.4.2 reads a 0 as
+# "Default" (PrintConfig.cpp 5011-5018), so a Bambu Studio file's own 0 needs
+# no reset at all - only the value above the filament count does.
 py '
 import json, zipfile
 with zipfile.ZipFile("bblx1c.3mf") as zin, zipfile.ZipFile("bblnosuch.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
@@ -2641,10 +2644,11 @@ ev = [e for e in ev if e.get("tag") == "FilamentIndexOutOfRangeReset"]
 assert len(ev) == 1, [e.get("tag") for e in ev]
 e = ev[0]
 assert e["filament_count"] == 1, e
-assert sorted(e["reset"]) == ["solid_infill_filament", "sparse_infill_filament", "wall_filament"], e
-assert all(c["from"] == 0 and c["to"] == 1 for c in e["reset"].values()), e
+assert sorted(e["reset"]) == ["internal_solid_filament_id", "outer_wall_filament_id",
+                              "sparse_infill_filament_id"], e
+assert all(c["from"] == 7 and c["to"] == 0 for c in e["reset"].values()), e
 assert e["clamped"] == {}, e
-for k in ("wall_filament", "solid_infill_filament", "sparse_infill_filament"):
+for k in ("outer_wall_filament_id", "internal_solid_filament_id", "sparse_infill_filament_id"):
     assert k in e["message"], e["message"]
 assert "tree_support_wall_count" not in e["message"], e["message"]
 ' bblflat/stdout || fail "orca: the 3MF filament-index reset was not reported as its own event"
@@ -2653,7 +2657,7 @@ import json, sys
 ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
 assert not [e for e in ev if e.get("tag") == "FilamentIndexOutOfRangeReset"], "a rebased run reset an index"
 ' bblu1/stdout || fail "orca: a project loaded over its shipped presets reported an index reset"
-echo "PASS: the Orca 3MF load resets a Bambu Studio project's 0-based filament indices into this engine's range, and reports it"
+echo "PASS: the Orca 3MF load resets a Bambu Studio project's filament index that this engine cannot read to Default, and reports it"
 # The printer change takes the U1's process, and the values, the pick and the
 # bed are the ones the desktop's retarget gives (u1-process-orca.json is the
 # process the desktop selects, flattened from the shipped presets).
@@ -2782,6 +2786,15 @@ wall = one("TreeSupportWallCountAutoConverted")
 assert wall["from"] == "-1" and str(wall["to"]) == "0", wall
 ' objconv/stdout || fail "orca: the object own settings were not converted with the same events as the project's"
 echo "PASS: an object's own tree_support_wall_count -1 and ensure_vertical_shell_thickness \"enabled\" convert like the project's"
+# v2.4.2 reads 0 as "Default" on every feature-filament key, so the Bambu
+# Studio 0 of these fixtures is a value this engine accepts as it is: no reset
+# for it, and no reset event.
+py '
+import json, sys
+ev = [json.loads(l.split("]] ", 1)[1]) for l in open(sys.argv[1], errors="replace") if "[[SLICER_EVENT]]" in l]
+assert not [e for e in ev if e.get("tag") == "FilamentIndexOutOfRangeReset"], \
+    "a Bambu Studio 0 is Default and must not be reset"
+' objconv/stdout || fail "orca: a Bambu Studio project's own 0 filament index was reset"
 
 # ── The desktop's and upstream's conversions the owner ruled on (G2-G8) ─────
 # Each case states the BambuStudio value on purpose (the maker's own key list,
