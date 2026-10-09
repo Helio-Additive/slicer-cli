@@ -30,29 +30,19 @@ const char* engine_version() { return SLIC3R_VERSION; }
 /// CLI::output_filepath for one object (BambuStudio.cpp 8531-8577 at
 /// 5873b5f; the same function in OrcaSlicer.cpp at 31f6803):
 /// "<dir>/obj_<n>_<name>.stl", where <dir> is the --export-stls folder, or
-/// "<outputdir>/stl", or "stl". The folder is created if missing.
+/// "<outputdir>/stl", or "stl" (object_stl_file). The folder is created if
+/// missing.
 std::string object_stl_path(const CliOptions& o, const Slic3r::ModelObject& object, unsigned index,
                             const std::string& path_dir) {
-    const std::string ext = ".stl";
-    std::string subdir = "stl";
-    std::string file_name = object.name.empty() ? object.input_file : object.name;
-    file_name = "obj_" + std::to_string(index) + "_" + file_name;
-    const size_t pos = file_name.rfind(ext);
-    const size_t ext_pos = file_name.size() >= ext.size() ? file_name.size() - ext.size() : std::string::npos;
-    if (pos == std::string::npos || pos != ext_pos)
-        file_name += ext;
-    if (path_dir.empty()) {
-        if (!o.outputdir.empty())
-            subdir = o.outputdir + "/" + subdir;
-    } else {
-        subdir = path_dir;
-    }
+    const std::string path = object_stl_file(o, object, index, path_dir);
     // The official creates the last folder only (create_directory), and
     // throws when its parent is missing; the whole path is made here.
+    const std::string subdir = !path_dir.empty() ? path_dir : o.outputdir.empty() ? std::string("stl")
+                                                                                  : o.outputdir + "/stl";
     boost::system::error_code ec;
     if (!boost::filesystem::exists(subdir, ec))
         boost::filesystem::create_directories(subdir, ec);
-    return subdir + "/" + file_name;
+    return path;
 }
 
 /// CLI::export_models(IO::STL, dir) (BambuStudio.cpp 8427-8465): one STL per
@@ -460,6 +450,25 @@ void apply_model_metadata(const CliOptions& o, Slic3r::Model& model) {
         model.md_name  = names;
         model.md_value = values;
     }
+}
+
+std::string object_stl_file(const CliOptions& o, const Slic3r::ModelObject& object, unsigned index,
+                            const std::string& path_dir) {
+    const std::string ext = ".stl";
+    std::string subdir = "stl";
+    std::string file_name = object.name.empty() ? object.input_file : object.name;
+    file_name = "obj_" + std::to_string(index) + "_" + file_name;
+    const size_t pos = file_name.rfind(ext);
+    const size_t ext_pos = file_name.size() >= ext.size() ? file_name.size() - ext.size() : std::string::npos;
+    if (pos == std::string::npos || pos != ext_pos)
+        file_name += ext;
+    if (path_dir.empty()) {
+        if (!o.outputdir.empty())
+            subdir = o.outputdir + "/" + subdir;
+    } else {
+        subdir = path_dir;
+    }
+    return subdir + "/" + file_name;
 }
 
 } // namespace slicer_cli
