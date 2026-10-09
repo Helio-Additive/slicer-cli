@@ -8643,7 +8643,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // under_cli only: OrcaSlicer PrintConfig.cpp 10456-10458,
             // BambuStudio PrintConfig.cpp 9574-9576; the desktop asks the user
             // there), and what a command-line value brings (the desktop's
-            // own fields refuse a value out of range as it is typed).
+            // own fields refuse a value out of range as it is typed): a
+            // finding on a setting given as a flag, which `config` already
+            // holds (config.apply(extra) above), is refused.
             std::map<std::string, std::string> validity;   // refused
             std::map<std::string, std::string> noted;      // warned, as the desktop notice
             if (!found.empty()) {
@@ -8652,7 +8654,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const std::map<std::string, std::string> desktop = file_only.validate(false);
                 for (const auto& [key, why] : found) {
                     const auto it = desktop.find(key);
-                    (it != desktop.end() && it->second == why ? noted : validity)[key] = why;
+                    const bool given_as_flag = extra.has(key) || overrides.count(key) > 0;
+                    (!given_as_flag && it != desktop.end() && it->second == why ? noted : validity)[key] = why;
                 }
             }
             // Each plate's findings are its own: recorded once per plate

@@ -205,7 +205,9 @@ for e in bambu orca; do
     fx_settings "$e" x1c "$X1C"
     fx_proj "$e" proj "$A1M"
     fx_proj "$e" x1c-proj "$X1C"
+    fx_proj "$e" p02 "Bambu Lab A1 mini 0.2 nozzle"
     [ -s "proj-$e.3mf" ] || { echo "FAIL: fixture proj-$e.3mf: $(why "fxproj-$e")"; exit 1; }
+    [ -s "p02-$e.3mf" ] || { echo "FAIL: fixture p02-$e.3mf: $(why "fxp02-$e")"; exit 1; }
     [ -s "x1c-proj-$e.3mf" ] || { echo "FAIL: fixture x1c-proj-$e.3mf: $(why "fxx1c-proj-$e")"; exit 1; }
 done
 for e in bambu orca; do
@@ -291,6 +293,18 @@ for e in bambu orca; do
     # slices with that value.
     check_slices value-out-of-range-retry "$e" support_threshold_angle 45 \
           "range-$e.3mf" --slice 1 --support-threshold-angle 45
+    # A flag whose value the command line alone accepts (the check against
+    # the default 0.4 nozzle) but the project's 0.2 nozzle does not: a
+    # command-line value, so refused with its hint, not noted. The same
+    # project without the flag slices.
+    if [ "$e" = orca ]; then
+        check flag-over-nozzle     "$e" "*bridge_line_width: Bridge line width must not exceed nozzle diameter*Give --bridge-line-width a value in range to override it.*" \
+              "p02-$e.3mf" --slice 1 --bridge-line-width 0.3
+    else
+        check flag-over-nozzle     "$e" "*outer_wall_line_width: too large line width*Give --outer-wall-line-width a value in range to override it.*" \
+              "p02-$e.3mf" --slice 1 --outer-wall-line-width 0.8
+    fi
+    check_slices flag-over-nozzle-without "$e" nozzle_diameter 0.2 "p02-$e.3mf" --slice 1
 done
 
 # A settings file of the wrong kind, and --load-defaultfila with no usable file.
