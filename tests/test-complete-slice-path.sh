@@ -426,6 +426,19 @@ assert d["return_code"] == -2 and "--export-settings" in d["error_string"], d
 '
 echo "PASS: --export-3mf refuses the file --export-settings writes"
 
+# Every output of a run is checked against the others, whether or not
+# --export-3mf is given: --export-settings onto the run's own result.json
+# (which the run writes last, over the settings) is refused before slicing.
+run setres "$B" "$FIXTURE" --slice 1 --outputdir setres/out --export-settings setres/out/result.json
+[ "$(rc setres)" != 0 ] || fail "--export-settings onto the run's own result.json was accepted"
+[ ! -e setres/out/plate_1.gcode ] || fail "the run sliced before refusing --export-settings onto result.json"
+py '
+import json; d = json.load(open("setres/out/result.json"))
+assert d["return_code"] == -2 and "--export-settings setres/out/result.json is the run'"'"'s own result.json in --outputdir" in d["error_string"], d
+' || { show setres; fail "--export-settings onto result.json: no ExportNameTaken refusal naming both"; }
+grep -q '"tag":"ExportNameTaken"' setres/stdout || { show setres; fail "no ExportNameTaken event for --export-settings onto result.json"; }
+echo "PASS: --export-settings onto the run's own result.json is refused without --export-3mf"
+
 # ... and a NAME that is a link to one of them (POSIX only: Git Bash on
 # Windows makes copies, not links).
 case "$(uname -s)" in

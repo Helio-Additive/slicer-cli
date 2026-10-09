@@ -10855,6 +10855,237 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
 /// call runs. The official loop stops at the first plate that fails
 /// (flush_and_exit inside the plate loop, BambuStudio.cpp 6533-7240), and so
 /// does this one. The exit status is the official CLI_* code of that failure.
+/// Every file this run writes, checked once before anything is sliced or
+/// exported, whatever flags are given: no two of them may be one file (the
+/// one written last would replace the other, and the run would report success
+/// with a requested output lost), and none may be a file the run reads.
+///
+/// The outputs: result.json and each sliced plate's plate_<n>.gcode in
+/// --outputdir (--slice), the G-code of -o (the single-plate call),
+/// --export-3mf (joined onto --outputdir, as the official joins it:
+/// export_3mf_file = outfile_dir + "/" + export_3mf_file, BambuStudio.cpp
+/// 7508-7510 at 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803), the
+/// --export-settings file, the object STL files of --export-stl /
+/// --export-stls ("<folder>/obj_<n>_<name>.stl", object_stl_path) and the
+/// plate folders under --export-slicedata.
+///
+/// Two outputs are compared by name, the link chain followed and without
+/// case on every system (they may not exist yet; a name that differs from
+/// another only by letter case is refused too, as an odd combination), and
+/// two existing names for one file by fs::equivalent. An output overwrites an
+/// input only when it is that file, and the inputs exist, so that check asks
+/// the file system (fs::equivalent: links, hard links and the volume's own
+/// case rule); an output that does not exist overwrites nothing.
+///
+/// Returns 0, or CLI_INVALID_PARAMS once the refusal is reported (-2:
+/// ExportOverwritesInput for an input, ExportNameTaken for two outputs).
+static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates) {
+    namespace fs = boost::filesystem;
+    const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
+    const auto key = [](const fs::path& p) {
+        // A link whose target does not exist yet (result.json before the run
+        // writes it) is not resolved by weakly_canonical: follow the chain by
+        // hand first.
+        fs::path q = fs::absolute(p);
+        boost::system::error_code ec;
+        for (int hops = 0; hops < 40 && fs::is_symlink(q, ec) && !ec; ++hops) {
+            const fs::path link = fs::read_symlink(q, ec);
+            if (ec) break;
+            q = link.is_absolute() ? link : q.parent_path() / link;
+        }
+        ec.clear();
+        const fs::path resolved = fs::weakly_canonical(q, ec);
+        return (ec ? q : resolved).lexically_normal().generic_string();
+    };
+    const auto lower = [](const std::string& s) { return boost::algorithm::to_lower_copy(s); };
+
+    // ── What the run writes ─────────────────────────────────────────────
+    struct Output {
+        enum Kind { File, StlFiles, Folder } kind;
+        std::string flag;       // "--export-3mf NAME"; empty for the run's own files
+        fs::path    path;       // the file; the STL folder; the folder
+        std::string what;       // "the run's own result.json in --outputdir"
+        std::string is_what;    // what follows "is" in the same-name sentence
+    };
+    std::vector<Output> outputs;
+    // The outputs a flag names come first: a clash is told from that flag.
+    if (!o.export_3mf.empty() && o.slice_mode)
+        outputs.push_back({Output::File, "--export-3mf " + o.export_3mf, outdir / o.export_3mf,
+                           "the project --export-3mf " + o.export_3mf + " writes",
+                           "the project --export-3mf " + o.export_3mf + " writes"});
+    for (const std::string& action : o.actions) {
+        if (action == "export_settings") {
+            const std::string file = o.cli.opt_string("export_settings");
+            if (!file.empty())
+                outputs.push_back({Output::File, "--export-settings " + file, fs::path(file),
+                                   "the file --export-settings " + file + " writes",
+                                   "the file --export-settings " + file + " writes"});
+        } else if (action == "export_stl" || action == "export_stls") {
+            std::string folder = action == "export_stls" ? o.cli.opt_string("export_stls") : std::string();
+            if (folder.empty())
+                folder = o.outputdir.empty() ? std::string("stl") : o.outputdir + "/stl";
+            const std::string flag = action == "export_stls" ? "--export-stls" : "--export-stl";
+            const std::string what = "one of the object STL files " + flag + " writes in " + folder;
+            outputs.push_back({Output::StlFiles, action == "export_stls" ? flag + " " + folder : flag,
+                               fs::path(folder), what, what});
+        }
+    }
+    if (o.slice_mode)
+        for (int p : plates) {
+            const std::string folder = slicer_cli::slicedata_dir(o, "export_slicedata", p);
+            if (!folder.empty())
+                outputs.push_back({Output::Folder, "--export-slicedata " + folder, fs::path(folder),
+                                   "the folder --export-slicedata writes (" + folder + ")",
+                                   "inside the folder --export-slicedata writes (" + folder + ")"});
+        }
+    if (o.slice_mode) {
+        outputs.push_back({Output::File, "", outdir / "result.json", "the run's own result.json in --outputdir",
+                           "the run's own result.json in --outputdir"});
+        for (int p : plates) {
+            const std::string name = "plate_" + std::to_string(p) + ".gcode";
+            outputs.push_back({Output::File, "", outdir / name, "the run's own " + name + " in --outputdir",
+                               "the run's own " + name + " in --outputdir"});
+        }
+    } else if (!slicer_cli::model_actions_only(o) && !o.output_file.empty()) {
+        outputs.push_back({Output::File, "-o " + o.output_file, fs::path(o.output_file),
+                           "the G-code -o " + o.output_file + " writes", "the G-code -o " + o.output_file + " writes"});
+    }
+
+    // ── What the run reads ──────────────────────────────────────────────
+    std::vector<std::string> inputs = o.input_files;
+    if (!o.machine_config.empty())  inputs.push_back(o.machine_config);
+    if (!o.filament_config.empty()) inputs.push_back(o.filament_config);
+    if (!o.process_config.empty())  inputs.push_back(o.process_config);
+    if (!o.bundle_config.empty())   inputs.push_back(o.bundle_config);
+    // Every file the run reads through a list option, as the loaders read
+    // them: the settings files, the up-to-date files and the --downward-check
+    // machine files (merge_loaded_settings, load_downward_printers).
+    for (const char* option : {"load_settings", "load_filaments", "uptodate_settings", "uptodate_filaments",
+                               "downward_settings"})
+        if (o.given_flag(option))
+            if (const auto* files = o.cli.option<Slic3r::ConfigOptionStrings>(option))
+                for (const std::string& file : files->values)
+                    if (!file.empty()) inputs.push_back(file);
+    for (const char* option : {"load_assemble_list", "load_custom_gcodes"})
+        if (o.given_flag(option)) {
+            const std::string file = o.cli.opt_string(option);
+            if (!file.empty()) inputs.push_back(file);
+        }
+    // The STL and OBJ files the assemble list names, as its loader opens them
+    // (the path as written, construct_assemble_list): they were read into the
+    // model, and an output over one would replace the user's part.
+    if (g_assemble)
+        for (const std::string& file : g_assemble->sources)
+            inputs.push_back(file);
+    // The files the loaders read beside those models (an OBJ's mtllib file,
+    // its textures, a glTF's buffers), as each loader resolves them: the
+    // user's files too, named only inside the model.
+    {
+        std::vector<std::string> side;
+        for (const std::string& file : o.input_files)
+            for (std::string& s : slicer_cli::loader_side_files(file, true))
+                side.push_back(std::move(s));
+        if (g_assemble)
+            for (const std::string& file : g_assemble->sources)
+                for (std::string& s : slicer_cli::loader_side_files(file, false))
+                    side.push_back(std::move(s));
+        inputs.insert(inputs.end(), side.begin(), side.end());
+    }
+
+    // ── The checks ──────────────────────────────────────────────────────
+    const auto refuse = [&](const char* tag, const std::string& detail) {
+        if (o.slice_mode)
+            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
+        std::cerr << "Error: " << detail << "\n";
+        emit_event({{"event","input_error"}, {"tag", tag}, {"message", detail}});
+        return CLI_INVALID_PARAMS;
+    };
+    // An object STL file name: obj_<n>_<name>.stl, read without case.
+    const auto stl_name = [&](const fs::path& p) {
+        const std::string file = lower(p.filename().string());
+        size_t digits = 4;
+        while (digits < file.size() && std::isdigit(static_cast<unsigned char>(file[digits]))) ++digits;
+        return boost::algorithm::starts_with(file, "obj_") && digits > 4 && digits < file.size() &&
+               file[digits] == '_' && boost::algorithm::ends_with(file, ".stl");
+    };
+    // 0: apart; 1: one name, or two names of one file; 2: names that differ
+    // only by letter case.
+    const auto same = [&](const fs::path& a, const fs::path& b) {
+        boost::system::error_code ec;
+        if (fs::equivalent(a, b, ec) && !ec)
+            return 1;
+        const std::string ka = key(a), kb = key(b);
+        if (ka == kb)
+            return 1;
+        return lower(ka) == lower(kb) ? 2 : 0;
+    };
+    const auto inside = [&](const fs::path& a, const fs::path& folder) {
+        const std::string ka = key(a), kf = key(folder) + "/";
+        if (boost::algorithm::starts_with(ka, kf))
+            return 1;
+        return boost::algorithm::starts_with(lower(ka), lower(kf)) ? 2 : 0;
+    };
+    // How two outputs meet (0, 1 or 2 as above).
+    const auto meet = [&](const Output& a, const Output& b) -> int {
+        if (a.kind == Output::Folder && b.kind == Output::Folder)
+            return 0;   // --export-slicedata's own plate folders, one per plate
+        if (a.kind == Output::Folder || b.kind == Output::Folder) {
+            const Output& folder = a.kind == Output::Folder ? a : b;
+            const Output& other  = a.kind == Output::Folder ? b : a;
+            if (const int c = same(other.path, folder.path))
+                return c;
+            return inside(other.path, folder.path);
+        }
+        if (a.kind == Output::File && b.kind == Output::File)
+            return same(a.path, b.path);
+        if (a.kind == Output::StlFiles && b.kind == Output::StlFiles)
+            return 0;   // --export-stl and --export-stls write the same files, the same way
+        const Output& stls  = a.kind == Output::StlFiles ? a : b;
+        const Output& other = a.kind == Output::StlFiles ? b : a;
+        return stl_name(other.path) ? same(other.path.parent_path(), stls.path) : 0;
+    };
+    for (const Output& out : outputs)
+        for (const std::string& input : inputs) {
+            boost::system::error_code ec;
+            const fs::path in(input);
+            bool hit = false;
+            if (out.kind == Output::File)
+                hit = fs::exists(out.path, ec) && fs::equivalent(out.path, in, ec) && !ec;
+            else if (out.kind == Output::StlFiles)
+                hit = stl_name(in) && fs::exists(out.path, ec) && fs::equivalent(in.parent_path(), out.path, ec) && !ec;
+            else   // the cache files of a plate folder: any input in it
+                hit = fs::exists(out.path, ec) && fs::exists(in, ec) && inside(in, out.path) != 0;
+            if (!hit)
+                continue;
+            if (out.flag.empty())   // result.json or a plate's G-code
+                return refuse("ExportOverwritesInput", "--slice would overwrite the input file '" + input + "' with " +
+                                                           out.what + "; choose another --outputdir.");
+            const std::string who = out.flag.rfind("--export-3mf ", 0) == 0 ? std::string("--export-3mf") : out.flag;
+            return refuse("ExportOverwritesInput",
+                          who + " would overwrite the input file '" + input + "'; give it another name.");
+        }
+    for (size_t i = 0; i < outputs.size(); ++i)
+        for (size_t j = i + 1; j < outputs.size(); ++j) {
+            const Output& a = outputs[i];
+            const Output& b = outputs[j];
+            if (a.flag.empty())
+                continue;   // two of the run's own files never clash (result.json, plate_<n>.gcode)
+            if (a.kind == b.kind && a.flag == b.flag)
+                continue;
+            const int c = meet(a, b);
+            if (c == 0)
+                continue;
+            if (a.kind == Output::Folder)   // a folder that would hold one of the run's own files
+                return refuse("ExportNameTaken", a.flag + (c == 1 ? " holds " : " differs only by letter case from ") +
+                                                     b.what + "; choose another folder.");
+            return refuse("ExportNameTaken", c == 1 ? a.flag + " is " + b.is_what + "; choose another name."
+                                                    : a.flag + " differs only by letter case from " + b.what +
+                                                          "; choose another name.");
+        }
+    return 0;
+}
+
 static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_params) {
     namespace fs = boost::filesystem;
     const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
@@ -11028,192 +11259,16 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             outcomes.push_back(*prepare_failure);
         }
     }
-    // --export-3mf NAME is written into --outputdir next to result.json and
-    // plate_N.gcode; a NAME that is one of them would overwrite it (or be
-    // overwritten). Compared without case on every system (a name that
-    // differs only by letter case is refused too). Links are followed
-    // (the NAME's own link chain, then weakly_canonical for every existing
-    // part),
-    // and two existing names for one file (a hard link) are caught by
-    // fs::equivalent, so a NAME that is another name for one of them is
-    // refused too.
-    // The check runs here, once the plate plan is final: the global arrange
-    // (--slice 0 --arrange 1) can add plates the pre-arrange count does not
-    // know (BambuStudio.cpp 5627-5722; OrcaSlicer.cpp 4887-4983), and a
-    // plate_<n>.gcode it then writes would be overwritten by the export.
-    // `plates` is the set this run slices.
-    if (!o.export_3mf.empty()) {
-        // The export may not name a file this run READS: an --export-3mf whose
-        // target resolves to one of the run's own inputs would write over it
-        // once the plate is sliced — the input project itself for
-        // `--export-3mf ../project.3mf` with a --outputdir under its folder.
-        // The official CLI joins the name onto --outputdir (export_3mf_file =
-        // outfile_dir + "/" + export_3mf_file, BambuStudio.cpp 7508-7510 at
-        // 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803) and writes wherever
-        // that lands, so the same name outside --outputdir is left alone here:
-        // only the run's own files are refused.
-        const auto key = [](const fs::path& p) {
-            // A link whose target does not exist yet (result.json before
-            // the run writes it) is not resolved by weakly_canonical: follow
-            // the chain by hand first.
-            fs::path q = fs::absolute(p);
-            boost::system::error_code ec;
-            for (int hops = 0; hops < 40 && fs::is_symlink(q, ec) && !ec; ++hops) {
-                const fs::path link = fs::read_symlink(q, ec);
-                if (ec) break;
-                q = link.is_absolute() ? link : q.parent_path() / link;
-            }
-            ec.clear();
-            const fs::path resolved = fs::weakly_canonical(q, ec);
-            return (ec ? q : resolved).lexically_normal().generic_string();
-        };
-        const fs::path target_path = outdir / o.export_3mf;
-        std::vector<std::string> inputs = o.input_files;
-        if (!o.machine_config.empty())  inputs.push_back(o.machine_config);
-        if (!o.filament_config.empty()) inputs.push_back(o.filament_config);
-        if (!o.process_config.empty())  inputs.push_back(o.process_config);
-        if (!o.bundle_config.empty())   inputs.push_back(o.bundle_config);
-        // Every file the run reads through a list option, as the loaders read
-        // them: the settings files, the up-to-date files and the
-        // --downward-check machine files (merge_loaded_settings,
-        // load_downward_printers).
-        for (const char* key : {"load_settings", "load_filaments", "uptodate_settings", "uptodate_filaments",
-                                "downward_settings"})
-            if (o.given_flag(key))
-                if (const auto* files = o.cli.option<Slic3r::ConfigOptionStrings>(key))
-                    for (const std::string& file : files->values)
-                        if (!file.empty()) inputs.push_back(file);
-        for (const char* key : {"load_assemble_list", "load_custom_gcodes"})
-            if (o.given_flag(key)) {
-                const std::string file = o.cli.opt_string(key);
-                if (!file.empty()) inputs.push_back(file);
-            }
-        // The STL and OBJ files the assemble list names, as its loader opens
-        // them (the path as written, construct_assemble_list): they were read
-        // into the model, and an export over one would replace the user's part.
-        if (g_assemble)
-            for (const std::string& file : g_assemble->sources)
-                inputs.push_back(file);
-        // The files the loaders read beside those models (an OBJ's mtllib
-        // file, its textures, a glTF's buffers), as each loader resolves them:
-        // the user's files too, named only inside the model.
-        {
-            std::vector<std::string> side;
-            for (const std::string& file : o.input_files)
-                for (std::string& s : slicer_cli::loader_side_files(file, true))
-                    side.push_back(std::move(s));
-            if (g_assemble)
-                for (const std::string& file : g_assemble->sources)
-                    for (std::string& s : slicer_cli::loader_side_files(file, false))
-                        side.push_back(std::move(s));
-            inputs.insert(inputs.end(), side.begin(), side.end());
-        }
-        // An export overwrites an input only when its target is that file: the
-        // inputs exist, so the file system says whether the two names are one
-        // file (fs::equivalent: links, hard links and the file system's own
-        // case rule). A target that does not exist overwrites nothing -- on a
-        // case-sensitive file system ../PART.STL is not part.stl.
-        boost::system::error_code target_ec;
-        if (fs::exists(target_path, target_ec))
-            for (const std::string& input : inputs) {
-                boost::system::error_code ec;
-                if (!(fs::equivalent(target_path, fs::path(input), ec) && !ec)) continue;
-                const std::string detail =
-                    "--export-3mf would overwrite the input file '" + input + "'; give it another name.";
-                write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
-                                  cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
-                std::cerr << "Error: " << detail << "\n";
-                emit_event({{"event","input_error"}, {"tag","ExportOverwritesInput"}, {"message", detail}});
-                return CLI_INVALID_PARAMS;
-            }
-        // The files this run writes may not exist yet, so they are compared
-        // by name, the link chain followed (key), and without case on every
-        // system: whether a file system tells Result.json from result.json
-        // is a property of the volume, not of the OS, and two outputs of one
-        // run whose names differ only by letter case are refused rather than
-        // left to the file system.
-        const std::string target_exact = key(target_path);
-        const std::string target       = boost::algorithm::to_lower_copy(target_exact);
-        // 0: another file; 1: this name or another name for this file; 2: a
-        // name that differs from it only by letter case.
-        const auto clash = [&](const fs::path& p) {
-            boost::system::error_code ec;
-            if (fs::equivalent(target_path, p, ec) && !ec)
-                return 1;
-            const std::string k = key(p);
-            if (k == target_exact)
-                return 1;
-            return boost::algorithm::to_lower_copy(k) == target ? 2 : 0;
-        };
-        const auto refuse_taken = [&](const std::string& detail) {
-            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
-                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
-            std::cerr << "Error: " << detail << "\n";
-            emit_event({{"event","input_error"}, {"tag","ExportNameTaken"}, {"message", detail}});
-            return CLI_INVALID_PARAMS;
-        };
-        // `what` names the other output; `same` is the sentence for the same name.
-        const auto refuse_clash = [&](int c, const std::string& what, const std::string& same) {
-            return refuse_taken(c == 1 ? same
-                                       : "--export-3mf " + o.export_3mf + " differs only by letter case from " + what +
-                                             "; choose another name.");
-        };
-        std::vector<std::string> taken = {"result.json"};
-        for (int p : plates)
-            taken.push_back("plate_" + std::to_string(p) + ".gcode");
-        for (const std::string& name : taken)
-            if (const int c = clash(outdir / name))
-                return refuse_clash(c, "the run's own " + name + " in --outputdir",
-                                    "--export-3mf " + o.export_3mf + " is the run's own " + name +
-                                        " in --outputdir; choose another name.");
-        // The files the run's other actions write: --export-settings' file,
-        // the STL files of --export-stl / --export-stls
-        // ("<folder>/obj_<n>_<name>.stl", object_stl_path) and the plate
-        // folders under --export-slicedata. Whichever is written last would
-        // replace the other.
-        for (const std::string& action : o.actions) {
-            if (action == "export_settings") {
-                const std::string file = o.cli.opt_string("export_settings");
-                if (file.empty())
-                    continue;
-                if (const int c = clash(fs::path(file)))
-                    return refuse_clash(c, "the file --export-settings " + file + " writes",
-                                        "--export-3mf " + o.export_3mf + " is the file --export-settings " + file +
-                                            " writes; choose another name.");
-            } else if (action == "export_stl" || action == "export_stls") {
-                std::string folder = action == "export_stls" ? o.cli.opt_string("export_stls") : std::string();
-                if (folder.empty())
-                    folder = o.outputdir.empty() ? std::string("stl") : o.outputdir + "/stl";
-                const std::string file = boost::algorithm::to_lower_copy(target_path.filename().string());
-                size_t digits = 4;
-                while (digits < file.size() && std::isdigit(static_cast<unsigned char>(file[digits]))) ++digits;
-                const bool stl_name = boost::algorithm::starts_with(file, "obj_") && digits > 4 &&
-                                      digits < file.size() && file[digits] == '_' &&
-                                      boost::algorithm::ends_with(file, ".stl");
-                if (!stl_name)
-                    continue;
-                const std::string flag = action == "export_stls" ? "export-stls" : "export-stl";
-                if (const int c = clash(fs::path(folder) / target_path.filename()))
-                    return refuse_clash(c, "one of the object STL files --" + flag + " writes in " + folder,
-                                        "--export-3mf " + o.export_3mf + " is one of the object STL files --" + flag +
-                                            " writes in " + folder + "; choose another name.");
-            }
-        }
-        for (int p : plates) {
-            const std::string folder = slicer_cli::slicedata_dir(o, "export_slicedata", p);
-            if (folder.empty())
-                continue;
-            const std::string folder_exact = key(fs::path(folder));
-            const std::string folder_lower = boost::algorithm::to_lower_copy(folder_exact);
-            int c = clash(fs::path(folder));
-            if (c == 0 && boost::algorithm::starts_with(target, folder_lower + "/"))
-                c = boost::algorithm::starts_with(target_exact, folder_exact + "/") ? 1 : 2;
-            if (c)
-                return refuse_clash(c, "the folder --export-slicedata writes (" + folder + ")",
-                                    "--export-3mf " + o.export_3mf + " is inside the folder --export-slicedata writes (" +
-                                        folder + "); choose another name.");
-        }
-    }
+    // Every file the run writes (result.json, the plates' G-code, the
+    // --export-3mf project, the --export-settings file, the object STL files,
+    // the --export-slicedata folders), checked against each other and against
+    // the files the run reads (check_run_outputs). The check runs here, once
+    // the plate plan is final: the global arrange (--slice 0 --arrange 1) can
+    // add plates the pre-arrange count does not know (BambuStudio.cpp
+    // 5627-5722; OrcaSlicer.cpp 4887-4983), and a plate_<n>.gcode it then
+    // writes would be overwritten. `plates` is the set this run slices.
+    if (const int refused = check_run_outputs(o, plates))
+        return refused;
 
     const bool pre_check = code == 0 && o.slice_plate == 0 && plates.size() > 1;
     for (size_t i = 0; pre_check && i < plates.size(); ++i) {
@@ -11627,6 +11682,13 @@ int main(int argc, char** argv) {
         std::cerr << "Error: --export-3mf needs --slice\n";
         return 1;
     }
+    // The single-plate call (-o) and a run of model actions only write no
+    // result.json and no plate files; their outputs (-o, --export-settings,
+    // the object STL files) are checked here, before anything loads. --slice
+    // checks its own once its plate plan is final (run_slice_mode).
+    if (!o.slice_mode)
+        if (const int refused = check_run_outputs(o, {}))
+            return refused;
     if (o.arrange_forced() && !o.slice_mode) {
         std::cerr << "Error: --arrange needs --slice (the official CLI arranges inside its plate loop)\n";
         return 1;
