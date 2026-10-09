@@ -10212,7 +10212,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // The engine's own sentence names the plate and the filament
                 // and stops there ("Plate 1: Cool Plate does not support
                 // filament 2"). Its check reads the plate's own bed temperature
-                // key and reads 0 as "not this filament's plate", for every
+                // key with get_at and reads 0 as "not this filament's plate", for every
                 // filament the run prints with (Print.cpp 1700-1726 at 31f6803;
                 // Print.cpp 1650-1672 at 5873b5f; the filament list is
                 // Print::extruders(), Print.cpp 1265 / 1307; get_bed_temp_key,
@@ -10239,9 +10239,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             const auto* temps = config.option<Slic3r::ConfigOptionInts>(temp_key);
                             if (temps == nullptr || temps->values.empty())
                                 continue;
+                            // Read as the check reads it: get_at, so a list with
+                            // one value is that value for every filament.
                             bool every_filament = true;
                             for (unsigned int filament : used)
-                                if (filament >= temps->values.size() || temps->values[filament] == 0) {
+                                if (temps->get_at(filament) == 0) {
                                     every_filament = false;
                                     break;
                                 }
