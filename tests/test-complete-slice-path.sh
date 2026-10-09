@@ -479,6 +479,17 @@ grep -q '"tag":"ExportNameTaken"' stlclash/stdout || { show stlclash; fail "no E
 [ ! -e stlclash/stl/obj_1_cube.stl ] || fail "the object STL clash was written before it was refused"
 echo "PASS: the outputs are checked before the first write, with the loaded objects' own STL names"
 
+# The STL export stages each file under a name of its own (a random part,
+# created exclusively): a file kept beside the target under the old fixed
+# staging name (<target>.writing) is neither taken nor removed.
+mkdir -p stlkeep/stl
+printf 'keep me\n' > stlkeep/stl/obj_1_cube.stl.writing
+run stlkeep "$B" cube.stl --printer-preset "$A1M" --outputdir stlkeep --export-stl
+[ "$(rc stlkeep)" = 0 ] && [ -s stlkeep/stl/obj_1_cube.stl ] || { show stlkeep; fail "--export-stl beside a kept .writing file exit $(rc stlkeep)"; }
+[ "$(cat stlkeep/stl/obj_1_cube.stl.writing 2>/dev/null)" = "keep me" ] || fail "--export-stl took or removed the file kept as obj_1_cube.stl.writing"
+[ "$(ls stlkeep/stl | grep -c '\.writing$')" = 1 ] || fail "--export-stl left a staging file behind: $(ls stlkeep/stl)"
+echo "PASS: --export-stl stages under its own name and leaves a kept .writing file alone"
+
 # The check before the first write reserves every plate G-code the run could
 # write: for --slice 0, every plate of the project before its plan is final,
 # so an action given before --slice that names one is refused before it runs.

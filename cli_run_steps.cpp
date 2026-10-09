@@ -77,9 +77,24 @@ bool export_stls(const CliOptions& o, Slic3r::Model& model, const std::string& d
         // full disk leaves a short or empty file.
         Slic3r::TriangleMesh mesh = object->mesh();
         const uintmax_t expected = 84u + 50u * uintmax_t(mesh.its.indices.size());
-        const std::string part = path + ".writing";
-        boost::filesystem::remove(part, ec);
-        ec.clear();
+        // The staging file is this run's own: a name with a random part,
+        // created exclusively ("x": fails if the name exists), so it never
+        // takes or removes a file someone else keeps beside the target.
+        std::string part;
+        const boost::filesystem::path folder = boost::filesystem::path(path).parent_path();
+        for (int attempt = 0; attempt < 16 && part.empty(); ++attempt) {
+            const std::string name = boost::filesystem::path(path).filename().string() + "." +
+                                     boost::filesystem::unique_path("%%%%%%%%%%%%").string() + ".writing";
+            const std::string candidate = (folder / name).string();
+            if (FILE* created = boost::nowide::fopen(candidate.c_str(), "wbx")) {
+                std::fclose(created);
+                part = candidate;
+            }
+        }
+        if (part.empty()) {
+            failed_path = path;
+            return false;
+        }
         bool written = Slic3r::store_stl(part.c_str(), &mesh, true);
         if (written) {
             const uintmax_t size = boost::filesystem::file_size(part, ec);
