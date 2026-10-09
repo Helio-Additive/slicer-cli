@@ -217,7 +217,7 @@ if(ENGINE STREQUAL "bambu")
       NO_DEFAULT_PATH)
     if(NOT CGAL_FOUND)
       message(FATAL_ERROR
-        "BambuStudio v02.08.01.55 requires Bambu-patched CGAL 5.4. "
+        "BambuStudio v02.08.02.61 requires Bambu-patched CGAL 5.4. "
         "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
     endif()
   endif()
