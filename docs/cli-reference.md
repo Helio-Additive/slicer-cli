@@ -315,7 +315,7 @@ Transforms run in the order given, before the objects are placed.
 
 | Flag | Value | What it does | Works in |
 |-|-|-|-|
-| `--export-3mf` | file | With `--slice`: the sliced project, written into `--outputdir`; a name that would overwrite one of the run's own input files (`../project.3mf` onto the input project itself, or a file a model's loader reads beside it, such as the `.mtl` an OBJ's `mtllib` names), or a file the run writes (`result.json`, `plate_N.gcode`), is refused (-2) | both binaries |
+| `--export-3mf` | file | With `--slice`: the sliced project, written into `--outputdir`; a name that would overwrite one of the run's own input files (`../project.3mf` onto the input project itself, or a file a model's loader reads beside it, such as the `.mtl` an OBJ's `mtllib` names), or a file the run writes (`result.json`, `plate_N.gcode`, the `--export-settings` file, an `--export-stl`/`--export-stls` object STL, anything under `--export-slicedata`), is refused (-2). Names differ by case only where the file system tells them apart (Linux) | both binaries |
 | `--min-save` | `=0` or `=1` | Write the 3MF without the model geometry | both binaries |
 | `--metadata-name` | "n1;n2" | Metadata names for the 3MF (pair with `--metadata-value`) | both binaries |
 | `--metadata-value` | "v1;v2" | Metadata values for the 3MF | both binaries |
