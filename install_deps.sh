@@ -19,7 +19,7 @@ run_as_root() {
     fi
 }
 
-# BambuStudio v02.08.01.55 uses CGAL v5.4's Polygon_mesh_processing API.
+# BambuStudio v02.08.02.61 uses CGAL v5.4's Polygon_mesh_processing API.
 # CGAL 6 moved extract_boundary_cycles out of that namespace, so Bambu cannot
 # compile against it. Homebrew no longer ships cgal@5; use the
 # commit-pinned, Bambu-patched CGAL 5.4 source. The CMake compatibility

@@ -40,6 +40,9 @@ int run_arrange_spike(const char* dir){
     {ArrangePolygon a;a.poly=make_rect(30,20);a.name="A";a.height=50;a.brim_width=5;items.push_back(a);}
     {ArrangePolygon b;b.poly=make_rect(40,15);b.name="B";b.height=30;b.brim_width=5;items.push_back(b);}
     {ArrangePolygon c;c.poly=make_rect(25,25);c.name="C";c.height=60;c.brim_width=5;items.push_back(c);}
+    // The nester needs bed_idx >= 0 (default -1 is BIN_ID_UNFIT and the item is
+    // skipped); the desktop seeds bed 0 in get_arrange_poly (ModelArrange.cpp:98).
+    for(auto&ap:items)ap.bed_idx=0;
 
     ArrangeParams params;
 #ifdef ENGINE_ORCA

@@ -916,9 +916,11 @@ bool bbs_3mf_config_contains_nozzle_map(const std::string& filepath,
 // identity vectors are taken as a floor too, because Print::apply() derives its
 // own extruder count from filament_diameter (PrintApply.cpp:1504) and every
 // per-region filament index it admits must be inside the arrays extended here.
-// It sizes the per-filament alignment below on the Bambu build, and the 3MF
-// filament-index reset (PresetBundle.cpp 4090-4105, N =
-// filament_presets.size()) on the Orca build, so it is not gated.
+// It sizes the per-filament alignment below on the Bambu build, the 3MF
+// filament-index reset (PresetBundle.cpp 4127-4136, N = filament_presets.size())
+// on the Orca build, and the Orca filament-vector normalization
+// (normalize_filament_config_vectors, Preset.cpp 444-486), so it is not gated:
+// one definition is what keeps those passes agreeing on what the roster is.
 size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
     size_t count = 0;
     for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
@@ -1889,6 +1891,57 @@ bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config,
     return extended != 0;
 }
 #endif // ENGINE_BAMBU — BBS-only config-normalization helpers
+
+// ── Filament-vector normalization: the desktop's own rule ────────────────────
+//
+// Preset::normalize() sizes every filament vector to the filament count,
+// filling a slot it has to add with that option's definition default and
+// skipping only the two name lists and the variant tables (Preset.cpp 444-486
+// at OrcaSlicer v2.4.2, 442-487 at BambuStudio v02.08.02.61, citing the same
+// keys). The desktop reaches it for every preset it loads
+// (PresetBundle::load_config_model -> Preset::normalize), and
+// PresetBundle::full_fff_config then assembles the slicing config out of those
+// presets, so no filament vector the engine slices with is ever shorter than
+// the roster it prints.
+//
+// This build has no preset bundle on the Orca path: the flat project config
+// goes straight to Print::apply(). A project whose filament_printable is empty
+// or shorter than its roster therefore reached
+// Print::get_physical_unprintable_filaments, which reads
+// m_config.filament_printable.values[filament_idx] with no bounds check
+// (OrcaSlicer v2.4.2 Print.cpp:3229), and died with SIGSEGV inside
+// Print::_make_wipe_tower (Orca build, 10-filament X2D tower project,
+// 2026-10-03). The Bambu build already has the equivalent pass for its own
+// flat-config path (align_per_filament_config_vectors above).
+//
+// Only a vector shorter than the roster is touched; one already at the roster
+// length keeps every value it holds, so a project's own filament_printable is
+// never overwritten.
+size_t normalize_filament_config_vectors(Slic3r::DynamicPrintConfig& config) {
+    const size_t filament_count = project_filament_count(config);
+    if (filament_count == 0)
+        return 0;
+    const auto& defaults = Slic3r::FullPrintConfig::defaults();
+    size_t grown = 0;
+    for (const std::string& key : Slic3r::Preset::filament_options()) {
+        // The two Preset::normalize skips as well: lists of preset names.
+        if (key == "compatible_prints" || key == "compatible_printers")
+            continue;
+        // The per-(extruder x nozzle volume) variant tables, skipped there too:
+        // their length is the slot count, not the filament count.
+        if (Slic3r::filament_options_with_variant.count(key) > 0)
+            continue;
+        const Slic3r::ConfigOption* fill = defaults.option(key);
+        if (fill == nullptr)
+            continue;
+        auto* vec = dynamic_cast<Slic3r::ConfigOptionVectorBase*>(config.option(key, false));
+        if (vec == nullptr || vec->size() >= filament_count)
+            continue;
+        vec->resize(filament_count, fill);
+        ++grown;
+    }
+    return grown;
+}
 
 // Parse a numeric CLI argument, failing fast with usage instead of letting
 // std::stod/std::stoi throw an uncaught exception (which would SIGABRT). Used by
@@ -3357,9 +3410,20 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
     const int glb_support_intf_extr = arrange_opt(full_config, "support_interface_filament")->getInt();
     const int glb_support_extr      = arrange_opt(full_config, "support_filament")->getInt();
 #ifdef ENGINE_ORCA
-    const int glb_wall_extr          = arrange_opt(full_config, "wall_filament")->getInt();
-    const int glb_sparse_infill_extr = arrange_opt(full_config, "sparse_infill_filament")->getInt();
-    const int glb_solid_infill_extr  = arrange_opt(full_config, "solid_infill_filament")->getInt();
+    // OrcaSlicer v2.4.2 renamed the feature-filament keys to `*_id`, where 0
+    // means "Default" (PrintConfig.cpp handle_legacy, 8038-8058), and adds the
+    // surface and inner-wall keys (PartPlate.cpp 1671-1681). The wall pair
+    // falls back to each other, and top/bottom surface to internal solid.
+    int glb_outer_wall_extr = arrange_opt(full_config, "outer_wall_filament_id")->getInt();
+    int glb_inner_wall_extr = arrange_opt(full_config, "inner_wall_filament_id")->getInt();
+    if (glb_outer_wall_extr == 0) glb_outer_wall_extr = glb_inner_wall_extr;
+    if (glb_inner_wall_extr == 0) glb_inner_wall_extr = glb_outer_wall_extr;
+    const int glb_sparse_infill_extr  = arrange_opt(full_config, "sparse_infill_filament_id")->getInt();
+    const int glb_internal_solid_extr = arrange_opt(full_config, "internal_solid_filament_id")->getInt();
+    int glb_top_surface_extr    = arrange_opt(full_config, "top_surface_filament_id")->getInt();
+    int glb_bottom_surface_extr = arrange_opt(full_config, "bottom_surface_filament_id")->getInt();
+    if (glb_top_surface_extr == 0)    glb_top_surface_extr    = glb_internal_solid_extr;
+    if (glb_bottom_surface_extr == 0) glb_bottom_surface_extr = glb_internal_solid_extr;
 #endif
     bool glb_support = arrange_opt(full_config, "enable_support")->getBool();
     glb_support |= arrange_opt(full_config, "raft_layers")->getInt() > 0;
@@ -3408,30 +3472,65 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
             else if (glb_support_extr != 0)
                 plate_extruders.push_back(glb_support_extr);
 #ifdef ENGINE_ORCA
-            // Orca also lists the wall / infill filaments (PartPlate.cpp 1703-1728).
-            int obj_wall_extr = 1;
-            if (const ConfigOption* opt = object->config.option("wall_filament"))
-                obj_wall_extr = opt->getInt();
-            if (obj_wall_extr != 1)
-                plate_extruders.push_back(obj_wall_extr);
-            else if (glb_wall_extr != 1)
-                plate_extruders.push_back(glb_wall_extr);
+            // Orca also lists wall / infill / surface filaments (PartPlate.cpp
+            // 1744-1800, v2.4.2): every key is `*_id` and 0 is "Default".
+            int obj_outer_wall_extr = 0;
+            if (const ConfigOption* opt = object->config.option("outer_wall_filament_id"))
+                obj_outer_wall_extr = opt->getInt();
+            if (obj_outer_wall_extr == 0)
+                if (const ConfigOption* opt = object->config.option("inner_wall_filament_id"))
+                    obj_outer_wall_extr = opt->getInt();
+            if (obj_outer_wall_extr != 0)
+                plate_extruders.push_back(obj_outer_wall_extr);
+            else if (glb_outer_wall_extr != 0)
+                plate_extruders.push_back(glb_outer_wall_extr);
 
-            int obj_sparse_infill_extr = 1;
-            if (const ConfigOption* opt = object->config.option("sparse_infill_filament"))
+            int obj_inner_wall_extr = 0;
+            if (const ConfigOption* opt = object->config.option("inner_wall_filament_id"))
+                obj_inner_wall_extr = opt->getInt();
+            if (obj_inner_wall_extr == 0)
+                if (const ConfigOption* opt = object->config.option("outer_wall_filament_id"))
+                    obj_inner_wall_extr = opt->getInt();
+            if (obj_inner_wall_extr != 0)
+                plate_extruders.push_back(obj_inner_wall_extr);
+            else if (glb_inner_wall_extr != 0)
+                plate_extruders.push_back(glb_inner_wall_extr);
+
+            int obj_sparse_infill_extr = 0;
+            if (const ConfigOption* opt = object->config.option("sparse_infill_filament_id"))
                 obj_sparse_infill_extr = opt->getInt();
-            if (obj_sparse_infill_extr != 1)
+            if (obj_sparse_infill_extr != 0)
                 plate_extruders.push_back(obj_sparse_infill_extr);
-            else if (glb_sparse_infill_extr != 1)
+            else if (glb_sparse_infill_extr != 0)
                 plate_extruders.push_back(glb_sparse_infill_extr);
 
-            int obj_solid_infill_extr = 1;
-            if (const ConfigOption* opt = object->config.option("solid_infill_filament"))
-                obj_solid_infill_extr = opt->getInt();
-            if (obj_solid_infill_extr != 1)
-                plate_extruders.push_back(obj_solid_infill_extr);
-            else if (glb_solid_infill_extr != 1)
-                plate_extruders.push_back(glb_solid_infill_extr);
+            int obj_internal_solid_extr = 0;
+            if (const ConfigOption* opt = object->config.option("internal_solid_filament_id"))
+                obj_internal_solid_extr = opt->getInt();
+            if (obj_internal_solid_extr != 0)
+                plate_extruders.push_back(obj_internal_solid_extr);
+            else if (glb_internal_solid_extr != 0)
+                plate_extruders.push_back(glb_internal_solid_extr);
+
+            int obj_top_surface_extr = 0;
+            if (const ConfigOption* opt = object->config.option("top_surface_filament_id"))
+                obj_top_surface_extr = opt->getInt();
+            if (obj_top_surface_extr == 0)
+                obj_top_surface_extr = obj_internal_solid_extr;
+            if (obj_top_surface_extr != 0)
+                plate_extruders.push_back(obj_top_surface_extr);
+            else if (glb_top_surface_extr != 0)
+                plate_extruders.push_back(glb_top_surface_extr);
+
+            int obj_bottom_surface_extr = 0;
+            if (const ConfigOption* opt = object->config.option("bottom_surface_filament_id"))
+                obj_bottom_surface_extr = opt->getInt();
+            if (obj_bottom_surface_extr == 0)
+                obj_bottom_surface_extr = obj_internal_solid_extr;
+            if (obj_bottom_surface_extr != 0)
+                plate_extruders.push_back(obj_bottom_surface_extr);
+            else if (glb_bottom_surface_extr != 0)
+                plate_extruders.push_back(glb_bottom_surface_extr);
 #endif
         }
     }
@@ -7664,33 +7763,39 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     }
                 }
             }
-            // A Bambu Studio project states its filament indices from 0
-            // (BambuStudio PrintConfig.cpp 4359-4361 at 5873b5f) while this
-            // engine's ranges start at 1 (wall_filament PrintConfig.cpp
-            // 4887-4894 at 31f6803), so every one of those projects would be
-            // refused by the value check further down. The desktop reads the
-            // same file: it only warns about the values (Plater.cpp 6259-6272,
-            // "Invalid values found in the 3MF") and slices from
-            // PresetBundle::full_fff_config, which walks the same three 1-based
-            // keys back to 1 when they fall outside [1, N] and clamps
-            // support_filament / support_interface_filament /
-            // wipe_tower_filament to [0, N] (PresetBundle.cpp 4090-4105, with
-            // N = filament_presets.size(), 3866). Ported here, on the settings
-            // the run is sliced with and before that check: a key the file
-            // states in its own app's numbering is not a value this engine
-            // cannot read. Any other out-of-range value is left as it is and
-            // still refuses, exactly as the desktop leaves it (it does not
-            // clamp them either, e.g. a BambuStudio -1, its "auto").
+            // OrcaSlicer v2.4.2 numbers every feature-filament index from 0,
+            // where 0 is "Default" — the active object's or part's own
+            // filament (outer_wall_filament_id, PrintConfig.cpp 5011-5018, min
+            // 0, default 0) — and both apps' project files now carry those
+            // keys by that name: handle_legacy renames the old 1-based
+            // wall_filament / sparse_infill_filament / solid_infill_filament
+            // to their *_id spelling and maps a legacy "1" to "0"
+            // (PrintConfig.cpp 8038-8058). A Bambu Studio file's own 0 is
+            // therefore already a value this engine reads, and nothing has to
+            // be moved for it. Before the bump this block carried that 0 into
+            // this engine's 1-based range; v2.4.2 makes that half redundant.
+            //
+            // What the desktop still does on load, and this run now does on
+            // the settings it slices with, before the value check below: an
+            // index outside [0, N] falls back to 0 for the six feature
+            // filaments (PresetBundle.cpp 4127-4136), and support_filament /
+            // support_interface_filament / wipe_tower_filament clamp to
+            // [0, N] (PresetBundle.cpp 4119-4125), with N the filament count.
+            // Any other out-of-range value is left as it is and still
+            // refuses, exactly as the desktop leaves it (it does not clamp
+            // them either, e.g. a BambuStudio -1, its "auto").
             {
                 const size_t filament_count = std::max<size_t>(1, project_filament_count(config));
                 json reset = json::object();
                 json clamped = json::object();
-                for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"}) {
+                for (const char* key : {"outer_wall_filament_id", "inner_wall_filament_id",
+                                        "sparse_infill_filament_id", "internal_solid_filament_id",
+                                        "top_surface_filament_id", "bottom_surface_filament_id"}) {
                     auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(config.option(key, false));
-                    if (opt == nullptr || (opt->value >= 1 && opt->value <= int(filament_count)))
+                    if (opt == nullptr || (opt->value >= 0 && opt->value <= int(filament_count)))
                         continue;
-                    reset[key] = {{"from", opt->value}, {"to", 1}};
-                    opt->value = 1;
+                    reset[key] = {{"from", opt->value}, {"to", 0}};
+                    opt->value = 0;
                 }
                 for (const char* key : {"support_filament", "support_interface_filament", "wipe_tower_filament"}) {
                     auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(config.option(key, false));
@@ -7717,7 +7822,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                 {"filament_count", int(filament_count)},
                                 {"message","The 3mf states filament index value(s) outside this engine's range for its " +
                                            std::to_string(filament_count) + " filament(s): " + names +
-                                           " (its indices start at 1; the desktop resets the same keys on load)"}});
+                                           " (0 is Default; the desktop resets the same keys on load)"}});
                 }
             }
 #endif
@@ -10034,6 +10139,16 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
         try {
             std::cout << "Applying configuration...\n";
+#ifdef ENGINE_ORCA
+            // Last write before Print::apply snapshots the config: size every
+            // filament vector to the roster the project declares, the way the
+            // desktop's Preset::normalize does. Print::get_physical_unprintable_
+            // filaments reads filament_printable unchecked
+            // (Print.cpp:3229 at v2.4.2); the Bambu build's own alignment
+            // (align_per_filament_config_vectors above) already ran on its path.
+            if (size_t grown = normalize_filament_config_vectors(config); grown > 0 && verbose)
+                std::cout << "Filament vectors: " << grown << " array(s) sized to the roster\n";
+#endif
             {
                 // The plate's instances only, on the plate (see the Print's
                 // origin above). Print::apply copies the model it is given
@@ -11947,6 +12062,11 @@ int main(int argc, char** argv) {
         // Use get_arrange_polys -> arrange pipeline (same as GUI ArrangeJob)
         ModelInstancePtrs instances;
         auto input = get_arrange_polys(model, instances);
+        // get_arrange_polygon leaves bed_idx at its UNARRANGED (-1) default,
+        // which the nester skips as BIN_ID_UNFIT. Seed bed 0 as the desktop
+        // does (ModelArrange.cpp:98, `ap.bed_idx = 0;` in get_arrange_poly;
+        // same in Orca v2.4.2 src/libslic3r/ModelArrange.cpp:25).
+        for (auto& ap : input) ap.bed_idx = 0;
 
 #ifdef ENGINE_ORCA
         update_arrange_params(params, &cfg, input);
