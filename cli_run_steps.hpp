@@ -106,6 +106,14 @@ StepResult check_triangle_limit(const CliOptions& o, const Slic3r::Model& model,
 /// 6068, 6186), or empty when the flag is not given.
 std::string slicedata_dir(const CliOptions& o, const char* key, int plate);
 
+/// The file --export-stl / --export-stls writes for one object, numbered from
+/// 1 in model order: CLI::output_filepath, "<dir>/obj_<n>_<name>.stl"
+/// (BambuStudio.cpp 8531-8577 at 5873b5f; the same in OrcaSlicer.cpp at
+/// 31f6803), where <dir> is `path_dir` (--export-stls), or "<outputdir>/stl",
+/// or "stl". Makes no folder.
+std::string object_stl_file(const CliOptions& o, const Slic3r::ModelObject& object, unsigned index,
+                            const std::string& path_dir);
+
 /// The combinations the official command line refuses with CLI_INVALID_PARAMS:
 /// --load-slicedata with --repetitions (BambuStudio.cpp 6354-6359; OrcaSlicer.cpp
 /// 5487-5492) and, in OrcaSlicer only, --load-slicedata with --export-slicedata

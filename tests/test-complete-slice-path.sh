@@ -215,6 +215,25 @@ assert not bad, bad
 done
 [ "$FAILS" = "$rooted_before" ] && echo "PASS: a rooted 3MF member is skipped, named in an event, and the project still slices (both engines)"
 
+# A member whose folder name only holds two dots (Metadata/rev..1/data) stays
+# inside the run's folder: only a ".." component leaves it, as the OrcaSlicer
+# loader's is_path_within_root reads it (bbs_3mf.cpp 112-117 at 31f6803). Its
+# folder is made like any other, and the project slices.
+py '
+import zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("dots.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        zout.writestr(item, zin.read(item.filename))
+    zout.writestr("Metadata/rev..1/data", "<x/>")
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run dots-$e "$bin" dots.3mf --slice 1 --outputdir dots-$e/out
+    [ "$(rc dots-$e)" = 0 ] && [ -s dots-$e/out/plate_1.gcode ] || { show dots-$e; fail "$e: the 3MF with the member Metadata/rev..1/data did not slice"; }
+    ! grep -q '"tag":"ThreeMfMemberSkipped"' dots-$e/stdout || fail "$e: Metadata/rev..1/data was named as skipped"
+done
+echo "PASS: a 3MF member whose folder name holds two dots loads (both engines)"
+
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.
 run slice "$B" "$FIXTURE" --slice 1 --outputdir slice/out
 [ "$(rc slice)" = 0 ] || { show slice; fail "--slice 1 exit $(rc slice)"; }
@@ -406,6 +425,68 @@ import json; d = json.load(open("setclash/out/result.json"))
 assert d["return_code"] == -2 and "--export-settings" in d["error_string"], d
 '
 echo "PASS: --export-3mf refuses the file --export-settings writes"
+
+# Every output of a run is checked against the others, whether or not
+# --export-3mf is given: --export-settings onto the run's own result.json
+# (which the run writes last, over the settings) is refused before slicing.
+run setres "$B" "$FIXTURE" --slice 1 --outputdir setres/out --export-settings setres/out/result.json
+[ "$(rc setres)" != 0 ] || fail "--export-settings onto the run's own result.json was accepted"
+[ ! -e setres/out/plate_1.gcode ] || fail "the run sliced before refusing --export-settings onto result.json"
+py '
+import json; d = json.load(open("setres/out/result.json"))
+assert d["return_code"] == -2 and "--export-settings setres/out/result.json is the run'"'"'s own result.json in --outputdir" in d["error_string"], d
+' || { show setres; fail "--export-settings onto result.json: no ExportNameTaken refusal naming both"; }
+grep -q '"tag":"ExportNameTaken"' setres/stdout || { show setres; fail "no ExportNameTaken event for --export-settings onto result.json"; }
+echo "PASS: --export-settings onto the run's own result.json is refused without --export-3mf"
+
+# --export-slicedata into the folder --load-slicedata reads (or one inside the
+# other) would write over the cache the run loads from; --export-stl and
+# --export-stls into one folder write the same object STL files, the later
+# action over the earlier.
+run sdsame "$B" "$FIXTURE" --slice 1 --outputdir sdsame/out --load-slicedata sdsame/cache --export-slicedata sdsame/cache/sub
+[ "$(rc sdsame)" != 0 ] || fail "--export-slicedata inside the --load-slicedata folder was accepted"
+grep -q '"tag":"ExportOverwritesInput"' sdsame/stdout || { show sdsame; fail "no ExportOverwritesInput event for --export-slicedata inside --load-slicedata"; }
+grep -q 'would overwrite the folder --load-slicedata' sdsame/stderr || { show sdsame; fail "the refusal does not name --load-slicedata"; }
+run stlboth "$B" cube.stl --printer-preset "$A1M" --outputdir stlboth --export-stl --export-stls stlboth/stl
+[ "$(rc stlboth)" != 0 ] || fail "--export-stl and --export-stls into one folder were accepted"
+grep -q '"tag":"ExportNameTaken"' stlboth/stdout || { show stlboth; fail "no ExportNameTaken event for --export-stl with --export-stls"; }
+grep -q -- '--export-stl and --export-stls stlboth/stl write the same object STL file' stlboth/stderr ||
+    { show stlboth; fail "the refusal does not name both STL flags"; }
+echo "PASS: --export-slicedata over the --load-slicedata folder, and --export-stl with --export-stls into one folder, are refused"
+
+# The outputs are checked once the model is loaded and before the first one is
+# written: an action given before --slice that would write over the input
+# project is refused with the project untouched, and the object STL files are
+# the loaded objects' own names (a one-object cube writes only obj_1_*.stl, so
+# another file in that folder is no clash; obj_1_cube.stl is).
+cp "$FIXTURE" pre.3mf
+py '
+import hashlib; print(hashlib.md5(open("pre.3mf", "rb").read()).hexdigest())
+' > pre.md5
+run preset "$B" pre.3mf --export-settings pre.3mf --slice 1 --outputdir preset/out
+[ "$(rc preset)" != 0 ] || fail "--export-settings onto the input project before --slice was accepted"
+grep -q '"tag":"ExportOverwritesInput"' preset/stdout || { show preset; fail "no ExportOverwritesInput event for --export-settings onto the input project"; }
+py '
+import hashlib; assert hashlib.md5(open("pre.3mf", "rb").read()).hexdigest() == open("pre.md5").read().strip(), "pre.3mf changed"
+' || fail "--export-settings before --slice wrote over the input project before refusing"
+run stlnote "$B" cube.stl --printer-preset "$A1M" --outputdir stlnote --export-stl --export-settings stlnote/stl/obj_999_notes.stl
+[ "$(rc stlnote)" = 0 ] || { show stlnote; fail "--export-stl with --export-settings stl/obj_999_notes.stl exit $(rc stlnote)"; }
+ls stlnote/stl/obj_1_*.stl > /dev/null 2>&1 && [ -s stlnote/stl/obj_999_notes.stl ] ||
+    fail "--export-stl and --export-settings stl/obj_999_notes.stl did not both write"
+run stlclash "$B" cube.stl --printer-preset "$A1M" --outputdir stlclash --export-stl --export-settings stlclash/stl/obj_1_cube.stl
+[ "$(rc stlclash)" != 0 ] || fail "--export-settings onto the object STL --export-stl writes was accepted"
+grep -q '"tag":"ExportNameTaken"' stlclash/stdout || { show stlclash; fail "no ExportNameTaken event for the object STL clash"; }
+[ ! -e stlclash/stl/obj_1_cube.stl ] || fail "the object STL clash was written before it was refused"
+echo "PASS: the outputs are checked before the first write, with the loaded objects' own STL names"
+
+# The check before the first write reserves every plate G-code the run could
+# write: for --slice 0, every plate of the project before its plan is final,
+# so an action given before --slice that names one is refused before it runs.
+run preplate "$B" "$FIXTURE" --export-settings preplate/out/plate_1.gcode --slice 0 --outputdir preplate/out
+[ "$(rc preplate)" != 0 ] || fail "--export-settings onto plate_1.gcode with --slice 0 was accepted"
+grep -q '"tag":"ExportNameTaken"' preplate/stdout || { show preplate; fail "no ExportNameTaken event for --export-settings onto plate_1.gcode"; }
+[ ! -e preplate/out/plate_1.gcode ] || fail "--export-settings wrote plate_1.gcode before the refusal"
+echo "PASS: --slice 0 reserves every plate's G-code before the first action writes"
 
 # ... and a NAME that is a link to one of them (POSIX only: Git Bash on
 # Windows makes copies, not links).

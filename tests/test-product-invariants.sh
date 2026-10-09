@@ -99,6 +99,23 @@ PY
     then pass "I1 $e: --layout-plan exit 4, candidate JSON on stdout, UNFITTABLE on stderr"
     else fail "I1 $e: exit $(rc i1-$e) (want 4); stderr: $(tail -c 300 i1-$e/stderr)"; fi
 
+    # I5: every spelling the parser takes for the flag (one dash, an inline
+    # =value) gives the same streams: stderr holds JSON documents only (the
+    # resources line is left out), the last one UNFITTABLE.
+    for spelling in -layout-plan --layout-plan=1; do
+        n=i5$(printf '%s' "$spelling" | tr -c 'a-z0-9' '_')-$e
+        run $n "$bin" "$spelling" --input big-$e.json
+        if [ "$(rc $n)" = 4 ] && python3 - $n/stderr <<'PY'
+import json, sys
+lines = [l for l in open(sys.argv[1]) if l.strip()]
+assert lines, "stderr is empty"
+docs = [json.loads(l) for l in lines]
+assert docs[-1]["error"]["code"] == "UNFITTABLE", docs[-1]
+PY
+        then pass "I5 $e: $spelling gives stderr of JSON documents only, UNFITTABLE"
+        else fail "I5 $e: $spelling exit $(rc $n) (want 4); stderr: $(head -c 300 $n/stderr)"; fi
+    done
+
     # I2: SIGINT while it waits for a writer on its --input FIFO: exit 5,
     # CANCELLED on stderr, nothing on stdout.
     if [ "$(uname -s)" = Linux ] || [ "$(uname -s)" = Darwin ]; then
