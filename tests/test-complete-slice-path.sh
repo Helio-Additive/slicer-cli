@@ -215,6 +215,25 @@ assert not bad, bad
 done
 [ "$FAILS" = "$rooted_before" ] && echo "PASS: a rooted 3MF member is skipped, named in an event, and the project still slices (both engines)"
 
+# A member whose folder name only holds two dots (Metadata/rev..1/data) stays
+# inside the run's folder: only a ".." component leaves it, as the OrcaSlicer
+# loader's is_path_within_root reads it (bbs_3mf.cpp 112-117 at 31f6803). Its
+# folder is made like any other, and the project slices.
+py '
+import zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("dots.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        zout.writestr(item, zin.read(item.filename))
+    zout.writestr("Metadata/rev..1/data", "<x/>")
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run dots-$e "$bin" dots.3mf --slice 1 --outputdir dots-$e/out
+    [ "$(rc dots-$e)" = 0 ] && [ -s dots-$e/out/plate_1.gcode ] || { show dots-$e; fail "$e: the 3MF with the member Metadata/rev..1/data did not slice"; }
+    ! grep -q '"tag":"ThreeMfMemberSkipped"' dots-$e/stdout || fail "$e: Metadata/rev..1/data was named as skipped"
+done
+echo "PASS: a 3MF member whose folder name holds two dots loads (both engines)"
+
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.
 run slice "$B" "$FIXTURE" --slice 1 --outputdir slice/out
 [ "$(rc slice)" = 0 ] || { show slice; fail "--slice 1 exit $(rc slice)"; }

@@ -6610,7 +6610,8 @@ static void set_run_backup_path(Slic3r::Model& model) {
 /// loaders extract only members under Metadata/ and Auxiliaries/ (bbs_3mf.cpp
 /// 2036-2054 at 5873b5f), and the OrcaSlicer one also skips an absolute path
 /// (is_path_within_root, bbs_3mf.cpp 104-118 and 2798-2807 at 31f6803), so a
-/// rooted member is never extracted. A ".." member stays a skip, as before.
+/// rooted member is never extracted. A member with a ".." component stays a
+/// skip, as before.
 static void create_archive_dirs(const std::string& archive, const std::string& backup_root) {
     mz_zip_archive zip;
     mz_zip_zero_struct(&zip);
@@ -6641,8 +6642,17 @@ static void create_archive_dirs(const std::string& archive, const std::string& b
             continue;
         }
         // the loader refuses a path that leaves the backup folder (bbs_3mf.cpp
-        // 2909-2912 / 2804-2807): never create one here either
-        if (name.empty() || name[0] == '/' || name.find("..") != std::string::npos)
+        // 2909-2912 / 2804-2807): never create one here either. Like its
+        // is_path_within_root (OrcaSlicer bbs_3mf.cpp 112-117), a component
+        // that IS ".." is refused, not a name that merely holds two dots
+        // (Metadata/rev..1/data stays inside the folder).
+        bool parent_step = false;
+        for (const boost::filesystem::path& part : member)
+            if (part == "..") {
+                parent_step = true;
+                break;
+            }
+        if (name.empty() || name[0] == '/' || parent_step)
             continue;
         const size_t slash = name.find_last_of('/');
         if (slash == std::string::npos)
