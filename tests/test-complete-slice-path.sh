@@ -375,8 +375,18 @@ assert "{initial_no_support_extruder}" in g and "initial_no_support_filament_id"
 [ "$(grep -c '"tag":"LegacyGcodeTokenAliased"' legacy-export/stdout)" = 1 ] || fail "the placeholder alias was reported more than once"
 echo "PASS: the exported project states the custom G-code the slice ran (reported once)"
 
-# --export-3mf may not name the run's own result.json or plate G-code.
-for name in result.json PLATE_1.gcode; do
+# --export-3mf may not name the run's own result.json or plate G-code; a name
+# that differs only in case is the same file on Windows and macOS only.
+case "$(uname -s)" in
+MINGW*|MSYS*|CYGWIN*|Darwin) case_names="PLATE_1.gcode";;
+*)
+    case_names=""
+    run caseok "$B" "$FIXTURE" --slice 1 --outputdir caseok/out --export-3mf PLATE_1.gcode
+    [ "$(rc caseok)" = 0 ] && [ -s caseok/out/plate_1.gcode ] && [ -s caseok/out/PLATE_1.gcode ] ||
+        { show caseok; fail "--export-3mf PLATE_1.gcode beside plate_1.gcode on a case-sensitive file system exit $(rc caseok)"; }
+    echo "PASS: --export-3mf PLATE_1.gcode is another file than plate_1.gcode on a case-sensitive file system";;
+esac
+for name in result.json $case_names; do
     run clash "$B" "$FIXTURE" --slice 1 --outputdir clash/out --export-3mf "$name"
     [ "$(rc clash)" != 0 ] || fail "--export-3mf $name was accepted"
     grep -q '"tag":"ExportNameTaken"' clash/stdout || { show clash; fail "no ExportNameTaken event for $name"; }
@@ -387,6 +397,17 @@ assert d["return_code"] != 0 and "export-3mf" in d["error_string"], d
     rm -rf clash
 done
 echo "PASS: --export-3mf refuses the name of a file the run writes"
+
+# ... or the file another action of the run writes: --export-settings' file.
+run setclash "$B" "$FIXTURE" --slice 1 --outputdir setclash/out --export-settings setclash/out/settings.json \
+    --export-3mf settings.json
+[ "$(rc setclash)" != 0 ] || fail "--export-3mf onto the --export-settings file was accepted"
+grep -q '"tag":"ExportNameTaken"' setclash/stdout || { show setclash; fail "no ExportNameTaken event for the --export-settings file"; }
+py '
+import json; d = json.load(open("setclash/out/result.json"))
+assert d["return_code"] == -2 and "--export-settings" in d["error_string"], d
+'
+echo "PASS: --export-3mf refuses the file --export-settings writes"
 
 # ... and a NAME that is a link to one of them (POSIX only: Git Bash on
 # Windows makes copies, not links).
@@ -473,6 +494,25 @@ assert hashlib.md5(open(sys.argv[2], "rb").read()).hexdigest() == open(sys.argv[
     run escpartok-$e "$bin" --load-assemble-list esc-$e/list.json --slice 1 --printer-preset "$A1M" \
         --outputdir esc-$e/out --export-3mf ../listed.3mf
     [ "$(rc escpartok-$e)" = 0 ] && [ -s esc-$e/listed.3mf ] || { show escpartok-$e; fail "$e: an export beside the assemble list's part exit $(rc escpartok-$e)"; }
+    # ../PART.STL is the part itself where the file system ignores case
+    # (Windows, macOS) and another file where it does not (Linux).
+    run escpartcase-$e "$bin" --load-assemble-list esc-$e/list.json --slice 1 --printer-preset "$A1M" \
+        --outputdir esc-$e/out --export-3mf ../PART.STL
+    case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*|Darwin)
+        [ "$(rc escpartcase-$e)" != 0 ] || fail "$e: --export-3mf ../PART.STL onto part.stl was accepted"
+        grep -q '"tag":"ExportOverwritesInput"' escpartcase-$e/stdout || { show escpartcase-$e; fail "$e: ../PART.STL: no ExportOverwritesInput event"; };;
+    *)
+        [ "$(rc escpartcase-$e)" = 0 ] || { show escpartcase-$e; fail "$e: --export-3mf ../PART.STL beside part.stl on a case-sensitive file system exit $(rc escpartcase-$e)"; }
+        py '
+import sys, zipfile
+assert "Metadata/plate_1.gcode" in zipfile.ZipFile(sys.argv[1]).namelist()
+' esc-$e/PART.STL || fail "$e: ../PART.STL is not the sliced project";;
+    esac
+    py '
+import hashlib, sys
+assert hashlib.md5(open(sys.argv[1], "rb").read()).hexdigest() == open(sys.argv[2]).read().strip(), "part.stl changed"
+' esc-$e/part.stl esc-$e/part.md5 || fail "$e: ../PART.STL changed the assemble list's part.stl"
     # The files a loader reads beside a model are inputs too: the .mtl an
     # OBJ's mtllib names (load_obj, both engines), for an OBJ model file and
     # for an OBJ the assemble list names. The export onto it is refused and

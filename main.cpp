@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstring>
 #include <ctime>
 #include <iomanip>
@@ -11131,8 +11132,9 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     }
     // --export-3mf NAME is written into --outputdir next to result.json and
     // plate_N.gcode; a NAME that is one of them would overwrite it (or be
-    // overwritten). Compared without case: Windows and macOS file systems
-    // treat Result.json and result.json as one file. Links are followed
+    // overwritten). Compared without case on Windows and macOS, whose file
+    // systems treat Result.json and result.json as one file, and exactly on
+    // other systems. Links are followed
     // (the NAME's own link chain, then weakly_canonical for every existing
     // part),
     // and two existing names for one file (a hard link) are caught by
@@ -11209,34 +11211,92 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
                         side.push_back(std::move(s));
             inputs.insert(inputs.end(), side.begin(), side.end());
         }
-        const std::string target = key(target_path);
-        for (const std::string& input : inputs) {
+        // An export overwrites an input only when its target is that file: the
+        // inputs exist, so the file system says whether the two names are one
+        // file (fs::equivalent: links, hard links and the file system's own
+        // case rule). A target that does not exist overwrites nothing -- on a
+        // case-sensitive file system ../PART.STL is not part.stl.
+        boost::system::error_code target_ec;
+        if (fs::exists(target_path, target_ec))
+            for (const std::string& input : inputs) {
+                boost::system::error_code ec;
+                if (!(fs::equivalent(target_path, fs::path(input), ec) && !ec)) continue;
+                const std::string detail =
+                    "--export-3mf would overwrite the input file '" + input + "'; give it another name.";
+                write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+                                  cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
+                std::cerr << "Error: " << detail << "\n";
+                emit_event({{"event","input_error"}, {"tag","ExportOverwritesInput"}, {"message", detail}});
+                return CLI_INVALID_PARAMS;
+            }
+        // The files this run writes may not exist yet, so they are compared
+        // by name, the link chain followed (key): without case on Windows and
+        // macOS, whose file systems treat Result.json and result.json as one
+        // file, and exactly elsewhere.
+        const auto name_key = [&key](const fs::path& p) {
+#if defined(_WIN32) || defined(__APPLE__)
+            return boost::algorithm::to_lower_copy(key(p));
+#else
+            return key(p);
+#endif
+        };
+        const std::string target = name_key(target_path);
+        const auto same_name = [&](const fs::path& p) {
             boost::system::error_code ec;
-            const fs::path input_path(input);
-            const bool same_file = fs::equivalent(target_path, input_path, ec) && !ec;
-            if (!same_file && !boost::algorithm::iequals(target, key(input_path))) continue;
-            const std::string detail =
-                "--export-3mf would overwrite the input file '" + input + "'; give it another name.";
-            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
-                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
-            std::cerr << "Error: " << detail << "\n";
-            emit_event({{"event","input_error"}, {"tag","ExportOverwritesInput"}, {"message", detail}});
-            return CLI_INVALID_PARAMS;
-        }
-        std::vector<std::string> taken = {"result.json"};
-        for (int p : plates)
-            taken.push_back("plate_" + std::to_string(p) + ".gcode");
-        for (const std::string& name : taken) {
-            boost::system::error_code ec;
-            const bool same_file = fs::equivalent(target_path, outdir / name, ec) && !ec;
-            if (!same_file && !boost::algorithm::iequals(target, key(outdir / name))) continue;
-            const std::string detail = "--export-3mf " + o.export_3mf + " is the run's own " + name +
-                                       " in --outputdir; choose another name.";
+            return (fs::equivalent(target_path, p, ec) && !ec) || target == name_key(p);
+        };
+        const auto refuse_taken = [&](const std::string& detail) {
             write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
                               cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
             std::cerr << "Error: " << detail << "\n";
             emit_event({{"event","input_error"}, {"tag","ExportNameTaken"}, {"message", detail}});
             return CLI_INVALID_PARAMS;
+        };
+        std::vector<std::string> taken = {"result.json"};
+        for (int p : plates)
+            taken.push_back("plate_" + std::to_string(p) + ".gcode");
+        for (const std::string& name : taken)
+            if (same_name(outdir / name))
+                return refuse_taken("--export-3mf " + o.export_3mf + " is the run's own " + name +
+                                    " in --outputdir; choose another name.");
+        // The files the run's other actions write: --export-settings' file,
+        // the STL files of --export-stl / --export-stls
+        // ("<folder>/obj_<n>_<name>.stl", object_stl_path) and the plate
+        // folders under --export-slicedata. Whichever is written last would
+        // replace the other.
+        for (const std::string& action : o.actions) {
+            if (action == "export_settings") {
+                const std::string file = o.cli.opt_string("export_settings");
+                if (!file.empty() && same_name(fs::path(file)))
+                    return refuse_taken("--export-3mf " + o.export_3mf + " is the file --export-settings " + file +
+                                        " writes; choose another name.");
+            } else if (action == "export_stl" || action == "export_stls") {
+                std::string folder = action == "export_stls" ? o.cli.opt_string("export_stls") : std::string();
+                if (folder.empty())
+                    folder = o.outputdir.empty() ? std::string("stl") : o.outputdir + "/stl";
+                std::string file = target_path.filename().string();
+#if defined(_WIN32) || defined(__APPLE__)
+                boost::algorithm::to_lower(file);
+#endif
+                size_t digits = 4;
+                while (digits < file.size() && std::isdigit(static_cast<unsigned char>(file[digits]))) ++digits;
+                const bool stl_name = boost::algorithm::starts_with(file, "obj_") && digits > 4 &&
+                                      digits < file.size() && file[digits] == '_' &&
+                                      boost::algorithm::ends_with(file, ".stl");
+                if (stl_name && same_name(fs::path(folder) / target_path.filename()))
+                    return refuse_taken("--export-3mf " + o.export_3mf + " is one of the object STL files --" +
+                                        (action == "export_stls" ? "export-stls" : "export-stl") + " writes in " +
+                                        folder + "; choose another name.");
+            }
+        }
+        for (int p : plates) {
+            const std::string folder = slicer_cli::slicedata_dir(o, "export_slicedata", p);
+            if (folder.empty())
+                continue;
+            const std::string prefix = name_key(fs::path(folder)) + "/";
+            if (boost::algorithm::starts_with(target, prefix) || same_name(fs::path(folder)))
+                return refuse_taken("--export-3mf " + o.export_3mf + " is inside the folder --export-slicedata writes (" +
+                                    folder + "); choose another name.");
         }
     }
 

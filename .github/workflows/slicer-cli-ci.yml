@@ -11,6 +11,11 @@ on:
       - "libslic3r/bambustudio/**"
       - ".github/workflows/slicer-cli-*.yml"
   pull_request:
+    # A draft PR runs no CI; marking it ready (ready_for_review) starts it.
+    # converted_to_draft starts a run whose jobs all skip: it shares the
+    # concurrency group (workflow + ref, the same for every PR activity) and
+    # so cancels a run still going on the PR.
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "**"
       - "libslic3r/bambustudio/**"
@@ -26,6 +31,7 @@ permissions:
 jobs:
   linux-occt:
     name: Provision Linux OpenCASCADE 7.6.0
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -97,6 +103,7 @@ jobs:
 
   linux-boost:
     name: Provision Linux Boost 1.84.0
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-22.04
     steps:
       - name: Install Boost build tools
@@ -801,6 +808,7 @@ jobs:
 
   build-nonlinux:
     name: Build & Test — ${{ matrix.os }} (${{ matrix.engine }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
