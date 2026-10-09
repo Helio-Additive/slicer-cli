@@ -1,163 +1,108 @@
 # slicer-cli
 
-Standalone dual-engine command-line slicer derived from BambuStudio and
-OrcaSlicer's `libslic3r` forks. AGPLv3.
+Command-line slicers built from the Bambu Studio and OrcaSlicer slicing
+engines. No user interface: give it a model or a project, get G-code.
 
-`slicer-cli` is the AGPL boundary that closed apps subprocess. Run it directly,
-embed it in CI, or wrap it from any tool that wants reproducible BambuStudio-
-compatible STL → gcode slicing without dragging in a UI.
+A release package holds two programs:
+
+| Program | Engine |
+|-|-|
+| `slicer_cli` | Bambu Studio 02.08.01.55 (source pin `5873b5f`) |
+| `slicer_cli-orcaslicer` | OrcaSlicer 2.4.0-alpha (source pin `31f6803`) |
+
+Each program slices with its engine's own code and its own printer, process
+and filament profiles, so a file sliced here gives the G-code the desktop app
+gives for the same settings. Flags that share a name with Bambu Studio's or
+OrcaSlicer's own command line behave the same way.
+
+## Install
+
+Download the package for your system from the
+[releases page](https://github.com/Helio-Additive/slicer-cli/releases) and
+extract it:
+
+| System | Package | Programs |
+|-|-|-|
+| Linux x86_64 (glibc 2.35 or later) | `slicer-cli-v<version>-linux-x86_64.tar.gz` | `bin/slicer_cli`, `bin/slicer_cli-orcaslicer` |
+| macOS arm64 | `slicer-cli-v<version>-macos-arm64.tar.gz` | `slicer_cli`, `slicer_cli-orcaslicer` |
+| Windows x86_64 | `slicer-cli-v<version>-windows-x86_64.zip` | `slicer_cli.exe`, `slicer_cli-orcaslicer.exe` |
+
+Keep the programs inside the extracted folder: they read their profiles and
+engine data from the `resources` folder beside them. The macOS and Windows
+builds are not notarized or code-signed.
+
+To build from source instead, see [docs/building.md](docs/building.md).
+
+## Quick start
+
+The examples use the Linux paths; on macOS and Windows run the programs from
+the top of the extracted folder.
+
+Slice one plate of a Bambu Studio or OrcaSlicer project. The project's own
+printer, process and filaments are used:
+
+```sh
+./bin/slicer_cli model.3mf --plate 1 -o plate1.gcode
+```
+
+Slice a model file for a printer, by preset name (the names the desktop app
+shows). The process and filament default to the printer's own:
+
+```sh
+./bin/slicer_cli part.stl --printer-preset "Bambu Lab A1 mini 0.4 nozzle" -o part.gcode
+./bin/slicer_cli-orcaslicer part.stl --printer-preset "Snapmaker U1 (0.4 nozzle)" \
+    --process-preset "0.20 Standard @Snapmaker U1 (0.4 nozzle)" -o part.gcode
+```
+
+Move a saved project to another printer the same way, by the name the desktop
+app shows:
+
+```sh
+./bin/slicer_cli-orcaslicer project.3mf --printer-preset "Snapmaker U1 (0.4 nozzle)" \
+    --slice 1 --outputdir out
+```
+
+Use the official command-line form, which writes `result.json` with the
+outcome of each plate and exports a sliced project:
+
+```sh
+./bin/slicer_cli model.3mf --slice 0 --outputdir out --export-3mf sliced.3mf
+```
+
+Change any print setting with a flag of the same name:
+
+```sh
+./bin/slicer_cli part.stl --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+    --sparse-infill-density 15% --wall-loops 3 --curr-bed-type "Textured PEI Plate" -o part.gcode
+```
+
+List the presets of an engine, or the ones that suit a printer:
+
+```sh
+./bin/slicer_cli --list-presets
+./bin/slicer_cli-orcaslicer --list-presets --printer "Prusa MK4 0.4 nozzle"
+```
+
+`--help` lists every flag of the program you run. Check the printer, nozzle and
+material settings before you print.
+
+## Documentation
+
+- [Command-line reference](docs/cli-reference.md): every flag, the outputs,
+  `result.json`, the event lines and the return codes.
+- [Building from source](docs/building.md): both engines on Linux, macOS and
+  Windows, the pinned versions and the engine override layer.
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
 ## License
 
 AGPL-3.0-or-later. See `LICENSE`.
 
-This project includes separate BambuStudio and OrcaSlicer engine binaries. Both
-are derived from PrusaSlicer and Slic3r under AGPLv3. The full attribution chain
-and engine-specific dependency provenance are in `NOTICE`.
+Both engines derive from PrusaSlicer and Slic3r under the AGPL. The
+attribution chain and the third-party licenses are in `NOTICE` and in the
+package's `THIRD_PARTY_LICENSES` folder.
 
 If you run `slicer-cli` (or a modified version of it) on a server and let
-network users interact with it, AGPL § 13 requires you to offer them the
-source. The recommended pattern is a "Source" link in the UI of whatever
-service wraps the binary. The Helio closed apps wrap `slicer-cli` via
-subprocess invocation only — no AGPL linking — so their UIs are not bound by
-§ 13; this README is for direct downstream consumers who are.
-
-## What it does
-
-- Reads STL or 3MF input.
-- Resolves a printer / filament / process profile triple (BBL profile schema —
-  same as BambuStudio).
-- Generates G-code byte-identical to what BambuStudio Desktop would produce
-  for the same inputs (within the supported-feature matrix below).
-
-## What it does NOT do
-
-This is `libslic3r`-headless. The following upstream features are intentionally
-excluded; full list with rationale and user-visible behaviour in
-`docs/slicer-cli-supported-features.md`:
-
-- SLA hollowing (`OpenVDBUtils.cpp`, `SLA/Hollowing.cpp`)
-- Mesh cutting (`CutSurface.cpp` — incompatible with system CGAL 6.x)
-- User post-processor scripts (`PostProcessor.cpp` — security-sensitive,
-  out of v1 scope)
-- Network printer push (`GCodeSender.cpp`)
-- Pressure equalizer (`PressureEqualizer.cpp`)
-
-Any of these surfacing as a CLI flag returns a clear capability error rather
-than silently mis-processing. A regression test per excluded feature pins the
-behaviour.
-
-## Build
-
-Dependencies are system packages — see `install_deps.sh`.
-
-```sh
-git clone --recurse-submodules https://github.com/<org>/slicer-cli.git
-cd slicer-cli
-./install_deps.sh        # installs Homebrew / apt packages
-mkdir -p cli/build && cd cli/build
-cmake ..
-cmake --build . -j
-./slicer_cli --help
-```
-
-Submodule pin: `references/BambuStudio` is pinned at a known-good commit
-(see `.gitmodules`). Bumping the pin is a deliberate maintenance action —
-it can ripple through the override layer and the patched libigl tree. Test on
-a feature branch first.
-
-## Releases
-
-Release builds are produced by GitHub Actions (`.github/workflows/`) for:
-
-- Linux x86_64
-- macOS arm64
-- Windows x86_64
-
-Linux packages target Ubuntu 22.04/glibc 2.35 and bundle non-glibc runtime
-libraries. macOS packages bundle non-system dylibs and reject Homebrew or build
-paths. CI artifacts are not currently notarized or Authenticode-signed.
-
-The engine dependency contract, upstream-aligned pins, and documented platform
-exceptions are recorded in `docs/engine-dependency-contract.md`.
-
-Package metadata identifies the artefact as `slicer_cli` (not `BambuStudio`).
-A CI assertion fails the build if the metadata regresses.
-
-## Using a release package
-
-Choose the engine by choosing its binary: `slicer_cli` uses BambuStudio;
-`slicer_cli-orcaslicer` uses OrcaSlicer. Run the examples from the extracted
-`slicer-cli` directory, using profiles from the matching engine's tree.
-On Linux the binaries live under `bin/` inside the extracted `slicer-cli`
-directory (`./bin/slicer_cli`, `./bin/slicer_cli-orcaslicer`) and nothing
-launches from that directory's top level; the macOS and Windows archives keep
-their flat layout with the binaries directly inside `slicer-cli`. On Windows,
-use the corresponding `.exe` filename.
-
-On every platform, the BambuStudio package reconstructs named presets from
-the bundled profiles when reading a Bambu 3MF (the archive ships the `BBL`
-profile tree and its `BBL.json` vendor index, and each package job slices a
-Bambu 3MF from the extracted archive and requires the three presets to
-resolve):
-
-```sh
-./bin/slicer_cli model.3mf -o bambu.gcode          # Linux
-./slicer_cli model.3mf -o bambu.gcode              # macOS / Windows (.exe)
-```
-
-Both engines also read their slice-time resource folders from the package:
-the Bambu engine `resources/info`, `resources/flush` and
-`resources/filament_mixing`; the Orca engine its own `resources/orca/info`
-and `resources/orca/flush`. Each engine prints the root it configured on
-stderr at startup (`Engine resources: …`), except under `--layout-plan`,
-whose stdout and stderr are JSON documents.
-
-For OrcaSlicer, this example selects the packaged Snapmaker U1 profiles
-(shown with the Linux `bin/` path; on macOS and Windows run
-`./slicer_cli-orcaslicer` from the extracted `slicer-cli` directory).
-First supply `resolved-orca-config.json` containing their complete inherited
-settings. The caller must resolve the profiles' `inherits` chains: the CLI
-loads JSON overrides directly and does not resolve those chains itself.
-Passing only the leaf files below would leave parent settings at defaults.
-
-```sh
-./bin/slicer_cli-orcaslicer model.stl \
-  --config resolved-orca-config.json \
-  --machine 'resources/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json' \
-  --filament 'resources/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json' \
-  --process 'resources/profiles-orca/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json' \
-  -o orca.gcode
-```
-
-Use profiles matching your actual printer, nozzle, and material before printing.
-
-## Versioning
-
-`slicer-cli` uses semver. The major version may bump when the supported-
-feature matrix narrows. The version reported in gcode headers is the pinned
-BambuStudio submodule version + a `slicer-cli/<version>` suffix so you can
-tell which lineage produced the output.
-
-## Contributing
-
-See `CONTRIBUTING.md`. External PRs require signing the CLA (preserves
-dual-licence optionality) and a green CI build on all three platforms.
-
-## Security
-
-See `SECURITY.md` for the disclosure policy.
-
-## Related projects
-
-`slicer-cli` is one of two repos in the Helio source release:
-
-- **`slicer-cli` (this repo, public AGPLv3)** — the engine.
-- **`helio-platform` (private, commercial)** — the Tauri client, the Rust
-  MCP server, the React UI, the rust-server cloud deploy, the Helio agent
-  intelligence. Subprocess-invokes `slicer-cli`. No linking, no AGPL
-  propagation.
-
-This separation is intentional: AGPLv3 stays pinned to the engine where it
-actually matters; closed-product code stays closed without cross-contaminating
-licences.
+network users interact with it, AGPL section 13 requires you to offer them the
+source, for example with a "Source" link in the service.

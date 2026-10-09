@@ -11,6 +11,11 @@ on:
       - "libslic3r/bambustudio/**"
       - ".github/workflows/slicer-cli-*.yml"
   pull_request:
+    # A draft PR runs no CI; marking it ready (ready_for_review) starts it.
+    # converted_to_draft starts a run whose jobs all skip: it shares the
+    # concurrency group (workflow + ref, the same for every PR activity) and
+    # so cancels a run still going on the PR.
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "**"
       - "libslic3r/bambustudio/**"
@@ -26,6 +31,7 @@ permissions:
 jobs:
   linux-occt:
     name: Provision Linux OpenCASCADE 7.6.0
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -97,6 +103,7 @@ jobs:
 
   linux-boost:
     name: Provision Linux Boost 1.84.0
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-22.04
     steps:
       - name: Install Boost build tools
@@ -694,14 +701,16 @@ jobs:
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
 
-      - name: Run structured-diagnostics event tests (bambu)
-        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+      - name: Run structured-diagnostics event tests (${{ matrix.engine }})
+        # Engine-aware: the script reads the engine from `layout capabilities`
+        # and uses that engine's fixture and profiles.
+        if: runner.os != 'Windows'
         run: bash tests/test_diagnostic_events.sh build/slicer_cli
 
-      - name: Run feature-exclusion regression tests (bambu)
-        # BambuStudio-specific excluded-source set; orca's differs, so this gates
-        # the bambu engine only. Orca gets a plain --help smoke below.
-        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+      - name: Run feature-exclusion regression tests (${{ matrix.engine }})
+        # Engine-aware: each engine slices its own fixtures; checks of a
+        # Bambu-only feature (pressure_advance_pattern) SKIP on Orca with the reason.
+        if: runner.os != 'Windows'
         run: bash tests/test_excluded_features.sh build/slicer_cli
 
       - name: Test diagnostic transport
@@ -799,6 +808,7 @@ jobs:
 
   build-nonlinux:
     name: Build & Test — ${{ matrix.os }} (${{ matrix.engine }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -1276,17 +1286,18 @@ jobs:
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
 
-      - name: Run feature-exclusion regression tests (bambu)
-        # BambuStudio-specific excluded-source set; orca's differs, so this gates
-        # the bambu engine only. Orca gets a plain --help smoke below.
-        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+      - name: Run feature-exclusion regression tests (${{ matrix.engine }})
+        # Engine-aware: each engine slices its own fixtures; checks of a
+        # Bambu-only feature (pressure_advance_pattern) SKIP on Orca with the reason.
+        if: runner.os != 'Windows'
         run: bash tests/test_excluded_features.sh build/slicer_cli
 
-      - name: Run structured-diagnostics event tests (bambu)
+      - name: Run structured-diagnostics event tests (${{ matrix.engine }})
         # Asserts engine diagnostics reach stdout as [[SLICER_EVENT]] lines on
         # the slice path with unchanged exit codes, and that the strict-JSON
         # paths (layout capabilities / --layout-plan) stay single-document.
-        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        # Engine-aware: the script uses this engine's fixture and profiles.
+        if: runner.os != 'Windows'
         run: bash tests/test_diagnostic_events.sh build/slicer_cli
 
       - name: Test diagnostic transport
@@ -1390,6 +1401,8 @@ jobs:
     name: Package — ${{ matrix.os }}
     needs: build-nonlinux
     runs-on: ${{ matrix.runner }}
+    # Backstop: a hung test fails the job instead of holding it for hours.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -1538,6 +1551,31 @@ jobs:
           test -f dist/verify/slicer-cli/resources/profiles/BBL.json
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
+          # Hang watchdog for the tests below: every 60 s, any slicer_cli or
+          # slicer_cli-orcaslicer process running for 20 min or more is sampled
+          # to $RUNNER_TEMP/hang-<pid>.txt (uploaded on failure), its command
+          # line and the first 80 lines of the sample are printed, and it is
+          # killed, so a hung case fails instead of walling the job for hours.
+          # bash 3.2 (the runner's /bin/bash): no wait -n, no associative arrays.
+          hang_watchdog() {
+            set +e +o pipefail   # a failed probe must not end the watchdog
+            while sleep 60; do
+              ps -axo pid=,etime=,command= | while read -r pid etime cmd; do
+                exe="${cmd%% *}"; exe="${exe##*/}"
+                case "$exe" in slicer_cli|slicer_cli-orcaslicer) ;; *) continue ;; esac
+                secs=$(echo "$etime" | awk -F'[-:]' '{n=NF; s=$n+60*$(n-1); if (n>=3) s+=3600*$(n-2); if (n==4) s+=86400*$1; print s}')
+                [ "$secs" -ge 1200 ] || continue
+                echo "::error::hang watchdog: $exe (pid $pid) has run for $etime; sampling and killing it"
+                ps -o command= -p "$pid" || true
+                sample "$pid" 10 -file "$RUNNER_TEMP/hang-$pid.txt" >/dev/null 2>&1 || true
+                head -n 80 "$RUNNER_TEMP/hang-$pid.txt" 2>/dev/null || true
+                kill -KILL "$pid" 2>/dev/null || true
+              done
+            done
+          }
+          hang_watchdog &
+          HANG_WATCHDOG=$!
+          trap 'kill "$HANG_WATCHDOG" 2>/dev/null || true' EXIT
           # A packaged slice must resolve presets from the package and read the
           # resource folders without a swallowed parse error (libslic3r logs
           # "parse info/…" and continues on its hardcoded tables).
@@ -1545,6 +1583,15 @@ jobs:
           # The complete slice path (--slice, --arrange, presets by name, --export-3mf,
           # --info, --list-presets) and the default-path checks, on both engines.
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          kill "$HANG_WATCHDOG" 2>/dev/null || true
+
+      - name: Upload hang samples (macOS)
+        if: failure() && matrix.os == 'macOS-arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hang-samples-${{ matrix.os }}
+          path: ${{ runner.temp }}/hang-*.txt
+          if-no-files-found: ignore
 
       - name: Assemble + validate package (Windows x86_64)
         if: matrix.os == 'Windows-x86_64'
@@ -1667,6 +1714,8 @@ jobs:
     name: Package - Linux x86_64
     needs: build-linux
     runs-on: ubuntu-22.04
+    # Backstop: a hung test fails the job instead of holding it for hours.
+    timeout-minutes: 90
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
@@ -1692,6 +1741,7 @@ jobs:
             libmpfr6 \
             libnlopt0 \
             libopencv-core4.5d \
+            libopencv-imgproc4.5d \
             libpng16-16 \
             libqhullcpp8.0 \
             libtbb12 \
@@ -1828,7 +1878,42 @@ jobs:
           dist/verify/slicer-cli/bin/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/bin/slicer_cli-orcaslicer --help >/dev/null
           bash tests/test-portable-bundle.sh dist/verify/slicer-cli
+          # A slicer run that crashes (rc 139 / 134) leaves its core in
+          # $RUNNER_TEMP/cores for the backtrace step below.
+          mkdir -p "$RUNNER_TEMP/cores"
+          ulimit -c unlimited
+          sudo sysctl -w kernel.core_pattern="$RUNNER_TEMP/cores/core.%e.%p" || echo "core_pattern not settable; no cores this run"
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/bin/slicer_cli dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
+
+      - name: Backtraces of crashed slicer runs (Linux)
+        if: failure()
+        shell: bash
+        run: |
+          set -u
+          shopt -s nullglob
+          cores=("$RUNNER_TEMP"/cores/core.*)
+          if [ ${#cores[@]} = 0 ]; then echo "no core files"; exit 0; fi
+          command -v gdb >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq gdb; }
+          for c in "${cores[@]}"; do
+            # core.%e: the executable's name, cut to 15 characters by the kernel.
+            case "$(basename "$c")" in
+              core.slicer_cli-orca*) bin=dist/verify/slicer-cli/bin/slicer_cli-orcaslicer ;;
+              core.slicer_cli.*) bin=dist/verify/slicer-cli/bin/slicer_cli ;;
+              *) echo "== $c: not a slicer run"; continue ;;
+            esac
+            echo "::error::crashed slicer run: $c ($bin)"
+            gdb -batch -ex "thread apply all bt" "$bin" "$c" 2>&1 | grep -v "^warning: " | head -n 400
+            cp "$bin" "$RUNNER_TEMP/cores/" || true
+          done
+
+      - name: Upload crashed-run cores (Linux)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-cores-Linux-x86_64
+          path: ${{ runner.temp }}/cores/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload Linux release package artifact
         uses: actions/upload-artifact@v4

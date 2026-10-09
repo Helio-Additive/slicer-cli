@@ -10,45 +10,65 @@ The CLA bot will comment on your first PR with instructions.
 
 > **Why a CLA for an AGPL project?** The AGPL covers distribution and network
 > use. The CLA additionally grants Helio a non-exclusive licence to use
-> contributions in closed commercial builds (the Helio Tauri client, cloud
-> server) that invoke `slicer-cli` via subprocess. This separation is the legal
-> basis for the open/closed boundary described in `README.md`.
+> contributions in commercial builds that run `slicer-cli` as a separate
+> program.
 
 ## What to contribute
 
-Good first contributions:
-- **Bug fixes** in the supported-feature matrix (see `docs/slicer-cli-supported-features.md`)
-- **Dependency updates** — when a system dep (Boost, Eigen, CGAL) releases a
-  new major version, the compat shims in `cli/CMakeLists.txt` may need updating
-- **Platform CI fixes** — if a release target (Linux arm64, Windows, etc.)
-  breaks, a PR that restores it is very welcome
-- **Profile additions / corrections** for printers and filaments under
-  `references/BambuStudio/resources/profiles/` — but note these go upstream to
-  BambuStudio first; file there, then bump our submodule pin here
+Welcome:
+- **Bug fixes**, for either engine. A fix to slicing behaviour should match
+  what the desktop app (Bambu Studio or OrcaSlicer) does at the pinned
+  version, and cite the lines it follows.
+- **Command-line parity**: a flag of Bambu Studio's or OrcaSlicer's own
+  command line that slicer-cli refuses, ported so it behaves the same way.
+- **Dependency updates**: when a dependency (Boost, Eigen, CGAL, OpenCASCADE)
+  changes, the build in `CMakeLists.txt`, `install_deps.sh` and the workflow
+  may need updating.
+- **Platform fixes**: a PR that restores a broken release target is very
+  welcome.
 
-**Not accepted (for now)**:
-- New upstream `libslic3r` features — this CLI tracks the BambuStudio submodule;
-  features belong upstream
-- New CLI flags that exercise excluded features (SLA, mesh-cut, post-processor) —
-  bring the dependency situation up to scratch first, then open an issue
-- Changes that cause the binary to fail the clean-host smoke test or the
-  package-metadata CI assertion
+Not accepted for now:
+- Changes to the engine source under `references/`. It tracks the pinned
+  engine commits as they are; see "Engine source" below.
+- Printer, filament or process profile changes. Profiles come from the engines;
+  send them to Bambu Studio or OrcaSlicer, and they arrive here with the next
+  pin.
+- Changes that break the release packages or their tests on any platform.
+
+## Both engines
+
+Every change to how slicing behaves must work in both programs, `slicer_cli`
+(Bambu Studio engine) and `slicer_cli-orcaslicer` (OrcaSlicer engine), on
+Linux, macOS and Windows. Where the engines differ, follow each engine's own
+code and say which one a line applies to. Code that only one engine compiles
+goes under `#ifdef ENGINE_ORCA` / `#ifndef ENGINE_ORCA`.
+
+Text that slicer-cli prints while it runs (stdout, stderr, event lines,
+`result.json`) is read by other programs. Do not change existing messages,
+event kinds and tags, `result.json` keys or return codes in a fix; add new
+ones instead.
+
+## Engine source
+
+The engine source (`references/BambuStudio`, `references/OrcaSlicer`) is not
+edited. To change a `libslic3r` file for the command-line build, add a file
+at the same relative path under `libslic3r/bambustudio/libslic3r/` or
+`libslic3r/orcaslicer/libslic3r/`; CMake compiles it in place of the engine's
+file. See "The override layer" in [docs/building.md](docs/building.md).
 
 ## CI requirements
 
-PRs must be green on all three platforms before merge:
+PRs must build and pass the tests on all three platforms, for both engines:
 - Linux x86_64
 - macOS arm64
 - Windows x86_64
 
-The CI matrix is in `.github/workflows/slicer-cli-*.yml`.
+The workflow is `.github/workflows/slicer-cli-ci.yml`. To build locally, see
+[docs/building.md](docs/building.md).
 
 ## Style
 
-The reference source (`references/BambuStudio/src/libslic3r/`) is **not
-editable** — it tracks the BambuStudio upstream byte-for-byte. If you need to
-change the behaviour of a reference file, add an override file at the same
-relative path under `libslic3r/bambustudio/libslic3r/`. See the override
-mechanism description in `cli/CMakeLists.txt`.
-
-C++17, same conventions as BambuStudio.
+C++17, the same conventions as the engine source. New command-line code goes
+in its own files (`cli_*.cpp`), not in `main.cpp`. Comments cite the engine
+lines a behaviour comes from as `BambuStudio.cpp 1234` or `OrcaSlicer.cpp
+1234`, at the pinned commits.

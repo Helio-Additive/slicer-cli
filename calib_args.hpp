@@ -1,4 +1,4 @@
-// calib_args.hpp — driver-side calibration CLI support (slicer-cli #5).
+// calib_args.hpp — driver-side calibration CLI support.
 //
 // Parses the `--calib-*` flag family into the engine's Calib_Params and drives
 // Print::set_calib_params() so the engine's per-layer calibration emission

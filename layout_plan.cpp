@@ -1,8 +1,10 @@
-// layout_plan.cpp — headless layout-plan executor for issue #7
+// layout_plan.cpp — headless layout-plan executor
 //
 // Reads LayoutProblemV1, runs arrange, emits PlacementCandidateV1 on stdout.
 // Also: `layout capabilities --json`.
 #include "layout_plan.hpp"
+
+#include <boost/nowide/convert.hpp>
 
 #include "libslic3r/Arrange.hpp"
 #include "libslic3r/BoundingBox.hpp"
@@ -83,7 +85,8 @@ static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
 // IS the existence check; no separate probe open that could consume a stream.
 static int slurp_profile_cancellable(const std::string& fp, std::string& out) {
 #ifdef _WIN32
-    int fd = ::_open(fp.c_str(), _O_RDONLY | _O_BINARY);
+    // The path is UTF-8 (boost::nowide::args): open it by its wide form.
+    int fd = ::_wopen(boost::nowide::widen(fp).c_str(), _O_RDONLY | _O_BINARY);
     if (fd < 0) return 2;
     char buf[4096];
     for (;;) {
@@ -357,7 +360,7 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
                 }
                 if (ex.id == ref.id) { err.error.code="INVALID_INPUT"; err.error.message="duplicate id '"+ref.id+"'"; err.error.object_ids={ref.id}; return false; }
             }
-            if (ref.path.empty()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' missing path"; err.error.object_ids={ref.id}; return false; }
+            if (ref.path.empty()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' missing path; give the model a path"; err.error.object_ids={ref.id}; return false; }
             // v1 keeps ONLY the original NESTED transform object {x,y,z,rotationZ}.
             // All flat top-level spellings (x/y/z/rotationZ as well as the
             // x_mm/y_mm/z_mm/rotation_rad/rot_z_rad variants) were added in this
