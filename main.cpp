@@ -11040,7 +11040,11 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
         if (a.kind == Output::File && b.kind == Output::File)
             return same(a.path, b.path);
         if (a.kind == Output::StlFiles && b.kind == Output::StlFiles)
-            return 0;   // --export-stl and --export-stls write the same files, the same way
+            // --export-stl and --export-stls into one folder write the same
+            // obj_<n>_<name>.stl files, each action in its turn (before or
+            // after --slice, so from a model the arrange may have moved): the
+            // later one replaces the earlier.
+            return same(a.path, b.path);
         const Output& stls  = a.kind == Output::StlFiles ? a : b;
         const Output& other = a.kind == Output::StlFiles ? b : a;
         return stl_name(other.path) ? same(other.path.parent_path(), stls.path) : 0;
@@ -11065,6 +11069,20 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
             return refuse("ExportOverwritesInput",
                           who + " would overwrite the input file '" + input + "'; give it another name.");
         }
+    // --export-slicedata into the folder --load-slicedata reads, or one inside
+    // the other: the export would write over the cache the run loads from.
+    if (o.slice_mode)
+        for (int p : plates) {
+            const std::string out_dir = slicer_cli::slicedata_dir(o, "export_slicedata", p);
+            const std::string in_dir  = slicer_cli::slicedata_dir(o, "load_slicedata", p);
+            if (out_dir.empty() || in_dir.empty())
+                continue;
+            if (same(fs::path(out_dir), fs::path(in_dir)) || inside(fs::path(out_dir), fs::path(in_dir)) ||
+                inside(fs::path(in_dir), fs::path(out_dir)))
+                return refuse("ExportOverwritesInput", "--export-slicedata " + out_dir +
+                                                           " would overwrite the folder --load-slicedata " + in_dir +
+                                                           " reads; give it another folder.");
+        }
     for (size_t i = 0; i < outputs.size(); ++i)
         for (size_t j = i + 1; j < outputs.size(); ++j) {
             const Output& a = outputs[i];
@@ -11076,6 +11094,11 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
             const int c = meet(a, b);
             if (c == 0)
                 continue;
+            if (a.kind == Output::StlFiles && b.kind == Output::StlFiles)
+                return refuse("ExportNameTaken", a.flag + " and " + b.flag + " write the same object STL files in " +
+                                                     b.path.generic_string() +
+                                                     (c == 1 ? "" : " (the folder names differ only by letter case)") +
+                                                     "; give --export-stls another folder.");
             if (a.kind == Output::Folder)   // a folder that would hold one of the run's own files
                 return refuse("ExportNameTaken", a.flag + (c == 1 ? " holds " : " differs only by letter case from ") +
                                                      b.what + "; choose another folder.");

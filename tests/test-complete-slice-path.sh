@@ -439,6 +439,21 @@ assert d["return_code"] == -2 and "--export-settings setres/out/result.json is t
 grep -q '"tag":"ExportNameTaken"' setres/stdout || { show setres; fail "no ExportNameTaken event for --export-settings onto result.json"; }
 echo "PASS: --export-settings onto the run's own result.json is refused without --export-3mf"
 
+# --export-slicedata into the folder --load-slicedata reads (or one inside the
+# other) would write over the cache the run loads from; --export-stl and
+# --export-stls into one folder write the same object STL files, the later
+# action over the earlier.
+run sdsame "$B" "$FIXTURE" --slice 1 --outputdir sdsame/out --load-slicedata sdsame/cache --export-slicedata sdsame/cache/sub
+[ "$(rc sdsame)" != 0 ] || fail "--export-slicedata inside the --load-slicedata folder was accepted"
+grep -q '"tag":"ExportOverwritesInput"' sdsame/stdout || { show sdsame; fail "no ExportOverwritesInput event for --export-slicedata inside --load-slicedata"; }
+grep -q 'would overwrite the folder --load-slicedata' sdsame/stderr || { show sdsame; fail "the refusal does not name --load-slicedata"; }
+run stlboth "$B" cube.stl --printer-preset "$A1M" --outputdir stlboth --export-stl --export-stls stlboth/stl
+[ "$(rc stlboth)" != 0 ] || fail "--export-stl and --export-stls into one folder were accepted"
+grep -q '"tag":"ExportNameTaken"' stlboth/stdout || { show stlboth; fail "no ExportNameTaken event for --export-stl with --export-stls"; }
+grep -q -- '--export-stl and --export-stls stlboth/stl write the same object STL files' stlboth/stderr ||
+    { show stlboth; fail "the refusal does not name both STL flags"; }
+echo "PASS: --export-slicedata over the --load-slicedata folder, and --export-stl with --export-stls into one folder, are refused"
+
 # ... and a NAME that is a link to one of them (POSIX only: Git Bash on
 # Windows makes copies, not links).
 case "$(uname -s)" in
