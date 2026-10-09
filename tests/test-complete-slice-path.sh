@@ -757,6 +757,19 @@ assert d["return_code"] != 0 and "layer_height" in d["error_string"], d
 '
 echo "PASS: a bad override is refused before slicing"
 
+# A refusal writes result.json only for a --slice the parse itself would read:
+# not after the "--" terminator, not as the value of another flag.
+run preok "$B" --bad --slice=1 --outputdir preok/out
+[ "$(rc preok)" != 0 ] || fail "--bad was accepted"
+[ -f preok/out/result.json ] || { show preok; fail "a refused --slice run wrote no result.json"; }
+run preend "$B" --bad -- --slice=1 --outputdir preend/out
+[ "$(rc preend)" != 0 ] || fail "--bad was accepted"
+[ ! -e preend/out/result.json ] || fail "--slice after the -- terminator wrote result.json"
+run preval "$B" --bad --export-settings --slice=1 --outputdir preval/out
+[ "$(rc preval)" != 0 ] || fail "--bad was accepted"
+[ ! -e preval/out/result.json ] || fail "--slice given as --export-settings' value wrote result.json"
+echo "PASS: a refusal reads --slice and --outputdir as the parse does"
+
 # A failed run deletes nothing: like the official CLI, --export-3mf only ever
 # overwrites on success, and result.json says whether this run worked.
 mkdir -p keep/out
