@@ -206,8 +206,10 @@ for e in bambu orca; do
     fx_proj "$e" proj "$A1M"
     fx_proj "$e" x1c-proj "$X1C"
     fx_proj "$e" p02 "Bambu Lab A1 mini 0.2 nozzle"
+    fx_proj "$e" p08 "Bambu Lab A1 mini 0.8 nozzle"
     [ -s "proj-$e.3mf" ] || { echo "FAIL: fixture proj-$e.3mf: $(why "fxproj-$e")"; exit 1; }
     [ -s "p02-$e.3mf" ] || { echo "FAIL: fixture p02-$e.3mf: $(why "fxp02-$e")"; exit 1; }
+    [ -s "p08-$e.3mf" ] || { echo "FAIL: fixture p08-$e.3mf: $(why "fxp08-$e")"; exit 1; }
     [ -s "x1c-proj-$e.3mf" ] || { echo "FAIL: fixture x1c-proj-$e.3mf: $(why "fxx1c-proj-$e")"; exit 1; }
 done
 for e in bambu orca; do
@@ -216,6 +218,9 @@ for e in bambu orca; do
     fx_rewrite "proj-$e.3mf" "range-$e.3mf" 'support_threshold_angle="999"'
     fx_rewrite "proj-$e.3mf" "spiral-$e.3mf" 'spiral_mode="1"'
 done
+# The 0.8 nozzle projects with a line width that fits 0.8 and not 0.4.
+fx_rewrite "p08-orca.3mf" "p08w-orca.3mf" 'bridge_line_width="0.6"'
+fx_rewrite "p08-bambu.3mf" "p08w-bambu.3mf" 'outer_wall_line_width="1.6"'
 
 # ---------------------------------------------------------------- option combinations
 both assemble-clone           "*give one of them, not both*" \
@@ -305,6 +310,19 @@ for e in bambu orca; do
               "p02-$e.3mf" --slice 1 --outer-wall-line-width 0.8
     fi
     check_slices flag-over-nozzle-without "$e" nozzle_diameter 0.2 "p02-$e.3mf" --slice 1
+    # A flag that makes another setting of the file out of range: the 0.8
+    # nozzle project's line width fits 0.8, and --nozzle-diameter 0.4 makes it
+    # too wide. The command line brought the finding, so it is refused; the
+    # same project without the flag slices.
+    if [ "$e" = orca ]; then
+        check flag-cross-key       "$e" "*bridge_line_width: Bridge line width must not exceed nozzle diameter*" \
+              "p08w-$e.3mf" --slice 1 --nozzle-diameter 0.4
+        check_slices flag-cross-key-without "$e" bridge_line_width 0.6 "p08w-$e.3mf" --slice 1
+    else
+        check flag-cross-key       "$e" "*outer_wall_line_width: too large line width*" \
+              "p08w-$e.3mf" --slice 1 --nozzle-diameter 0.4
+        check_slices flag-cross-key-without "$e" outer_wall_line_width 1.6 "p08w-$e.3mf" --slice 1
+    fi
 done
 
 # A settings file of the wrong kind, and --load-defaultfila with no usable file.
