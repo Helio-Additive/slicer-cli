@@ -8573,9 +8573,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // The official value check (OrcaSlicer.cpp 3574-3581 at 31f6803,
         // BambuStudio.cpp 4134-4141 at 5873b5f): DynamicPrintConfig::validate(true)
         // over the settings as the file and profiles state them, before this
-        // driver pads any vector. Out-of-range values are refused, each named
-        // with the engine's own sentence ("tree_support_wall_count: -1 not in
-        // range [0,2]").
+        // driver pads any vector. Out-of-range values are named with the
+        // engine's own sentence ("tree_support_wall_count: -1 not in range
+        // [0,2]"); which of them refuse and which only warn is below.
         // The official check runs after the command line is applied
         // (m_print_config.apply(m_extra_config) at BambuStudio.cpp 4091,
         // OrcaSlicer.cpp 3542), so a command-line override is range-checked
@@ -8605,8 +8605,56 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 with_overrides->apply(extra, true);
                 apply_command_line_overrides(*with_overrides, overrides, /*report_rejections=*/false);
             }
-            const std::map<std::string, std::string> validity =
+            const std::map<std::string, std::string> found =
                 (with_overrides ? *with_overrides : config).validate(true);
+            // The desktop app runs the same check on the settings a 3MF
+            // brings (config.validate(), not under the CLI) and only shows a
+            // notice, "Invalid values found in the 3MF" (OrcaSlicer
+            // Plater.cpp 6283-6297 at v2.4.2; BambuStudio Plater.cpp
+            // 8627-8640 at 926a719); its slice is gated by Print::validate,
+            // which checks each region against its own nozzle (OrcaSlicer
+            // Print.cpp 1676-1690). Those findings are a warning here too, and
+            // the slice's own Print::validate below stays the gate. Still
+            // refused: what only the CLI check finds (the spiral-vase checks,
+            // under_cli only: OrcaSlicer PrintConfig.cpp 10456-10458,
+            // BambuStudio PrintConfig.cpp 9574-9576; the desktop asks the user
+            // there), and what a command-line value brings (the desktop's
+            // own fields refuse a value out of range as it is typed).
+            std::map<std::string, std::string> validity;   // refused
+            std::map<std::string, std::string> noted;      // warned, as the desktop notice
+            if (!found.empty()) {
+                Slic3r::DynamicPrintConfig file_only(config);
+                file_only.apply(plate_settings, true);
+                const std::map<std::string, std::string> desktop = file_only.validate(false);
+                for (const auto& [key, why] : found) {
+                    const auto it = desktop.find(key);
+                    (it != desktop.end() && it->second == why ? noted : validity)[key] = why;
+                }
+            }
+            if (!noted.empty()) {
+                std::string sentence = "Invalid values found in the 3MF/config: ";
+                json items = json::object();
+                std::string flags;
+                for (const auto& [key, why] : noted) {
+                    sentence += (items.empty() ? "" : "; ") + key + ": " + why;
+                    items[key] = why;
+                    std::string flag = "--" + key;
+                    std::replace(flag.begin(), flag.end(), '_', '-');
+                    flags += (flags.empty() ? "" : ", ") + flag;
+                }
+                sentence += ". The run slices with them as they are, and the slice's own check of each "
+                            "object against its nozzle and plate still applies. Give " + flags +
+                            " a value in range to change it.";
+                emit_event({{"event","warning"},
+                            {"tag","InvalidValuesNoted"},
+                            {"plate_id", checked},
+                            {"settings", items},
+                            {"message", sentence}});
+                std::cerr << "Warning: " << sentence << "\n";
+                outcome.warnings.push_back(json{{"message", sentence},
+                                                {"level", "warning"},
+                                                {"tag", "InvalidValuesNoted"}});
+            }
             if (!validity.empty() || !unknown_values.empty()) {
                 // One refusal naming every value at once: unknown enum
                 // values first, then the engine's range findings.

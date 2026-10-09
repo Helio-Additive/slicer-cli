@@ -212,6 +212,7 @@ for e in bambu orca; do
     fx_rewrite "proj-$e.3mf" "post-$e.3mf" 'post_process=["/bin/true"]'
     fx_rewrite "proj-$e.3mf" "mixed-$e.3mf" 'filament_is_mixed=["1"]'
     fx_rewrite "proj-$e.3mf" "range-$e.3mf" 'support_threshold_angle="999"'
+    fx_rewrite "proj-$e.3mf" "spiral-$e.3mf" 'spiral_mode="1"'
 done
 
 # ---------------------------------------------------------------- option combinations
@@ -273,10 +274,21 @@ for e in bambu orca; do
           "$x" --slice 1 --load-settings "x1c-$e-machine.json;a1m-$e-process.json"
     check post-process             "$e" "*clear post_process in the file, or slice it in the desktop app*" \
           "post-$e.3mf" --slice 1
-    check value-out-of-range       "$e" "*Give --support-threshold-angle a value in range to override it.*" \
+    # A finding only the CLI check gives is refused, with the flags to give:
+    # spiral vase mode with more than one wall (under_cli only; the desktop
+    # asks the user in a dialog there). A value out of range in the file is
+    # only noted (the desktop app's notice on load) and the run slices with it.
+    check value-out-of-range       "$e" "*wall_loops: Invalid value when spiral vase mode is enabled*--wall-loops a value in range to override it.*" \
+          "spiral-$e.3mf" --slice 1
+    check_slices value-out-of-range-file "$e" support_threshold_angle 999 \
           "range-$e.3mf" --slice 1
-    # The retry the hint above promises, on the same input: the flag it names,
-    # with a value in range, gets past the check and reaches the slice.
+    if grep '"tag":"InvalidValuesNoted"' "c-value-out-of-range-file-$e/stdout" | grep -q support_threshold_angle; then
+        report value-out-of-range-noted "$e" PASS "InvalidValuesNoted names support_threshold_angle"
+    else
+        report value-out-of-range-noted "$e" FAIL "no InvalidValuesNoted warning naming support_threshold_angle"
+    fi
+    # The hint the warning gives: the flag it names, with a value in range,
+    # slices with that value.
     check_slices value-out-of-range-retry "$e" support_threshold_angle 45 \
           "range-$e.3mf" --slice 1 --support-threshold-angle 45
 done

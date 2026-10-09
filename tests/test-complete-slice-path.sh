@@ -849,6 +849,21 @@ assert any(r.startswith("filament") for r in d["defaults_replaced"]), d["default
 '
 echo "PASS: the Snapmaker U1 0.4 defaults are the ones the OrcaSlicer app selects"
 
+# The Snapmaker U1 0.4+0.6 with its own presets: the settings check finds
+# bridge_line_width (100% of the 0.6 nozzle) over the 0.4 nozzle. The desktop
+# app only notes such values and slices, each region against its own nozzle
+# (Plater.cpp 6283-6297, Print.cpp 1676-1690 at v2.4.2): a warning, rc 0.
+run u1mix "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4+0.6 nozzle)" --outputdir u1mix/out
+[ "$(rc u1mix)" = 0 ] || { show u1mix; fail "the U1 0.4+0.6 with its own presets exit $(rc u1mix)"; }
+grep -q '"tag":"InvalidValuesNoted"' u1mix/stdout || { show u1mix; fail "no InvalidValuesNoted warning for the U1 0.4+0.6"; }
+py '
+import json; d = json.load(open("u1mix/out/result.json"))
+assert d["return_code"] == 0, d
+w = [x for p in d["sliced_plates"] for x in p["warnings"] if x.get("tag") == "InvalidValuesNoted"]
+assert w and "bridge_line_width" in w[0]["message"], d["sliced_plates"]
+' || { show u1mix; fail "result.json carries no InvalidValuesNoted warning naming bridge_line_width"; }
+echo "PASS: the Snapmaker U1 0.4+0.6 with its own presets slices, with the settings check as a warning (Orca build)"
+
 # A part larger than the bed: refused with the official -50 code and its size.
 run big-bambu "$B" big.stl --slice 1 --arrange 1 --printer-preset "$A1M" --outputdir big-bambu/out
 run big-orca "$O" big.stl --slice 1 --arrange 1 --printer-preset "$A1M" --outputdir big-orca/out
@@ -965,7 +980,8 @@ grep -q '^; curr_bed_type = Cool Plate$' platebed/out.lf || fail "the plate's Co
 grep -q '"tag":"PlateSettingsApplied"' platebed/stdout || fail "no PlateSettingsApplied event"
 echo "PASS: the plate's own bed type applies over the project's"
 
-# A plate value out of the engine's range is refused like a project value.
+# A plate value out of the engine's range is noted like a project value: a
+# warning naming it, and the run slices (the desktop app's notice on load).
 py '
 import zipfile
 with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("plateseq.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
@@ -980,9 +996,10 @@ with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("plateseq.3mf", "w", zi
         zout.writestr(item, data)
 '
 run plateseq "$B" plateseq.3mf --plate 1 -o plateseq/out.gcode
-[ "$(rc plateseq)" != 0 ] || fail "a plate value out of range was sliced"
-grep -q 'first_layer_print_sequence: 99 not in range' plateseq/stderr || { show plateseq; fail "no range refusal for the plate value"; }
-echo "PASS: a plate value out of range is refused"
+[ "$(rc plateseq)" = 0 ] || { show plateseq; fail "a plate value out of range exit $(rc plateseq)"; }
+grep -q 'first_layer_print_sequence: 99 not in range' plateseq/stderr || { show plateseq; fail "no range warning for the plate value"; }
+grep -q '"tag":"InvalidValuesNoted"' plateseq/stdout || { show plateseq; fail "no InvalidValuesNoted event for the plate value"; }
+echo "PASS: a plate value out of range is noted and the plate slices"
 
 # Default path: a printer this engine does not have is refused, naming the binary that has it.
 run u1 "$B" u1.3mf --plate 1 -o u1/out.gcode
