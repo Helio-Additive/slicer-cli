@@ -958,6 +958,54 @@ assert not (x0 < 18 and y0 < 28), ("over the exclusion area", x0, y0)
 done
 echo "PASS: --arrange keeps clear of the bed exclusion area (both engines)"
 
+# An OrcaSlicer project with support off whose top surfaces print with a
+# second filament (top_surface_filament_id): the plate uses two filaments, so
+# the arrange keeps the object off the prime tower's place. The desktop counts
+# the feature filaments with or without support (PartPlate::get_extruders,
+# PartPlate.cpp 1563-1640 at v2.4.2); the tower sits at the bed centre, where
+# the arrange would put the cube otherwise. Two colours, and no slice_info
+# (the plate's filament count from a last slice comes first), so the count is
+# the objects' own.
+run ftproj "$O" cube.stl --slice 1 --printer-preset "$X1C" --filament-preset "Bambu PLA Basic @BBL X1C" \
+    --filament-preset "Bambu PLA Matte @BBL X1C" --outputdir ftproj/out --export-3mf ftproj.3mf
+[ "$(rc ftproj)" = 0 ] || { show ftproj; fail "the two-filament Orca project exit $(rc ftproj)"; }
+py '
+import json, zipfile
+with zipfile.ZipFile("ftproj/out/ftproj.3mf") as zin, zipfile.ZipFile("ftsurf.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/slice_info.config":
+            continue
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d.update({"top_surface_filament_id": "2", "enable_support": "0", "raft_layers": "0",
+                      "enable_prime_tower": "1", "wipe_tower_x": ["118"], "wipe_tower_y": ["118"],
+                      "filament_colour": ["#FF0000", "#0000FF"]})
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+'
+run ftsurf "$O" ftsurf.3mf --slice 1 --arrange 1 --outputdir ftsurf/out
+[ "$(rc ftsurf)" = 0 ] || { show ftsurf; fail "the top-surface-filament project exit $(rc ftsurf)"; }
+py '
+import json, re, sys
+events = []
+for line in open("ftsurf/stdout", encoding="utf-8", errors="replace"):
+    line = line.strip()
+    if line.startswith("[[SLICER_EVENT]] "):
+        events.append(json.loads(line[len("[[SLICER_EVENT]] "):]))
+arranged = [e for e in events if e.get("tag") == "ObjectsArranged"]
+assert arranged, "no ObjectsArranged event"
+o = arranged[-1]["objects"][0]
+g = open("ftsurf/out/plate_1.gcode", errors="replace").read().replace("\r", "")
+assert re.search(r"^; top_surface_filament_id = 2", g, re.M), "top surfaces not on filament 2"
+wx = float(re.search(r"^; wipe_tower_x = ([\d.eE+-]+)", g, re.M).group(1))
+wy = float(re.search(r"^; wipe_tower_y = ([\d.eE+-]+)", g, re.M).group(1))
+# The 20 mm cube must not cover the tower corner.
+inside = abs(o["center_x_mm"] - (wx + 1)) < 10 and abs(o["center_y_mm"] - (wy + 1)) < 10
+assert not inside, ("the cube sits on the prime tower", o, wx, wy)
+' || { show ftsurf; fail "the arrange put the cube on the prime tower of a top-surface-filament plate"; }
+echo "PASS: --arrange keeps clear of the prime tower a feature filament brings, with support off (Orca build)"
+
 # Default path: the plate's own settings apply over the project's (official
 # new_print_config.apply(plate config)); plate 1 states a Cool Plate.
 py '
@@ -1577,6 +1625,49 @@ assert plates[0]["objects"], plates[0]
 ' multirep-$e/out/result.json || { show multirep-$e; fail "$e: the plate came out of the repetitions search empty"; }
     done
     echo "PASS: --repetitions on one plate of a multi-plate project leaves it whole (both engines)"
+fi
+
+# --slice 0 on the same three-plate project with a project value out of range
+# (support_threshold_angle 999) and a plate 2 value out of range
+# (first_layer_print_sequence 99): each plate's result lists its own settings
+# warning once, the project value on every plate, the plate value on plate 2
+# only.
+if [ ! -f "$REPS" ]; then
+    echo "SKIP: settings warnings per plate on a multi-plate project (no $REPS)"
+else
+    py '
+import json, re, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile("noted3.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d["support_threshold_angle"] = "999"; data = json.dumps(d, indent=4).encode()
+        if item.filename == "Metadata/model_settings.config":
+            t = data.decode()
+            mark = "<metadata key=\"plater_id\" value=\"2\"/>"
+            assert mark in t
+            t = t.replace(mark, mark + "\n    <metadata key=\"first_layer_print_sequence\" value=\"99\"/>", 1)
+            data = t.encode()
+        zout.writestr(item, data)
+' "$REPS"
+    for e in bambu orca; do
+        bin=$B; [ $e = orca ] && bin=$O
+        run noted3-$e "$bin" noted3.3mf --slice 0 --allow-newer-file --outputdir noted3-$e/out
+        [ "$(rc noted3-$e)" = 0 ] || { show noted3-$e; fail "$e: --slice 0 on the three-plate project exit $(rc noted3-$e)"; }
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == 0, d
+plates = {p["id"]: p for p in d["sliced_plates"]}
+assert sorted(plates) == [1, 2, 3], sorted(plates)
+for pid, p in plates.items():
+    w = [x["message"] for x in p["warnings"] if x.get("tag") == "InvalidValuesNoted"]
+    assert len(w) == 1, (pid, w)
+    assert "support_threshold_angle" in w[0], (pid, w)
+    assert ("first_layer_print_sequence" in w[0]) == (pid == 2), (pid, w)
+' noted3-$e/out/result.json || { show noted3-$e; fail "$e: the settings warnings are not each plate's own, once"; }
+    done
+    echo "PASS: --slice 0 lists each plate's settings warnings once, on that plate (both engines)"
 fi
 
 # A project 3MF of each engine's own (the Bambu fixture is too new for the
@@ -4321,24 +4412,25 @@ if [ ! -d "$folder" ]; then
     kill -KILL $apid 2>/dev/null || true
     fail "the second run's sweep removed the staging folder of the live run"
 fi
-# Let the first run finish: every open of the FIFO is served, so it ends the
-# way an ordinary run does — its folder intact, its G-code written. A python
+# Let the first run finish the way an ordinary run does — its folder intact,
+# its G-code written. The feeder writes the OBJ once, into the open run A's
+# loader is blocked in, and before it closes that pipe it puts a regular file
+# with the same OBJ in the FIFO's place: the loader reads exactly one copy, and
+# every later open (the output check reads the OBJ's mtllib names) reads the
+# regular file. A feeder that kept reopening the FIFO could hand one reader
+# copy after copy for as long as it kept reading (26 seen on the box) and
+# left a later open waiting on it; CI 1b88d81 timed out there. A python
 # feeder, not a shell loop: it dies on the first signal, so no feeder of this
-# case can outlive the script and hold its output pipe open. A reader that
-# closes while the feeder still writes (the loader reads its feeds, the next
-# write finds it gone) is a broken pipe, not the end: run A opens the OBJ again
-# (the output check reads its mtllib names), and that open must be served too.
+# case can outlive the script and hold its output pipe open.
 py '
-import sys
+import os, sys
 data = open("objfeed.obj", "rb").read()
-while True:
-    try:
-        with open(sys.argv[1], "wb") as f:
-            f.write(data)
-    except BrokenPipeError:
-        continue
-    except OSError:
-        break
+with open("objfeed-regular.obj", "wb") as f:
+    f.write(data)
+with open(sys.argv[1], "wb") as f:
+    f.write(data)
+    f.flush()
+    os.replace("objfeed-regular.obj", sys.argv[1])
 ' "$RACE/slow.obj" &
 feeder=$!
 arc=hung
@@ -4398,15 +4490,16 @@ if [ ! -d "$folder" ] || [ ! -f "$folder.owner" ]; then
     kill -KILL $opid 2>/dev/null || true
     fail "the Bambu run's sweep removed the live OrcaSlicer run's staging folder"
 fi
+# One feed, then a regular file in the FIFO's place, as in the case above.
 py '
-import sys
+import os, sys
 data = open("objfeed2.obj", "rb").read()
-while True:
-    try:
-        with open(sys.argv[1], "wb") as f:
-            f.write(data)
-    except OSError:
-        break
+with open("objfeed2-regular.obj", "wb") as f:
+    f.write(data)
+with open(sys.argv[1], "wb") as f:
+    f.write(data)
+    f.flush()
+    os.replace("objfeed2-regular.obj", sys.argv[1])
 ' "$RACE/slow.obj" &
 feeder=$!
 arc=hung

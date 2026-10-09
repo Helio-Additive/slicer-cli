@@ -3453,27 +3453,32 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
                     obj_support |= obj_raft_opt->getInt() > 0;
             } else
                 obj_support = glb_support;
-            if (!obj_support)
-                continue;
+            if (obj_support) {
+                int obj_support_intf_extr = 0;
+                if (const ConfigOption* opt = object->config.option("support_interface_filament"))
+                    obj_support_intf_extr = opt->getInt();
+                if (obj_support_intf_extr != 0)
+                    plate_extruders.push_back(obj_support_intf_extr);
+                else if (glb_support_intf_extr != 0)
+                    plate_extruders.push_back(glb_support_intf_extr);
 
-            int obj_support_intf_extr = 0;
-            if (const ConfigOption* opt = object->config.option("support_interface_filament"))
-                obj_support_intf_extr = opt->getInt();
-            if (obj_support_intf_extr != 0)
-                plate_extruders.push_back(obj_support_intf_extr);
-            else if (glb_support_intf_extr != 0)
-                plate_extruders.push_back(glb_support_intf_extr);
-
-            int obj_support_extr = 0;
-            if (const ConfigOption* opt = object->config.option("support_filament"))
-                obj_support_extr = opt->getInt();
-            if (obj_support_extr != 0)
-                plate_extruders.push_back(obj_support_extr);
-            else if (glb_support_extr != 0)
-                plate_extruders.push_back(glb_support_extr);
+                int obj_support_extr = 0;
+                if (const ConfigOption* opt = object->config.option("support_filament"))
+                    obj_support_extr = opt->getInt();
+                if (obj_support_extr != 0)
+                    plate_extruders.push_back(obj_support_extr);
+                else if (glb_support_extr != 0)
+                    plate_extruders.push_back(glb_support_extr);
+            }
 #ifdef ENGINE_ORCA
-            // Orca also lists wall / infill / surface filaments (PartPlate.cpp
-            // 1744-1800, v2.4.2): every key is `*_id` and 0 is "Default".
+            // Orca also lists wall / infill / surface filaments, with or
+            // without support: the desktop's PartPlate::get_extruders, which
+            // decides the plate's wipe tower (GLCanvas3D.cpp 2880), lists them
+            // after its `if (obj_support)` block (PartPlate.cpp 1563-1640,
+            // v2.4.2). The official CLI's get_extruders_under_cli puts them
+            // behind `if (!obj_support) continue;` (1723-1801), so an object
+            // without support would count one filament for the tower and the
+            // arrange. Every key is `*_id` and 0 is "Default".
             int obj_outer_wall_extr = 0;
             if (const ConfigOption* opt = object->config.option("outer_wall_filament_id"))
                 obj_outer_wall_extr = opt->getInt();
@@ -6941,6 +6946,8 @@ struct RunState {
     ProjectPlan plan;
     // What the load and the run-level steps record for every plate's result.
     PlateOutcome carry;
+    // The settings check's warnings, per plate (InvalidValuesNoted).
+    std::map<int, json> noted;
     // Load-time facts every later step reads.
     bool is_bbl_3mf = false;
     Slic3r::Semver file_version;
@@ -7164,6 +7171,20 @@ static bool plate_triangle_limit(const CliOptions& o, const Slic3r::Model& model
 static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
                              std::string* detail);
 
+/// The settings check's warnings (InvalidValuesNoted) of the plate this
+/// result is for, once: any the outcome already holds (a carry from another
+/// plate's call) are replaced.
+static void take_noted_warnings(PlateOutcome& outcome, const std::map<int, json>& noted, int plate_id) {
+    json& warnings = outcome.warnings;
+    warnings.erase(std::remove_if(warnings.begin(), warnings.end(),
+                                  [](const json& w) { return w.value("tag", "") == "InvalidValuesNoted"; }),
+                   warnings.end());
+    const int plate = outcome.plate_id > 0 ? outcome.plate_id : (plate_id > 0 ? plate_id : 1);
+    if (const auto it = noted.find(plate); it != noted.end())
+        for (const json& w : it->second)
+            warnings.push_back(w);
+}
+
 static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
     const std::string& input_file      = o.input_file;
@@ -7194,6 +7215,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             carried.derived_filament_map_mode.clear();
         }
         outcome = carried;
+        // The carry is the prepare call's outcome, with that plate's settings
+        // warnings: this plate gets its own instead.
+        take_noted_warnings(outcome, rs.noted, plate_id);
     }
     try {
         // Create configuration BEFORE model loading so load_bbs_3mf can populate it
@@ -8631,6 +8655,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     (it != desktop.end() && it->second == why ? noted : validity)[key] = why;
                 }
             }
+            // Each plate's findings are its own: recorded once per plate
+            // (every call of a --slice 0 run checks the plates again) and
+            // given to that plate's result below.
+            const int noted_plate = checked > 0 ? checked : 1;
+            const bool noted_first_time = rs.noted.count(noted_plate) == 0;
+            json& noted_warnings = rs.noted[noted_plate];
+            noted_warnings = json::array();
             if (!noted.empty()) {
                 std::string sentence = "Invalid values found in the 3MF/config: ";
                 json items = json::object();
@@ -8645,15 +8676,17 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 sentence += ". The run slices with them as they are, and the slice's own check of each "
                             "object against its nozzle and plate still applies. Give " + flags +
                             " a value in range to change it.";
-                emit_event({{"event","warning"},
-                            {"tag","InvalidValuesNoted"},
-                            {"plate_id", checked},
-                            {"settings", items},
-                            {"message", sentence}});
-                std::cerr << "Warning: " << sentence << "\n";
-                outcome.warnings.push_back(json{{"message", sentence},
-                                                {"level", "warning"},
-                                                {"tag", "InvalidValuesNoted"}});
+                if (noted_first_time) {
+                    emit_event({{"event","warning"},
+                                {"tag","InvalidValuesNoted"},
+                                {"plate_id", noted_plate},
+                                {"settings", items},
+                                {"message", sentence}});
+                    std::cerr << "Warning: " << sentence << "\n";
+                }
+                noted_warnings.push_back(json{{"message", sentence},
+                                              {"level", "warning"},
+                                              {"tag", "InvalidValuesNoted"}});
             }
             if (!validity.empty() || !unknown_values.empty()) {
                 // One refusal naming every value at once: unknown enum
@@ -8698,6 +8731,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 return 1;
             }
             }
+            // This result's plate gets its own findings, once.
+            take_noted_warnings(outcome, rs.noted, plate_id);
         }
 
         // A project on a printer with another bed: each plate's objects and
