@@ -6867,6 +6867,8 @@ struct RunState {
     bool actions_done = false;
     // The outputs were checked before the first write (check_run_outputs).
     bool outputs_checked = false;
+    // --slice: the plates the input declares before any plan (run_slice_mode).
+    int file_plate_count = 1;
     // Plate `plate_id` of the run; a run of one plate (model files, a 3MF
     // without plates) answers with that plate whatever the id.
     RunPlate& plate(int plate_id) {
@@ -9509,13 +9511,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (rs.outputs_checked)
                 return true;
             rs.outputs_checked = true;
+            // Every plate the run could write: plate N for --slice N, else
+            // every plate of the plan, or of the input when there is no plan
+            // yet (a superset is fine: the check after the plan stays).
             std::vector<int> known_plates;
             if (o.slice_mode) {
-                if (rs.plan.done)
-                    for (int p = 1; p <= rs.plan.plate_count; ++p)
-                        known_plates.push_back(p);
-                else if (o.slice_plate > 0)
+                if (o.slice_plate > 0)
                     known_plates.push_back(o.slice_plate);
+                const int count = rs.plan.done ? std::max(rs.plan.plate_count, rs.file_plate_count)
+                                               : rs.file_plate_count;
+                if (o.slice_plate <= 0)
+                    for (int p = 1; p <= std::max(1, count); ++p)
+                        known_plates.push_back(p);
             }
             std::string detail;
             if (const int refused = check_run_outputs(o, known_plates, &model, &detail)) {
@@ -11233,6 +11240,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // prepares first, as its plan (ProjectPlan) decides the plates; every
     // other run prepares once the plates are known (below).
     RunState rs;
+    rs.file_plate_count = plate_count;
     int plan_code = 0;
     std::string plan_error;
     const bool trailing = per_plate_load && !g_assemble && trailing_models_port(o);

@@ -479,6 +479,15 @@ grep -q '"tag":"ExportNameTaken"' stlclash/stdout || { show stlclash; fail "no E
 [ ! -e stlclash/stl/obj_1_cube.stl ] || fail "the object STL clash was written before it was refused"
 echo "PASS: the outputs are checked before the first write, with the loaded objects' own STL names"
 
+# The check before the first write reserves every plate G-code the run could
+# write: for --slice 0, every plate of the project before its plan is final,
+# so an action given before --slice that names one is refused before it runs.
+run preplate "$B" "$FIXTURE" --export-settings preplate/out/plate_1.gcode --slice 0 --outputdir preplate/out
+[ "$(rc preplate)" != 0 ] || fail "--export-settings onto plate_1.gcode with --slice 0 was accepted"
+grep -q '"tag":"ExportNameTaken"' preplate/stdout || { show preplate; fail "no ExportNameTaken event for --export-settings onto plate_1.gcode"; }
+[ ! -e preplate/out/plate_1.gcode ] || fail "--export-settings wrote plate_1.gcode before the refusal"
+echo "PASS: --slice 0 reserves every plate's G-code before the first action writes"
+
 # ... and a NAME that is a link to one of them (POSIX only: Git Bash on
 # Windows makes copies, not links).
 case "$(uname -s)" in
