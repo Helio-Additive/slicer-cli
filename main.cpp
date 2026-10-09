@@ -10246,6 +10246,40 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // the scene.
                 PlateScope scope(model, rs.plate(plate_id));
                 print.apply(model, config);
+#ifdef ENGINE_ORCA
+                // The Orca desktop applies again before Slice (Plater.cpp 15855/15893 at v2.4.2).
+                // On Bambu a second apply moves the output away from the desktop's own G-code (7
+                // corpus files with the desktop's G-code keep enable_prime_tower=1), so not there.
+                // Applied again, as the desktop does before every slice: its
+                // background-process timer applies (OrcaSlicer Plater.cpp
+                // 5035-5038, 7983 at v2.4.2), then Slice applies once more
+                // (reslice, 15855 -> 15893). Print::apply counts the used
+                // filaments (PrintApply.cpp 1131, 1620) before it builds the
+                // regions (1730), so on the first apply a filament used only
+                // through a feature setting (top_surface_filament_id and the
+                // like, PrintRegion.cpp 89-90) is not counted and
+                // normalize_fdm_2 turns the prime tower off (PrintConfig.cpp
+                // 8692); on the second the regions exist and the tower stays
+                // as the settings state it. The official CLI applies once
+                // (OrcaSlicer.cpp 6040) and drops the tower. Nothing else of
+                // the model or the settings changes between the two calls.
+                // What the second call changes in the settings the print runs
+                // with is told (PrintReapplied); when it changes nothing, the
+                // print is the one the first call made.
+                const Slic3r::PrintConfig first_config = print.config();
+                print.apply(model, config);
+                const Slic3r::t_config_option_keys reapplied = first_config.diff(print.config());
+                if (!reapplied.empty()) {
+                    json values = json::object();
+                    for (const std::string& key : reapplied)
+                        values[key] = print.config().opt_serialize(key);
+                    emit_event({{"event","config_normalized"}, {"tag","PrintReapplied"},
+                                {"plate_id", plate_id}, {"settings", values},
+                                {"message","The settings applied a second time before slicing, as the desktop "
+                                           "app does, changed " + boost::algorithm::join(reapplied, ", ") +
+                                           ": the plate's filaments are counted with its regions"}});
+                }
+#endif
             }
 #ifdef ENGINE_ORCA
             // OrcaSlicer's WipeTowerData::height is read on a path that never

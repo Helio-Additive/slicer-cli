@@ -862,6 +862,8 @@ assert d["return_code"] == 0, d
 w = [x for p in d["sliced_plates"] for x in p["warnings"] if x.get("tag") == "InvalidValuesNoted"]
 assert w and "bridge_line_width" in w[0]["message"], d["sliced_plates"]
 ' || { show u1mix; fail "result.json carries no InvalidValuesNoted warning naming bridge_line_width"; }
+# One filament: the second apply before slicing changes nothing.
+grep -q '"tag":"PrintReapplied"' u1mix/stdout && { show u1mix; fail "the second apply changed the U1 0.4+0.6 print"; }
 echo "PASS: the Snapmaker U1 0.4+0.6 with its own presets slices, with the settings check as a warning (Orca build)"
 
 # A part larger than the bed: refused with the official -50 code and its size.
@@ -1005,6 +1007,44 @@ inside = abs(o["center_x_mm"] - (wx + 1)) < 10 and abs(o["center_y_mm"] - (wy + 
 assert not inside, ("the cube sits on the prime tower", o, wx, wy)
 ' || { show ftsurf; fail "the arrange put the cube on the prime tower of a top-surface-filament plate"; }
 echo "PASS: --arrange keeps clear of the prime tower a feature filament brings, with support off (Orca build)"
+
+# A single-nozzle multi-material printer of another maker (Creality K2 Plus:
+# one nozzle, single_extruder_multi_material, its processes enable the prime
+# tower), a two-filament project with support off whose top surfaces print with
+# filament 2. The desktop applies the settings again before it slices, once
+# the regions that use filament 2 exist, and keeps the tower (Plater.cpp
+# 7983, 15893 at v2.4.2); one apply alone counts one filament and turns it off
+# (PrintApply.cpp 1620, PrintConfig.cpp 8692).
+K2P="Creality K2 Plus 0.4 nozzle"
+run k2proj "$O" cube.stl --slice 1 --printer-preset "$K2P" --filament-preset "Generic PLA @K2 Plus-all" \
+    --filament-preset "Generic PLA Matte @System" --outputdir k2proj/out --export-3mf k2proj.3mf
+[ "$(rc k2proj)" = 0 ] || { show k2proj; fail "the two-filament K2 Plus project exit $(rc k2proj)"; }
+py '
+import json, zipfile
+with zipfile.ZipFile("k2proj/out/k2proj.3mf") as zin, zipfile.ZipFile("k2surf.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/slice_info.config":
+            continue
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d.update({"top_surface_filament_id": "2", "enable_support": "0", "raft_layers": "0",
+                      "enable_prime_tower": "1", "filament_colour": ["#FF0000", "#0000FF"]})
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+'
+run k2surf "$O" k2surf.3mf --slice 1 --outputdir k2surf/out
+[ "$(rc k2surf)" = 0 ] || { show k2surf; fail "the K2 Plus top-surface-filament project exit $(rc k2surf)"; }
+py '
+import re
+g = open("k2surf/out/plate_1.gcode", errors="replace").read().replace("\r", "")
+assert re.search(r"^; top_surface_filament_id = 2", g, re.M), "top surfaces not on filament 2"
+assert re.search(r"^; enable_prime_tower = 1", g, re.M), "the prime tower was turned off"
+assert re.search(r"^; ?(?:FEATURE|TYPE): ?(?:Prime|Wipe) tower$", g, re.M), "no prime tower in the G-code"
+assert re.search(r"^T1", g, re.M), "no change to filament 2"
+' || { show k2surf; fail "the K2 Plus plate whose top surfaces print with filament 2 has no prime tower"; }
+grep '"tag":"PrintReapplied"' k2surf/stdout | grep -q enable_prime_tower || { show k2surf; fail "no PrintReapplied event naming enable_prime_tower"; }
+echo "PASS: a filament used only by a feature setting keeps the prime tower on a single-nozzle printer, as the desktop's second apply does (Orca build)"
 
 # Default path: the plate's own settings apply over the project's (official
 # new_print_config.apply(plate config)); plate 1 states a Cool Plate.
