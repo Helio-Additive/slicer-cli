@@ -254,19 +254,38 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
     std::vector<std::string> positional;
 
     // First pass for the two values a refusal needs: --slice (write
-    // result.json) and --outputdir (where). Read raw, before any refusal.
+    // result.json) and --outputdir (where), read before any refusal. The
+    // tokens are read as the parse below reads them: nothing after "--" is
+    // a flag, and a flag that takes a value (an official non-bool option, a
+    // slicer-cli flag with a value) consumes the next token unless it has an
+    // inline =value, so a value spelled like a flag is never read as one.
     for (int i = 1; i < argc; ++i) {
         std::string t = argv[i];
+        if (t == "--")
+            break;
+        if (!boost::starts_with(t, "-") || t == "-")
+            continue;
+        t.erase(t.begin(), t.begin() + (boost::starts_with(t, "--") ? 2 : 1));
         std::string v;
+        bool inline_value = false;
         const size_t eq = t.find('=');
-        if (eq != std::string::npos) { v = t.substr(eq + 1); t.erase(eq); }
-        if ((t == "--slice" || t == "-slice") ) {
+        if (eq != std::string::npos) { v = t.substr(eq + 1); t.erase(eq); inline_value = true; }
+        std::string opt_key;
+        bool takes_value = false;
+        if (const auto it = names.find(t); it != names.end()) {
+            opt_key = it->second;
+            const Slic3r::ConfigOptionDef& def = cfg.def()->options.at(opt_key);
+            takes_value = def.type != Slic3r::coBool && def.type != Slic3r::coBools;
+        } else if (const LegacyFlag* lf = find_legacy(t)) {
+            takes_value = lf->takes_value;
+        }
+        if (takes_value && !inline_value && i + 1 < argc)
+            v = argv[++i];
+        if (opt_key == "slice") {
             o.slice_given = true;
-            if (v.empty() && i + 1 < argc) v = argv[i + 1];
             int n = 0;
             if (parse_int_text(v, n)) { o.slice_mode = true; o.slice_plate = n; }
-        } else if (t == "--outputdir" || t == "-outputdir") {
-            if (v.empty() && i + 1 < argc) v = argv[i + 1];
+        } else if (opt_key == "outputdir") {
             o.outputdir = v;
         }
     }

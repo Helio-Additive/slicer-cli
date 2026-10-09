@@ -442,8 +442,10 @@ echo "PASS: --export-settings onto the run's own result.json is refused without 
 # --export-slicedata into the folder --load-slicedata reads (or one inside the
 # other) would write over the cache the run loads from; --export-stl and
 # --export-stls into one folder write the same object STL files, the later
-# action over the earlier.
-run sdsame "$B" "$FIXTURE" --slice 1 --outputdir sdsame/out --load-slicedata sdsame/cache --export-slicedata sdsame/cache/sub
+# action over the earlier. Both flags name a parent folder with one folder per
+# plate under it: --export-slicedata sdsame/cache/1 writes plate 1 to
+# sdsame/cache/1/1, inside sdsame/cache/1 that --load-slicedata reads.
+run sdsame "$B" "$FIXTURE" --slice 1 --outputdir sdsame/out --load-slicedata sdsame/cache --export-slicedata sdsame/cache/1
 [ "$(rc sdsame)" != 0 ] || fail "--export-slicedata inside the --load-slicedata folder was accepted"
 grep -q '"tag":"ExportOverwritesInput"' sdsame/stdout || { show sdsame; fail "no ExportOverwritesInput event for --export-slicedata inside --load-slicedata"; }
 grep -q 'would overwrite the folder --load-slicedata' sdsame/stderr || { show sdsame; fail "the refusal does not name --load-slicedata"; }
@@ -478,6 +480,17 @@ run stlclash "$B" cube.stl --printer-preset "$A1M" --outputdir stlclash --export
 grep -q '"tag":"ExportNameTaken"' stlclash/stdout || { show stlclash; fail "no ExportNameTaken event for the object STL clash"; }
 [ ! -e stlclash/stl/obj_1_cube.stl ] || fail "the object STL clash was written before it was refused"
 echo "PASS: the outputs are checked before the first write, with the loaded objects' own STL names"
+
+# The STL export stages each file under a name of its own (a random part,
+# created exclusively): a file kept beside the target under the old fixed
+# staging name (<target>.writing) is neither taken nor removed.
+mkdir -p stlkeep/stl
+printf 'keep me\n' > stlkeep/stl/obj_1_cube.stl.writing
+run stlkeep "$B" cube.stl --printer-preset "$A1M" --outputdir stlkeep --export-stl
+[ "$(rc stlkeep)" = 0 ] && [ -s stlkeep/stl/obj_1_cube.stl ] || { show stlkeep; fail "--export-stl beside a kept .writing file exit $(rc stlkeep)"; }
+[ "$(cat stlkeep/stl/obj_1_cube.stl.writing 2>/dev/null)" = "keep me" ] || fail "--export-stl took or removed the file kept as obj_1_cube.stl.writing"
+[ "$(ls stlkeep/stl | grep -c '\.writing$')" = 1 ] || fail "--export-stl left a staging file behind: $(ls stlkeep/stl)"
+echo "PASS: --export-stl stages under its own name and leaves a kept .writing file alone"
 
 # The check before the first write reserves every plate G-code the run could
 # write: for --slice 0, every plate of the project before its plan is final,
@@ -745,6 +758,19 @@ import json; d = json.load(open("badlh/out/result.json"))
 assert d["return_code"] != 0 and "layer_height" in d["error_string"], d
 '
 echo "PASS: a bad override is refused before slicing"
+
+# A refusal writes result.json only for a --slice the parse itself would read:
+# not after the "--" terminator, not as the value of another flag.
+run preok "$B" --bad --slice=1 --outputdir preok/out
+[ "$(rc preok)" != 0 ] || fail "--bad was accepted"
+[ -f preok/out/result.json ] || { show preok; fail "a refused --slice run wrote no result.json"; }
+run preend "$B" --bad -- --slice=1 --outputdir preend/out
+[ "$(rc preend)" != 0 ] || fail "--bad was accepted"
+[ ! -e preend/out/result.json ] || fail "--slice after the -- terminator wrote result.json"
+run preval "$B" --bad --export-settings --slice=1 --outputdir preval/out
+[ "$(rc preval)" != 0 ] || fail "--bad was accepted"
+[ ! -e preval/out/result.json ] || fail "--slice given as --export-settings' value wrote result.json"
+echo "PASS: a refusal reads --slice and --outputdir as the parse does"
 
 # A failed run deletes nothing: like the official CLI, --export-3mf only ever
 # overwrites on success, and result.json says whether this run worked.
@@ -4281,7 +4307,10 @@ fi
 # Let the first run finish: every open of the FIFO is served, so it ends the
 # way an ordinary run does — its folder intact, its G-code written. A python
 # feeder, not a shell loop: it dies on the first signal, so no feeder of this
-# case can outlive the script and hold its output pipe open.
+# case can outlive the script and hold its output pipe open. A reader that
+# closes while the feeder still writes (the loader reads its feeds, the next
+# write finds it gone) is a broken pipe, not the end: run A opens the OBJ again
+# (the output check reads its mtllib names), and that open must be served too.
 py '
 import sys
 data = open("objfeed.obj", "rb").read()
@@ -4289,6 +4318,8 @@ while True:
     try:
         with open(sys.argv[1], "wb") as f:
             f.write(data)
+    except BrokenPipeError:
+        continue
     except OSError:
         break
 ' "$RACE/slow.obj" &
