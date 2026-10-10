@@ -3136,6 +3136,13 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
                 std::vector<std::string> inputs = named_input_files(*g_result_json_options);
                 for (const std::string& side : model_side_files(g_result_json_options->input_files))
                     inputs.push_back(side);
+                // The assemble list's models and their side files, as
+                // check_run_outputs reads them (named_input_files has the
+                // models; their side files are added here).
+                if (g_assemble)
+                    for (const std::string& file : g_assemble->sources)
+                        for (std::string& side : slicer_cli::loader_side_files(file, false))
+                            inputs.push_back(std::move(side));
                 if (g_result_json_mode != nullptr) {
                     // --layout's JSON and --engine-info's file: read by the
                     // run, and named by a mode flag rather than an option.

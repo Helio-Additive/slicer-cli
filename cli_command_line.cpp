@@ -263,12 +263,12 @@ const std::vector<FileOption>& file_options() {
 
 namespace {
 
-/// True when the official flag `key` is one of the file_options above.
-bool option_reads_a_file(const std::string& key) {
+/// The file_options entry of the official flag `key`, or nullptr.
+const FileOption* file_option(const std::string& key) {
     for (const FileOption& option : file_options())
         if (key == option.key)
-            return true;
-    return false;
+            return &option;
+    return nullptr;
 }
 
 /// How slicer-cli's own flag reads a file, for the walk below.
@@ -314,8 +314,11 @@ CommandLineFiles command_line_files(const std::vector<std::string>& words) {
         }
         FileRole role = FileRole::None;
         bool takes_value = false;
+        bool file_list = false;
         if (const auto it = names.find(token); it != names.end()) {
-            role = option_reads_a_file(it->second) ? FileRole::Named : FileRole::None;
+            const FileOption* option = file_option(it->second);
+            role = option != nullptr ? FileRole::Named : FileRole::None;
+            file_list = option != nullptr && option->vector;
             const Slic3r::ConfigOptionDef& def = cfg.def()->options.at(it->second);
             takes_value = def.type != Slic3r::coBool && def.type != Slic3r::coBools;
         } else if (const LegacyFlag* lf = find_legacy(token)) {
@@ -331,10 +334,18 @@ CommandLineFiles command_line_files(const std::vector<std::string>& words) {
         }
         if (value.empty())
             continue;
-        if (role == FileRole::Model)
+        if (role == FileRole::Model) {
             out.models.push_back(value);
-        else if (role == FileRole::Named)
+        } else if (role == FileRole::Named && file_list) {
+            // A list of files is split the way the option itself reads it
+            // (ConfigOptionStrings::deserialize), so each file is named.
+            Slic3r::ConfigOptionStrings files;
+            files.deserialize(value);
+            for (const std::string& file : files.values)
+                if (!file.empty()) out.named.push_back(file);
+        } else if (role == FileRole::Named) {
             out.named.push_back(value);
+        }
     }
     return out;
 }

@@ -546,6 +546,35 @@ run lj "$B" --layout lj/out/result.json --slice 1 --outputdir lj/out
 [ "$(cat lj/out/result.json 2>/dev/null)" = "keep me" ] || { show lj; fail "the --layout refusal wrote result.json over the layout file"; }
 echo "PASS: result.json is never written over the --layout file"
 
+# A flag that reads a list of files names each of them, also on a command line
+# refused before it was all read: --load-settings "a;b" is two files, the way
+# the option reads it (ConfigOptionStrings).
+mkdir -p lsl/out
+printf 'keep me\n' > lsl/out/result.json
+run lsl "$B" cube.stl --slice 1 --outputdir lsl/out --not-a-flag \
+    --load-settings "machine.json;lsl/out/result.json"
+[ "$(rc lsl)" != 0 ] || fail "--not-a-flag was accepted"
+[ "$(cat lsl/out/result.json 2>/dev/null)" = "keep me" ] || { show lsl; fail "the refusal wrote result.json over a file in a --load-settings list"; }
+echo "PASS: result.json is never written over a file in a list of settings files"
+
+# An assemble list's models are read with their side files too (an OBJ's
+# mtllib), as the output check reads them.
+for bin in "$B" "$O"; do
+    e=asmmtl-$(basename "$bin")
+    rm -rf "$e"; mkdir -p "$e/out"
+    printf 'keep me\n' > "$e/out/result.json"
+    cp mtl/out/part.obj "$e/out/part.obj"
+    py '
+import json, sys
+json.dump({"plates": [{"plate_name": "p1", "need_arrange": False,
+           "objects": [{"path": sys.argv[1] + "/out/part.obj", "count": 1, "filaments": [1]}]}]},
+          open(sys.argv[1] + "/list.json", "w"))' "$e"
+    run "$e" "$bin" --load-assemble-list "$e/list.json" --slice 1 --printer-preset "$A1M" --outputdir "$e/out"
+    [ "$(rc "$e")" != 0 ] || fail "$(basename "$bin"): an assemble-list OBJ whose mtllib file is result.json was accepted"
+    [ "$(cat "$e/out/result.json" 2>/dev/null)" = "keep me" ] || { show "$e"; fail "$(basename "$bin"): result.json was written over an assemble-list OBJ's mtllib file"; }
+done
+echo "PASS: result.json is never written over a file an assemble-list model's loader reads"
+
 # layout capabilities with --slice among its words: refused with result.json,
 # as every refused --slice command line is.
 run lcap "$B" layout capabilities --json --slice 1 --outputdir lcap/out
