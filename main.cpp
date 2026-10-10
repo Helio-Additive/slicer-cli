@@ -11780,6 +11780,10 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         prepare_failure = prepare_outcome;
     };
     if (trailing) {
+        // --slice 0 may check several plates once the plan is known, so the
+        // project's noted-value warning found here is held like the check
+        // pass's own (released below when the run checks only one plate).
+        rs.hold_noted = o.slice_plate == 0;
         prepare_run(0);
         if (plan_code == 0)
             plate_count = rs.plan.plate_count;
@@ -11818,7 +11822,13 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // pass has passed: the warning says the run slices with the file's values,
     // which a later plate's refusal makes untrue. The prepare call below
     // checks the first plate, so the hold starts before it.
-    rs.hold_noted = o.slice_plate == 0 && plates.size() > 1;
+    const bool hold_noted = o.slice_plate == 0 && plates.size() > 1;
+    if (rs.hold_noted && !hold_noted) {
+        for (const json& announcement : rs.noted_held)
+            announce_noted_warning(announcement);
+        rs.noted_held.clear();
+    }
+    rs.hold_noted = hold_noted;
 
     // --slice 0 on several plates checks every plate before it slices any
     // (pre_check, BambuStudio.cpp 6441, 7027-7028, 7428-7429; OrcaSlicer.cpp
