@@ -395,7 +395,9 @@ for e in bambu orca; do
     # file's values, so it is not announced for the plates that passed before
     # the refusal (it is held until the check pass ended).
     run "c-noted-held-$e" "$(bin_of "$e")" "twosp-$e.3mf" --slice 0 --outputdir "c-noted-held-$e/out"
-    if [ "$(cat "c-noted-held-$e/rc")" = 0 ]; then
+    if ! grep -q 'when spiral vase mode is enabled' "c-noted-held-$e/out/result.json" 2>/dev/null; then
+        report noted-held "$e" FAIL "not refused for plate 2's spiral vase setting (rc $(cat "c-noted-held-$e/rc")): $(why "c-noted-held-$e")"
+    elif [ "$(cat "c-noted-held-$e/rc")" = 0 ]; then
         report noted-held "$e" FAIL "the two-plate project sliced (plate 2 is spiral vase with sparse infill)"
     elif grep -q -e 'Invalid values found in the 3MF/config' -e '"tag":"InvalidValuesNoted"' \
             "c-noted-held-$e/stdout" "c-noted-held-$e/stderr"; then
@@ -406,7 +408,9 @@ for e in bambu orca; do
     # The same with a model file after the project: the project is prepared
     # before the plates are known, and that preparation holds the warning too.
     run "c-noted-held-trail-$e" "$(bin_of "$e")" "twosp-$e.3mf" cube.stl --slice 0 --outputdir "c-noted-held-trail-$e/out"
-    if [ "$(cat "c-noted-held-trail-$e/rc")" = 0 ]; then
+    if ! grep -q 'when spiral vase mode is enabled' "c-noted-held-trail-$e/out/result.json" 2>/dev/null; then
+        report noted-held-trailing "$e" FAIL "not refused for plate 2's spiral vase setting (rc $(cat "c-noted-held-trail-$e/rc")): $(why "c-noted-held-trail-$e")"
+    elif [ "$(cat "c-noted-held-trail-$e/rc")" = 0 ]; then
         report noted-held-trailing "$e" FAIL "the two-plate project with a model file after it sliced (plate 2 is spiral vase with sparse infill)"
     elif grep -q -e 'Invalid values found in the 3MF/config' -e '"tag":"InvalidValuesNoted"' \
             "c-noted-held-trail-$e/stdout" "c-noted-held-trail-$e/stderr"; then
