@@ -247,6 +247,98 @@ ParseRefusal refuse_number(const std::string& flag, const std::string& value, bo
 
 } // namespace
 
+const std::vector<FileOption>& file_options() {
+    // The official flags whose value is a file of the run's to read: the
+    // settings it merges (Config.cpp load_settings/load_filaments, the
+    // "uptodate" pair and downward_settings), the assemble list it builds the
+    // plates from, and the per-layer custom G-codes it loads. The options
+    // holding a list of files keep several.
+    static const std::vector<FileOption> options = {
+        {"load_settings", true}, {"load_filaments", true}, {"uptodate_settings", true},
+        {"uptodate_filaments", true}, {"downward_settings", true},
+        {"load_assemble_list", false}, {"load_custom_gcodes", false},
+    };
+    return options;
+}
+
+namespace {
+
+/// True when the official flag `key` is one of the file_options above.
+bool option_reads_a_file(const std::string& key) {
+    for (const FileOption& option : file_options())
+        if (key == option.key)
+            return true;
+    return false;
+}
+
+/// How slicer-cli's own flag reads a file, for the walk below.
+enum class FileRole { None, Model, Named };
+
+FileRole legacy_file_role(Legacy id) {
+    switch (id) {
+    case Legacy::Input:      return FileRole::Model;   // a positional model file (or --layout-plan's JSON)
+    case Legacy::Machine:
+    case Legacy::Filament:
+    case Legacy::Process:
+    case Legacy::Config:
+    case Legacy::Layout:
+    case Legacy::EngineInfo: return FileRole::Named;
+    default:                 return FileRole::None;
+    }
+}
+
+} // namespace
+
+CommandLineFiles command_line_files(const std::vector<std::string>& words) {
+    CommandLineFiles out;
+    Slic3r::DynamicPrintAndCLIConfig cfg;
+    const auto& names = official_names();
+    bool parse_options = true;
+    for (size_t i = 0; i < words.size(); ++i) {
+        const std::string& word = words[i];
+        if (!parse_options || !boost::starts_with(word, "-") || word == "-") {
+            out.models.push_back(word);
+            continue;
+        }
+        if (word == "--") {
+            parse_options = false;
+            continue;
+        }
+        std::string token = word.substr(boost::starts_with(word, "--") ? 2 : 1);
+        std::string value;
+        bool inline_value = false;
+        if (const size_t eq = token.find('='); eq != std::string::npos) {
+            value = token.substr(eq + 1);
+            token.erase(eq);
+            inline_value = true;
+        }
+        FileRole role = FileRole::None;
+        bool takes_value = false;
+        if (const auto it = names.find(token); it != names.end()) {
+            role = option_reads_a_file(it->second) ? FileRole::Named : FileRole::None;
+            const Slic3r::ConfigOptionDef& def = cfg.def()->options.at(it->second);
+            takes_value = def.type != Slic3r::coBool && def.type != Slic3r::coBools;
+        } else if (const LegacyFlag* lf = find_legacy(token)) {
+            role = legacy_file_role(lf->id);
+            takes_value = lf->takes_value;
+        }
+        if (!takes_value)
+            continue;
+        if (!inline_value) {
+            if (i + 1 >= words.size())
+                continue;
+            value = words[++i];
+        }
+        if (value.empty())
+            continue;
+        if (role == FileRole::Model)
+            out.models.push_back(value);
+        else if (role == FileRole::Named)
+            out.named.push_back(value);
+    }
+    return out;
+}
+
 bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, ParseRefusal& refusal) {
     o.argv0 = argc > 0 ? argv[0] : "slicer_cli";
     Slic3r::DynamicPrintAndCLIConfig& cfg = o.cli;

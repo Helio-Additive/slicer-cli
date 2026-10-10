@@ -44,6 +44,29 @@ struct ParseRefusal {
     bool        with_usage = false;
 };
 
+/// One official flag whose value names files the run reads.
+struct FileOption {
+    const char* key;
+    bool        vector;   // a list of files (the rest hold one)
+};
+
+/// The official flags that read a file (settings to merge, the assemble list,
+/// the custom G-codes, --downward-settings): the run opens these, so
+/// result.json's guard (named_input_files, main.cpp) and the walk below name
+/// the same set.
+const std::vector<FileOption>& file_options();
+
+/// The files a command line that was refused before it was fully read names
+/// the run to read, read token by token as the parser reads it: a positional
+/// word names a model, and a value counts only when the flag in front of it
+/// reads a file. A word that is any other flag's value (-o NAME, a
+/// --metadata-value) is not a file of the run's, whatever it is spelled like.
+struct CommandLineFiles {
+    std::vector<std::string> models;   // model files: positional words, --input
+    std::vector<std::string> named;    // the value of a flag that reads a file
+};
+CommandLineFiles command_line_files(const std::vector<std::string>& words);
+
 /// Reads argv into `o` and `m`. Returns false with `refusal` filled when the
 /// run must stop; `o.slice_mode` and `o.outputdir` are filled even then, so
 /// the caller can write result.json the way --slice always does.
