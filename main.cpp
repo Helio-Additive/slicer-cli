@@ -6112,9 +6112,8 @@ static int run_list_settings() {
 #else
     out["engine"] = "bambustudio";
 #endif
-    out["engine_version"]     = engine_version_text();
-    out["slicer_cli_version"] = SLICER_CLI_VERSION;
-    out["settings"]           = std::move(settings);
+    out["engine_version"] = engine_version_text();
+    out["settings"]       = std::move(settings);
     std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
     return 0;
 }

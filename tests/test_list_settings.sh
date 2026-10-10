@@ -33,7 +33,7 @@ doc = json.load(open(path))
 want = "orcaslicer" if engine == "orca" else "bambustudio"
 assert doc["engine"] == want, doc["engine"]
 assert doc["engine_version"], "no engine_version"
-assert doc["slicer_cli_version"], "no slicer_cli_version"
+assert "slicer_cli_version" not in doc, "slicer_cli_version: the release version is in engine-manifest.json"
 settings = doc["settings"]
 by = {s["key"]: s for s in settings}
 assert len(by) == len(settings), "duplicate keys"

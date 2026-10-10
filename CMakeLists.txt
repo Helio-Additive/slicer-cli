@@ -343,9 +343,6 @@ set(BBL_INTERNAL_TESTING    0)
 # "#if <empty>" preprocessor error in GCode.hpp. Disable it for the release CLI.
 set(ORCA_CHECK_GCODE_PLACEHOLDERS 0)
 
-# slicer-cli's own version, reported beside the engine's in --list-settings.
-add_compile_definitions(SLICER_CLI_VERSION="${PROJECT_VERSION}")
-
 # Use the override version template if present, otherwise fall back to reference.
 if(EXISTS "${LIBSLIC3R_DIR}/libslic3r_version.h.in")
   set(_ver_in "${LIBSLIC3R_DIR}/libslic3r_version.h.in")
