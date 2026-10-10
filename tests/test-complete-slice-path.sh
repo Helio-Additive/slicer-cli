@@ -492,6 +492,141 @@ run stlkeep "$B" cube.stl --printer-preset "$A1M" --outputdir stlkeep --export-s
 [ "$(ls stlkeep/stl | grep -c '\.writing$')" = 1 ] || fail "--export-stl left a staging file behind: $(ls stlkeep/stl)"
 echo "PASS: --export-stl stages under its own name and leaves a kept .writing file alone"
 
+# A settings file named as the run's own result.json: the run is refused, and
+# result.json is not written over the file.
+mkdir -p rjin/out
+printf 'keep me\n' > rjin/out/result.json
+run rjin "$B" cube.stl --slice 1 --printer-preset "$A1M" --machine rjin/out/result.json --outputdir rjin/out
+[ "$(rc rjin)" != 0 ] || fail "a run whose settings file is its own result.json was accepted"
+[ "$(cat rjin/out/result.json 2>/dev/null)" = "keep me" ] || { show rjin; fail "result.json was written over the input file"; }
+grep -q '"tag":"ResultIsInput"' rjin/stdout || { show rjin; fail "no ResultIsInput event"; }
+echo "PASS: result.json is never written over a file the run reads"
+
+# ... and the files a model's loader reads beside it count too: an OBJ's
+# `mtllib` file (an .mtl, or anything else it names — here result.json itself)
+# is a file the run reads, and the refusal must not write over it either.
+mkdir -p mtl/out
+printf 'keep me\n' > mtl/out/result.json
+py '
+open("mtl/out/part.obj", "w").write("mtllib result.json\nv 0 0 0\nv 20 0 0\nv 0 20 0\nf 1 2 3\n")'
+for bin in "$B" "$O"; do
+    e=mtl-$(basename "$bin")
+    rm -rf "$e"; mkdir -p "$e/out"
+    printf 'keep me\n' > "$e/out/result.json"
+    cp mtl/out/part.obj "$e/out/part.obj"
+    run "$e" "$bin" "$e/out/part.obj" --slice 1 --printer-preset "$A1M" --outputdir "$e/out"
+    [ "$(rc "$e")" != 0 ] || fail "$(basename "$bin"): an OBJ whose mtllib file is its own result.json was accepted"
+    [ "$(cat "$e/out/result.json" 2>/dev/null)" = "keep me" ] || { show "$e"; fail "$(basename "$bin"): result.json was written over the OBJ's mtllib file"; }
+    grep -q '"tag":"ResultIsInput"' "$e/stdout" || { show "$e"; fail "$(basename "$bin"): no ResultIsInput event for the OBJ's mtllib file"; }
+done
+echo "PASS: result.json is never written over a file a model's loader reads beside it"
+
+# Only a word that names a file the run reads holds the write back: a value of
+# a flag that reads no file (--metadata-value) that happens to equal
+# <outputdir>/result.json is not a file of the run's, so the refusal's own
+# result.json is written — a stale result must not stand in for the verdict.
+mkdir -p nfv/out
+printf 'stale\n' > nfv/out/result.json
+run nfv "$B" cube.stl --slice 1 --printer-preset "$A1M" --outputdir nfv/out \
+    --metadata-value nfv/out/result.json --not-a-flag
+[ "$(rc nfv)" != 0 ] || fail "--not-a-flag was accepted"
+py '
+import json, sys
+d = json.load(open("nfv/out/result.json"))
+assert d["return_code"] != 0, d' || { show nfv; fail "a refused command line left the stale result.json in place (a --metadata-value is not a file the run reads)"; }
+echo "PASS: only the values of flags that read a file hold result.json back"
+
+# The same for a mode's own file: --layout's JSON is named to the run to read
+# (by a mode flag, not a settings option), so a --layout refused for --slice
+# does not write its result.json over it.
+mkdir -p lj/out
+printf 'keep me\n' > lj/out/result.json
+run lj "$B" --layout lj/out/result.json --slice 1 --outputdir lj/out
+[ "$(rc lj)" != 0 ] || fail "--layout with --slice was accepted"
+[ "$(cat lj/out/result.json 2>/dev/null)" = "keep me" ] || { show lj; fail "the --layout refusal wrote result.json over the layout file"; }
+echo "PASS: result.json is never written over the --layout file"
+
+# A flag that reads a list of files names each of them, also on a command line
+# refused before it was all read: --load-settings "a;b" is two files, the way
+# the option reads it (ConfigOptionStrings).
+mkdir -p lsl/out
+printf 'keep me\n' > lsl/out/result.json
+run lsl "$B" cube.stl --slice 1 --outputdir lsl/out --not-a-flag \
+    --load-settings "machine.json;lsl/out/result.json"
+[ "$(rc lsl)" != 0 ] || fail "--not-a-flag was accepted"
+[ "$(cat lsl/out/result.json 2>/dev/null)" = "keep me" ] || { show lsl; fail "the refusal wrote result.json over a file in a --load-settings list"; }
+echo "PASS: result.json is never written over a file in a list of settings files"
+
+# An assemble list's models are read with their side files too (an OBJ's
+# mtllib), as the output check reads them.
+for bin in "$B" "$O"; do
+    e=asmmtl-$(basename "$bin")
+    rm -rf "$e"; mkdir -p "$e/out"
+    printf 'keep me\n' > "$e/out/result.json"
+    cp mtl/out/part.obj "$e/out/part.obj"
+    py '
+import json, sys
+json.dump({"plates": [{"plate_name": "p1", "need_arrange": False,
+           "objects": [{"path": sys.argv[1] + "/out/part.obj", "count": 1, "filaments": [1]}]}]},
+          open(sys.argv[1] + "/list.json", "w"))' "$e"
+    run "$e" "$bin" --load-assemble-list "$e/list.json" --slice 1 --printer-preset "$A1M" --outputdir "$e/out"
+    [ "$(rc "$e")" != 0 ] || fail "$(basename "$bin"): an assemble-list OBJ whose mtllib file is result.json was accepted"
+    [ "$(cat "$e/out/result.json" 2>/dev/null)" = "keep me" ] || { show "$e"; fail "$(basename "$bin"): result.json was written over an assemble-list OBJ's mtllib file"; }
+done
+echo "PASS: result.json is never written over a file an assemble-list model's loader reads"
+
+# layout capabilities with --slice among its words: refused with result.json,
+# as every refused --slice command line is.
+run lcap "$B" layout capabilities --json --slice 1 --outputdir lcap/out
+[ "$(rc lcap)" != 0 ] || fail "layout capabilities with --slice was accepted"
+py '
+import json; d = json.load(open("lcap/out/result.json"))
+assert d["return_code"] != 0 and "layout capabilities takes --json and nothing else" in d["error_string"], d
+' || { show lcap; fail "layout capabilities with --slice left no result.json naming the refusal"; }
+echo "PASS: layout capabilities with --slice leaves result.json"
+# ... and never over a file the same command line names to read.
+mkdir -p lcapin/out
+printf 'keep me\n' > lcapin/out/result.json
+run lcapin "$B" layout capabilities --json --slice 1 --outputdir lcapin/out --machine lcapin/out/result.json
+[ "$(rc lcapin)" != 0 ] || fail "layout capabilities with --slice and --machine was accepted"
+[ "$(cat lcapin/out/result.json 2>/dev/null)" = "keep me" ] || { show lcapin; fail "layout capabilities wrote result.json over the --machine file"; }
+echo "PASS: layout capabilities with --slice keeps a settings file named as result.json"
+
+# The pressure-advance pattern replaces the model with its own object: the
+# object STL files --export-stl writes take that object's name, and an
+# --export-3mf of the same name (with --slice, a name in --outputdir) is
+# refused (Bambu build; the Orca build refuses the mode).
+run pastl "$B" "$FIXTURE" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005 \
+    --slice 1 --outputdir pastl/out --export-stl --export-3mf stl/obj_1_pa_pattern_handle.stl
+[ "$(rc pastl)" != 0 ] || fail "--export-3mf onto the pattern's own STL was accepted"
+grep -q '"tag":"ExportNameTaken"' pastl/stdout || { show pastl; fail "no ExportNameTaken for --export-3mf onto the pattern's STL"; }
+[ ! -e pastl/out/plate_1.gcode ] || fail "the run sliced before refusing the pattern's STL name"
+# --export-stl before --slice writes the loaded model's STL files before the
+# pattern replaces the model: the pattern's STL name is free for --export-3mf.
+run pastl2 "$B" "$FIXTURE" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005 \
+    --export-stl --slice 1 --outputdir pastl2/out --export-3mf stl/obj_1_pa_pattern_handle.stl
+[ "$(rc pastl2)" = 0 ] || { show pastl2; fail "--export-stl before --slice with the pattern's STL name for --export-3mf exit $(rc pastl2)"; }
+py '
+import zipfile; zipfile.ZipFile("pastl2/out/stl/obj_1_pa_pattern_handle.stl").namelist()
+' || fail "--export-3mf did not write the project under the pattern's STL name"
+echo "PASS: the pressure-advance pattern's object STL name is checked against the other outputs (Bambu build)"
+
+# An action given before --slice has written its file by the time the pattern
+# replaced the model, so the check that follows keeps it reserved (without
+# running it again): an action after --slice that names the same file is
+# refused instead of overwriting what is already there.
+run pastl3 "$B" "$FIXTURE" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005 \
+    --export-settings pastl3/out/obj_1_pa_pattern_handle.stl \
+    --slice 1 --outputdir pastl3/out --export-stls pastl3/out
+[ "$(rc pastl3)" != 0 ] || fail "--export-stls onto the --export-settings file written before --slice was accepted"
+grep -q '"tag":"ExportNameTaken"' pastl3/stdout || { show pastl3; fail "no ExportNameTaken event for the pattern's object STL onto the pre-slice --export-settings file"; }
+[ -s pastl3/out/obj_1_pa_pattern_handle.stl ] || { show pastl3; fail "the pre-slice --export-settings file was not written"; }
+py '
+import json
+json.load(open("pastl3/out/obj_1_pa_pattern_handle.stl"))' || fail "the pre-slice --export-settings file was overwritten by the object STL"
+[ ! -e pastl3/out/plate_1.gcode ] || fail "the run sliced after refusing the object STL name"
+echo "PASS: the pattern's recheck keeps the outputs written before --slice reserved"
+
 # The check before the first write reserves every plate G-code the run could
 # write: for --slice 0, every plate of the project before its plan is final,
 # so an action given before --slice that names one is refused before it runs.

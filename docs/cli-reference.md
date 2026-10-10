@@ -328,7 +328,29 @@ Transforms run in the order given, before the objects are placed.
 | `--info` | | Print each object's size, volume and facets, and stop | both binaries |
 | `--engine-info` | file | What a file is (printer, plates, the app that made it) and which program fits it, as JSON | both binaries |
 | `--list-presets` | | This engine's system presets as JSON | both binaries |
+| `--list-settings` | | This engine's settings table as JSON: every key with its type and edit mode (`simple`/`advanced`/`develop`, plus `expert` on the OrcaSlicer build), and where the engine has them, its label, tooltip, category, default, bounds (`min`/`max`), unit, the preset that holds it (`scope`: `process`, `filament` or `printer`; left out for a setting in none of them) and, for enums, the values it takes. A field the engine has no value for is left out | both binaries |
 | `--printer` | name | With `--list-presets`: only this printer's presets, with its defaults and plate type | both binaries |
+
+`--list-settings` is how an agent driving this binary finds a setting without
+reading the engine's source: the keys, their meaning and their valid values are
+all in the engine's own settings table, so it is printed rather than guessed.
+
+```sh
+# The setting behind "infill", and what it takes: key, label, type, min/max.
+slicer_cli --list-settings | python3 -c '
+import json, sys
+for s in json.load(sys.stdin)["settings"]:
+    if "infill" in s["key"]:
+        print(s["key"], s["type"], s.get("min"), s.get("max"), s.get("default"), "|", s.get("label"))'
+# sparse_infill_density percent 0 100 20% | Sparse infill density
+
+# The values an enum takes, with their labels.
+slicer_cli --list-settings | python3 -c '
+import json, sys
+for s in json.load(sys.stdin)["settings"]:
+    if s["key"] == "sparse_infill_pattern":
+        print([v["value"] for v in s["enum"]])'
+```
 
 slicer-cli makes no pictures: the exported 3MF has no plate thumbnails (the
 `export_note` event `NoPlatePictures` says so) and the G-code has no

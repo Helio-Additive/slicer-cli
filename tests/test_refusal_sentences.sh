@@ -138,6 +138,24 @@ fx_bedproj() {  # fx_bedproj ENGINE
         --printer-preset "$X1C" --outputdir "fxbed-$1/out" --export-3mf bedproj.3mf
     cp "fxbed-$1/out/bedproj.3mf" "bedproj-$1.3mf" 2>/dev/null || true
 }
+# twopair-<e>.3mf: that engine's own two-plate project from an assemble list,
+# a 20 mm cube on each plate. (A 300 mm box on plate 2 cannot be the refused
+# plate: the export that makes the project refuses it first.)
+fx_twoplate() {  # fx_twoplate ENGINE NAME
+    [ -s "$2-$1.3mf" ] && return 0
+    python3 - "$2" <<'PY'
+import json, sys
+name = sys.argv[1]
+second = "cube.stl"
+json.dump({"plates": [
+    {"plate_name": "p1", "need_arrange": False, "objects": [{"path": "cube.stl", "count": 1, "filaments": [1]}]},
+    {"plate_name": "p2", "need_arrange": False, "objects": [{"path": second, "count": 1, "filaments": [1]}]},
+]}, open(name + ".json", "w"))
+PY
+    run "fx$2-$1" "$(bin_of "$1")" --load-assemble-list "$2.json" --slice 1 \
+        --printer-preset "$A1M" --outputdir "fx$2-$1/out" --export-3mf "$2.3mf"
+    cp "fx$2-$1/out/$2.3mf" "$2-$1.3mf" 2>/dev/null || true
+}
 # A copy of the engine's own project with the given project_settings.config
 # keys replaced.
 fx_rewrite() {  # fx_rewrite SRC DST KEY=VALUE...
@@ -217,10 +235,32 @@ for e in bambu orca; do
     fx_rewrite "proj-$e.3mf" "mixed-$e.3mf" 'filament_is_mixed=["1"]'
     fx_rewrite "proj-$e.3mf" "range-$e.3mf" 'support_threshold_angle="999"'
     fx_rewrite "proj-$e.3mf" "spiral-$e.3mf" 'spiral_mode="1"'
+    fx_rewrite "proj-$e.3mf" "spiralr-$e.3mf" 'spiral_mode="1"' 'support_threshold_angle="999"'
+    # Two plates, and the same with a value out of range in the file: noted,
+    # not refused. twosp adds spiral vase to plate 2 only (a plate setting),
+    # which the sparse infill makes the plate the run is refused for.
+    fx_twoplate "$e" twopair
+    fx_rewrite "twopair-$e.3mf" "twopairn-$e.3mf" 'support_threshold_angle="999"'
+    python3 - "twopairn-$e.3mf" "twosp-$e.3mf" <<'PY'
+import sys, zipfile
+src, dst = sys.argv[1:3]
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            t, mark = data.decode(), '<metadata key="plater_id" value="2"/>'
+            assert mark in t
+            data = t.replace(mark, mark + '\n    <metadata key="spiral_mode" value="true"/>', 1).encode()
+        zout.writestr(item, data)
+PY
+    [ -s "twosp-$e.3mf" ] || { echo "FAIL: fixture twosp-$e.3mf"; exit 1; }
 done
 # The 0.8 nozzle projects with a line width that fits 0.8 and not 0.4.
 fx_rewrite "p08-orca.3mf" "p08w-orca.3mf" 'bridge_line_width="0.6"'
 fx_rewrite "p08-bambu.3mf" "p08w-bambu.3mf" 'outer_wall_line_width="1.6"'
+# The 0.2 nozzle projects with a line width already too wide for 0.2.
+fx_rewrite "p02-orca.3mf" "p02w-orca.3mf" 'bridge_line_width="0.3"'
+fx_rewrite "p02-bambu.3mf" "p02w-bambu.3mf" 'outer_wall_line_width="0.8"'
 
 # ---------------------------------------------------------------- option combinations
 both assemble-clone           "*give one of them, not both*" \
@@ -322,6 +362,71 @@ for e in bambu orca; do
         check flag-cross-key       "$e" "*outer_wall_line_width: too large line width*" \
               "p08w-$e.3mf" --slice 1 --nozzle-diameter 0.4
         check_slices flag-cross-key-without "$e" outer_wall_line_width 1.6 "p08w-$e.3mf" --slice 1
+    fi
+    # The file's value is already out of range for its nozzle, and the flag
+    # gives the same setting the same value: the command line's value, so
+    # refused by the settings check. The file alone is only noted there (the
+    # slice's own check, Print::validate, then gates it as the desktop does).
+    if [ "$e" = orca ]; then
+        check flag-same-as-file    "$e" "*bridge_line_width: Bridge line width must not exceed nozzle diameter*Give --bridge-line-width a value in range to override it.*" \
+              "p02w-$e.3mf" --slice 1 --bridge-line-width 0.3
+    else
+        check flag-same-as-file    "$e" "*outer_wall_line_width: too large line width*Give --outer-wall-line-width a value in range to override it.*" \
+              "p02w-$e.3mf" --slice 1 --outer-wall-line-width 0.8
+    fi
+    run "c-flag-same-as-file-without-$e" "$(bin_of "$e")" "p02w-$e.3mf" --slice 1 --outputdir "c-flag-same-as-file-without-$e/out"
+    if grep -q '"tag":"InvalidValuesNoted"' "c-flag-same-as-file-without-$e/stdout"; then
+        report flag-same-as-file-without "$e" PASS "the file's own value is noted, not refused by the settings check"
+    else
+        report flag-same-as-file-without "$e" FAIL "no InvalidValuesNoted for the file's own value; $(why "c-flag-same-as-file-without-$e")"
+    fi
+    # A refused finding (spiral vase with two walls) beside a noted one (a
+    # value out of range in the file): refused, and the noted one is not
+    # announced as sliced.
+    check refused-with-noted       "$e" "*wall_loops: Invalid value when spiral vase mode is enabled*" \
+          "spiralr-$e.3mf" --slice 1
+    if grep -q '"tag":"InvalidValuesNoted"' "c-refused-with-noted-$e/stdout"; then
+        report refused-with-noted-quiet "$e" FAIL "InvalidValuesNoted announced on a refused run"
+    else
+        report refused-with-noted-quiet "$e" PASS "no InvalidValuesNoted on a refused run"
+    fi
+    # --slice 0 checks every plate before it slices any, and a later plate's
+    # refusal cancels the whole run: the warning says the run slices with the
+    # file's values, so it is not announced for the plates that passed before
+    # the refusal (it is held until the check pass ended).
+    run "c-noted-held-$e" "$(bin_of "$e")" "twosp-$e.3mf" --slice 0 --outputdir "c-noted-held-$e/out"
+    if ! grep -q 'when spiral vase mode is enabled' "c-noted-held-$e/out/result.json" 2>/dev/null; then
+        report noted-held "$e" FAIL "not refused for plate 2's spiral vase setting (rc $(cat "c-noted-held-$e/rc")): $(why "c-noted-held-$e")"
+    elif [ "$(cat "c-noted-held-$e/rc")" = 0 ]; then
+        report noted-held "$e" FAIL "the two-plate project sliced (plate 2 is spiral vase with sparse infill)"
+    elif grep -q -e 'Invalid values found in the 3MF/config' -e '"tag":"InvalidValuesNoted"' \
+            "c-noted-held-$e/stdout" "c-noted-held-$e/stderr"; then
+        report noted-held "$e" FAIL "InvalidValuesNoted announced before a later plate's refusal"
+    else
+        report noted-held "$e" PASS "no InvalidValuesNoted for a run a later plate's refusal cancelled"
+    fi
+    # The same with a model file after the project: the project is prepared
+    # before the plates are known, and that preparation holds the warning too.
+    run "c-noted-held-trail-$e" "$(bin_of "$e")" "twosp-$e.3mf" cube.stl --slice 0 --outputdir "c-noted-held-trail-$e/out"
+    if ! grep -q 'when spiral vase mode is enabled' "c-noted-held-trail-$e/out/result.json" 2>/dev/null; then
+        report noted-held-trailing "$e" FAIL "not refused for plate 2's spiral vase setting (rc $(cat "c-noted-held-trail-$e/rc")): $(why "c-noted-held-trail-$e")"
+    elif [ "$(cat "c-noted-held-trail-$e/rc")" = 0 ]; then
+        report noted-held-trailing "$e" FAIL "the two-plate project with a model file after it sliced (plate 2 is spiral vase with sparse infill)"
+    elif grep -q -e 'Invalid values found in the 3MF/config' -e '"tag":"InvalidValuesNoted"' \
+            "c-noted-held-trail-$e/stdout" "c-noted-held-trail-$e/stderr"; then
+        report noted-held-trailing "$e" FAIL "InvalidValuesNoted announced before a later plate's refusal (model file after the project)"
+    else
+        report noted-held-trailing "$e" PASS "no InvalidValuesNoted for a cancelled run with a model file after the project"
+    fi
+    # ... and every plate's warning is announced once the pass has passed.
+    run "c-noted-drained-$e" "$(bin_of "$e")" "twopairn-$e.3mf" --slice 0 --outputdir "c-noted-drained-$e/out"
+    held=$(grep -c '"tag":"InvalidValuesNoted"' "c-noted-drained-$e/stdout" 2>/dev/null || true)
+    if [ "$(cat "c-noted-drained-$e/rc")" != 0 ]; then
+        report noted-drained "$e" FAIL "the two-cube project did not slice: $(why "c-noted-drained-$e")"
+    elif [ "$held" = 2 ]; then
+        report noted-drained "$e" PASS "each plate's warning is announced once the check pass passed"
+    else
+        report noted-drained "$e" FAIL "$held InvalidValuesNoted event(s) for a two-plate run, expected 2"
     fi
 done
 
