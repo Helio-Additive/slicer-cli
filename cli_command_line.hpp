@@ -29,6 +29,7 @@ struct ModeArgs {
     bool        layout_plan_mode = false;
     std::string engine_info_file;   // --engine-info FILE
     bool        list_presets = false;
+    bool        list_settings = false;   // --list-settings
     std::string list_printer;       // --printer (with --list-presets)
     bool        help = false;
     CalibOptions calib;

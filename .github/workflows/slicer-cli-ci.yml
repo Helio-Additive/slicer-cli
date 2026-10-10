@@ -1583,6 +1583,8 @@ jobs:
           # The complete slice path (--slice, --arrange, presets by name, --export-3mf,
           # --info, --list-presets) and the default-path checks, on both engines.
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          # --list-settings: the settings table of both engines as JSON.
+          bash tests/test_list_settings.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
           kill "$HANG_WATCHDOG" 2>/dev/null || true
 
       - name: Upload hang samples (macOS)

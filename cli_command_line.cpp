@@ -47,7 +47,7 @@ enum class Legacy {
     Plate, Input, NoNormalizeLegacyGcode,
     CalibMode, CalibStart, CalibEnd, CalibStep, CalibExtruderId, CalibNoNumbers,
     Layout, LayoutPlan, Progress,
-    PrinterPreset, ProcessPreset, FilamentPreset, ListPresets, Printer,
+    PrinterPreset, ProcessPreset, FilamentPreset, ListPresets, ListSettings, Printer,
     AllowSubstitution, EngineInfo, LayerHeight, SingleInstance,
 };
 
@@ -91,6 +91,7 @@ const std::vector<LegacyFlag>& legacy_flags() {
         {"process-preset",            Legacy::ProcessPreset,     true,  "NAME",    "Process system preset by name (default: the printer's)"},
         {"filament-preset",           Legacy::FilamentPreset,    true,  "NAME",    "Filament system preset by name; repeat for more filaments"},
         {"list-presets",              Legacy::ListPresets,       false, "",        "This engine's system presets as JSON"},
+        {"list-settings",             Legacy::ListSettings,      false, "",        "This engine's settings as JSON"},
         {"printer",                   Legacy::Printer,           true,  "NAME",    "With --list-presets: only this printer's presets"},
         {"allow-substitution",        Legacy::AllowSubstitution, false, "",        "With --slice: slice a 3MF whose values this engine substitutes"},
         {"engine-info",               Legacy::EngineInfo,        true,  "FILE",    "What the file is and which engine binary fits it, as JSON"},
@@ -418,6 +419,7 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
             case Legacy::ProcessPreset:  o.process_preset = value; break;
             case Legacy::FilamentPreset: o.filament_presets.push_back(value); break;
             case Legacy::ListPresets:    m.list_presets = true; break;
+            case Legacy::ListSettings:   m.list_settings = true; break;
             case Legacy::Printer:        m.list_printer = value; break;
             case Legacy::AllowSubstitution: o.allow_substitution = true; break;
             case Legacy::EngineInfo:     m.engine_info_file = value; break;

@@ -5954,6 +5954,135 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
     return 0;
 }
 
+/// True when the engine's own writer can give this option's default. An enum
+/// default is written through the key map the *option* carries, and the engines
+/// build some of them from a bare value (an initializer list), leaving that map
+/// null while their writer walks it without a check
+/// (ConfigOptionEnumsGenericTempl::serialize_single_value): such a default has
+/// no name to report.
+static bool default_is_writable(const Slic3r::ConfigOption* option) {
+    if (option == nullptr)
+        return false;
+    if (const auto* one = dynamic_cast<const Slic3r::ConfigOptionEnumGeneric*>(option))
+        return one->keys_map != nullptr;
+    if (const auto* many = dynamic_cast<const Slic3r::ConfigOptionEnumsGeneric*>(option))
+        return many->keys_map != nullptr;
+    if (const auto* nullable = dynamic_cast<const Slic3r::ConfigOptionEnumsGenericNullable*>(option))
+        return nullable->keys_map != nullptr;
+    return true;
+}
+
+/// --list-settings: this engine's settings table (PrintConfigDef) as one JSON
+/// document — every key with what it means, its type, its default, its bounds
+/// and the values it takes — so an agent driving this binary can find a
+/// setting ("infill" -> sparse_infill_density, 0-100 %) without reading the
+/// engine's source. Nothing is loaded, so nothing can warn: stdout is the
+/// document, exit 0.
+static int run_list_settings() {
+    using namespace Slic3r;
+    // The type's own name, and whether it is the plural (vector) one: the two
+    // group types are defined with the vector bit already set (10 +
+    // coVectorType, 11 + coVectorType), so they are matched on that value.
+    const auto type_text = [](ConfigOptionType type, bool& vector) {
+        switch (int(type)) {
+        case coFloat:            vector = false; return std::string("float");
+        case coFloats:           vector = true;  return std::string("floats");
+        case coInt:              vector = false; return std::string("int");
+        case coInts:             vector = true;  return std::string("ints");
+        case coString:           vector = false; return std::string("string");
+        case coStrings:          vector = true;  return std::string("strings");
+        case coPercent:          vector = false; return std::string("percent");
+        case coPercents:         vector = true;  return std::string("percents");
+        case coFloatOrPercent:   vector = false; return std::string("float_or_percent");
+        case coFloatsOrPercents: vector = true;  return std::string("floats_or_percents");
+        case coPoint:            vector = false; return std::string("point");
+        case coPoints:           vector = true;  return std::string("points");
+        case coPoint3:           vector = false; return std::string("point3");
+        case coBool:             vector = false; return std::string("bool");
+        case coBools:            vector = true;  return std::string("bools");
+        case coEnum:             vector = false; return std::string("enum");
+        case coEnums:            vector = true;  return std::string("enums");
+        case coPointsGroups:     vector = true;  return std::string("points_groups");
+        case coIntsGroups:       vector = true;  return std::string("ints_groups");
+        default:                 vector = false; return std::string("none");
+        }
+    };
+    const auto mode_text = [](ConfigOptionMode mode) {
+        switch (mode) {
+        case comSimple:   return std::string("simple");
+        case comAdvanced: return std::string("advanced");
+#ifdef ENGINE_ORCA
+        case comExpert:   return std::string("expert");
+#endif
+        case comDevelop:  return std::string("develop");
+        }
+        return std::string("simple");
+    };
+    // Which preset holds the key: the engine's own lists (Preset.cpp). The
+    // meta keys they share ("inherits", "compatible_printers") are named the
+    // way the engines name them, by the last list that holds them: process
+    // first, then filament, then printer.
+    static const std::map<std::string, std::string> scopes = [] {
+        std::map<std::string, std::string> out;
+        for (const std::string& key : Preset::printer_options())  out[key] = "printer";
+        for (const std::string& key : Preset::filament_options()) out[key] = "filament";
+        for (const std::string& key : Preset::print_options())    out[key] = "process";
+        return out;
+    }();
+    json settings = json::array();
+    for (const auto& option : print_config_def.options) {
+        const std::string& key = option.first;
+        const ConfigOptionDef& def = option.second;
+        bool vector = false;
+        json entry;
+        entry["key"]    = key;
+        entry["type"]   = type_text(def.type, vector);
+        entry["vector"] = vector;
+        entry["mode"]   = mode_text(def.mode);
+        if (!def.label.empty())      entry["label"] = def.label;
+        if (!def.full_label.empty()) entry["full_label"] = def.full_label;
+        if (!def.category.empty())   entry["category"] = def.category;
+        if (!def.tooltip.empty())    entry["tooltip"] = def.tooltip;
+        if (!def.sidetext.empty())   entry["unit"] = def.sidetext;
+        // The default as the engine writes it, where the engine's own writer
+        // can write it (see default_is_writable).
+        if (default_is_writable(def.default_value.get()))
+            entry["default"] = def.default_value->serialize();
+        // Only a real bound: the engines mark "none" with a sentinel
+        // (min_default/max_default in BambuStudio, -/+FLT_MAX in OrcaSlicer).
+#ifdef ENGINE_ORCA
+        const float min_default = -FLT_MAX, max_default = FLT_MAX;
+#else
+        const double min_default = ConfigOptionDef::min_default, max_default = ConfigOptionDef::max_default;
+#endif
+        if (def.min > min_default) entry["min"] = def.min;
+        if (def.max < max_default) entry["max"] = def.max;
+        if (const auto scope = scopes.find(key); scope != scopes.end())
+            entry["scope"] = scope->second;
+        if (!def.enum_values.empty()) {
+            json values = json::array();
+            for (size_t i = 0; i < def.enum_values.size(); ++i) {
+                const bool labelled = i < def.enum_labels.size() && !def.enum_labels[i].empty();
+                values.push_back(json{{"value", def.enum_values[i]},
+                                      {"label", labelled ? def.enum_labels[i] : def.enum_values[i]}});
+            }
+            entry["enum"] = std::move(values);
+        }
+        settings.push_back(std::move(entry));
+    }
+    json out;
+#ifdef ENGINE_ORCA
+    out["engine"] = "orcaslicer";
+#else
+    out["engine"] = "bambustudio";
+#endif
+    out["engine_version"]     = engine_version_text();
+    out["slicer_cli_version"] = SLICER_CLI_VERSION;
+    out["settings"]           = std::move(settings);
+    std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
+    return 0;
+}
+
 /// A plate's logical width and depth, as the desktop's PartPlateList sizes
 /// it from the printable area: whole millimetres, plus the axes tip for files
 /// older than 1.5.9 (through reset_size(int, int, ...)). Zero without an area.
@@ -11984,6 +12113,9 @@ int main(int argc, char** argv) {
     if (o.slice_mode && mode_args.list_presets)
         return refuse_run(CLI_INVALID_PARAMS, "--list-presets lists this engine's presets and slices nothing; give it "
                                               "without --slice.");
+    if (o.slice_mode && mode_args.list_settings)
+        return refuse_run(CLI_INVALID_PARAMS, "--list-settings lists this engine's settings and slices nothing; give "
+                                              "it without --slice.");
     if (!mode_args.engine_info_file.empty()) {
         boost::log::core::get()->set_logging_enabled(false);
         return run_info(o.argv0, mode_args.engine_info_file, o.printer_preset);
@@ -11992,6 +12124,10 @@ int main(int argc, char** argv) {
     if (mode_args.list_presets) {
         boost::log::core::get()->set_logging_enabled(false);
         return run_list_presets(o, mode_args.list_printer);
+    }
+    if (mode_args.list_settings) {
+        boost::log::core::get()->set_logging_enabled(false);
+        return run_list_settings();
     }
     // --load-assemble-list builds the plates itself: no model files with it
     // (BambuStudio.cpp 1848-1853), and on OrcaSlicer no transforms either
