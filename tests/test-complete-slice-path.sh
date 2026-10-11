@@ -536,6 +536,33 @@ d = json.load(open("nfv/out/result.json"))
 assert d["return_code"] != 0, d' || { show nfv; fail "a refused command line left the stale result.json in place (a --metadata-value is not a file the run reads)"; }
 echo "PASS: only the values of flags that read a file hold result.json back"
 
+# A flag of the other engine reads its value too: the walk knows both engines'
+# own option tables, so the value of a flag this binary does not have is that
+# flag's value, not a model file, and the refusal's result.json is written.
+mkdir -p ofv/out
+printf 'stale\n' > ofv/out/result.json
+run ofv "$O" --camera-view ofv/out/result.json --slice 1 --outputdir ofv/out
+[ "$(rc ofv)" != 0 ] || fail "--camera-view was accepted by the OrcaSlicer build"
+py '
+import json
+d = json.load(open("ofv/out/result.json"))
+assert d["return_code"] != 0 and "only in slicer_cli" in d["error_string"], d' \
+    || { show ofv; fail "a refused command line left the stale result.json in place (a Bambu-only flag takes its value)"; }
+echo "PASS: the value of a flag of the other engine is not a model file"
+
+# ... and the other way round: a setting of the OrcaSlicer engine is no flag of
+# the Bambu Studio engine, and its value is no model file either.
+mkdir -p ofv2/out
+printf 'stale\n' > ofv2/out/result.json
+run ofv2 "$B" --chamber-temperature ofv2/out/result.json --slice 1 --outputdir ofv2/out
+[ "$(rc ofv2)" != 0 ] || fail "--chamber-temperature was accepted by the Bambu Studio build"
+py '
+import json
+d = json.load(open("ofv2/out/result.json"))
+assert d["return_code"] != 0, d' \
+    || { show ofv2; fail "a refused command line left the stale result.json in place (a setting of the other engine takes its value)"; }
+echo "PASS: the value of a setting of the other engine is not a model file"
+
 # The same for a mode's own file: --layout's JSON is named to the run to read
 # (by a mode flag, not a settings option), so a --layout refused for --slice
 # does not write its result.json over it.

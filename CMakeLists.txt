@@ -118,6 +118,38 @@ endif()
 
 get_filename_component(REF_SRC "${ENGINE_ROOT}/src" ABSOLUTE)
 
+# ─── The other engine's command-line flags ──────────────────────────────────
+# The walk over a refused command line (cli_command_line.cpp) reads a flag's
+# value the way that flag's own engine does, and the flags of the engine this
+# build does not compile are in none of its tables. They are read from the
+# other engine's own option registrations at configure time: the generated
+# header holds every flag that engine's command line has, with whether its
+# read_cli reads a value for it (scripts/engine_cli_flags.cmake). The other
+# engine's source is needed for that, so both submodules have to be checked
+# out — the submodules of `git clone --recurse-submodules`, or
+# `git submodule update --init --recursive`.
+if(ENGINE STREQUAL "orca")
+  set(OTHER_ENGINE_NAME "BambuStudio")
+  get_filename_component(OTHER_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/BambuStudio" ABSOLUTE)
+else()
+  set(OTHER_ENGINE_NAME "OrcaSlicer")
+  get_filename_component(OTHER_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/OrcaSlicer" ABSOLUTE)
+endif()
+set(OTHER_ENGINE_PRINT_CONFIG "${OTHER_ENGINE_ROOT}/src/libslic3r/PrintConfig.cpp")
+set(OTHER_ENGINE_FLAGS_HEADER "${CMAKE_CURRENT_BINARY_DIR}/engine_cli_flags.hpp")
+add_custom_command(
+  OUTPUT  "${OTHER_ENGINE_FLAGS_HEADER}"
+  COMMAND "${CMAKE_COMMAND}"
+          "-DENGINE_SRC=${OTHER_ENGINE_PRINT_CONFIG}"
+          "-DAPP_NAME=${OTHER_ENGINE_NAME}"
+          "-DOUT=${OTHER_ENGINE_FLAGS_HEADER}"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/scripts/engine_cli_flags.cmake"
+  DEPENDS "${OTHER_ENGINE_PRINT_CONFIG}"
+          "${CMAKE_CURRENT_SOURCE_DIR}/scripts/engine_cli_flags.cmake"
+  VERBATIM
+  COMMENT "Reading ${OTHER_ENGINE_NAME}'s command-line flags")
+add_custom_target(engine_cli_flags DEPENDS "${OTHER_ENGINE_FLAGS_HEADER}")
+
 # Primary source: exact engine reference files (do not edit these)
 set(LIBSLIC3R_REF_DIR "${REF_SRC}/libslic3r")
 
@@ -844,12 +876,14 @@ add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_pla
     cli_assemble.cpp cli_pipe.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 target_include_directories(slicer_cli PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}"   # engine_cli_flags.hpp, the other engine's flags
     "${VENDOR}"
     "${REF_SRC}"
     "${LIBSLIC3R_DIR}"
     "${LIBSLIC3R_REF_DIR}"
     "${SUBLIB_DIR}/miniz"
     "${OpenCASCADE_INCLUDE_DIR}")
+add_dependencies(slicer_cli engine_cli_flags)
 
 # Bake the engine submodule git SHA into the binary for capabilities.engine_commit
 # Provenance: run git with -C <engine dir> and verify the resolved toplevel IS

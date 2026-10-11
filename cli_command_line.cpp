@@ -24,6 +24,7 @@
 #include "libslic3r/Utils.hpp"
 
 #include "cli_flag_support.hpp"
+#include "engine_cli_flags.hpp"
 
 namespace slicer_cli {
 namespace {
@@ -115,6 +116,21 @@ const std::map<std::string, std::string>& official_names() {
         for (const auto& kv : cfg.def()->options)
             for (const std::string& t : kv.second.cli_args(kv.first))
                 out[t] = kv.first;
+        return out;
+    }();
+    return names;
+}
+
+// The other engine's official option table, read from its own registrations at
+// configure time (engine_cli_flags.hpp; CMakeLists.txt, "The other engine's
+// command-line flags"): this binary compiles one engine, and a flag of the
+// other is in none of its tables. Only the names this engine has not are read
+// from there — the walk asks this engine's own table first.
+const std::map<std::string, const OtherEngineFlag*>& other_engine_names() {
+    static const std::map<std::string, const OtherEngineFlag*> names = [] {
+        std::map<std::string, const OtherEngineFlag*> out;
+        for (const OtherEngineFlag& flag : kOtherEngineFlags)
+            out[flag.name] = &flag;
         return out;
     }();
     return names;
@@ -324,6 +340,14 @@ CommandLineFiles command_line_files(const std::vector<std::string>& words) {
         } else if (const LegacyFlag* lf = find_legacy(token)) {
             role = legacy_file_role(lf->id);
             takes_value = lf->takes_value;
+        } else if (const auto other = other_engine_names().find(token); other != other_engine_names().end()) {
+            // A flag of the engine this binary is not built on: that engine's
+            // own tables say whether it reads a value, and its key says
+            // whether the value is a file of the run's.
+            const FileOption* option = file_option(other->second->key);
+            role = option != nullptr ? FileRole::Named : FileRole::None;
+            file_list = option != nullptr && option->vector;
+            takes_value = other->second->takes_value;
         }
         if (!takes_value)
             continue;
