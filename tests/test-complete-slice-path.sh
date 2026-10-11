@@ -585,14 +585,32 @@ for bin in "$B" "$O"; do
     rm -rf "$e"; mkdir -p "$e/out"
     printf 'keep me\n' > "$e/out/result.json"
     cp mtl/out/part.obj "$e/out/part.obj"
+    # A third part past the one that fails: construction never reaches it, so
+    # the run must not read it. Where a pipe can be made it is one — a reader
+    # of a pipe no writer ever opens waits forever, and the guard read the
+    # side files of every part of the list, reached or not, before this fix.
+    # Windows has no mkfifo (the two-part list stands there), and a box
+    # without timeout cannot bound the run, so the part is left out there too.
+    third=""; gate=""
+    case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) if command -v timeout >/dev/null 2>&1; then
+           mkfifo "$e/out/later.obj"; third="$e/out/later.obj"; gate="timeout 60"
+       fi ;;
+    esac
     py '
 import json, sys
-json.dump({"plates": [{"plate_name": "p1", "need_arrange": False,
-           "objects": [{"path": sys.argv[1] + "/out/part.obj", "count": 1, "filaments": [1]},
-                       {"path": sys.argv[1] + "/out/gone.stl", "count": 1, "filaments": [1]}]}]},
-          open(sys.argv[1] + "/list.json", "w"))' "$e"
-    run "$e" "$bin" --load-assemble-list "$e/list.json" --slice 1 --printer-preset "$A1M" --outputdir "$e/out"
+objects = [{"path": sys.argv[1] + "/out/part.obj", "count": 1, "filaments": [1]},
+           {"path": sys.argv[1] + "/out/gone.stl", "count": 1, "filaments": [1]}]
+if sys.argv[2]:
+    objects.append({"path": sys.argv[2], "count": 1, "filaments": [1]})
+json.dump({"plates": [{"plate_name": "p1", "need_arrange": False, "objects": objects}]},
+          open(sys.argv[1] + "/list.json", "w"))' "$e" "$third"
+    # gate is "timeout 60" or nothing: word-split on purpose, so a box that
+    # cannot bound the run still exercises the two-part list.
+    run "$e" $gate "$bin" --load-assemble-list "$e/list.json" --slice 1 --printer-preset "$A1M" --outputdir "$e/out"
     [ "$(rc "$e")" != 0 ] || fail "$(basename "$bin"): an assemble list naming a file that is not there was accepted"
+    [ "$(rc "$e")" != 124 ] || { show "$e"; fail "$(basename "$bin"): the refusal for a list that failed to build waited on a part past the failure (a pipe)"; }
     [ "$(cat "$e/out/result.json" 2>/dev/null)" = "keep me" ] || { show "$e"; fail "$(basename "$bin"): the refusal for a list that failed to build wrote result.json over the first part's mtllib file"; }
 done
 echo "PASS: result.json is never written over a file a part of a list that failed to build reads"

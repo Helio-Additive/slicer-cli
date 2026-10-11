@@ -2842,13 +2842,15 @@ static std::unique_ptr<Slic3r::DynamicPrintConfig> g_preset_config;
 // its own); each plate's slice copies its objects out.
 static std::unique_ptr<slicer_cli::AssembleList> g_assemble;
 
-/// The parts of an assemble list that was built for the run — while it is
-/// built, or after the build turned it down: they are read and named before
-/// the list is moved into g_assemble, and a refusal while it is built (a later
-/// part the loader turns down) writes result.json too, from run_slice_mode or
-/// from its caller. Those parts and the files their loaders read beside them
-/// are the run's own inputs by then, so the write is held back for them as it
-/// is for a built list's. Empty while no assemble list is in hand.
+/// The parts of an assemble list the run is building — the ones construction
+/// has reached, in the order it reached them — or, if the build turned the
+/// list down, those same parts: they were read while it was built, and a
+/// refusal then writes result.json too, from run_slice_mode or from its
+/// caller. Those parts and the files their loaders read beside them are the
+/// run's own inputs by then, so the write is held back for them as it is for a
+/// built list's. A part construction never reached is not here: nothing read
+/// it, and reading it beside the input list can hold the run (a part that is
+/// a pipe). Empty while no assemble list is in hand.
 static std::vector<std::string> g_assemble_pending_sources;
 
 /// The --load-assemble-list file, or empty (an empty value is no list, as
@@ -11725,11 +11727,11 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     const std::string assemble_file = assemble_list_file(o);
     if (!assemble_file.empty()) {
         auto list = std::make_unique<slicer_cli::AssembleList>();
-        // The parts are read while the list is built: a refusal here names
-        // them (and the files their loaders read beside them) as the run's own
-        // inputs too, so the result.json it writes — here and from this
-        // function's caller — lands on none of them. They stay in hand until
-        // the list is the run's (g_assemble).
+        // The parts are read while the list is built: a refusal here names the
+        // ones construction reached (and the files their loaders read beside
+        // them) as the run's own inputs too, so the result.json it writes —
+        // here and from this function's caller — lands on none of them. They
+        // stay in hand until the list is the run's (g_assemble).
         const slicer_cli::StepResult built = slicer_cli::load_assemble_list(assemble_file, *list);
         g_assemble_pending_sources = list->sources;
         if (built.code != 0) {
