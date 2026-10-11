@@ -61,10 +61,6 @@ const std::vector<FileOption>& file_options();
 /// word names a model, and a value counts only when the flag in front of it
 /// reads a file. A word that is any other flag's value (-o NAME, a
 /// --metadata-value) is not a file of the run's, whatever it is spelled like.
-/// A flag of the other engine is read the same way, with whether it takes a
-/// value from that engine's own option tables (engine_cli_flags.hpp, generated
-/// at configure time): a value of a flag this binary does not have is not a
-/// model file either.
 struct CommandLineFiles {
     std::vector<std::string> models;   // model files: positional words, --input
     std::vector<std::string> named;    // the value of a flag that reads a file

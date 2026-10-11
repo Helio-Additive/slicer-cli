@@ -492,18 +492,6 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 
 The last three are written only when they have entries.
 
-`result.json` is never written over a file the run reads, whatever else fails:
-an input, a settings file, a file a model's loader reads beside it (the `.mtl`
-an OBJ's `mtllib` names), a part `--load-assemble-list` names — including one
-named by a list that failed to build — and the JSON `--layout` reads. The run
-is refused instead (`ResultIsInput` on stderr and as an `output_error` event:
-`<the file> is the input file ...; result.json is not written over it`). A
-value of a flag that reads no file is not such a file, so a refusal still
-replaces a stale `result.json`; a flag of the *other* engine counts as a flag
-of the other engine's own command line, value and all (`--camera-view FILE` on
-`slicer_cli-orcaslicer`, `--chamber-temperature 35` on `slicer_cli`), so its
-value is not read as a model file.
-
 ### Event lines
 
 While it runs, slicer-cli writes one line per event on stdout:

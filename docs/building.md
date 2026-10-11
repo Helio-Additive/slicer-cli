@@ -20,14 +20,6 @@ git clone --recurse-submodules https://github.com/Helio-Additive/slicer-cli.git
 cd slicer-cli
 ```
 
-Check out **both** engine submodules before configuring: a build reads the
-command line of both engines (`scripts/engine_cli_flags.cmake` turns the other
-engine's option registrations into `engine_cli_flags.hpp` in the build tree, so
-that a flag of the engine this build does not compile is read with its value —
-the `result.json` section of `docs/cli-reference.md` says what that changes). A
-missing engine tree stops the configure. `git clone --recurse-submodules` and
-`git submodule update --init --recursive` both do it.
-
 The two engines are git submodules, pinned to one commit each:
 
 | Engine | Submodule | Pin | Version |
