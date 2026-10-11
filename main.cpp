@@ -6083,8 +6083,9 @@ static int run_list_settings() {
     };
     // Which preset holds the key: the engine's own lists (Preset.cpp). The
     // meta keys they share ("inherits", "compatible_printers") are named the
-    // way the engines name them, by the last list that holds them: process
-    // first, then filament, then printer.
+    // way the engines name them, by the last list that holds them: the lists
+    // are laid down printer, filament, process, and the process list has the
+    // last word — a key in several of them is reported as process.
     static const std::map<std::string, std::string> scopes = [] {
         std::map<std::string, std::string> out;
         for (const std::string& key : Preset::printer_options())  out[key] = "printer";
