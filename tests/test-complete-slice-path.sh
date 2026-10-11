@@ -575,6 +575,28 @@ json.dump({"plates": [{"plate_name": "p1", "need_arrange": False,
 done
 echo "PASS: result.json is never written over a file an assemble-list model's loader reads"
 
+# The same while the list is built: a list whose second part fails — here a
+# file that is not there — has already read the first part's OBJ and its
+# mtllib file, and the refusal must not write over that file either. The parts
+# are read before the list is the run's own (construct_assemble_list), so the
+# guard has to know them from the list being built.
+for bin in "$B" "$O"; do
+    e=asmfail-$(basename "$bin")
+    rm -rf "$e"; mkdir -p "$e/out"
+    printf 'keep me\n' > "$e/out/result.json"
+    cp mtl/out/part.obj "$e/out/part.obj"
+    py '
+import json, sys
+json.dump({"plates": [{"plate_name": "p1", "need_arrange": False,
+           "objects": [{"path": sys.argv[1] + "/out/part.obj", "count": 1, "filaments": [1]},
+                       {"path": sys.argv[1] + "/out/gone.stl", "count": 1, "filaments": [1]}]}]},
+          open(sys.argv[1] + "/list.json", "w"))' "$e"
+    run "$e" "$bin" --load-assemble-list "$e/list.json" --slice 1 --printer-preset "$A1M" --outputdir "$e/out"
+    [ "$(rc "$e")" != 0 ] || fail "$(basename "$bin"): an assemble list naming a file that is not there was accepted"
+    [ "$(cat "$e/out/result.json" 2>/dev/null)" = "keep me" ] || { show "$e"; fail "$(basename "$bin"): the refusal for a list that failed to build wrote result.json over the first part's mtllib file"; }
+done
+echo "PASS: result.json is never written over a file a part of a list that failed to build reads"
+
 # layout capabilities with --slice among its words: refused with result.json,
 # as every refused --slice command line is.
 run lcap "$B" layout capabilities --json --slice 1 --outputdir lcap/out
