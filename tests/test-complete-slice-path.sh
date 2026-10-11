@@ -612,6 +612,41 @@ json.dump({"plates": [{"plate_name": "p1", "need_arrange": False, "objects": obj
     [ "$(rc "$e")" != 0 ] || fail "$(basename "$bin"): an assemble list naming a file that is not there was accepted"
     [ "$(rc "$e")" != 124 ] || { show "$e"; fail "$(basename "$bin"): the refusal for a list that failed to build waited on a part past the failure (a pipe)"; }
     [ "$(cat "$e/out/result.json" 2>/dev/null)" = "keep me" ] || { show "$e"; fail "$(basename "$bin"): the refusal for a list that failed to build wrote result.json over the first part's mtllib file"; }
+
+    # A part a branch turns down without opening it: on the Bambu build an OBJ
+    # part that is not a normal part fails the OBJ branch's own condition, so
+    # no loader reads it, and the refusal must not read it either (before this,
+    # its path was named before the branch was chosen). On the Orca build that
+    # branch has no subtype condition and ignores the key, so the part is read
+    # there and this class of bug cannot arise: that run waits on the pipe and
+    # the bound below is what ends it.
+    if [ -n "$third" ]; then
+        e2=asmobj-$(basename "$bin")
+        rm -rf "$e2"; mkdir -p "$e2/out"
+        printf 'keep me\n' > "$e2/out/result.json"
+        cp mtl/out/part.obj "$e2/out/part.obj"
+        mkfifo "$e2/out/later.obj"
+        py '
+import json, sys
+json.dump({"plates": [{"plate_name": "p1", "need_arrange": False,
+           "objects": [{"path": sys.argv[1] + "/out/part.obj", "count": 1, "filaments": [1]},
+                       {"path": sys.argv[1] + "/out/later.obj", "count": 1, "filaments": [1],
+                        "subtype": "negative_part"}]}]},
+          open(sys.argv[1] + "/list.json", "w"))' "$e2"
+        run "$e2" timeout 30 "$bin" --load-assemble-list "$e2/list.json" --slice 1 --printer-preset "$A1M" --outputdir "$e2/out"
+        if [ "$bin" = "$O" ]; then
+            # Its OBJ branch reads the part (no subtype condition, and the key
+            # is ignored), so the engine waits on the pipe itself: the bound is
+            # what ends the run. Not the refusal this check is about, and not
+            # the guard hanging on a name nothing opened.
+            [ "$(rc "$e2")" = 124 ] || { show "$e2"; fail "$(basename "$bin"): the OBJ branch that reads every .obj part did not read this one (exit $(rc "$e2"))"; }
+        else
+            [ "$(rc "$e2")" != 0 ] || fail "$(basename "$bin"): an assemble list part that is not a normal OBJ part was accepted"
+            [ "$(rc "$e2")" != 124 ] || { show "$e2"; fail "$(basename "$bin"): the refusal read a part its own branch turned down (a pipe) and waited on it"; }
+            grep -q '"tag":"ResultIsInput"' "$e2/stdout" || { show "$e2"; fail "$(basename "$bin"): no ResultIsInput event for the part that was read"; }
+        fi
+        [ "$(cat "$e2/out/result.json" 2>/dev/null)" = "keep me" ] || { show "$e2"; fail "$(basename "$bin"): the refusal for a part no loader read wrote result.json over the first part's mtllib file"; }
+    fi
 done
 echo "PASS: result.json is never written over a file a part of a list that failed to build reads"
 

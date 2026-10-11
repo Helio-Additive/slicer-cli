@@ -68,9 +68,9 @@ struct AssembleList {
     Slic3r::Model                           model;
     std::vector<Slic3r::DynamicPrintConfig> plate_configs;   // each plate's plate_params
     std::vector<Slic3r::RGBA>               colours;         // the OBJ colours, as filaments
-    /// Each object's file, as the list names it, added as construction starts
-    /// on that object (construct_assemble_list): a list that fails early never
-    /// reaches the parts after it, and those are not the run's files.
+    /// Each object's file, as the list names it, added where its loader reads
+    /// it (construct_assemble_list): a part the build never opens is not one
+    /// of the run's files.
     std::vector<std::string>                sources;
 };
 
@@ -83,8 +83,9 @@ StepResult load_assemble_plate_list(const std::string& file, std::vector<Assembl
 /// 765-1160): reads each object's STL or OBJ, sets its filament, settings,
 /// height ranges and position, makes its copies, and merges the parts that
 /// share an assemble_index into one "assemble_<n>" object. Each object's path
-/// is appended to `sources` as construction starts on that object, so a list
-/// that fails on an early object names only the parts it reached.
+/// is appended to `sources` in the branch whose loader reads it, so a list
+/// that fails early — or that turns a part down without opening it — names
+/// only the parts the run read.
 StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Slic3r::Model& model,
                                    std::vector<Slic3r::DynamicPrintConfig>& plate_configs,
                                    std::vector<Slic3r::RGBA>& all_colours,
