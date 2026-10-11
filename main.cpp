@@ -2842,6 +2842,17 @@ static std::unique_ptr<Slic3r::DynamicPrintConfig> g_preset_config;
 // its own); each plate's slice copies its objects out.
 static std::unique_ptr<slicer_cli::AssembleList> g_assemble;
 
+/// The parts of an assemble list the run is building — the ones its loaders
+/// have read, in the order they read them — or, if the build turned the list
+/// down, those same parts: they were read while it was built, and a refusal
+/// then writes result.json too, from run_slice_mode or from its caller. Those
+/// parts and the files their loaders read beside them are the run's own inputs
+/// by then, so the write is held back for them as it is for a built list's. A
+/// part no loader opened is not here: nothing read it, and reading it beside
+/// the input list can hold the run (a part that is a pipe). Empty while no
+/// assemble list is in hand.
+static std::vector<std::string> g_assemble_pending_sources;
+
 /// The --load-assemble-list file, or empty (an empty value is no list, as
 /// the official reads it: BambuStudio.cpp 1795-1799).
 static std::string assemble_list_file(const CliOptions& o) {
@@ -3055,6 +3066,16 @@ static std::string mm_text(double v) {
     return t;
 }
 
+/// The parts of the assemble list in hand — the built one, or the one a refusal
+/// left half-built (they name the run's files just the same) — or nullptr.
+static const std::vector<std::string>* assemble_sources() {
+    if (g_assemble)
+        return &g_assemble->sources;
+    if (!g_assemble_pending_sources.empty())
+        return &g_assemble_pending_sources;
+    return nullptr;
+}
+
 /// result.json in the official shape (record_exit_reson, BambuStudio.cpp
 /// 476-593 at 5873b5f). OrcaSlicer's own record (OrcaSlicer.cpp 416-460) is a
 /// subset of these keys, so both builds write this one. Keys beyond the
@@ -3081,8 +3102,8 @@ static std::vector<std::string> named_input_files(const CliOptions& o) {
             inputs.push_back(file);
         }
     }
-    if (g_assemble)
-        for (const std::string& file : g_assemble->sources)
+    if (const std::vector<std::string>* sources = assemble_sources())
+        for (const std::string& file : *sources)
             inputs.push_back(file);
     return inputs;
 }
@@ -3138,9 +3159,10 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
                     inputs.push_back(side);
                 // The assemble list's models and their side files, as
                 // check_run_outputs reads them (named_input_files has the
-                // models; their side files are added here).
-                if (g_assemble)
-                    for (const std::string& file : g_assemble->sources)
+                // models; their side files are added here). The list being
+                // built counts too: its parts are read before it is the run's.
+                if (const std::vector<std::string>* sources = assemble_sources())
+                    for (const std::string& file : *sources)
                         for (std::string& side : slicer_cli::loader_side_files(file, false))
                             inputs.push_back(std::move(side));
                 if (g_result_json_mode != nullptr) {
@@ -6063,8 +6085,9 @@ static int run_list_settings() {
     };
     // Which preset holds the key: the engine's own lists (Preset.cpp). The
     // meta keys they share ("inherits", "compatible_printers") are named the
-    // way the engines name them, by the last list that holds them: process
-    // first, then filament, then printer.
+    // way the engines name them, by the last list that holds them: the lists
+    // are laid down printer, filament, process, and the process list has the
+    // last word — a key in several of them is reported as process.
     static const std::map<std::string, std::string> scopes = [] {
         std::map<std::string, std::string> out;
         for (const std::string& key : Preset::printer_options())  out[key] = "printer";
@@ -11704,7 +11727,13 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     const std::string assemble_file = assemble_list_file(o);
     if (!assemble_file.empty()) {
         auto list = std::make_unique<slicer_cli::AssembleList>();
+        // The parts are read while the list is built: a refusal here names the
+        // ones its loaders read (and the files they read beside them) as the
+        // run's own inputs too, so the result.json it writes — here and from
+        // this function's caller — lands on none of them. They stay in hand
+        // until the list is the run's (g_assemble).
         const slicer_cli::StepResult built = slicer_cli::load_assemble_list(assemble_file, *list);
+        g_assemble_pending_sources = list->sources;
         if (built.code != 0) {
             write_result_json(outdir.string(), built.code, 0, cli_error_sentence(built.code) + " " + built.message, {}, 0, 0);
             std::cerr << "Error: " << built.message << "\n";
@@ -11713,6 +11742,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             return built.code;
         }
         g_assemble = std::move(list);
+        g_assemble_pending_sources.clear();
     } else
     // A missing input is the official "not found", not an unparseable model:
     // the official CLI checks every input before loading it

@@ -327,7 +327,8 @@ StepResult load_assemble_plate_list(const std::string& file, std::vector<Assembl
 }
 
 StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& model,
-                                   std::vector<DynamicPrintConfig>& plate_configs, std::vector<RGBA>& all_colours) {
+                                   std::vector<DynamicPrintConfig>& plate_configs, std::vector<RGBA>& all_colours,
+                                   std::vector<std::string>& sources) {
     ConfigSubstitutionContext config_substitutions(ForwardCompatibilitySubstitutionRule::Enable);
     Model temp_model;
     const int max_filament_count = int(size_t(EnforcerBlockerType::ExtruderMax));
@@ -353,6 +354,13 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
             TriangleMesh mesh;
             bool skip_filament = false;
             const std::string what = assemble_object.path + " (" + where + ", object " + std::to_string(obj_index + 1) + ")";
+            // The parts the run reads are named below, in the branch whose
+            // loader opens them — not here, before the branch is chosen. The
+            // output check beside the input list reads every name, so a part
+            // the branches turn down without opening it (an OBJ that is not a
+            // normal part, on the Bambu build) must not be named: the check
+            // would read a part nothing opened, and a part that is a pipe
+            // would hold the run there.
 
             if (!boost::filesystem::exists(boost::filesystem::path(assemble_object.path)))
                 return fail(CLI_FILE_NOTFOUND, "The assemble list names " + what + ", which does not exist; check the path");
@@ -362,6 +370,7 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
             object_name.assign(last_slash == nullptr ? path_str : last_slash + 1);
 
             if (boost::algorithm::iends_with(assemble_object.path, ".stl")) {
+                sources.push_back(assemble_object.path);   // read from ReadSTLFile on
                 if (!mesh.ReadSTLFile(path_str, true, nullptr))
                     return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be read; check the file");
                 if (mesh.empty())
@@ -379,6 +388,7 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                      assemble_object.subtype == ModelVolumeType::MODEL_PART)
 #endif
             {
+                sources.push_back(assemble_object.path);   // read from load_obj on
                 std::string message;
                 ObjInfo obj_info;
                 bool result = load_obj(path_str, &mesh, obj_info, message);
@@ -544,13 +554,12 @@ StepResult load_assemble_list(const std::string& file, AssembleList& list) {
     StepResult r = load_assemble_plate_list(file, list.plates);
     if (r.code != 0)
         return r;
-    // The files the objects come from, kept before construct_assemble_list
-    // clears each plate's object entries: the run may not export over them.
-    for (const AssemblePlate& plate : list.plates)
-        for (const AssembleObject& object : plate.objects)
-            list.sources.push_back(object.path);
+    // The files the objects come from are collected by the build itself, in the
+    // branch whose loader reads each one: construct_assemble_list clears each
+    // plate's object entries as it goes, and a list it turns down names only
+    // the parts whose loaders ran — the ones the run has read.
     try {
-        r = construct_assemble_list(list.plates, list.model, list.plate_configs, list.colours);
+        r = construct_assemble_list(list.plates, list.model, list.plate_configs, list.colours, list.sources);
         if (r.code != 0)
             return r;
     } catch (const std::exception& e) {

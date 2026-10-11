@@ -68,7 +68,10 @@ struct AssembleList {
     Slic3r::Model                           model;
     std::vector<Slic3r::DynamicPrintConfig> plate_configs;   // each plate's plate_params
     std::vector<Slic3r::RGBA>               colours;         // the OBJ colours, as filaments
-    std::vector<std::string>                sources;         // every object's file, as the list names it
+    /// Each object's file, as the list names it, added where its loader reads
+    /// it (construct_assemble_list): a part the build never opens is not one
+    /// of the run's files.
+    std::vector<std::string>                sources;
 };
 
 /// load_assemble_plate_list (BambuStudio.cpp 746-905; OrcaSlicer.cpp 609-764):
@@ -79,10 +82,14 @@ StepResult load_assemble_plate_list(const std::string& file, std::vector<Assembl
 /// construct_assemble_list (BambuStudio.cpp 907-1345; OrcaSlicer.cpp
 /// 765-1160): reads each object's STL or OBJ, sets its filament, settings,
 /// height ranges and position, makes its copies, and merges the parts that
-/// share an assemble_index into one "assemble_<n>" object.
+/// share an assemble_index into one "assemble_<n>" object. Each object's path
+/// is appended to `sources` in the branch whose loader reads it, so a list
+/// that fails early — or that turns a part down without opening it — names
+/// only the parts the run read.
 StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Slic3r::Model& model,
                                    std::vector<Slic3r::DynamicPrintConfig>& plate_configs,
-                                   std::vector<Slic3r::RGBA>& all_colours);
+                                   std::vector<Slic3r::RGBA>& all_colours,
+                                   std::vector<std::string>& sources);
 
 /// Both, then model.add_default_instances() (BambuStudio.cpp 2165-2188;
 /// OrcaSlicer.cpp 1812-1834): an exception while building is
