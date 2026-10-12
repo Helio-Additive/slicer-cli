@@ -41,16 +41,31 @@ struct ProfileRef {
     std::string filament;
 };
 
+/// v3: the prime tower, a fixed rectangle in bed-local mm placed on every bed,
+/// as the desktop's ArrangeJob::prepare_wipe_tower puts one per plate.
+struct PrimeTower {
+    bool   present      = false;
+    double x_mm         = 0.0;
+    double y_mm         = 0.0;
+    double width_mm     = 0.0;
+    double depth_mm     = 0.0;
+    double brim_mm      = 0.0;
+};
+
 struct LayoutProblemV1 {
     static constexpr int  SCHEMA_VERSION = 1;   // struct version; wire schemaVersion lives in VERSION_MIN..VERSION_MAX
     static constexpr int  VERSION_MIN    = 1;
-    static constexpr int  VERSION_MAX    = 2;   // v2: locked semantics + seed acceptance + allowed_rotations refusal
+    static constexpr int  VERSION_MAX    = 3;   // v2: locked semantics + seed acceptance + allowed_rotations refusal
+                                                // v3: beds "all", primeTower, bed exclusion areas, beds_used
+    int                    schema_version = 1;
     std::string            engine;
     std::string            profiles_dir;
     ProfileRef             profiles;
     SpacingPolicy          spacing;
     std::vector<ModelRef>  models;
     uint64_t               seed = 0;   // accepted-and-recorded; engine is inherently deterministic
+    bool                   all_beds = false;   // v3 "beds": "all": every bed the arrange fills is a placement
+    PrimeTower             prime_tower;        // v3
 };
 
 struct PlacedModel {
@@ -71,6 +86,7 @@ struct PlacementCandidateV1 {
     static constexpr int SCHEMA_VERSION = 1;
     std::string              engine;
     std::vector<PlacedModel> placements;
+    int                      beds_used = -1;   // v3 only: the number of beds the placements use (-1: not written)
 };
 
 struct LayoutErrorV1 {
@@ -91,7 +107,8 @@ struct CapabilitiesV1 {
     int         min_schema_version = LayoutProblemV1::VERSION_MIN;
     int         max_schema_version = LayoutProblemV1::VERSION_MAX;
     bool within_plate          = true;
-    bool cross_plate           = false;
+    bool cross_plate           = true;  // v3: beds "all"
+    bool prime_tower           = true;  // v3: primeTower on every bed
     bool non_rectangular_beds  = true;
     bool locks                 = true;
     bool rotation_constraints  = false; // v2: engine computes rotations internally, caller sets unsupported

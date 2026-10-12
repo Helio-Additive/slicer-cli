@@ -3475,9 +3475,10 @@ static std::vector<Slic3r::BoundingBoxf> arrange_exclude_boxes(const Slic3r::Dyn
 /// official adds a copy for every bed up to the sliced plate (num_plates,
 /// default 16); a one-plate arrange places items on bed 0 only, so it asks
 /// for bed 0's copy alone, and the project-wide arrange for the default 16.
-static void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
-                                      const Slic3r::DynamicPrintConfig& config, double inflation,
-                                      int num_beds = 1) {
+/// Also used by --layout-plan (layout_plan.cpp), for a v3 request.
+void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
+                               const Slic3r::DynamicPrintConfig& config, double inflation,
+                               int num_beds = 1) {
     using namespace Slic3r;
     const auto* wrapping = config.option<ConfigOptionBool>("enable_wrapping_detection");
     if (wrapping != nullptr && wrapping->value) {

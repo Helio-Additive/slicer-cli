@@ -7,6 +7,9 @@
 #      input, nothing on stdout (Linux and macOS: needs a FIFO).
 #   I3 --layout-plan: exit 0 with stdout one JSON document (the JSON is the
 #      last thing printed, after any diagnostics).
+#   I6 --layout-plan schemaVersion 3: "beds": "all" places items on every bed
+#      it fills (bed_idx, beds_used), clear of the primeTower on every bed;
+#      v2 keeps the single-bed answer; v3 fields in a v2 request are refused.
 #   I4 the product's default call on a by-object plate whose objects are too
 #      close: a nonzero exit and the stderr line
 #      "Validation error: ... collisions may be caused".
@@ -115,6 +118,77 @@ PY
         then pass "I5 $e: $spelling gives stderr of JSON documents only, UNFITTABLE"
         else fail "I5 $e: $spelling exit $(rc $n) (want 4); stderr: $(head -c 300 $n/stderr)"; fi
     done
+
+    # I6 (schemaVersion 3): six 110 mm squares need two X1 Carbon beds.
+    #  - "beds": "first" (today's single-bed answer, v2) leaves the ones past
+    #    bed 0 unplaced: exit 4, UNFITTABLE.
+    #  - "beds": "all" places every one, on bed 0 or 1 (beds_used 2), each fully
+    #    on its bed, and none overlapping the prime tower given in the request,
+    #    which stands on every bed.
+    #  - "beds" in a v2 request is refused; capabilities say v3, cross_plate
+    #    and prime_tower.
+    six() {  # six FILE SCHEMA EXTRA
+        python3 - "$1" "$2" "$3" "$e" "$(native "$prof")" "$machine" "$(native "$WORKDIR/sq110.stl")" <<'PY'
+import json, sys
+path, schema, extra, engine, prof, machine, model = sys.argv[1:]
+req = {"schemaVersion": int(schema), "engine": engine, "profilesDir": prof, "profiles": {"machine": machine},
+       "spacing": {"minObjectDistanceMm": 10.0, "allowRotations": False},
+       "models": [{"id": "s%d" % i, "path": model} for i in range(6)]}
+req.update(json.loads(extra))
+json.dump(req, open(path, "w"))
+PY
+    }
+    [ -f sq110.stl ] || python3 -c '
+v=[(x,y,z) for z in (0,10) for y in (0,110) for x in (0,110)]
+f=[(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+o=open("sq110.stl","w"); o.write("solid t\n")
+for a,b,c in f:
+    o.write("facet normal 0 0 0\nouter loop\n")
+    for i in (a,b,c): o.write("vertex %g %g %g\n" % v[i])
+    o.write("endloop\nendfacet\n")
+o.write("endsolid t\n")'
+    TOWER='{"x_mm": 15, "y_mm": 206.4, "width_mm": 35, "depth_mm": 37.4, "brim_mm": 3}'
+    six i6first-$e.json 2 '{}'
+    run i6first-$e "$bin" --layout-plan --input i6first-$e.json
+    if [ "$(rc i6first-$e)" = 4 ] && grep -q '"UNFITTABLE"' i6first-$e/stderr; then
+        pass "I6 $e: v2 (one bed) leaves the squares past bed 0 unplaced: exit 4, UNFITTABLE"
+    else fail "I6 $e: v2 exit $(rc i6first-$e) (want 4); stderr: $(tail -c 200 i6first-$e/stderr)"; fi
+
+    six i6all-$e.json 3 "{\"beds\": \"all\", \"primeTower\": $TOWER}"
+    run i6all-$e "$bin" --layout-plan --input i6all-$e.json
+    if [ "$(rc i6all-$e)" = 0 ] && python3 - i6all-$e/stdout <<'PY'
+import json, sys
+doc = json.loads(open(sys.argv[1]).read())
+pl = doc["placements"]
+assert len(pl) == 6 and all(p["bed_idx"] in (0, 1) for p in pl), pl
+assert doc["beds_used"] == 2 and {p["bed_idx"] for p in pl} == {0, 1}, doc
+# The tower box grown by its brim: x 12..53, y 203.4..246.8. A square's box
+# (centre +- 55) must not overlap it, on any bed; and each square stays on
+# the 256 x 256 bed.
+tx0, ty0, tx1, ty1 = 12, 203.4, 53, 246.8
+for p in pl:
+    x0, y0, x1, y1 = p["x_mm"] - 55, p["y_mm"] - 55, p["x_mm"] + 55, p["y_mm"] + 55
+    assert x0 >= -0.01 and y0 >= -0.01 and x1 <= 256.01 and y1 <= 256.01, p
+    assert x1 <= tx0 or x0 >= tx1 or y1 <= ty0 or y0 >= ty1, ("on the tower", p)
+PY
+    then pass "I6 $e: v3 beds all places all six on beds 0-1 (beds_used 2), clear of the prime tower on every bed"
+    else fail "I6 $e: v3 exit $(rc i6all-$e) (want 0); stdout: $(head -c 400 i6all-$e/stdout); stderr: $(tail -c 200 i6all-$e/stderr)"; fi
+
+    six i6old-$e.json 2 '{"beds": "all"}'
+    run i6old-$e "$bin" --layout-plan --input i6old-$e.json
+    if [ "$(rc i6old-$e)" = 3 ] && grep -q "require schemaVersion 3" i6old-$e/stderr; then
+        pass "I6 $e: beds in a v2 request is refused (exit 3)"
+    else fail "I6 $e: v2 with beds exit $(rc i6old-$e) (want 3); stderr: $(tail -c 200 i6old-$e/stderr)"; fi
+
+    run i6caps-$e "$bin" layout capabilities --json
+    if python3 - i6caps-$e/stdout <<'PY'
+import json, sys
+doc = json.loads(open(sys.argv[1]).read())
+c = doc["capabilities"]
+assert doc["max_schema_version"] == 3 and c["cross_plate"] is True and c["prime_tower"] is True, doc
+PY
+    then pass "I6 $e: capabilities: max_schema_version 3, cross_plate, prime_tower"
+    else fail "I6 $e: capabilities: $(head -c 300 i6caps-$e/stdout)"; fi
 
     # I2: SIGINT while it waits for a writer on its --input FIFO: exit 5,
     # CANCELLED on stderr, nothing on stdout.
