@@ -42,51 +42,68 @@ program called `slicer_cli`; packaging renames the OrcaSlicer one.
 
 One engine per build tree; build twice for both. Per-OS instructions, the pinned
 dependency versions and the CGAL prefixes are in
-[docs/building.md](docs/building.md).
+[docs/building.md](docs/building.md). Line numbers below are in
+`.github/workflows/slicer-cli-ci.yml`. Every build and test job is skipped on a
+draft pull request (`github.event.pull_request.draft == false`), so mark a PR
+ready for review before reading its checks.
 
-Dependencies:
+Dependencies — Linux and macOS; on Windows they come from vcpkg
+(docs/building.md, "Windows"):
 
 ```sh
-ENGINE=bambu ./install_deps.sh          # docs/building.md; CI: slicer-cli-ci.yml:306
+ENGINE=bambu ./install_deps.sh     # docs/building.md; CI runs it on macOS: slicer-cli-ci.yml:306,883
 ENGINE=orca  ./install_deps.sh
 ```
 
-Configure and build (Linux, macOS):
+Configure and build — Linux (`:629,677`) and macOS (`:1214,1262`):
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENGINE=bambu   # slicer-cli-ci.yml:629
-cmake --build build --config Release --parallel 4               # slicer-cli-ci.yml:677
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENGINE=bambu \
+  -DCGAL_DIR=<CGAL 5.4 prefix>/lib/cmake/CGAL      # -DENGINE=orca uses the 5.6.3 prefix
+cmake --build build --config Release --parallel 4
 ```
 
-Windows, from a Visual Studio developer prompt:
+Windows, from a Visual Studio developer prompt (`:1245,1265`); the toolchain,
+CGAL and libnoise paths come from vcpkg:
 
 ```powershell
-cmake -S . -B build -DENGINE=bambu     # slicer-cli-ci.yml:660
-cmake --build build --config Release --parallel 16              # slicer-cli-ci.yml:680
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+  -DENGINE=bambu `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+  -DCGAL_DIR="$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\cgal" `
+  -DCMAKE_PREFIX_PATH="$env:LIBNOISE_ROOT"
+cmake --build build --config Release --parallel 16
 ```
 
-Tests, against the built program (CI: `slicer-cli-ci.yml:702,708,714,718`):
+Tests. The build-tree tests take the program the build produced; CI runs them on
+Linux (`:702-718`) and macOS (`:1287-1305`), not on Windows:
 
 ```sh
-bash tests/test_nozzle_map_provenance.sh build/slicer_cli
-bash tests/test_diagnostic_events.sh build/slicer_cli
+bash tests/test_diagnostic_events.sh build/slicer_cli        # engine read from the binary
 bash tests/test_excluded_features.sh build/slicer_cli
-python3 tests/test_diagnostic_transport.py
+python3 tests/test_diagnostic_transport.py                   # no arguments; compiles its own probe
+bash tests/test_nozzle_map_provenance.sh build/slicer_cli    # Bambu build only
 ```
 
-Against a package, both programs (`slicer-cli-ci.yml:1582-1587`, `:1882`):
+The package tests take the packaged programs. Linux keeps them in `bin/`
+(`:1850-1851`); macOS (`:1534-1535`) and Windows (`:1681-1682`) put them at the
+package root, with `.exe` on Windows:
 
 ```sh
-bash tests/test-packaged-slice.sh <pkg>/bin/slicer_cli <pkg>/bin/slicer_cli-orcaslicer
-bash tests/test-complete-slice-path.sh <pkg>/bin/slicer_cli <pkg>/bin/slicer_cli-orcaslicer
-bash tests/test_list_settings.sh <pkg>/bin/slicer_cli
-bash tests/test-portable-bundle.sh <pkg>
+# every OS, both programs, in that order
+bash tests/test-complete-slice-path.sh <slicer_cli> <slicer_cli-orcaslicer>   # :1888, :1585, :1705
+# macOS (:1582) and Windows (:1703); the second program is optional
+bash tests/test-packaged-slice.sh <slicer_cli> [<slicer_cli-orcaslicer>]
+# macOS only (:1587); both programs required
+bash tests/test_list_settings.sh <slicer_cli> <slicer_cli-orcaslicer>
+# Linux package only (:1882); takes the package root and checks the bin/ layout
+bash tests/test-portable-bundle.sh <package root>
 ```
 
 `tests/test-complete-slice-path.sh` covers both engines: the flags, plate type
 rules, model formats, `result.json` and exported projects. Flags and outputs are
 documented in [docs/cli-reference.md](docs/cli-reference.md); a first build
-compiles about 1,500 engine files.
+compiles about 1,500 engine files (`:674-676`).
 
 ## Rules
 
