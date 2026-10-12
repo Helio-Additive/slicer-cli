@@ -78,8 +78,21 @@ vcpkg install tbb eigen3 boost cgal "opencv[core]" assimp opencascade qhull cere
 # Bambu Studio engine: add --overlay-ports=ci/vcpkg-overlays for CGAL 5.4
 ```
 
-libnoise is built from the engine's pinned source, as in the workflow's
-"libnoise" step.
+libnoise is not in vcpkg, so build it before configuring, from the engine's own
+pinned fork — `bambulab/libnoise` `7e7c98c` for the Bambu Studio engine,
+`SoftFever/Orca-deps-libnoise` `f25d533` for OrcaSlicer. Install it into a
+prefix of its own and pass that prefix as `-DCMAKE_PREFIX_PATH` in the Windows
+command below; the workflow's "libnoise" steps do the same before they
+configure:
+
+```powershell
+git clone https://github.com/bambulab/libnoise.git
+git -C libnoise checkout 7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+cmake -S libnoise -B libnoise/build -G "Visual Studio 17 2022" -A x64 `
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build libnoise/build --config Release
+cmake --install libnoise/build --config Release --prefix C:\libnoise-prefix
+```
 
 ## Configure and build
 
@@ -98,7 +111,9 @@ cmake --build build-orca --target slicer_cli
 Add the prefixes of anything you built yourself (Boost, libnoise, qhull) to
 `-DCMAKE_PREFIX_PATH`.
 
-Windows (from a Visual Studio developer prompt):
+Windows (from a Visual Studio developer prompt; `$env:VCPKG_ROOT` is your own
+vcpkg checkout — the CI runners call the same place
+`VCPKG_INSTALLATION_ROOT`):
 
 ```powershell
 cmake -S . -B build -G Ninja -DENGINE=bambu `

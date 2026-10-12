@@ -45,7 +45,9 @@ dependency versions and the CGAL prefixes are in
 [docs/building.md](docs/building.md). Line numbers below are in
 `.github/workflows/slicer-cli-ci.yml`. Every build and test job is skipped on a
 draft pull request (`github.event.pull_request.draft == false`), so mark a PR
-ready for review before reading its checks.
+ready for review before reading its checks. A change that touches only `*.md`,
+`docs/**`, `LICENSE` or `NOTICE` runs no CI at all (`paths-ignore` on both
+triggers).
 
 Dependencies — Linux and macOS; on Windows they come from vcpkg
 (docs/building.md, "Windows"):
@@ -63,17 +65,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENGINE=bambu \
 cmake --build build --config Release --parallel 4
 ```
 
-Windows, from a Visual Studio developer prompt (`:1245,1265`); the toolchain,
-CGAL and libnoise paths come from vcpkg:
-
-```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
-  -DENGINE=bambu `
-  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
-  -DCGAL_DIR="$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\cgal" `
-  -DCMAKE_PREFIX_PATH="$env:LIBNOISE_ROOT"
-cmake --build build --config Release --parallel 16
-```
+Windows builds follow [docs/building.md](docs/building.md), "Windows": vcpkg
+gives the dependencies, libnoise comes from the engine's pinned fork and must be
+built first, and its prefix goes in `-DCMAKE_PREFIX_PATH`.
 
 Tests. The build-tree tests take the program the build produced; CI runs them on
 Linux (`:702-718`) and macOS (`:1287-1305`), not on Windows:
