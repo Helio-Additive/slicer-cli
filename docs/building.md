@@ -40,7 +40,7 @@ platform allows it:
 
 | Dependency | Bambu Studio engine | OrcaSlicer engine |
 |-|-|-|
-| CGAL | 5.4, commit `c58ac97e`, with Bambu's `0001-clang19.patch` | 5.6.3 (Linux, macOS); vcpkg CGAL 6 on Windows |
+| CGAL | 5.4, commit `c58ac97e`, with Bambu's `0001-clang19.patch` | 5.6.3 on Linux and in macOS CI; Homebrew's CGAL on a local macOS build; vcpkg CGAL 6 on Windows |
 | OpenCASCADE | 7.6.0 static on Linux; vcpkg 7.9.3 on Windows | the same |
 | libnoise | bambulab/libnoise `7e7c98c0` | SoftFever/Orca-deps-libnoise `f25d5331` |
 | Boost | 1.84.0 static on Linux, with Bambu's process patch | the same |
@@ -55,13 +55,27 @@ the Windows Bambu build takes CGAL 5.4 from the overlay port in
 
 ### Linux (Ubuntu 22.04) and macOS
 
-`install_deps.sh` installs the system packages (apt or Homebrew) and builds
-the pinned CGAL, OpenCASCADE (Linux) and libnoise for one engine:
+`install_deps.sh` installs the system packages (apt or Homebrew) and builds the
+pinned dependencies for one engine:
 
 ```sh
 ENGINE=bambu ./install_deps.sh
 ENGINE=orca ./install_deps.sh
 ```
+
+On Linux it builds the engine's own pinned CGAL either way — 5.4 (Bambu, with
+its Clang 19 patch) into `/opt/slicer-cli/cgal-5.4`, or 5.6.3 into
+`/opt/slicer-cli/cgal-5.6.3` — and that prefix is what `-DCGAL_DIR` takes in the
+configure command below.
+
+On macOS it builds the pinned 5.4 keg for the Bambu engine only: a local
+OrcaSlicer build takes the CGAL Homebrew installs, which is not the 5.6.3 the
+Linux build and the macOS CI build use (docs/engine-dependency-contract.md,
+"Compatibility exceptions"). The macOS CI build holds Orca at 5.6.3 — its step
+`Build macOS pinned CGAL (Orca)` builds that prefix from the CGAL 5.6.3 release
+archive, and the configure step passes
+`-DCGAL_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL`. Build the same prefix
+locally when the engines' CGAL has to match.
 
 On Linux the release build also links a static Boost 1.84.0; the
 `linux-boost` job of the workflow shows how it is built (the Boost source,

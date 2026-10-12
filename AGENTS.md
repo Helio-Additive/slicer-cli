@@ -40,37 +40,20 @@ program called `slicer_cli`; packaging renames the OrcaSlicer one.
 
 ## Build and test
 
-One engine per build tree; build twice for both. Per-OS instructions, the pinned
-dependency versions and the CGAL prefixes are in
-[docs/building.md](docs/building.md). The job and step names quoted below are
-those in `.github/workflows/slicer-cli-ci.yml`, with the `${{ matrix.* }}`
-suffix left off where a name is parameterised. Every build and test job is
-skipped on a draft pull request (`github.event.pull_request.draft == false`), so
-mark a PR ready for review before reading its checks. A change that touches only
-`*.md`, `docs/**`, `LICENSE` or `NOTICE` runs no CI at all (`paths-ignore` on
-both triggers).
+One engine per build tree; build twice for both. Build per operating system and
+engine by [docs/building.md](docs/building.md): its "Dependencies" and "Configure
+and build" sections carry the pinned versions, the per-platform recipe and the
+prefix each engine needs. The tested recipe is the `Build & Test` job of
+`.github/workflows/slicer-cli-ci.yml`, in steps `Install dependencies (macOS)`,
+`Install dependencies (Linux)`, `Install dependencies (Windows)`, `Configure
+(macOS / Linux)`, `Configure (Windows)` and `Build`.
 
-Dependencies — Linux and macOS; on Windows they come from vcpkg
-(docs/building.md, "Windows"):
-
-```sh
-ENGINE=bambu ./install_deps.sh     # docs/building.md; step "Install dependencies (macOS)"
-ENGINE=orca  ./install_deps.sh
-```
-
-Configure and build — steps `Configure (macOS / Linux)` and `Build` of the
-`Build & Test` job:
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENGINE=bambu \
-  -DCGAL_DIR=<CGAL 5.4 prefix>/lib/cmake/CGAL      # -DENGINE=orca uses the 5.6.3 prefix
-cmake --build build --config Release --parallel 4
-```
-
-Windows builds follow [docs/building.md](docs/building.md), "Windows": vcpkg
-gives the dependencies, libnoise comes from the engine's pinned fork and must be
-built first, and its prefix goes in `-DCMAKE_PREFIX_PATH`. CI builds Windows in
-steps `Configure (Windows)` and `Build (Windows)` of the same job.
+The job and step names quoted below are those in that workflow, with the
+`${{ matrix.* }}` suffix left off where a name is parameterised. Every build and
+test job is skipped on a draft pull request (`github.event.pull_request.draft ==
+false`), so mark a PR ready for review before reading its checks. A change that
+touches only `*.md`, `docs/**`, `LICENSE` or `NOTICE` runs no CI at all
+(`paths-ignore` on both triggers).
 
 Tests. The build-tree tests take the program the build produced; CI runs them on
 Linux and macOS, never on Windows, in steps `Run structured-diagnostics event
