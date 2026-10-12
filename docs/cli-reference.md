@@ -405,7 +405,8 @@ reports the schema versions a binary takes. Version 3 adds, both binaries:
   wrapping-detection area when `enable_wrapping_detection` is on, and, on a
   printer that scans its first layer (`scan_first_layer`), the front
   calibration strip from (18, 0) to (240, 15) mm (OrcaSlicer: Bambu Lab
-  printers only), as the desktop's Arrange keeps them.
+  printers only), as the desktop's Arrange keeps them. A locked model that
+  stands on the tower or one of these areas is `UNFITTABLE`.
 
 Give the printer's own rectangular `printable_area`. A bed with a notch cut out
 for the tower makes the arrange use its irregular-bed path, which places objects

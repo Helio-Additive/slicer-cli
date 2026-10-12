@@ -217,6 +217,26 @@ PY
     then pass "I6 $e: the tower stands on every bed: nine squares in front of it take $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["beds_used"])' i6wall-$e/stdout) beds"
     else fail "I6 $e: tower on every bed: exit $(rc i6wall-$e); stdout: $(head -c 400 i6wall-$e/stdout); stderr: $(tail -c 200 i6wall-$e/stderr)"; fi
 
+    # A locked square standing on the tower is UNFITTABLE: two fixed items are
+    # never moved apart, so v3 reports it rather than answer an overlap. The
+    # same request without the tower places it.
+    for tw in with without; do
+        python3 - i6lock$tw-$e.json "$e" "$(native "$prof")" "$machine" "$(native "$WORKDIR/sq60.stl")" "$tw" <<'PY'
+import json, sys
+path, engine, prof, machine, model, tw = sys.argv[1:]
+req = {"schemaVersion": 3, "engine": engine, "profilesDir": prof, "profiles": {"machine": machine},
+       "models": [{"id": "lk", "path": model, "locked": True, "transform": {"x_mm": 40, "y_mm": 185}}], "beds": "all"}
+if tw == "with":
+    req["primeTower"] = {"x_mm": 15, "y_mm": 206.4, "width_mm": 35, "depth_mm": 37.4, "brim_mm": 3}
+json.dump(req, open(path, "w"))
+PY
+        run i6lock$tw-$e "$bin" --layout-plan --input i6lock$tw-$e.json
+    done
+    if [ "$(rc i6lockwith-$e)" = 4 ] && grep -q '"UNFITTABLE"' i6lockwith-$e/stderr && grep -q '"lk"' i6lockwith-$e/stderr \
+       && [ "$(rc i6lockwithout-$e)" = 0 ]; then
+        pass "I6 $e: a locked square on the prime tower is UNFITTABLE (placed when there is no tower)"
+    else fail "I6 $e: locked on tower exit $(rc i6lockwith-$e) (want 4), without tower exit $(rc i6lockwithout-$e) (want 0); stderr: $(tail -c 200 i6lockwith-$e/stderr)"; fi
+
     # A tower that is not on the bed is refused, not reserved off the bed.
     python3 - i6off-$e.json "$e" "$(native "$prof")" "$machine" "$(native "$WORKDIR/sq60.stl")" <<'PY'
 import json, sys

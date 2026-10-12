@@ -812,9 +812,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     // a virtual wipe-tower item that never moves. A v1/v2 request keeps
     // today's arrange: the locked items alone.
     ArrangePolygons fixed = locked_input;
+    ArrangePolygons extra;   // v3: the tower, exclusion areas and calibration strip copies, per bed
     if (problem.schema_version >= 3) {
         const int num_beds = problem.all_beds ? kMaxBeds : 1;
-        ArrangePolygons extra;
         if (problem.prime_tower.present) {
             const PrimeTower& t = problem.prime_tower;
             const double x0 = t.x_mm - t.brim_mm, y0 = t.y_mm - t.brim_mm;
@@ -823,11 +823,14 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             // tower inside the plate before it arranges (PartPlate.cpp
             // 2290-2291); a request is refused instead, so the answer never
             // reserves a place the tower does not print at.
-            BoundingBoxf area_box;
+            // Against the printable_area polygon itself, so a round or notched
+            // bed is honoured too (fully_inside_bed clips edge-aware).
+            Polygon area_poly;
             if (const auto* area = cfg.option<ConfigOptionPoints>("printable_area"))
-                for (const Vec2d& p : area->values) area_box.merge(p);
-            if (!area_box.defined || x0 < area_box.min.x() - EPSILON || y0 < area_box.min.y() - EPSILON ||
-                x1 > area_box.max.x() + EPSILON || y1 > area_box.max.y() + EPSILON) {
+                for (const Vec2d& p : area->values) area_poly.points.emplace_back(scaled(p.x()), scaled(p.y()));
+            const ExPolygon tower_box(Polygon({{scaled(x0), scaled(y0)}, {scaled(x1), scaled(y0)},
+                                               {scaled(x1), scaled(y1)}, {scaled(x0), scaled(y1)}}));
+            if (area_poly.points.size() < 3 || !fully_inside_bed(tower_box, area_poly)) {
                 LayoutErrorV1 err; err.error.code="INVALID_INPUT";
                 err.error.message="primeTower with its brim must lie inside the printer's printable_area; give the "
                                   "position the tower prints at";
@@ -922,6 +925,18 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 if (!off.empty())
                     inflated = off.front();
                 if (!fully_inside_bed(inflated, bed_poly)) {
+                    pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
+                }
+                // v3: a locked object (fixed on bed 0) standing on a region
+                // v3 keeps clear on that bed (the tower, an exclusion area,
+                // the calibration strip) is UNFITTABLE: the nester moves
+                // neither of two fixed items apart.
+                bool on_region = false;
+                for (const ArrangePolygon& region : extra) {
+                    if (region.bed_idx != 0) continue;
+                    if (!intersection_ex(ap.transformed_poly(), region.transformed_poly()).empty()) { on_region = true; break; }
+                }
+                if (on_region) {
                     pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
                 }
             }
