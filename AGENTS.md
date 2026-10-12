@@ -34,30 +34,32 @@ Read first, and change here rather than copy: [README.md](README.md),
 | `.github/workflows/slicer-cli-ci.yml` | Build, test, package, release |
 
 The build picks its engine with the CMake cache variable `ENGINE`
-(`-DENGINE=bambu` default, `-DENGINE=orca`; `CMakeLists.txt:99`), which defines
-`ENGINE_BAMBU` or `ENGINE_ORCA` (`CMakeLists.txt:107,113`). Both engines build a
+(`-DENGINE=bambu` default, `-DENGINE=orca`; `CMakeLists.txt`), which defines
+`ENGINE_BAMBU` or `ENGINE_ORCA` for the front-end blocks. Both engines build a
 program called `slicer_cli`; packaging renames the OrcaSlicer one.
 
 ## Build and test
 
 One engine per build tree; build twice for both. Per-OS instructions, the pinned
 dependency versions and the CGAL prefixes are in
-[docs/building.md](docs/building.md). Line numbers below are in
-`.github/workflows/slicer-cli-ci.yml`. Every build and test job is skipped on a
-draft pull request (`github.event.pull_request.draft == false`), so mark a PR
-ready for review before reading its checks. A change that touches only `*.md`,
-`docs/**`, `LICENSE` or `NOTICE` runs no CI at all (`paths-ignore` on both
-triggers).
+[docs/building.md](docs/building.md). The job and step names quoted below are
+those in `.github/workflows/slicer-cli-ci.yml`, with the `${{ matrix.* }}`
+suffix left off where a name is parameterised. Every build and test job is
+skipped on a draft pull request (`github.event.pull_request.draft == false`), so
+mark a PR ready for review before reading its checks. A change that touches only
+`*.md`, `docs/**`, `LICENSE` or `NOTICE` runs no CI at all (`paths-ignore` on
+both triggers).
 
 Dependencies — Linux and macOS; on Windows they come from vcpkg
 (docs/building.md, "Windows"):
 
 ```sh
-ENGINE=bambu ./install_deps.sh     # docs/building.md; CI runs it on macOS: slicer-cli-ci.yml:306,883
+ENGINE=bambu ./install_deps.sh     # docs/building.md; step "Install dependencies (macOS)"
 ENGINE=orca  ./install_deps.sh
 ```
 
-Configure and build — Linux (`:629,677`) and macOS (`:1214,1262`):
+Configure and build — steps `Configure (macOS / Linux)` and `Build` of the
+`Build & Test` job:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENGINE=bambu \
@@ -67,10 +69,13 @@ cmake --build build --config Release --parallel 4
 
 Windows builds follow [docs/building.md](docs/building.md), "Windows": vcpkg
 gives the dependencies, libnoise comes from the engine's pinned fork and must be
-built first, and its prefix goes in `-DCMAKE_PREFIX_PATH`.
+built first, and its prefix goes in `-DCMAKE_PREFIX_PATH`. CI builds Windows in
+steps `Configure (Windows)` and `Build (Windows)` of the same job.
 
 Tests. The build-tree tests take the program the build produced; CI runs them on
-Linux (`:702-718`) and macOS (`:1287-1305`), not on Windows:
+Linux and macOS, never on Windows, in steps `Run structured-diagnostics event
+tests`, `Run feature-exclusion regression tests`, `Test diagnostic transport`
+and `Run nozzle-map provenance regression tests (bambu)`:
 
 ```sh
 bash tests/test_diagnostic_events.sh build/slicer_cli        # engine read from the binary
@@ -79,25 +84,27 @@ python3 tests/test_diagnostic_transport.py                   # no arguments; com
 bash tests/test_nozzle_map_provenance.sh build/slicer_cli    # Bambu build only
 ```
 
-The package tests take the packaged programs. Linux keeps them in `bin/`
-(`:1850-1851`); macOS (`:1534-1535`) and Windows (`:1681-1682`) put them at the
-package root, with `.exe` on Windows:
+The package tests take the packaged programs, from the `Package` job (macOS and
+Windows) and the `Package - Linux x86_64` job. Linux keeps them in `bin/` (step
+`Assemble and validate Linux package`); macOS (step `Assemble + validate package
+(macOS arm64)`) and Windows (step `Assemble + validate package (Windows x86_64)`)
+put them at the package root, with `.exe` on Windows:
 
 ```sh
 # every OS, both programs, in that order
-bash tests/test-complete-slice-path.sh <slicer_cli> <slicer_cli-orcaslicer>   # :1888, :1585, :1705
-# macOS (:1582) and Windows (:1703); the second program is optional
+bash tests/test-complete-slice-path.sh <slicer_cli> <slicer_cli-orcaslicer>
+# macOS and Windows; the second program is optional
 bash tests/test-packaged-slice.sh <slicer_cli> [<slicer_cli-orcaslicer>]
-# macOS only (:1587); both programs required
+# macOS only; both programs required
 bash tests/test_list_settings.sh <slicer_cli> <slicer_cli-orcaslicer>
-# Linux package only (:1882); takes the package root and checks the bin/ layout
+# Linux package only; takes the package root and checks the bin/ layout
 bash tests/test-portable-bundle.sh <package root>
 ```
 
 `tests/test-complete-slice-path.sh` covers both engines: the flags, plate type
 rules, model formats, `result.json` and exported projects. Flags and outputs are
 documented in [docs/cli-reference.md](docs/cli-reference.md); a first build
-compiles about 1,500 engine files (`:674-676`).
+compiles about 1,500 engine files.
 
 ## Rules
 
@@ -131,9 +138,9 @@ compiles about 1,500 engine files (`:674-676`).
 
 ## Releases
 
-Tags are `slicer-cli/v<version>`; the workflow publishes the release assets
-(`.github/workflows/slicer-cli-ci.yml`, `release` job, line 1929). Contributors
-do not tag or publish.
+Tags are `slicer-cli/v<version>`; the `.github/workflows/slicer-cli-ci.yml` job
+`Publish slicer-cli release assets` publishes them. Contributors do not tag or
+publish.
 
 Everything else — the CLA, what is and is not accepted, style — is in
 [CONTRIBUTING.md](CONTRIBUTING.md).
