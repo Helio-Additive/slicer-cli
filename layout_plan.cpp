@@ -38,11 +38,20 @@
 #include <string>
 #include <unordered_set>
 
+// The bed exclusion areas as fixed arrange items and excluded regions
+// (main.cpp: PartPlateList::preprocess_exclude_areas, shared with --arrange).
+void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out, const Slic3r::DynamicPrintConfig& config,
+                               double inflation, int num_beds);
+
 namespace layout_plan {
 
 using json = nlohmann::json;
 using namespace Slic3r;
 using namespace Slic3r::arrangement;
+
+// MAX_PLATE_COUNT: the most plates a project holds (Bambu PartPlate.hpp; the
+// project-wide arrange's create_plate limit, main.cpp plan_project_plates).
+static constexpr int kMaxBeds = 36;
 
 // ─── Cancellation ────────────────────────────────────────────────────────────
 static std::atomic<bool> g_cancelled{false};
@@ -130,6 +139,12 @@ static int slurp_profile_cancellable(const std::string& fp, std::string& out) {
 #endif
 }
 
+// While the machine profile loads, where its printer_model goes: preset
+// metadata the loader keeps out of the config, read as the files are parsed
+// (each file is opened once; a profile may be a one-shot pipe). A child's
+// value is read after its parents', so it wins.
+static std::string* g_printer_model_sink = nullptr;
+
 // return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), 2 = parse error (bad file), 3 = cancelled
 // (cycle → already loaded ancestors, clean stop via the visited set)
 // parses the slurped content; the root file was opened ONCE by slurp_profile_cancellable
@@ -156,6 +171,8 @@ static int load_profile_json_impl(const std::string& content, const std::string&
     }
     ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
     for (auto& [k, v] : j.items()) {
+        if (k == "printer_model" && v.is_string() && g_printer_model_sink != nullptr)
+            *g_printer_model_sink = v.get<std::string>();
         if (k == "type" || k == "name" || k == "inherits" || k == "from" ||
             k == "setting_id" || k == "instantiation" || k == "description" ||
             k == "compatible_printers" || k == "compatible_prints" ||
@@ -203,7 +220,9 @@ static json to_json(const PlacedModel& pm) {
 }
 static json to_json(const PlacementCandidateV1& pc) {
     json arr = json::array(); for (auto& p : pc.placements) arr.push_back(to_json(p));
-    return {{"schemaVersion",pc.SCHEMA_VERSION},{"engine",pc.engine},{"placements",arr}};
+    json j = {{"schemaVersion",pc.SCHEMA_VERSION},{"engine",pc.engine},{"placements",arr}};
+    if (pc.beds_used >= 0) j["beds_used"] = pc.beds_used;
+    return j;
 }
 static json to_json(const LayoutErrorV1::Detail& d) {
     json j = {{"code",d.code},{"message",d.message}};
@@ -217,7 +236,7 @@ static json to_json(const CapabilitiesV1& c) {
     return {{"schemaVersion",c.SCHEMA_VERSION},{"engine",c.engine},{"engine_commit",c.engine_commit},
         {"engine_version",c.engine_version},{"min_schema_version",c.min_schema_version},
         {"max_schema_version",c.max_schema_version},
-        {"capabilities",{{"within_plate",c.within_plate},{"cross_plate",c.cross_plate},
+        {"capabilities",{{"within_plate",c.within_plate},{"cross_plate",c.cross_plate},{"prime_tower",c.prime_tower},
          {"non_rectangular_beds",c.non_rectangular_beds},{"locks",c.locks},
          {"rotation_constraints",c.rotation_constraints},{"seeded_determinism",c.seeded_determinism},
          {"cancellation",c.cancellation},{"progress",c.progress}}}};
@@ -297,6 +316,41 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         }
         int sv = svj.get<int>();
         if (!check_schema(sv, err)) return false;
+        out.schema_version = sv;
+        // v3: "beds" and "primeTower". An older request that names either is
+        // refused, as v1 refuses the v2 fields.
+        if (sv < 3 && (raw.contains("beds") || raw.contains("primeTower"))) {
+            err.error.code="INVALID_INPUT"; err.error.message="fields 'beds' and 'primeTower' require schemaVersion 3"; return false;
+        }
+        if (raw.contains("beds")) {
+            const json& bj = raw["beds"];
+            if (!bj.is_string() || (bj.get<std::string>() != "first" && bj.get<std::string>() != "all")) {
+                err.error.code="INVALID_INPUT"; err.error.message="beds must be \"first\" or \"all\""; return false;
+            }
+            out.all_beds = bj.get<std::string>() == "all";
+        }
+        if (raw.contains("primeTower")) {
+            const json& tj = raw["primeTower"];
+            if (!tj.is_object()) { err.error.code="INVALID_INPUT"; err.error.message="primeTower must be an object"; return false; }
+            PrimeTower& t = out.prime_tower;
+            // a missing or non-number field is a typed refusal, not a 0 mm tower
+            auto num = [&](const char* key, bool required, double& dst) {
+                if (!tj.contains(key)) return !required;
+                if (!tj[key].is_number()) return false;
+                dst = tj[key].get<double>();
+                return std::isfinite(dst) && std::abs(dst) <= 10000.0;
+            };
+            if (!num("x_mm", true, t.x_mm) || !num("y_mm", true, t.y_mm) || !num("width_mm", true, t.width_mm) ||
+                !num("depth_mm", true, t.depth_mm) || !num("brim_mm", false, t.brim_mm)) {
+                err.error.code="INVALID_INPUT";
+                err.error.message="primeTower needs x_mm, y_mm, width_mm and depth_mm as finite numbers (|v| <= 10000), and brim_mm is optional";
+                return false;
+            }
+            if (t.width_mm <= 0 || t.depth_mm <= 0 || t.brim_mm < 0) {
+                err.error.code="INVALID_INPUT"; err.error.message="primeTower width_mm and depth_mm must be above 0, and brim_mm at least 0"; return false;
+            }
+            t.present = true;
+        }
         out.engine = raw.value("engine", "");
         if (out.engine != "orca" && out.engine != "bambu") { err.error.code="INVALID_INPUT"; err.error.message="unknown engine"; return false; }
         out.profiles_dir = strip_dir(raw.value("profilesDir", ""));
@@ -484,6 +538,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     // Load profiles
     std::string dir = problem.profiles_dir;
     DynamicPrintConfig cfg;
+    std::string machine_model;   // the machine profile's printer_model (preset metadata, not in cfg)
     { std::string cp = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json";
       std::string content; if (slurp_profile_cancellable(cp, content) == 0) { std::unordered_set<std::string> vis; load_profile_json_impl(content, cp, cfg, vis, 0); } }
     { std::string fp = dir + "/" + problem.profiles.machine;
@@ -502,7 +557,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
           std::cerr << to_json(err).dump() << std::endl; return 5;
       }
       std::unordered_set<std::string> vis;
+      g_printer_model_sink = &machine_model;   // the machine chain only
       int rc = load_profile_json_impl(content, fp, cfg, vis, 0);
+      g_printer_model_sink = nullptr;
       if (rc == 3) {
           LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
           std::cerr << to_json(err).dump() << std::endl; return 5;
@@ -753,7 +810,112 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         std::cerr << to_json(err).dump() << std::endl; return 3;
     }}
     Polygon bed_poly(bed_pts);
-    arrangement::arrange(unlocked_input, locked_input, bed_pts, params);
+
+    // v3: what the desktop's ArrangeJob keeps fixed besides the locked items,
+    // on every bed it may fill: the prime tower (prepare_wipe_tower, an
+    // unselected item per bed: ArrangeJob.cpp 336-376 at Bambu 926a719, the
+    // same in Orca's ArrangeJob) and the bed exclusion areas
+    // (preprocess_exclude_areas, ArrangeJob.cpp 265-266), both inflated by
+    // update_unselected_items_inflation (process(), ArrangeJob.cpp 669), and
+    // the exclusion areas as excluded regions too (ArrangeJob.cpp 675). The
+    // tower is the rectangle the official CLI builds for it (main.cpp
+    // arrange_on_bed, BambuStudio.cpp 5770-5878): its box grown by its brim,
+    // a virtual wipe-tower item that never moves. A v1/v2 request keeps
+    // today's arrange: the locked items alone.
+    ArrangePolygons fixed = locked_input;
+    ArrangePolygons extra;   // v3: the tower, exclusion areas and calibration strip copies, per bed
+    if (problem.schema_version >= 3) {
+        const int num_beds = problem.all_beds ? kMaxBeds : 1;
+        if (problem.prime_tower.present) {
+            const PrimeTower& t = problem.prime_tower;
+            const double x0 = t.x_mm - t.brim_mm, y0 = t.y_mm - t.brim_mm;
+            const double x1 = t.x_mm + t.width_mm + t.brim_mm, y1 = t.y_mm + t.depth_mm + t.brim_mm;
+            // The tower is placed where it will print. The desktop clamps a
+            // tower inside the plate before it arranges (PartPlate.cpp
+            // 2290-2291); a request is refused instead, so the answer never
+            // reserves a place the tower does not print at.
+            // Against the printable_area polygon itself, so a round or notched
+            // bed is honoured too (fully_inside_bed clips edge-aware).
+            Polygon area_poly;
+            if (const auto* area = cfg.option<ConfigOptionPoints>("printable_area"))
+                for (const Vec2d& p : area->values) area_poly.points.emplace_back(scaled(p.x()), scaled(p.y()));
+            const ExPolygon tower_box(Polygon({{scaled(x0), scaled(y0)}, {scaled(x1), scaled(y0)},
+                                               {scaled(x1), scaled(y1)}, {scaled(x0), scaled(y1)}}));
+            if (area_poly.points.size() < 3 || !fully_inside_bed(tower_box, area_poly)) {
+                LayoutErrorV1 err; err.error.code="INVALID_INPUT";
+                err.error.message="primeTower with its brim must lie inside the printer's printable_area; give the "
+                                  "position the tower prints at";
+                std::cerr << to_json(err).dump() << std::endl; return 3;
+            }
+            for (int bed = 0; bed < num_beds; ++bed) {
+                ArrangePolygon tower;
+                tower.poly.contour = Polygon({{scaled(x0), scaled(y0)}, {scaled(x1), scaled(y0)},
+                                              {scaled(x1), scaled(y1)}, {scaled(x0), scaled(y1)}});
+                tower.translation    = {0, 0};
+                tower.rotation       = 0.;
+                tower.bed_idx        = bed;
+                tower.setter         = nullptr;   // do not move the tower
+                tower.name           = "WipeTower" + std::to_string(bed);
+                tower.is_virt_object = true;
+                tower.is_wipe_tower  = true;
+                ++tower.priority;
+                extra.emplace_back(std::move(tower));
+            }
+        }
+        ::arrange_add_exclude_areas(extra, cfg, 0., num_beds);
+        // The front strip the printer scans its first layer and calibrates
+        // in, kept clear when the printer scans (avoid_extrusion_cali_region,
+        // true by default in ArrangeParams, Arrange.hpp 134 at Bambu 926a719,
+        // 127 in Orca, and in the desktop's ArrangeSettings, GLCanvas3D.hpp 567):
+        // ArrangeJob.cpp 661-662 and PartPlateList::preprocess_nonprefered_areas
+        // (PartPlate.cpp 6191-6221), box (18,0)-(240,15) on every bed. Orca adds
+        // it for a Bambu Lab printer only (its ArrangeJob.cpp 532-534), which it
+        // tells by the printer model: is_bbl_vendor is true when the BBL vendor
+        // lists printer_model in its models (PresetBundle::get_current_vendor_type,
+        // PresetBundle.cpp 612-645 at Orca 8500fcd), the vendor file's
+        // machine_model_list here.
+        bool cali_strip = params.avoid_extrusion_cali_region && cfg.has("scan_first_layer") && cfg.opt_bool("scan_first_layer");
+#ifdef ENGINE_ORCA
+        if (cali_strip) {
+            bool bbl = false;
+            std::string vendor;
+            // printer_model as the machine profile gave it while it loaded
+            // (preset metadata, kept out of cfg; the profile is not reopened).
+            const std::string& model = machine_model;
+            if (!model.empty() && slurp_profile_cancellable(dir + "/BBL.json", vendor) == 0) {
+                const json v = json::parse(vendor, nullptr, false);
+                if (v.is_object() && v.contains("machine_model_list") && v["machine_model_list"].is_array())
+                    for (const json& m : v["machine_model_list"])
+                        if (m.is_object() && m.value("name", "") == model) { bbl = true; break; }
+            }
+            cali_strip = bbl;
+        }
+#endif
+        if (cali_strip) {
+            const Polygon strip = scaled(BoundingBoxf(Vec2d{18, 0}, Vec2d{240, 15})).polygon();
+            for (int bed = 0; bed < num_beds; ++bed) {
+                ArrangePolygon ret;
+                ret.poly.contour            = strip;
+                ret.translation             = Vec2crd(0, 0);
+                ret.rotation                = 0.0f;
+                ret.is_virt_object          = true;
+                ret.is_extrusion_cali_object = true;
+                ret.bed_idx                 = bed;
+                ret.height                  = 1;
+                ret.name                    = "NonpreferedRegion0";
+                ret.inflation               = 0;
+                extra.emplace_back(std::move(ret));
+            }
+        }
+#ifdef ENGINE_ORCA
+        update_unselected_items_inflation(extra, &cfg, params);
+#else
+        update_unselected_items_inflation(extra, cfg, params);
+#endif
+        ::arrange_add_exclude_areas(params.excluded_regions, cfg, scale_(1), 1);
+        fixed.insert(fixed.end(), extra.begin(), extra.end());
+    }
+    arrangement::arrange(unlocked_input, fixed, bed_pts, params);
 
     if (unlocked_input.size() != unlocked_model.objects.size()) {
         LayoutErrorV1 err; err.error.code="INVALID_INPUT";
@@ -793,6 +955,22 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 if (!fully_inside_bed(inflated, bed_poly)) {
                     pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
                 }
+                // v3: a locked object (fixed on bed 0) standing on a region
+                // v3 keeps clear on that bed (the tower, an exclusion area,
+                // the calibration strip) is UNFITTABLE: the nester moves
+                // neither of two fixed items apart. Both are compared as the
+                // nester sees them, each grown by its own inflation.
+                bool on_region = false;
+                for (const ArrangePolygon& region : extra) {
+                    if (region.bed_idx != 0) continue;
+                    const Slic3r::ExPolygons r = offset_ex(region.transformed_poly(), float(region.inflation));
+                    if (!intersection_ex(Slic3r::ExPolygons{inflated}, r.empty() ? Slic3r::ExPolygons{region.transformed_poly()} : r).empty()) {
+                        on_region = true; break;
+                    }
+                }
+                if (on_region) {
+                    pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
+                }
             }
             locked_placed.push_back({ref.id, ap.transformed_poly(), ap.inflation});
             pm.bed_idx = 0;
@@ -808,7 +986,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             BoundingBox bb = ap.transformed_poly().contour.bounding_box();
             double cx = unscaled<double>((double)bb.min.x()+(double)bb.max.x())/2.0;
             double cy = unscaled<double>((double)bb.min.y()+(double)bb.max.y())/2.0;
-            bool bad = (ap.bed_idx != 0);
+            // "first": only bed 0 counts. "all": every bed the arrange filled,
+            // up to MAX_PLATE_COUNT (create_plate, Bambu PartPlate.cpp
+            // 4834-4842); its position is local to its own bed.
+            bool bad = problem.all_beds ? (ap.bed_idx < 0 || ap.bed_idx >= kMaxBeds) : (ap.bed_idx != 0);
             if (!bad) bad = !fully_inside_bed(ap.transformed_poly(), bed_poly);
             if (bad) { pm.bed_idx=-1; unfittable.push_back(ref.id); }
             else { pm.bed_idx=ap.bed_idx; pm.x_mm=cx; pm.y_mm=cy; pm.rotation_rad=ap.rotation; pm.bb_cx_mm=cx; pm.bb_cy_mm=cy; }
@@ -877,6 +1058,13 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
             std::cerr << to_json(err).dump() << std::endl; return 5;
         }
+    }
+
+    // v3: how many beds the placements use (beds 0..beds_used-1).
+    if (problem.schema_version >= 3) {
+        result.beds_used = 0;
+        for (const auto& pm : result.placements)
+            result.beds_used = std::max(result.beds_used, pm.bed_idx + 1);
     }
 
     // write the serialized candidate to stdout in chunks, checking
