@@ -237,6 +237,27 @@ PY
         pass "I6 $e: a locked square on the prime tower is UNFITTABLE (placed when there is no tower)"
     else fail "I6 $e: locked on tower exit $(rc i6lockwith-$e) (want 4), without tower exit $(rc i6lockwithout-$e) (want 0); stderr: $(tail -c 200 i6lockwith-$e/stderr)"; fi
 
+    # The same check counts each item's inflation (half the 10 mm spacing),
+    # as the nester does: a tower 3 mm right of the locked square overlaps it
+    # once both are grown; 25 mm away it does not. The square's place on the
+    # bed is read from the run without a tower.
+    for gap in 3 25; do
+        python3 - i6lockgap$gap-$e.json "$e" "$(native "$prof")" "$machine" "$(native "$WORKDIR/sq60.stl")" i6lockwithout-$e/stdout "$gap" <<'PY'
+import json, sys
+path, engine, prof, machine, model, placed, gap = sys.argv[1:]
+p = json.loads(open(placed).read())["placements"][0]
+right = p["x_mm"] + 30 + float(gap)
+json.dump({"schemaVersion": 3, "engine": engine, "profilesDir": prof, "profiles": {"machine": machine},
+           "spacing": {"minObjectDistanceMm": 10.0},
+           "models": [{"id": "lk", "path": model, "locked": True, "transform": {"x_mm": 40, "y_mm": 185}}], "beds": "all",
+           "primeTower": {"x_mm": right, "y_mm": p["y_mm"] - 30, "width_mm": 20, "depth_mm": 60}}, open(path, "w"))
+PY
+        run i6lockgap$gap-$e "$bin" --layout-plan --input i6lockgap$gap-$e.json
+    done
+    if [ "$(rc i6lockgap3-$e)" = 4 ] && grep -q '"lk"' i6lockgap3-$e/stderr && [ "$(rc i6lockgap25-$e)" = 0 ]; then
+        pass "I6 $e: a locked square 3 mm from the tower is UNFITTABLE once both are inflated (placed at 25 mm)"
+    else fail "I6 $e: inflated locked check: 3 mm exit $(rc i6lockgap3-$e) (want 4), 25 mm exit $(rc i6lockgap25-$e) (want 0); stderr: $(tail -c 200 i6lockgap3-$e/stderr)"; fi
+
     # A tower that is not on the bed is refused, not reserved off the bed.
     python3 - i6off-$e.json "$e" "$(native "$prof")" "$machine" "$(native "$WORKDIR/sq60.stl")" <<'PY'
 import json, sys

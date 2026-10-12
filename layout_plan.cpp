@@ -858,10 +858,25 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         // 127 in Orca, and in the desktop's ArrangeSettings, GLCanvas3D.hpp 567):
         // ArrangeJob.cpp 661-662 and PartPlateList::preprocess_nonprefered_areas
         // (PartPlate.cpp 6191-6221), box (18,0)-(240,15) on every bed. Orca adds
-        // it for a Bambu Lab printer only (its ArrangeJob.cpp 532-534).
+        // it for a Bambu Lab printer only (its ArrangeJob.cpp 532-534), which it
+        // tells by the printer model: is_bbl_vendor is true when the BBL vendor
+        // lists printer_model in its models (PresetBundle::get_current_vendor_type,
+        // PresetBundle.cpp 612-645 at Orca 8500fcd), the vendor file's
+        // machine_model_list here.
         bool cali_strip = params.avoid_extrusion_cali_region && cfg.has("scan_first_layer") && cfg.opt_bool("scan_first_layer");
 #ifdef ENGINE_ORCA
-        cali_strip = cali_strip && problem.profiles.machine.rfind("BBL/", 0) == 0;
+        if (cali_strip) {
+            bool bbl = false;
+            std::string vendor;
+            const auto* model = cfg.option<ConfigOptionString>("printer_model");
+            if (model != nullptr && slurp_profile_cancellable(dir + "/BBL.json", vendor) == 0) {
+                const json v = json::parse(vendor, nullptr, false);
+                if (v.is_object() && v.contains("machine_model_list") && v["machine_model_list"].is_array())
+                    for (const json& m : v["machine_model_list"])
+                        if (m.is_object() && m.value("name", "") == model->value) { bbl = true; break; }
+            }
+            cali_strip = bbl;
+        }
 #endif
         if (cali_strip) {
             const Polygon strip = scaled(BoundingBoxf(Vec2d{18, 0}, Vec2d{240, 15})).polygon();
@@ -930,11 +945,15 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 // v3: a locked object (fixed on bed 0) standing on a region
                 // v3 keeps clear on that bed (the tower, an exclusion area,
                 // the calibration strip) is UNFITTABLE: the nester moves
-                // neither of two fixed items apart.
+                // neither of two fixed items apart. Both are compared as the
+                // nester sees them, each grown by its own inflation.
                 bool on_region = false;
                 for (const ArrangePolygon& region : extra) {
                     if (region.bed_idx != 0) continue;
-                    if (!intersection_ex(ap.transformed_poly(), region.transformed_poly()).empty()) { on_region = true; break; }
+                    const Slic3r::ExPolygons r = offset_ex(region.transformed_poly(), float(region.inflation));
+                    if (!intersection_ex(Slic3r::ExPolygons{inflated}, r.empty() ? Slic3r::ExPolygons{region.transformed_poly()} : r).empty()) {
+                        on_region = true; break;
+                    }
                 }
                 if (on_region) {
                     pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
