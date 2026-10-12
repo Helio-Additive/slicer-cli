@@ -139,6 +139,12 @@ static int slurp_profile_cancellable(const std::string& fp, std::string& out) {
 #endif
 }
 
+// While the machine profile loads, where its printer_model goes: preset
+// metadata the loader keeps out of the config, read as the files are parsed
+// (each file is opened once; a profile may be a one-shot pipe). A child's
+// value is read after its parents', so it wins.
+static std::string* g_printer_model_sink = nullptr;
+
 // return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), 2 = parse error (bad file), 3 = cancelled
 // (cycle → already loaded ancestors, clean stop via the visited set)
 // parses the slurped content; the root file was opened ONCE by slurp_profile_cancellable
@@ -165,6 +171,8 @@ static int load_profile_json_impl(const std::string& content, const std::string&
     }
     ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
     for (auto& [k, v] : j.items()) {
+        if (k == "printer_model" && v.is_string() && g_printer_model_sink != nullptr)
+            *g_printer_model_sink = v.get<std::string>();
         if (k == "type" || k == "name" || k == "inherits" || k == "from" ||
             k == "setting_id" || k == "instantiation" || k == "description" ||
             k == "compatible_printers" || k == "compatible_prints" ||
@@ -183,29 +191,6 @@ static int load_profile_json_impl(const std::string& content, const std::string&
         } catch (...) {}
     }
     return 0;
-}
-
-// The machine profile's printer_model, which load_profile_json_impl leaves
-// out of the config (preset metadata): the file's own value, else its
-// parent's along the same inherits chain. Empty when no file in the chain
-// names one or a file cannot be read.
-static std::string machine_printer_model(const std::string& fp, int depth = 0) {
-    if (depth > kMaxInheritsDepth) return {};
-    std::string content;
-    if (slurp_profile_cancellable(fp, content) != 0) return {};
-    const json j = json::parse(content, nullptr, false);
-    if (!j.is_object()) return {};
-    if (j.contains("printer_model") && j["printer_model"].is_string()) return j["printer_model"].get<std::string>();
-    std::string v;
-    if (j.contains("inherits")) {
-        const json& iv = j["inherits"];
-        if (iv.is_string()) v = iv.get<std::string>();
-        else if (iv.is_array() && !iv.empty() && iv[0].is_string()) v = iv[0].get<std::string>();
-    }
-    if (v.empty()) return {};
-    std::string pp = fp.substr(0, fp.find_last_of("/\\")) + "/" + v;
-    if (pp.size() <= 5 || pp.compare(pp.size() - 5, 5, ".json") != 0) pp += ".json";
-    return machine_printer_model(pp, depth + 1);
 }
 
 // path variant: slurps the file once (open-failure IS the existence signal)
@@ -553,6 +538,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     // Load profiles
     std::string dir = problem.profiles_dir;
     DynamicPrintConfig cfg;
+    std::string machine_model;   // the machine profile's printer_model (preset metadata, not in cfg)
     { std::string cp = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json";
       std::string content; if (slurp_profile_cancellable(cp, content) == 0) { std::unordered_set<std::string> vis; load_profile_json_impl(content, cp, cfg, vis, 0); } }
     { std::string fp = dir + "/" + problem.profiles.machine;
@@ -571,7 +557,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
           std::cerr << to_json(err).dump() << std::endl; return 5;
       }
       std::unordered_set<std::string> vis;
+      g_printer_model_sink = &machine_model;   // the machine chain only
       int rc = load_profile_json_impl(content, fp, cfg, vis, 0);
+      g_printer_model_sink = nullptr;
       if (rc == 3) {
           LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
           std::cerr << to_json(err).dump() << std::endl; return 5;
@@ -891,9 +879,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         if (cali_strip) {
             bool bbl = false;
             std::string vendor;
-            // printer_model is preset metadata the profile loader leaves out
-            // of cfg, so it is read from the machine profile itself.
-            const std::string model = machine_printer_model(dir + "/" + problem.profiles.machine);
+            // printer_model as the machine profile gave it while it loaded
+            // (preset metadata, kept out of cfg; the profile is not reopened).
+            const std::string& model = machine_model;
             if (!model.empty() && slurp_profile_cancellable(dir + "/BBL.json", vendor) == 0) {
                 const json v = json::parse(vendor, nullptr, false);
                 if (v.is_object() && v.contains("machine_model_list") && v["machine_model_list"].is_array())
