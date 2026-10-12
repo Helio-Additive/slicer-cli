@@ -52,8 +52,11 @@ The job and step names quoted below are those in that workflow, with the
 `${{ matrix.* }}` suffix left off where a name is parameterised. Every build and
 test job is skipped on a draft pull request (`github.event.pull_request.draft ==
 false`), so mark a PR ready for review before reading its checks. A change that
-touches only `*.md`, `docs/**`, `LICENSE` or `NOTICE` runs no CI at all
-(`paths-ignore` on both triggers).
+touches only markdown other than `README.md`, or files under `docs/`, starts no
+CI run: both triggers carry an ordered `paths` filter that excludes `**/*.md`
+and `docs/**` and re-includes `README.md`, which the packages, CPack and the
+install rules copy. `LICENSE` and `NOTICE` are never excluded, for the same
+reason.
 
 Tests. The build-tree tests take the program the build produced; CI runs them on
 Linux and macOS, never on Windows, in steps `Run structured-diagnostics event

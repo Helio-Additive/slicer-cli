@@ -6,25 +6,31 @@ on:
     tags:
       - "v*"
       - "slicer-cli/v*"
-    # Doc-only changes run no CI. GitHub allows paths or paths-ignore for an
-    # event, not both, and does not evaluate path filters for tag pushes, so
-    # a release tag still runs the whole workflow.
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "LICENSE"
-      - "NOTICE"
+    # Doc-only changes run no CI: the patterns are ordered and the later ones
+    # win, so everything matches, markdown and docs are excluded, and README.md
+    # comes back in because the packages, CPack and the install rules copy it.
+    # LICENSE and NOTICE are never excluded, for the same reason. GitHub allows
+    # paths or paths-ignore for an event, not both, and does not evaluate path
+    # filters for tag pushes, so a release tag still runs the whole workflow.
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/**"
+      - "README.md"
   pull_request:
     # A draft PR runs no CI; marking it ready (ready_for_review) starts it.
     # converted_to_draft starts a run whose jobs all skip: it shares the
     # concurrency group (workflow + ref, the same for every PR activity) and
     # so cancels a run still going on the PR.
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "LICENSE"
-      - "NOTICE"
+    # The same filter as the push trigger: paths-ignore cannot be used beside
+    # paths, and a pattern that excludes has to be followed by the one that
+    # brings README.md back in.
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/**"
+      - "README.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
