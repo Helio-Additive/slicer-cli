@@ -392,15 +392,20 @@ reports the schema versions a binary takes. Version 3 adds, both binaries:
 
 - `"beds": "all"`: every bed the arrange fills is a placement. A model's `bed_idx`
   is 0, 1, 2… (bed k becomes plate k+1), and its `x_mm`/`y_mm` are on that bed.
-  The answer gains `beds_used`. Only a model that fits on no bed, or that is past
-  36 beds, has `bed_idx` -1; that answer exits 4 with `UNFITTABLE`, as before.
-  The default, `"first"`, is the single-bed answer of versions 1 and 2.
+  Only a model that fits on no bed, or that is past 36 beds, has `bed_idx` -1;
+  that answer exits 4 with `UNFITTABLE`, as before. The default, `"first"`, is
+  the single-bed answer of versions 1 and 2. Every version 3 answer gives
+  `beds_used`, the number of beds its placements use.
 - `"primeTower": {"x_mm", "y_mm", "width_mm", "depth_mm", "brim_mm"}`: the tower
-  rectangle in bed millimetres, with `brim_mm` optional. It is a fixed item on
-  every bed, as Bambu Studio's and OrcaSlicer's Arrange keep a tower on every
-  plate.
-- The machine profile's `bed_exclude_area` boxes, and the wrapping-detection area
-  when `enable_wrapping_detection` is on, are kept clear on every bed.
+  rectangle in bed millimetres, where it prints, with `brim_mm` optional. It is
+  a fixed item on every bed, as Bambu Studio's and OrcaSlicer's Arrange keep a
+  tower on every plate. A tower that, with its brim, is not inside the
+  printer's `printable_area` is refused.
+- Kept clear on every bed: the machine profile's `bed_exclude_area` boxes, the
+  wrapping-detection area when `enable_wrapping_detection` is on, and, on a
+  printer that scans its first layer (`scan_first_layer`), the front
+  calibration strip from (18, 0) to (240, 15) mm (OrcaSlicer: Bambu Lab
+  printers only), as the desktop's Arrange keeps them.
 
 Give the printer's own rectangular `printable_area`. A bed with a notch cut out
 for the tower makes the arrange use its irregular-bed path, which places objects

@@ -819,6 +819,20 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             const PrimeTower& t = problem.prime_tower;
             const double x0 = t.x_mm - t.brim_mm, y0 = t.y_mm - t.brim_mm;
             const double x1 = t.x_mm + t.width_mm + t.brim_mm, y1 = t.y_mm + t.depth_mm + t.brim_mm;
+            // The tower is placed where it will print. The desktop clamps a
+            // tower inside the plate before it arranges (PartPlate.cpp
+            // 2290-2291); a request is refused instead, so the answer never
+            // reserves a place the tower does not print at.
+            BoundingBoxf area_box;
+            if (const auto* area = cfg.option<ConfigOptionPoints>("printable_area"))
+                for (const Vec2d& p : area->values) area_box.merge(p);
+            if (!area_box.defined || x0 < area_box.min.x() - EPSILON || y0 < area_box.min.y() - EPSILON ||
+                x1 > area_box.max.x() + EPSILON || y1 > area_box.max.y() + EPSILON) {
+                LayoutErrorV1 err; err.error.code="INVALID_INPUT";
+                err.error.message="primeTower with its brim must lie inside the printer's printable_area; give the "
+                                  "position the tower prints at";
+                std::cerr << to_json(err).dump() << std::endl; return 3;
+            }
             for (int bed = 0; bed < num_beds; ++bed) {
                 ArrangePolygon tower;
                 tower.poly.contour = Polygon({{scaled(x0), scaled(y0)}, {scaled(x1), scaled(y0)},
@@ -835,6 +849,33 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             }
         }
         ::arrange_add_exclude_areas(extra, cfg, 0., num_beds);
+        // The front strip the printer scans its first layer and calibrates
+        // in, kept clear when the printer scans (avoid_extrusion_cali_region,
+        // true by default in ArrangeParams, Arrange.hpp 134 at Bambu 926a719,
+        // 127 in Orca, and in the desktop's ArrangeSettings, GLCanvas3D.hpp 567):
+        // ArrangeJob.cpp 661-662 and PartPlateList::preprocess_nonprefered_areas
+        // (PartPlate.cpp 6191-6221), box (18,0)-(240,15) on every bed. Orca adds
+        // it for a Bambu Lab printer only (its ArrangeJob.cpp 532-534).
+        bool cali_strip = params.avoid_extrusion_cali_region && cfg.has("scan_first_layer") && cfg.opt_bool("scan_first_layer");
+#ifdef ENGINE_ORCA
+        cali_strip = cali_strip && problem.profiles.machine.rfind("BBL/", 0) == 0;
+#endif
+        if (cali_strip) {
+            const Polygon strip = scaled(BoundingBoxf(Vec2d{18, 0}, Vec2d{240, 15})).polygon();
+            for (int bed = 0; bed < num_beds; ++bed) {
+                ArrangePolygon ret;
+                ret.poly.contour            = strip;
+                ret.translation             = Vec2crd(0, 0);
+                ret.rotation                = 0.0f;
+                ret.is_virt_object          = true;
+                ret.is_extrusion_cali_object = true;
+                ret.bed_idx                 = bed;
+                ret.height                  = 1;
+                ret.name                    = "NonpreferedRegion0";
+                ret.inflation               = 0;
+                extra.emplace_back(std::move(ret));
+            }
+        }
 #ifdef ENGINE_ORCA
         update_unselected_items_inflation(extra, &cfg, params);
 #else
