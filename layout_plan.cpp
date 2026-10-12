@@ -185,6 +185,29 @@ static int load_profile_json_impl(const std::string& content, const std::string&
     return 0;
 }
 
+// The machine profile's printer_model, which load_profile_json_impl leaves
+// out of the config (preset metadata): the file's own value, else its
+// parent's along the same inherits chain. Empty when no file in the chain
+// names one or a file cannot be read.
+static std::string machine_printer_model(const std::string& fp, int depth = 0) {
+    if (depth > kMaxInheritsDepth) return {};
+    std::string content;
+    if (slurp_profile_cancellable(fp, content) != 0) return {};
+    const json j = json::parse(content, nullptr, false);
+    if (!j.is_object()) return {};
+    if (j.contains("printer_model") && j["printer_model"].is_string()) return j["printer_model"].get<std::string>();
+    std::string v;
+    if (j.contains("inherits")) {
+        const json& iv = j["inherits"];
+        if (iv.is_string()) v = iv.get<std::string>();
+        else if (iv.is_array() && !iv.empty() && iv[0].is_string()) v = iv[0].get<std::string>();
+    }
+    if (v.empty()) return {};
+    std::string pp = fp.substr(0, fp.find_last_of("/\\")) + "/" + v;
+    if (pp.size() <= 5 || pp.compare(pp.size() - 5, 5, ".json") != 0) pp += ".json";
+    return machine_printer_model(pp, depth + 1);
+}
+
 // path variant: slurps the file once (open-failure IS the existence signal)
 // then delegates; the slurp reader is cancellable on both platforms
 static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
@@ -868,12 +891,14 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         if (cali_strip) {
             bool bbl = false;
             std::string vendor;
-            const auto* model = cfg.option<ConfigOptionString>("printer_model");
-            if (model != nullptr && slurp_profile_cancellable(dir + "/BBL.json", vendor) == 0) {
+            // printer_model is preset metadata the profile loader leaves out
+            // of cfg, so it is read from the machine profile itself.
+            const std::string model = machine_printer_model(dir + "/" + problem.profiles.machine);
+            if (!model.empty() && slurp_profile_cancellable(dir + "/BBL.json", vendor) == 0) {
                 const json v = json::parse(vendor, nullptr, false);
                 if (v.is_object() && v.contains("machine_model_list") && v["machine_model_list"].is_array())
                     for (const json& m : v["machine_model_list"])
-                        if (m.is_object() && m.value("name", "") == model->value) { bbl = true; break; }
+                        if (m.is_object() && m.value("name", "") == model) { bbl = true; break; }
             }
             cali_strip = bbl;
         }
