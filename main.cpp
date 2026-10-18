@@ -10456,86 +10456,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // rewrites nozzle_temperature down to a single value, so aligning any
         // earlier would leave that array short again.
         align_per_filament_config_vectors(config, project_filaments, verbose);
-
-        // Automatic filament grouping on a machine with several extruders
-        // groups against the AMS slots it is told about. With none, every
-        // filament lands on the master extruder. The official CLI gives each
-        // extruder one estimated 4-slot AMS ("1#0|4#1") holding the project's
-        // filament colours and types in turn (BambuStudio.cpp 6911-6950 at
-        // 5873b5f; estimate_mode is off on this path). The Orca build runs
-        // OrcaSlicer.cpp's own version of the block below.
-        {
-            const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
-            const int extruder_count = nozzles ? int(nozzles->values.size()) : 1;
-            const auto* map_mode = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode");
-            if (extruder_count > 1 && (!map_mode || Slic3r::is_auto_filament_map_mode(map_mode->value))) {
-                const auto* filament_colour = config.option<Slic3r::ConfigOptionStrings>("filament_colour");
-                const auto* filament_type = config.option<Slic3r::ConfigOptionStrings>("filament_type");
-                std::vector<std::string> colors = filament_colour ? filament_colour->vserialize() : std::vector<std::string>{};
-                if (colors.empty()) colors.push_back("#FFFFFFFF");
-                std::vector<std::string> types = filament_type ? filament_type->vserialize() : std::vector<std::string>{"PLA"};
-                if (types.empty()) types.push_back("PLA");
-                std::vector<std::string> extruder_ams_count(extruder_count, "1#0|4#1");
-                std::vector<std::vector<Slic3r::DynamicPrintConfig>> extruder_filament_info(extruder_count);
-                int color_count = 0;
-                for (int e = 0; e < extruder_count; ++e)
-                    for (int slot = 0; slot < 4; ++slot, ++color_count) {
-                        Slic3r::DynamicPrintConfig slot_config;
-                        slot_config.set_key_value("filament_colour", new Slic3r::ConfigOptionStrings({colors[color_count % colors.size()]}));
-                        slot_config.set_key_value("filament_type", new Slic3r::ConfigOptionStrings({types[color_count % types.size()]}));
-                        slot_config.set_key_value("filament_is_support", new Slic3r::ConfigOptionBools({false}));
-                        slot_config.set_key_value("tray_name", new Slic3r::ConfigOptionStrings({"A1"}));
-                        extruder_filament_info[e].push_back(std::move(slot_config));
-                    }
-                config.option<Slic3r::ConfigOptionStrings>("extruder_ams_count", true)->values = extruder_ams_count;
-                print.set_extruder_filament_info(extruder_filament_info);
-            }
-        }
 #endif // ENGINE_BAMBU
-#ifdef ENGINE_ORCA
-        // The same step as the official OrcaSlicer CLI runs it before
-        // automatic grouping (OrcaSlicer.cpp 5914-5951 at 31f6803): on a
-        // printer with more than one extruder and a filament map mode before
-        // Manual (AutoForFlush when the setting is missing), each extruder
-        // gets one estimated 4-slot AMS ("1#0|4#1") whose slots take the
-        // project's filament types in turn. Unlike BambuStudio, Orca leaves
-        // every slot white (its colour copy is commented out) and names no
-        // tray. The types are the project's (m_print_config's; a plate's own
-        // settings do not change them).
-        {
-            const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
-            const int new_extruder_count = nozzles ? int(nozzles->values.size()) : 1;
-            if (new_extruder_count > 1) {
-                Slic3r::FilamentMapMode map_mode = Slic3r::fmmAutoForFlush;
-                if (const auto* mode = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode"))
-                    map_mode = mode->value;
-                if (map_mode < Slic3r::fmmManual) {
-                    std::vector<std::string> extruder_ams_count(new_extruder_count, "");
-                    std::vector<std::vector<Slic3r::DynamicPrintConfig>> extruder_filament_info(new_extruder_count);
-                    int color_count = 0;
-                    const auto* filament_type = dynamic_cast<const Slic3r::ConfigOptionStrings*>(config.option("filament_type"));
-                    std::vector<std::string> types = filament_type ? filament_type->vserialize() : std::vector<std::string>{"PLA"};
-                    for (int e_index = 0; e_index < new_extruder_count; e_index++) {
-                        extruder_ams_count[e_index] = "1#0|4#1";
-                        for (int color_index = 0; color_index < 4; color_index++) {
-                            Slic3r::DynamicPrintConfig temp_config;
-                            std::vector<std::string> temp_colors(1, "#FFFFFFFF");
-                            std::vector<std::string> temp_types(1, "PLA");
-                            if (filament_type && !types.empty())
-                                temp_types[0] = types[color_count % types.size()];
-                            temp_config.option<Slic3r::ConfigOptionStrings>("filament_colour", true)->values = temp_colors;
-                            temp_config.option<Slic3r::ConfigOptionStrings>("filament_type", true)->values = temp_types;
-                            temp_config.option<Slic3r::ConfigOptionBools>("filament_is_support", true)->values = {0};
-                            extruder_filament_info[e_index].push_back(std::move(temp_config));
-                            color_count++;
-                        }
-                    }
-                    config.option<Slic3r::ConfigOptionStrings>("extruder_ams_count", true)->values = extruder_ams_count;
-                    print.set_extruder_filament_info(extruder_filament_info);
-                }
-            }
-        }
-#endif // ENGINE_ORCA
+
+        // Automatic filament grouping on a machine with several extruders sizes
+        // each nozzle's group from extruder_ams_count (FilamentGroupUtils.cpp
+        // calc_max_group_size, both engines). The desktop app takes that count
+        // from the printer it is connected to, else from the project it opened,
+        // and builds no AMS slots without a printer (BambuStudio PresetBundle.cpp
+        // 3826-3831 and 3547, Plater.cpp 10810-10826 at 02.08.02.61; OrcaSlicer
+        // PresetBundle.cpp 4375-4379 and 4162 at 2.4.2). Headless there is no
+        // printer, so the input's own count stands, and input without one groups
+        // as the desktop does with an empty count. The official CLIs instead
+        // give every nozzle an estimated 4-slot AMS (BambuStudio.cpp 6911-6950,
+        // OrcaSlicer.cpp 5914-5951), which regroups a project the maker sliced
+        // with another count.
 
         try {
             std::cout << "Applying configuration...\n";

@@ -10,6 +10,9 @@
 #   I6 --layout-plan schemaVersion 3: "beds": "all" places items on every bed
 #      it fills (bed_idx, beds_used), clear of the primeTower on every bed;
 #      v2 keeps the single-bed answer; v3 fields in a v2 request are refused.
+#   I7 --layout-plan on a shipped two-nozzle machine profile arranges inside
+#      the area both nozzles reach (each nozzle's extruder_printable_area kept
+#      apart, as the engines' own profile loader keeps them).
 #   I4 the product's default call on a by-object plate whose objects are too
 #      close: a nonzero exit and the stderr line
 #      "Validation error: ... collisions may be caused".
@@ -286,6 +289,47 @@ assert doc["max_schema_version"] == 3 and c["cross_plate"] is True and c["prime_
 PY
     then pass "I6 $e: capabilities: max_schema_version 3, cross_plate, prime_tower"
     else fail "I6 $e: capabilities: $(head -c 300 i6caps-$e/stdout)"; fi
+
+    # I7: the arrange bed is the area every nozzle reaches (get_shrink_bedpts →
+    # get_bed_shape's shared polygon of extruder_printable_area). The H2D's two
+    # nozzles reach x 0-325 and 25-350 of a 350 mm bed, so a 310 mm box fits
+    # the bed but not the 300 mm both reach: UNFITTABLE. On the X2D (bambu tree
+    # only) both reach x 20.5-256, so a lone 20 mm box centres at x 138.25, not
+    # at the bed's 128.
+    [ -f bar310.stl ] || python3 -c '
+v=[(x,y,z) for z in (0,5) for y in (0,20) for x in (0,310)]
+f=[(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+o=open("bar310.stl","w"); o.write("solid t\n")
+for a,b,c in f:
+    o.write("facet normal 0 0 0\nouter loop\n")
+    for i in (a,b,c): o.write("vertex %g %g %g\n" % v[i])
+    o.write("endloop\nendfacet\n")
+o.write("endsolid t\n")'
+    reach() {  # reach FILE MACHINE MODEL
+        python3 - "$1" "$e" "$(native "$prof")" "BBL/machine/$2.json" "$(native "$WORKDIR/$3")" <<'PY'
+import json, sys
+path, engine, prof, machine, model = sys.argv[1:]
+json.dump({"schemaVersion": 2, "engine": engine, "profilesDir": prof, "profiles": {"machine": machine},
+           "spacing": {"minObjectDistanceMm": 0.0, "allowRotations": False},
+           "models": [{"id": "m", "path": model}]}, open(path, "w"))
+PY
+    }
+    reach i7h2d-$e.json "Bambu Lab H2D 0.4 nozzle" bar310.stl
+    run i7h2d-$e "$bin" --layout-plan --input i7h2d-$e.json
+    if [ "$(rc i7h2d-$e)" = 4 ] && grep -q '"UNFITTABLE"' i7h2d-$e/stderr; then
+        pass "I7 $e: a 310 mm box on the H2D is UNFITTABLE: both nozzles reach only 300 mm"
+    else fail "I7 $e: H2D 310 mm box exit $(rc i7h2d-$e) (want 4); stdout: $(head -c 300 i7h2d-$e/stdout)"; fi
+    if [ $e = bambu ]; then
+        reach i7x2d-$e.json "Bambu Lab X2D 0.4 nozzle" cube.stl
+        run i7x2d-$e "$bin" --layout-plan --input i7x2d-$e.json
+        if [ "$(rc i7x2d-$e)" = 0 ] && python3 - i7x2d-$e/stdout <<'PY'
+import json, sys
+p = json.loads(open(sys.argv[1]).read())["placements"][0]
+assert abs(p["bb_cx_mm"] - 138.25) < 0.5, p
+PY
+        then pass "I7 $e: a lone box on the X2D centres in the area both nozzles reach (x 138.25)"
+        else fail "I7 $e: X2D lone box exit $(rc i7x2d-$e); stdout: $(head -c 300 i7x2d-$e/stdout)"; fi
+    fi
 
     # I2: SIGINT while it waits for a writer on its --input FIFO: exit 5,
     # CANCELLED on stderr, nothing on stdout.

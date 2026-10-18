@@ -4164,14 +4164,13 @@ assert not bad, "; ".join(bad[:12])
 done
 [ $d2_ok = 1 ] && echo "PASS: D2 no per-filament setting is padded with 0 on the H2D (both engines)"
 
-# D3: the Orca build gives automatic grouping the same estimated AMS slots as
-# the official OrcaSlicer CLI (extruder_ams_count / set_extruder_filament_info,
-# OrcaSlicer.cpp 5914-5951). N cubes in a row, cube k on filament k, auto
-# grouping: the filament_map equals the official CLI's on its own presets
-# (OrcaSlicer 2.4.0-alpha, the version of the pin 31f6803, measured on the
-# Linux AppImage; the 8-filament projects the official refuses are not
-# listed). The Bambu build runs BambuStudio.cpp's own step (6911-6950), so
-# this item is checked on the Orca build only.
+# D3: automatic grouping on the Orca build. N cubes in a row, cube k on
+# filament k, from presets (no extruder_ams_count, so the desktop's empty
+# count, not the official CLI's estimated AMS): the filament_map still equals
+# the official CLI's on its own presets (OrcaSlicer 2.4.0-alpha, the version
+# of the pin 31f6803, measured on the Linux AppImage; the 8-filament projects
+# the official refuses are not listed). Checked on the Orca build only, where
+# these maps were measured.
 d3_ok=1
 while IFS='|' read -r printer fils official; do
     n=$(echo "$fils" | tr ';' '\n' | wc -l | tr -d ' ')
@@ -4197,6 +4196,42 @@ Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BB
 Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BBL X2D 0.4 nozzle;Bambu PETG HF @BBL X2D 0.4 nozzle;Bambu ABS @BBL X2D 0.4 nozzle|1,1,1,1
 D3EOF
 [ $d3_ok = 1 ] && echo "PASS: D3 the Orca build's automatic grouping equals the official OrcaSlicer CLI's on the H2D, H2D Pro and X2D"
+
+# D3b (both builds): a project's own extruder_ams_count is what automatic
+# grouping sizes each nozzle's group from, as when the desktop opens it with
+# no printer connected (PresetBundle project load), never the official CLI's
+# estimated 4-slot AMS per nozzle. An H2D project saved with no AMS on either
+# nozzle ("1#0|4#0", what the desktop writes then) keeps that count.
+d3b_ok=1
+py '
+import json
+json.dump({"plates": [{"plate_name": "d3b", "need_arrange": False,
+            "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2],
+                         "pos_x": [100, 140], "pos_y": [150, 150]}]}]}, open("d3b.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run d3b-$e "$bin" --load-assemble-list d3b.json --slice 1 --printer-preset "Bambu Lab H2D 0.4 nozzle" \
+        --filament-preset "Bambu PLA Basic @BBL H2D" --filament-preset "Bambu PLA Matte @BBL H2D" \
+        --outputdir d3b-$e/out --export-3mf d3b.3mf
+    [ -s d3b-$e/out/d3b.3mf ] || { show d3b-$e; fail "D3b $e: H2D project exit $(rc d3b-$e)"; d3b_ok=0; continue; }
+    py '
+import json, sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d["extruder_ams_count"] = ["1#0|4#0", "1#0|4#0"]; data = json.dumps(d, indent=4).encode()
+        elif item.filename.startswith("Metadata/plate_") and item.filename.endswith((".gcode", ".md5")):
+            continue
+        zout.writestr(item.filename, data)
+' d3b-$e/out/d3b.3mf d3b-$e.3mf
+    run d3bs-$e "$bin" d3b-$e.3mf --plate 1 -o d3bs-$e.gcode
+    got=$(sed -n 's/^; extruder_ams_count = //p' d3bs-$e.gcode | head -n 1)
+    [ "$(rc d3bs-$e)" = 0 ] && [ "$got" = "1#0|4#0;1#0|4#0" ] || { show d3bs-$e; fail "D3b $e: the project's extruder_ams_count 1#0|4#0 sliced as '$got' (exit $(rc d3bs-$e))"; d3b_ok=0; }
+done
+[ $d3b_ok = 1 ] && echo "PASS: D3b a project's own extruder_ams_count reaches automatic grouping unchanged (both engines)"
 
 # D4 (Bambu build; OrcaSlicer 31f6803 has no such setting): input without
 # extruder_nozzle_stats gets the official CLI's value (BambuStudio.cpp
