@@ -1024,8 +1024,8 @@ bool apply_explicit_nozzle_mapping(
     for (size_t i = 0; i < derived_map.size(); ++i)
         filament_map_2->values[i] = derived_map[i] - 1;
 
-    // A manual mode keeps the derived map: without real AMS data the
-    // automatic grouping would put every filament on the master extruder.
+    // A manual mode keeps the derived map, which automatic grouping would
+    // otherwise replace with its own.
     // Which manual mode follows the machine, as the official CLI decides: a
     // machine with several nozzles per extruder takes Nozzle Manual, and one
     // nozzle per extruder (H2D, X2D) takes Manual, since the official CLI

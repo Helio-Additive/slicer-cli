@@ -4164,17 +4164,19 @@ assert not bad, "; ".join(bad[:12])
 done
 [ $d2_ok = 1 ] && echo "PASS: D2 no per-filament setting is padded with 0 on the H2D (both engines)"
 
-# D3: automatic grouping on the Orca build. N cubes in a row, cube k on
-# filament k, from presets (no extruder_ams_count, so the desktop's empty
-# count, not the official CLI's estimated AMS): the filament_map still equals
-# the official CLI's on its own presets (OrcaSlicer 2.4.0-alpha, the version
-# of the pin 31f6803, measured on the Linux AppImage; the 8-filament projects
-# the official refuses are not listed). Checked on the Orca build only, where
-# these maps were measured.
+# D3: automatic grouping. N cubes in a row, cube k on filament k, from
+# presets (no extruder_ams_count, so the desktop's empty count, not the
+# official CLI's estimated AMS): the maps equal those the estimated AMS gave,
+# so no filament falls back to one nozzle. Orca rows: the official CLI's maps on its own
+# presets (OrcaSlicer 2.4.0-alpha, the version of the pin 31f6803, measured on
+# the Linux AppImage; the 8-filament projects the official refuses are not
+# listed). Bambu rows: the maps this CLI gave with the BambuStudio CLI's
+# estimated AMS (BambuStudio.cpp 6911-6950) before it was dropped.
 d3_ok=1
-while IFS='|' read -r printer fils official; do
+while IFS='|' read -r e printer fils official; do
     n=$(echo "$fils" | tr ';' '\n' | wc -l | tr -d ' ')
-    t="d3-$(printf '%s' "$printer-$n" | tr -c 'A-Za-z0-9' '_')"
+    t="d3-$e-$(printf '%s' "$printer-$n" | tr -c 'A-Za-z0-9' '_')"
+    bin=$B; [ $e = orca ] && bin=$O
     py '
 import json, sys
 n = int(sys.argv[1])
@@ -4183,19 +4185,21 @@ json.dump({"plates": [{"plate_name": "d3", "need_arrange": False,
                          "pos_x": [100 + 40 * i for i in range(n)], "pos_y": [150] * n}]}]}, open(sys.argv[2], "w"))
 ' $n $t.json
     fargs=(); IFS=';' read -ra fl <<< "$fils"; for f in "${fl[@]}"; do fargs+=(--filament-preset "$f"); done
-    run $t "$O" --load-assemble-list $t.json --slice 1 --printer-preset "$printer" "${fargs[@]}" --outputdir $t/out
-    [ "$(rc $t)" = 0 ] || { show $t; fail "D3 orca: $printer, $n filaments exit $(rc $t)"; d3_ok=0; continue; }
+    run $t "$bin" --load-assemble-list $t.json --slice 1 --printer-preset "$printer" "${fargs[@]}" --outputdir $t/out
+    [ "$(rc $t)" = 0 ] || { show $t; fail "D3 $e: $printer, $n filaments exit $(rc $t)"; d3_ok=0; continue; }
     ours=$(sed -n 's/^; filament_map = //p' $t/out/plate_1.gcode | head -n 1)
-    [ "$ours" = "$official" ] || { fail "D3 orca: $printer, $n filaments: filament_map $ours, the official CLI $official"; d3_ok=0; }
+    [ "$ours" = "$official" ] || { fail "D3 $e: $printer, $n filaments: filament_map $ours, expected $official"; d3_ok=0; }
 done <<'D3EOF'
-Bambu Lab H2D 0.4 nozzle|Bambu PLA Basic @BBL H2D;Bambu PLA Matte @BBL H2D|2,1
-Bambu Lab H2D 0.4 nozzle|Bambu PLA Basic @BBL H2D;Bambu PLA Matte @BBL H2D;Bambu PETG HF @BBL H2D 0.4 nozzle;Bambu ABS @BBL H2D|1,1,1,2
-Bambu Lab H2D Pro 0.4 nozzle|Bambu PLA Basic @BBL H2DP;Bambu PLA Matte @BBL H2DP|2,1
-Bambu Lab H2D Pro 0.4 nozzle|Bambu PLA Basic @BBL H2DP;Bambu PLA Matte @BBL H2DP;Bambu PETG HF @BBL H2DP 0.4 nozzle;Bambu ABS @BBL H2DP|1,1,1,2
-Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BBL X2D 0.4 nozzle|1,1
-Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BBL X2D 0.4 nozzle;Bambu PETG HF @BBL X2D 0.4 nozzle;Bambu ABS @BBL X2D 0.4 nozzle|1,1,1,1
+orca|Bambu Lab H2D 0.4 nozzle|Bambu PLA Basic @BBL H2D;Bambu PLA Matte @BBL H2D|2,1
+orca|Bambu Lab H2D 0.4 nozzle|Bambu PLA Basic @BBL H2D;Bambu PLA Matte @BBL H2D;Bambu PETG HF @BBL H2D 0.4 nozzle;Bambu ABS @BBL H2D|1,1,1,2
+orca|Bambu Lab H2D Pro 0.4 nozzle|Bambu PLA Basic @BBL H2DP;Bambu PLA Matte @BBL H2DP|2,1
+orca|Bambu Lab H2D Pro 0.4 nozzle|Bambu PLA Basic @BBL H2DP;Bambu PLA Matte @BBL H2DP;Bambu PETG HF @BBL H2DP 0.4 nozzle;Bambu ABS @BBL H2DP|1,1,1,2
+orca|Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BBL X2D 0.4 nozzle|1,1
+orca|Bambu Lab X2D 0.4 nozzle|Bambu PLA Basic @BBL X2D 0.4 nozzle;Bambu PLA Matte @BBL X2D 0.4 nozzle;Bambu PETG HF @BBL X2D 0.4 nozzle;Bambu ABS @BBL X2D 0.4 nozzle|1,1,1,1
+bambu|Bambu Lab H2D 0.4 nozzle|Bambu PLA Basic @BBL H2D;Bambu PLA Matte @BBL H2D|2,1
+bambu|Bambu Lab H2D 0.4 nozzle|Bambu PLA Basic @BBL H2D;Bambu PLA Matte @BBL H2D;Bambu PETG HF @BBL H2D 0.4 nozzle;Bambu PETG HF @BBL H2D 0.4 nozzle|2,1,1,2
 D3EOF
-[ $d3_ok = 1 ] && echo "PASS: D3 the Orca build's automatic grouping equals the official OrcaSlicer CLI's on the H2D, H2D Pro and X2D"
+[ $d3_ok = 1 ] && echo "PASS: D3 automatic grouping with no AMS count keeps the estimated AMS's maps (Orca: the official CLI's maps on the H2D, H2D Pro and X2D; Bambu: H2D)"
 
 # D3b (both builds): a project's own extruder_ams_count is what automatic
 # grouping sizes each nozzle's group from, as when the desktop opens it with
