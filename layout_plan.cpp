@@ -145,6 +145,45 @@ static int slurp_profile_cancellable(const std::string& fp, std::string& out) {
 // value is read after its parents', so it wins.
 static std::string* g_printer_model_sink = nullptr;
 
+// A JSON array value as the string set_deserialize reads, joined the way both
+// engines' ConfigBase::load_from_json joins it (parse_str_arr; BambuStudio
+// Config.cpp 863 and 1018-1037 at 02.08.02.61, OrcaSlicer Config.cpp
+// 831 and 975-994 at 2.4.2): the separator follows the option type, so a points group
+// (extruder_printable_area: one zone per nozzle) keeps its zones apart with '#',
+// and a strings option takes ';' with each value quoted.
+static std::string join_profile_array(const std::string& key, const json& v) {
+    char single_sep = ',';
+    bool quote = false;
+    if (const ConfigOptionDef* def = print_config_def.get(key)) {
+        if (def->type == coStrings) { single_sep = ';'; quote = true; }
+        else if (def->type == coPointsGroups) single_sep = '#';
+    }
+    auto text = [quote](const std::string& s) { return quote ? "\"" + escape_string_cstyle(s) + "\"" : s; };
+    std::string out;
+    bool first = true;
+    for (auto& e : v) {
+        if (e.is_array()) {                              // nested: inner arrays split on '#'
+            if (!first) out += '#';
+            bool inner_first = true;
+            for (auto& ie : e) {
+                if (!ie.is_string()) continue;
+                if (!inner_first) out += single_sep;
+                out += text(ie.get<std::string>());
+                inner_first = false;
+            }
+        } else if (e.is_string()) {
+            if (!first) out += single_sep;
+            out += text(e.get<std::string>());
+        } else if (e.is_number()) {
+            if (!first) out += single_sep;
+            out += text(std::to_string(e.get<double>()));
+        } else
+            continue;
+        first = false;
+    }
+    return out;
+}
+
 // return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), 2 = parse error (bad file), 3 = cancelled
 // (cycle → already loaded ancestors, clean stop via the visited set)
 // parses the slurped content; the root file was opened ONCE by slurp_profile_cancellable
@@ -182,7 +221,7 @@ static int load_profile_json_impl(const std::string& content, const std::string&
             continue;
         try {
             std::string vs;
-            if (v.is_array()) { std::vector<std::string> ps; for (auto& e : v) { if (e.is_string()) ps.push_back(e.get<std::string>()); else if (e.is_number()) ps.push_back(std::to_string(e.get<double>())); } for (size_t i = 0; i < ps.size(); i++) { if (i > 0) vs += ","; vs += ps[i]; } }
+            if (v.is_array()) vs = join_profile_array(k, v);
             else if (v.is_string()) vs = v.get<std::string>();
             else if (v.is_number_float()) vs = std::to_string(v.get<double>());
             else if (v.is_number_integer()) vs = std::to_string(v.get<int>());
