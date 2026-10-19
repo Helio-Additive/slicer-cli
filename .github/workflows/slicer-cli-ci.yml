@@ -834,7 +834,7 @@ jobs:
             runner: macos-14          # Apple Silicon — primary dev target
             cmake_preset: ""
           - os: Windows-x86_64
-            runner: blacksmith-16vcpu-windows-2025
+            runner: windows-2025      # free GitHub runner (public repo); 4 cores, slower
             cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release"
           # - os: macOS-x86_64
           #   runner: macos-13
@@ -1413,7 +1413,9 @@ jobs:
     needs: build-nonlinux
     runs-on: ${{ matrix.runner }}
     # Backstop: a hung test fails the job instead of holding it for hours.
-    timeout-minutes: 90
+    # 240, not 90: Windows packages on the 4-core free runner (36 min on
+    # the old 16-core Blacksmith one).
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -1423,7 +1425,7 @@ jobs:
             runner: macos-14
             platform: macos-arm64
           - os: Windows-x86_64
-            runner: blacksmith-16vcpu-windows-2025
+            runner: windows-2025      # free GitHub runner (public repo); 4 cores, slower
             platform: windows-x86_64
     steps:
       - name: Checkout (with submodules)
