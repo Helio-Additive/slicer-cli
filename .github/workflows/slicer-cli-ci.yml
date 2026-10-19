@@ -505,7 +505,9 @@ jobs:
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
-          VCPKG_ARGS=()
+          # --clean-after-build: the 4-core free runner has little disk; a cold
+          # build of every port overflowed it with buildtrees (PR #46).
+          VCPKG_ARGS=(--clean-after-build)
           if [[ "${{ matrix.engine }}" == "bambu" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           fi
@@ -688,7 +690,7 @@ jobs:
         run: cmake --build build --config Release --parallel 4
       - name: Build (Windows)
         if: runner.os == 'Windows'
-        run: cmake --build build --config Release --parallel 16
+        run: cmake --build build --config Release --parallel 4  # free runner has 4 cores
 
       - name: Show sccache stats
         shell: bash
@@ -1094,7 +1096,9 @@ jobs:
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
-          VCPKG_ARGS=()
+          # --clean-after-build: the 4-core free runner has little disk; a cold
+          # build of every port overflowed it with buildtrees (PR #46).
+          VCPKG_ARGS=(--clean-after-build)
           if [[ "${{ matrix.engine }}" == "bambu" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           fi
@@ -1273,7 +1277,7 @@ jobs:
         run: cmake --build build --config Release --parallel 4
       - name: Build (Windows)
         if: runner.os == 'Windows'
-        run: cmake --build build --config Release --parallel 16
+        run: cmake --build build --config Release --parallel 4  # free runner has 4 cores
 
       - name: Show sccache stats
         shell: bash
