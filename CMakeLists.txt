@@ -244,19 +244,7 @@ endif()
 find_package(OpenCV REQUIRED core imgproc)
 find_package(assimp REQUIRED)
 
-find_package(NLopt QUIET)
-# libnest2d links NLopt::nlopt. Ubuntu's libnlopt-cxx-dev installs a second
-# NLoptConfig.cmake (cmake/nlopt_cxx) whose target is NLopt::nlopt_cxx, and
-# find_package takes whichever of the two directories the filesystem lists
-# first. Then NLOPT_LIBRARIES, the package's own target list, stands in.
-if(NLopt_FOUND AND NOT TARGET NLopt::nlopt)
-  if(NOT NLOPT_LIBRARIES)
-    message(FATAL_ERROR "NLopt found at ${NLopt_DIR} without the NLopt::nlopt target or NLOPT_LIBRARIES; "
-                        "point NLopt_DIR at the C package's config (cmake/nlopt)")
-  endif()
-  add_library(NLopt::nlopt INTERFACE IMPORTED)
-  set_target_properties(NLopt::nlopt PROPERTIES INTERFACE_LINK_LIBRARIES "${NLOPT_LIBRARIES}")
-endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/find_nlopt.cmake)
 if(NLopt_FOUND)
   message(STATUS "NLopt found: ${NLopt_DIR}")
 else()
