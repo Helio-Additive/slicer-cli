@@ -7,12 +7,16 @@
 # takes the one the filesystem lists first. Sorted by name, cmake/nlopt comes
 # first on every machine.
 #
-# Sets NLopt_FOUND and NLopt_DIR. Tested by tests/test_find_nlopt.sh.
-set(CMAKE_FIND_PACKAGE_SORT_ORDER NAME)
-set(CMAKE_FIND_PACKAGE_SORT_DIRECTION ASC)
-find_package(NLopt QUIET)
-unset(CMAKE_FIND_PACKAGE_SORT_ORDER)
-unset(CMAKE_FIND_PACKAGE_SORT_DIRECTION)
+# The sort settings live in a function scope, so the caller's own settings
+# for later find_package calls stay as they were. Sets NLopt_FOUND and
+# NLopt_DIR. Tested by tests/test_find_nlopt.sh.
+function(slicer_cli_find_nlopt)
+  set(CMAKE_FIND_PACKAGE_SORT_ORDER NAME)
+  set(CMAKE_FIND_PACKAGE_SORT_DIRECTION ASC)
+  find_package(NLopt QUIET)
+  set(NLopt_FOUND "${NLopt_FOUND}" PARENT_SCOPE)
+endfunction()
+slicer_cli_find_nlopt()
 if(NLopt_FOUND AND NOT TARGET NLopt::nlopt)
   message(FATAL_ERROR
     "NLopt was found at ${NLopt_DIR}, but that package has no NLopt::nlopt target, "
