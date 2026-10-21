@@ -728,6 +728,10 @@ jobs:
         if: runner.os != 'Windows'
         run: python3 tests/test_diagnostic_transport.py
 
+      - name: Test NLopt package choice
+        if: runner.os != 'Windows'
+        run: bash tests/test_find_nlopt.sh
+
       - name: Smoke --help (orca, macOS/Linux)
         if: runner.os != 'Windows' && matrix.engine == 'orca'
         run: build/slicer_cli --help
@@ -1310,6 +1314,10 @@ jobs:
       - name: Test diagnostic transport
         if: runner.os != 'Windows'
         run: python3 tests/test_diagnostic_transport.py
+
+      - name: Test NLopt package choice
+        if: runner.os != 'Windows'
+        run: bash tests/test_find_nlopt.sh
 
       - name: Smoke --help (orca, macOS/Linux)
         if: runner.os != 'Windows' && matrix.engine == 'orca'
