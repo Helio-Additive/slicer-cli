@@ -196,7 +196,6 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
             emit({{"event", "model_loaded"}, {"tag", "ZeroVolumeObjectsRemoved"}, {"path", file},
                   {"removed", removed}, {"message", msg}});
             r.notes.push_back(msg);
-            add_failure_reason(r.failure_reason, msg + ".");
         }
         if (loaded.objects.empty()) {
             // The official CLI skips an empty file ("file is empty",

@@ -1715,7 +1715,7 @@ assert "No layers were detected" in r["error_reason"], r
 assert "add --convert-unit" in r["error_reason"], r
 ' ms-$e/out/result.json || { show ms-$e; fail "$e: result.json does not give the engine reason and --convert-unit"; }
     # A --machine file that could not be read: the failed plate says so.
-    run mb-$e "$bin" meters.stl --machine "$PWD/no-such-machine.json" --slice 1 --printer-preset "$A1M" --outputdir mb-$e/out
+    run mb-$e "$bin" meters.stl --machine no-such-machine.json --slice 1 --printer-preset "$A1M" --outputdir mb-$e/out
     py '
 import json, sys
 r = json.load(open(sys.argv[1]))
@@ -1726,10 +1726,12 @@ echo "PASS: model units are reported, a failed plate's result.json error_reason 
 
 # --engine-info on a STEP file: stdout is the JSON document only, though the
 # STEP loader prints its progress (STEP.hpp's StepProgressIncdicator). The
-# file is the STEP model Bambu Studio ships for its volumetric speed test.
+# file is the STEP model Bambu Studio ships for its volumetric speed test,
+# copied here to be read by a relative path, as the Windows binaries need.
+cp "$SCRIPT_DIR/../references/BambuStudio/resources/calib/volumetric_speed/SpeedTestStructure.step" speedtest.step
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
-    "$bin" --engine-info "$SCRIPT_DIR/../references/BambuStudio/resources/calib/volumetric_speed/SpeedTestStructure.step" > ei-step-$e.json 2> ei-step-$e.err
+    "$bin" --engine-info speedtest.step > ei-step-$e.json 2> ei-step-$e.err
     py '
 import json, sys
 d = json.load(open(sys.argv[1]))

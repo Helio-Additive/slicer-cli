@@ -498,7 +498,7 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 |-|-|
 | `return_code` | 0, or the return code of the failure (see below) |
 | `error_string` | The official sentence for the code, then what failed |
-| `error_reason` | Only when a plate failed and more is known: the engine's own reason (which the official command lines print to stderr only), then what the load noted that can cause it (zero-volume objects removed, a model that looks saved in meters or inches, a `--machine`/`--process`/`--filament` file that could not be read) |
+| `error_reason` | Only when a plate failed and more is known: the engine's own reason (which the official command lines print to stderr only), then what the load noted that can cause it (a model that looks saved in meters or inches, a `--machine`/`--process`/`--filament` file that could not be read) |
 | `plate_index` | The `--slice` value |
 | `prepare_time`, `export_time` | Milliseconds |
 | `engine` | `bambustudio` or `orcaslicer` |

@@ -3,9 +3,9 @@
 // error_string stays the official sentence for the code (record_exit_reson,
 // BambuStudio.cpp 483-513 at 02.08.02.61). The official command lines print
 // an engine exception's text to stderr only (BambuStudio.cpp 7412-7417,
-// OrcaSlicer.cpp 6286-6290 at 2.4.2), and what the load noted (zero-volume
-// objects removed, a model that looks saved in meters or inches, a settings
-// file that could not be read) goes out only as an event. A caller that reads
+// OrcaSlicer.cpp 6286-6290 at 2.4.2), and what the load noted (a model that
+// looks saved in meters or inches, a settings file that could not be read)
+// goes out only as an event. A caller that reads
 // result.json gets these sentences in error_reason.
 #pragma once
 
