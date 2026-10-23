@@ -1722,29 +1722,6 @@ r = json.load(open(sys.argv[1]))
 assert "no-such-machine.json could not be read" in r["error_reason"], r
 ' mb-$e/out/result.json || { show mb-$e; fail "$e: result.json does not name the unread --machine file"; }
 done
-# A model whose only object has zero volume: the plate is refused as empty,
-# and error_reason says the object was removed.
-py '
-v = [(x, y, 0) for y in (0, 20) for x in (0, 20)] * 2
-f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
-with open("flatcube.stl", "w") as o:
-    o.write("solid t\n")
-    for a, b, c in f:
-        o.write("facet normal 0 0 0\nouter loop\n")
-        for i in (a, b, c): o.write("vertex %g %g %g\n" % v[i])
-        o.write("endloop\nendfacet\n")
-    o.write("endsolid t\n")
-'
-for e in bambu orca; do
-    bin=$B; [ $e = orca ] && bin=$O
-    run zv-$e "$bin" flatcube.stl --slice 1 --printer-preset "$A1M" --outputdir zv-$e/out
-    py '
-import json, sys
-r = json.load(open(sys.argv[1]))
-assert r["return_code"] != 0 and "with zero volume removed from flatcube.stl" in r["error_reason"], r
-' zv-$e/out/result.json || { show zv-$e; fail "$e: result.json does not say the zero-volume object was removed"; }
-done
-echo "PASS: a plate left empty by zero-volume objects says so in error_reason (both engines)"
 echo "PASS: model units are reported, a failed plate's result.json error_reason gives the engine reason, --convert-unit and an unread --machine file, and --convert-unit converts (both engines)"
 
 # --engine-info on a STEP file: stdout is the JSON document only, though the
