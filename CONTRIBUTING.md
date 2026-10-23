@@ -58,8 +58,9 @@ file. See "The override layer" in [docs/building.md](docs/building.md).
 
 ## CI requirements
 
-PRs must build and pass the tests on all three platforms, for both engines:
+PRs must build and pass the tests on every platform, for both engines:
 - Linux x86_64
+- Linux arm64
 - macOS arm64
 - Windows x86_64
 

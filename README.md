@@ -24,6 +24,7 @@ extract it:
 | System | Package | Programs |
 |-|-|-|
 | Linux x86_64 (glibc 2.35 or later) | `slicer-cli-v<version>-linux-x86_64.tar.gz` | `bin/slicer_cli`, `bin/slicer_cli-orcaslicer` |
+| Linux arm64 (glibc 2.35 or later) | `slicer-cli-v<version>-linux-arm64.tar.gz` | `bin/slicer_cli`, `bin/slicer_cli-orcaslicer` |
 | macOS arm64 | `slicer-cli-v<version>-macos-arm64.tar.gz` | `slicer_cli`, `slicer_cli-orcaslicer` |
 | Windows x86_64 | `slicer-cli-v<version>-windows-x86_64.zip` | `slicer_cli.exe`, `slicer_cli-orcaslicer.exe` |
 
