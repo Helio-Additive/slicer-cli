@@ -84,7 +84,8 @@ free spot, each lowered onto the bed. With `--slice`, several objects from
 model files are then arranged, as the official command lines arrange model
 files. With `--arrange 0` or `--arrange 1` a model file keeps its own
 coordinates instead of this placement (and `1` then arranges it). A model that looks like it was saved in
-meters or inches is reported (`model_warning` event `ModelUnitsLookWrong`);
+meters or inches is reported (`model_warning` event `ModelUnitsLookWrong`,
+and at the end of `result.json`'s `error_string` when the plate then fails);
 `--convert-unit` converts it. An object larger than the bed is scaled down to
 fit when it is far too large, as the desktop does, and reported.
 

@@ -1703,8 +1703,29 @@ for e in bambu orca; do
     events m-$e/stdout model_warning | grep ModelUnitsLookWrong >/dev/null || { show m-$e; fail "$e: no units event for a model in meters"; }
     run mc-$e "$bin" meters.stl --convert-unit --info
     grep -q 'size_x = 20' mc-$e/stdout || { show mc-$e; fail "$e: --convert-unit did not scale meters to mm"; }
+    # The slice of it fails, and result.json says what to add.
+    run ms-$e "$bin" meters.stl --slice 1 --printer-preset "$A1M" --outputdir ms-$e/out
+    [ "$(rc ms-$e)" != 0 ] || fail "$e: a model in meters sliced"
+    py '
+import json, sys
+r = json.load(open(sys.argv[1]))
+assert "add --convert-unit" in r["error_string"], r["error_string"]
+' ms-$e/out/result.json || { show ms-$e; fail "$e: result.json does not say to add --convert-unit"; }
 done
-echo "PASS: model units are reported, and --convert-unit converts (both engines)"
+echo "PASS: model units are reported, result.json names --convert-unit, and --convert-unit converts (both engines)"
+
+# --engine-info on a STEP file: stdout is the JSON document only, though the
+# STEP loader prints its progress (STEP.hpp's StepProgressIncdicator).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    "$bin" --engine-info "$SCRIPT_DIR/fixtures/block.step" > ei-step-$e.json 2> ei-step-$e.err
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["kind"] == "step" and "error" not in d, d
+' ei-step-$e.json || { head -5 ei-step-$e.json; fail "$e: --engine-info on a STEP file is not one JSON document on stdout"; }
+done
+echo "PASS: --engine-info on a STEP file prints only its JSON (both engines)"
 
 # Transforms, in command-line order: --scale, --rotate, --orient, --assemble.
 for e in bambu orca; do

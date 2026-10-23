@@ -215,6 +215,8 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
                 emit({{"event", "model_warning"}, {"tag", "ModelUnitsLookWrong"}, {"path", file},
                       {"looks_like", unit}, {"message", msg}});
                 r.notes.push_back(msg);
+                r.units_hint += (r.units_hint.empty() ? "" : " ") + std::string("The object from ") + file_name(file) +
+                                " is very small and may be in " + unit + "; add --convert-unit to scale it to millimeters.";
             }
         }
 

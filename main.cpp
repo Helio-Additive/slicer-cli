@@ -3027,6 +3027,14 @@ static void set_outcome_failure(PlateOutcome& outcome, int code, const std::stri
         outcome.error_string += " " + outcome.refusal_note;
 }
 
+/// A model that looks saved in meters or inches loads too small to slice
+/// ("No layers were detected"); a refusal of the plate says to add
+/// --convert-unit, as the model_warning event does.
+static void note_units_hint(PlateOutcome& outcome, const slicer_cli::ModelLoadResult& loaded) {
+    if (!loaded.units_hint.empty())
+        outcome.refusal_note += (outcome.refusal_note.empty() ? "" : " ") + loaded.units_hint;
+}
+
 #ifdef ENGINE_ORCA
 /// The filament settings PresetBundle::load_config_file_config cannot split:
 /// with more than one filament (counted from filament_colour, as it counts
@@ -7646,6 +7654,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 set_outcome_failure(outcome, loaded.code, loaded.message);
                 return 1;
             }
+            note_units_hint(outcome, loaded);
         } else if (input_is_3mf(input_file)) {
 #ifdef ENGINE_BAMBU
             Slic3r::ConfigOptionInts accepted_3mf_nozzle_map(
@@ -8599,6 +8608,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 set_outcome_failure(outcome, loaded.code, loaded.message);
                 return 1;
             }
+            note_units_hint(outcome, loaded);
         }
         // A run of one plate (model files, a 3MF sliced as one plate): every
         // instance is on it, at the origin.
@@ -11072,6 +11082,11 @@ static int run_info(const std::string& argv0, const std::string& path, const std
     // Any other model file: read with the slice path's loader.
     if (!is_3mf && !input_is_stl(path) && kind != "unknown") {
         bool loaded = false;
+        // stdout holds this run's JSON only, and the STEP loader's progress
+        // indicator prints "Progress: N%" lines to it (StepProgressIncdicator::Show,
+        // BambuStudio STEP.hpp 100-102 at 02.08.02.61, OrcaSlicer STEP.hpp
+        // 80-82 at 2.4.2): the load's output goes to stderr.
+        std::streambuf* const json_out = std::cout.rdbuf(std::cerr.rdbuf());
         try {
             Slic3r::Model m = boost::algorithm::iends_with(path, ".step") || boost::algorithm::iends_with(path, ".stp")
                 ? Slic3r::Model::read_from_step(path, Slic3r::LoadStrategy::LoadModel, nullptr, nullptr,
@@ -11082,6 +11097,7 @@ static int run_info(const std::string& argv0, const std::string& path, const std
         } catch (...) {
             loaded = false;
         }
+        std::cout.rdbuf(json_out);
         if (!loaded) {
             out["error"] = cli_error_sentence(CLI_DATA_FILE_ERROR) + " " + path + " is not a readable " + kind + " file.";
             std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;

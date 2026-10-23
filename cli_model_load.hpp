@@ -55,6 +55,7 @@ struct ModelLoadResult {
     int         code = 0;        // 0, or the official CLI_* code
     std::string message;         // why, when code != 0
     std::vector<std::string> notes;  // what changed on load, one sentence each
+    std::string units_hint;          // the --convert-unit sentence for a model that looks saved in meters or inches
 };
 
 /// Loads `files` (each a geometry file) into `model` the official CLI's way
