@@ -8314,9 +8314,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                        std::to_string(plate_data.size()) + " plate(s)"}});
                 std::cerr << "Error: --plate " << plate_id
                           << " but 3MF only has " << plate_data.size() << " plate(s)\n";
-                slicer_cli::add_failure_reason(outcome.error_reason,
-                                               "--plate " + std::to_string(plate_id) + " but the 3MF has only " +
-                                                   std::to_string(plate_data.size()) + " plate(s).");
                 set_outcome_failure(outcome, CLI_INVALID_PARAMS);
                 return 1;
             }
@@ -11090,23 +11087,7 @@ static int run_info(const std::string& argv0, const std::string& path, const std
     }
     // Any other model file: read with the slice path's loader.
     if (!is_3mf && !input_is_stl(path) && kind != "unknown") {
-        bool loaded = false;
-        // stdout holds this run's JSON only, and the STEP loader's progress
-        // indicator prints "Progress: N%" lines to it (StepProgressIncdicator::Show,
-        // BambuStudio STEP.hpp 100-102 at 02.08.02.61, OrcaSlicer STEP.hpp
-        // 80-82 at 2.4.2): the load's output goes to stderr.
-        std::streambuf* const json_out = std::cout.rdbuf(std::cerr.rdbuf());
-        try {
-            Slic3r::Model m = boost::algorithm::iends_with(path, ".step") || boost::algorithm::iends_with(path, ".stp")
-                ? Slic3r::Model::read_from_step(path, Slic3r::LoadStrategy::LoadModel, nullptr, nullptr,
-                                                [](Slic3r::Step&, double& l, double& a, bool& s) -> int { l = 0.003; a = 0.5; s = false; return 1; },
-                                                0.003, 0.5, false)
-                : Slic3r::Model::read_from_file(path, nullptr, nullptr, Slic3r::LoadStrategy::LoadModel);
-            loaded = !m.objects.empty();
-        } catch (...) {
-            loaded = false;
-        }
-        std::cout.rdbuf(json_out);
+        const bool loaded = slicer_cli::model_file_has_objects(path);
         if (!loaded) {
             out["error"] = cli_error_sentence(CLI_DATA_FILE_ERROR) + " " + path + " is not a readable " + kind + " file.";
             std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;

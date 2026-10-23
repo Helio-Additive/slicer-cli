@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem.hpp>
@@ -499,6 +500,26 @@ std::vector<std::string> loader_side_files(const std::string& path, bool model_f
     }
 #endif
     return out;
+}
+
+bool model_file_has_objects(const std::string& path) {
+    // The STEP loader's progress indicator prints "Progress: N%" lines to
+    // std::cout (StepProgressIncdicator::Show, BambuStudio STEP.hpp 100-102
+    // at 02.08.02.61, OrcaSlicer STEP.hpp 80-82 at 2.4.2): they go to stderr.
+    struct StdoutToStderr {
+        std::streambuf* out = std::cout.rdbuf(std::cerr.rdbuf());
+        ~StdoutToStderr() { std::cout.rdbuf(out); }
+    } quiet;
+    try {
+        Slic3r::Model m = is_step(path)
+            ? Slic3r::Model::read_from_step(path, Slic3r::LoadStrategy::LoadModel, nullptr, nullptr,
+                                            [](Slic3r::Step&, double& l, double& a, bool& s) -> int { l = 0.003; a = 0.5; s = false; return 1; },
+                                            0.003, 0.5, false)
+            : Slic3r::Model::read_from_file(path, nullptr, nullptr, Slic3r::LoadStrategy::LoadModel);
+        return !m.objects.empty();
+    } catch (...) {
+        return false;
+    }
 }
 
 } // namespace slicer_cli

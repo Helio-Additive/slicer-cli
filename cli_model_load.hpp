@@ -68,6 +68,11 @@ struct ModelLoadResult {
 ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::string>& files,
                                     size_t first_index, Slic3r::Model& model);
 
+/// True when the model file at `path` (not a project 3MF) reads with at
+/// least one object, as --engine-info checks it. Nothing the loader prints
+/// reaches stdout, which holds --engine-info's JSON only.
+bool model_file_has_objects(const std::string& path);
+
 /// The desktop app's placement of loaded geometry when nothing arranges it
 /// (Plater::priv::load_files and load_model_objects, BambuStudio Plater.cpp
 /// 9151-9166 and 9530-9660 at 5873b5f; OrcaSlicer Plater.cpp 6656-6839 and
