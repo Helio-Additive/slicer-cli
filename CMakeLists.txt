@@ -841,7 +841,7 @@ add_library(libslic3r ALIAS libslic3r_core)
 # ─── CLI executable ────────────────────────────────────────────────────────
 add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_plan.cpp
     cli_command_line.cpp cli_flag_support.cpp desktop_presets.cpp cli_model_load.cpp cli_run_steps.cpp cli_load_settings.cpp cli_repetitions.cpp
-    cli_assemble.cpp cli_pipe.cpp)
+    cli_assemble.cpp cli_pipe.cpp cli_failure_reason.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 target_include_directories(slicer_cli PRIVATE
     "${VENDOR}"

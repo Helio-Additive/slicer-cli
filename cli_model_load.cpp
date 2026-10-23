@@ -1,5 +1,6 @@
 // cli_model_load.cpp — see cli_model_load.hpp.
 #include "cli_model_load.hpp"
+#include "cli_failure_reason.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -194,6 +195,7 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
             emit({{"event", "model_loaded"}, {"tag", "ZeroVolumeObjectsRemoved"}, {"path", file},
                   {"removed", removed}, {"message", msg}});
             r.notes.push_back(msg);
+            add_failure_reason(r.failure_reason, msg + ".");
         }
         if (loaded.objects.empty()) {
             // The official CLI skips an empty file ("file is empty",
@@ -215,8 +217,8 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
                 emit({{"event", "model_warning"}, {"tag", "ModelUnitsLookWrong"}, {"path", file},
                       {"looks_like", unit}, {"message", msg}});
                 r.notes.push_back(msg);
-                r.units_hint += (r.units_hint.empty() ? "" : " ") + std::string("The object from ") + file_name(file) +
-                                " is very small and may be in " + unit + "; add --convert-unit to scale it to millimeters.";
+                add_failure_reason(r.failure_reason, "The object from " + file_name(file) + " is very small and may be in " +
+                                                         unit + "; add --convert-unit to scale it to millimeters.");
             }
         }
 

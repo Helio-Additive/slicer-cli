@@ -85,7 +85,7 @@ model files are then arranged, as the official command lines arrange model
 files. With `--arrange 0` or `--arrange 1` a model file keeps its own
 coordinates instead of this placement (and `1` then arranges it). A model that looks like it was saved in
 meters or inches is reported (`model_warning` event `ModelUnitsLookWrong`,
-and at the end of `result.json`'s `error_string` when the plate then fails);
+and in `result.json`'s `error_reason` when the plate then fails);
 `--convert-unit` converts it. An object larger than the bed is scaled down to
 fit when it is far too large, as the desktop does, and reported.
 
@@ -498,6 +498,7 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 |-|-|
 | `return_code` | 0, or the return code of the failure (see below) |
 | `error_string` | The official sentence for the code, then what failed |
+| `error_reason` | Only when a plate failed and more is known: the engine's own reason (which the official command lines print to stderr only), then what the load noted that can cause it (zero-volume objects removed, a model that looks saved in meters or inches, a `--machine`/`--process`/`--filament` file that could not be read) |
 | `plate_index` | The `--slice` value |
 | `prepare_time`, `export_time` | Milliseconds |
 | `engine` | `bambustudio` or `orcaslicer` |

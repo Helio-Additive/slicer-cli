@@ -99,6 +99,7 @@
 #include "cli_command_line.hpp"
 #include "desktop_presets.hpp"
 #include "cli_model_load.hpp"
+#include "cli_failure_reason.hpp"
 #include "cli_run_steps.hpp"
 #include "cli_load_settings.hpp"
 #include "cli_repetitions.hpp"
@@ -2868,6 +2869,7 @@ struct PlateOutcome {
     int         cli_code   = 0;    // CLI_SUCCESS, or the official CLI_* code of the failure
     std::string error_string;      // the official sentence for cli_code, plus specifics
     std::string refusal_note;      // appended to any refusal of this plate (set_outcome_failure)
+    std::string error_reason;      // why it failed, beyond error_string: result.json error_reason
     std::string gcode_path;
     bool        exported   = false;
 
@@ -3025,14 +3027,6 @@ static void set_outcome_failure(PlateOutcome& outcome, int code, const std::stri
         outcome.error_string += " " + detail;
     if (!outcome.refusal_note.empty())
         outcome.error_string += " " + outcome.refusal_note;
-}
-
-/// A model that looks saved in meters or inches loads too small to slice
-/// ("No layers were detected"); a refusal of the plate says to add
-/// --convert-unit, as the model_warning event does.
-static void note_units_hint(PlateOutcome& outcome, const slicer_cli::ModelLoadResult& loaded) {
-    if (!loaded.units_hint.empty())
-        outcome.refusal_note += (outcome.refusal_note.empty() ? "" : " ") + loaded.units_hint;
 }
 
 #ifdef ENGINE_ORCA
@@ -3206,6 +3200,10 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
     j["plate_index"]  = plate_id;
     j["return_code"]  = code;
     j["error_string"] = error_string;
+    // The failed plate's reasons, beyond the official sentence
+    // (cli_failure_reason.hpp); the failed plate is the last one run.
+    if (code != 0 && !outcomes.empty() && outcomes.back().cli_code != 0 && !outcomes.back().error_reason.empty())
+        j["error_reason"] = outcomes.back().error_reason;
     j["prepare_time"] = prepare_time_ms;
     j["export_time"]  = export_time_ms;
 #ifdef ENGINE_ORCA
@@ -7647,6 +7645,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 set_outcome_failure(outcome, CLI_DATA_FILE_ERROR);
                 return 1;
             }
+            slicer_cli::add_failure_reason(outcome.error_reason, loaded.failure_reason);
             if (loaded.code != 0) {
                 emit_event({{"event","load_error"}, {"tag","ModelLoadFailed"}, {"path", input_file},
                             {"message", loaded.message}});
@@ -7654,7 +7653,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 set_outcome_failure(outcome, loaded.code, loaded.message);
                 return 1;
             }
-            note_units_hint(outcome, loaded);
         } else if (input_is_3mf(input_file)) {
 #ifdef ENGINE_BAMBU
             Slic3r::ConfigOptionInts accepted_3mf_nozzle_map(
@@ -8316,6 +8314,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                        std::to_string(plate_data.size()) + " plate(s)"}});
                 std::cerr << "Error: --plate " << plate_id
                           << " but 3MF only has " << plate_data.size() << " plate(s)\n";
+                slicer_cli::add_failure_reason(outcome.error_reason,
+                                               "--plate " + std::to_string(plate_id) + " but the 3MF has only " +
+                                                   std::to_string(plate_data.size()) + " plate(s).");
                 set_outcome_failure(outcome, CLI_INVALID_PARAMS);
                 return 1;
             }
@@ -8601,6 +8602,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         if (!geometry_input && o.input_files.size() > 1) {
             const std::vector<std::string> rest(o.input_files.begin() + 1, o.input_files.end());
             const slicer_cli::ModelLoadResult loaded = slicer_cli::load_geometry_files(o, rest, 1, model);
+            slicer_cli::add_failure_reason(outcome.error_reason, loaded.failure_reason);
             if (loaded.code != 0) {
                 emit_event({{"event","load_error"}, {"tag","ModelLoadFailed"}, {"path", rest.front()},
                             {"message", loaded.message}});
@@ -8608,7 +8610,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 set_outcome_failure(outcome, loaded.code, loaded.message);
                 return 1;
             }
-            note_units_hint(outcome, loaded);
         }
         // A run of one plate (model files, a 3MF sliced as one plate): every
         // instance is on it, at the origin.
@@ -8678,6 +8679,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         {"message", std::string("Failed to load ") + kind +
                                     " config; slicing continues with the previously resolved settings"}});
             std::cerr << "Warning: Failed to load " << kind << " config\n";
+            slicer_cli::add_failure_reason(outcome.error_reason, std::string("The ") + kind + " file " + path +
+                                                                 " could not be read, so its settings were not used.");
         };
         // Presets by name: the desktop app's full_config() for the named
         // printer, process and filaments, over the engine defaults.
@@ -10958,15 +10961,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 return 1;
             } catch (const Slic3r::RuntimeError& e) {
                 emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
+                slicer_cli::add_engine_reason(outcome.error_reason, e.what());
                 std::cerr << "\n❌ G-code export failed (RuntimeError): " << e.what() << "\n";
                 std::cerr << "\nSlicing succeeded, but export needs additional configuration.\n";
                 return 1;
             } catch (const std::length_error& e) {
                 emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","length_error"},{"message",std::string(e.what())}});
+                slicer_cli::add_engine_reason(outcome.error_reason, e.what());
                 std::cerr << "\n❌ G-code export failed (length_error): " << e.what() << "\n";
                 return 1;
             } catch (const std::exception& e) {
                 emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind",typeid(e).name()},{"message",std::string(e.what())}});
+                slicer_cli::add_engine_reason(outcome.error_reason, e.what());
                 std::cerr << "\n❌ G-code export failed (" << typeid(e).name() << "): " << e.what() << "\n";
                 std::cerr << "\nSlicing succeeded, but export needs additional configuration.\n";
                 return 1;
@@ -10986,16 +10992,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             return 1;
         } catch (const Slic3r::RuntimeError& e) {
             emit_event({{"event","slicing_error"},{"phase","process"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
+            slicer_cli::add_engine_reason(outcome.error_reason, e.what());
             std::cerr << "Slicing RuntimeError: " << e.what() << "\n";
             std::cerr << "\nThis may indicate missing or incomplete configuration.\n";
             std::cerr << "Try using BambuStudio config files with --machine, --filament, --process\n";
             return 1;
         } catch (const std::length_error& e) {
             emit_event({{"event","slicing_error"},{"phase","process"},{"kind","length_error"},{"message",std::string(e.what())}});
+            slicer_cli::add_engine_reason(outcome.error_reason, e.what());
             std::cerr << "Slicing length_error: " << e.what() << "\n";
             return 1;
         } catch (const std::exception& e) {
             emit_event({{"event","slicing_error"},{"phase","process"},{"kind",typeid(e).name()},{"message",std::string(e.what())}});
+            slicer_cli::add_engine_reason(outcome.error_reason, e.what());
             std::cerr << "Slicing error (" << typeid(e).name() << "): " << e.what() << "\n";
             std::cerr << "\nThis may indicate missing or incomplete configuration.\n";
             std::cerr << "Try using BambuStudio config files with --machine, --filament, --process\n";
