@@ -26,9 +26,15 @@ CONFIG_DIR="$(mktemp -d)"
 trap 'rm -rf "$CONFIG_DIR"' EXIT
 python3 "$SCRIPT_DIR/resolve-orca-profiles.py" "$PACKAGE_ROOT/resources/profiles-orca/Snapmaker" "$CONFIG_DIR/config.json"
 
+# The container runs the package's own architecture.
+case "$(file -b "$PACKAGE_ROOT/bin/slicer_cli")" in
+    *aarch64*) DOCKER_PLATFORM=linux/arm64 ;;
+    *)         DOCKER_PLATFORM=linux/amd64 ;;
+esac
+
 # Mount only the archive and test inputs: source-checkout fallbacks must not
 # satisfy profile lookup, and network access must not supply missing inputs.
-docker run --rm --platform linux/amd64 --network none -i \
+docker run --rm --platform "$DOCKER_PLATFORM" --network none -i \
     -v "$PACKAGE_ROOT:/package-input:ro" \
     -v "$FIXTURES:/fixtures:ro" \
     -v "$CONFIG_DIR:/resolved:ro" \

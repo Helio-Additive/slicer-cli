@@ -9,8 +9,8 @@ programs:
 | `-DENGINE=orca` | `slicer_cli-orcaslicer` | `references/OrcaSlicer` |
 
 The release builds run in GitHub Actions
-(`.github/workflows/slicer-cli-ci.yml`) for Linux x86_64, macOS arm64 and
-Windows x86_64, both engines each. That workflow is the full, tested recipe;
+(`.github/workflows/slicer-cli-ci.yml`) for Linux x86_64, Linux arm64, macOS
+arm64 and Windows x86_64, both engines each. That workflow is the full, tested recipe;
 this page is the short form.
 
 ## Get the source

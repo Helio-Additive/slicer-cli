@@ -8,7 +8,7 @@ are the authority.
 A command-line slicer: one front end, two slicing engines. It ships two
 programs, `slicer_cli` (Bambu Studio engine, source pin `926a719`) and
 `slicer_cli-orcaslicer` (OrcaSlicer engine, pin `8500fcd`), for Linux x86_64,
-macOS arm64 and Windows x86_64. Flags that share a name with the desktop apps'
+Linux arm64, macOS arm64 and Windows x86_64. Flags that share a name with the desktop apps'
 own command lines behave the same way.
 
 Read first, and change here rather than copy: [README.md](README.md),
@@ -71,7 +71,7 @@ bash tests/test_nozzle_map_provenance.sh build/slicer_cli    # Bambu build only
 ```
 
 The package tests take the packaged programs, from the `Package` job (macOS and
-Windows) and the `Package - Linux x86_64` job. Linux keeps them in `bin/` (step
+Windows) and the `Package - Linux-x86_64` and `Package - Linux-arm64` jobs. Linux keeps them in `bin/` (step
 `Assemble and validate Linux package`); macOS (step `Assemble + validate package
 (macOS arm64)`) and Windows (step `Assemble + validate package (Windows x86_64)`)
 put them at the package root, with `.exe` on Windows:

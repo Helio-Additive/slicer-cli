@@ -41,9 +41,17 @@ permissions:
 
 jobs:
   linux-occt:
-    name: Provision Linux OpenCASCADE 7.6.0
+    name: Provision Linux OpenCASCADE 7.6.0 (${{ matrix.arch }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,7 +68,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/occt-7.6
-          key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
+          key: linux-${{ matrix.arch }}-occt-7.6.0-static-73f8f71be02c1d9a-v2
 
       - name: Build OpenCASCADE 7.6.0
         if: steps.cache-linux-occt.outputs.cache-hit != 'true'
@@ -107,15 +115,23 @@ jobs:
       - name: Upload pinned libnoise prefix
         uses: actions/upload-artifact@v4
         with:
-          name: linux-x86_64-libnoise-prefix
+          name: linux-${{ matrix.arch }}-libnoise-prefix
           path: ${{ runner.temp }}/libnoise-prefix/
           if-no-files-found: error
           include-hidden-files: true
 
   linux-boost:
-    name: Provision Linux Boost 1.84.0
+    name: Provision Linux Boost 1.84.0 (${{ matrix.arch }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
     steps:
       - name: Install Boost build tools
         run: |
@@ -143,7 +159,7 @@ jobs:
           # Boost version or the CMake args in "Build Boost 1.84.0" change. The
           # build jobs' "Restore Boost 1.84.0 (Linux)" steps must use this exact
           # key, and their Configure steps re-check the marker's hashes.
-          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
+          key: linux-${{ matrix.arch }}-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
 
       - name: Build Boost 1.84.0
         if: steps.cache-linux-boost.outputs.cache-hit != 'true'
@@ -254,17 +270,16 @@ jobs:
         # #ifdef paths against two libslic3r forks). Build both; the package job
         # fans them into one package and the app routes per printer at slice time.
         engine: [bambu, orca]
-        os: [Linux-x86_64]
+        arch: [x86_64, arm64]
         include:
-          - os: Linux-x86_64
+          - arch: x86_64
+            os: Linux-x86_64
             runner: ubuntu-22.04
             cmake_preset: ""
-          # - os: macOS-x86_64
-          #   runner: macos-13
-          #   cmake_preset: ""
-          # - os: Linux-x86_64
-          #   runner: ubuntu-22.04
-          #   cmake_preset: ""
+          - arch: arm64
+            os: Linux-arm64
+            runner: ubuntu-22.04-arm
+            cmake_preset: ""
 
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -327,7 +342,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/occt-7.6
-          key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
+          key: linux-${{ matrix.arch }}-occt-7.6.0-static-73f8f71be02c1d9a-v2
 
       - name: Prepare Linux pinned CGAL prefixes
         if: runner.os == 'Linux'
@@ -340,14 +355,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.4
-          key: linux-x86_64-cgal-5.4-bambu-v3
+          key: linux-${{ matrix.arch }}-cgal-5.4-bambu-v3
 
       - name: Restore Linux pinned CGAL (orca)
         if: runner.os == 'Linux' && matrix.engine == 'orca'
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.6.3
-          key: linux-x86_64-cgal-5.6.3-orca-v2
+          key: linux-${{ matrix.arch }}-cgal-5.6.3-orca-v2
 
       - name: Prepare Linux Boost prefix
         if: runner.os == 'Linux'
@@ -360,13 +375,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/boost-1.84.0
-          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
+          key: linux-${{ matrix.arch }}-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
 
       - name: Download pinned libnoise prefix (Linux)
         if: runner.os == 'Linux'
         uses: actions/download-artifact@v4
         with:
-          name: linux-x86_64-libnoise-prefix
+          name: linux-${{ matrix.arch }}-libnoise-prefix
           path: ${{ runner.temp }}/libnoise-prefix
 
       - name: Install dependencies (Linux)
@@ -1722,9 +1737,19 @@ jobs:
           if-no-files-found: error
 
   package-linux:
-    name: Package - Linux x86_64
+    name: Package - ${{ matrix.os }}
     needs: build-linux
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Linux-x86_64
+            runner: ubuntu-22.04
+            platform: linux-x86_64
+          - os: Linux-arm64
+            runner: ubuntu-22.04-arm
+            platform: linux-arm64
     # Backstop: a hung test fails the job instead of holding it for hours.
     timeout-minutes: 90
     steps:
@@ -1761,13 +1786,13 @@ jobs:
       - name: Download Bambu engine binary
         uses: actions/download-artifact@v4
         with:
-          name: engine-Linux-x86_64-bambu
+          name: engine-${{ matrix.os }}-bambu
           path: engine-bambu
 
       - name: Download Orca engine binary
         uses: actions/download-artifact@v4
         with:
-          name: engine-Linux-x86_64-orca
+          name: engine-${{ matrix.os }}-orca
           path: engine-orca
 
       - name: Assemble and validate Linux package
@@ -1776,7 +1801,7 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#slicer-cli/v}"; VERSION="${VERSION#v}"
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then VERSION="0.0.0-${GITHUB_SHA::12}"; fi
-          PLATFORM=linux-x86_64
+          PLATFORM=${{ matrix.platform }}
           ASSET="slicer-cli-v${VERSION}-${PLATFORM}.tar.gz"
           rm -rf dist/package dist/release dist/verify
           P=dist/package/slicer-cli
@@ -1921,7 +1946,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: crash-cores-Linux-x86_64
+          name: crash-cores-${{ matrix.os }}
           path: ${{ runner.temp }}/cores/
           if-no-files-found: ignore
           retention-days: 7
@@ -1929,7 +1954,7 @@ jobs:
       - name: Upload Linux release package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: slicer-cli-release-Linux-x86_64
+          name: slicer-cli-release-${{ matrix.os }}
           path: dist/release/*
           if-no-files-found: error
 
