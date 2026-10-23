@@ -1725,10 +1725,11 @@ done
 echo "PASS: model units are reported, a failed plate's result.json error_reason gives the engine reason, --convert-unit and an unread --machine file, and --convert-unit converts (both engines)"
 
 # --engine-info on a STEP file: stdout is the JSON document only, though the
-# STEP loader prints its progress (STEP.hpp's StepProgressIncdicator).
+# STEP loader prints its progress (STEP.hpp's StepProgressIncdicator). The
+# file is the STEP model Bambu Studio ships for its volumetric speed test.
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
-    "$bin" --engine-info "$SCRIPT_DIR/fixtures/block.step" > ei-step-$e.json 2> ei-step-$e.err
+    "$bin" --engine-info "$SCRIPT_DIR/../references/BambuStudio/resources/calib/volumetric_speed/SpeedTestStructure.step" > ei-step-$e.json 2> ei-step-$e.err
     py '
 import json, sys
 d = json.load(open(sys.argv[1]))
