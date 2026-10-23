@@ -55,6 +55,7 @@ struct ModelLoadResult {
     int         code = 0;        // 0, or the official CLI_* code
     std::string message;         // why, when code != 0
     std::vector<std::string> notes;  // what changed on load, one sentence each
+    std::string failure_reason;      // what can make the plate fail (a model that looks saved in meters or inches): result.json error_reason
 };
 
 /// Loads `files` (each a geometry file) into `model` the official CLI's way
@@ -66,6 +67,11 @@ struct ModelLoadResult {
 /// those two per-file lists. Emits the load events.
 ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::string>& files,
                                     size_t first_index, Slic3r::Model& model);
+
+/// True when the model file at `path` (not a project 3MF) reads with at
+/// least one object, as --engine-info checks it. Nothing the loader prints
+/// reaches stdout, which holds --engine-info's JSON only.
+bool model_file_has_objects(const std::string& path);
 
 /// The desktop app's placement of loaded geometry when nothing arranges it
 /// (Plater::priv::load_files and load_model_objects, BambuStudio Plater.cpp
