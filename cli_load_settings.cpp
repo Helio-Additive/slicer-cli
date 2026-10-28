@@ -264,6 +264,16 @@ int update_full_config(DynamicPrintConfig& full_config, const DynamicPrintConfig
                 if (skip_gcodes && gcodes_key_set.count(opt_key)) {
                     diff_key_sets.erase(iter);
                 } else {
+#ifdef ENGINE_SNAPMAKER
+                    // The fork's lambda keeps every key the project changed
+                    // (Snapmaker_Orca.cpp 2390-2407): it has no per-extruder
+                    // variants to restore.
+                    (void)variant_count_changed;
+                    (void)key_set_1;
+                    (void)key_set_2;
+                    (void)variant_index;
+                    continue;
+#else
                     if (variant_count_changed) {
                         int stride = 0;
                         if (key_set_1.count(opt_key) > 0)
@@ -283,6 +293,7 @@ int update_full_config(DynamicPrintConfig& full_config, const DynamicPrintConfig
                             continue;
                     } else
                         continue;
+#endif
                 }
             }
         }
@@ -330,8 +341,17 @@ bool parse_color4(const std::string& scolor, unsigned char* rgba_out) {
 /// long retraction when cutting already removed, per filament.
 std::vector<int> get_min_flush_volumes(const DynamicPrintConfig& full_config, size_t nozzle_id, size_t filament_count) {
     std::vector<int> extra_flush_volumes;
+#ifdef ENGINE_SNAPMAKER
+    // The fork's nozzle_volume is one number (coFloat, PrintConfig.cpp 4085),
+    // read with getFloat (get_min_flush_volumes, slic3r/GUI/Plater.cpp
+    // 1447-1453 of the fork).
+    const ConfigOption* nozzle_volume_opt = full_config.option("nozzle_volume");
+    const int nozzle_volume_val =
+        nozzle_volume_opt && nozzle_volume_opt->is_scalar() ? (int)nozzle_volume_opt->getFloat() : 0;
+#else
     const auto* nozzle_volume_opt = full_config.option<ConfigOptionFloatsNullable>("nozzle_volume");
     const int nozzle_volume_val = nozzle_volume_opt ? (int)nozzle_volume_opt->get_at(nozzle_id) : 0;
+#endif
     int machine_enabled_level = 0;
     if (const auto* opt = full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut"))
         machine_enabled_level = opt->value;
@@ -382,6 +402,41 @@ std::vector<int> get_min_flush_volumes(const DynamicPrintConfig& full_config, si
     return extra_flush_volumes;
 }
 
+#ifdef ENGINE_SNAPMAKER
+/// One filament's segment of a flow-variant option in the fork's composed
+/// layout (PresetBundle::full_fff_config, PresetBundle.cpp 2673-2722 of the
+/// fork: filament i owns filament_flow_step_size[i] values, one per flow type
+/// its filament_flow_support declares). The `old_size` values at `start`
+/// become `from_old.size()` values: value k is the old segment's value
+/// from_old[k] when that is >= 0, else `src`'s value k (its first value where
+/// it holds fewer, as the fork pads, PresetBundle.cpp 2700-2703), else the old
+/// segment's first value. The values after the segment move with it.
+void rewrite_flow_segment(ConfigOptionVectorBase* dst, size_t start, size_t old_size,
+                          const ConfigOptionVectorBase* src, const std::vector<int>& from_old) {
+    const std::unique_ptr<ConfigOption> old_copy(dst->clone());
+    const auto* old_vec = static_cast<const ConfigOptionVectorBase*>(old_copy.get());
+    const size_t old_total = old_vec->size();
+    if (old_total == 0 && (src == nullptr || src->empty()))
+        return;
+    const size_t new_size  = from_old.size();
+    const size_t tail_from = std::min(start + old_size, old_total);
+    const size_t tail_size = old_total - tail_from;
+    dst->resize(start + new_size + tail_size, old_total == 0 ? src : nullptr);
+    const size_t old_first = start < old_total ? start : 0;
+    for (size_t k = 0; k < new_size; k++) {
+        const size_t at = start + k;
+        if (from_old[k] >= 0 && start + size_t(from_old[k]) < old_total)
+            dst->set_at(old_vec, at, start + size_t(from_old[k]));
+        else if (src != nullptr && !src->empty())
+            dst->set_at(src, at, k < src->size() ? k : 0);
+        else
+            dst->set_at(old_vec, at, old_first);
+    }
+    for (size_t t = 0; t < tail_size; t++)
+        dst->set_at(old_vec, start + new_size + t, tail_from + t);
+}
+#endif
+
 StepResult fail(int code, const std::string& message) {
     StepResult r;
     r.code    = code;
@@ -410,11 +465,18 @@ void read_project_facts(const DynamicPrintConfig& config, ProjectFacts& f) {
     if (opt_nozzle_volume_type)
         f.current_nozzle_volume_type = opt_nozzle_volume_type->values;
     f.current_extruder_variants.assign(f.current_extruder_count, "");
+#ifdef ENGINE_SNAPMAKER
+    // The fork has no extruder variant strings (no extruder_type, no
+    // get_extruder_variant_string): its nozzle_volume_type holds flow types
+    // (standard / high_flow, PrintConfig.cpp 4114-4124), kept above as they are.
+    (void)opt_extruder_type;
+#else
     for (int e = 0; e < f.current_extruder_count; e++) {
         const ExtruderType extruder_type = opt_extruder_type ? (ExtruderType)(opt_extruder_type->get_at(e)) : etDirectDrive;
         const NozzleVolumeType nvt = opt_nozzle_volume_type ? (NozzleVolumeType)(opt_nozzle_volume_type->get_at(e)) : nvtStandard;
         f.current_extruder_variants[e] = get_extruder_variant_string(extruder_type, nvt);
     }
+#endif
     if (const auto* option_strings = config.option<ConfigOptionStrings>("inherits_group");
         option_strings && option_strings->values.size() >= 2) {
         f.current_inherits_group = option_strings->values;
@@ -1055,17 +1117,27 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         load_default_gcodes_to_config(load_machine_config, Preset::TYPE_PRINTER);
         if (new_printer_name.empty()) {
             const size_t diff_keys_size = different_keys_set.size();
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker_Orca.cpp 2464-2466: no per-extruder variants to index.
+            ret = update_full_config(m_print_config, load_machine_config, different_keys_set, false, {}, {}, {}, false,
+                                     skip_modified_gcodes);
+#else
             compute_variant_index(m_print_config, load_machine_config, "printer_extruder_id", "printer_extruder_variant",
                                   new_variant_index, variant_count_changed);
             ret = update_full_config(m_print_config, load_machine_config, different_keys_set, variant_count_changed,
                                      printer_options_with_variant_1, printer_options_with_variant_2, new_variant_index, false,
                                      skip_modified_gcodes);
+#endif
             if (diff_keys_size != different_keys_set.size())
                 different_settings[inherits_count + 1] =
                     escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
         } else {
+#ifdef ENGINE_SNAPMAKER
+            ret = update_full_config(m_print_config, load_machine_config, different_keys_set, false, {}, {}, {}, true);   // Snapmaker_Orca.cpp 2479
+#else
             ret = update_full_config(m_print_config, load_machine_config, different_keys_set, variant_count_changed,
                                      printer_options_with_variant_1, printer_options_with_variant_2, new_variant_index, true);
+#endif
             if (new_printer_name != facts.current_printer_name) {
                 // The printer's safe machine limits from cli_config.json (B 3263-3331).
                 const std::string cli_config_file = resources_dir() + "/profiles/BBL/cli_config.json";
@@ -1106,8 +1178,12 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     if (m_print_config.option<ConfigOptionFloats>("nozzle_diameter")) {
         new_extruder_count = int(m_print_config.option<ConfigOptionFloats>("nozzle_diameter")->values.size());
         new_is_multi_extruder = new_extruder_count > 1;
+        // Snapmaker: the fork defines no printer_extruder_variant (creating it
+        // gives no option): the variant list stays empty and its count 1.
+#ifndef ENGINE_SNAPMAKER
         new_printer_extruder_variants = m_print_config.option<ConfigOptionStrings>("printer_extruder_variant", true)->values;
         new_printer_variant_count = int(new_printer_extruder_variants.size());
+#endif
     }
 #endif
 
@@ -1141,22 +1217,41 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         load_default_gcodes_to_config(load_process_config, Preset::TYPE_PRINT);
         if (new_process_name.empty()) {
             const size_t diff_keys_size = different_keys_set.size();
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker_Orca.cpp 2601-2603: no per-extruder variants to index.
+            ret = update_full_config(m_print_config, load_process_config, different_keys_set, false, {}, {}, {}, false,
+                                     skip_modified_gcodes);
+#else
             compute_variant_index(m_print_config, load_process_config, "print_extruder_id", "print_extruder_variant",
                                   new_variant_index, variant_count_changed);
             ret = update_full_config(m_print_config, load_process_config, different_keys_set, variant_count_changed,
                                      print_options_with_variant, empty_options, new_variant_index, false, skip_modified_gcodes);
+#endif
             if (diff_keys_size != different_keys_set.size())
                 different_settings[0] = escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
         } else {
+#ifdef ENGINE_SNAPMAKER
+            ret = update_full_config(m_print_config, load_process_config, different_keys_set, false, {}, {}, {}, true);   // Snapmaker_Orca.cpp 2616
+#else
             ret = update_full_config(m_print_config, load_process_config, different_keys_set, variant_count_changed,
                                      print_options_with_variant, empty_options, new_variant_index, true);
+#endif
         }
+        // Snapmaker: the fork defines no print_extruder_variant; the count stays the project's.
+#ifndef ENGINE_SNAPMAKER
         current_print_variant_count = int(m_print_config.option<ConfigOptionStrings>("print_extruder_variant", true)->values.size());
+#endif
         if (ret)
             return fail(ret, "Merging the process settings failed.");
     }
 
     // Nozzle volume types of the new setup (B 3408-3458; O 2947-2972).
+    // Snapmaker: the fork's CLI has no such step (Snapmaker_Orca.cpp 2620-2642
+    // goes from the process straight to the machine switch). Its
+    // nozzle_volume_type is a per-extruder flow type the printer settings
+    // carry as they are, there are no extruder variant strings, and the flush
+    // matrix does not depend on it (one filament x filament matrix, 2841-2843).
+#ifndef ENGINE_SNAPMAKER
     std::vector<NozzleVolumeType> new_nozzle_volume_type;
 #ifndef ENGINE_ORCA
     sync_nozzle_volume_type_to_extruder_count(m_print_config, m_extra_config.has("nozzle_volume_type"));
@@ -1199,6 +1294,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     if (current_nozzle_volume_type.empty())
         current_nozzle_volume_type.resize(facts.current_extruder_count, nvtStandard);
     out.current_print_extruder_variants = m_print_config.option<ConfigOptionStrings>("print_extruder_variant", true)->values;
+#endif
 
     if (machine_switch) {
         print_compatible_printers.push_back(new_printer_system_name);
@@ -1308,6 +1404,158 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     }
 
     // The filaments into the print settings (B 3524-3757; O 3041-3264).
+#ifdef ENGINE_SNAPMAKER
+    // The fork's CLI (Snapmaker_Orca.cpp 2645-2765): each loaded filament's
+    // vector values at its index, a key the project changed kept. The fork has
+    // no per-extruder filament variants (no filament_extruder_variant, no
+    // filament_self_index); its flow variants are laid out the way the
+    // desktop composes them (PresetBundle.cpp 2673-2722): every
+    // filament_flow_variant_options() key and filament_flow_support hold one
+    // value per flow type the filament declares, filament after filament, and
+    // filament_flow_step_size says how many each filament owns. The fork's CLI
+    // writes one value per filament there, which slices the same standard
+    // values but is not the layout the desktop's project carries.
+    if (load_filament_count > 0 || up_config_to_date) {
+        // The project's table, else one value per filament (a legacy layout:
+        // PresetBundle.cpp 2905-2921 of the fork).
+        std::vector<int> step_sizes(size_t(std::max(filament_count, 0)), 1);
+        if (const auto* stored = m_print_config.option<ConfigOptionInts>("filament_flow_step_size");
+            stored && stored->values.size() == step_sizes.size())
+            for (size_t i = 0; i < step_sizes.size(); i++)
+                step_sizes[i] = std::max(1, stored->values[i]);
+        const ConfigOptionStrings standard_support{FLOW_MODE_STANDARD};
+        std::vector<std::string> flow_keys = filament_flow_variant_options();
+        flow_keys.push_back("filament_flow_support");
+        for (size_t index = 0; index < load_filaments_config.size(); index++) {
+            DynamicPrintConfig& config = load_filaments_config[index];
+            const int filament_index = load_filaments_index[index];
+            if (filament_index < 1 || filament_index > filament_count)
+                continue;
+            std::vector<std::string> different_keys;
+            load_default_gcodes_to_config(config, Preset::TYPE_FILAMENT);
+            if (load_filament_count > 0) {
+                auto* opt_filament_settings = static_cast<ConfigOptionStrings*>(m_print_config.option("filament_settings_id", true));
+                ConfigOptionString filament_name_setting(load_filaments_name[index]);
+                if (int(opt_filament_settings->size()) < filament_count)
+                    opt_filament_settings->resize(filament_count, &filament_name_setting);
+                opt_filament_settings->set_at(&filament_name_setting, filament_index - 1, 0);
+                config.erase("filament_settings_id");
+                different_settings[filament_index] = "";   // Snapmaker_Orca.cpp 2678-2679
+                inherits_group[filament_index] = load_filaments_inherit[index];
+            } else if (!different_settings.empty()) {
+                unescape_strings_cstyle(different_settings[filament_index], different_keys);
+            }
+            {
+                auto* opt_filament_ids = static_cast<ConfigOptionStrings*>(m_print_config.option("filament_ids", true));
+                ConfigOptionString filament_id_setting(load_filaments_id[index]);
+                if (int(opt_filament_ids->size()) < filament_count)
+                    opt_filament_ids->resize(filament_count, &filament_id_setting);
+                opt_filament_ids->set_at(&filament_id_setting, filament_index - 1, 0);
+            }
+            // This filament's segment: where it starts, the flow types it
+            // held, and the ones the new settings declare.
+            size_t start = 0;
+            for (int i = 0; i < filament_index - 1; i++)
+                start += size_t(step_sizes[size_t(i)]);
+            const size_t old_size = size_t(step_sizes[size_t(filament_index - 1)]);
+            const auto* new_support_opt = config.option<ConfigOptionStrings>("filament_flow_support");
+            const ConfigOptionStrings& new_support =
+                new_support_opt && !new_support_opt->values.empty() ? *new_support_opt : standard_support;
+            const size_t new_size = new_support.values.size();
+            const auto* old_support_opt = m_print_config.option<ConfigOptionStrings>("filament_flow_support");
+            std::vector<int> from_old(new_size, -1);
+            for (size_t k = 0; k < new_size; k++)
+                for (size_t j = 0; j < old_size; j++) {
+                    const std::string old_name = old_support_opt && start + j < old_support_opt->values.size()
+                                                     ? old_support_opt->values[start + j]
+                                                     : std::string(j == 0 ? FLOW_MODE_STANDARD : "");
+                    if (old_name == new_support.values[k]) {
+                        from_old[k] = int(j);
+                        break;
+                    }
+                }
+            std::set<std::string> segmented;
+            std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
+            const size_t diff_keys_size = different_keys_set.size();
+            for (const t_config_option_key& opt_key : config.keys()) {
+                const ConfigOption* source_opt = config.option(opt_key);
+                if (source_opt == nullptr)
+                    return fail(CLI_CONFIG_FILE_ERROR, "Filament " + std::to_string(filament_index) + " has no value for " + opt_key + ".");
+                const bool flow_key = std::find(flow_keys.begin(), flow_keys.end(), opt_key) != flow_keys.end();
+                if (load_filament_count == 0 && !different_keys_set.empty()) {
+                    auto iter = different_keys_set.find(opt_key);
+                    if (iter != different_keys_set.end()) {
+                        if (skip_modified_gcodes && gcodes_key_set.count(opt_key)) {
+                            different_keys_set.erase(iter);
+                        } else {
+                            // Kept (Snapmaker_Orca.cpp 2705-2709). A flow-variant
+                            // key keeps its value per flow type the filament
+                            // still declares; a new one takes the new value.
+                            if (flow_key && opt_key != "filament_flow_support" && !source_opt->is_scalar())
+                                if (ConfigOption* opt = m_print_config.option(opt_key); opt && !opt->is_scalar()) {
+                                    rewrite_flow_segment(static_cast<ConfigOptionVectorBase*>(opt), start, old_size,
+                                                         static_cast<const ConfigOptionVectorBase*>(source_opt), from_old);
+                                    segmented.insert(opt_key);
+                                }
+                            continue;
+                        }
+                    }
+                }
+                if (source_opt->is_scalar()) {
+                    if (opt_key == "compatible_printers_condition") {
+                        auto* dst = static_cast<ConfigOptionStrings*>(m_print_config.option("compatible_machine_expression_group", true));
+                        ConfigOptionString empty;
+                        if (dst->size() == 0)
+                            dst->resize(filament_count + 2, &empty);
+                        dst->set_at(source_opt, filament_index, 0);
+                    } else if (opt_key == "compatible_prints_condition") {
+                        auto* dst = static_cast<ConfigOptionStrings*>(m_print_config.option("compatible_process_expression_group", true));
+                        ConfigOptionString empty;
+                        if (dst->size() == 0)
+                            dst->resize(filament_count, &empty);
+                        dst->set_at(source_opt, filament_index - 1, 0);
+                    }
+                    continue;
+                }
+                if (opt_key == "compatible_prints" || opt_key == "compatible_printers" || opt_key == "model_id" ||
+                    opt_key == "dev_model_name" || opt_key == "filament_settings_id")
+                    continue;
+                ConfigOption* opt = m_print_config.option(opt_key, true);
+                if (opt == nullptr)
+                    return fail(CLI_CONFIG_FILE_ERROR, "Cannot take " + opt_key + " from filament " + std::to_string(filament_index) + ".");
+                auto* opt_vec_dst = static_cast<ConfigOptionVectorBase*>(opt);
+                auto* opt_vec_src = static_cast<const ConfigOptionVectorBase*>(source_opt);
+                if (flow_key) {
+                    rewrite_flow_segment(opt_vec_dst, start, old_size, opt_vec_src, std::vector<int>(new_size, -1));
+                    segmented.insert(opt_key);
+                } else
+                    opt_vec_dst->set_at(opt_vec_src, filament_index - 1, 0);
+            }
+            // The project's other flow-variant values follow the new segment,
+            // each flow type keeping its value; filament_flow_support is the
+            // new settings' own (the standard one when they state none).
+            for (const std::string& key : flow_keys) {
+                if (segmented.count(key))
+                    continue;
+                ConfigOption* opt = m_print_config.option(key);
+                if (opt == nullptr || opt->is_scalar())
+                    continue;
+                if (key == "filament_flow_support")
+                    rewrite_flow_segment(static_cast<ConfigOptionVectorBase*>(opt), start, old_size, &new_support,
+                                         std::vector<int>(new_size, -1));
+                else
+                    rewrite_flow_segment(static_cast<ConfigOptionVectorBase*>(opt), start, old_size, nullptr, from_old);
+            }
+            step_sizes[size_t(filament_index - 1)] = int(new_size);
+            if (diff_keys_size != different_keys_set.size())
+                different_settings[filament_index] =
+                    escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
+        }
+        // The table the desktop writes with every composed config
+        // (PresetBundle.cpp 2587 and 2722 of the fork).
+        m_print_config.option<ConfigOptionInts>("filament_flow_step_size", true)->values = step_sizes;
+    }
+#else
     if (load_filament_count > 0 || up_config_to_date) {
         std::vector<int> old_start_indice(filament_count, 0);
         std::vector<int> old_variant_counts(filament_count, 1), new_variant_counts;
@@ -1464,6 +1712,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     indice[n++] = i + 1;
         }
     }
+#endif
 
     // The flush volumes, when the colours, the nozzles or the matrix change
     // (B 3759-3941; O 3266-3420).
@@ -1488,9 +1737,17 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         project_colors_option->values.assign(filament_count, "#FFFFFF");
     }
     bool filament_color_changed = false;
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker_Orca.cpp 2781: new colours or no matrix. The fork's matrix
+    // is one filament x filament block for every nozzle, so neither the
+    // extruder count nor the nozzles' flow types change it.
+    if (project_colors_option &&
+        (selected_colors_option || !m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix"))) {
+#else
     if (project_colors_option &&
         (selected_colors_option || !m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix") ||
          facts.current_extruder_count != new_extruder_count || new_nozzle_volume_type != current_nozzle_volume_type)) {
+#endif
         std::vector<std::string> selected_colors;
         if (selected_colors_option) {
             selected_colors = selected_colors_option->values;
@@ -1522,6 +1779,37 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             if (filament_is_support->size() != project_filament_count)
                 return fail(CLI_CONFIG_FILE_ERROR, "filament_is_support has " + std::to_string(filament_is_support->size()) +
                                                    " values for " + std::to_string(project_filament_count) + " filament colours.");
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker_Orca.cpp 2841-2900: one filament x filament matrix,
+            // the multiplier set to 1, each volume from the two colours.
+            std::vector<double>& flush_vol_matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix", true)->values;
+            flush_vol_matrix.resize(project_filament_count * project_filament_count, 0.f);
+            m_print_config.option<ConfigOptionFloat>("flush_multiplier", true)->value = 1.f;
+            for (size_t from_idx = 0; from_idx < project_filament_count; from_idx++) {
+                unsigned char from_rgb[4] = {};
+                parse_color4(project_colors[from_idx], from_rgb);
+                const bool is_from_support = filament_is_support->get_at(from_idx);
+                for (size_t to_idx = 0; to_idx < project_filament_count; to_idx++) {
+                    const bool is_to_support = filament_is_support->get_at(to_idx);
+                    if (from_idx == to_idx) {
+                        flush_vol_matrix[project_filament_count * from_idx + to_idx] = 0.f;
+                        continue;
+                    }
+                    int flushing_volume = 0;
+                    if (is_to_support) {
+                        flushing_volume = g_flush_volume_to_support;
+                    } else {
+                        unsigned char to_rgb[4] = {};
+                        parse_color4(project_colors[to_idx], to_rgb);
+                        FlushVolCalculator calculator(min_flush_volumes[from_idx], g_max_flush_volume);
+                        flushing_volume = calculator.calc_flush_vol(from_rgb[3], from_rgb[0], from_rgb[1], from_rgb[2], to_rgb[3], to_rgb[0], to_rgb[1], to_rgb[2]);
+                        if (is_from_support)
+                            flushing_volume = std::max(g_min_flush_volume_from_support, flushing_volume);
+                    }
+                    flush_vol_matrix[project_filament_count * from_idx + to_idx] = flushing_volume;
+                }
+            }
+#else
             std::vector<double>& flush_vol_matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix", true)->values;
             flush_vol_matrix.resize(project_filament_count * project_filament_count * new_extruder_count, 0.f);
 #ifndef ENGINE_ORCA
@@ -1597,6 +1885,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 }
                 set_flush_volumes_matrix(flush_vol_matrix, flush_vol_mtx, nozzle_id, new_extruder_count);
             }
+#endif
         }
     }
 
@@ -1662,6 +1951,15 @@ void update_object_configs_after_switch(const ProjectFacts& facts, const Setting
                                         const DynamicPrintConfig& print_config, Model& model) {
     if (!merge.machine_switch)
         return;
+#ifdef ENGINE_SNAPMAKER
+    // The fork's CLI leaves the objects' settings as they are on a printer
+    // switch (Snapmaker_Orca.cpp has no update_values_from_multi_to_multi_2):
+    // it has no per-extruder process variants to move.
+    (void)facts;
+    (void)print_config;
+    (void)model;
+    return;
+#else
     const int current_print_variant_count = int(merge.current_print_extruder_variants.size());
     if (facts.current_extruder_count == merge.new_extruder_count && current_print_variant_count == merge.new_printer_variant_count)
         return;
@@ -1691,6 +1989,7 @@ void update_object_configs_after_switch(const ProjectFacts& facts, const Setting
             }
         }
     }
+#endif
 }
 
 StepResult apply_custom_gcodes(const CliOptions& o, int plate_to_slice, Model& model) {
@@ -1730,6 +2029,18 @@ namespace {
 // (BambuStudio.cpp 4728-4756, 4258-4280; OrcaSlicer.cpp 4067-4093).
 bool shared_extruder_box(const DynamicPrintConfig& config, int width, int depth, double height,
                          double& shared_width, double& shared_depth, double& shared_height) {
+#ifdef ENGINE_SNAPMAKER
+    // The fork has no per-extruder printable areas (no extruder_printable_area
+    // or extruder_printable_height): there is no shared box.
+    (void)config;
+    (void)width;
+    (void)depth;
+    (void)height;
+    (void)shared_width;
+    (void)shared_depth;
+    (void)shared_height;
+    return false;
+#else
     const auto* areas   = config.option<ConfigOptionPointsGroups>("extruder_printable_area");
     const auto* heights = config.option<ConfigOptionFloatsNullable>("extruder_printable_height");
     if (!areas || !heights || areas->values.empty() || heights->values.size() != areas->values.size())
@@ -1750,6 +2061,7 @@ bool shared_extruder_box(const DynamicPrintConfig& config, int width, int depth,
     shared_depth  = current_bbox.size().y();
     shared_height = temp_extruder_height;
     return true;
+#endif
 }
 
 // load_downward_settings_list_from_config (BambuStudio.cpp 1440-1488;
@@ -1809,7 +2121,13 @@ StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts
         printer.name = config_name;
         const Pointfs printable_area = config.option<ConfigOptionPoints>("printable_area", true)->values;
         const Pointfs exclude_area   = config.option<ConfigOptionPoints>("bed_exclude_area", true)->values;
+#ifdef ENGINE_SNAPMAKER
+        // The fork has no wrapping detection (no wrapping_exclude_area; its
+        // downward check, Snapmaker_Orca.cpp 3374-3420, reads none).
+        const Pointfs wrapping_area;
+#else
         const Pointfs wrapping_area  = config.option<ConfigOptionPoints>("wrapping_exclude_area", true)->values;
+#endif
         // The points option's own default is a full rectangle, so the size
         // check above passes for a file that states no printable_area at all;
         // printable_height then is not in the config, and opt_float() has

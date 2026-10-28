@@ -9,6 +9,9 @@
 #include <vector>
 
 #include <boost/algorithm/string/trim.hpp>
+#ifdef ENGINE_SNAPMAKER
+#include <boost/algorithm/string/predicate.hpp>
+#endif
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
@@ -32,6 +35,9 @@ const Slic3r::VendorProfile::PrinterModel* curr_printer_model(Slic3r::PresetBund
     return pm;
 }
 
+// Snapmaker: the fork's printer models carry no not_support_bed_types, and
+// its plate type does not come from the plate list (desktop_bed_type).
+#ifndef ENGINE_SNAPMAKER
 /// The plate types the desktop's plate list offers for this printer: every
 /// curr_bed_type label, less the model's not_support_bed_types, in enum
 /// order (Sidebar::reset_bed_type_combox_choices, BambuStudio Plater.cpp
@@ -56,6 +62,7 @@ std::vector<Slic3r::BedType> offered_bed_types(const Slic3r::VendorProfile::Prin
 bool offered(const std::vector<Slic3r::BedType>& list, Slic3r::BedType type) {
     return std::find(list.begin(), list.end(), type) != list.end();
 }
+#endif
 
 /// The file names an "include" key holds: one name, or a JSON array of them
 /// (BambuStudio reads the raw key-value and takes the string between quotes or
@@ -414,14 +421,54 @@ InheritsResolution apply_inherited_settings(const std::string& profiles_dir, con
 
 std::string bed_type_name(Slic3r::BedType type) {
     const Slic3r::ConfigOptionDef* def = Slic3r::print_config_def.get("curr_bed_type");
+#ifdef ENGINE_SNAPMAKER
+    // The fork's enum_values skip its Graphic Effect Plate (btGESP sits before
+    // btSuperTack in the enum, PrintConfig.hpp 282-292, but the list holds no
+    // name for it, PrintConfig.cpp 865-875), so the position is not the type;
+    // the name is the one its keys map gives the type (PrintConfig.cpp 386-396).
+    if (def && def->enum_keys_map)
+        for (const auto& [name, value] : *def->enum_keys_map)
+            if (value == int(type) && type != Slic3r::btDefault)
+                return name;
+    return "Default Plate";
+#else
     const int i = int(type) - 1;
     if (def && i >= 0 && i < int(def->enum_values.size()))
         return def->enum_values[size_t(i)];
     return "Default Plate";
+#endif
 }
 
 DesktopBedType desktop_bed_type(Slic3r::PresetBundle& bundle) {
     DesktopBedType out;
+#ifdef ENGINE_SNAPMAKER
+    // The fork, a printer picked with no plate remembered for it
+    // (Sidebar::update_all_preset_comboboxes, slic3r/GUI/Plater.cpp 3655-3706
+    // of the fork): the plate is Preset::get_default_bed_type (Preset.cpp
+    // 892-915) on both sides of its `is_bbl_vendor || support_multi_bed_types
+    // || is_snapmaker_u1` test - the printer's default_bed_type when it reads
+    // as a number greater than 0 (atoi; the U1's stated NAME "Textured PEI
+    // Plate" reads as 0), else by printer model id (BL-P001/BL-P002/C13
+    // btPC, C11 btPEI, SM_U1 btPTE, every other btPEI). A Snapmaker U1 without
+    // support_multi_bed_types then takes btPTE for any plate but its three
+    // (btPTE, btPEI, btGESP). The plate list only shows the selection; the
+    // fork does not move the plate to the list's first entry.
+    Slic3r::Preset& printer = bundle.printers.get_edited_preset();
+    const auto* model_opt = printer.config.option<Slic3r::ConfigOptionString>("printer_model");
+    const std::string model = model_opt ? model_opt->value : std::string();
+    const bool is_snapmaker_u1 = boost::icontains(model, "Snapmaker") && boost::icontains(model, "U1");
+    const auto* multi_opt = printer.config.option<Slic3r::ConfigOptionBool>("support_multi_bed_types");
+    const bool support_multi_bed_types = multi_opt && multi_opt->value;
+    out.type = printer.get_default_bed_type(&bundle);
+    out.why  = "the printer's default plate";
+    if (is_snapmaker_u1 && !support_multi_bed_types && out.type != Slic3r::btPTE && out.type != Slic3r::btPEI &&
+        out.type != Slic3r::btGESP) {
+        out.why  = "the Snapmaker U1 offers three plates and its default plate (" + bed_type_name(out.type) +
+                   ") is not one of them; the Textured PEI Plate";
+        out.type = Slic3r::btPTE;
+    }
+    return out;
+#else
     const Slic3r::VendorProfile::PrinterModel* pm = curr_printer_model(bundle);
     const std::vector<Slic3r::BedType> list = offered_bed_types(pm);
     // The plate list's first entry, which is the selection after the list is
@@ -485,6 +532,7 @@ DesktopBedType desktop_bed_type(Slic3r::PresetBundle& bundle) {
     }
 #endif
     return out;
+#endif
 }
 
 std::string apply_printer_pick(Slic3r::PresetBundle& bundle) {
