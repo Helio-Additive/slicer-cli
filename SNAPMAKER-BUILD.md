@@ -39,6 +39,10 @@ Compared with Snapmaker Orca 2.4.1's own command line, run headless with network
   - Mixed filament: we follow the desktop's path, so a wipe tower is placed. Snapmaker's CLI places none (D-141 and the snap-fixes entries).
   - Bare STL with no project: Snapmaker's CLI uses the Cool Plate and a different placement; we follow the desktop's U1 defaults (D-007).
 - **Snapmaker's own CLI refuses its own 2.4.1 projects without `--allow-newer-file`; ours accepts them** (version gate, provisional).
+- **Colour mixing:** 20 of 21 tests in the colour-mixing set are identical (D-163).
+  - The set is `work/u1-tests/gen_mixing.py`, `run_mix_tests.sh` and `compare_mix.py`, run on Snapmaker-saved projects.
+  - It covers the mixing modes, patterns, gradients, Local-Z, cadence, dithering, bias and offsets, painted mixed zones, and the Color Mixing process.
+  - The one difference: a plate whose only object uses a mixed colour keeps its prime tower with us, and has none with Snapmaker's CLI (D-142, provisional).
 
 ## Known gaps
 

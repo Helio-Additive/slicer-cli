@@ -18,3 +18,4 @@
 - 2026-10-28 22:26 package helper done: Bambu built (3:44) and passes its 3 test scripts; 3-program package in pkg-local/ passes test-complete-slice-path (309/0/4), test-packaged-slice, smoke-clean-host; packaged slicer_cli-snapmaker four_colour IDENTICAL to Snapmaker CLI. Found temp-folder sweep bug (needs a 1-line change in all builds).
 - 2026-10-28 22:29 review-fixes verified (arrange rc 0) & committed; D-160 temp-folder list; D-161 Snapmaker → CGAL 5.4; final verification run started
 - 2026-10-28 22:56 Run FINISHED. Checkpoints 4 and 5 recorded. Morning report written.
+- 2026-10-29 07:15 Colour-mixing test set (user chose option 1): 21 projects, 20 IDENTICAL to Snapmaker CLI; mix_only differs only by the prime tower (D-142). D-163. Report: ~/Projects/Snapmaker/COLOUR-MIXING-REPORT.md

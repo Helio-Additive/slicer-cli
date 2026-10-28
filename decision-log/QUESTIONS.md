@@ -79,6 +79,7 @@ Provisional answer used: unchanged (15/220).
 Time: 2026-10-28 21:58
 Our output keeps the prime tower and the re-serialised mixed_filament_definitions, as the desktop's double apply and load_config_model do; Snapmaker's CLI applies once and drops the tower (607 vs 1810 mm). Confirm with the desktop app if possible.
 Provisional answer used: the desktop's behaviour (no change).
+Update 2026-10-29 07:15 (D-163): 20 of 21 colour-mixing tests are identical to Snapmaker's CLI. What is left is only the tower when a mixed colour is the only filament on the plate; Snapmaker-saved projects are not re-serialised.
 
 ### From the independent review (coordinator summary)
 - **D-137, U1 default process.** Read literally, the fork's desktop code picks "0.08mm Standard" on a fresh U1, because the printer's default name "0.20 Standard…" now exists only as a `renamed_from` alias. Our build picks "0.20mm Standard" (Snapmaker's evident intent). This departs from the "closest to the desktop" rule because the coordinator's brief told the helper to resolve `renamed_from`. **Provisional.** Which do you want?

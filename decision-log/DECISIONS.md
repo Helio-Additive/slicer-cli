@@ -755,3 +755,22 @@ Why:     With D-161 (CGAL 5.4), the Snapmaker build failed in Triangulation.cpp 
          the same CGAL-5.4-with-new-Boost problem the Bambu build already fixes with this header.
 Evidence: decision-log/final/build-snapmaker.log
 Undo:    revert the CMakeLists.txt condition (~line 703)
+
+## D-163  2026-10-29 07:15  coordinator  provisional (D-142 narrowed, still open)
+Title: Colour-mixing test set: 20 of 21 identical to Snapmaker's CLI
+What:    New test set work/u1-tests/gen_mixing.py -> models-mix/ (21 projects, Snapmaker Orca tag, rows in the desktop's
+         serialize_custom_entries() format, a plain anchor cube on filament 1 in all but mix_only), run_mix_tests.sh,
+         compare_mix.py. Both programs got `--allow-newer-file --slice 0`. Result: every case IDENTICAL to Snapmaker
+         Orca 2.4.1's CLI except mix_only. Each setting was also checked to change the toolpath. Where it does not
+         (layer-cycle at 50%, pointillisme, 3-id gradient in Simple mode, cadence heights without Local-Z, Local-Z
+         without painting) the cause is in the fork's own code, and both programs behave alike.
+         mix_only differs only in enable_prime_tower (theirs 0, ours 1): 53 tool changes either way; 707 vs 2174 mm,
+         9m24s vs 20m48s. The mixing row is identical, because a Snapmaker-tagged project is not rebased (D-111).
+         So D-142 part (1), re-serialisation, does not affect projects saved by Snapmaker's app.
+Why:     User asked for option 1: test every mixing mode against Snapmaker's CLI without manual work.
+Options: n/a (measurement)
+Evidence: work/u1-tests/out-mix-table.md; MixedFilament.cpp 620, 893-907 (pointillisme normalised on load);
+          PrintObjectSlice.cpp 3040-3082, 3360, 3401 (cadence/Local-Z act on painted zones / whole objects);
+          PrintApply.cpp 1788-1790 + PrintConfig.cpp 8001-8016 (tower dropped when one filament is counted)
+User-visible effect: none (no code change). D-142 (tower on a mixed-only plate) stays provisional; only the desktop app can settle it.
+Undo:    n/a
