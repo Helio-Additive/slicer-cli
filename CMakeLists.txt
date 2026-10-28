@@ -181,6 +181,9 @@ if(ENGINE STREQUAL "snapmaker" AND EXISTS "${SUBLIB_DIR}/eigen/Eigen/Core")
   # its libigl still uses Eigen::DynamicSparseMatrix, which Eigen 5 removed.
   set(EIGEN3_INCLUDE_DIR "${SUBLIB_DIR}/eigen")
   set(EIGEN3_VERSION_STRING "3.3.7 (bundled)")
+  # Its clipper and admesh link an `eigen` INTERFACE target (deps_src/eigen/CMakeLists.txt).
+  add_library(eigen INTERFACE)
+  target_include_directories(eigen SYSTEM INTERFACE "${EIGEN3_INCLUDE_DIR}")
 else()
   find_package(Eigen3  REQUIRED)
 endif()
