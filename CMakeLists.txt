@@ -698,9 +698,10 @@ target_include_directories(libslic3r_cgal SYSTEM BEFORE PRIVATE
 
 # CGAL 5.4's ConicCPA2 header uses CGAL_NTS is_zero without including the
 # declaration itself. Bambu's dependency build exposes it transitively; make
-# that requirement explicit only for Bambu's pinned 5.4 build.
+# that requirement explicit only for Bambu's pinned 5.4 build (and the Snapmaker
+# fork's, which pins the same patched 5.4).
 set(CGAL_54_COMPAT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio/cgal_54_compat.hpp")
-if(ENGINE STREQUAL "bambu")
+if(ENGINE STREQUAL "bambu" OR (ENGINE STREQUAL "snapmaker" AND CGAL_VERSION VERSION_LESS 5.5))
     foreach(CGAL_54_CONSUMER IN ITEMS libslic3r_core libslic3r_cgal)
         if(MSVC)
             target_compile_options(${CGAL_54_CONSUMER} PRIVATE "/FI${CGAL_54_COMPAT_HEADER}")
