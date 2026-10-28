@@ -21,7 +21,12 @@
 namespace slicer_cli {
 namespace {
 
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+// The fork has no SoftFever_VERSION: its own release number is
+// Snapmaker_VERSION (common_func/common_func.hpp), the one Snapmaker's CLI
+// writes into a saved project_settings (Snapmaker_Orca.cpp 4761).
+const char* engine_version() { return Snapmaker_VERSION; }
+#elif defined(ENGINE_ORCA)
 const char* engine_version() { return SoftFever_VERSION; }
 #else
 const char* engine_version() { return SLIC3R_VERSION; }

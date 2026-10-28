@@ -128,6 +128,7 @@ void merge_or_add_object(AssemblePlate& plate, Model& model, int assemble_index,
     }
 }
 
+#ifndef ENGINE_SNAPMAKER
 // convert_obj_cluster_colors (BambuStudio.cpp 941-1038; OrcaSlicer.cpp
 // 795-849): the OBJ's colours clustered into filaments, a colour seen before
 // keeping its filament (BambuStudio only), and past the filament limit the
@@ -211,6 +212,7 @@ bool convert_obj_cluster_colors(std::vector<RGBA>& input_colors, std::vector<RGB
         output_filament_ids[i] = (unsigned char) cluster_color_maps[cluster_labels[i]];
     return true;
 }
+#endif // !ENGINE_SNAPMAKER: Snapmaker's CLI clusters no OBJ colours (Snapmaker_Orca.cpp 847-857)
 
 void apply_params(ModelConfigObject& target, const std::map<std::string, std::string>& params,
                   ConfigSubstitutionContext& subst) {
@@ -394,12 +396,14 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                 bool result = load_obj(path_str, &mesh, obj_info, message);
                 if (!result)
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " holds no usable mesh: " + message + "; check the file");
+#ifndef ENGINE_SNAPMAKER
                 if (!obj_info.lost_material_name.empty())
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " uses the material " +
                                                          obj_info.lost_material_name +
                                                          ", which its MTL file lacks; check the file");
                 if (!obj_info.face_colors.empty() && obj_info.face_colors.size() < mesh.facets_count())
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " gives some faces no colour; check its MTL and OBJ files.");
+#endif
                 object_name.erase(object_name.end() - 4, object_name.end());
                 object_1_name = object_name + "_1";
                 Model obj_temp_model;
@@ -408,6 +412,16 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added; check the file");
                 std::vector<unsigned char> output_filament_ids;
                 int first_filament_id = 0;
+#ifdef ENGINE_SNAPMAKER
+                // Snapmaker's CLI loads an assembled OBJ as a plain mesh and
+                // gives it the listed filament (Snapmaker_Orca.cpp 847-857):
+                // its colours are not turned into filaments, and the fork's
+                // ObjInfo states no missing material (Format/OBJ.hpp 12-22).
+                (void)output_filament_ids;
+                (void)first_filament_id;
+                (void)all_colours;
+                (void)max_filament_count;
+#else
 #ifdef ENGINE_ORCA
                 if (!obj_info.vertex_colors.empty()) {
                     convert_obj_cluster_colors(obj_info.vertex_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id);
@@ -440,6 +454,7 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                     skip_filament = true;
                 }
 #endif
+#endif // ENGINE_SNAPMAKER
                 if (!result)
                     return fail(CLI_DATA_FILE_ERROR, "The colours of the OBJ " + what +
                                                          " could not be turned into filaments; check the file");
