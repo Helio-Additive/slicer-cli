@@ -15,3 +15,9 @@ Rule: slicer_cli-snapmaker slices the single-colour and 4-colour U1 tests; Bambu
 Result: snapmaker build passes 8/8 U1 cases (work/u1-tests/out-snap). Orca: test_diagnostic_events + test_excluded_features pass (21 passed, 0 failed, 2 skipped). Bambu: not built yet; the frontend helper proved by preprocessing (unifdef) that Bambu/Orca code is unchanged; Bambu build is scheduled for Phase 5. Snapmaker build itself fails 10 regression cases (3 diagnostic-events, 3 legacy-token, 4 calibration); assigned for investigation.
 Early Phase 4 result: vs Snapmaker Orca 2.4.1 own CLI — four_colour, four_colour_gep, four_colour_highflow, two_plate plate 1: IDENTICAL; two_plate plate 2: 1 move differs by 0.001 mm; mixed_filament: different (theirs no tower); single: their CLI segfaults on a flattened process JSON.
 Decision: continue.
+
+## Checkpoint 4 — 2026-10-28 22:56 — reported (no gate)
+Parity vs Snapmaker Orca 2.4.1 own CLI, 10 G-code files from 9 U1 cases: 6 IDENTICAL (four_colour, four_colour_gep, four_colour_highflow, single_project, two-plate plate 1 x2). 2 differ by one coordinate (0.001 mm, plate 2 of the two-plate projects). 2 differ by decision: mixed_filament (D-142), bare STL (D-007). Independent review: Bambu/Orca unchanged (unifdef), 1 crash + 5 issues fixed (review-fixes), 4 decision items to QUESTIONS.md.
+
+## Checkpoint 5 — 2026-10-28 22:56 — FINISHED
+All three programs build (Snapmaker on CGAL 5.4, D-161/D-162). Tests: diagnostic-events 8/8 on all three; excluded-features snapmaker 21/0/2, orca 21/0/2, bambu 22/0/0; nozzle-map bambu 32/0; U1 suite 9/9; Orca U1 G-code identical to the pre-change baseline. Package pkg-local/release/*.tar.gz (112 MB) validated on an extracted copy (3 programs, clean-host smoke, CI package tests); packaged slicer_cli-snapmaker four_colour IDENTICAL to Snapmaker CLI. Nothing pushed (push URL disabled; 10 local commits).

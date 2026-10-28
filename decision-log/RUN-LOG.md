@@ -17,3 +17,4 @@
 - 2026-10-28 22:16 Independent review done: Bambu/Orca unchanged (unifdef-verified); 1 confirmed crash (--arrange 1) + 5 smaller items → helper review-fixes; 4 decision items → QUESTIONS.md
 - 2026-10-28 22:26 package helper done: Bambu built (3:44) and passes its 3 test scripts; 3-program package in pkg-local/ passes test-complete-slice-path (309/0/4), test-packaged-slice, smoke-clean-host; packaged slicer_cli-snapmaker four_colour IDENTICAL to Snapmaker CLI. Found temp-folder sweep bug (needs a 1-line change in all builds).
 - 2026-10-28 22:29 review-fixes verified (arrange rc 0) & committed; D-160 temp-folder list; D-161 Snapmaker → CGAL 5.4; final verification run started
+- 2026-10-28 22:56 Run FINISHED. Checkpoints 4 and 5 recorded. Morning report written.

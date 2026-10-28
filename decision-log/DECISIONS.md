@@ -590,7 +590,7 @@ Evidence: decision-log/scripts/configure.sh; .github/workflows/slicer-cli-ci.yml
 User-visible effect: none
 Status: final
 
-## D-147  helper "package", accepted by coordinator 2026-10-28 22:26
+## D-147 [SUPERSEDED by D-161]  helper "package", accepted by coordinator 2026-10-28 22:26
 Title: Snapmaker build keeps CGAL 5.6.3 although the fork pins CGAL 5.4
 Time: 2026-10-28 21:45
 What:    configure.sh snapmaker still passes deps-prefix/cgal-5.6.3 (as it did). SNAPMAKER_CGAL=5.4 switches it to deps-prefix/cgal-5.4.
