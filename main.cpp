@@ -7322,11 +7322,9 @@ static bool is_staging_folder_name(const std::string& name) {
 static bool is_engine_binary_name(std::string name) {
     while (!name.empty() && (name.front() == '/' || name.front() == '\\'))
         name.erase(name.begin());
-#ifdef ENGINE_SNAPMAKER
+    // Every program the package ships, whichever engine this one is: the
+    // stale-folder sweep must keep a running sibling's folders.
     for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer", "slicer_cli-snapmaker"}) {
-#else
-    for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer"}) {
-#endif
         const std::string base(binary);
         if (boost::algorithm::iequals(name, base) || boost::algorithm::iequals(name, base + ".exe"))
             return true;
