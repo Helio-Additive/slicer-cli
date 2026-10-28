@@ -29,7 +29,10 @@ namespace slicer_cli {
 namespace {
 
 // The engine this binary is built on, in the official app's own name.
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+const char* const kThisApp  = "Snapmaker Orca";
+const char* const kOtherApp = "BambuStudio";
+#elif defined(ENGINE_ORCA)
 const char* const kThisApp  = "OrcaSlicer";
 const char* const kOtherApp = "BambuStudio";
 #else
@@ -641,7 +644,11 @@ void print_help(std::ostream& out, const char* prog) {
 
     out << "\nFlags that share a name with Bambu Studio's or OrcaSlicer's own command line behave the same way.\n"
         << "\"Works in\" names the binaries that take the flag: slicer_cli runs the Bambu Studio engine,\n"
+#ifdef ENGINE_SNAPMAKER
+        << "slicer_cli-orcaslicer the OrcaSlicer engine, slicer_cli-snapmaker (this binary) the Snapmaker Orca engine.\n";
+#else
         << "slicer_cli-orcaslicer the OrcaSlicer engine.\n";
+#endif
 
     out << "\n=== Files, presets and modes ===\n";
     for (const auto& f : legacy_flags()) {

@@ -88,7 +88,7 @@ skip() { SKIP=$((SKIP + 1)); echo "SKIP [$1] $2"; }
 ENGINE=$("$BINARY" layout capabilities --json 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["engine"])' 2>/dev/null || true)
 case "$ENGINE" in
-    bambu|orca) echo "Engine: $ENGINE" ;;
+    bambu|orca|snapmaker) echo "Engine: $ENGINE" ;;
     *) echo "FAIL [engine-detect] 'layout capabilities --json' gave no engine (got '$ENGINE')"; exit 1 ;;
 esac
 
@@ -105,7 +105,9 @@ esac
 # the gcode_file key, the slice_info plate block). legacy_token_orca.3mf adds the
 # same two `{initial_no_support_filament_id}` lines as legacy_token.3mf to
 # machine_start_gcode and filament_start_gcode.
-if [ "$ENGINE" = orca ]; then FIXTURE_SUFFIX=_orca; else FIXTURE_SUFFIX=; fi
+# The Snapmaker build (engine "snapmaker", Snapmaker Orca's OrcaSlicer fork) is
+# an Orca-family engine and slices the _orca twins too.
+if [ "$ENGINE" = orca ] || [ "$ENGINE" = snapmaker ]; then FIXTURE_SUFFIX=_orca; else FIXTURE_SUFFIX=; fi
 
 # ── Binary launches ─────────────────────────────────────────────────────────
 check "binary-launches"           0 "Usage"    --help
@@ -143,6 +145,48 @@ TOKEN="initial_no_support_filament_id"
 TOKEN_3MF="$FIXTURES/legacy_token$FIXTURE_SUFFIX.3mf"
 BASE_3MF="$FIXTURES/calib_base$FIXTURE_SUFFIX.3mf"
 
+# Snapmaker build: the _orca token twin is an OrcaSlicer 2.4 project
+# (Application "BambuStudio-02.06.00.51" plus an OrcaSlicer tag). The fork's
+# loader knows makers only by Application ("BambuStudio-" / "Snapmaker_Orca-",
+# SnapmakerOrca bbs_3mf.cpp 3827-3837), so the Snapmaker build loads it over
+# its own system presets as a Bambu Studio project, as Snapmaker Orca's desktop
+# loads a project it did not make; the file lists no
+# different_settings_to_system, so the preset's start G-code replaces the two
+# hand-added token lines and the token checks would test nothing. The token
+# checks therefore run on a copy tagged as a Snapmaker Orca 2.4.1 project
+# (Application "Snapmaker_Orca-2.4.1", no OrcaSlicer tag), which keeps its own
+# settings: the same settings and token lines, read the way this engine reads
+# its own projects. Its machine_start_gcode is cut down to the token line: the
+# rest is OrcaSlicer 2.4's X1 Carbon start G-code, whose placeholders the fork
+# does not bind (flush_volumetric_speeds: "Not a variable name"), so it fails
+# with or without the token. The expectations stay the Orca ones (same
+# placeholder binding in the fork, GCode.cpp:2907).
+SNAPMAKER_TMP=""
+if [ "$ENGINE" = snapmaker ] && [ -f "$TOKEN_3MF" ]; then
+    SNAPMAKER_TMP=$(mktemp -d "${TMPDIR:-/tmp}/snapmaker_token.XXXXXX")
+    python3 - "$TOKEN_3MF" "$SNAPMAKER_TMP/legacy_token_snapmaker.3mf" <<'PY'
+import json, re, sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "3D/3dmodel.model":
+            text = data.decode("utf-8")
+            text = re.sub(r'(<metadata name="Application">)[^<]*(</metadata>)', r"\1Snapmaker_Orca-2.4.1\2", text)
+            text = re.sub(r'\s*<metadata name="OrcaSlicer">[^<]*</metadata>', "", text)
+            data = text.encode("utf-8")
+        elif item.filename == "Metadata/project_settings.config":
+            settings = json.loads(data.decode("utf-8"))
+            start = settings["machine_start_gcode"]
+            lines = (start if isinstance(start, str) else start[0]).split("\n")
+            settings["machine_start_gcode"] = "\n".join(l for l in lines if "initial_no_support_filament_id" in l)
+            data = json.dumps(settings, indent=4).encode("utf-8")
+        zout.writestr(item, data)
+PY
+    TOKEN_3MF="$SNAPMAKER_TMP/legacy_token_snapmaker.3mf"
+    trap 'rm -rf "$SNAPMAKER_TMP"' EXIT
+fi
+
 if [ -f "$TOKEN_3MF" ]; then
     # (1) Default: slice succeeds, an audit notice is emitted, and the literal
     #     token is gone from the exported G-code.
@@ -165,9 +209,11 @@ if [ -f "$TOKEN_3MF" ]; then
     #     (GCode.cpp:2818, PrintConfig.cpp:10899), so on Orca the opt-out hands the
     #     engine an unknown variable: its placeholder parser refuses the custom
     #     G-code and no G-code is written. That is the engine's own behaviour.
+    #     Snapmaker Orca's fork binds the same name only (SnapmakerOrca
+    #     GCode.cpp:2907), so the Snapmaker build takes the Orca expectation.
     GC=$(mktmp_gcode)
     run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode
-    if [ "$ENGINE" = orca ]; then
+    if [ "$ENGINE" = orca ] || [ "$ENGINE" = snapmaker ]; then
         if [ "$LAST_EXIT" -ne 0 ] \
            && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
            && grep -q "Not a variable name" <<<"$LAST_OUTPUT" \
@@ -278,12 +324,15 @@ if [ -f "$BASE_3MF" ]; then
     # (docs/cli-reference.md, --calib-mode pressure_advance_pattern: "slicer_cli
     # only"); slicer_cli-orcaslicer refuses the mode before any input check.
     PA_PATTERN_SKIP="pressure_advance_pattern is slicer_cli only (docs/cli-reference.md); slicer_cli-orcaslicer refuses the mode"
-    if [ "$ENGINE" = orca ]; then
+    # The Snapmaker build refuses it the same way, naming its own engine
+    # (the Orca-family refusal in main.cpp, "Snapmaker Orca" there).
+    if [ "$ENGINE" = snapmaker ]; then PA_PATTERN_ENGINE="Snapmaker Orca"; else PA_PATTERN_ENGINE="OrcaSlicer"; fi
+    if [ "$ENGINE" = orca ] || [ "$ENGINE" = snapmaker ]; then
         skip "calib-pa-pattern" "$PA_PATTERN_SKIP"
         GC=$(mktmp_gcode)
         run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
         if [ "$LAST_EXIT" -ne 0 ] \
-           && grep -q "pressure_advance_pattern is not yet supported on the OrcaSlicer engine" <<<"$LAST_OUTPUT" \
+           && grep -q "pressure_advance_pattern is not yet supported on the $PA_PATTERN_ENGINE engine" <<<"$LAST_OUTPUT" \
            && [ ! -s "$GC" ]; then
             record "calib-pa-pattern-refused-on-orca" 1
         else
@@ -347,7 +396,7 @@ if [ -f "$BASE_3MF" ]; then
 
     # pressure_advance_pattern requires a .3mf --input (it discards the model but
     # needs the embedded config + plate setup). An STL must be rejected.
-    if [ "$ENGINE" = orca ]; then
+    if [ "$ENGINE" = orca ] || [ "$ENGINE" = snapmaker ]; then
         skip "calib-pa-pattern-stl-rejected" "$PA_PATTERN_SKIP"
     else
         STL_TMP=$(mktemp "${TMPDIR:-/tmp}/calib_stl.XXXXXX"); mv "$STL_TMP" "$STL_TMP.stl"; STL_TMP="$STL_TMP.stl"

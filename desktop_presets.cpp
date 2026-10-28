@@ -267,6 +267,94 @@ bool load_flat_preset_in_vendor(const std::string& profiles_dir, const std::stri
     return true;
 }
 
+#ifdef ENGINE_SNAPMAKER
+/// The former names a system preset answers to in the fork: its file's
+/// "renamed_from" list, else -- for an "@" name -- the name with the "@"
+/// removed, which the loader adds when the file lists none
+/// (load_vendor_configs_from_json, PresetBundle.cpp 3571-3576 and 3670-3687;
+/// the alias it also tests is no option of the fork, so never stated).
+/// `renamed_from` is that key's raw text.
+std::vector<std::string> former_preset_names(const std::string& name, const std::string& renamed_from) {
+    std::vector<std::string> out;
+    if (!renamed_from.empty())
+        Slic3r::unescape_strings_cstyle(renamed_from, out);
+    if (out.empty()) {
+        const size_t at = name.find('@');
+        if (at != std::string::npos)
+            out.push_back(name.substr(0, at) + name.substr(at + 1));
+    }
+    return out;
+}
+
+/// The current name and vendor bundle of the system preset that lists `name`
+/// among its former names, in the list `list_key` (PresetCollection::
+/// get_preset_name_renamed, Preset.cpp 2740-2746, over the map
+/// update_map_system_profile_renamed builds from every loaded system preset,
+/// 3394-3405; templates are no presets, so they are skipped). The bundles are
+/// read in name order, as the desktop loads them; the map keeps the first
+/// preset that claims a former name. Built once per profiles tree and list.
+bool renamed_system_preset(const std::string& profiles_dir, const char* list_key, const std::string& name,
+                           std::string& current, std::string& vendor_out) {
+    namespace fs = boost::filesystem;
+    struct Entry { std::string current, vendor; };
+    static std::map<std::string, std::map<std::string, Entry>> cache;
+    const std::string cache_key = profiles_dir + "\n" + list_key;
+    auto cached = cache.find(cache_key);
+    if (cached == cache.end()) {
+        std::map<std::string, Entry> renamed;
+        std::vector<fs::path> vendor_jsons;
+        try {
+            for (fs::directory_iterator it{fs::path(profiles_dir)}, end; it != end; ++it)
+                if (it->path().extension() == ".json")
+                    vendor_jsons.push_back(it->path());
+        } catch (...) {
+        }
+        std::sort(vendor_jsons.begin(), vendor_jsons.end(),
+                  [](const fs::path& a, const fs::path& b) { return a.filename().string() < b.filename().string(); });
+        for (const fs::path& vendor_json : vendor_jsons) {
+            const std::string vendor = vendor_json.stem().string();
+            try {
+                nlohmann::json j;
+                boost::nowide::ifstream ifs(vendor_json.string());
+                ifs >> j;
+                if (!j.contains(list_key) || !j[list_key].is_array())
+                    continue;
+                for (const auto& entry : j[list_key]) {
+                    if (!entry.is_object())
+                        continue;
+                    const std::string preset_name = entry.value("name", std::string());
+                    const fs::path    file        = fs::path(profiles_dir) / vendor / entry.value("sub_path", std::string());
+                    if (preset_name.empty() || !fs::is_regular_file(file))
+                        continue;
+                    nlohmann::json preset;
+                    try {
+                        boost::nowide::ifstream pfs(file.string());
+                        pfs >> preset;
+                    } catch (...) {
+                        continue;
+                    }
+                    if (!preset.is_object() || preset.value("instantiation", std::string("true")) == "false")
+                        continue;
+                    const auto rf = preset.find("renamed_from");
+                    const std::string renamed_from = rf != preset.end() && rf->is_string() ? rf->get<std::string>() : std::string();
+                    for (const std::string& former : former_preset_names(preset_name, renamed_from))
+                        renamed.emplace(former, Entry{preset_name, vendor});
+                }
+            } catch (...) {
+                continue;
+            }
+        }
+        cached = cache.emplace(cache_key, std::move(renamed)).first;
+    }
+    const auto it = cached->second.find(name);
+    if (it == cached->second.end())
+        return false;
+    current    = it->second.current;
+    vendor_out = it->second.vendor;
+    return true;
+}
+#endif
+
 /// The system preset `name` of one vendor bundle.
 bool find_preset_in_vendor(const boost::filesystem::path& profiles_dir, const std::string& vendor,
                            const char* list_key, const std::string& name, Slic3r::DynamicPrintConfig& out,
@@ -317,6 +405,15 @@ bool find_system_preset(const std::string& profiles_dir, const char* list_key, c
             return true;
         }
     }
+#ifdef ENGINE_SNAPMAKER
+    // A former name: the fork finds a project's or a parent's preset through
+    // renamed_from (load_external_preset, Preset.cpp 2114-2120; inherits,
+    // 2662-2668), so "0.20 Standard @Snapmaker U1 (0.4 nozzle)" is the
+    // renamed 0.20mm Standard process.
+    std::string current, current_vendor;
+    if (renamed_system_preset(profiles_dir, list_key, name, current, current_vendor) && current != name)
+        return find_system_preset(profiles_dir, list_key, current, out, meta, current_vendor);
+#endif
     return false;
 }
 
@@ -675,7 +772,20 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
             out.config = std::move(config);
             break;   // INT_MAX: no better match exists
         }
+#ifdef ENGINE_SNAPMAKER
+        // The printer's default named by a former name of this preset (the
+        // U1's "0.20 Standard @Snapmaker U1 (0.4 nozzle)" for "0.20mm
+        // Standard @..."): taken as that preset, as the named-preset path does
+        // (snapmaker_default_process in main.cpp).
+        bool is_declared = name == declared_default;
+        if (!is_declared && !declared_default.empty()) {
+            const std::vector<std::string> former = former_preset_names(name, meta["renamed_from"]);
+            is_declared = std::find(former.begin(), former.end(), declared_default) != former.end();
+        }
+        int quality = (is_declared ? 1 : 0) + 2;   // listed and visible
+#else
         int quality = (name == declared_default ? 1 : 0) + 2;   // listed and visible
+#endif
         const auto* candidate_layer_height =
             dynamic_cast<const Slic3r::ConfigOptionFloat*>(config.option("layer_height"));
         if (current_layer_height > 0. && candidate_layer_height != nullptr &&

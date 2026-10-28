@@ -7,7 +7,10 @@
 namespace slicer_cli {
 namespace {
 
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+const char* const kThisApp  = "Snapmaker Orca";
+const char* const kOtherApp = "BambuStudio";
+#elif defined(ENGINE_ORCA)
 const char* const kThisApp  = "OrcaSlicer";
 const char* const kOtherApp = "BambuStudio";
 #else
@@ -78,8 +81,13 @@ std::string foreign_flag_refusal(const std::string& cli_name) {
 #ifdef ENGINE_ORCA
     for (const std::string& key : bambu_only_keys())
         if (dashed(key) == cli_name)
+#ifdef ENGINE_SNAPMAKER
+            return "--" + cli_name + " works only in slicer_cli (the Bambu Studio engine); "
+                   "slicer_cli-snapmaker runs the Snapmaker Orca engine, which has no such flag.";
+#else
             return "--" + cli_name + " works only in slicer_cli (the Bambu Studio engine); "
                    "slicer_cli-orcaslicer runs the OrcaSlicer engine, which has no such flag.";
+#endif
 #endif
     if (commented_out_names().count(cli_name))
         return "--" + cli_name + " is not a flag of slicer-cli: Bambu Studio's and OrcaSlicer's own "

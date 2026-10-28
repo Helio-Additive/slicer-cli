@@ -2096,7 +2096,16 @@ static std::map<std::string, std::string> model_metadata(const std::string& mode
 /// 5873b5f).
 static boost::optional<Slic3r::Semver> engine_file_version(const std::map<std::string, std::string>& meta) {
     const auto app = meta.find("Application");
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    // The fork's loader takes the version after "BambuStudio-" or
+    // "Snapmaker_Orca-" in Application and reads no OrcaSlicer tag
+    // (SnapmakerOrca bbs_3mf.cpp 3827-3837): that is the version the slice
+    // path receives, so --engine-info states the same one.
+    if (app != meta.end()) {
+        if (boost::starts_with(app->second, "Snapmaker_Orca-")) return Slic3r::Semver::parse(app->second.substr(15));
+        if (boost::starts_with(app->second, "BambuStudio-"))    return Slic3r::Semver::parse(app->second.substr(12));
+    }
+#elif defined(ENGINE_ORCA)
     if (const auto orca = meta.find("OrcaSlicer"); orca != meta.end())
         if (auto v = Slic3r::Semver::parse(orca->second)) return v;
     if (app != meta.end()) {
@@ -2149,7 +2158,25 @@ enum class FileVersionVerdict { Ok, WarnedNewerThanBase, Refused };
 
 static FileVersionVerdict file_version_verdict(const Slic3r::Semver& file_version,
                                                const std::map<std::string, std::string>& meta) {
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker: a project Snapmaker Orca made ("Snapmaker_Orca-<version>"
+    // Application, or its "Snapmaker_Orca:3mfVersion" marker, which only the
+    // fork writes: bbs_3mf.cpp 6645-6650) carries the fork's own release
+    // number and is compared with Snapmaker_VERSION under the usual newer-file
+    // rule, so files up to this release are accepted. Snapmaker's own CLI
+    // compares it with SLIC3R_VERSION 01.10.01.50 instead and so refuses its
+    // own 2.x files without --allow-newer-file (Snapmaker_Orca.cpp 1431-1436);
+    // that is not copied. Any other project states a Bambu Studio version
+    // (the fork's loader reads only "BambuStudio-" besides its own tag), is
+    // compared with the Bambu base SLIC3R_VERSION and only warned about, as
+    // the Orca build does for a project it did not make.
+    const auto app = meta.find("Application");
+    const bool snapmaker_made = meta.count("Snapmaker_Orca:3mfVersion") != 0 ||
+                                (app != meta.end() && boost::starts_with(app->second, "Snapmaker_Orca-"));
+    if (!snapmaker_made)
+        return file_newer_than_version(file_version, SLIC3R_VERSION) ? FileVersionVerdict::WarnedNewerThanBase
+                                                                     : FileVersionVerdict::Ok;
+#elif defined(ENGINE_ORCA)
     const auto app = meta.find("Application");
     const bool orca_made = meta.count("OrcaSlicer") != 0 ||
                            (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-"));
@@ -2318,7 +2345,11 @@ static EngineFit engine_fit_for(const std::string& argv0, const std::string& pri
 #ifdef ENGINE_ORCA
     const boost::filesystem::path this_dir  = orca_profiles_dir(exe_dir);
     const boost::filesystem::path other_dir = engine_profiles_dir(exe_dir);
+#ifdef ENGINE_SNAPMAKER
+    EngineFit fit{"Snapmaker Orca", "slicer_cli-snapmaker", "BambuStudio", "slicer_cli"};
+#else
     EngineFit fit{"OrcaSlicer", "slicer_cli-orcaslicer", "BambuStudio", "slicer_cli"};
+#endif
 #else
     const boost::filesystem::path this_dir  = engine_profiles_dir(exe_dir);
     const boost::filesystem::path other_dir = orca_profiles_dir(exe_dir);
@@ -3007,7 +3038,9 @@ static std::string g_preset_printer_model_id;
 #endif
 
 static std::string cli_error_sentence(int code) {
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+#define SLICER_APP "Snapmaker Orca"   // Snapmaker_Orca.cpp 134-160
+#elif defined(ENGINE_ORCA)
 #define SLICER_APP "Orca Slicer"
 #else
 #define SLICER_APP "Bambu Studio"
@@ -3268,7 +3301,9 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
         j["error_reason"] = outcomes.back().error_reason;
     j["prepare_time"] = prepare_time_ms;
     j["export_time"]  = export_time_ms;
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    j["engine"] = "snapmaker";
+#elif defined(ENGINE_ORCA)
     j["engine"] = "orcaslicer";
 #else
     j["engine"] = "bambustudio";
@@ -4530,6 +4565,22 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
 /// PartPlate.cpp 4637-4642).
 static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& config) {
     using namespace Slic3r;
+#ifdef ENGINE_SNAPMAKER
+    // The fork: x is WIPE_TOWER_DEFAULT_X_POS 13 (I3: 0), y the middle of the
+    // plate's depth (PartPlateList::set_default_wipe_tower_pos_for_plate,
+    // SnapmakerOrca PartPlate.cpp 70-72 and 4081-4097; its CLI's assemble
+    // blocks the same, Snapmaker_Orca.cpp 3950-3956, 4208-4213). The plate's
+    // depth is the bed's, in whole millimetres (PartPlateList::get_plate_size,
+    // an int; the CLI sizes its plate list from the bed shape).
+    BoundingBoxf bed;
+    if (const auto* area = config.option<ConfigOptionPoints>("printable_area"))
+        for (const Vec2d& pt : area->values) bed.merge(pt);
+    const int plate_depth = bed.defined ? (int)bed.size().y() : 0;
+    Vec2d corner(13., (double)(plate_depth * 0.5f));
+    if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
+        structure && structure->value == PrinterStructure::psI3)
+        corner.x() = 0.;
+#else
     Vec2d corner(165., 250.);   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
     if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
         structure && structure->value == PrinterStructure::psI3)
@@ -4537,6 +4588,7 @@ static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& conf
 #ifdef ENGINE_BAMBU
     if (g_preset_printer_model_id == "N9")   // N9_WIPE_TOWER_DEFAULT_Y_POS
         corner.y() = 160.;
+#endif
 #endif
     return corner;
 }
@@ -4607,6 +4659,17 @@ static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, cons
     auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y", true);
     const Vec2d corner = tower_default_corner(config);
     float x = (float)corner.x(), y = (float)corner.y();
+#ifdef ENGINE_SNAPMAKER
+    // The fork's set_default_wipe_tower_pos_for_plate writes the default
+    // corner as it is, with no clamping to the plate or a tower size
+    // (SnapmakerOrca PartPlate.cpp 4081-4097).
+    if (!keep_existing) {
+        ConfigOptionFloat wt_x_opt(x), wt_y_opt(y);
+        wipe_x->set_at(&wt_x_opt, plate_index, 0);
+        wipe_y->set_at(&wt_y_opt, plate_index, 0);
+        return;
+    }
+#endif
     if (keep_existing && plate_index >= 0 && (int)wipe_x->values.size() > plate_index &&
         (int)wipe_y->values.size() > plate_index) {
         x = (float)wipe_x->get_at(plate_index);
@@ -5245,9 +5308,18 @@ static std::string config_value_text(const Slic3r::ConfigBase& config, const cha
 /// found = false); this command line keeps the flat file config for the whole
 /// project instead, and says so in an event.
 static bool project_presets_shipped(Slic3r::PresetBundle& bundle, const std::string& printer, const std::string& process) {
+#ifdef ENGINE_SNAPMAKER
+    // A former name counts: the fork's load_external_preset finds the preset a
+    // project names through renamed_from (Preset.cpp 2114-2120).
+    const auto shipped = [](const Slic3r::PresetCollection& collection, const std::string& name) {
+        return collection.find_preset(name, false) != nullptr || collection.get_preset_name_renamed(name) != nullptr;
+    };
+    return !printer.empty() && !process.empty() && shipped(bundle.printers, printer) && shipped(bundle.prints, process);
+#else
     return !printer.empty() && !process.empty() &&
            bundle.printers.find_preset(printer, false) != nullptr &&
            bundle.prints.find_preset(process, false) != nullptr;
+#endif
 }
 #endif
 
@@ -5719,6 +5791,142 @@ static std::string default_replaced_note(const char* kind, const std::string& pi
     return std::string(kind) + " '" + picked + "' (" + why + ")";
 }
 
+#ifdef ENGINE_SNAPMAKER
+/// The name a system preset goes by now: `name` when the collection holds it,
+/// else the preset that lists `name` among its former names. The fork maps
+/// every "renamed_from" entry of a system preset (and, for an "@" preset that
+/// states none, its name without the "@", PresetBundle.cpp 3670-3680) in
+/// PresetCollection::get_preset_name_renamed (Preset.cpp 2740-2746,
+/// update_map_system_profile_renamed 3394-3405), and resolves a project's or a
+/// parent's preset name through it (load_external_preset 2114-2120, inherits
+/// 2662-2668, find_preset2 2785-2791). Unknown names come back unchanged.
+static std::string current_preset_name(const Slic3r::PresetCollection& collection, const std::string& name) {
+    if (name.empty() || collection.find_preset(name, false) != nullptr)
+        return name;
+    if (const std::string* renamed = collection.get_preset_name_renamed(name))
+        return *renamed;
+    return name;
+}
+
+/// Replaces a former preset name the command line gave with the preset's
+/// current name, and says so in an event: Snapmaker renamed presets the U1
+/// still names ("0.20 Standard @Snapmaker U1 (0.4 nozzle)" is now "0.20mm
+/// Standard @Snapmaker U1 (0.4 nozzle)", renamed_from in its process file).
+static void resolve_renamed_preset_name(const Slic3r::PresetCollection& collection, const char* kind, std::string& name) {
+    const std::string current = current_preset_name(collection, name);
+    if (current == name)
+        return;
+    emit_event({{"event","presets_resolved"},
+                {"tag","PresetRenamed"},
+                {"kind", kind},
+                {"requested", name},
+                {"preset", current},
+                {"message", std::string("The ") + kind + " preset '" + name + "' is now called '" + current +
+                            "' (its renamed_from); that preset is used"}});
+    name = current;
+}
+
+/// A default the desktop's pick took, and why it is not the printer's stated
+/// default, empty when it is (the "defaults_replaced" entry).
+struct SnapmakerDefaultPick {
+    std::string name;
+    std::string note;
+};
+
+/// The process a printer picked with no process selected takes on the
+/// Snapmaker build: first_compatible_idx with PreferedPrintProfileMatch, as
+/// desktop_default_process, with the printer's default_print_profile read
+/// through renamed_from. The fork's own update_compatible compares the stated
+/// name exactly (PresetBundle.cpp 4140-4185) and so never matches the U1's
+/// stale "0.20 Standard @Snapmaker U1 (0.4 nozzle)"; Snapmaker means its
+/// renamed 0.20mm Standard ("set default_print_profile to 0.20 standard in
+/// U1"), which this takes.
+static SnapmakerDefaultPick snapmaker_default_process(const Slic3r::PresetCollection& prints, const std::string& declared) {
+    SnapmakerDefaultPick out;
+    const std::string wanted = current_preset_name(prints, declared);
+    out.name = first_compatible_name(prints, [&](const Slic3r::Preset& p) { return (p.name == wanted ? 1 : 0) + 2; });
+    if (out.name.empty())
+        out.name = prints.default_preset().name;
+    if (!declared.empty() && out.name == wanted && wanted != declared)
+        out.note = "process '" + out.name + "' (the printer's default '" + declared +
+                   "' is this preset's former name, its renamed_from)";
+    else
+        out.note = default_replaced_note("process", out.name, declared);
+    return out;
+}
+
+/// The filament a printer picked with no filament selected takes on the
+/// Snapmaker build:
+///  1. the printer's first default_filament_profile, through renamed_from,
+///     when it is a compatible preset (load_selections, PresetBundle.cpp
+///     1975-1990);
+///  2. else a compatible preset with that default's alias, which the desktop's
+///     PreferedFilamentsProfileMatch always takes first (PresetBundle.cpp
+///     4206-4222);
+///  3. else -- what the desktop takes then depends on which filaments the
+///     setup wizard installed (first_compatible_idx counts visible presets
+///     only, Preset.hpp 632-656, and the U1 model names no default_materials
+///     for load_installed_filaments, PresetBundle.cpp 1775-1828), which the
+///     code does not decide -- a compatible filament of the printer's own
+///     vendor with the default's filament_type (PLA when the default is not
+///     shipped, the match's own "default choose PLA", PresetBundle.cpp 4213):
+///     "Generic <type>" first, then another "Generic ..." one, then the
+///     vendor's own, in collection order (provisional);
+///  4. else the first compatible filament, as desktop_default_filament.
+static SnapmakerDefaultPick snapmaker_default_filament(const Slic3r::PresetCollection& filaments,
+                                                       const std::vector<std::string>& declared,
+                                                       const Slic3r::Preset& printer) {
+    SnapmakerDefaultPick out;
+    const std::string stated = declared.empty() ? std::string() : declared.front();
+    const std::string wanted = current_preset_name(filaments, stated);
+    if (!wanted.empty() && preset_usable(filaments, wanted)) {
+        out.name = wanted;
+        if (wanted != stated)
+            out.note = "filament '" + wanted + "' (the printer's default '" + stated +
+                       "' is this preset's former name, its renamed_from)";
+        return out;
+    }
+    const Slic3r::Preset* stated_preset = wanted.empty() ? nullptr : filaments.find_preset(wanted, false);
+    if (stated_preset != nullptr && !stated_preset->alias.empty()) {
+        out.name = first_compatible_name(filaments, [&](const Slic3r::Preset& p) { return p.alias == stated_preset->alias ? 1 : -1; });
+        const Slic3r::Preset* found = out.name.empty() ? nullptr : filaments.find_preset(out.name, false);
+        if (found != nullptr && found->alias == stated_preset->alias) {
+            out.note = "filament '" + out.name + "' (the printer's default '" + stated +
+                       "' does not suit this printer; this preset has its alias '" + stated_preset->alias + "')";
+            return out;
+        }
+        out.name.clear();
+    }
+    const auto filament_type = [](const Slic3r::Preset& p) {
+        const auto* types = p.config.option<Slic3r::ConfigOptionStrings>("filament_type");
+        return types != nullptr && !types->values.empty() ? types->values.front() : std::string();
+    };
+    const std::string type = stated_preset != nullptr && !filament_type(*stated_preset).empty()
+                                 ? filament_type(*stated_preset) : std::string("PLA");
+    const std::string vendor = printer.vendor != nullptr ? printer.vendor->id : std::string();
+    if (!vendor.empty()) {
+        out.name = first_compatible_name(filaments, [&](const Slic3r::Preset& p) {
+            if (p.vendor == nullptr || p.vendor->id != vendor || filament_type(p) != type)
+                return -1;
+            if (p.name == "Generic " + type)
+                return 3;
+            return boost::algorithm::starts_with(p.name, "Generic ") ? 2 : 1;
+        });
+        const Slic3r::Preset* found = out.name.empty() ? nullptr : filaments.find_preset(out.name, false);
+        if (found != nullptr && found->vendor != nullptr && found->vendor->id == vendor && filament_type(*found) == type) {
+            out.note = "filament '" + out.name + "' (the printer's default '" + stated + "' " +
+                       (stated_preset != nullptr ? "does not suit this printer" : "is not available") +
+                       "; this is " + vendor + "'s compatible " + type + " filament, Generic first)";
+            return out;
+        }
+        out.name.clear();
+    }
+    out.name = first_compatible_name(filaments, [](const Slic3r::Preset&) { return 0; });
+    out.note = default_replaced_note("filament", out.name, stated);
+    return out;
+}
+#endif
+
 /// The named system preset of `collection`, made visible the way naming a
 /// preset installs it — a fresh AppConfig has no printer models installed, so
 /// system presets load invisible, and select_preset_by_name skips an invisible
@@ -5803,7 +6011,9 @@ static bool stage_named_presets_for_project(CliOptions& o, const std::string& di
         code = CLI_ENVIRONMENT_ERROR;
         return false;
     }
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    const std::string app = "Snapmaker Orca";
+#elif defined(ENGINE_ORCA)
     const std::string app = "OrcaSlicer";
 #else
     const std::string app = "BambuStudio";
@@ -5812,6 +6022,13 @@ static bool stage_named_presets_for_project(CliOptions& o, const std::string& di
         o.cli.option<Slic3r::ConfigOptionStrings>("load_settings", true)->values.push_back(path);
     };
     std::string path;
+#ifdef ENGINE_SNAPMAKER
+    // A former preset name is the renamed preset (current_preset_name).
+    resolve_renamed_preset_name(bundle.printers, "printer", o.printer_preset);
+    resolve_renamed_preset_name(bundle.prints, "process", o.process_preset);
+    for (std::string& name : o.filament_presets)
+        resolve_renamed_preset_name(bundle.filaments, "filament", name);
+#endif
     if (!find_named_preset(bundle.printers, o.printer_preset, "printer", /*allow_default=*/false, app, code, error))
         return false;
     if (!write_named_preset_file(dir, *bundle.printers.find_preset(o.printer_preset, false), "machine", "machine",
@@ -5880,8 +6097,15 @@ static bool desktop_plate_type_for_printer(const CliOptions& o, const std::strin
     return true;
 }
 
+#ifdef ENGINE_SNAPMAKER
+// Not const on the Snapmaker build: a former preset name is replaced with the
+// preset's current one (resolve_renamed_preset_name).
+static bool resolve_named_presets(CliOptions& o, Slic3r::DynamicPrintConfig& out,
+                                  int& code, std::string& error) {
+#else
 static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
                                   int& code, std::string& error) {
+#endif
     namespace fs = boost::filesystem;
     // The temp folder lookup throws on a bad TMPDIR/TMP; it sits inside the
     // try so that is a refusal with a sentence, never an uncaught exception.
@@ -5896,7 +6120,9 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         code = CLI_ENVIRONMENT_ERROR;
         return false;
     }
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    const std::string app = "Snapmaker Orca";
+#elif defined(ENGINE_ORCA)
     const std::string app = "OrcaSlicer";
 #else
     const std::string app = "BambuStudio";
@@ -5931,6 +6157,12 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         code = CLI_INVALID_PARAMS;
         return false;
     }
+#ifdef ENGINE_SNAPMAKER
+    resolve_renamed_preset_name(bundle.printers, "printer", o.printer_preset);
+    resolve_renamed_preset_name(bundle.prints, "process", o.process_preset);
+    for (std::string& name : o.filament_presets)
+        resolve_renamed_preset_name(bundle.filaments, "filament", name);
+#endif
     if (!find(bundle.printers, o.printer_preset, "printer")) return false;
     bundle.printers.select_preset_by_name(o.printer_preset, true);
     if (bundle.printers.get_edited_preset().name != o.printer_preset) {
@@ -5949,9 +6181,15 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     std::string process = o.process_preset;
     if (process.empty()) {
         const std::string declared = printer.has("default_print_profile") ? printer.opt_string("default_print_profile") : std::string();
+#ifdef ENGINE_SNAPMAKER
+        const SnapmakerDefaultPick pick = snapmaker_default_process(bundle.prints, declared);
+        process = pick.name;
+        if (!pick.note.empty()) substituted_defaults.push_back(pick.note);
+#else
         process = desktop_default_process(bundle.prints, declared);
         const std::string note = default_replaced_note("process", process, declared);
         if (!note.empty()) substituted_defaults.push_back(note);
+#endif
     }
     if (process.empty()) {
         error = "Printer preset '" + o.printer_preset + "' has no compatible process; give --process-preset.";
@@ -5977,10 +6215,17 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         std::vector<std::string> declared;
         if (const auto* d = printer.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
             declared = d->values;
+#ifdef ENGINE_SNAPMAKER
+        const SnapmakerDefaultPick pick = snapmaker_default_filament(bundle.filaments, declared,
+                                                                     bundle.printers.get_edited_preset());
+        const std::string wanted = pick.name;
+        if (!pick.note.empty()) substituted_defaults.push_back(pick.note);
+#else
         const std::string wanted = desktop_default_filament(bundle.filaments, declared);
         const std::string note = default_replaced_note("filament", wanted,
                                                        declared.empty() ? std::string() : declared.front());
         if (!note.empty()) substituted_defaults.push_back(note);
+#endif
         if (!wanted.empty()) filaments.push_back(wanted);
     }
     if (filaments.empty()) {
@@ -6106,13 +6351,19 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
 /// --list-presets [--printer NAME]: the system presets of this engine, as one
 /// JSON document. With a printer: the processes and filaments it can use,
 /// and its defaults.
+#ifdef ENGINE_SNAPMAKER
+static int run_list_presets(const CliOptions& o, const std::string& printer_name_given) {
+#else
 static int run_list_presets(const CliOptions& o, const std::string& printer_name) {
+#endif
     namespace fs = boost::filesystem;
     struct Cleanup { fs::path dir; ~Cleanup() { remove_owned_temp_dir(dir); } } cleanup;
     Slic3r::PresetBundle bundle;
     std::string error;
     json out;
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    out["engine"] = "snapmaker";
+#elif defined(ENGINE_ORCA)
     out["engine"] = "orcaslicer";
 #else
     out["engine"] = "bambustudio";
@@ -6131,6 +6382,10 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
         std::cout << out.dump(2) << std::endl;
         return CLI_ENVIRONMENT_ERROR;
     }
+#ifdef ENGINE_SNAPMAKER
+    // A former printer name is the renamed printer (current_preset_name).
+    const std::string printer_name = current_preset_name(bundle.printers, printer_name_given);
+#endif
     if (printer_name.empty()) {
         json printers = json::array();
         for (const Slic3r::Preset& p : bundle.printers)
@@ -6157,13 +6412,31 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
         // default is always one --process-preset/--filament-preset accepts.
         json defaults_replaced = json::array();
         const std::string declared_process = cfg.has("default_print_profile") ? cfg.opt_string("default_print_profile") : std::string();
+#ifdef ENGINE_SNAPMAKER
+        const SnapmakerDefaultPick process_pick = snapmaker_default_process(bundle.prints, declared_process);
+        const std::string process = process_pick.name;
+        out["default_process"] = process;
+        if (!process_pick.note.empty())
+            defaults_replaced.push_back(process_pick.note);
+#else
         const std::string process = desktop_default_process(bundle.prints, declared_process);
         out["default_process"] = process;
         if (const std::string note = default_replaced_note("process", process, declared_process); !note.empty())
             defaults_replaced.push_back(note);
+#endif
         std::vector<std::string> declared_filaments;
         if (const auto* d = cfg.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
             declared_filaments = d->values;
+#ifdef ENGINE_SNAPMAKER
+        const SnapmakerDefaultPick filament_pick =
+            snapmaker_default_filament(bundle.filaments, declared_filaments, bundle.printers.get_edited_preset());
+        const std::string filament = filament_pick.name;
+        json default_filaments = json::array();
+        if (!filament.empty()) default_filaments.push_back(filament);
+        out["default_filaments"] = default_filaments;
+        if (!filament_pick.note.empty())
+            defaults_replaced.push_back(filament_pick.note);
+#else
         const std::string filament = desktop_default_filament(bundle.filaments, declared_filaments);
         json default_filaments = json::array();
         if (!filament.empty()) default_filaments.push_back(filament);
@@ -6171,6 +6444,7 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
         if (const std::string note = default_replaced_note("filament", filament,
                 declared_filaments.empty() ? std::string() : declared_filaments.front()); !note.empty())
             defaults_replaced.push_back(note);
+#endif
         out["defaults_replaced"] = defaults_replaced;
         json processes = json::array(), filaments = json::array();
         for (const Slic3r::Preset& p : bundle.prints)
@@ -6309,7 +6583,9 @@ static int run_list_settings() {
         settings.push_back(std::move(entry));
     }
     json out;
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    out["engine"] = "snapmaker";
+#elif defined(ENGINE_ORCA)
     out["engine"] = "orcaslicer";
 #else
     out["engine"] = "bambustudio";
@@ -6996,7 +7272,11 @@ static bool is_staging_folder_name(const std::string& name) {
 static bool is_engine_binary_name(std::string name) {
     while (!name.empty() && (name.front() == '/' || name.front() == '\\'))
         name.erase(name.begin());
+#ifdef ENGINE_SNAPMAKER
+    for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer", "slicer_cli-snapmaker"}) {
+#else
     for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer"}) {
+#endif
         const std::string base(binary);
         if (boost::algorithm::iequals(name, base) || boost::algorithm::iequals(name, base + ".exe"))
             return true;
@@ -8121,10 +8401,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         const bool  one  = empty.size() == 1;
                         const char* what = single ? (one ? " is a single value" : " are single values")
                                                   : (one ? " has no entries" : " have no entries");
-                        unavailable += ": the file's " + names + what + " where OrcaSlicer expects one per filament";
+#ifdef ENGINE_SNAPMAKER
+                        const std::string this_app = "Snapmaker Orca";
+#else
+                        const std::string this_app = "OrcaSlicer";
+#endif
+                        unavailable += ": the file's " + names + what + " where " + this_app + " expects one per filament";
                         outcome.refusal_note =
                             "This project's " + names + what +
-                            " where OrcaSlicer expects one per filament, so its settings could not be matched to the "
+                            " where " + this_app + " expects one per filament, so its settings could not be matched to the "
                             "desktop presets; slice it with slicer_cli (BambuStudio), or re-save it with one " +
                             names + " entry per filament.";
                     }
@@ -9210,7 +9495,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (!validity.empty() || !unknown_values.empty()) {
                 // One refusal naming every value at once: unknown enum
                 // values first, then the engine's range findings.
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+                std::string sentence = "Snapmaker Orca cannot print this file as it is: ";
+#elif defined(ENGINE_ORCA)
                 std::string sentence = "OrcaSlicer cannot print this file as it is: ";
 #else
                 std::string sentence = "BambuStudio cannot print this file as it is: ";
@@ -9853,10 +10140,17 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const std::string instead = placeholder == "initial_nozzle_id"
                                                 ? "{initial_extruder}"
                                                 : "{nozzle_diameter[initial_extruder]}";
+#ifdef ENGINE_SNAPMAKER
+                const std::string sentence =
+                    "The project's " + placeholder_key + " uses {" + placeholder +
+                    "}, which this engine has no value for; use " + instead + " instead (Snapmaker Orca binds "
+                    "the initial extruder as {initial_extruder} and the nozzle diameters as {nozzle_diameter}).";
+#else
                 const std::string sentence =
                     "The project's " + placeholder_key + " uses {" + placeholder +
                     "}, which this engine has no value for; use " + instead + " instead (OrcaSlicer binds "
                     "the initial extruder as {initial_extruder} and the nozzle diameters as {nozzle_diameter}).";
+#endif
                 emit_event({{"event","config_refused"},
                             {"tag","BambuOnlyGcodePlaceholder"},
                             {"opt_key", placeholder_key},
@@ -11381,6 +11675,13 @@ static int run_info(const std::string& argv0, const std::string& path, const std
         maker["orcaslicer"]  = orca != meta.end() ? json(orca->second) : json(nullptr);
         // OrcaSlicer writes "BambuStudio-<its Bambu base>" as Application and
         // its own version in the OrcaSlicer tag (bbs_3mf.cpp 6837 at 31f6803).
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker Orca writes "Snapmaker_Orca-<version>" (bbs_3mf.cpp 6646);
+        // named as this build's own app, so `recommended` can pick this binary.
+        if (app != meta.end() && boost::starts_with(app->second, "Snapmaker_Orca-"))
+            maker_app = "Snapmaker Orca";
+        else
+#endif
         if (orca != meta.end() || (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-")))
             maker_app = "OrcaSlicer";
         else if (app != meta.end() && boost::starts_with(app->second, "BambuStudio-"))
@@ -12446,8 +12747,13 @@ int main(int argc, char** argv) {
     // engine (Orca's CalibPressureAdvancePattern API differs); reject it cleanly
     // here so the Orca binary fails fast instead of throwing from apply_pa_pattern.
     if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern)
+#ifdef ENGINE_SNAPMAKER
+        return refuse_run(CLI_INVALID_PARAMS, "pressure_advance_pattern is not yet supported on the Snapmaker Orca "
+                                              "engine; use a tower or pressure_advance_line calib mode instead.");
+#else
         return refuse_run(CLI_INVALID_PARAMS, "pressure_advance_pattern is not yet supported on the OrcaSlicer "
                                               "engine; use a tower or pressure_advance_line calib mode instead.");
+#endif
 #endif
 
     // --engine-info and --list-presets (slicer-cli's own, with no official
@@ -12784,7 +13090,9 @@ int main(int argc, char** argv) {
 
         json out;
         out["engine"] =
-        #ifdef ENGINE_ORCA
+        #ifdef ENGINE_SNAPMAKER
+            "snapmaker";
+        #elif defined(ENGINE_ORCA)
             "orca";
         #else
             "bambu";

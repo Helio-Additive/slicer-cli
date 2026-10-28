@@ -66,6 +66,14 @@ case "$ENGINE" in
            DEFAULT_PROFILES_DIR="$SCRIPT_DIR/../references/BambuStudio/resources/profiles" ;;
     orca)  BASE_3MF="$FIXTURES/calib_base_orca.3mf"
            DEFAULT_PROFILES_DIR="$SCRIPT_DIR/../references/OrcaSlicer/resources/profiles" ;;
+    # The Snapmaker build (slicer_cli-snapmaker, Snapmaker Orca's engine)
+    # names itself "snapmaker". It is an Orca-family engine, so it slices the
+    # Orca fixture: Snapmaker's fork ships no fixture of its own here, and its
+    # version gate only warns about that file's Bambu Studio 02.06 version
+    # (it is newer than the fork's Bambu base, not a Snapmaker Orca file). Its
+    # own profiles tree has the BBL bundle the layout checks read.
+    snapmaker) BASE_3MF="$FIXTURES/calib_base_orca.3mf"
+           DEFAULT_PROFILES_DIR="$SCRIPT_DIR/../references/SnapmakerOrca/resources/profiles" ;;
     *) echo "FAIL [engine-detect] 'layout capabilities --json' gave no engine (got '$ENGINE')"; exit 1 ;;
 esac
 echo "Engine: $ENGINE"
