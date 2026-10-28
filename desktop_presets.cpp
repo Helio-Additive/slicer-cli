@@ -13,6 +13,9 @@
 #include <boost/algorithm/string/predicate.hpp>
 #endif
 #include <boost/filesystem.hpp>
+#ifdef ENGINE_SNAPMAKER
+#include <boost/log/trivial.hpp>
+#endif
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
 
@@ -291,8 +294,12 @@ std::vector<std::string> former_preset_names(const std::string& name, const std:
 /// get_preset_name_renamed, Preset.cpp 2740-2746, over the map
 /// update_map_system_profile_renamed builds from every loaded system preset,
 /// 3394-3405; templates are no presets, so they are skipped). The bundles are
-/// read in name order, as the desktop loads them; the map keeps the first
-/// preset that claims a former name. Built once per profiles tree and list.
+/// read in name order, as the desktop loads them. When two presets claim the
+/// same former name the map keeps the first in the fork's collection, which
+/// is sorted by preset name (Preset::operator<, Preset.hpp 324): the smaller
+/// name wins, whichever bundle it comes from, and the clash is logged as the
+/// fork logs it. Files that cannot be read are logged and skipped. Built once
+/// per profiles tree and list.
 bool renamed_system_preset(const std::string& profiles_dir, const char* list_key, const std::string& name,
                            std::string& current, std::string& vendor_out) {
     namespace fs = boost::filesystem;
@@ -307,7 +314,9 @@ bool renamed_system_preset(const std::string& profiles_dir, const char* list_key
             for (fs::directory_iterator it{fs::path(profiles_dir)}, end; it != end; ++it)
                 if (it->path().extension() == ".json")
                     vendor_jsons.push_back(it->path());
-        } catch (...) {
+        } catch (const std::exception& ex) {
+            BOOST_LOG_TRIVIAL(warning) << "renamed_from: cannot list the profiles folder " << profiles_dir << ": "
+                                       << ex.what();
         }
         std::sort(vendor_jsons.begin(), vendor_jsons.end(),
                   [](const fs::path& a, const fs::path& b) { return a.filename().string() < b.filename().string(); });
@@ -317,30 +326,66 @@ bool renamed_system_preset(const std::string& profiles_dir, const char* list_key
                 nlohmann::json j;
                 boost::nowide::ifstream ifs(vendor_json.string());
                 ifs >> j;
-                if (!j.contains(list_key) || !j[list_key].is_array())
+                if (!j.contains(list_key) || !j[list_key].is_array()) {
+                    BOOST_LOG_TRIVIAL(debug) << "renamed_from: " << vendor_json.string() << " has no " << list_key
+                                             << " list";
                     continue;
+                }
                 for (const auto& entry : j[list_key]) {
-                    if (!entry.is_object())
+                    if (!entry.is_object()) {
+                        BOOST_LOG_TRIVIAL(warning) << "renamed_from: skipped a " << list_key << " entry of "
+                                                   << vendor_json.string() << " that is not an object";
                         continue;
+                    }
                     const std::string preset_name = entry.value("name", std::string());
                     const fs::path    file        = fs::path(profiles_dir) / vendor / entry.value("sub_path", std::string());
-                    if (preset_name.empty() || !fs::is_regular_file(file))
+                    if (preset_name.empty() || !fs::is_regular_file(file)) {
+                        BOOST_LOG_TRIVIAL(warning) << "renamed_from: skipped " << list_key << " entry \""
+                                                   << preset_name << "\" of " << vendor_json.string()
+                                                   << (preset_name.empty() ? ": it has no name"
+                                                                           : ": no file " + file.string());
                         continue;
+                    }
                     nlohmann::json preset;
                     try {
                         boost::nowide::ifstream pfs(file.string());
                         pfs >> preset;
-                    } catch (...) {
+                    } catch (const std::exception& ex) {
+                        BOOST_LOG_TRIVIAL(warning) << "renamed_from: skipped " << file.string()
+                                                   << ": not readable JSON: " << ex.what();
                         continue;
                     }
-                    if (!preset.is_object() || preset.value("instantiation", std::string("true")) == "false")
+                    if (!preset.is_object()) {
+                        BOOST_LOG_TRIVIAL(warning) << "renamed_from: skipped " << file.string()
+                                                   << ": not a JSON object";
                         continue;
+                    }
+                    if (preset.value("instantiation", std::string("true")) == "false") {
+                        BOOST_LOG_TRIVIAL(debug) << "renamed_from: skipped " << file.string()
+                                                 << ": instantiation false";
+                        continue;
+                    }
                     const auto rf = preset.find("renamed_from");
                     const std::string renamed_from = rf != preset.end() && rf->is_string() ? rf->get<std::string>() : std::string();
-                    for (const std::string& former : former_preset_names(preset_name, renamed_from))
-                        renamed.emplace(former, Entry{preset_name, vendor});
+                    for (const std::string& former : former_preset_names(preset_name, renamed_from)) {
+                        const auto [it, inserted] = renamed.emplace(former, Entry{preset_name, vendor});
+                        if (inserted || it->second.current == preset_name)
+                            continue;
+                        // Preset.cpp 3398-3404: the earlier preset in name
+                        // order keeps the former name, the later one is logged.
+                        const bool replace = preset_name < it->second.current;
+                        BOOST_LOG_TRIVIAL(warning)
+                            << "renamed_from: preset \"" << (replace ? it->second.current : preset_name)
+                            << "\" was marked as renamed from \"" << former << "\", though preset \""
+                            << (replace ? preset_name : it->second.current)
+                            << "\" was marked as renamed from it as well; the latter keeps it";
+                        if (replace)
+                            it->second = Entry{preset_name, vendor};
+                    }
                 }
-            } catch (...) {
+            } catch (const std::exception& ex) {
+                BOOST_LOG_TRIVIAL(warning) << "renamed_from: skipped " << vendor_json.string()
+                                           << ": not readable JSON: " << ex.what();
                 continue;
             }
         }

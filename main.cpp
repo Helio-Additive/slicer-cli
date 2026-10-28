@@ -3648,7 +3648,15 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
     std::vector<int> plate_extruders;
     const int glb_support_intf_extr = arrange_opt(full_config, "support_interface_filament")->getInt();
     const int glb_support_extr      = arrange_opt(full_config, "support_filament")->getInt();
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    // The fork has the 1-based wall_filament / sparse_infill_filament /
+    // solid_infill_filament and none of upstream 2.4's `*_filament_id` keys
+    // (PartPlate::get_extruders_under_cli, PartPlate.cpp 1975-1982; get_extruders
+    // 1863-1865), so arrange_opt would return null for those.
+    const int glb_wall_extr          = arrange_opt(full_config, "wall_filament")->getInt();
+    const int glb_sparse_infill_extr = arrange_opt(full_config, "sparse_infill_filament")->getInt();
+    const int glb_solid_infill_extr  = arrange_opt(full_config, "solid_infill_filament")->getInt();
+#elif defined(ENGINE_ORCA)
     // OrcaSlicer v2.4.2 renamed the feature-filament keys to `*_id`, where 0
     // means "Default" (PrintConfig.cpp handle_legacy, 8038-8058), and adds the
     // surface and inner-wall keys (PartPlate.cpp 1671-1681). The wall pair
@@ -3709,7 +3717,36 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
                 else if (glb_support_extr != 0)
                     plate_extruders.push_back(glb_support_extr);
             }
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+            // The fork's wall / sparse / solid infill filaments, 1-based, with
+            // 1 counted through the volumes. Listed with or without support,
+            // as the fork's desktop PartPlate::get_extruders does (PartPlate.cpp
+            // 1919-1937, after its `if (obj_support)` block); its CLI's
+            // get_extruders_under_cli lists the same three behind
+            // `if (!obj_support) continue;` (2042-2081), the same split the
+            // Orca block below follows the desktop on.
+            int obj_wall_extr = glb_wall_extr;
+            if (const ConfigOption* opt = object->config.option("wall_filament"))
+                obj_wall_extr = opt->getInt();
+            if (obj_wall_extr != 1)
+                plate_extruders.push_back(obj_wall_extr);
+
+            // resolve_sparse_infill_filament (PartPlate.cpp 83-88): the
+            // object's value when above 0, else the global one.
+            int obj_sparse_infill_extr = glb_sparse_infill_extr;
+            if (const ConfigOption* opt = object->config.option("sparse_infill_filament"); opt && opt->getInt() > 0)
+                obj_sparse_infill_extr = opt->getInt();
+            if (obj_sparse_infill_extr != 1)
+                plate_extruders.push_back(obj_sparse_infill_extr);
+
+            int obj_solid_infill_extr = 1;
+            if (const ConfigOption* opt = object->config.option("solid_infill_filament"))
+                obj_solid_infill_extr = opt->getInt();
+            if (obj_solid_infill_extr != 1)
+                plate_extruders.push_back(obj_solid_infill_extr);
+            else if (glb_solid_infill_extr != 1)
+                plate_extruders.push_back(glb_solid_infill_extr);
+#elif defined(ENGINE_ORCA)
             // Orca also lists wall / infill / surface filaments, with or
             // without support: the desktop's PartPlate::get_extruders, which
             // decides the plate's wipe tower (GLCanvas3D.cpp 2880), lists them
@@ -4058,7 +4095,13 @@ static Slic3r::BoundingBoxf3 downward_plate_bbox(const Slic3r::Model& model, con
     const BoundingBoxf3 plate_box(Vec3d(bed.min.x(), bed.min.y(), 0.), Vec3d(bed.max.x(), bed.max.y(), bed_height));
     const Vec3d tower = arrange_estimate_wipe_tower_size(model, config, width, wipe_volume, extruder_count, (int)filaments_cnt,
                                                          enable_wrapping, plate_box, arrange_exclude_boxes(config));
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker_Orca.cpp 3219, 3238-3247: the tower is prime_tower_width wide
+    // (wipe_width), only its depth comes from the estimate, and the brim is
+    // on the sides only.
+    obj_bbox.merge(Vec3d(wipe_x - brim_width, wipe_y, 0.f));
+    obj_bbox.merge(Vec3d(wipe_x + width + brim_width, wipe_y + tower(1), 0.f));
+#elif defined(ENGINE_ORCA)
     // OrcaSlicer.cpp 3876-3879: the brim on the sides only.
     obj_bbox.merge(Vec3d(wipe_x - brim_width, wipe_y, 0.f));
     obj_bbox.merge(Vec3d(wipe_x + tower(0) + brim_width, wipe_y + tower(1), 0.f));
@@ -6264,7 +6307,14 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // pins). Without it a two-nozzle printer (X2D, H2D) reads past the
     // matrix in ToolOrdering::reorder_extruders_for_minimum_flush_volume.
     bundle.update_multi_material_filament_presets();
-#ifdef ENGINE_ORCA
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // Not on the Snapmaker build: the fork's update_multi_material_filament_presets
+    // adds no filament per extruder (that step is under `#if 0`, PresetBundle.cpp
+    // 3787-3796), and its set_num_filaments above already sizes filament_colour
+    // and aligns its own colour lists (filament_multi_colors,
+    // filament_colour_mode: EnsureFilamentColorFieldsAligned, 116-140, 2225-2250).
+    // The fork has no filament_multi_colour / filament_colour_type, which the
+    // block below dereferences.
     // OrcaSlicer's update_multi_material_filament_presets gives a printer with
     // more extruders than filaments one filament per extruder (PresetBundle.cpp
     // 5120-5131), single_extruder_multi_material or not, and leaves the colour
@@ -8186,6 +8236,16 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 std::map<std::string, std::string> meta;
                 if (read_zip_member(load_path, "3D/3dmodel.model", model_xml))
                     meta = model_metadata(model_xml);
+                else
+                    // The loader read the Application metadata from this
+                    // member, so this is not expected; say so instead of
+                    // deciding the maker without it.
+                    emit_event({{"event","warning"},
+                                {"tag","ProjectMakerUnread"},
+                                {"path", input_file},
+                                {"message","Could not read 3D/3dmodel.model again to tell a Bambu Studio project "
+                                           "from a Snapmaker Orca one; it is taken as a Snapmaker Orca project "
+                                           "and sliced with its own settings (not rebased onto this engine's presets)"}});
                 const auto app = meta.find("Application");
                 is_orca_3mf = !(app != meta.end() && boost::starts_with(app->second, "BambuStudio-"));
             }
@@ -8595,6 +8655,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const size_t filament_count = std::max<size_t>(1, project_filament_count(config));
                 json reset = json::object();
                 json clamped = json::object();
+#ifdef ENGINE_SNAPMAKER
+                // The fork has no `*_filament_id` keys: its feature filaments
+                // are the 1-based wall_filament / sparse_infill_filament /
+                // solid_infill_filament, and its desktop sets one below 1 or
+                // above N to 1 (PresetBundle::full_fff_config, PresetBundle.cpp
+                // 2763-2775).
+                for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"}) {
+                    auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(config.option(key, false));
+                    if (opt == nullptr || (opt->value >= 1 && opt->value <= int(filament_count)))
+                        continue;
+                    reset[key] = {{"from", opt->value}, {"to", 1}};
+                    opt->value = 1;
+                }
+#else
                 for (const char* key : {"outer_wall_filament_id", "inner_wall_filament_id",
                                         "sparse_infill_filament_id", "internal_solid_filament_id",
                                         "top_surface_filament_id", "bottom_surface_filament_id"}) {
@@ -8604,6 +8678,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     reset[key] = {{"from", opt->value}, {"to", 0}};
                     opt->value = 0;
                 }
+#endif
                 for (const char* key : {"support_filament", "support_interface_filament", "wipe_tower_filament"}) {
                     auto* opt = dynamic_cast<Slic3r::ConfigOptionInt*>(config.option(key, false));
                     if (opt == nullptr)
@@ -8629,7 +8704,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                 {"filament_count", int(filament_count)},
                                 {"message","The 3mf states filament index value(s) outside this engine's range for its " +
                                            std::to_string(filament_count) + " filament(s): " + names +
+#ifdef ENGINE_SNAPMAKER
+                                           " (the desktop resets the same keys on load)"}});
+#else
                                            " (0 is Default; the desktop resets the same keys on load)"}});
+#endif
                 }
             }
 #endif

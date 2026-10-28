@@ -1440,17 +1440,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     opt_filament_settings->resize(filament_count, &filament_name_setting);
                 opt_filament_settings->set_at(&filament_name_setting, filament_index - 1, 0);
                 config.erase("filament_settings_id");
-                different_settings[filament_index] = "";   // Snapmaker_Orca.cpp 2678-2679
-                inherits_group[filament_index] = load_filaments_inherit[index];
-            } else if (!different_settings.empty()) {
-                unescape_strings_cstyle(different_settings[filament_index], different_keys);
-            }
-            {
+                // filament_ids only for a loaded filament, as the fork's CLI
+                // does (Snapmaker_Orca.cpp 2665-2670); an up_config_to_date
+                // run keeps the project's own ids.
                 auto* opt_filament_ids = static_cast<ConfigOptionStrings*>(m_print_config.option("filament_ids", true));
                 ConfigOptionString filament_id_setting(load_filaments_id[index]);
                 if (int(opt_filament_ids->size()) < filament_count)
                     opt_filament_ids->resize(filament_count, &filament_id_setting);
                 opt_filament_ids->set_at(&filament_id_setting, filament_index - 1, 0);
+                different_settings[filament_index] = "";   // Snapmaker_Orca.cpp 2673-2674
+                inherits_group[filament_index] = load_filaments_inherit[index];
+            } else if (!different_settings.empty()) {
+                unescape_strings_cstyle(different_settings[filament_index], different_keys);
             }
             // This filament's segment: where it starts, the flow types it
             // held, and the ones the new settings declare.
