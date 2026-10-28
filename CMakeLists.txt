@@ -63,7 +63,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 if(APPLE)
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "" FORCE)
+  # 10.15 is the release target; a newer SDK's libc++ refuses anything below 11.0,
+  # so a local build on such a host passes -DSLICER_CLI_OSX_DEPLOYMENT_TARGET=11.0.
+  set(SLICER_CLI_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "macOS deployment target")
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "${SLICER_CLI_OSX_DEPLOYMENT_TARGET}" CACHE STRING "" FORCE)
 endif()
 
 # BambuStudio was developed on x86/macOS where `char` is signed by default.
@@ -96,8 +99,8 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 #                     OrcaSlicer:  deps_src/   (admesh, clipper, …)
 #   * ENGINE_BAMBU / ENGINE_ORCA compile define → gates the divergent front-end
 #     blocks in main.cpp (preset/staging resolution, toolchanger normalizations).
-set(ENGINE "bambu" CACHE STRING "Slicing engine source: bambu (BambuStudio) or orca (OrcaSlicer)")
-set_property(CACHE ENGINE PROPERTY STRINGS bambu orca)
+set(ENGINE "bambu" CACHE STRING "Slicing engine source: bambu (BambuStudio), orca (OrcaSlicer) or snapmaker (Snapmaker Orca)")
+set_property(CACHE ENGINE PROPERTY STRINGS bambu orca snapmaker)
 set(ENGINE_EXTRA_LIBS "")   # engine-specific extra link libraries (populated below)
 
 if(ENGINE STREQUAL "orca")
@@ -106,6 +109,15 @@ if(ENGINE STREQUAL "orca")
   set(SUBLIB_DIR "${ENGINE_ROOT}/deps_src")   # Orca bundles sub-libs under deps_src/
   add_compile_definitions(ENGINE_ORCA)
   message(STATUS "ENGINE = orca (OrcaSlicer)")
+elseif(ENGINE STREQUAL "snapmaker")
+  # Snapmaker's OrcaSlicer fork. It is an Orca engine, so ENGINE_ORCA is set and
+  # every Orca front-end block applies; ENGINE_SNAPMAKER marks the places where
+  # the fork (branched from upstream ~v2.3.1) differs from the Orca pin.
+  get_filename_component(ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/SnapmakerOrca" ABSOLUTE)
+  get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/snapmaker"     ABSOLUTE)
+  set(SUBLIB_DIR "${ENGINE_ROOT}/deps_src")
+  add_compile_definitions(ENGINE_ORCA ENGINE_SNAPMAKER)
+  message(STATUS "ENGINE = snapmaker (Snapmaker Orca)")
 elseif(ENGINE STREQUAL "bambu")
   get_filename_component(ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/BambuStudio"  ABSOLUTE)
   get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio"   ABSOLUTE)
@@ -113,7 +125,7 @@ elseif(ENGINE STREQUAL "bambu")
   add_compile_definitions(ENGINE_BAMBU)
   message(STATUS "ENGINE = bambu (BambuStudio)")
 else()
-  message(FATAL_ERROR "Unknown ENGINE='${ENGINE}'. Use -DENGINE=bambu or -DENGINE=orca")
+  message(FATAL_ERROR "Unknown ENGINE='${ENGINE}'. Use -DENGINE=bambu, -DENGINE=orca or -DENGINE=snapmaker")
 endif()
 
 get_filename_component(REF_SRC "${ENGINE_ROOT}/src" ABSOLUTE)
@@ -349,7 +361,14 @@ if(EXISTS "${LIBSLIC3R_DIR}/libslic3r_version.h.in")
 else()
   set(_ver_in "${LIBSLIC3R_REF_DIR}/libslic3r_version.h.in")
 endif()
-configure_file("${_ver_in}" "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h" @ONLY)
+if(ENGINE STREQUAL "snapmaker" AND NOT EXISTS "${_ver_in}")
+  # The Snapmaker fork dropped the template: its version and app names are
+  # fixed #defines in src/common_func/common_func.hpp, which libslic3r.h includes.
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h"
+       "// Snapmaker Orca: version macros come from common_func/common_func.hpp\n#include \"common_func/common_func.hpp\"\n")
+else()
+  configure_file("${_ver_in}" "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h" @ONLY)
+endif()
 
 # ─── Global include directories ─────────────────────────────────────────────
 # Listed in priority order — the first matching directory wins for #include.
@@ -406,7 +425,11 @@ endif()
 #
 add_subdirectory("${SUBLIB_DIR}/admesh"      "${CMAKE_CURRENT_BINARY_DIR}/admesh")
 add_subdirectory("${SUBLIB_DIR}/clipper"     "${CMAKE_CURRENT_BINARY_DIR}/clipper")
-add_subdirectory("${SUBLIB_DIR}/clipper2"    "${CMAKE_CURRENT_BINARY_DIR}/clipper2")
+# The Snapmaker fork predates Orca's Clipper2 import; its libslic3r never uses it.
+if(EXISTS "${SUBLIB_DIR}/clipper2/CMakeLists.txt")
+  add_subdirectory("${SUBLIB_DIR}/clipper2"    "${CMAKE_CURRENT_BINARY_DIR}/clipper2")
+  list(APPEND ENGINE_EXTRA_LIBS Clipper2)
+endif()
 add_subdirectory("${SUBLIB_DIR}/miniz"       "${CMAKE_CURRENT_BINARY_DIR}/miniz")
 add_subdirectory("${SUBLIB_DIR}/glu-libtess" "${CMAKE_CURRENT_BINARY_DIR}/glu-libtess")
 add_subdirectory("${SUBLIB_DIR}/semver"      "${CMAKE_CURRENT_BINARY_DIR}/semver")
@@ -416,8 +439,8 @@ add_subdirectory("${SUBLIB_DIR}/mcut"        "${CMAKE_CURRENT_BINARY_DIR}/mcut")
 
 # OrcaSlicer's GCode/Thumbnails.cpp compresses thumbnails as JPG (<jpeglib.h>) and
 # QOI (bundled deps_src/qoi). BambuStudio handles thumbnails differently and needs
-# neither. Wire them up only for the Orca engine.
-if(ENGINE STREQUAL "orca")
+# neither. Wire them up only for the Orca engines.
+if(ENGINE STREQUAL "orca" OR ENGINE STREQUAL "snapmaker")
   find_package(JPEG REQUIRED)
   add_subdirectory("${SUBLIB_DIR}/qoi" "${CMAKE_CURRENT_BINARY_DIR}/qoi")
   list(APPEND ENGINE_EXTRA_LIBS JPEG::JPEG qoi)
@@ -748,7 +771,6 @@ target_link_libraries(libslic3r_core PUBLIC
     Boost::atomic
     Boost::locale
     clipper
-    Clipper2
     nowide
     ${EXPAT_LIBRARIES}
     glu-libtess

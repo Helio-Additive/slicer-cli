@@ -28,3 +28,10 @@ nanosvg_impl.cpp
 .DS_Store
 /bin/
 .worktrees/
+
+# local Snapmaker build (never pushed)
+/deps-prefix/
+/deps-src/
+/build-*/
+/pkg-*/
+/work/
