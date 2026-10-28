@@ -176,7 +176,14 @@ endfunction()
 # ─── System dependencies ────────────────────────────────────────────────────
 find_package(Threads REQUIRED)
 find_package(TBB     REQUIRED)
-find_package(Eigen3  REQUIRED)
+if(ENGINE STREQUAL "snapmaker" AND EXISTS "${SUBLIB_DIR}/eigen/Eigen/Core")
+  # The fork builds against its bundled Eigen 3.3.7 (its deps/ has no Eigen);
+  # its libigl still uses Eigen::DynamicSparseMatrix, which Eigen 5 removed.
+  set(EIGEN3_INCLUDE_DIR "${SUBLIB_DIR}/eigen")
+  set(EIGEN3_VERSION_STRING "3.3.7 (bundled)")
+else()
+  find_package(Eigen3  REQUIRED)
+endif()
 find_package(PNG     REQUIRED)
 find_package(ZLIB    REQUIRED)
 find_package(EXPAT   REQUIRED)
