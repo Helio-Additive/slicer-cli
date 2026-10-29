@@ -5443,11 +5443,9 @@ struct BambuValueAction {
     std::string from;
 };
 
-#ifdef ENGINE_SNAPMAKER
-/// Whether this file was made by BambuStudio. Snapmaker's own values differ from
-/// BambuStudio's for some keys, so BambuStudio's value rules that describe its
-/// own meanings apply to a BambuStudio file only (see the maker check, and
-/// references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:4589-4593 at bac6fd5).
+#if defined(ENGINE_SNAPMAKER) || defined(ENGINE_ORCA)
+/// Whether this file was made by BambuStudio, so BambuStudio's own meaning of a
+/// value applies to it and no one else's. Set from the maker check.
 static bool g_file_made_by_bambustudio = false;
 #endif
 
@@ -5468,9 +5466,10 @@ static bool bambu_value_actions(const RawValues& raw, const std::string& support
     const std::string wall_count = raw_value("tree_support_wall_count");
     if (wall_count == "-1")
         conversions.push_back({"tree_support_wall_count", "0", "-1"});
-#ifdef ENGINE_SNAPMAKER
-    // Snapmaker's 0 is its own automatic (PrintConfig tooltip, 0-2 at bac6fd5),
-    // so the "infill-only walls" warning is about a BambuStudio file only.
+#if defined(ENGINE_SNAPMAKER) || defined(ENGINE_ORCA)
+    // BambuStudio's 0 means infill-only walls. Snapmaker's 0 is its own automatic
+    // (PrintConfig tooltip, 0-2 at bac6fd5) and an OrcaSlicer project's 0 is its
+    // own value too, so the warning is about a file made in BambuStudio only.
     else if (wall_count == "0" && tree && g_file_made_by_bambustudio)
 #else
     else if (wall_count == "0" && tree)
@@ -8713,8 +8712,25 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
 #endif
             const bool bambu_made_project = is_bbl_3mf && !is_orca_3mf;
-#ifdef ENGINE_SNAPMAKER
+#if defined(ENGINE_SNAPMAKER) || defined(ENGINE_ORCA)
             g_file_made_by_bambustudio = bambu_made_project;
+#endif
+#ifdef ENGINE_ORCA
+            // The loader's own is_orca_3mf flag does not recognise every
+            // OrcaSlicer-made file (it is false for an "OrcaSlicer-0.1.0-dev"
+            // project), so the maker is read from the file's own tags, the way
+            // --engine-info reads it.
+            {
+                std::string maker_xml;
+                if (read_zip_member(input_file, "3D/3dmodel.model", maker_xml)) {
+                    const auto maker_meta = model_metadata(maker_xml);
+                    const auto maker_app  = maker_meta.find("Application");
+                    const bool orca_made  = maker_meta.count("OrcaSlicer") != 0 ||
+                                            (maker_app != maker_meta.end() &&
+                                             boost::starts_with(maker_app->second, "OrcaSlicer-"));
+                    g_file_made_by_bambustudio = is_bbl_3mf && !orca_made;
+                }
+            }
 #endif
             if (bambu_made_project) {
                 // The settings as the file states them, for read_project_facts
