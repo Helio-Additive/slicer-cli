@@ -2277,6 +2277,7 @@ static boost::filesystem::path orca_profiles_dir(const boost::filesystem::path& 
 /// has references/SnapmakerOrca; a package would ship it as
 /// resources/profiles-snapmaker (Linux: bin/../resources; macOS and Windows:
 /// next to the binaries).
+#ifdef ENGINE_SNAPMAKER
 static boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir) {
     for (const auto& p : std::vector<boost::filesystem::path>{
         exe_dir / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
@@ -2289,6 +2290,7 @@ static boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::p
     }
     return boost::filesystem::path();
 }
+#endif
 
 /// The printer models a profiles tree offers: every vendor file's
 /// machine_model_list (the list PresetBundle::load_vendor_configs_from_json
@@ -7029,12 +7031,11 @@ static bool is_staging_folder_name(const std::string& name) {
 static bool is_engine_binary_name(std::string name) {
     while (!name.empty() && (name.front() == '/' || name.front() == '\\'))
         name.erase(name.begin());
-    for (const char* binary : {
-             "slicer_cli", "slicer_cli-orcaslicer",
 #ifdef ENGINE_SNAPMAKER
-             "slicer_cli-snapmaker",
+    for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer", "slicer_cli-snapmaker"}) {
+#else
+    for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer"}) {
 #endif
-         }) {
         const std::string base(binary);
         if (boost::algorithm::iequals(name, base) || boost::algorithm::iequals(name, base + ".exe"))
             return true;

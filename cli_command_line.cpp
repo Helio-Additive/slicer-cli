@@ -644,11 +644,10 @@ void print_help(std::ostream& out, const char* prog) {
 
     out << "\nFlags that share a name with Bambu Studio's or OrcaSlicer's own command line behave the same way.\n"
         << "\"Works in\" names the binaries that take the flag: slicer_cli runs the Bambu Studio engine,\n"
-        << "slicer_cli-orcaslicer the OrcaSlicer engine.\n"
+        << "slicer_cli-orcaslicer the OrcaSlicer engine.\n";
 #ifdef ENGINE_SNAPMAKER
-        << "This binary, slicer_cli-snapmaker, runs the Snapmaker Orca engine.\n"
+    out << "This binary, slicer_cli-snapmaker, runs the Snapmaker Orca engine.\n";
 #endif
-        ;
 
     out << "\n=== Files, presets and modes ===\n";
     for (const auto& f : legacy_flags()) {
