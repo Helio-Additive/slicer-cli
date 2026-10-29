@@ -5443,6 +5443,17 @@ struct BambuValueAction {
     std::string from;
 };
 
+#ifdef ENGINE_SNAPMAKER
+/// The filament-id remap a printer switch leaves behind, and the filament total
+/// it maps into. The desktop applies it to every volume's painted facets when
+/// the filament count changes (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:22180-22290
+/// at bac6fd5); the remap is built by
+/// PresetBundle::update_multi_material_filament_presets (PresetBundle.cpp:3983-4094).
+static std::vector<unsigned int> g_filament_id_remap;
+static size_t                    g_filament_id_total = 0;
+
+#endif
+
 #if defined(ENGINE_SNAPMAKER) || defined(ENGINE_ORCA)
 /// Whether this file was made by BambuStudio, so BambuStudio's own meaning of a
 /// value applies to it and no one else's. Set from the maker check.
@@ -6304,6 +6315,24 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         const size_t extruders = nozzles != nullptr ? nozzles->values.size() : 0;
         if (extruders > 0 && extruders != bundle.filament_presets.size())
             bundle.set_num_filaments((unsigned int) extruders, std::vector<std::string>());
+    }
+    // The remap the switch built, applied to the volumes once the model is loaded.
+    g_filament_id_remap = bundle.consume_last_filament_id_remap();
+    {
+        // physical + enabled mixed, the range the remap maps into
+        std::vector<std::string> colours;
+        if (const auto* colour = out.option<Slic3r::ConfigOptionStrings>("filament_colour"))
+            colours = colour->values;
+        size_t physical = colours.size();
+        if (physical == 0)
+            physical = std::max<size_t>(1, bundle.filament_presets.size());
+        colours.resize(physical, "#26A69A");
+        Slic3r::MixedFilamentManager mixed;
+        mixed.clear_custom_entries();
+        mixed.auto_generate(colours);
+        if (const auto* defs = out.option<Slic3r::ConfigOptionString>("mixed_filament_definitions"))
+            mixed.load_custom_entries(defs->value, colours);
+        g_filament_id_total = mixed.total_filaments(physical);
     }
 #endif
 #ifdef ENGINE_SNAPMAKER
@@ -8296,8 +8325,9 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
             message = "Plate " + std::to_string(plate_id) + ": filament slot [" + std::to_string(id) +
                       "] is a mixed filament of " + describe(mf->component_a) + " and " + describe(mf->component_b) +
                       ", and the filament compatibility table marks those materials incompatible."
-                      " Correct the mixed filament settings: give the filament settings with --filament <file> and"
-                      " change or remove the mixed filament in mixed_filament_definitions there.";
+                      " mixed_filament_definitions is a project setting, not a filament one, so correct it on the"
+                      " command line with --mixed-filament-definitions \"<rows>\" (each row lists the two component"
+                      " filaments it mixes), or in the process settings given with --load-settings.";
             return code;
         }
     }
@@ -9110,9 +9140,30 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         }
                     }
                 };
+                // The switch's filament-id remap, applied as the desktop does
+                // (Plater.cpp:22281-22290): an id past the physical + mixed total
+                // becomes NONE, otherwise the remap's target.
+                const auto apply_remap = [&](Slic3r::ModelVolume& volume) {
+                    const size_t total = g_filament_id_total > 0 ? g_filament_id_total : range;
+                    if (!g_filament_id_remap.empty()) {
+                        Slic3r::EnforcerBlockerStateMap state_map;
+                        for (size_t i = 1; i < state_map.size(); ++i) {
+                            const unsigned int mapped = i < g_filament_id_remap.size() ? g_filament_id_remap[i] : 0;
+                            state_map[i] = (mapped == 0 || mapped >= state_map.size() || mapped > total)
+                                               ? Slic3r::EnforcerBlockerType::NONE
+                                               : Slic3r::EnforcerBlockerType(mapped);
+                        }
+                        volume.remap_extruder_ids(total, state_map);
+                    } else {
+                        volume.update_extruder_count(total);
+                    }
+                };
                 for (size_t oi = 0; oi < model.objects.size(); ++oi) {
                     Slic3r::ModelObject* object = model.objects[oi];
                     if (object == nullptr) continue;
+                    for (Slic3r::ModelVolume* volume : object->volumes)
+                        if (volume != nullptr)
+                            apply_remap(*volume);
                     fix(object->config, "object " + std::to_string(oi + 1), true);
                     if (object->volumes.size() > 1)
                         for (size_t vi = 0; vi < object->volumes.size(); ++vi)

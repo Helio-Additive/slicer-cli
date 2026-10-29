@@ -1599,6 +1599,21 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         project_colors_option->values.assign(filament_count, "#FFFFFF");
     }
     bool filament_color_changed = false;
+#ifdef ENGINE_SNAPMAKER
+    // Switching to a Snapmaker U1 keeps the project's own flush matrix and
+    // vector verbatim: the desktop saves them before the switch and puts them
+    // back afterwards rather than recomputing for the new extruder count
+    // (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:6184-6189, 6200-6205 at
+    // bac6fd5). Saved here, restored before this function returns.
+    const bool keep_switched_flush = new_printer_name.find("Snapmaker U1") != std::string::npos;
+    std::vector<double> kept_flush_matrix, kept_flush_vector;
+    if (keep_switched_flush) {
+        if (const auto* matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix"))
+            kept_flush_matrix = matrix->values;
+        if (const auto* vector = m_print_config.option<ConfigOptionFloats>("flush_volumes_vector"))
+            kept_flush_vector = vector->values;
+    }
+#endif
     if (project_colors_option &&
         (selected_colors_option || !m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix") ||
          facts.current_extruder_count != new_extruder_count || new_nozzle_volume_type != current_nozzle_volume_type)) {
@@ -1721,6 +1736,16 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         }
     }
 
+#ifdef ENGINE_SNAPMAKER
+    if (keep_switched_flush) {
+        if (!kept_flush_matrix.empty())
+            if (auto* matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix"))
+                matrix->values = kept_flush_matrix;
+        if (!kept_flush_vector.empty())
+            if (auto* vector = m_print_config.option<ConfigOptionFloats>("flush_volumes_vector"))
+                vector->values = kept_flush_vector;
+    }
+#endif
     out.machine_switch                   = machine_switch;
     out.machine_upwards                  = machine_upwards;
     out.disable_wipe_tower_after_mapping = disable_wipe_tower_after_mapping;
