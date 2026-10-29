@@ -3587,17 +3587,16 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
 static const Slic3r::ConfigOption* arrange_opt(const Slic3r::DynamicPrintConfig& config, const std::string& key) {
     if (const Slic3r::ConfigOption* opt = config.option(key))
         return opt;
-    const Slic3r::ConfigOption* fallback = Slic3r::FullPrintConfig::defaults().option(key);
 #ifdef ENGINE_SNAPMAKER
     // A run whose settings come from bare model files can reach the arrange
     // with a setting this engine has no default for; a null here used to crash
     // in arrange_plate_extruders. Zero is the engine's own "Default"/none.
-    if (fallback == nullptr) {
+    if (Slic3r::FullPrintConfig::defaults().option(key) == nullptr) {
         static const Slic3r::ConfigOptionInt kZero(0);
         return &kZero;
     }
 #endif
-    return fallback;
+    return Slic3r::FullPrintConfig::defaults().option(key);
 }
 
 /// The printer's bed exclusion boxes, as PartPlate::calc_bounding_boxes makes
