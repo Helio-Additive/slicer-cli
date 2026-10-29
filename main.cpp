@@ -49,10 +49,16 @@
 #include "libslic3r/Arrange.hpp"
 #include "libslic3r/GCode/WipeTower.hpp"
 #ifdef ENGINE_SNAPMAKER
-// The Snapmaker fork moved the wipe-tower depth helpers out of WipeTower into
-// WipeTowerHelper (references/SnapmakerOrca/src/libslic3r/GCode/WipeTowerHelper.hpp:21
-// at bac6fd5); OrcaSlicer 2.4 keeps them on WipeTower itself.
-#include "libslic3r/GCode/WipeTowerHelper.hpp"
+// ProjectSchemaRegistry: the desktop's newer-schema warning
+// (references/SnapmakerOrca/src/libslic3r/ProjectSchemaVersion.hpp at bac6fd5).
+#include "libslic3r/ProjectSchemaVersion.hpp"
+// NozzleFilamentRuleMismatch: the desktop's filament advice notes
+// (references/SnapmakerOrca/src/libslic3r/FilamentHotBedNozzleRules.hpp:17 at
+// bac6fd5).
+#include "libslic3r/FilamentHotBedNozzleRules.hpp"
+// MixedFilamentManager: the desktop's incompatible-mixed-filament rule
+// (references/SnapmakerOrca/src/libslic3r/MixedFilament.hpp:200 at bac6fd5).
+#include "libslic3r/MixedFilament.hpp"
 #endif
 #ifdef ENGINE_BAMBU
 #include "libslic3r/FilamentMixer.hpp"
@@ -3062,7 +3068,9 @@ static std::string g_preset_printer_model_id;
 #endif
 
 static std::string cli_error_sentence(int code) {
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+#define SLICER_APP "Snapmaker Orca"
+#elif defined(ENGINE_ORCA)
 #define SLICER_APP "Orca Slicer"
 #else
 #define SLICER_APP "Bambu Studio"
@@ -3326,7 +3334,9 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
         j["error_reason"] = outcomes.back().error_reason;
     j["prepare_time"] = prepare_time_ms;
     j["export_time"]  = export_time_ms;
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    j["engine"] = "snapmaker";
+#elif defined(ENGINE_ORCA)
     j["engine"] = "orcaslicer";
 #else
     j["engine"] = "bambustudio";
@@ -3804,6 +3814,11 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
     }
 
     // conside_custom_gcode: the plate's tool changes.
+#ifndef ENGINE_SNAPMAKER
+    // Snapmaker's CLI passes conside_custom_gcode = false and only logs that it
+    // skipped the scan, so its plate filament list never gains a tool-change
+    // filament (references/SnapmakerOrca/src/slic3r/GUI/PartPlate.cpp:2083-2087
+    // at bac6fd5).
     if (const auto* color_option = dynamic_cast<const ConfigOptionStrings*>(full_config.option("filament_colour"))) {
         const int nums_extruders = (int)color_option->values.size();
         auto it = model.plates_custom_gcodes.find(plate_index);
@@ -3813,6 +3828,7 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
                     plate_extruders.push_back(item.extruder);
         }
     }
+#endif
 
     std::sort(plate_extruders.begin(), plate_extruders.end());
     auto it_end = std::unique(plate_extruders.begin(), plate_extruders.end());
@@ -3905,6 +3921,47 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
 #endif
     }
     wipe_tower_size(2) = max_height;
+#ifdef ENGINE_SNAPMAKER
+    const FullPrintConfig& print_defaults = FullPrintConfig::defaults();
+    // Snapmaker rewrote this sizing, so this is its arithmetic line for line
+    // (references/SnapmakerOrca/src/slic3r/GUI/PartPlate.cpp:2177-2248 at
+    // bac6fd5): the spacing from wipe_tower_extra_spacing, the change volume
+    // from the fresh plate Print's filament_multitool_ramming_volume (max, 0.5
+    // when unset), volume = prime_volume*n + change*(n-1), no minimum depth by
+    // height, and the rib depth without the 1/sqrt(2) factor.
+    auto timelapse_type_opt = config.option<ConfigOptionEnum<TimelapseType>>("timelapse_type");
+    const bool need_wipe_tower = timelapse_type_opt && timelapse_type_opt->value == TimelapseType::tlSmooth;
+    double extra_spacing = 1.0;
+    if (const ConfigOption* spacing_opt = config.option("wipe_tower_extra_spacing"))
+        extra_spacing = spacing_opt->getFloat() / 100.;
+    const auto* use_rib_wall_opt = config.option<ConfigOptionEnum<WipeTowerWallType>>("wipe_tower_wall_type");
+    bool use_rib_wall = use_rib_wall_opt ? use_rib_wall_opt->value == WipeTowerWallType::wtwRib : false;
+    double rib_width = arrange_opt(config, "wipe_tower_rib_width")->getFloat();
+    const double extra_rib_length = print_defaults.wipe_tower_extra_rib_length.value;
+    double filament_change_volume = 0.5;
+    {
+        const std::vector<double>& change_volumes = print_defaults.filament_multitool_ramming_volume.values;
+        if (!change_volumes.empty())
+            filament_change_volume = *std::max_element(change_volumes.begin(), change_volumes.end());
+    }
+    const double volume = wipe_volume * plate_extruder_size + filament_change_volume * (plate_extruder_size - 1);
+    double depth;
+    if (use_rib_wall) {
+        depth = std::sqrt(volume / layer_height * extra_spacing);
+        if (need_wipe_tower || plate_extruder_size > 1) {
+            rib_width = std::min(rib_width, depth / 2);
+            depth = rib_width + std::max(depth + extra_rib_length, depth);
+            wipe_tower_size(0) = wipe_tower_size(1) = depth;
+        }
+    } else {
+        depth = volume / (layer_height * wipe_volume) * extra_spacing;
+        wipe_tower_size(0) = w;
+        wipe_tower_size(1) = depth;
+    }
+    (void) extruder_count;
+    (void) enable_wrapping_detection;
+    return wipe_tower_size;
+#else
     auto timelapse_type  = config.option<ConfigOptionEnum<TimelapseType>>("timelapse_type");
     bool need_wipe_tower = (timelapse_type ? (timelapse_type->value == TimelapseType::tlSmooth) : false) | enable_wrapping_detection;
     double extra_spacing = arrange_opt(config, "prime_tower_infill_gap")->getFloat() / 100.;
@@ -3922,7 +3979,6 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
 #endif
     double depth;
     double filament_change_volume = 0.;
-#ifndef ENGINE_SNAPMAKER
     {
         const std::vector<double>& filament_change_lengths = print_defaults.filament_change_length.values;
         double length = filament_change_lengths.empty() ? 0 : *std::max_element(filament_change_lengths.begin(), filament_change_lengths.end());
@@ -3931,20 +3987,12 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
         diameter = diameters.empty() ? diameter : *std::max_element(diameters.begin(), diameters.end());
         filament_change_volume = length * PI * diameter * diameter / 4.;
     }
-#else
-    // Snapmaker Orca has no filament_change_length setting (PrintConfig.cpp at
-    // bac6fd5), so its tower sizing carries no filament-change volume.
-#endif
     double volume = wipe_volume * (extruder_count == 2 ? plate_extruder_size : (plate_extruder_size - 1));
     if (extruder_count == 2) volume += filament_change_volume * (int) (plate_extruder_size / 2);
     if (use_rib_wall) {
         depth = std::sqrt(volume / layer_height * extra_spacing);
         if (need_wipe_tower || plate_extruder_size > 1) {
-#ifdef ENGINE_SNAPMAKER
-            float min_wipe_tower_depth = WipeTowerHelper::get_limit_depth_by_height(max_height);
-#else
             float min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height);
-#endif
             double volume_depth        = depth;
             depth = std::max((double) min_wipe_tower_depth, depth);
             rib_width = std::min(rib_width, depth / 2);
@@ -3954,17 +4002,14 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
     } else {
         depth = volume / (layer_height * w) * extra_spacing;
         if (need_wipe_tower || depth > EPSILON) {
-#ifdef ENGINE_SNAPMAKER
-            float min_wipe_tower_depth = WipeTowerHelper::get_limit_depth_by_height(max_height);
-#else
             float min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height);
-#endif
             depth = std::max((double) min_wipe_tower_depth, depth);
         }
         wipe_tower_size(0) = w;
         wipe_tower_size(1) = depth;
     }
     return wipe_tower_size;
+#endif // ENGINE_SNAPMAKER
 }
 
 /// The official arrange switches given on the command line (cli_options.hpp).
@@ -4016,6 +4061,23 @@ static Slic3r::BoundingBoxf3 downward_plate_bbox(const Slic3r::Model& model, con
     const unsigned int filaments_cnt = (unsigned int)arrange_plate_extruders(model, config, plate_index).size();
     if (filaments_cnt <= 1 && !is_smooth_timelapse)
         return obj_bbox;
+
+#ifdef ENGINE_SNAPMAKER
+    // Missing or empty tower coordinates, or any missing tower scalar, means
+    // no tower rather than a crash: Snapmaker's check_plate_wipe_tower returns
+    // with has_wipe_tower false (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:3186-3220
+    // at bac6fd5).
+    const auto* wipe_x_guard = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_x"));
+    const auto* wipe_y_guard = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_y"));
+    if (wipe_x_guard == nullptr || wipe_y_guard == nullptr ||
+        wipe_x_guard->size() == 0 || wipe_y_guard->size() == 0)
+        return obj_bbox;
+    if (config.option("prime_tower_width") == nullptr || config.option("prime_tower_brim_width") == nullptr ||
+        config.option("prime_volume") == nullptr ||
+        config.option("prime_tower_brim_chamfer_max_width") == nullptr ||
+        config.option("prime_tower_brim_chamfer") == nullptr)
+        return obj_bbox;
+#endif
 
     const float wipe_x = (float)dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_x"))->get_at(plate_index);
     const float wipe_y = (float)dynamic_cast<const ConfigOptionFloats*>(arrange_opt(config, "wipe_tower_y"))->get_at(plate_index);
@@ -4550,6 +4612,25 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
 /// PartPlate.cpp 4637-4642).
 static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& config) {
     using namespace Slic3r;
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's own defaults differ: x = WIPE_TOWER_DEFAULT_X_POS (13, the
+    // I3 printers 0) and y at the middle of the plate, not the top corner
+    // (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:3948-3962, 4206-4213,
+    // 4296-4303, and PartPlate.cpp:4094 for the desktop's setter, at bac6fd5;
+    // the constant is PartPlate.cpp:70). The plate depth there is the bed's.
+    double plate_depth = 0.;
+    if (const auto* area = config.option<ConfigOptionPoints>("printable_area"); area && !area->values.empty()) {
+        BoundingBoxf bed;
+        for (const Vec2d& pt : area->values)
+            bed.merge(pt);
+        plate_depth = bed.size().y();
+    }
+    Vec2d corner(13., plate_depth * 0.5);
+    if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
+        structure && structure->value == PrinterStructure::psI3)
+        corner.x() = 0.;   // I3_WIPE_TOWER_DEFAULT_X_POS
+    return corner;
+#else
     Vec2d corner(165., 250.);   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
     if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
         structure && structure->value == PrinterStructure::psI3)
@@ -4559,6 +4640,7 @@ static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& conf
         corner.y() = 160.;
 #endif
     return corner;
+#endif // ENGINE_SNAPMAKER
 }
 
 /// The prime tower's starting corner on an assemble-list plate, kept a margin
@@ -5714,7 +5796,42 @@ static std::string first_compatible_name(const Slic3r::PresetCollection& collect
 /// the built-in default process (Preset.hpp 686-709 at 31f6803: "No
 /// compatible preset found, return the default preset"; the same at
 /// 5873b5f), and the desktop slices with that.
+#ifdef ENGINE_SNAPMAKER
+/// A process name with the "mm" the tree's presets spell after the layer
+/// height: "0.20 Standard @Snapmaker U1 (0.4 nozzle)" →
+/// "0.20mm Standard @Snapmaker U1 (0.4 nozzle)". Unchanged when the name does
+/// not start with a number.
+static std::string declared_with_mm_unit(const std::string& declared) {
+    const size_t space = declared.find(' ');
+    if (space == std::string::npos)
+        return declared;
+    const std::string head = declared.substr(0, space);
+    if (head.empty() || head.find_first_not_of("0123456789.") != std::string::npos)
+        return declared;
+    return head + "mm" + declared.substr(space);
+}
+#endif
+
 static std::string desktop_default_process(const Slic3r::PresetCollection& prints, const std::string& declared) {
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's own machine JSON names its default process without the "mm"
+    // the tree's process presets carry: "Snapmaker U1 (0.4 nozzle).json" states
+    // default_print_profile "0.20 Standard @Snapmaker U1 (0.4 nozzle)" while
+    // process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json is the preset.
+    // Snapmaker's own matcher compares names exactly (PreferedProfileMatch,
+    // PresetBundle.cpp:4140-4152 at bac6fd5), so taking the stated default
+    // means reading its number the way the presets spell it.
+    if (!declared.empty()) {
+        const std::string wanted = declared_with_mm_unit(declared);
+        for (const Slic3r::Preset& p : prints) {
+            if (!is_listed_preset(p) || !p.is_compatible) continue;
+            if (p.name == declared || p.name == wanted) {
+                const_cast<Slic3r::Preset&>(p).is_visible = true;
+                return p.name;
+            }
+        }
+    }
+#endif
     const std::string picked =
         first_compatible_name(prints, [&](const Slic3r::Preset& p) { return (p.name == declared ? 1 : 0) + 2; });
     return picked.empty() ? prints.default_preset().name : picked;
@@ -5734,6 +5851,39 @@ static std::string desktop_default_filament(const Slic3r::PresetCollection& fila
                                             const std::vector<std::string>& declared) {
     if (!declared.empty() && preset_usable(filaments, declared.front()))
         return declared.front();
+#ifdef ENGINE_SNAPMAKER
+    // The Snapmaker tree names "Snapmaker PLA" as the U1's default filament
+    // (machine/fdm_toolchanger.json default_filament_profile, inherited by
+    // machine/Snapmaker U1 (0.4 nozzle).json), but that preset's own
+    // compatible_printers lists the A-series printers only, so it is not one
+    // the U1 can print with. The printer's default therefore means its default
+    // material: the first compatible preset of this tree with the same
+    // filament_type, never another vendor's filament taken by collection order.
+    if (!declared.empty()) {
+        const Slic3r::Preset* wanted = filaments.find_preset(declared.front(), false);
+        // filament_type is a per-filament list (coStrings), as the desktop reads
+        // it (Plater.cpp:22874-22879 at bac6fd5): its first entry.
+        std::string wanted_type;
+        if (wanted != nullptr)
+            if (const auto* types = wanted->config.option<Slic3r::ConfigOptionStrings>("filament_type");
+                types != nullptr && !types->values.empty())
+                wanted_type = types->values.front();
+        if (!wanted_type.empty()) {
+            // Same vendor as the declared preset, so the printer's default
+            // material is one of its own maker's filaments and never another
+            // vendor's preset taken by collection order.
+            const Slic3r::VendorProfile* const wanted_vendor = wanted->vendor;
+            for (const Slic3r::Preset& p : filaments) {
+                if (!is_listed_preset(p) || !p.is_compatible) continue;
+                if (wanted_vendor != nullptr && p.vendor != wanted_vendor) continue;
+                const auto* types = p.config.option<Slic3r::ConfigOptionStrings>("filament_type");
+                if (types == nullptr || types->values.empty() || types->values.front() != wanted_type) continue;
+                const_cast<Slic3r::Preset&>(p).is_visible = true;
+                return p.name;
+            }
+        }
+    }
+#endif
     return first_compatible_name(filaments, [](const Slic3r::Preset&) { return 0; });
 }
 
@@ -5741,6 +5891,12 @@ static std::string desktop_default_filament(const Slic3r::PresetCollection& fila
 /// empty when it is.
 static std::string default_replaced_note(const char* kind, const std::string& picked, const std::string& declared) {
     if (picked.empty() || picked == declared) return {};
+#ifdef ENGINE_SNAPMAKER
+    // A process the tree names without the "mm" its presets spell
+    // (desktop_default_process) is the printer's own default, not a
+    // replacement of it.
+    if (picked == declared_with_mm_unit(declared)) return {};
+#endif
     std::string why;
     if (declared.empty())
         why = "the printer names no default";
@@ -6146,7 +6302,9 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
     Slic3r::PresetBundle bundle;
     std::string error;
     json out;
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    out["engine"] = "snapmaker";
+#elif defined(ENGINE_ORCA)
     out["engine"] = "orcaslicer";
 #else
     out["engine"] = "bambustudio";
@@ -6344,7 +6502,9 @@ static int run_list_settings() {
         settings.push_back(std::move(entry));
     }
     json out;
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    out["engine"] = "snapmaker";
+#elif defined(ENGINE_ORCA)
     out["engine"] = "orcaslicer";
 #else
     out["engine"] = "bambustudio";
@@ -6582,12 +6742,23 @@ static bool plan_project_plates(Slic3r::Model& model, Slic3r::DynamicPrintConfig
         // (BambuStudio.cpp 2041-2046, 2083-2088); on Orca only
         // --load-filament-ids' (OrcaSlicer.cpp 1734).
         if (filament_count > 0) {
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker's own corner: x = 13 (0 on an I3) and y at the middle
+            // of the plate (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:4206-4213
+            // and 4296-4303 at bac6fd5), not 165/250.
+            float x = 13.f;                        // WIPE_TOWER_DEFAULT_X_POS
+            float y = (float)plate_size.y() * 0.5f;
+            if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
+                structure && structure->value == PrinterStructure::psI3)
+                x = 0.f;                           // I3_WIPE_TOWER_DEFAULT_X_POS
+#else
             float x = 165.f, y = 250.f;   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
             if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
                 structure && structure->value == PrinterStructure::psI3) {
                 x = 0.f;     // I3_WIPE_TOWER_DEFAULT_X_POS
                 y = 250.f;   // I3_WIPE_TOWER_DEFAULT_Y_POS
             }
+#endif
 #ifdef ENGINE_ORCA
             const float tower_margin = WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat();
 #else
@@ -7691,6 +7862,334 @@ static void take_noted_warnings(PlateOutcome& outcome, const std::map<int, json>
             warnings.push_back(w);
 }
 
+#ifdef ENGINE_SNAPMAKER
+namespace {
+
+/// The filament slots this plate uses, 0-based, as the desktop's
+/// collect_used_filament_slots_on_plate lists them
+/// (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:505-570 at bac6fd5):
+/// the plate's own config, each on-plate object's and volume's configs and the
+/// volumes' filament ids, the plate's wipe-tower/support filaments, and — when
+/// an object uses the default extruder — the process's wall and infill
+/// filaments and that default extruder.
+std::set<int> desktop_used_filament_slots(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+                                          int num_filaments) {
+    using namespace Slic3r;
+    std::set<int> slots;
+    if (num_filaments <= 0)
+        return slots;
+    auto from_config = [&](const DynamicPrintConfig& c) {
+        for (const char* key : {"support_filament", "support_interface_filament", "wall_filament",
+                                "sparse_infill_filament", "solid_infill_filament", "wipe_tower_filament"}) {
+            if (const auto* opt = c.option<ConfigOptionInt>(key); opt && opt->value >= 1 && opt->value <= num_filaments)
+                slots.insert(opt->value - 1);
+        }
+        if (const auto* opt = c.option<ConfigOptionInt>("extruder"); opt && opt->value >= 1 && opt->value <= num_filaments)
+            slots.insert(opt->value - 1);
+    };
+    auto from_model_config = [&](const ModelConfigObject& c) {
+        if (c.has("extruder")) {
+            const int id = c.extruder();
+            if (id >= 1 && id <= num_filaments) slots.insert(id - 1);
+        }
+        for (const char* key : {"support_filament", "support_interface_filament", "wall_filament",
+                                "sparse_infill_filament", "solid_infill_filament", "wipe_tower_filament"}) {
+            if (c.has(key)) {
+                const int value = c.opt_int(key);
+                if (value >= 1 && value <= num_filaments) slots.insert(value - 1);
+            }
+        }
+    };
+    // The driver has no Plater working config separate from the run's own:
+    // `config` is the merged settings this plate slices with, so the plate's
+    // and the process's keys are read from it.
+    from_config(config);
+    bool uses_default_extruder = false;
+    for (const ModelObject* object : model.objects) {
+        from_model_config(object->config);
+        if (!object->config.has("extruder") || object->config.extruder() == 0)
+            uses_default_extruder = true;
+        for (const ModelVolume* volume : object->volumes) {
+            from_model_config(volume->config);
+            for (int extruder_id : volume->get_extruders())
+                if (extruder_id >= 1 && extruder_id <= num_filaments)
+                    slots.insert(extruder_id - 1);
+        }
+    }
+    if (uses_default_extruder)
+        if (const auto* opt = config.option<ConfigOptionInt>("extruder"); opt && opt->value >= 1 && opt->value <= num_filaments)
+            slots.insert(opt->value - 1);
+    return slots;
+}
+
+/// The filament categories the desktop's mixed-filament rule knows, in its enum
+/// order (references/SnapmakerOrca/src/slic3r/GUI/MixedColorMatchHelpers.cpp:1031-1040
+/// at bac6fd5).
+enum class MixCategory : size_t { PLA, PETG, TPU, PET, ABS, ASA, PC, PA, SUPPORT, UNKNOWN };
+const char* const k_mix_category_names[] = {"PLA", "PETG", "TPU", "PET", "ABS", "ASA", "PC", "PA", "SUPPORT"};
+
+MixCategory mix_category_from_name(const std::string& name) {
+    for (size_t i = 0; i < 9; ++i)
+        if (name == k_mix_category_names[i])
+            return static_cast<MixCategory>(i);
+    return MixCategory::UNKNOWN;
+}
+
+/// The compatibility table the desktop loads from the bundled
+/// filament_compatibility.json (MixedColorMatchHelpers.cpp:1056-1124): each
+/// category is compatible with itself and with the partners the file lists.
+const std::vector<std::vector<bool>>& mix_compatibility_table() {
+    static const std::vector<std::vector<bool>> table = [] {
+        std::vector<std::vector<bool>> t(10, std::vector<bool>(10, false));
+        for (size_t i = 0; i < 9; ++i) t[i][i] = true;
+        const std::string path = Slic3r::resources_dir() + "/profiles/Snapmaker/filament/filament_compatibility.json";
+        try {
+            boost::nowide::ifstream ifs(path);
+            if (ifs.is_open()) {
+                nlohmann::json j;
+                ifs >> j;
+                for (auto& [a_name, partners] : j["compatibility"].items()) {
+                    const MixCategory a = mix_category_from_name(a_name);
+                    if (a == MixCategory::UNKNOWN || !partners.is_array()) continue;
+                    for (auto& b_val : partners) {
+                        const MixCategory b = mix_category_from_name(b_val.get<std::string>());
+                        if (b == MixCategory::UNKNOWN) continue;
+                        t[(size_t) a][(size_t) b] = true;
+                        t[(size_t) b][(size_t) a] = true;
+                    }
+                }
+            }
+        } catch (...) {
+            // An unreadable table leaves self-compatibility only, as the
+            // desktop's own default does.
+        }
+        return t;
+    }();
+    return table;
+}
+
+/// is_filament_compatible(ids) (MixedColorMatchHelpers.cpp:1214-1260 at
+/// bac6fd5): an unknown category is incompatible, one fibre or one shared
+/// category is fine, and otherwise the table decides every pair.
+bool mixed_filament_ids_compatible(const std::vector<unsigned int>& ids_0based,
+                                   const std::vector<std::string>& filament_types) {
+    if (ids_0based.size() <= 1) return true;
+    std::vector<MixCategory> resolved;
+    for (unsigned int id : ids_0based) {
+        if (id >= filament_types.size()) return false;
+        const MixCategory category = mix_category_from_name(filament_types[id]);
+        if (category == MixCategory::UNKNOWN) return false;
+        resolved.push_back(category);
+    }
+    if (resolved.size() <= 1) return true;
+    bool all_same = true;
+    for (size_t i = 1; i < resolved.size(); ++i)
+        if (resolved[i] != resolved[0]) { all_same = false; break; }
+    if (all_same) return true;
+    const auto& table = mix_compatibility_table();
+    for (size_t i = 0; i < resolved.size(); ++i)
+        for (size_t j = i + 1; j < resolved.size(); ++j)
+            if (!table[(size_t) resolved[i]][(size_t) resolved[j]]) return false;
+    return true;
+}
+
+/// is_filament_compatible(MixedFilament) (MixedColorMatchHelpers.cpp:1258-1318):
+/// the physical components a mixed filament blends, from its components, its
+/// gradient ids, or its cycle/pattern string.
+bool mixed_filament_compatible(const Slic3r::MixedFilament& mf, size_t num_physical,
+                               const std::vector<std::string>& filament_types) {
+    using namespace Slic3r;
+    std::vector<unsigned int> ids_0based;
+    if (!mf.manual_pattern.empty()) {
+        const std::string norm = MixedFilamentManager::normalize_manual_pattern(mf.manual_pattern);
+        if (norm.empty()) return false;   // a malformed pattern cannot be checked
+        for (const std::string& group : MixedFilamentManager::split_pattern_groups(norm))
+            for (const std::string& token : MixedFilamentManager::split_pattern_group_to_tokens(group, num_physical)) {
+                const unsigned int id = MixedFilamentManager::physical_filament_from_token(token, mf, num_physical);
+                if (id >= 1 && id <= num_physical) ids_0based.push_back(id - 1);
+            }
+    } else {
+        if (mf.component_a >= 1 && mf.component_a <= num_physical) ids_0based.push_back(mf.component_a - 1);
+        if (mf.component_b >= 1 && mf.component_b <= num_physical) ids_0based.push_back(mf.component_b - 1);
+        if (!mf.gradient_component_ids.empty())
+            for (unsigned int id : MixedFilamentManager::decode_gradient_component_ids(mf.gradient_component_ids))
+                if (id >= 1 && id <= num_physical) ids_0based.push_back(id - 1);
+    }
+    if (ids_0based.empty()) return false;
+    return mixed_filament_ids_compatible(ids_0based, filament_types);
+}
+
+/// "[1] Name", the desktop's filament_display_label (Plater.cpp:280-300 at
+/// bac6fd5), from the run's filament preset names.
+std::string filament_slot_label(const std::vector<std::string>& names, int slot_1based) {
+    const int index = slot_1based - 1;
+    const std::string name = index >= 0 && index < (int)names.size() ? names[index] : std::string("unknown");
+    return "[" + std::to_string(slot_1based) + "] " + name;
+}
+
+std::string filament_slot_list(const std::vector<std::string>& names, const std::vector<int>& slots_1based) {
+    std::string out;
+    for (size_t i = 0; i < slots_1based.size(); ++i) {
+        if (i != 0) out += ", ";
+        out += filament_slot_label(names, slots_1based[i]);
+    }
+    return out;
+}
+
+/// The desktop's pre-slice blockers, in its own order
+/// (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:21485-21530 at bac6fd5:
+/// the temperature mix and the Cool Steel Plate first, then the flow ratio).
+/// Returns the refusal code, or 0 to slice. `warning` carries a non-blocking
+/// message the desktop shows as a serious warning.
+int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config, int plate_id,
+                               bool allow_mix_temp, const std::vector<std::string>& filament_names,
+                               int& code, std::string& message, std::string& warning) {
+    using namespace Slic3r;
+    code = 0;
+    const auto* filament_types = config.option<ConfigOptionStrings>("filament_type");
+    const int num_filaments = filament_types ? (int)filament_types->values.size() : 0;
+    if (num_filaments <= 0)
+        return 0;
+    // The desktop reads each slot's values from that slot's filament preset; a
+    // loaded project's preset holds the file's own values, so they are read
+    // here from the settings this plate slices with, at index = slot.
+    const std::set<int> used = desktop_used_filament_slots(model, config, num_filaments);
+    if (used.empty())
+        return 0;
+
+    // check_filament_temp_mixing (Plater.cpp:22343-22492): one used filament
+    // flagged high temperature and another not is a mix the desktop blocks.
+    if (!allow_mix_temp) {
+        const auto* high_flags = config.option<ConfigOptionBools>("filament_is_high_temperature");
+        std::vector<int> high, low;
+        for (int slot : used) {
+            const bool is_high = high_flags != nullptr && slot < (int)high_flags->values.size() && high_flags->values[slot];
+            (is_high ? high : low).push_back(slot + 1);
+        }
+        if (!high.empty() && !low.empty()) {
+            code = CLI_FILAMENTS_DIFFERENT_TEMP;
+            message = "Plate " + std::to_string(plate_id) +
+                      ": detected both high and low temperature materials (filament_is_high_temperature)."
+                      " Mixed printing may result in extruder clogging, nozzle damage, or layer adhesion issues."
+                      " High temperature: " + filament_slot_list(filament_names, high) +
+                      ". Low temperature: " + filament_slot_list(filament_names, low) +
+                      ". Pass --allow-mix-temp to slice anyway.";
+            return code;
+        }
+    }
+
+    // get_cold_plate_compat_state (Plater.cpp:22820-22900): only under the Cool
+    // Steel Plate, which reuses the Supertack bed type.
+    const BedType bed_type = config.opt_enum<BedType>("curr_bed_type");
+    if (bed_type == btSuperTack) {
+        std::vector<int> unsupported, tpu;
+        const auto* supertack_temps = config.option<ConfigOptionInts>("supertack_plate_temp");
+        const auto* supertack_firsts = config.option<ConfigOptionInts>("supertack_plate_temp_initial_layer");
+        for (int slot : used) {
+            const std::string type = filament_types != nullptr && slot < (int)filament_types->values.size()
+                                         ? filament_types->values[slot] : std::string();
+            if (type == "TPU")
+                tpu.push_back(slot + 1);
+            const int temp = supertack_temps != nullptr && slot < (int)supertack_temps->values.size()
+                                 ? supertack_temps->values[slot] : 0;
+            const int temp_first = supertack_firsts != nullptr && slot < (int)supertack_firsts->values.size()
+                                       ? supertack_firsts->values[slot] : 0;
+            if (temp_first <= 0 || temp <= 0)
+                unsupported.push_back(slot + 1);
+        }
+        if (!unsupported.empty()) {
+            code = CLI_FILAMENT_NOT_MATCH_BED_TYPE;
+            std::string list;
+            for (size_t i = 0; i < unsupported.size(); ++i) {
+                if (i != 0) list += ", ";
+                const int slot = unsupported[i] - 1;
+                const int temp = supertack_temps != nullptr && slot < (int)supertack_temps->values.size()
+                                     ? supertack_temps->values[slot] : 0;
+                const int temp_first = supertack_firsts != nullptr && slot < (int)supertack_firsts->values.size()
+                                           ? supertack_firsts->values[slot] : 0;
+                list += filament_slot_label(filament_names, unsupported[i]) + " (supertack_plate_temp = " +
+                        std::to_string(temp) + ", supertack_plate_temp_initial_layer = " + std::to_string(temp_first) + ")";
+            }
+            message = "Plate " + std::to_string(plate_id) + ": the Cool Steel Plate is not recommended for " + list +
+                      ". Give the filament settings with --filament <file> and set supertack_plate_temp and"
+                      " supertack_plate_temp_initial_layer above 0 there, or choose a filament preset that has them"
+                      " with --filament-preset <name>.";
+            return code;
+        }
+        if (!tpu.empty())
+            warning = "The Cool Steel Plate is not recommended for " + filament_slot_list(filament_names, tpu) +
+                      ". It may be hard to remove. Use a textured PEI plate or heat the bed.";
+    }
+
+    // has_incompatible_mixed_filament_in_use (Plater.cpp:13466-13517 at
+    // bac6fd5): a plate that uses an enabled mixed (virtual) filament whose
+    // component categories the compatibility table marks incompatible cannot be
+    // sliced.
+    {
+        Slic3r::MixedFilamentManager mixed;
+        if (const auto* definitions = config.option<ConfigOptionString>("mixed_filament_definitions");
+            definitions != nullptr && !definitions->value.empty()) {
+            std::vector<std::string> colours;
+            if (const auto* colour_option = config.option<ConfigOptionStrings>("filament_colour"))
+                colours = colour_option->values;
+            mixed.load_custom_entries(definitions->value, colours);
+        }
+        std::set<unsigned int> used_virtual;
+        for (const ModelObject* object : model.objects)
+            for (const ModelVolume* volume : object->volumes)
+                for (int id : volume->get_extruders())
+                    if (id > num_filaments) used_virtual.insert((unsigned int) id);
+        for (unsigned int id : used_virtual) {
+            const Slic3r::MixedFilament* mf = mixed.mixed_filament_from_id(id, (size_t) num_filaments);
+            if (mf == nullptr || !mf->enabled || mf->deleted) continue;
+            if (mixed_filament_compatible(*mf, (size_t) num_filaments, filament_types->values)) continue;
+            auto describe = [&](unsigned int component) {
+                const int index = (int) component - 1;
+                const std::string type = index >= 0 && index < (int) filament_types->values.size()
+                                             ? filament_types->values[index] : std::string("unknown");
+                return filament_slot_label(filament_names, (int) component) + " (" + type + ")";
+            };
+            code = CLI_VALIDATE_ERROR;
+            message = "Plate " + std::to_string(plate_id) + ": filament slot [" + std::to_string(id) +
+                      "] is a mixed filament of " + describe(mf->component_a) + " and " + describe(mf->component_b) +
+                      ", and the filament compatibility table marks those materials incompatible."
+                      " Correct the mixed filament settings: give the filament settings with --filament <file> and"
+                      " change or remove the mixed filament in mixed_filament_definitions there.";
+            return code;
+        }
+    }
+
+    // check_flow_ratio_zero (Plater.cpp:22669-22770): a used filament whose
+    // flow ratio is not above zero extrudes nothing.
+    const auto* flow_ratios = config.option<ConfigOptionFloats>("filament_flow_ratio");
+    std::vector<int> offenders;
+    for (int slot : used)
+        if (flow_ratios == nullptr || slot >= (int)flow_ratios->values.size() || flow_ratios->values[slot] <= 0.0)
+            offenders.push_back(slot + 1);
+    if (!offenders.empty()) {
+        code = CLI_VALIDATE_ERROR;
+        message = "Plate " + std::to_string(plate_id) +
+                  ": flow ratio is 0%, resulting in zero extrusion and no valid toolpath. Filament(s): ";
+        for (size_t i = 0; i < offenders.size(); ++i) {
+            if (i != 0) message += "; ";
+            const int slot = offenders[i] - 1;
+            const double ratio = flow_ratios != nullptr && slot < (int)flow_ratios->values.size()
+                                     ? flow_ratios->values[slot] : 0.;
+            char ratio_text[32];
+            std::snprintf(ratio_text, sizeof ratio_text, "%g", ratio);
+            message += filament_slot_label(filament_names, offenders[i]) + " (filament_flow_ratio = " +
+                       ratio_text + ")";
+        }
+        message += ". Give the filament settings with --filament <file> and set filament_flow_ratio above 0 there,"
+                   " or choose a filament preset that has it with --filament-preset <name>.";
+        return code;
+    }
+    return 0;
+}
+
+} // namespace
+#endif // ENGINE_SNAPMAKER
+
 static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
     const std::string& input_file      = o.input_file;
@@ -7983,6 +8482,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // host wrote that this engine has no definition for) is recorded.
             emit_config_substitutions(config_subst, "3mf:project_settings.config");
             outcome.unknown_settings = config_subst.unrecogized_keys;   // sic — upstream spelling
+#ifdef ENGINE_SNAPMAKER
+            // The desktop warns when the project's schema is newer than this
+            // build, and still loads it (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:224-238,
+            // libslic3r/ProjectSchemaVersion.cpp:21-30 at bac6fd5). A warning
+            // here too, never a refusal: the version gate above stays ours.
+            if (result && Slic3r::ProjectSchemaRegistry::is_newer(config))
+                emit_event({{"event","warning"},
+                            {"tag","NewerProjectSchema"},
+                            {"file_schema", Slic3r::ProjectSchemaRegistry::version_from(config)},
+                            {"supported_schema", Slic3r::ProjectSchemaRegistry::definition().current_version},
+                            {"message","The current version of Snapmaker Orca cannot fully load this 3MF file."
+                                       " Please update to the latest version and try again."}});
+#endif
 
             if (!result) {
                 emit_event({{"event","load_error"},
@@ -10934,6 +11446,149 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #else
             if (o.given_flag("allow_mix_temp"))
                 print.set_check_multi_filaments_compatibility(!switches.allow_mix_temp);
+#endif
+#ifdef ENGINE_SNAPMAKER
+            // notify_filament_compatibility_after_apply
+            // (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:13388-13450 at
+            // bac6fd5): the engine's own hot-bed/nozzle rules, evaluated after
+            // apply. Each note is a warning and the slice goes on.
+            {
+                Slic3r::NozzleFilamentRuleMismatch nozzle_mismatch;
+                bool graphic_plate = false, pei_not_pla = false, pei_tpu = false;
+                print.filament_rule_mismatch_flags(nozzle_mismatch, graphic_plate, pei_not_pla, pei_tpu);
+                if (pei_tpu && pei_not_pla) pei_not_pla = false;   // as the desktop orders them
+                auto note = [&](const char* tag, const std::string& text) {
+                    emit_event({{"event","warning"}, {"tag",tag}, {"plate_id",plate_id}, {"message",text}});
+                    std::cout << "Warning: " << text << "\n";
+                };
+                if (graphic_plate)
+                    note("GraphicEffectPlateAdhesion",
+                         "Note: Low adhesion to the graphic effect plate may cause failure."
+                         " Use a different filament instead.");
+                if (pei_not_pla)
+                    note("SmoothPeiAdhesion",
+                         "Note: Filament may not adhere well to the smooth PEI plate on the first layer."
+                         " Apply glue before printing.");
+                if (nozzle_mismatch.has_mismatch)
+                    note("NozzleFilamentNotRecommended",
+                         "Note: Using a " + nozzle_mismatch.nozzle_diameter_mm + " mm " +
+                             nozzle_mismatch.nozzle_type_key + " nozzle for " +
+                             (nozzle_mismatch.filament_preset_name.empty() ? std::string("(unknown)")
+                                                                           : nozzle_mismatch.filament_preset_name) +
+                             " is not recommended.");
+                if (pei_tpu)
+                    note("SmoothPeiTpuAdhesion",
+                         "Note: Filament may stick too strongly to the smooth PEI plate."
+                         " Apply glue to protect the plate and ease part removal.");
+            }
+#endif
+#ifdef ENGINE_SNAPMAKER
+            // G: sync_filament_volume_types_for_slice
+            // (references/SnapmakerOrca/src/slic3r/GUI/FlowTypeHelper.cpp:187-208 at
+            // bac6fd5), called before every slice. The nozzles' flow types come
+            // from nozzle_volume_type and the printer's printer_flow_support; when
+            // they all agree every filament follows that type, and when they mix
+            // the desktop asks the user — headless we keep the file's values and
+            // say so.
+            {
+                using namespace Slic3r;
+                const auto* nozzle_types = config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type");
+                std::vector<int> types;
+                if (nozzle_types != nullptr)
+                    types = nozzle_types->values;
+                if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+                    types.resize(std::max<size_t>(types.size(), nozzles->size()), 0);
+                std::vector<int> distinct = types;
+                std::sort(distinct.begin(), distinct.end());
+                distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
+                bool supports_high_flow = false;
+                if (const auto* support = config.option<ConfigOptionStrings>("printer_flow_support"))
+                    supports_high_flow = std::find(support->values.begin(), support->values.end(), "High Flow") !=
+                                         support->values.end();
+                if (distinct.size() >= 2) {
+                    emit_event({{"event","warning"}, {"tag","MixedNozzleFlowTypes"},
+                                {"plate_id", plate_id},
+                                {"message","The nozzles mix standard and high-flow types. The desktop asks which flow"
+                                           " type the filaments should use; this run keeps the file's filament_volume_type"
+                                           " values."}});
+                } else {
+                    // 1 (nvtBigTraffic in nozzle_volume_type) is the high-flow type.
+                    const int wanted = (!types.empty() && types.front() == 1 && supports_high_flow) ? 1 : 0;
+                    auto* flow_opt = config.option<ConfigOptionEnumsGeneric>("filament_volume_type", true);
+                    const bool uniform = !flow_opt->values.empty() &&
+                                         std::all_of(flow_opt->values.begin(), flow_opt->values.end(),
+                                                     [wanted](int v) { return v == wanted; });
+                    if (!uniform) {
+                        size_t filament_count = 1;
+                        if (const auto* ftypes = config.option<ConfigOptionStrings>("filament_type"))
+                            filament_count = std::max<size_t>(ftypes->values.size(), 1);
+                        flow_opt->values.assign(filament_count, wanted);
+                    }
+                }
+            }
+            // H: the U1's bed types (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:3615,
+            // 3790-3802 at bac6fd5): without support_multi_bed_types a Snapmaker
+            // U1 takes Textured PEI, Smooth PEI or Graphic Effect only, and any
+            // other plate becomes Textured PEI.
+            {
+                using namespace Slic3r;
+                const std::string printer_model = config.has("printer_model") ? config.opt_string("printer_model") : std::string();
+                const bool is_u1 = boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1");
+                const bool multi_bed = config.has("support_multi_bed_types") && config.opt_bool("support_multi_bed_types");
+                if (is_u1 && !multi_bed) {
+                    const BedType current = config.opt_enum<BedType>("curr_bed_type");
+                    if (current != btPTE && current != btPEI && current != btGESP) {
+                        const auto* bed_def = print_config_def.get("curr_bed_type");
+                        const std::string before = bed_def != nullptr && (size_t) current < bed_def->enum_labels.size()
+                                                       ? bed_def->enum_labels[(size_t) current] : std::string("(unknown)");
+                        config.option<ConfigOptionEnum<BedType>>("curr_bed_type", true)->value = btPTE;
+                        emit_event({{"event","warning"}, {"tag","BedTypeForcedForU1"},
+                                    {"plate_id", plate_id}, {"was", before},
+                                    {"message","Snapmaker U1 without support_multi_bed_types: plate '" + before +
+                                               "' is not one of its plate types, so this run uses Textured PEI."}});
+                    }
+                }
+            }
+            // J: PLA and PETG on one plate
+            // (references/SnapmakerOrca/src/slic3r/GUI/GLCanvas3D.cpp:11061-11080 at
+            // bac6fd5) — a warning only; the desktop does not block on it.
+            if (const auto* plate_types = config.option<Slic3r::ConfigOptionStrings>("filament_type")) {
+                bool has_pla = false, has_petg = false;
+                for (const std::string& type : plate_types->values) {
+                    if (type == "PLA") has_pla = true;
+                    if (type == "PETG") has_petg = true;
+                }
+                if (has_pla && has_petg)
+                    emit_event({{"event","warning"}, {"tag","PlaPetgMix"}, {"plate_id", plate_id},
+                                {"message","This plate uses both PLA and PETG filaments."
+                                           " PLA and PETG adhere poorly to each other; check the print."}});
+            }
+#endif
+#ifdef ENGINE_SNAPMAKER
+            // The Snapmaker desktop's own pre-slice blockers
+            // (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:21485-21530 at
+            // bac6fd5): the high/low-temperature mix, the Cool Steel Plate, then
+            // the zero flow ratio. They replace the OrcaSlicer CLI's type-based
+            // Print::check_multi_filaments_compatibility, which the desktop does
+            // not use. --allow-mix-temp lifts the temperature rule only.
+            {
+                std::vector<std::string> filament_names;
+                if (const auto* ids = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id"))
+                    filament_names = ids->values;
+                int blocker_code = 0;
+                std::string blocker_message, blocker_warning;
+                if (desktop_pre_slice_blockers(model, config, plate_id, switches.allow_mix_temp, filament_names,
+                                               blocker_code, blocker_message, blocker_warning) != 0) {
+                    std::cerr << blocker_message << "\n";
+                    set_outcome_failure(outcome, blocker_code, blocker_message);
+                    return 1;
+                }
+                if (!blocker_warning.empty()) {
+                    emit_event({{"event","warning"}, {"tag","ColdPlateNotRecommended"},
+                                {"plate_id", plate_id}, {"message", blocker_warning}});
+                    std::cout << "Warning: " << blocker_warning << "\n";
+                }
+            }
 #endif
 
             std::cout << "Validating...\n";

@@ -73,8 +73,18 @@ std::string official_flag_refusal(const std::string& key) {
            " own command line that slicer-cli does not support: " + it->second;
 }
 
+#ifdef ENGINE_SNAPMAKER
+std::string all_binaries_label() {
+    return "slicer_cli and slicer_cli-snapmaker";
+}
+#endif
+
 std::string works_in(const std::string& key) {
+#ifdef ENGINE_SNAPMAKER
+    return bambu_only_keys().count(key) ? "slicer_cli only (Bambu Studio engine)" : all_binaries_label();
+#else
     return bambu_only_keys().count(key) ? "slicer_cli only (Bambu Studio engine)" : "both binaries";
+#endif
 }
 
 std::string foreign_flag_refusal(const std::string& cli_name) {

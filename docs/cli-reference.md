@@ -203,6 +203,18 @@ flag takes its value as the next word or after `=`.
 Settings priority, highest first: setting flags on the command line, then
 `--load-settings` and `--load-filaments`, then the 3MF.
 
+`SNAPMAKER_ORCA_ALLOW_NEWER_FILE` (in the `slicer_cli-snapmaker` binary only):
+any value but empty or `0` turns on `--allow-newer-file`, as Snapmaker Orca's
+own CLI does (`Snapmaker_Orca.cpp:1274-1279`). It prints
+`Forcing CLI newer-file compatibility from SNAPMAKER_ORCA_ALLOW_NEWER_FILE` to
+stderr.
+
+`--allow-mix-temp` (in the `slicer_cli-snapmaker` binary only): slice a plate
+whose filaments mix high- and low-temperature materials. Snapmaker Orca's engine
+has no `allow_mix_temp` setting, so this build takes the desktop's rule (a used
+filament flagged `filament_is_high_temperature` next to one that is not) as a
+refusal, code `-62`, and this flag lifts it.
+
 A project moved to a printer with another bed (a machine file in
 `--load-settings`) has its plate moved onto the new bed, as the official
 command lines do: on a larger bed the plate keeps its place around the bed

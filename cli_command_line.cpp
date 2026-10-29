@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -48,6 +49,9 @@ enum class Legacy {
     Verbose, Output, Machine, Filament, Process, Config,
     Infill, Perimeters, Nozzle, Temp, BedTemp,
     Plate, Input, NoNormalizeLegacyGcode,
+#ifdef ENGINE_SNAPMAKER
+    AllowMixTemp,
+#endif
     CalibMode, CalibStart, CalibEnd, CalibStep, CalibExtruderId, CalibNoNumbers,
     Layout, LayoutPlan, Progress,
     PrinterPreset, ProcessPreset, FilamentPreset, ListPresets, ListSettings, Printer,
@@ -99,6 +103,12 @@ const std::vector<LegacyFlag>& legacy_flags() {
         {"allow-substitution",        Legacy::AllowSubstitution, false, "",        "With --slice: slice a 3MF whose values this engine substitutes"},
         {"engine-info",               Legacy::EngineInfo,        true,  "FILE",    "What the file is and which engine binary fits it, as JSON"},
         {"single-instance",           Legacy::SingleInstance,    false, "",        "Accepted and ignored (the official app's one-window switch; commented out of its CLI)"},
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker Orca's engine has no allow_mix_temp setting (PrintConfig.cpp
+        // at bac6fd5), so this build takes the desktop's temperature rule as its
+        // own switch instead; the flag lifts it (desktop_pre_slice_blockers).
+        {"allow-mix-temp",            Legacy::AllowMixTemp,      false, "",        "Slice a plate whose filaments mix high and low temperature materials"},
+#endif
     };
     return flags;
 }
@@ -497,6 +507,9 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
                 break;
             case Legacy::Input:     positional.insert(positional.begin(), value); break;
             case Legacy::NoNormalizeLegacyGcode: o.normalize_legacy_gcode = false; break;
+#ifdef ENGINE_SNAPMAKER
+            case Legacy::AllowMixTemp: o.allow_mix_temp = true; break;
+#endif
             case Legacy::CalibMode: m.calib.mode = value; break;
             case Legacy::CalibStart:
             case Legacy::CalibEnd:
@@ -598,6 +611,16 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
     o.outputdir        = o.given_flag("outputdir") ? cfg.opt_string("outputdir") : std::string();
     o.export_3mf       = o.given_flag("export_3mf") ? cfg.opt_string("export_3mf") : std::string();
     o.allow_newer_file = o.given_flag("allow_newer_file") && cfg.opt_bool("allow_newer_file");
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's CLI also takes the flag from the environment: any value but
+    // empty or "0" turns it on, with this warning
+    // (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:1274-1279 at bac6fd5).
+    if (const char* allow_newer_env = std::getenv("SNAPMAKER_ORCA_ALLOW_NEWER_FILE");
+        allow_newer_env != nullptr && *allow_newer_env != '\0' && std::strcmp(allow_newer_env, "0") != 0) {
+        std::cerr << "Forcing CLI newer-file compatibility from SNAPMAKER_ORCA_ALLOW_NEWER_FILE\n";
+        o.allow_newer_file = true;
+    }
+#endif
     if (o.given_flag("arrange"))
         o.arrange = cfg.opt_int("arrange");
     if (o.given_flag("help"))
@@ -654,7 +677,11 @@ void print_help(std::ostream& out, const char* prog) {
         if (official_names().count(f.name)) continue;   // listed with the shared names below
         std::string lhs = (std::string(f.name).size() == 1 ? "-" : "--") + std::string(f.name);
         if (f.takes_value) lhs += std::string(" ") + f.help_value;
+#ifdef ENGINE_SNAPMAKER
+        help_row(out, lhs, std::string(f.help) + "  [works in: " + all_binaries_label() + "]");
+#else
         help_row(out, lhs, std::string(f.help) + "  [works in: both binaries]");
+#endif
     }
 
     out << "\n=== Slicing, transforms and exports ===\n";
