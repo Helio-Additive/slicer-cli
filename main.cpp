@@ -48,6 +48,12 @@
 #include "libslic3r/ModelArrange.hpp"
 #include "libslic3r/Arrange.hpp"
 #include "libslic3r/GCode/WipeTower.hpp"
+#ifdef ENGINE_SNAPMAKER
+// The Snapmaker fork moved the wipe-tower depth helpers out of WipeTower into
+// WipeTowerHelper (references/SnapmakerOrca/src/libslic3r/GCode/WipeTowerHelper.hpp:21
+// at bac6fd5); OrcaSlicer 2.4 keeps them on WipeTower itself.
+#include "libslic3r/GCode/WipeTowerHelper.hpp"
+#endif
 #ifdef ENGINE_BAMBU
 #include "libslic3r/FilamentMixer.hpp"
 #endif
@@ -156,7 +162,14 @@ const char* string_exception_tag(Slic3r::StringExceptionType t) {
     switch (t) {
         case Slic3r::STRING_EXCEPT_NOT_DEFINED:                   return "STRING_EXCEPT_NOT_DEFINED";
         case Slic3r::STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE:   return "STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE";
+#ifndef ENGINE_SNAPMAKER
+        // Snapmaker Orca names this one STRING_EXCEPT_FILAMENTS_MIXING_TEMP
+        // instead (references/SnapmakerOrca/src/libslic3r/PrintBase.hpp:1-12 at
+        // bac6fd5), tagged below.
         case Slic3r::STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP:      return "STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP";
+#else
+        case Slic3r::STRING_EXCEPT_FILAMENTS_MIXING_TEMP:         return "STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP";
+#endif
         case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT: return "STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT";
         case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT: return "STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT";
         case Slic3r::STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT:    return "STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT";
@@ -239,6 +252,11 @@ const char* slice_warning_level_tag(int level) {
 }
 
 /// Emits structured flags and details from an engine G-code check result.
+#ifndef ENGINE_SNAPMAKER
+// GCodeProcessorResult::gcode_check_result is OrcaSlicer 2.4 only; the Snapmaker
+// fork's GCodeProcessorResult carries no post-slice check result
+// (references/SnapmakerOrca/src/libslic3r/GCode/GCodeProcessor.hpp at bac6fd5),
+// so the engine reports no check outcome and no such event is emitted.
 void emit_gcode_check_result(const Slic3r::GCodeProcessorResult& r) {
     const int code = r.gcode_check_result.error_code;
     if (code == 0) return;
@@ -279,6 +297,7 @@ void emit_gcode_check_result(const Slic3r::GCodeProcessorResult& r) {
     if (!heights.empty()) e["print_height_errors"] = heights;
     emit_event(e);
 }
+#endif // ENGINE_SNAPMAKER
 
 /// Emits diagnostics retained in a completed G-code processing result.
 void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r) {
@@ -307,11 +326,17 @@ void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r) {
                         "' conflict at height " + std::to_string(c._height);
         emit_event(e);
     }
+#ifndef ENGINE_SNAPMAKER
     emit_gcode_check_result(r);
+#endif
+#ifndef ENGINE_SNAPMAKER
     // `filament_printable_reuslt` (sic — upstream spelling) carries a
     // has_value() helper, but it is `const` on BambuStudio and NOT const on
     // OrcaSlicer, so calling it through this const& breaks the orca build.
-    // Both engines define it as exactly this emptiness test.
+    // Both engines define it as exactly this emptiness test. It is OrcaSlicer
+    // 2.4 only: the Snapmaker fork's GCodeProcessorResult has no such field
+    // (references/SnapmakerOrca/src/libslic3r/GCode/GCodeProcessor.hpp at
+    // bac6fd5), so this engine reports no unprintable-filament result.
     if (!r.filament_printable_reuslt.conflict_filament.empty()) {
         json e;
         e["event"]             = "filament_unprintable";
@@ -321,6 +346,7 @@ void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r) {
         e["message"]           = "One or more filaments cannot be printed on their assigned extruder";
         emit_event(e);
     }
+#endif
     if (r.toolpath_outside) {
         emit_event({{"event","toolpath_outside_bed"},
                     {"tag","ToolpathOutside"},
@@ -332,12 +358,16 @@ void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r) {
                     {"code", r.timelapse_warning_code},
                     {"message","Timelapse configuration produced a warning"}});
     }
+#ifndef ENGINE_SNAPMAKER
+    // limit_filament_maps is OrcaSlicer 2.4 only (absent from the Snapmaker
+    // fork's GCodeProcessorResult at bac6fd5), so this engine never reports it.
     if (!r.limit_filament_maps.empty()) {
         emit_event({{"event","filament_map_limited"},
                     {"tag","LimitFilamentMaps"},
                     {"limit_filament_maps", r.limit_filament_maps},
                     {"message","The engine constrained the filament-to-extruder map"}});
     }
+#endif
 }
 
 // ── Channel 3: the Boost.Log bridge ────────────────────────────────────────
@@ -429,7 +459,15 @@ void emit_status_warning(const Slic3r::PrintBase::SlicingStatus& s) {
 
 void emit_validation_event(const Slic3r::StringObjectException& v) {
     json e;
+#ifdef ENGINE_SNAPMAKER
+    // StringObjectException::is_warning is OrcaSlicer 2.4 only; the Snapmaker
+    // fork's struct has no such field
+    // (references/SnapmakerOrca/src/libslic3r/PrintBase.hpp:14-21 at bac6fd5),
+    // so every exception reaching here is an error.
+    e["event"]    = "validation_error";
+#else
     e["event"]    = v.is_warning ? "validation_warning" : "validation_error";
+#endif
     e["tag"]      = string_exception_tag(v.type);
     e["message"]  = v.string;
     if (!v.opt_key.empty()) e["opt_key"] = v.opt_key;
@@ -772,7 +810,13 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
                     if (def != nullptr && def->type == Slic3r::coStrings) {
                         value_str = Slic3r::escape_strings_cstyle(parts);
                     } else {
+#ifdef ENGINE_SNAPMAKER
+                        // Snapmaker Orca has no ConfigOptionPointsGroups, so
+                        // no option takes the '#' separator (layout_plan.cpp).
+                        const char* sep = ",";
+#else
                         const char* sep = def != nullptr && def->type == Slic3r::coPointsGroups ? "#" : ",";
+#endif
                         value_str = "";
                         for (size_t i = 0; i < parts.size(); i++) {
                             if (i > 0) value_str += sep;
@@ -1580,7 +1624,14 @@ bool is_per_filament_config_key(const std::string& key) {
                 return false;
         return true;
     }
+    // Snapmaker Orca has no filament_options_with_variant set (its OrcaSlicer
+    // base predates the per-extruder variant tables), so nothing is excluded
+    // there and every remaining filament_ key is per filament.
+#ifndef ENGINE_SNAPMAKER
     return Slic3r::filament_options_with_variant.count(key) > 0;
+#else
+    return false;
+#endif
 }
 
 // True for every setting a filament preset carries: the keys above plus the
@@ -1929,9 +1980,12 @@ size_t normalize_filament_config_vectors(Slic3r::DynamicPrintConfig& config) {
         if (key == "compatible_prints" || key == "compatible_printers")
             continue;
         // The per-(extruder x nozzle volume) variant tables, skipped there too:
-        // their length is the slot count, not the filament count.
+        // their length is the slot count, not the filament count. This engine
+        // has none (no filament_options_with_variant at bac6fd5).
+#ifndef ENGINE_SNAPMAKER
         if (Slic3r::filament_options_with_variant.count(key) > 0)
             continue;
+#endif
         const Slic3r::ConfigOption* fill = defaults.option(key);
         if (fill == nullptr)
             continue;
@@ -2063,7 +2117,15 @@ static std::map<std::string, std::string> model_metadata(const std::string& mode
 /// 5873b5f).
 static boost::optional<Slic3r::Semver> engine_file_version(const std::map<std::string, std::string>& meta) {
     const auto app = meta.find("Application");
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca writes Application "Snapmaker_Orca-<version>"
+    // (references/SnapmakerOrca/src/libslic3r/Format/bbs_3mf.cpp:6645-6647 at
+    // bac6fd5) and reads that prefix back (3830-3836).
+    if (app != meta.end()) {
+        if (boost::starts_with(app->second, "BambuStudio-"))   return Slic3r::Semver::parse(app->second.substr(12));
+        if (boost::starts_with(app->second, "Snapmaker_Orca-")) return Slic3r::Semver::parse(app->second.substr(15));
+    }
+#elif defined(ENGINE_ORCA)
     if (const auto orca = meta.find("OrcaSlicer"); orca != meta.end())
         if (auto v = Slic3r::Semver::parse(orca->second)) return v;
     if (app != meta.end()) {
@@ -2114,8 +2176,17 @@ static FileVersionVerdict file_version_verdict(const Slic3r::Semver& file_versio
                                                const std::map<std::string, std::string>& meta) {
 #ifdef ENGINE_ORCA
     const auto app = meta.find("Application");
+#ifdef ENGINE_SNAPMAKER
+    // A Snapmaker Orca project is this engine's own: it writes Application
+    // "Snapmaker_Orca-<version>" (references/SnapmakerOrca/src/libslic3r/Format/bbs_3mf.cpp:6645-6647
+    // at bac6fd5), so it is compared with this engine's version, not the base.
+    const bool orca_made = (app != meta.end() && boost::starts_with(app->second, "Snapmaker_Orca-")) ||
+                           meta.count("OrcaSlicer") != 0 ||
+                           (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-"));
+#else
     const bool orca_made = meta.count("OrcaSlicer") != 0 ||
                            (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-"));
+#endif
     if (!orca_made)
         return file_newer_than_version(file_version, SLIC3R_VERSION) ? FileVersionVerdict::WarnedNewerThanBase
                                                                      : FileVersionVerdict::Ok;
@@ -2202,6 +2273,23 @@ static boost::filesystem::path orca_profiles_dir(const boost::filesystem::path& 
     return boost::filesystem::path();
 }
 
+/// The Snapmaker Orca profiles tree beside this binary, or empty: a checkout
+/// has references/SnapmakerOrca; a package would ship it as
+/// resources/profiles-snapmaker (Linux: bin/../resources; macOS and Windows:
+/// next to the binaries).
+static boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir) {
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        exe_dir / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
+        exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
+        exe_dir / ".." / "resources" / "profiles-snapmaker",
+        exe_dir / "resources" / "profiles-snapmaker",
+    }) {
+        if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+}
+
 /// The printer models a profiles tree offers: every vendor file's
 /// machine_model_list (the list PresetBundle::load_vendor_configs_from_json
 /// reads its printer models from, PresetBundle.cpp in both engines).
@@ -2268,7 +2356,13 @@ static std::string preset_printer_model(const boost::filesystem::path& profiles_
 
 static EngineFit engine_fit_for(const std::string& argv0, const std::string& printer_model) {
     const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    const boost::filesystem::path this_dir  = snapmaker_profiles_dir(exe_dir);
+    // A printer this engine does not have belongs to one of the engines the
+    // package ships beside it; the OrcaSlicer one is the one named.
+    const boost::filesystem::path other_dir = orca_profiles_dir(exe_dir);
+    EngineFit fit{"Snapmaker Orca", "slicer_cli-snapmaker", "OrcaSlicer", "slicer_cli-orcaslicer"};
+#elif defined(ENGINE_ORCA)
     const boost::filesystem::path this_dir  = orca_profiles_dir(exe_dir);
     const boost::filesystem::path other_dir = engine_profiles_dir(exe_dir);
     EngineFit fit{"OrcaSlicer", "slicer_cli-orcaslicer", "BambuStudio", "slicer_cli"};
@@ -2791,6 +2885,21 @@ static void stage_vendor_dir(const boost::filesystem::path& src,
 ///          a checkout (build/ or build/<config>/).
 static boost::filesystem::path engine_resources_root(const boost::filesystem::path& exe_dir) {
 #ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's own resources root (its flush data and info/*.json are its
+    // own bytes): references/SnapmakerOrca/resources in a checkout,
+    // resources/snapmaker in a package.
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        exe_dir / ".." / "references" / "SnapmakerOrca" / "resources",
+        exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources",
+        exe_dir / ".." / "resources" / "snapmaker",
+        exe_dir / "resources" / "snapmaker",
+    }) {
+        if (boost::filesystem::exists(p / "info") && boost::filesystem::is_directory(p / "info"))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+#else
     for (const auto& p : std::vector<boost::filesystem::path>{
         exe_dir / ".." / "references" / "OrcaSlicer" / "resources",
         exe_dir / ".." / ".." / "references" / "OrcaSlicer" / "resources",
@@ -2801,6 +2910,7 @@ static boost::filesystem::path engine_resources_root(const boost::filesystem::pa
             return boost::filesystem::canonical(p);
     }
     return boost::filesystem::path();
+#endif // ENGINE_SNAPMAKER
 #else
     const boost::filesystem::path profiles_dir = engine_profiles_dir(exe_dir);
     if (profiles_dir.empty())
@@ -2980,7 +3090,11 @@ static std::string cli_error_sentence(int code) {
         {CLI_OBJECT_COLLISION_IN_LAYER_PRINT, "Object conflicts were detected. Please verify the slicing of all plates in " SLICER_APP " before uploading."},
         {CLI_SLICING_ERROR, "Failed slicing the model. Please verify the slicing of all plates on " SLICER_APP " before uploading."},
         {CLI_GCODE_PATH_CONFLICTS, " G-code conflicts detected after slicing. Please make sure the 3mf file can be successfully sliced in the latest " SLICER_APP ". If the file slices normally in " SLICER_APP ", try moving the wipe tower further from other models, as we use more conservative parameters for it during upload."},
+#ifndef ENGINE_SNAPMAKER
+        // Not in the Snapmaker fork's CLIResultCode enum (PrintConfig.hpp at
+        // bac6fd5): its CLI has no post-slice unprintable-area code.
         {CLI_GCODE_PATH_IN_UNPRINTABLE_AREA, "Found G-code in unprintable area of multi-extruder printers after slicing. Please make sure the 3mf file can be successfully sliced in the latest " SLICER_APP "."},
+#endif
         {CLI_FILAMENT_UNPRINTABLE_ON_FIRST_LAYER, "Found some filament unprintable at first layer on current Plate. Please make sure the 3mf file can be successfully sliced with the same Plate type in the latest " SLICER_APP "."},
         {CLI_GCODE_PATH_OUTSIDE, "Found G-code outside of the printable area. The issue may be caused by support, wipe tower, brim, or skirt. If the file slices normally in " SLICER_APP ", try moving the wipe tower further inside the build plate, as we use more conservative parameters for it during upload."},
         {CLI_GCODE_IN_WRAPPING_DETECT_AREA, "Found G-code in the wrapping detect area. Please make sure the 3mf file can be successfully sliced in the latest " SLICER_APP "."},
@@ -3010,8 +3124,12 @@ static std::string cli_error_sentence(int code) {
         {CLI_TRIANGLE_COUNT_EXCEEDS_LIMIT, "Triangle count of single plate exceeds the limit. Please simplify the model and try to upload again."},
         {CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP, "No printable objects to slice after skipping."},
         {CLI_SPIRAL_MODE_INVALID_PARAMS, "Some slicing parameters cannot work with Spiral Vase mode. Please solve the issue in " SLICER_APP " before uploading."},
+#ifndef ENGINE_SNAPMAKER
+        // Not in the Snapmaker fork's CLIResultCode enum (PrintConfig.hpp at
+        // bac6fd5): its CLI has neither code.
         {CLI_FILAMENT_CAN_NOT_MAP, "Some filaments cannot be mapped to correct extruders for multi-extruder Printer."},
         {CLI_ONLY_ONE_TPU_SUPPORTED, "Not support printing 2 or more TPU filaments."},
+#endif
     };
 #undef SLICER_APP
     const auto it = sentences.find(code);
@@ -3375,6 +3493,7 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
     // padded or partial table would shrink the bed the engine itself uses.
     std::vector<std::vector<Slic3r::Vec2d>> extruder_areas;
     std::vector<double> extruder_heights;
+#ifndef ENGINE_SNAPMAKER
     const auto* groups  = config.option<Slic3r::ConfigOptionPointsGroups>("extruder_printable_area");
     const auto* heights = config.option<Slic3r::ConfigOptionFloatsNullable>("extruder_printable_height");
     if (groups && heights && groups->values.size() > 1 && groups->values.size() == heights->values.size()) {
@@ -3387,6 +3506,12 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
         }
     }
     Slic3r::BuildVolume build_volume(area->values, height, extruder_areas, extruder_heights);
+#else
+    // Snapmaker Orca has neither ConfigOptionPointsGroups nor the per-extruder
+    // BuildVolume constructor (references/SnapmakerOrca/src/libslic3r/BuildVolume.hpp:36
+    // at bac6fd5): its bed is the single printable area, as its own CLI uses.
+    Slic3r::BuildVolume build_volume(area->values, height);
+#endif
     const unsigned int inside = model.update_print_volume_state(build_volume);
 
     for (const Slic3r::ModelObject* object : model.objects) {
@@ -3795,6 +3920,7 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
 #endif
     double depth;
     double filament_change_volume = 0.;
+#ifndef ENGINE_SNAPMAKER
     {
         const std::vector<double>& filament_change_lengths = print_defaults.filament_change_length.values;
         double length = filament_change_lengths.empty() ? 0 : *std::max_element(filament_change_lengths.begin(), filament_change_lengths.end());
@@ -3803,12 +3929,20 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
         diameter = diameters.empty() ? diameter : *std::max_element(diameters.begin(), diameters.end());
         filament_change_volume = length * PI * diameter * diameter / 4.;
     }
+#else
+    // Snapmaker Orca has no filament_change_length setting (PrintConfig.cpp at
+    // bac6fd5), so its tower sizing carries no filament-change volume.
+#endif
     double volume = wipe_volume * (extruder_count == 2 ? plate_extruder_size : (plate_extruder_size - 1));
     if (extruder_count == 2) volume += filament_change_volume * (int) (plate_extruder_size / 2);
     if (use_rib_wall) {
         depth = std::sqrt(volume / layer_height * extra_spacing);
         if (need_wipe_tower || plate_extruder_size > 1) {
+#ifdef ENGINE_SNAPMAKER
+            float min_wipe_tower_depth = WipeTowerHelper::get_limit_depth_by_height(max_height);
+#else
             float min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height);
+#endif
             double volume_depth        = depth;
             depth = std::max((double) min_wipe_tower_depth, depth);
             rib_width = std::min(rib_width, depth / 2);
@@ -3818,7 +3952,11 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
     } else {
         depth = volume / (layer_height * w) * extra_spacing;
         if (need_wipe_tower || depth > EPSILON) {
+#ifdef ENGINE_SNAPMAKER
+            float min_wipe_tower_depth = WipeTowerHelper::get_limit_depth_by_height(max_height);
+#else
             float min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height);
+#endif
             depth = std::max((double) min_wipe_tower_depth, depth);
         }
         wipe_tower_size(0) = w;
@@ -3881,8 +4019,14 @@ static Slic3r::BoundingBoxf3 downward_plate_bbox(const Slic3r::Model& model, con
     const float wipe_y = (float)dynamic_cast<const ConfigOptionFloats*>(arrange_opt(config, "wipe_tower_y"))->get_at(plate_index);
     const double width = arrange_opt(config, "prime_tower_width")->getFloat();
     float brim_width = (float)arrange_opt(config, "prime_tower_brim_width")->getFloat();
+#ifdef ENGINE_SNAPMAKER
+    // No WipeTower::get_auto_brim_by_height at bac6fd5: this engine has no
+    // automatic prime-tower brim, so a negative (automatic) width adds none.
+    if (brim_width < 0) brim_width = 0.f;
+#else
     if (brim_width < 0)
         brim_width = WipeTower::get_auto_brim_by_height((float)obj_bbox.max.z());
+#endif
 #ifdef ENGINE_ORCA
     const double wipe_volume = arrange_opt(config, "prime_volume")->getFloat();
 #else
@@ -3991,6 +4135,9 @@ static int move_to_new_bed(const slicer_cli::ProjectFacts& facts, bool machine_s
     // The area every nozzle reaches (BambuStudio.cpp 4250-4277; OrcaSlicer.cpp
     // 3662-3689): an integer box, as the official's.
     int shared_center_x = 0, shared_center_y = 0, shared_width = 0, shared_depth = 0;
+#ifndef ENGINE_SNAPMAKER
+    // No ConfigOptionPointsGroups at bac6fd5: a Snapmaker printer states no
+    // per-nozzle area, so the shared box is the whole bed (the zeros above).
     {
         const auto* areas   = config.option<ConfigOptionPointsGroups>("extruder_printable_area");
         const auto* heights = config.option<ConfigOptionFloatsNullable>("extruder_printable_height");
@@ -4011,6 +4158,7 @@ static int move_to_new_bed(const slicer_cli::ProjectFacts& facts, bool machine_s
             shared_center_y = (int)current_bbox.center().y();
         }
     }
+#endif // ENGINE_SNAPMAKER
     double exclude_width = 0., exclude_depth = 0.;
     if (current_exclude_area.size() >= 4) {
         exclude_width = current_exclude_area[2].x() - current_exclude_area[0].x();
@@ -4226,7 +4374,11 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
             float margin = 15.f, wp_brim_width = 0.f;
             if (const ConfigOption* wipe_tower_brim_width_opt = config.option("prime_tower_brim_width")) {
                 wp_brim_width = wipe_tower_brim_width_opt->getFloat();
+#ifdef ENGINE_SNAPMAKER
+                if (wp_brim_width < 0) wp_brim_width = 0.f;   // no automatic brim at bac6fd5
+#else
                 if (wp_brim_width < 0) wp_brim_width = WipeTower::get_auto_brim_by_height((float) wipe_tower_size.z());
+#endif
             }
             w = wipe_tower_size(0);
             if ((y + depth + margin + wp_brim_width) > (float)plate_depth)
@@ -4485,6 +4637,9 @@ static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, cons
     // (PartPlate::get_extruder_areas), at the plate's own origin.
     BoundingBoxf plate_bbox;
     for (const Vec2d& pt : area->values) plate_bbox.merge(pt);
+#ifndef ENGINE_SNAPMAKER
+    // No ConfigOptionPointsGroups at bac6fd5: the plate box is the printable
+    // area itself, with no per-nozzle narrowing.
     if (const auto* extruder_areas = config.option<ConfigOptionPointsGroups>("extruder_printable_area"))
         for (const std::vector<Vec2d>& points : extruder_areas->values) {
             BoundingBoxf boxf;
@@ -4492,6 +4647,7 @@ static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, cons
             plate_bbox.min = plate_bbox.min.x() >= boxf.min.x() ? plate_bbox.min : boxf.min;
             plate_bbox.max = plate_bbox.max.x() <= boxf.max.x() ? plate_bbox.max : boxf.max;
         }
+#endif
     const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
     const BoundingBoxf3 plate_box(Vec3d(plate_bbox.min.x(), plate_bbox.min.y(), 0.),
                                   Vec3d(plate_bbox.max.x(), plate_bbox.max.y(), height));
@@ -4504,7 +4660,11 @@ static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, cons
     // Orca's margin carries the tower's brim, the height rule when negative
     // (Orca PartPlate.cpp 4162-4169).
     float brim_width = arrange_opt(config, "prime_tower_brim_width")->getFloat();
+#ifdef ENGINE_SNAPMAKER
+    if (brim_width < 0) brim_width = 0.f;   // no automatic brim at bac6fd5
+#else
     if (brim_width < 0) brim_width = WipeTower::get_auto_brim_by_height((float) tower.z());
+#endif
     margin += brim_width;
 #endif
     if (x + margin + (float)tower(0) > (float)plate_bbox.max.x())
@@ -4553,7 +4713,11 @@ static Slic3r::arrangement::ArrangePolygon estimate_tower_polygon_global(const S
     float wp_brim_width = 0.f;
     if (const ConfigOption* brim_opt = config.option("prime_tower_brim_width")) {
         wp_brim_width = brim_opt->getFloat();
+#ifdef ENGINE_SNAPMAKER
+        if (wp_brim_width < 0) wp_brim_width = 0.f;   // no automatic brim at bac6fd5
+#else
         if (wp_brim_width < 0) wp_brim_width = WipeTower::get_auto_brim_by_height((float) wt_size.z());
+#endif
     }
     // std::clamp(x, margin, plate - w - margin - brim), spelled out.
     const auto clamp = [](float value, float lo, float hi) { return value < lo ? lo : (hi < value ? hi : value); };
@@ -4726,7 +4890,13 @@ static void record_plate_statistics(const Slic3r::Print& print, const Slic3r::Mo
             break;
         }
 #else
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca names the counter total_filamentchanges
+    // (references/SnapmakerOrca/src/libslic3r/GCode/GCodeProcessor.hpp at bac6fd5).
+    outcome.filament_change_times = int(stat.total_filamentchanges);
+#else
     outcome.filament_change_times = int(stat.total_filament_changes);
+#endif
 #endif
     const auto* filament_ids = dynamic_cast<const Slic3r::ConfigOptionStrings*>(config.option("filament_ids"));
     for (const auto& [extruder, volume] : stat.total_volumes_per_extruder) {
@@ -4784,12 +4954,17 @@ static void record_plate_for_export(const Slic3r::Print& print, const Slic3r::Mo
     pd->toolpath_outside         = result.toolpath_outside;
     pd->timelapse_warning_code   = result.timelapse_warning_code;
     pd->is_label_object_enabled  = result.label_object_enabled;
+#ifndef ENGINE_SNAPMAKER
+    // OrcaSlicer 2.4 writes these per-plate filament-map facts into the 3MF;
+    // Snapmaker's PlateData has no such fields at bac6fd5, so its plates carry
+    // none of them.
     pd->limit_filament_maps      = result.limit_filament_maps;
     pd->layer_filaments          = result.layer_filaments;
     pd->filament_change_sequence = result.filament_change_sequence;
     pd->nozzle_change_sequence   = result.nozzle_change_sequence;
     pd->optimal_assignment       = result.optimal_assignment;
     pd->filament_maps            = print.get_filament_maps();
+#endif
     const double weight = print.print_statistics().total_weight;
     if (weight != 0.) {
         char text[32];
@@ -4944,6 +5119,11 @@ static bool post_slice_checks(const Slic3r::Print& print, const Slic3r::Model& m
             return false;
         }
     }
+#ifndef ENGINE_SNAPMAKER
+    // The post-slice G-code check (gcode_check_result) and the unprintable
+    // filament result are OrcaSlicer 2.4 only; the Snapmaker fork's
+    // GCodeProcessorResult carries neither at bac6fd5, so its CLI has nothing
+    // to check here (and no CLI_GCODE_PATH_IN_UNPRINTABLE_AREA code either).
     const int code = result.gcode_check_result.error_code;
     if (code != 0 && code != (1 << 11)) {
         std::set<int> labels;
@@ -4979,6 +5159,7 @@ static bool post_slice_checks(const Slic3r::Print& print, const Slic3r::Model& m
                             result.filament_printable_reuslt.plate_name + " plate.");
         return false;
     }
+#endif // ENGINE_SNAPMAKER
     return true;
 }
 
@@ -4996,7 +5177,9 @@ static bool post_slice_checks(const Slic3r::Print& print, const Slic3r::Model& m
 /// This engine's profiles tree: Bambu's for the Bambu build, Orca's for Orca.
 static boost::filesystem::path this_engine_profiles_dir(const std::string& argv0) {
     const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    return snapmaker_profiles_dir(exe_dir);
+#elif defined(ENGINE_ORCA)
     return orca_profiles_dir(exe_dir);
 #else
     return engine_profiles_dir(exe_dir);
@@ -5758,7 +5941,10 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         // printer, and the sibling does.
         if (kind == std::string("printer")) {
             const boost::filesystem::path exe_dir = engine_executable_dir(o.argv0.c_str());
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+            const boost::filesystem::path other_dir = orca_profiles_dir(exe_dir);
+            const std::string other_app = "OrcaSlicer", other_binary = "slicer_cli-orcaslicer";
+#elif defined(ENGINE_ORCA)
             const boost::filesystem::path other_dir = engine_profiles_dir(exe_dir);
             const std::string other_app = "BambuStudio", other_binary = "slicer_cli";
 #else
@@ -5919,7 +6105,14 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // value, or the first filament's value followed by 0s); named presets
     // follow the desktop's full_fff_config, one value per filament from
     // each filament's own preset.
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca's PresetBundle::full_config() takes no argument and is
+    // full_fff_config() for FFF (references/SnapmakerOrca/src/libslic3r/PresetBundle.cpp:2491-2496
+    // at bac6fd5): the same settings OrcaSlicer's full_config(false) returns.
+    out = bundle.full_config();
+#else
     out = bundle.full_config(false);
+#endif
 #else
     // BambuStudio's full_config(true) keeps each filament's own values and
     // its filament_self_index (PresetBundle.cpp 3400-3460 at 5873b5f), and
@@ -6074,8 +6267,12 @@ static int run_list_settings() {
         case coBools:            vector = true;  return std::string("bools");
         case coEnum:             vector = false; return std::string("enum");
         case coEnums:            vector = true;  return std::string("enums");
+#ifndef ENGINE_SNAPMAKER
+        // ConfigOptionPointsGroups / ConfigOptionIntsGroups are OrcaSlicer 2.4
+        // only (no such types at bac6fd5).
         case coPointsGroups:     vector = true;  return std::string("points_groups");
         case coIntsGroups:       vector = true;  return std::string("ints_groups");
+#endif
         default:                 vector = false; return std::string("none");
         }
     };
@@ -6083,7 +6280,8 @@ static int run_list_settings() {
         switch (mode) {
         case comSimple:   return std::string("simple");
         case comAdvanced: return std::string("advanced");
-#ifdef ENGINE_ORCA
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // ConfigOptionMode::comExpert is OrcaSlicer 2.4 only (absent at bac6fd5).
         case comExpert:   return std::string("expert");
 #endif
         case comDevelop:  return std::string("develop");
@@ -6831,7 +7029,12 @@ static bool is_staging_folder_name(const std::string& name) {
 static bool is_engine_binary_name(std::string name) {
     while (!name.empty() && (name.front() == '/' || name.front() == '\\'))
         name.erase(name.begin());
-    for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer"}) {
+    for (const char* binary : {
+             "slicer_cli", "slicer_cli-orcaslicer",
+#ifdef ENGINE_SNAPMAKER
+             "slicer_cli-snapmaker",
+#endif
+         }) {
         const std::string base(binary);
         if (boost::algorithm::iequals(name, base) || boost::algorithm::iequals(name, base + ".exe"))
             return true;
@@ -7112,9 +7315,16 @@ static bool load_plate_objects(const std::string& input_file, int plate_id, Slic
     bool loaded = false;
     try {
 #ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker's load_bbs_3mf takes no is_orca_3mf flag (Format/bbs_3mf.hpp
+        // at bac6fd5), like BambuStudio's.
+        loaded = load_bbs_3mf(load_path.c_str(), &scratch, &subst, &model, &plates, &presets, &is_bbl,
+                              &version, nullptr, strategy, nullptr, plate_id);
+#else
         bool is_orca = false;
         loaded = load_bbs_3mf(load_path.c_str(), &scratch, &subst, &model, &plates, &presets, &is_bbl, &is_orca,
                               &version, nullptr, strategy, nullptr, plate_id);
+#endif
 #else
         loaded = load_bbs_3mf(load_path.c_str(), &scratch, &subst, &model, &plates, &presets, &is_bbl,
                               &version, nullptr, strategy, nullptr, plate_id);
@@ -7712,6 +7922,24 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                           | Slic3r::LoadStrategy::LoadConfig
                           | Slic3r::LoadStrategy::AddDefaultInstances;
 #ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker's load_bbs_3mf has no is_orca_3mf flag (Format/bbs_3mf.hpp
+            // at bac6fd5), so this uses the BambuStudio-shaped call.
+            bool result = Slic3r::load_bbs_3mf(
+                load_path.c_str(),
+                &config,
+                &config_subst,
+                &model,
+                &plate_data,
+                &presets,
+                &is_bbl_3mf,
+                &file_version,
+                nullptr,   // proFn (progress callback)
+                strategy,
+                nullptr,   // BBLProject
+                load_plate_id   // 0 = all plates, >0 = specific plate
+            );
+#else
             // OrcaSlicer's load_bbs_3mf inserts a bool* is_orca_3mf between is_bbl_3mf
             // and file_version (and drops the two trailing Bambu-only params).
             bool is_orca_3mf = false;
@@ -7730,6 +7958,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 nullptr,   // BBLProject
                 load_plate_id   // 0 = all plates, >0 = specific plate
             );
+#endif // ENGINE_SNAPMAKER
 #else
             bool result = Slic3r::load_bbs_3mf(
                 load_path.c_str(),
@@ -7807,6 +8036,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // project already states this engine's own values, and every file
             // this product writes must keep slicing as it did. This scope test
             // is the one place the scope is decided.
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker's loader reports no "made by OrcaSlicer" flag (Format/bbs_3mf.hpp
+            // at bac6fd5), so no project is an OrcaSlicer one to this engine.
+            const bool is_orca_3mf = false;
+#endif
             const bool bambu_made_project = is_bbl_3mf && !is_orca_3mf;
             if (bambu_made_project) {
                 // The settings as the file states them, for read_project_facts
@@ -7876,7 +8110,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         // the rebase itself succeeded.
                         Slic3r::DynamicPrintConfig file_config_for_bundle = config;
                         bundle.load_config_model(input_file, std::move(file_config_for_bundle), file_version);
+#ifdef ENGINE_SNAPMAKER
+                        rebased = bundle.full_config();   // see above: full_fff_config at bac6fd5
+#else
                         rebased = bundle.full_config(false);
+#endif
                         // A project whose preset name this bundle cannot
                         // resolve is loaded as an external preset built from the
                         // file, and the config that comes back can describe a
@@ -9598,6 +9836,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 real_mode = plate_mode->value;
                 config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", true)->value = real_mode;
             }
+#ifndef ENGINE_SNAPMAKER
+            // PlateData::filament_maps is OrcaSlicer 2.4 only; Snapmaker's
+            // PlateData has no per-plate map at bac6fd5, so a plate's own map
+            // cannot be applied.
             if (real_mode == Slic3r::FilamentMapMode::fmmManual && !plate.filament_maps.empty()) {
                 config.option<Slic3r::ConfigOptionInts>("filament_map", true)->values = plate.filament_maps;
                 if (const auto* pvm = plate.config.option<Slic3r::ConfigOptionInts>("filament_volume_map");
@@ -9608,6 +9850,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             {"message","Plate " + std::to_string(plate_id) +
                                        " is in Manual mode: its own filament map applies"}});
             }
+#endif // ENGINE_SNAPMAKER
         }
 #endif
         {
@@ -10572,8 +10815,17 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // the packaged macOS Orca engine of run 37538132874: the E4 project's
             // plate 2 either slices or dies with that exception run to run, and
             // setting wipe_tower_cone_angle to 0 makes every failing input slice.
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker Orca has no WipeTowerType/wipe_tower_type() (absent at
+            // bac6fd5) and always builds the Type-2 tower
+            // (`bUseWipeTower2 = is_BBL_printer() ? false : true`,
+            // references/SnapmakerOrca/src/libslic3r/Print.cpp:3221), whose
+            // branch writes WipeTowerData::height — so the workaround below,
+            // which is for the Type-1 path, does not apply.
+#else
             if (print.has_wipe_tower() && print.wipe_tower_type() == Slic3r::WipeTowerType::Type1)
                 const_cast<Slic3r::WipeTowerData&>(print.wipe_tower_data()).height = 0.f;
+#endif
 #endif
 
             // Calibration: install the calibration params after apply (which resets print
@@ -10660,8 +10912,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             outcome.no_check = switches.no_check;
             if (o.given_flag("no_check"))
                 print.set_no_check_flag(switches.no_check);
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker Orca has no setter for this check (no
+            // set_check_multi_filaments_compatibility in its Print at
+            // bac6fd5, Print.hpp:1020), so --allow_mix_temp has no engine hook.
+#else
             if (o.given_flag("allow_mix_temp"))
                 print.set_check_multi_filaments_compatibility(!switches.allow_mix_temp);
+#endif
 
             std::cout << "Validating...\n";
             // Option C — pass a warning out-pointer so BBS routes is_warning-
@@ -10732,7 +10990,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 int validate_error = CLI_VALIDATE_ERROR;
                 switch (validation_result.type) {
                     case Slic3r::STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE:      validate_error = CLI_FILAMENT_NOT_MATCH_BED_TYPE; break;
+#ifndef ENGINE_SNAPMAKER
                     case Slic3r::STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP:         validate_error = CLI_FILAMENTS_DIFFERENT_TEMP; break;
+#else
+                    // Snapmaker Orca calls it STRING_EXCEPT_FILAMENTS_MIXING_TEMP
+                    // (references/SnapmakerOrca/src/libslic3r/PrintBase.hpp:1-12
+                    // at bac6fd5); the same situation, the same code.
+                    case Slic3r::STRING_EXCEPT_FILAMENTS_MIXING_TEMP:            validate_error = CLI_FILAMENTS_DIFFERENT_TEMP; break;
+#endif
                     case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT:    validate_error = CLI_OBJECT_COLLISION_IN_SEQ_PRINT; break;
                     case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT:  validate_error = CLI_OBJECT_COLLISION_IN_LAYER_PRINT; break;
                     default: break;
@@ -11277,12 +11542,15 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         pd->toolpath_outside         = sliced.toolpath_outside;
         pd->timelapse_warning_code   = sliced.timelapse_warning_code;
         pd->is_label_object_enabled  = sliced.is_label_object_enabled;
+#ifndef ENGINE_SNAPMAKER
+        // Not in Snapmaker's PlateData at bac6fd5 (see record_plate_for_export).
         pd->limit_filament_maps      = sliced.limit_filament_maps;
         pd->layer_filaments          = sliced.layer_filaments;
         pd->filament_change_sequence = sliced.filament_change_sequence;
         pd->nozzle_change_sequence   = sliced.nozzle_change_sequence;
         pd->optimal_assignment       = sliced.optimal_assignment;
         pd->filament_maps            = sliced.filament_maps;
+#endif
         pd->is_support_used          = sliced.is_support_used;
         pd->slice_filaments_info     = sliced.slice_filaments_info;
         pd->skipped_objects          = sliced.skipped_objects;

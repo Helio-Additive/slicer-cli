@@ -42,12 +42,20 @@ std::vector<Slic3r::BedType> offered_bed_types(const Slic3r::VendorProfile::Prin
     if (def == nullptr)
         return out;
     int index = 0;
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca's PrinterModel carries no not_support_bed_types
+    // (references/SnapmakerOrca/src/libslic3r/Preset.hpp:111 at bac6fd5), so no
+    // bed type is excluded for a model and every label is offered.
+    (void)pm;
+#endif
     for (const std::string& label : def->enum_labels) {
         ++index;
+#ifndef ENGINE_SNAPMAKER
         if (pm && def->enum_keys_map &&
             std::find(pm->not_support_bed_types.begin(), pm->not_support_bed_types.end(), label) !=
                 pm->not_support_bed_types.end())
             continue;
+#endif
         out.push_back(Slic3r::BedType(index));
     }
     return out;

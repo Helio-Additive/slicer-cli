@@ -156,7 +156,12 @@ static std::string join_profile_array(const std::string& key, const json& v) {
     bool quote = false;
     if (const ConfigOptionDef* def = print_config_def.get(key)) {
         if (def->type == coStrings) { single_sep = ';'; quote = true; }
+#ifndef ENGINE_SNAPMAKER
+        // Snapmaker Orca has no ConfigOptionPointsGroups (its OrcaSlicer base
+        // predates per-nozzle point groups), so no option can take the '#'
+        // separator and every value arrives as a flat list.
         else if (def->type == coPointsGroups) single_sep = '#';
+#endif
     }
     auto text = [quote](const std::string& s) { return quote ? "\"" + escape_string_cstyle(s) + "\"" : s; };
     std::string out;

@@ -40,6 +40,45 @@ using FloatsN = ConfigOptionFloatsNullable;
 using BoolsN  = ConfigOptionBoolsNullable;
 #endif
 
+#ifdef ENGINE_SNAPMAKER
+// Snapmaker Orca predates the OrcaSlicer 2.4 per-extruder variant tables: its
+// tree has neither the *_options_with_variant option lists
+// (Slic3r::printer_options_with_variant_1 and friends, Preset.hpp) nor
+// ConfigOptionVectorBase::set_with_restore. The sets below therefore have the
+// same content they would have for this engine — no option is a variant
+// table — and are empty; the plain set_at() copies stay.
+const std::set<std::string> printer_options_with_variant_1;
+const std::set<std::string> printer_options_with_variant_2;
+const std::set<std::string> print_options_with_variant;
+const std::set<std::string> filament_options_with_variant;
+const std::set<std::string> empty_options;
+
+// The Snapmaker fork names the standard nozzle volume type nvtNormal
+// (references/SnapmakerOrca/src/libslic3r/PrintConfig.hpp:348-352 at bac6fd5,
+// 0); OrcaSlicer 2.4 calls it nvtStandard. Same value.
+constexpr NozzleVolumeType nvtStandard = NozzleVolumeType::nvtNormal;
+
+// OrcaSlicer 2.4 has get/set_flush_volumes_matrix as static helpers in
+// PrintConfig.hpp:2133-2159; the Snapmaker fork predates them. These are the
+// same slicing rules, with the same signature, from that source, so the CLI's
+// per-nozzle matrix layout is unchanged.
+static std::vector<double> get_flush_volumes_matrix(const std::vector<double>& fv_matrix, size_t extruder_id = -1, size_t nozzle_nums = 1) {
+    if (extruder_id != -1 && nozzle_nums != 1) {
+        return std::vector<double>(fv_matrix.begin() + size_t(fv_matrix.size() / nozzle_nums * extruder_id + EPSILON),
+                                   fv_matrix.begin() + size_t(fv_matrix.size() / nozzle_nums * (extruder_id + 1) + EPSILON));
+    }
+    return fv_matrix;
+}
+
+static void set_flush_volumes_matrix(std::vector<double>& out_matrix, const std::vector<double>& fv_matrix, size_t extruder_id = -1, size_t nozzle_nums = 1) {
+    if (extruder_id != -1 && nozzle_nums != 1) {
+        std::copy(fv_matrix.begin(), fv_matrix.end(), out_matrix.begin() + size_t(out_matrix.size() / nozzle_nums * extruder_id + EPSILON));
+    } else {
+        out_matrix = std::vector<double>(fv_matrix.begin(), fv_matrix.end());
+    }
+}
+#endif
+
 // B 682-683 / O 545-546.
 const std::set<std::string> gcodes_key_set = {"filament_end_gcode", "filament_start_gcode", "change_filament_gcode",
     "layer_change_gcode", "machine_end_gcode", "machine_pause_gcode", "machine_start_gcode", "template_custom_gcode",
@@ -212,6 +251,11 @@ std::string printer_model_id_for(const std::string& printer_model) {
 }
 
 /// The lambda compute_variant_index (B 3098-3138; O 2634-2675).
+#ifndef ENGINE_SNAPMAKER
+// Snapmaker Orca has no *_extruder_variant options (the OrcaSlicer 2.4 variant
+// tables), so there is no variant index to compute; its callers pass an empty
+// index with count_changed false, which is what this function returns for a
+// settings file that states no variant.
 void compute_variant_index(DynamicPrintConfig& full_config, const DynamicPrintConfig& new_config,
                            const std::string& id_name, const std::string& variant_name,
                            std::vector<int>& new_index, bool& count_changed) {
@@ -252,6 +296,7 @@ void compute_variant_index(DynamicPrintConfig& full_config, const DynamicPrintCo
             new_index[i] = 0;
     }
 }
+#endif // ENGINE_SNAPMAKER
 
 /// The lambda update_full_config (B 3141-3205; O 2677-2740).
 int update_full_config(DynamicPrintConfig& full_config, const DynamicPrintConfig& config, std::set<std::string>& diff_key_sets,
@@ -264,6 +309,16 @@ int update_full_config(DynamicPrintConfig& full_config, const DynamicPrintConfig
                 if (skip_gcodes && gcodes_key_set.count(opt_key)) {
                     diff_key_sets.erase(iter);
                 } else {
+#ifdef ENGINE_SNAPMAKER
+                    // ConfigOptionVectorBase::set_with_restore is OrcaSlicer 2.4
+                    // only, and this engine has no variant key sets, so
+                    // variant_count_changed is always false here: the differing
+                    // key is copied plainly below, as the OrcaSlicer CLI does
+                    // when no variant count changed (O 2709-2713).
+                    (void) variant_count_changed;
+                    (void) variant_index;
+                    continue;
+#else
                     if (variant_count_changed) {
                         int stride = 0;
                         if (key_set_1.count(opt_key) > 0)
@@ -277,12 +332,13 @@ int update_full_config(DynamicPrintConfig& full_config, const DynamicPrintConfig
                             auto* opt_vec_dest = static_cast<ConfigOptionVectorBase*>(dest_opt);
                             opt_vec_dest->set_with_restore(opt_vec_src, variant_index, stride);
 #ifndef ENGINE_ORCA
-                            continue;   // B 3175; the OrcaSlicer CLI falls through and also copies the key (O 2709-2713)
+                            continue;
 #endif
                         } else
                             continue;
                     } else
                         continue;
+#endif // ENGINE_SNAPMAKER
                 }
             }
         }
@@ -400,21 +456,33 @@ void read_project_facts(const DynamicPrintConfig& config, ProjectFacts& f) {
         f.current_filaments_name = fs->values;
     if (const auto* nd = config.option<FloatsN>("nozzle_diameter"))
         f.current_extruder_count = int(nd->values.size());
+#ifndef ENGINE_SNAPMAKER
     if (const auto* v = config.option<ConfigOptionStrings>("printer_extruder_variant"))
         f.current_printer_variant_count = int(v->values.size());
     if (const auto* v = config.option<ConfigOptionStrings>("print_extruder_variant"))
         f.current_print_variant_count = int(v->values.size());
+#else
+    // Snapmaker Orca has no *_extruder_variant options and no ExtruderType
+    // enum (references/SnapmakerOrca/src/libslic3r/PrintConfig.hpp:345-352 at
+    // bac6fd5), so a file states no variant count or variant name.
+#endif
     f.current_is_multi_extruder = f.current_extruder_count > 1;
     const auto* opt_extruder_type       = dynamic_cast<const ConfigOptionEnumsGeneric*>(config.option("extruder_type"));
     const auto* opt_nozzle_volume_type  = dynamic_cast<const ConfigOptionEnumsGeneric*>(config.option("nozzle_volume_type"));
     if (opt_nozzle_volume_type)
         f.current_nozzle_volume_type = opt_nozzle_volume_type->values;
     f.current_extruder_variants.assign(f.current_extruder_count, "");
+#ifndef ENGINE_SNAPMAKER
     for (int e = 0; e < f.current_extruder_count; e++) {
         const ExtruderType extruder_type = opt_extruder_type ? (ExtruderType)(opt_extruder_type->get_at(e)) : etDirectDrive;
         const NozzleVolumeType nvt = opt_nozzle_volume_type ? (NozzleVolumeType)(opt_nozzle_volume_type->get_at(e)) : nvtStandard;
         f.current_extruder_variants[e] = get_extruder_variant_string(extruder_type, nvt);
     }
+#else
+    // The variant-name string (get_extruder_variant_string) and the
+    // ExtruderType enum are OrcaSlicer 2.4 only; this engine names no variant.
+    (void) opt_extruder_type;
+#endif
     if (const auto* option_strings = config.option<ConfigOptionStrings>("inherits_group");
         option_strings && option_strings->values.size() >= 2) {
         f.current_inherits_group = option_strings->values;
@@ -1055,8 +1123,10 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         load_default_gcodes_to_config(load_machine_config, Preset::TYPE_PRINTER);
         if (new_printer_name.empty()) {
             const size_t diff_keys_size = different_keys_set.size();
+#ifndef ENGINE_SNAPMAKER
             compute_variant_index(m_print_config, load_machine_config, "printer_extruder_id", "printer_extruder_variant",
                                   new_variant_index, variant_count_changed);
+#endif
             ret = update_full_config(m_print_config, load_machine_config, different_keys_set, variant_count_changed,
                                      printer_options_with_variant_1, printer_options_with_variant_2, new_variant_index, false,
                                      skip_modified_gcodes);
@@ -1141,8 +1211,10 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         load_default_gcodes_to_config(load_process_config, Preset::TYPE_PRINT);
         if (new_process_name.empty()) {
             const size_t diff_keys_size = different_keys_set.size();
+#ifndef ENGINE_SNAPMAKER
             compute_variant_index(m_print_config, load_process_config, "print_extruder_id", "print_extruder_variant",
                                   new_variant_index, variant_count_changed);
+#endif
             ret = update_full_config(m_print_config, load_process_config, different_keys_set, variant_count_changed,
                                      print_options_with_variant, empty_options, new_variant_index, false, skip_modified_gcodes);
             if (diff_keys_size != different_keys_set.size())
@@ -1188,17 +1260,26 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     }
     new_nozzle_volume_type.resize(std::max<size_t>(new_nozzle_volume_type.size(), size_t(new_extruder_count)), nvtStandard);
     std::vector<std::string> new_extruder_variants(new_extruder_count, "");
+#ifndef ENGINE_SNAPMAKER
     const auto* opt_extruder_type = dynamic_cast<const ConfigOptionEnumsGeneric*>(m_print_config.option("extruder_type"));
     for (int e = 0; e < new_extruder_count; e++) {
         const ExtruderType extruder_type = opt_extruder_type ? (ExtruderType)(opt_extruder_type->get_at(e)) : etDirectDrive;
         new_extruder_variants[e] = get_extruder_variant_string(extruder_type, new_nozzle_volume_type[e]);
     }
+#else
+    // No ExtruderType enum and no get_extruder_variant_string at bac6fd5, so
+    // this engine names no extruder variant.
+#endif
     std::vector<NozzleVolumeType> current_nozzle_volume_type;
     for (int v : facts.current_nozzle_volume_type)
         current_nozzle_volume_type.push_back(NozzleVolumeType(v));
     if (current_nozzle_volume_type.empty())
         current_nozzle_volume_type.resize(facts.current_extruder_count, nvtStandard);
+#ifndef ENGINE_SNAPMAKER
     out.current_print_extruder_variants = m_print_config.option<ConfigOptionStrings>("print_extruder_variant", true)->values;
+#else
+    // No print_extruder_variant option at bac6fd5: no variant names to carry.
+#endif
 
     if (machine_switch) {
         print_compatible_printers.push_back(new_printer_system_name);
@@ -1367,6 +1448,13 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     opt_filament_ids->resize(filament_count, &filament_id_setting);
                 opt_filament_ids->set_at(&filament_id_setting, filament_index - 1, 0);
             }
+#ifdef ENGINE_SNAPMAKER
+            // No filament_extruder_variant option and no variant name at
+            // bac6fd5: one slot per filament, so there is no variant index to
+            // build and no variant stride for the bookkeeping below.
+            const int new_variant_count = 1;
+            const int old_variant_count = 1;
+#else
             ConfigOptionStrings* curr_variant_opt = m_print_config.option<ConfigOptionStrings>("filament_extruder_variant");
             if (!curr_variant_opt) {
                 curr_variant_opt = m_print_config.option<ConfigOptionStrings>("filament_extruder_variant", true);
@@ -1383,6 +1471,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         new_variant_indice[i] = j;
                         break;
                     }
+#endif // ENGINE_SNAPMAKER
             std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
             const size_t diff_keys_size = different_keys_set.size();
             for (const t_config_option_key& opt_key : config.keys()) {
@@ -1395,6 +1484,11 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         if (skip_modified_gcodes && gcodes_key_set.count(opt_key)) {
                             different_keys_set.erase(iter);
                         } else {
+#ifndef ENGINE_SNAPMAKER
+                            // ConfigOptionVectorBase::set_with_restore_2 is
+                            // OrcaSlicer 2.4 only, and this engine has no
+                            // variant tables, so this branch never runs; the
+                            // key is copied by the plain path below.
                             if (filament_options_with_variant.count(opt_key)) {
                                 ConfigOption* opt = m_print_config.option(opt_key);
                                 if (opt == nullptr)
@@ -1407,6 +1501,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                 opt_vec_dst->set_with_restore_2(opt_key, opt_vec_src, new_variant_indice, old_start_indice[filament_index - 1], old_variant_count);
 #endif
                             }
+#endif // ENGINE_SNAPMAKER
                             continue;
                         }
                     }
@@ -1435,6 +1530,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     return fail(CLI_CONFIG_FILE_ERROR, "Cannot take " + opt_key + " from filament " + std::to_string(filament_index) + ".");
                 auto* opt_vec_dst = static_cast<ConfigOptionVectorBase*>(opt);
                 auto* opt_vec_src = static_cast<const ConfigOptionVectorBase*>(source_opt);
+#ifndef ENGINE_SNAPMAKER
+                // No variant tables in this engine: every filament option is
+                // copied straight to the filament's own slot, as below.
                 if (filament_options_with_variant.count(opt_key)) {
                     std::vector<int> temp_variant_indice(new_variant_count, -1);
 #ifdef ENGINE_ORCA
@@ -1445,6 +1543,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     if (opt_key == "filament_extruder_variant")
                         new_variant_counts[filament_index - 1] = int(opt_vec_src->size());
                 } else
+#endif // ENGINE_SNAPMAKER
                     opt_vec_dst->set_at(opt_vec_src, filament_index - 1, 0);
             }
             if (old_variant_count != new_variant_count)
@@ -1454,6 +1553,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 different_settings[filament_index] =
                     escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
         }
+#ifndef ENGINE_SNAPMAKER
+        // filament_extruder_variant / filament_self_index are OrcaSlicer 2.4
+        // only; without variant tables each filament is its own slot.
         if (m_print_config.option<ConfigOptionStrings>("filament_extruder_variant")) {
             std::vector<int>& indice = m_print_config.option<ConfigOptionInts>("filament_self_index", true)->values;
             const int index_size = int(m_print_config.option<ConfigOptionStrings>("filament_extruder_variant")->size());
@@ -1463,6 +1565,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 for (int j = 0; j < new_variant_counts[i] && n < index_size; j++)
                     indice[n++] = i + 1;
         }
+#endif // ENGINE_SNAPMAKER
     }
 
     // The flush volumes, when the colours, the nozzles or the matrix change
@@ -1537,6 +1640,15 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             std::vector<int> nozzle_flush_dataset(new_extruder_count, 0);
             {
                 std::vector<int> nozzle_flush_dataset_full = m_print_config.option<ConfigOptionIntsNullable>("nozzle_flush_dataset", true)->values;
+#ifdef ENGINE_SNAPMAKER
+                // No *_extruder_variant options and no ExtruderType /
+                // NozzleVolumeType::nvtStandard / get_index_for_extruder at
+                // bac6fd5: one flush dataset, the branch the official takes
+                // when printer_extruder_variant is absent.
+                nozzle_flush_dataset_full.resize(1, 0);
+                for (int eidx = 0; eidx < new_extruder_count; ++eidx)
+                    nozzle_flush_dataset[eidx] = nozzle_flush_dataset_full[0];
+#else
                 if (m_print_config.has("printer_extruder_variant"))
                     nozzle_flush_dataset_full.resize(new_printer_variant_count, 0);
                 else
@@ -1563,6 +1675,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     if (idx >= 0 && idx < int(nozzle_flush_dataset_full.size()))
                         nozzle_flush_dataset[eidx] = nozzle_flush_dataset_full[idx];
                 }
+#endif // ENGINE_SNAPMAKER
             }
             for (size_t nozzle_id = 0; nozzle_id < size_t(new_extruder_count); ++nozzle_id) {
                 std::vector<double> flush_vol_mtx = get_flush_volumes_matrix(flush_vol_matrix, nozzle_id, new_extruder_count);
@@ -1666,8 +1779,14 @@ void update_object_configs_after_switch(const ProjectFacts& facts, const Setting
     if (facts.current_extruder_count == merge.new_extruder_count && current_print_variant_count == merge.new_printer_variant_count)
         return;
     auto update = [&](DynamicPrintConfig& c) {
+#ifdef ENGINE_SNAPMAKER
+        // update_values_from_multi_to_multi_2 is OrcaSlicer 2.4 only and this
+        // engine has no variant tables to remap.
+        (void) c;
+#else
         c.update_values_from_multi_to_multi_2(merge.current_print_extruder_variants, merge.new_printer_extruder_variants,
                                               print_config, print_options_with_variant);
+#endif
     };
     for (ModelObject* object : model.objects) {
         DynamicPrintConfig object_config = object->config.get();
@@ -1730,6 +1849,15 @@ namespace {
 // (BambuStudio.cpp 4728-4756, 4258-4280; OrcaSlicer.cpp 4067-4093).
 bool shared_extruder_box(const DynamicPrintConfig& config, int width, int depth, double height,
                          double& shared_width, double& shared_depth, double& shared_height) {
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca has no ConfigOptionPointsGroups (no per-nozzle
+    // extruder_printable_area) at bac6fd5, so a printer states no shared box
+    // narrower than its bed and this returns false, as for any printer that
+    // states none.
+    (void) config; (void) width; (void) depth; (void) height;
+    (void) shared_width; (void) shared_depth; (void) shared_height;
+    return false;
+#else
     const auto* areas   = config.option<ConfigOptionPointsGroups>("extruder_printable_area");
     const auto* heights = config.option<ConfigOptionFloatsNullable>("extruder_printable_height");
     if (!areas || !heights || areas->values.empty() || heights->values.size() != areas->values.size())
@@ -1750,6 +1878,7 @@ bool shared_extruder_box(const DynamicPrintConfig& config, int width, int depth,
     shared_depth  = current_bbox.size().y();
     shared_height = temp_extruder_height;
     return true;
+#endif // ENGINE_SNAPMAKER
 }
 
 // load_downward_settings_list_from_config (BambuStudio.cpp 1440-1488;

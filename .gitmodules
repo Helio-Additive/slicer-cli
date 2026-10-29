@@ -6,3 +6,7 @@
 	path = references/OrcaSlicer
 	url = https://github.com/OrcaSlicer/OrcaSlicer.git
 	shallow = true
+[submodule "references/SnapmakerOrca"]
+	path = references/SnapmakerOrca
+	url = https://github.com/Snapmaker/OrcaSlicer.git
+	shallow = true

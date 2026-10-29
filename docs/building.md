@@ -7,6 +7,7 @@ programs:
 |-|-|-|
 | `-DENGINE=bambu` (default) | `slicer_cli` | `references/BambuStudio` |
 | `-DENGINE=orca` | `slicer_cli-orcaslicer` | `references/OrcaSlicer` |
+| `-DENGINE=snapmaker` | `slicer_cli-snapmaker` | `references/SnapmakerOrca` |
 
 The release builds run in GitHub Actions
 (`.github/workflows/slicer-cli-ci.yml`) for Linux x86_64, Linux arm64, macOS
@@ -20,16 +21,22 @@ git clone --recurse-submodules https://github.com/Helio-Additive/slicer-cli.git
 cd slicer-cli
 ```
 
-The two engines are git submodules, pinned to one commit each:
+The engines are git submodules, pinned to one commit each:
 
 | Engine | Submodule | Pin | Version |
 |-|-|-|-|
 | Bambu Studio | `references/BambuStudio` | `926a719` | 02.08.02.61 |
 | OrcaSlicer | `references/OrcaSlicer` | `8500fcd` | 2.4.2 |
+| Snapmaker Orca | `references/SnapmakerOrca` | `bac6fd5` | 2.4.1 |
 
-Both submodules point at the upstream projects' official repositories and are
+The Snapmaker Orca engine is a Snapmaker fork of OrcaSlicer, so it builds with
+the OrcaSlicer engine's dependency pins above. It is built locally only: the
+release workflow publishes the two engines.
+
+The submodules point at the upstream projects' official repositories and are
 pinned to the commit of the release tag: `bambulab/BambuStudio` tag
-`v02.08.02.61` and `OrcaSlicer/OrcaSlicer` tag `v2.4.2`. The engine source is
+`v02.08.02.61` and `OrcaSlicer/OrcaSlicer` tag `v2.4.2`, and
+`Snapmaker/OrcaSlicer` commit `bac6fd5` (version 2.4.1). The engine source is
 used as it is (see "The override layer" below); no Helio commit lives inside
 `references/`.
 
