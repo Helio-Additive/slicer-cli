@@ -1176,8 +1176,14 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     if (m_print_config.option<ConfigOptionFloats>("nozzle_diameter")) {
         new_extruder_count = int(m_print_config.option<ConfigOptionFloats>("nozzle_diameter")->values.size());
         new_is_multi_extruder = new_extruder_count > 1;
+#ifndef ENGINE_SNAPMAKER
         new_printer_extruder_variants = m_print_config.option<ConfigOptionStrings>("printer_extruder_variant", true)->values;
         new_printer_variant_count = int(new_printer_extruder_variants.size());
+#else
+        // No printer_extruder_variant option at bac6fd5 (option(key, true)
+        // returns null for a key the engine does not define): one variant,
+        // as Snapmaker's CLI has no variant logic.
+#endif
     }
 #endif
 
@@ -1223,7 +1229,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             ret = update_full_config(m_print_config, load_process_config, different_keys_set, variant_count_changed,
                                      print_options_with_variant, empty_options, new_variant_index, true);
         }
+#ifndef ENGINE_SNAPMAKER
         current_print_variant_count = int(m_print_config.option<ConfigOptionStrings>("print_extruder_variant", true)->values.size());
+#endif
         if (ret)
             return fail(ret, "Merging the process settings failed.");
     }
