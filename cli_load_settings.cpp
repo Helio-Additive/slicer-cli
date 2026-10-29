@@ -160,7 +160,27 @@ int load_config_file(const std::string& file, DynamicPrintConfig& config, std::s
             why = file + " is of type '" + config_type + "'; a settings file is a machine, process or filament";
             return CLI_CONFIG_FILE_ERROR;
         }
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker's normalize_fdm range-checks wipe_tower_filament against
+        // nozzle_diameter without testing that the file has one
+        // (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:7892-7897 at
+        // bac6fd5). A process file states the first and not the second (its
+        // shipped "0.08mm Standard @Snapmaker U1 (0.4 nozzle)" does), and the
+        // dereference crashes Snapmaker's own CLI too (Snapmaker_Orca.cpp:1743;
+        // its AppRun --load-settings with that file exits 139). The check
+        // cannot run without a nozzle count, so the value is held out of that
+        // one call and put back unchanged.
+        std::unique_ptr<ConfigOption> held_wipe_tower_filament;
+        if (config.has("wipe_tower_filament") && !config.has("nozzle_diameter")) {
+            held_wipe_tower_filament.reset(config.option("wipe_tower_filament")->clone());
+            config.erase("wipe_tower_filament");
+        }
         config.normalize_fdm();
+        if (held_wipe_tower_filament)
+            config.set_key_value("wipe_tower_filament", held_wipe_tower_filament.release());
+#else
+        config.normalize_fdm();
+#endif
     } catch (const std::exception& ex) {
         why = "loading " + file + " failed: " + ex.what();
         return CLI_CONFIG_FILE_ERROR;

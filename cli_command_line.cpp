@@ -588,7 +588,24 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
     // m_extra_config: every print setting given (BambuStudio.cpp 1563-1564,
     // OrcaSlicer.cpp 1258-1259).
     o.extra_config.apply(cfg, true);
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's normalize_fdm reads nozzle_diameter whenever
+    // wipe_tower_filament is set (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:7892-7897
+    // at bac6fd5), so --wipe-tower-filament alone would crash; the value is
+    // held out of that one call (see load_config_file, cli_load_settings.cpp).
+    {
+        std::unique_ptr<Slic3r::ConfigOption> held;
+        if (o.extra_config.has("wipe_tower_filament") && !o.extra_config.has("nozzle_diameter")) {
+            held.reset(o.extra_config.option("wipe_tower_filament")->clone());
+            o.extra_config.erase("wipe_tower_filament");
+        }
+        o.extra_config.normalize_fdm();
+        if (held)
+            o.extra_config.set_key_value("wipe_tower_filament", held.release());
+    }
+#else
     o.extra_config.normalize_fdm();
+#endif
     if (const std::string why = extra_config_refusal(o.extra_config); !why.empty()) {
         refusal = refuse(why);
         return false;
