@@ -1400,6 +1400,13 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     if (load_filament_count > 0 || up_config_to_date) {
         std::vector<int> old_start_indice(filament_count, 0);
         std::vector<int> old_variant_counts(filament_count, 1), new_variant_counts;
+#ifdef ENGINE_SNAPMAKER
+        // No filament_self_index option at bac6fd5 (option(key, true) is null
+        // for it): one slot per filament, as Snapmaker's CLI keeps them.
+        std::vector<int> old_self_indice(std::max(filament_count, 0));
+        for (int i = 0; i < filament_count; i++)
+            old_self_indice[i] = i + 1;
+#else
         ConfigOptionInts* filament_self_index_opt = m_print_config.option<ConfigOptionInts>("filament_self_index");
         if (!filament_self_index_opt) {
             filament_self_index_opt = m_print_config.option<ConfigOptionInts>("filament_self_index", true);
@@ -1409,6 +1416,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 indice[i] = i + 1;
         }
         const std::vector<int> old_self_indice = filament_self_index_opt->values;
+#endif
         int k = -1, current_filament = 0;
         for (size_t i = 0; i < old_self_indice.size(); i++) {
             if (old_self_indice[i] > current_filament) {
@@ -1649,6 +1657,39 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 return fail(CLI_CONFIG_FILE_ERROR, "filament_is_support has " + std::to_string(filament_is_support->size()) +
                                                    " values for " + std::to_string(project_filament_count) + " filament colours.");
             std::vector<double>& flush_vol_matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix", true)->values;
+#ifdef ENGINE_SNAPMAKER
+            // Snapmaker's CLI computes one filament-by-filament matrix with a
+            // single flush_multiplier of 1 (a scalar there), and no per-nozzle
+            // flush dataset, which the engine does not define
+            // (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:2839-2896 at bac6fd5).
+            flush_vol_matrix.resize(project_filament_count * project_filament_count, 0.f);
+            m_print_config.option<ConfigOptionFloat>("flush_multiplier", true)->value = 1.f;
+            for (size_t from_idx = 0; from_idx < project_filament_count; from_idx++) {
+                unsigned char from_rgb[4] = {};
+                parse_color4(project_colors[from_idx], from_rgb);
+                const bool is_from_support = filament_is_support->get_at(from_idx);
+                for (size_t to_idx = 0; to_idx < project_filament_count; to_idx++) {
+                    const bool is_to_support = filament_is_support->get_at(to_idx);
+                    if (from_idx == to_idx) {
+                        flush_vol_matrix[project_filament_count * from_idx + to_idx] = 0.f;
+                        continue;
+                    }
+                    int flushing_volume = 0;
+                    if (is_to_support) {
+                        flushing_volume = g_flush_volume_to_support;
+                    } else {
+                        unsigned char to_rgb[4] = {};
+                        parse_color4(project_colors[to_idx], to_rgb);
+                        FlushVolCalculator calculator(min_flush_volumes[from_idx], g_max_flush_volume);
+                        flushing_volume = calculator.calc_flush_vol(from_rgb[3], from_rgb[0], from_rgb[1], from_rgb[2], to_rgb[3], to_rgb[0], to_rgb[1], to_rgb[2]);
+                        if (is_from_support)
+                            flushing_volume = std::max(g_min_flush_volume_from_support, flushing_volume);
+                    }
+                    flush_vol_matrix[project_filament_count * from_idx + to_idx] = flushing_volume;
+                }
+            }
+            (void)new_extruder_count;
+#else
             flush_vol_matrix.resize(project_filament_count * project_filament_count * new_extruder_count, 0.f);
 #ifndef ENGINE_ORCA
             const std::vector<std::string>& flush_filament_ids = m_print_config.option<ConfigOptionStrings>("filament_ids", true)->values;
@@ -1663,15 +1704,6 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             std::vector<int> nozzle_flush_dataset(new_extruder_count, 0);
             {
                 std::vector<int> nozzle_flush_dataset_full = m_print_config.option<ConfigOptionIntsNullable>("nozzle_flush_dataset", true)->values;
-#ifdef ENGINE_SNAPMAKER
-                // No *_extruder_variant options and no ExtruderType /
-                // NozzleVolumeType::nvtStandard / get_index_for_extruder at
-                // bac6fd5: one flush dataset, the branch the official takes
-                // when printer_extruder_variant is absent.
-                nozzle_flush_dataset_full.resize(1, 0);
-                for (int eidx = 0; eidx < new_extruder_count; ++eidx)
-                    nozzle_flush_dataset[eidx] = nozzle_flush_dataset_full[0];
-#else
                 if (m_print_config.has("printer_extruder_variant"))
                     nozzle_flush_dataset_full.resize(new_printer_variant_count, 0);
                 else
@@ -1698,7 +1730,6 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     if (idx >= 0 && idx < int(nozzle_flush_dataset_full.size()))
                         nozzle_flush_dataset[eidx] = nozzle_flush_dataset_full[idx];
                 }
-#endif // ENGINE_SNAPMAKER
             }
             for (size_t nozzle_id = 0; nozzle_id < size_t(new_extruder_count); ++nozzle_id) {
                 std::vector<double> flush_vol_mtx = get_flush_volumes_matrix(flush_vol_matrix, nozzle_id, new_extruder_count);
@@ -1733,6 +1764,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 }
                 set_flush_volumes_matrix(flush_vol_matrix, flush_vol_mtx, nozzle_id, new_extruder_count);
             }
+#endif // ENGINE_SNAPMAKER
         }
     }
 
@@ -1971,7 +2003,11 @@ StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts
         printer.name = config_name;
         const Pointfs printable_area = config.option<ConfigOptionPoints>("printable_area", true)->values;
         const Pointfs exclude_area   = config.option<ConfigOptionPoints>("bed_exclude_area", true)->values;
+#ifdef ENGINE_SNAPMAKER
+        const Pointfs wrapping_area;   // no wrapping_exclude_area option at bac6fd5
+#else
         const Pointfs wrapping_area  = config.option<ConfigOptionPoints>("wrapping_exclude_area", true)->values;
+#endif
         // The points option's own default is a full rectangle, so the size
         // check above passes for a file that states no printable_area at all;
         // printable_height then is not in the config, and opt_float() has

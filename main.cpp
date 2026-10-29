@@ -5451,6 +5451,9 @@ struct BambuValueAction {
 /// PresetBundle::update_multi_material_filament_presets (PresetBundle.cpp:3983-4094).
 static std::vector<unsigned int> g_filament_id_remap;
 static size_t                    g_filament_id_total = 0;
+// The desktop remaps only when the filament count changes (on_filaments_change);
+// a run without a printer switch that changes it leaves the paint alone.
+static bool                      g_filament_count_changed = false;
 
 #endif
 
@@ -6313,8 +6316,10 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     if (!o.printer_preset.empty() && o.printer_preset.find("Snapmaker U1") == std::string::npos) {
         const auto* nozzles = bundle.printers.get_edited_preset().config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
         const size_t extruders = nozzles != nullptr ? nozzles->values.size() : 0;
-        if (extruders > 0 && extruders != bundle.filament_presets.size())
+        if (extruders > 0 && extruders != bundle.filament_presets.size()) {
             bundle.set_num_filaments((unsigned int) extruders, std::vector<std::string>());
+            g_filament_count_changed = true;
+        }
     }
     // The remap the switch built, applied to the volumes once the model is loaded.
     g_filament_id_remap = bundle.consume_last_filament_id_remap();
@@ -8745,7 +8750,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #if defined(ENGINE_SNAPMAKER) || defined(ENGINE_ORCA)
             g_file_made_by_bambustudio = bambu_made_project;
 #endif
-#ifdef ENGINE_ORCA
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
             // The loader's own is_orca_3mf flag does not recognise every
             // OrcaSlicer-made file (it is false for an "OrcaSlicer-0.1.0-dev"
             // project), so the maker is read from the file's own tags, the way
@@ -9161,9 +9166,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 for (size_t oi = 0; oi < model.objects.size(); ++oi) {
                     Slic3r::ModelObject* object = model.objects[oi];
                     if (object == nullptr) continue;
-                    for (Slic3r::ModelVolume* volume : object->volumes)
-                        if (volume != nullptr)
-                            apply_remap(*volume);
+                    if (!g_filament_id_remap.empty() || g_filament_count_changed)
+                        for (Slic3r::ModelVolume* volume : object->volumes)
+                            if (volume != nullptr)
+                                apply_remap(*volume);
                     fix(object->config, "object " + std::to_string(oi + 1), true);
                     if (object->volumes.size() > 1)
                         for (size_t vi = 0; vi < object->volumes.size(); ++vi)
