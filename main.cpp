@@ -10815,6 +10815,22 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // (BambuStudio.cpp 4669-4914; OrcaSlicer.cpp 4006-4175). The
         // official checks the plates of a project (plate_obj_size_infos
         // exists only then, BambuStudio.cpp 4646-4658), every one of them.
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker Orca defines downward_check twice: a CLI action taking a
+        // list of machine files (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:8542
+        // at bac6fd5) and the on/off switch (8798). The command line here
+        // holds the list, so there is no on/off value to read; Snapmaker's
+        // own CLI checks for that before reading it (Snapmaker_Orca.cpp:1136-1140).
+        if (o.given_flag("downward_check") && o.cli.option<Slic3r::ConfigOptionBool>("downward_check") == nullptr) {
+            const std::string why =
+                "--downward-check cannot run in slicer_cli-snapmaker: Snapmaker Orca defines downward_check as an "
+                "action that takes a list of machine files, so the on/off check has no value to read here. Drop the "
+                "flag to slice; this build cannot run the downward check.";
+            std::cerr << "Error: " << why << "\n";
+            set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
+            return 1;
+        }
+#endif
         if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check") && g_downward_run.done) {
             // Every plate was checked by the run's first call.
             outcome.downward_checked = true;
