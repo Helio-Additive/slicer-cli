@@ -68,14 +68,21 @@ std::string official_flag_refusal(const std::string& key) {
     auto it = not_supported().find(key);
     if (it == not_supported().end())
         return {};
+#ifdef ENGINE_SNAPMAKER
+    // --pipe is an active CLI flag at bac6fd5 too
+    // (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp CLI defs).
+    return "--" + dashed(key) + " is a flag of Snapmaker Orca's own command line that slicer-cli does not support: " +
+           it->second;
+#else
     return "--" + dashed(key) + " is a flag of " +
            (bambu_only_keys().count(key) ? std::string("Bambu Studio's") : std::string("Bambu Studio's and OrcaSlicer's")) +
            " own command line that slicer-cli does not support: " + it->second;
+#endif
 }
 
 #ifdef ENGINE_SNAPMAKER
 std::string all_binaries_label() {
-    return "slicer_cli and slicer_cli-snapmaker";
+    return "slicer_cli, slicer_cli-orcaslicer and slicer_cli-snapmaker";
 }
 #endif
 
@@ -99,8 +106,15 @@ std::string foreign_flag_refusal(const std::string& cli_name) {
 #endif
 #endif
     if (commented_out_names().count(cli_name))
+#ifdef ENGINE_SNAPMAKER
+        // Commented out in Snapmaker's CLI defs as well (block comments in
+        // references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp 8454-8900 at bac6fd5).
+        return "--" + cli_name + " is not a flag of slicer-cli: Snapmaker Orca's own command line does not "
+               "have it either (it is commented out there)";
+#else
         return "--" + cli_name + " is not a flag of slicer-cli: Bambu Studio's and OrcaSlicer's own "
                "command lines do not have it either (it is commented out in both)";
+#endif
     (void)kOtherApp;
     return {};
 }
