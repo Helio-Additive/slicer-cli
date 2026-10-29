@@ -8378,6 +8378,29 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
     const bool verbose                 = o.verbose;
     const bool normalize_legacy_gcode  = o.normalize_legacy_gcode;
     const auto& overrides              = o.overrides;
+#ifdef ENGINE_SNAPMAKER
+    // The engine writes debug SVGs into data_dir()/"SVG" on some slicing paths
+    // (references/SnapmakerOrca/src/libslic3r/utils.cpp:302-320 at bac6fd5, where
+    // create_directory throws if the parent is gone). The data directory can be
+    // the named-preset staging folder, which is removed once staging ends, so a
+    // run that switched printer stopped there. Give such a run a data directory
+    // that exists for as long as the slice does.
+    {
+        namespace fs = boost::filesystem;
+        fs::path data_dir(Slic3r::data_dir());
+        if (data_dir.empty() || !fs::exists(data_dir)) {
+            const fs::path fallback = run_backup_path();
+            boost::system::error_code ec;
+            fs::create_directories(fallback, ec);
+            if (!fallback.empty())
+                Slic3r::set_data_dir(fallback.string());
+        }
+        if (!Slic3r::data_dir().empty()) {
+            boost::system::error_code ec;
+            fs::create_directories(fs::path(Slic3r::data_dir()) / "SVG", ec);
+        }
+    }
+#endif
     const bool calib_enabled       = calib_params.mode != Slic3r::CalibMode::Calib_None;
     const bool calib_self_geometry = slicer_cli::calib_mode_generates_geometry(calib_params.mode);
     const auto plate_started = std::chrono::steady_clock::now();
