@@ -9106,7 +9106,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (verdict == FileVersionVerdict::Refused) {
                     std::string detail = "The file is version " + file_version.to_string() +
                                          (app != meta.end() ? " (" + app->second + ")" : std::string()) +
-                                         "; this engine is " + engine_version_text() + ".";
+                                         "; this engine is " + engine_version_text() + "." +
+                                         " Pass --allow-newer-file to slice it anyway; the settings this engine"
+                                         " does not know are then ignored.";
                     emit_event({{"event","config_refused"},
                                 {"tag","FileVersionNewerThanEngine"},
                                 {"file_version", file_version.to_string()},
@@ -9887,7 +9889,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (!validity.empty() || !unknown_values.empty()) {
                 // One refusal naming every value at once: unknown enum
                 // values first, then the engine's range findings.
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+                std::string sentence = "Snapmaker Orca cannot print this file as it is: ";
+#elif defined(ENGINE_ORCA)
                 std::string sentence = "OrcaSlicer cannot print this file as it is: ";
 #else
                 std::string sentence = "BambuStudio cannot print this file as it is: ";
@@ -9917,6 +9921,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     }
                     sentence += " Give " + flags + " a value in range to override it.";
                 }
+                sentence += " --allow-substitution lets the engine use its own default for a value it does"
+                            " not know instead.";
                 emit_event({{"event","config_refused"},
                             {"tag", unknown_values.empty() ? "InvalidValues" : "InvalidOrUnknownValues"},
                             {"settings", items},

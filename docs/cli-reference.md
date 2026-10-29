@@ -209,6 +209,11 @@ own CLI does (`Snapmaker_Orca.cpp:1274-1279`). It prints
 `Forcing CLI newer-file compatibility from SNAPMAKER_ORCA_ALLOW_NEWER_FILE` to
 stderr.
 
+A refusal that a flag gets past says so in its own sentence: a file newer than
+the engine names `--allow-newer-file`, and a value this engine does not know
+names the setting's own flag (`--<setting> <value>`) and `--allow-substitution`,
+which lets the engine use its own default instead.
+
 `--allow-mix-temp` (in the `slicer_cli-snapmaker` binary only): slice a plate
 whose filaments mix high- and low-temperature materials. Snapmaker Orca's engine
 has no `allow_mix_temp` setting, so this build takes the desktop's rule (a used
