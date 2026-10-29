@@ -6264,6 +6264,18 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // follow the desktop's full_fff_config, one value per filament from
     // each filament's own preset.
 #ifdef ENGINE_SNAPMAKER
+    // Item 3b: on a switch to a printer that is not a Snapmaker U1 the desktop
+    // trims the filament count to the printer's extruder count, while a U1
+    // keeps the count it had (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:2247-2270
+    // at bac6fd5; set_num_filaments is its own call, Tab.cpp:2270).
+    if (!o.printer_preset.empty() && o.printer_preset.find("Snapmaker U1") == std::string::npos) {
+        const auto* nozzles = bundle.printers.get_edited_preset().config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
+        const size_t extruders = nozzles != nullptr ? nozzles->values.size() : 0;
+        if (extruders > 0 && extruders != bundle.filament_presets.size())
+            bundle.set_num_filaments((unsigned int) extruders, std::vector<std::string>());
+    }
+#endif
+#ifdef ENGINE_SNAPMAKER
     // Snapmaker Orca's PresetBundle::full_config() takes no argument and is
     // full_fff_config() for FFF (references/SnapmakerOrca/src/libslic3r/PresetBundle.cpp:2491-2496
     // at bac6fd5): the same settings OrcaSlicer's full_config(false) returns.
@@ -6277,6 +6289,49 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // the Print maps them as for full_config(false); false would also write
     // the AMS drying lists per variant, unlike a desktop project.
     out = bundle.full_config();
+#endif
+#ifdef ENGINE_SNAPMAKER
+    // Item 1: check_filament_max_volumetric_speed (references/SnapmakerOrca/src/slic3r/GUI/ConfigManipulation.cpp:126-163
+    // at bac6fd5, run for the filament preset from Tab.cpp:4648): pad the list
+    // to the flow-variant count with its own first value and lift anything
+    // under 0.5 to 0.5. The desktop asks with a dialog; here it is a warning.
+    // The desktop runs it when a filament preset is edited or selected, not on
+    // the filaments a 3MF carries — those load into project_config and are
+    // never run through ConfigManipulation — so this runs on the named and STL
+    // paths, which is where presets by name become the run's filaments.
+    if (auto* speeds = out.option<Slic3r::ConfigOptionFloats>("filament_max_volumetric_speed");
+        speeds != nullptr && !speeds->values.empty()) {
+        size_t variants = speeds->values.size();
+        if (const auto* flow = out.option<Slic3r::ConfigOptionStrings>("filament_flow_support");
+            flow != nullptr && !flow->values.empty())
+            variants = std::max(variants, flow->values.size());
+        const double fallback = speeds->values.front();
+        const bool padded = speeds->values.size() != variants;
+        speeds->values.resize(variants, fallback);
+        bool lifted = false;
+        for (double& value : speeds->values)
+            if (value < 0.5) { value = 0.5; lifted = true; }
+        if (lifted || padded)
+            emit_event({{"event","warning"}, {"tag","MaxVolumetricSpeedCorrected"},
+                        {"message","Too small max volumetric speed. Reset to 0.5."}});
+    }
+    // Item 2: the desktop copies the mixed and dithering keys from the process
+    // preset into the project config before PresetBundle applies that config
+    // last (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:2295-2316,
+    // GUI_App.cpp:6798-6826, libslic3r/PresetBundle.cpp:2525 at bac6fd5), so the
+    // process wins over a project's own values. Here `out` is that config.
+    {
+        static const Slic3r::t_config_option_keys mixed_keys = {
+            "mixed_filament_gradient_mode", "mixed_filament_height_lower_bound",
+            "mixed_filament_height_upper_bound", "mixed_filament_advanced_dithering",
+            "mixed_filament_component_bias_enabled", "mixed_filament_surface_indentation",
+            "mixed_filament_region_collapse", "mixed_color_layer_height_a", "mixed_color_layer_height_b",
+            "dithering_z_step_size", "dithering_local_z_mode", "dithering_local_z_whole_objects",
+            "dithering_local_z_infill", "dithering_local_z_direct_multicolor",
+            "dithering_step_painted_zones_only", "mixed_filament_pointillism_pixel_size",
+            "mixed_filament_pointillism_line_gap", "mixed_filament_definitions"};
+        out.apply_only(bundle.prints.get_edited_preset().config, mixed_keys, true);
+    }
 #endif
     // full_config() writes each filament's own colour; a slot without one
     // keeps the engine default.
@@ -8911,6 +8966,65 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 }
             }
 #endif
+#ifdef ENGINE_SNAPMAKER
+            // Item 4 (and 3f): the desktop's rule for filament indices that are
+            // out of range (references/SnapmakerOrca/src/slic3r/GUI/GUI_ObjectList.cpp:748-793
+            // at bac6fd5): an object's or volume's missing or too-large
+            // extruder becomes 0, and its wall_filament, sparse_infill_filament,
+            // solid_infill_filament, support_filament and
+            // support_interface_filament are erased. The range counts physical
+            // and mixed filaments (GUI_ObjectList.cpp:74-80).
+            {
+                const size_t physical = std::max<size_t>(1, project_filament_count(config));
+                size_t total = physical;
+                {
+                    Slic3r::MixedFilamentManager mixed;
+                    std::vector<std::string> colours;
+                    if (const auto* colour = config.option<Slic3r::ConfigOptionStrings>("filament_colour"))
+                        colours = colour->values;
+                    if (const auto* defs = config.option<Slic3r::ConfigOptionString>("mixed_filament_definitions");
+                        defs != nullptr && !defs->value.empty())
+                        mixed.load_custom_entries(defs->value, colours);
+                    total = mixed.total_filaments(physical);
+                }
+                const size_t range = std::max<size_t>(total, 1);
+                json reset = json::object();
+                json erased = json::array();
+                auto fix = [&](Slic3r::ModelConfigObject& cfg, const std::string& where) {
+                    if (!cfg.has("extruder") || (size_t) cfg.extruder() > range) {
+                        const int was = cfg.has("extruder") ? cfg.extruder() : -1;
+                        cfg.set_key_value("extruder", new Slic3r::ConfigOptionInt(0));
+                        reset[where] = {{"from", was}, {"to", 0}};
+                    }
+                    for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament",
+                                            "support_filament", "support_interface_filament"}) {
+                        if (cfg.has(key) && (size_t) cfg.opt_int(key) > range) {
+                            erased.push_back(where + " " + key);
+                            cfg.erase(key);
+                        }
+                    }
+                };
+                for (size_t oi = 0; oi < model.objects.size(); ++oi) {
+                    Slic3r::ModelObject* object = model.objects[oi];
+                    if (object == nullptr) continue;
+                    fix(object->config, "object " + std::to_string(oi + 1));
+                    for (size_t vi = 0; vi < object->volumes.size(); ++vi)
+                        if (object->volumes[vi] != nullptr)
+                            fix(object->volumes[vi]->config, "object " + std::to_string(oi + 1) + " volume " +
+                                                                 std::to_string(vi + 1));
+                }
+                if (!reset.empty() || !erased.empty())
+                    emit_event({{"event","config_normalized"},
+                                {"tag","FilamentIndexOutOfRangeReset"},
+                                {"reset_extruder", reset},
+                                {"erased_keys", erased},
+                                {"filament_range", int(range)},
+                                {"message","The project states filament indices outside this printer's " +
+                                           std::to_string(range) + " filament(s) (physical and mixed): an object's "
+                                           "or volume's extruder is reset to 0 (Default) and its feature-filament "
+                                           "keys are dropped, as the desktop does on load"}});
+            }
+#endif
             // Engine fit: a project for a printer this engine does not have is
             // refused before anything is sliced. Without the printer's presets
             // the engine slices the flat file against its own defaults (a
@@ -11262,6 +11376,28 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // (align_per_filament_config_vectors above) already ran on its path.
             if (size_t grown = normalize_filament_config_vectors(config); grown > 0 && verbose)
                 std::cout << "Filament vectors: " << grown << " array(s) sized to the roster\n";
+#endif
+#ifdef ENGINE_SNAPMAKER
+            // Item 6: a run whose models come from a file with no plate tower
+            // position gets the desktop's defaults for the plate — x =
+            // WIPE_TOWER_DEFAULT_X_POS (13), y at the middle of the bed, each
+            // lifted to the tower's margin
+            // (references/SnapmakerOrca/src/slic3r/GUI/PartPlate.cpp:4094 and :70
+            // at bac6fd5; the same rule the CLI applies at
+            // Snapmaker_Orca.cpp:3948-3962). A 3MF states its own wipe_tower_x/y
+            // and keeps them.
+            if (!boost::algorithm::iends_with(input_file, ".3mf")) {
+                using namespace Slic3r;
+                const Vec2d corner = tower_default_corner(config);
+                const float tower_margin =
+                    WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat();
+                float tower_x = std::max((float) corner.x(), tower_margin);
+                float tower_y = std::max((float) corner.y(), tower_margin);
+                ConfigOptionFloat wt_x_opt(tower_x), wt_y_opt(tower_y);
+                const int plate_slot = std::max(0, plate_id - 1);
+                config.option<ConfigOptionFloats>("wipe_tower_x", true)->set_at(&wt_x_opt, plate_slot, 0);
+                config.option<ConfigOptionFloats>("wipe_tower_y", true)->set_at(&wt_y_opt, plate_slot, 0);
+            }
 #endif
             {
                 // The plate's instances only, on the plate (see the Print's
