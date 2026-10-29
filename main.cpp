@@ -8977,12 +8977,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #endif
 #ifdef ENGINE_SNAPMAKER
             // Item 4 (and 3f): the desktop's rule for filament indices that are
-            // out of range (references/SnapmakerOrca/src/slic3r/GUI/GUI_ObjectList.cpp:748-793
-            // at bac6fd5): an object's or volume's missing or too-large
-            // extruder becomes 0, and its wall_filament, sparse_infill_filament,
+            // out of range (references/SnapmakerOrca/src/slic3r/GUI/GUI_ObjectList.cpp:750-793
+            // at bac6fd5): an object's missing or too-large extruder becomes 0,
+            // and its wall_filament, sparse_infill_filament,
             // solid_infill_filament, support_filament and
-            // support_interface_filament are erased. The range counts physical
-            // and mixed filaments (GUI_ObjectList.cpp:74-80).
+            // support_interface_filament are erased when too large. A volume's
+            // extruder is never changed (the desktop only relabels the row,
+            // 777-782); its too-large keys are erased, and only for an object
+            // of several volumes (774). The range counts physical and mixed
+            // filaments (GUI_ObjectList.cpp:74-80).
             {
                 const size_t physical = std::max<size_t>(1, project_filament_count(config));
                 size_t total = physical;
@@ -8999,8 +9002,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const size_t range = std::max<size_t>(total, 1);
                 json reset = json::object();
                 json erased = json::array();
-                auto fix = [&](Slic3r::ModelConfigObject& cfg, const std::string& where) {
-                    if (!cfg.has("extruder") || (size_t) cfg.extruder() > range) {
+                auto fix = [&](Slic3r::ModelConfigObject& cfg, const std::string& where, bool is_object) {
+                    if (is_object && (!cfg.has("extruder") || (size_t) cfg.extruder() > range)) {
                         const int was = cfg.has("extruder") ? cfg.extruder() : -1;
                         cfg.set_key_value("extruder", new Slic3r::ConfigOptionInt(0));
                         reset[where] = {{"from", was}, {"to", 0}};
@@ -9016,11 +9019,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 for (size_t oi = 0; oi < model.objects.size(); ++oi) {
                     Slic3r::ModelObject* object = model.objects[oi];
                     if (object == nullptr) continue;
-                    fix(object->config, "object " + std::to_string(oi + 1));
-                    for (size_t vi = 0; vi < object->volumes.size(); ++vi)
-                        if (object->volumes[vi] != nullptr)
-                            fix(object->volumes[vi]->config, "object " + std::to_string(oi + 1) + " volume " +
-                                                                 std::to_string(vi + 1));
+                    fix(object->config, "object " + std::to_string(oi + 1), true);
+                    if (object->volumes.size() > 1)
+                        for (size_t vi = 0; vi < object->volumes.size(); ++vi)
+                            if (object->volumes[vi] != nullptr)
+                                fix(object->volumes[vi]->config, "object " + std::to_string(oi + 1) + " volume " +
+                                                                     std::to_string(vi + 1), false);
                 }
                 if (!reset.empty() || !erased.empty())
                     emit_event({{"event","config_normalized"},
@@ -9030,7 +9034,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                 {"filament_range", int(range)},
                                 {"message","The project states filament indices outside this printer's " +
                                            std::to_string(range) + " filament(s) (physical and mixed): an object's "
-                                           "or volume's extruder is reset to 0 (Default) and its feature-filament "
+                                           "extruder is reset to 0 (Default), and too-large feature-filament "
                                            "keys are dropped, as the desktop does on load"}});
             }
 #endif
