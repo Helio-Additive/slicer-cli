@@ -12,7 +12,9 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <cstring>
+#ifdef ENGINE_SNAPMAKER
+#include <cstring>   // strcmp, for SNAPMAKER_ORCA_ALLOW_NEWER_FILE
+#endif
 #include <iomanip>
 #include <iostream>
 #include <map>

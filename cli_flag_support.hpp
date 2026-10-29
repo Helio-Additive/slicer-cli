@@ -22,7 +22,6 @@ std::string works_in(const std::string& key);
 /// binary, so a help line never points at one the reader does not have.
 std::string all_binaries_label();
 #endif
-
 /// For a name that is not a flag of this binary: a sentence when it is an
 /// official flag of the other engine's CLI, or a flag the official CLIs have
 /// commented out. Empty when slicer-cli knows nothing about it.
