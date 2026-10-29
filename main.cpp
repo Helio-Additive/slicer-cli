@@ -5443,6 +5443,14 @@ struct BambuValueAction {
     std::string from;
 };
 
+#ifdef ENGINE_SNAPMAKER
+/// Whether this file was made by BambuStudio. Snapmaker's own values differ from
+/// BambuStudio's for some keys, so BambuStudio's value rules that describe its
+/// own meanings apply to a BambuStudio file only (see the maker check, and
+/// references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:4589-4593 at bac6fd5).
+static bool g_file_made_by_bambustudio = false;
+#endif
+
 static bool bambu_value_actions(const RawValues& raw, const std::string& support_type, bool maker_set_raft,
                                 std::vector<BambuValueAction>& conversions,
                                 std::vector<BambuValueAction>& warnings, std::string& refusal) {
@@ -5460,13 +5468,28 @@ static bool bambu_value_actions(const RawValues& raw, const std::string& support
     const std::string wall_count = raw_value("tree_support_wall_count");
     if (wall_count == "-1")
         conversions.push_back({"tree_support_wall_count", "0", "-1"});
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's 0 is its own automatic (PrintConfig tooltip, 0-2 at bac6fd5),
+    // so the "infill-only walls" warning is about a BambuStudio file only.
+    else if (wall_count == "0" && tree && g_file_made_by_bambustudio)
+#else
     else if (wall_count == "0" && tree)
+#endif
         warnings.push_back({"tree_support_wall_count", "0", "0"});
     // raft_first_layer_expansion: BambuStudio's -1 is 2 mm of automatic
     // expansion under normal support (BambuStudio Support/SupportCommon.cpp
     // 392-394 and 431-437 at 5873b5f), which is this engine's own 2.0, and a
     // per-branch moment brim under tree support, which it has no value for.
     if (raw_value("raft_first_layer_expansion") == "-1") {
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker's engine has -1 = auto natively, and -1 is its own default
+        // (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:4589-4593 at
+        // bac6fd5), passed through raw by TreeSupport.cpp:1617-1623 and
+        // SupportCommon.cpp:403. So -1 is neither converted nor refused.
+        (void) maker_set_raft;
+        (void) tree;
+    } else if (false) {
+#endif
         if (tree) {
             if (maker_set_raft) {
                 refusal = "The settings ask for raft_first_layer_expansion -1, BambuStudio's automatic "
@@ -7986,6 +8009,58 @@ std::set<int> desktop_used_filament_slots(const Slic3r::Model& model, const Slic
     return slots;
 }
 
+/// The engine's own mixed-filament construction, exactly as the slice does it
+/// (references/SnapmakerOrca/src/libslic3r/PrintApply.cpp:1439-1449 at bac6fd5):
+/// the colours come from filament_colour, padded to the nozzle count with
+/// "#26A69A"; the manager is cleared, auto-generated from those colours, given
+/// the project's mixed_filament_definitions, and finally given the gradient
+/// settings. Skipping the auto_generate leaves it with no rows, which is why
+/// load_custom_entries alone found nothing.
+Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrintConfig& config, size_t& physical) {
+    using namespace Slic3r;
+    std::vector<std::string> colours;
+    if (const auto* colour = config.option<ConfigOptionStrings>("filament_colour"))
+        colours = colour->values;
+    size_t extruders = 0;
+    if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+        extruders = nozzles->size();
+    physical = std::max({colours.size(), extruders, size_t(1)});
+    colours.resize(physical, "#26A69A");
+    std::string definitions;
+    if (const auto* defs = config.option<ConfigOptionString>("mixed_filament_definitions"))
+        definitions = defs->value;
+    // Each of these is read by its own option type: the fork declares some as
+    // Int and some as Bool, and an opt_* cast on the wrong one is null.
+    auto read_int = [&](const char* key, int fallback) {
+        if (const auto* opt = config.option<ConfigOptionInt>(key)) return opt->value;
+        if (const auto* opt = config.option<ConfigOptionBools>(key); opt != nullptr && !opt->values.empty())
+            return int(opt->values.front());
+        return fallback;
+    };
+    auto read_float = [&](const char* key, float fallback) {
+        if (const auto* opt = config.option<ConfigOptionFloat>(key)) return float(opt->value);
+        return fallback;
+    };
+    auto read_bool = [&](const char* key, bool fallback) {
+        if (const auto* opt = config.option<ConfigOptionBool>(key)) return bool(opt->value);
+        if (const auto* opt = config.option<ConfigOptionInt>(key)) return opt->value != 0;
+        return fallback;
+    };
+    int gradient_mode = read_int("mixed_filament_gradient_mode", 0);
+    float lower = read_float("mixed_filament_height_lower_bound", 0.04f);
+    float upper = read_float("mixed_filament_height_upper_bound", 0.16f);
+    bool advanced = read_bool("mixed_filament_advanced_dithering", false);
+    gradient_mode = std::clamp(gradient_mode, 0, 1);
+    lower = std::max(0.01f, lower);
+    upper = std::max(lower, upper);
+    MixedFilamentManager mgr;
+    mgr.clear_custom_entries();
+    mgr.auto_generate(colours);
+    mgr.load_custom_entries(definitions, colours);
+    mgr.apply_gradient_settings(gradient_mode, lower, upper, advanced);
+    return mgr;
+}
+
 /// The filament categories the desktop's mixed-filament rule knows, in its enum
 /// order (references/SnapmakerOrca/src/slic3r/GUI/MixedColorMatchHelpers.cpp:1031-1040
 /// at bac6fd5).
@@ -8190,14 +8265,19 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
     // component categories the compatibility table marks incompatible cannot be
     // sliced.
     {
-        Slic3r::MixedFilamentManager mixed;
-        if (const auto* definitions = config.option<ConfigOptionString>("mixed_filament_definitions");
-            definitions != nullptr && !definitions->value.empty()) {
-            std::vector<std::string> colours;
-            if (const auto* colour_option = config.option<ConfigOptionStrings>("filament_colour"))
-                colours = colour_option->values;
-            mixed.load_custom_entries(definitions->value, colours);
-        }
+        size_t physical_filaments = 0;
+        Slic3r::MixedFilamentManager mixed = mixed_manager_from_config(config, physical_filaments);
+        int enabled_rows = 0;
+        for (const Slic3r::MixedFilament& row : mixed.mixed_filaments())
+            if (row.enabled && !row.deleted) ++enabled_rows;
+        if (enabled_rows > 0)
+            emit_event({{"event","config_normalized"}, {"tag","MixedFilamentsRead"},
+                        {"plate_id", plate_id}, {"physical", int(physical_filaments)},
+                        {"enabled_rows", enabled_rows},
+                        {"total_filaments", int(mixed.total_filaments(physical_filaments))},
+                        {"message","The project states " + std::to_string(enabled_rows) + " enabled mixed filament(s): " +
+                                   std::to_string(mixed.total_filaments(physical_filaments)) +
+                                   " filaments in all, physical and mixed"}});
         std::set<unsigned int> used_virtual;
         for (const ModelObject* object : model.objects)
             for (const ModelVolume* volume : object->volumes)
@@ -8633,6 +8713,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
 #endif
             const bool bambu_made_project = is_bbl_3mf && !is_orca_3mf;
+#ifdef ENGINE_SNAPMAKER
+            g_file_made_by_bambustudio = bambu_made_project;
+#endif
             if (bambu_made_project) {
                 // The settings as the file states them, for read_project_facts
                 // below: the facts describe the file (its printer, bed, plate
@@ -8990,14 +9073,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const size_t physical = std::max<size_t>(1, project_filament_count(config));
                 size_t total = physical;
                 {
-                    Slic3r::MixedFilamentManager mixed;
-                    std::vector<std::string> colours;
-                    if (const auto* colour = config.option<Slic3r::ConfigOptionStrings>("filament_colour"))
-                        colours = colour->values;
-                    if (const auto* defs = config.option<Slic3r::ConfigOptionString>("mixed_filament_definitions");
-                        defs != nullptr && !defs->value.empty())
-                        mixed.load_custom_entries(defs->value, colours);
-                    total = mixed.total_filaments(physical);
+                    size_t manager_physical = 0;
+                    const Slic3r::MixedFilamentManager mixed = mixed_manager_from_config(config, manager_physical);
+                    total = mixed.total_filaments(std::max<size_t>(manager_physical, 1));
                 }
                 const size_t range = std::max<size_t>(total, 1);
                 json reset = json::object();
