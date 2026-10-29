@@ -8039,8 +8039,22 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // is the one place the scope is decided.
 #ifdef ENGINE_SNAPMAKER
             // Snapmaker's loader reports no "made by OrcaSlicer" flag (Format/bbs_3mf.hpp
-            // at bac6fd5), so no project is an OrcaSlicer one to this engine.
-            const bool is_orca_3mf = false;
+            // at bac6fd5), so the maker is read from the file's own tags: a Snapmaker Orca
+            // project (Application "Snapmaker_Orca-<version>", Format/bbs_3mf.cpp:6645-6647)
+            // or an OrcaSlicer one already states this engine's values and is sliced as the
+            // file states them, as Snapmaker's CLI slices it (no rebase without --uptodate,
+            // Snapmaker_Orca.cpp:1243-1245 at bac6fd5).
+            bool is_orca_3mf = false;
+            {
+                std::string model_xml;
+                if (read_zip_member(input_file, "3D/3dmodel.model", model_xml)) {
+                    const auto meta = model_metadata(model_xml);
+                    const auto app  = meta.find("Application");
+                    is_orca_3mf = meta.count("OrcaSlicer") != 0 ||
+                                  (app != meta.end() && (boost::starts_with(app->second, "Snapmaker_Orca-") ||
+                                                         boost::starts_with(app->second, "OrcaSlicer-")));
+                }
+            }
 #endif
             const bool bambu_made_project = is_bbl_3mf && !is_orca_3mf;
             if (bambu_made_project) {
