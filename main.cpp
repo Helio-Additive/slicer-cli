@@ -5991,6 +5991,21 @@ static bool find_named_preset(Slic3r::PresetCollection& collection, const std::s
     return false;
 }
 
+/// Filament compatibility against the selected process as well as the
+/// printer. A filament may name the processes it suits (compatible_prints, or
+/// compatible_prints_condition), and PresetBundle::update_compatible checks
+/// each filament against the edited print preset (OrcaSlicer PresetBundle.cpp
+/// 5421-5440 at 8500fcdc, BambuStudio 5741-5760 at 926a719, Snapmaker Orca
+/// 4252-4263 at bac6fd5). The desktop runs it again when a process is picked
+/// (Tab::select_preset: OrcaSlicer Tab.cpp 6201-6204, BambuStudio 6828-6831,
+/// Snapmaker Orca 6135-6138), so a filament locked to that process becomes
+/// selectable and one that excludes it does not. Run once the process is
+/// selected; the first run, made with only the printer selected, checked the
+/// filaments against the built-in default process.
+static void update_filament_compatibility(Slic3r::PresetBundle& bundle) {
+    bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Never);
+}
+
 /// One named system preset written out as a settings file the official merge
 /// reads: its settings with every parent already applied (Preset::config holds
 /// them — the vendor loader builds each preset over its parents,
@@ -6252,6 +6267,7 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         code = CLI_CONFIG_FILE_ERROR;
         return false;
     }
+    update_filament_compatibility(bundle);
 
     std::vector<std::string> filaments = o.filament_presets;
     if (filaments.empty()) {
@@ -6278,9 +6294,19 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     }
     for (const std::string& f : filaments) {
         if (!find(bundle.filaments, f, "filament")) return false;
-        if (!bundle.filaments.find_preset(f, false)->is_compatible) {
-            error = "Filament preset '" + f + "' is not for printer '" + o.printer_preset +
-                    "'. See --list-presets --printer \"" + o.printer_preset + "\".";
+        const Slic3r::Preset& filament = *bundle.filaments.find_preset(f, false);
+        if (!filament.is_compatible) {
+            // A filament the printer takes but that names other processes
+            // (compatible_prints) is refused naming the process.
+            const Slic3r::PresetWithVendorProfile with_vendor = bundle.filaments.get_preset_with_vendor_profile(filament);
+            const Slic3r::PresetWithVendorProfile printer_with_vendor = bundle.printers.get_edited_preset_with_vendor_profile();
+            if (Slic3r::is_compatible_with_printer(with_vendor, printer_with_vendor) &&
+                !Slic3r::is_compatible_with_print(with_vendor, bundle.prints.get_edited_preset_with_vendor_profile(), printer_with_vendor))
+                error = "Filament preset '" + f + "' is not for process '" + process + "'. See --list-presets --printer \"" +
+                        o.printer_preset + "\" --process-preset \"" + process + "\".";
+            else
+                error = "Filament preset '" + f + "' is not for printer '" + o.printer_preset +
+                        "'. See --list-presets --printer \"" + o.printer_preset + "\".";
             code = CLI_PROCESS_NOT_COMPATIBLE;
             return false;
         }
@@ -6398,9 +6424,10 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     return true;
 }
 
-/// --list-presets [--printer NAME]: the system presets of this engine, as one
-/// JSON document. With a printer: the processes and filaments it can use,
-/// and its defaults.
+/// --list-presets [--printer NAME [--process-preset NAME]]: the system presets
+/// of this engine, as one JSON document. With a printer: the processes and
+/// filaments it can use, and its defaults; with a process too, the filaments
+/// for that process.
 #ifdef ENGINE_SNAPMAKER
 static int run_list_presets(const CliOptions& o, const std::string& printer_name_given) {
 #else
@@ -6436,6 +6463,11 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
     // A former printer name is the renamed printer (current_preset_name).
     const std::string printer_name = current_preset_name(bundle.printers, printer_name_given);
 #endif
+    if (printer_name.empty() && !o.process_preset.empty()) {
+        out["error"] = "--process-preset with --list-presets needs --printer.";
+        std::cout << out.dump(2) << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
     if (printer_name.empty()) {
         json printers = json::array();
         for (const Slic3r::Preset& p : bundle.printers)
@@ -6474,6 +6506,48 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
         if (const std::string note = default_replaced_note("process", process, declared_process); !note.empty())
             defaults_replaced.push_back(note);
 #endif
+        // The filaments: for the printer alone, or with --process-preset for
+        // that process as well, as a slice with it takes them
+        // (update_filament_compatibility), so a filament locked to the process
+        // is listed. The default filament is the one a slice takes, with the
+        // process given or else the default process selected.
+        json filaments = json::array();
+        const auto list_filaments = [&] {
+            filaments = json::array();
+            for (const Slic3r::Preset& p : bundle.filaments)
+                if (is_listed_preset(p) && p.is_compatible) filaments.push_back(p.name);
+        };
+        list_filaments();
+        if (!o.process_preset.empty()) {
+#ifdef ENGINE_SNAPMAKER
+            const std::string process_given = current_preset_name(bundle.prints, o.process_preset);
+#else
+            const std::string& process_given = o.process_preset;
+#endif
+            Slic3r::Preset* chosen = bundle.prints.find_preset(process_given, false);
+            if (!chosen || chosen->name != process_given || !is_listed_preset(*chosen)) {
+                out["error"] = "No process preset named '" + o.process_preset + "'.";
+                const std::string similar = near_preset_names(bundle.prints, o.process_preset);
+                if (!similar.empty()) out["close_names"] = similar;
+                std::cout << out.dump(2) << std::endl;
+                return CLI_CONFIG_FILE_ERROR;
+            }
+            if (!chosen->is_compatible) {
+                out["error"] = "Process preset '" + process_given + "' is not for printer '" + printer_name + "'.";
+                std::cout << out.dump(2) << std::endl;
+                return CLI_PROCESS_NOT_COMPATIBLE;
+            }
+            chosen->is_visible = true;
+            bundle.prints.select_preset_by_name(process_given, true);
+            update_filament_compatibility(bundle);
+            list_filaments();
+            out["process"] = process_given;
+        } else if (Slic3r::Preset* chosen = process.empty() ? nullptr : bundle.prints.find_preset(process, false);
+                   chosen && chosen->name == process) {
+            chosen->is_visible = true;
+            bundle.prints.select_preset_by_name(process, true);
+            update_filament_compatibility(bundle);
+        }
         std::vector<std::string> declared_filaments;
         if (const auto* d = cfg.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
             declared_filaments = d->values;
@@ -6496,11 +6570,9 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
             defaults_replaced.push_back(note);
 #endif
         out["defaults_replaced"] = defaults_replaced;
-        json processes = json::array(), filaments = json::array();
+        json processes = json::array();
         for (const Slic3r::Preset& p : bundle.prints)
             if (is_listed_preset(p) && p.is_compatible) processes.push_back(p.name);
-        for (const Slic3r::Preset& p : bundle.filaments)
-            if (is_listed_preset(p) && p.is_compatible) filaments.push_back(p.name);
         out["processes"] = processes;
         out["filaments"] = filaments;
         // The plate type a slice with this printer takes (desktop_bed_type).

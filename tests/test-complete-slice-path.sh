@@ -1059,6 +1059,54 @@ assert any(r.startswith("filament") for r in d["defaults_replaced"]), d["default
 '
 echo "PASS: the Snapmaker U1 0.4 defaults are the ones the OrcaSlicer app selects"
 
+# A filament that names the one process it suits (compatible_prints): the
+# desktop checks filaments against the selected process too (update_compatible
+# after Tab::select_preset), so with that process it is taken, and with another
+# it is refused naming the process. A filament for another printer is still
+# refused naming the printer (both engines).
+TIQ2="iQ TiQ2 0.4 Nozzle"
+TIQ2_PROCESS="0.20mm Standard @iQ TiQ2 P1 - PACF Pro Fiberthree (0.4 Nozzle)"
+TIQ2_FILAMENT="Fiberthree PACF Pro P1 @iQ TiQ2 0.4 Nozzle"
+run locked "$O" cube.stl --slice 1 --printer-preset "$TIQ2" --process-preset "$TIQ2_PROCESS" \
+    --filament-preset "$TIQ2_FILAMENT" --outputdir locked/out
+[ "$(rc locked)" = 0 ] || { show locked; fail "a filament locked to the given process exit $(rc locked)"; }
+# The TiQ2 has two extruders, each given the filament (one per extruder, as
+# OrcaSlicer's update_multi_material_filament_presets does).
+py '
+import re, sys
+m = re.search(r"^; filament_settings_id = (.*)$", open("locked/out/plate_1.gcode").read(), re.M)
+ids = [s.strip().strip("\"") for s in m.group(1).split(";")]
+assert ids and all(i == sys.argv[1] for i in ids), ids
+' "$TIQ2_FILAMENT" || { show locked; fail "the G-code does not name the process-locked filament"; }
+"$O" --list-presets --printer "$TIQ2" > list-tiq2.json
+"$O" --list-presets --printer "$TIQ2" --process-preset "$TIQ2_PROCESS" > list-tiq2-locked.json
+py '
+import json, sys
+plain, locked = json.load(open("list-tiq2.json")), json.load(open("list-tiq2-locked.json"))
+f = sys.argv[1]
+assert f not in plain["filaments"] and "process" not in plain, plain.get("process")
+assert f in locked["filaments"] and locked["process"] == sys.argv[2], locked.get("process")
+assert set(plain["filaments"]) <= set(locked["filaments"])
+' "$TIQ2_FILAMENT" "$TIQ2_PROCESS"
+OTHER_TIQ2_PROCESS=$(py '
+import json; d = json.load(open("list-tiq2.json"))
+print(next(p for p in d["processes"] if "PACF" not in p))')
+run locked-other "$O" cube.stl --slice 1 --printer-preset "$TIQ2" --process-preset "$OTHER_TIQ2_PROCESS" \
+    --filament-preset "$TIQ2_FILAMENT" --outputdir locked-other/out
+[ "$(rc locked-other)" = 239 ] || { show locked-other; fail "a filament locked to another process exit $(rc locked-other), not 239"; }
+grep -qF "Filament preset '$TIQ2_FILAMENT' is not for process '$OTHER_TIQ2_PROCESS'." locked-other/stderr \
+    || { show locked-other; fail "the refusal does not name the process"; }
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run notfor-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --process-preset "$A1M_PROCESS" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --outputdir notfor-$e/out
+    [ "$(rc notfor-$e)" = 239 ] || { show notfor-$e; fail "$e: a filament for another printer exit $(rc notfor-$e), not 239"; }
+    grep -qF "Filament preset 'Bambu PLA Basic @BBL X1C' is not for printer '$A1M'." notfor-$e/stderr \
+        || { show notfor-$e; fail "$e: the refusal does not name the printer"; }
+    py 'import json; assert json.load(open("notfor-'$e'/out/result.json"))["return_code"] == -17'
+done
+echo "PASS: a filament locked to a process is taken with that process and refused with another (Orca build); one for another printer is refused (both engines)"
+
 # The Snapmaker U1 0.4+0.6 with its own presets: the settings check finds
 # bridge_line_width (100% of the 0.6 nozzle) over the 0.4 nozzle. The desktop
 # app only notes such values and slices, each region against its own nozzle
