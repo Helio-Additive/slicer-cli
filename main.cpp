@@ -6909,14 +6909,12 @@ static bool plan_project_plates(Slic3r::Model& model, Slic3r::DynamicPrintConfig
         // --load-filament-ids' (OrcaSlicer.cpp 1734).
         if (filament_count > 0) {
 #ifdef ENGINE_SNAPMAKER
-            // Snapmaker's own corner: x = 13 (0 on an I3) and y at the middle
-            // of the plate (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:4206-4213
-            // and 4296-4303 at bac6fd5), not 165/250.
-            float x = 13.f;                        // WIPE_TOWER_DEFAULT_X_POS
-            float y = (float)plate_size.y() * 0.5f;
-            if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
-                structure && structure->value == PrinterStructure::psI3)
-                x = 0.f;                           // I3_WIPE_TOWER_DEFAULT_X_POS
+            // The one corner function, so this path and the assemble ones cannot
+            // drift apart (Snapmaker's x = 13 / y = depth/2, Snapmaker_Orca.cpp:
+            // 4206-4213 and 4296-4303 at bac6fd5).
+            const Vec2d snap_corner = tower_default_corner(config);
+            float x = (float) snap_corner.x();
+            float y = (float) snap_corner.y();
 #else
             float x = 165.f, y = 250.f;   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
             if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
@@ -8399,11 +8397,26 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
 
     // check_flow_ratio_zero (Plater.cpp:22669-22770): a used filament whose
     // flow ratio is not above zero extrudes nothing.
+    // filament_flow_ratio is a flow-variant option: one group per filament, one
+    // value per filament_flow_support entry
+    // (PrintConfig.cpp:7440 filament_flow_variant_options, PresetBundle.cpp:
+    // 2696-2710 at bac6fd5). The flat index of filament `slot`'s group is
+    // slot * variants, so a flat slot index would read another filament's value.
     const auto* flow_ratios = config.option<ConfigOptionFloats>("filament_flow_ratio");
+    size_t flow_variants = 1;
+    if (const auto* support = config.option<ConfigOptionStrings>("filament_flow_support");
+        support != nullptr && !support->values.empty())
+        flow_variants = support->values.size();
     std::vector<int> offenders;
-    for (int slot : used)
-        if (flow_ratios == nullptr || slot >= (int)flow_ratios->values.size() || flow_ratios->values[slot] <= 0.0)
+    for (int slot : used) {
+        const size_t group = (size_t) slot * flow_variants;
+        bool unprintable = flow_ratios == nullptr || group >= flow_ratios->values.size();
+        if (!unprintable)
+            for (size_t k = 0; k < flow_variants && group + k < flow_ratios->values.size(); ++k)
+                if (flow_ratios->values[group + k] <= 0.0) unprintable = true;
+        if (unprintable)
             offenders.push_back(slot + 1);
+    }
     if (!offenders.empty()) {
         code = CLI_VALIDATE_ERROR;
         message = "Plate " + std::to_string(plate_id) +
@@ -11667,16 +11680,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             const bool user_set_tower = o.given_flag("wipe_tower_x") || o.given_flag("wipe_tower_y");
             if (!boost::algorithm::iends_with(input_file, ".3mf") && !user_set_tower &&
                 !o.given_flag("arrange")) {
-                using namespace Slic3r;
-                const Vec2d corner = tower_default_corner(config);
-                const float tower_margin =
-                    WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat();
-                float tower_x = std::max((float) corner.x(), tower_margin);
-                float tower_y = std::max((float) corner.y(), tower_margin);
-                ConfigOptionFloat wt_x_opt(tower_x), wt_y_opt(tower_y);
-                const int plate_slot = std::max(0, plate_id - 1);
-                config.option<ConfigOptionFloats>("wipe_tower_x", true)->set_at(&wt_x_opt, plate_slot, 0);
-                config.option<ConfigOptionFloats>("wipe_tower_y", true)->set_at(&wt_y_opt, plate_slot, 0);
+                // The same writer the assemble and fixed-plate paths use, so the
+                // corner and its margin live in one place.
+                assemble_tower_default_corner(config, std::max(0, plate_id - 1),
+                                              WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat());
             }
 #endif
 #ifdef ENGINE_SNAPMAKER
@@ -11700,20 +11707,78 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     config.has("single_extruder_multi_material") && config.opt_bool("single_extruder_multi_material");
                 if (!single_extruder_multi_material && switch_extruders > 0 && colours != nullptr &&
                     colours->values.size() > switch_extruders) {
-                    for (const std::string& key : Preset::filament_options())
-                        if (auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false)))
-                            if (vec->size() > switch_extruders)
-                                vec->resize(switch_extruders);
+                    // A flow-variant option keeps one group of values per
+                    // filament (PrintConfig.cpp:7440, PresetBundle.cpp:2696-2710
+                    // at bac6fd5), so it is cut per group, not per value: a plain
+                    // resize would hand filament 2 filament 1's variants.
+                    size_t flow_variants = 1;
+                    if (const auto* support = config.option<ConfigOptionStrings>("filament_flow_support");
+                        support != nullptr && !support->values.empty())
+                        flow_variants = support->values.size();
+                    const std::vector<std::string>& variant_keys = filament_flow_variant_options();
+                    const size_t colours_before = colours->values.size();
+                    for (const std::string& key : Preset::filament_options()) {
+                        auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
+                        if (vec == nullptr) continue;
+                        const bool variant = std::find(variant_keys.begin(), variant_keys.end(), key) != variant_keys.end();
+                        const size_t want = variant ? switch_extruders * flow_variants : switch_extruders;
+                        if (vec->size() > want) vec->resize(want);
+                    }
                     config.option<ConfigOptionStrings>("filament_colour", true)->values.resize(switch_extruders);
+                    // Painting keeps the physical + mixed total the desktop passes
+                    // (Plater.cpp:22236, 22283): a mixed id must survive the trim.
+                    const size_t paint_total = g_filament_id_total > 0 ? g_filament_id_total : switch_extruders;
                     for (ModelObject* object : model.objects)
                         for (ModelVolume* volume : object->volumes)
                             if (volume != nullptr)
-                                volume->update_extruder_count(switch_extruders);
+                                volume->update_extruder_count(paint_total);
+                    // Finding 7: with fewer filaments, an index that was in range
+                    // at load can be out of range now; the same reset runs again.
+                    json shrunk = json::object();
+                    json dropped = json::array();
+                    for (size_t oi = 0; oi < model.objects.size(); ++oi) {
+                        ModelObject* object = model.objects[oi];
+                        if (object == nullptr) continue;
+                        auto recheck = [&](ModelConfigObject& cfg, const std::string& where, bool is_object) {
+                            if (is_object && (!cfg.has("extruder") || (size_t) cfg.extruder() > paint_total)) {
+                                const int was = cfg.has("extruder") ? cfg.extruder() : -1;
+                                cfg.set_key_value("extruder", new ConfigOptionInt(0));
+                                shrunk[where] = {{"from", was}, {"to", 0}};
+                            }
+                            for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament",
+                                                    "support_filament", "support_interface_filament"})
+                                if (cfg.has(key) && (size_t) cfg.opt_int(key) > paint_total) {
+                                    dropped.push_back(where + " " + key);
+                                    cfg.erase(key);
+                                }
+                        };
+                        recheck(object->config, "object " + std::to_string(oi + 1), true);
+                        if (object->volumes.size() > 1)
+                            for (size_t vi = 0; vi < object->volumes.size(); ++vi)
+                                if (object->volumes[vi] != nullptr)
+                                    recheck(object->volumes[vi]->config,
+                                            "object " + std::to_string(oi + 1) + " volume " + std::to_string(vi + 1), false);
+                    }
+                    if (!shrunk.empty() || !dropped.empty())
+                        emit_event({{"event","config_normalized"}, {"tag","FilamentIndexOutOfRangeReset"},
+                                    {"reset_extruder", shrunk}, {"erased_keys", dropped},
+                                    {"filament_range", int(paint_total)},
+                                    {"message","After the switch trimmed the filaments, indices past the new "
+                                               + std::to_string(paint_total) + "-filament range were reset"}});
+                    // Finding 9: report what the slice actually uses, and that the
+                    // switch dropped the rest, so a caller can see it.
+                    json dropped_filaments = json::array();
+                    if (const auto* names = config.option<ConfigOptionStrings>("filament_settings_id"))
+                        for (size_t i = switch_extruders; i < names->values.size(); ++i)
+                            dropped_filaments.push_back(names->values[i]);
                     emit_event({{"event","config_normalized"}, {"tag","FilamentsTrimmedForSwitch"},
                                 {"plate_id", plate_id}, {"printer", o.printer_preset},
                                 {"filaments", int(switch_extruders)},
-                                {"message","The switch to '" + o.printer_preset + "' trims the project's filaments to its " +
-                                           std::to_string(switch_extruders) + " extruder(s), as the desktop does"}});
+                                {"filaments_before", int(colours_before)},
+                                {"dropped_filaments", dropped_filaments},
+                                {"message","The switch to '" + o.printer_preset + "' trims the project's filaments from " +
+                                           std::to_string(colours_before) + " to " + std::to_string(switch_extruders) +
+                                           ", as the desktop does"}});
                 }
             }
 #endif
