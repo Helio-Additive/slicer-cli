@@ -2285,29 +2285,6 @@ static boost::filesystem::path orca_profiles_dir(const boost::filesystem::path& 
     return boost::filesystem::path();
 }
 
-/// The Snapmaker Orca profiles tree beside this binary, or empty: a checkout
-/// has references/SnapmakerOrca; a package ships it as
-/// resources/snapmaker/profiles (Linux: bin/../resources; macOS and Windows:
-/// next to the binaries).
-#ifdef ENGINE_SNAPMAKER
-static boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir) {
-    for (const auto& p : std::vector<boost::filesystem::path>{
-        // A package ships the tree once, under this engine's own resources root,
-        // because the engine reads its data files beside it at
-        // resources_dir()/profiles/Snapmaker/filament/... (FilamentHotBedNozzleRules.cpp:32
-        // at bac6fd5). Linux keeps the binaries in bin/, macOS and Windows at the
-        // package root.
-        exe_dir / ".." / "resources" / "snapmaker" / "profiles",
-        exe_dir / "resources" / "snapmaker" / "profiles",
-        exe_dir / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
-        exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
-    }) {
-        if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p))
-            return boost::filesystem::canonical(p);
-    }
-    return boost::filesystem::path();
-}
-#endif
 
 /// The printer models a profiles tree offers: every vendor file's
 /// machine_model_list (the list PresetBundle::load_vendor_configs_from_json
@@ -2376,7 +2353,7 @@ static std::string preset_printer_model(const boost::filesystem::path& profiles_
 static EngineFit engine_fit_for(const std::string& argv0, const std::string& printer_model) {
     const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
 #ifdef ENGINE_SNAPMAKER
-    const boost::filesystem::path this_dir  = snapmaker_profiles_dir(exe_dir);
+    const boost::filesystem::path this_dir  = slicer_cli::snapmaker_profiles_dir(exe_dir);
     // A printer this engine does not have belongs to one of the engines the
     // package ships beside it; the OrcaSlicer one is the one named.
     const boost::filesystem::path other_dir = orca_profiles_dir(exe_dir);
@@ -2905,19 +2882,7 @@ static void stage_vendor_dir(const boost::filesystem::path& src,
 static boost::filesystem::path engine_resources_root(const boost::filesystem::path& exe_dir) {
 #ifdef ENGINE_ORCA
 #ifdef ENGINE_SNAPMAKER
-    // Snapmaker's own resources root (its flush data and info/*.json are its
-    // own bytes): references/SnapmakerOrca/resources in a checkout,
-    // resources/snapmaker in a package.
-    for (const auto& p : std::vector<boost::filesystem::path>{
-        exe_dir / ".." / "references" / "SnapmakerOrca" / "resources",
-        exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources",
-        exe_dir / ".." / "resources" / "snapmaker",
-        exe_dir / "resources" / "snapmaker",
-    }) {
-        if (boost::filesystem::exists(p / "info") && boost::filesystem::is_directory(p / "info"))
-            return boost::filesystem::canonical(p);
-    }
-    return boost::filesystem::path();
+    return slicer_cli::snapmaker_resources_root(exe_dir);
 #else
     for (const auto& p : std::vector<boost::filesystem::path>{
         exe_dir / ".." / "references" / "OrcaSlicer" / "resources",
@@ -5246,7 +5211,7 @@ static bool post_slice_checks(const Slic3r::Print& print, const Slic3r::Model& m
 static boost::filesystem::path this_engine_profiles_dir(const std::string& argv0) {
     const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
 #ifdef ENGINE_SNAPMAKER
-    return snapmaker_profiles_dir(exe_dir);
+    return slicer_cli::snapmaker_profiles_dir(exe_dir);
 #elif defined(ENGINE_ORCA)
     return orca_profiles_dir(exe_dir);
 #else
@@ -5346,10 +5311,8 @@ static bool project_presets_shipped(Slic3r::PresetBundle& bundle, const std::str
     // fork's load_external_preset matches the original name against the
     // renamed_from map (Preset.cpp 2114-2120 at bac6fd5), though its
     // find_preset, unlike upstream's, does not (Preset.cpp 2776-2783).
-    const auto shipped = [](Slic3r::PresetCollection& collection, const std::string& name) {
-        return collection.find_preset(name, false) != nullptr || collection.get_preset_name_renamed(name) != nullptr;
-    };
-    return !printer.empty() && !process.empty() && shipped(bundle.printers, printer) && shipped(bundle.prints, process);
+    return !printer.empty() && !process.empty() && slicer_cli::preset_shipped_or_renamed(bundle.printers, printer) &&
+           slicer_cli::preset_shipped_or_renamed(bundle.prints, process);
 #else
     return !printer.empty() && !process.empty() &&
            bundle.printers.find_preset(printer, false) != nullptr &&
@@ -7895,21 +7858,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
     // the named-preset staging folder, which is removed once staging ends, so a
     // run that switched printer stopped there. Give such a run a data directory
     // that exists for as long as the slice does.
-    {
-        namespace fs = boost::filesystem;
-        fs::path data_dir(Slic3r::data_dir());
-        if (data_dir.empty() || !fs::exists(data_dir)) {
-            const fs::path fallback = run_backup_path();
-            boost::system::error_code ec;
-            fs::create_directories(fallback, ec);
-            if (!fallback.empty())
-                Slic3r::set_data_dir(fallback.string());
-        }
-        if (!Slic3r::data_dir().empty()) {
-            boost::system::error_code ec;
-            fs::create_directories(fs::path(Slic3r::data_dir()) / "SVG", ec);
-        }
-    }
+    slicer_cli::snapmaker_keep_data_dir(run_backup_path());
 #endif
     const bool calib_enabled       = calib_params.mode != Slic3r::CalibMode::Calib_None;
     const bool calib_self_geometry = slicer_cli::calib_mode_generates_geometry(calib_params.mode);

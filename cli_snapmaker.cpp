@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
 
@@ -1013,6 +1014,55 @@ bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config) 
            config.option("prime_volume") != nullptr &&
            config.option("prime_tower_brim_chamfer_max_width") != nullptr &&
            config.option("prime_tower_brim_chamfer") != nullptr;
+}
+
+boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir) {
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        // A package ships the tree once, under this engine's own resources root,
+        // because the engine reads its data files beside it at
+        // resources_dir()/profiles/Snapmaker/filament/... (FilamentHotBedNozzleRules.cpp:32
+        // at bac6fd5). Linux keeps the binaries in bin/, macOS and Windows at the
+        // package root.
+        exe_dir / ".." / "resources" / "snapmaker" / "profiles",
+        exe_dir / "resources" / "snapmaker" / "profiles",
+        exe_dir / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
+        exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
+    }) {
+        if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+}
+
+boost::filesystem::path snapmaker_resources_root(const boost::filesystem::path& exe_dir) {
+    // Snapmaker's own resources root (its flush data and info/*.json are its
+    // own bytes): references/SnapmakerOrca/resources in a checkout,
+    // resources/snapmaker in a package.
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        exe_dir / ".." / "references" / "SnapmakerOrca" / "resources",
+        exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources",
+        exe_dir / ".." / "resources" / "snapmaker",
+        exe_dir / "resources" / "snapmaker",
+    }) {
+        if (boost::filesystem::exists(p / "info") && boost::filesystem::is_directory(p / "info"))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+}
+
+void snapmaker_keep_data_dir(const std::string& fallback) {
+    namespace fs = boost::filesystem;
+    fs::path data_dir(Slic3r::data_dir());
+    if (data_dir.empty() || !fs::exists(data_dir)) {
+        boost::system::error_code ec;
+        fs::create_directories(fallback, ec);
+        if (!fallback.empty())
+            Slic3r::set_data_dir(fallback);
+    }
+    if (!Slic3r::data_dir().empty()) {
+        boost::system::error_code ec;
+        fs::create_directories(fs::path(Slic3r::data_dir()) / "SVG", ec);
+    }
 }
 
 } // namespace slicer_cli

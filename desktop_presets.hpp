@@ -128,4 +128,12 @@ std::string snapmaker_default_material(const Slic3r::PresetCollection& filaments
                                        bool (*is_listed_preset)(const Slic3r::Preset&));
 #endif
 
+#ifdef ENGINE_SNAPMAKER
+/// A preset this tree ships, by its name or a former one: the fork's
+/// load_external_preset matches a name against the renamed_from map
+/// (Preset.cpp 2114-2120 at bac6fd5), though its find_preset does not
+/// (Preset.cpp 2776-2783).
+bool preset_shipped_or_renamed(const Slic3r::PresetCollection& collection, const std::string& name);
+#endif
+
 } // namespace slicer_cli

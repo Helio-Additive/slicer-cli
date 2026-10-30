@@ -768,4 +768,10 @@ std::string snapmaker_default_material(const Slic3r::PresetCollection& filaments
 }
 #endif
 
+#ifdef ENGINE_SNAPMAKER
+bool preset_shipped_or_renamed(const Slic3r::PresetCollection& collection, const std::string& name) {
+    return collection.find_preset(name, false) != nullptr || collection.get_preset_name_renamed(name) != nullptr;
+}
+#endif
+
 } // namespace slicer_cli

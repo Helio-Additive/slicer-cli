@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include <boost/filesystem/path.hpp>
+
 #include "libslic3r/Model.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/MixedFilament.hpp"
@@ -105,6 +107,25 @@ bool snapmaker_engine_made(const std::map<std::string, std::string>& meta);
 /// as Snapmaker's check_plate_wipe_tower returns with has_wipe_tower false
 /// (Snapmaker_Orca.cpp:3186-3220 at bac6fd5).
 bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config);
+
+/// The Snapmaker Orca profiles tree beside this binary, or empty: a checkout
+/// has references/SnapmakerOrca; a package ships it as
+/// resources/snapmaker/profiles (Linux: bin/../resources; macOS and Windows:
+/// next to the binaries).
+boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir);
+
+/// Snapmaker's own resources root (its flush data and info/*.json are its own
+/// bytes), or empty: references/SnapmakerOrca/resources in a checkout,
+/// resources/snapmaker in a package.
+boost::filesystem::path snapmaker_resources_root(const boost::filesystem::path& exe_dir);
+
+/// The engine writes debug SVGs into data_dir()/"SVG" on some slicing paths
+/// (references/SnapmakerOrca/src/libslic3r/utils.cpp:302-320 at bac6fd5, where
+/// create_directory throws if the parent is gone). The data directory can be
+/// the named-preset staging folder, removed once staging ends: a missing one
+/// becomes `fallback`, a folder that lives as long as the slice, and its SVG
+/// folder is made.
+void snapmaker_keep_data_dir(const std::string& fallback);
 
 } // namespace slicer_cli
 
