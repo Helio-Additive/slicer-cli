@@ -5,6 +5,7 @@
 
 #ifdef ENGINE_SNAPMAKER
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -72,6 +73,38 @@ void fix_out_of_range_filaments(Slic3r::Model& model, const Slic3r::DynamicPrint
 /// `rib_width` is the config's wipe_tower_rib_width.
 Slic3r::Vec2d snapmaker_wipe_tower_footprint(const Slic3r::DynamicPrintConfig& config, double w, double wipe_volume,
                                             int plate_extruder_size, double layer_height, double rib_width);
+
+/// Snapmaker's default prime-tower corner: x = WIPE_TOWER_DEFAULT_X_POS (13,
+/// the I3 printers 0) and y at the middle of the bed, not the top corner
+/// (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:3948-3962, 4206-4213,
+/// 4296-4303, and PartPlate.cpp:4094 for the desktop's setter, at bac6fd5;
+/// the constant is PartPlate.cpp:70).
+Slic3r::Vec2d snapmaker_tower_default_corner(const Slic3r::DynamicPrintConfig& config);
+
+/// Item 6: whether a run gets the desktop's default tower corner for its
+/// plate (PartPlate.cpp:4094 and :70; the CLI's own at Snapmaker_Orca.cpp:
+/// 3948-3962 at bac6fd5). Only a run from a model file (a 3MF states its own
+/// position), and only when nothing else placed the tower: --wipe-tower-x/y,
+/// --arrange, settings files, the assemble list or an arrange.
+bool snapmaker_tower_default_applies(const Slic3r::DynamicPrintConfig& config, bool model_file, bool tower_given,
+                                     bool arrange_given);
+
+/// The filaments an object's wall, sparse infill and solid infill add to its
+/// plate, by the fork's own rule (PartPlate.cpp:2075-2081 and 83-87 at bac6fd5).
+void snapmaker_object_feature_filaments(const Slic3r::ModelObject& object, int glb_wall_extr, int glb_sparse_infill_extr,
+                                        int glb_solid_infill_extr, std::vector<int>& plate_extruders);
+
+/// A project made by Snapmaker Orca (Application "Snapmaker_Orca-<version>",
+/// Format/bbs_3mf.cpp:6645-6647 at bac6fd5) or OrcaSlicer, read from its model
+/// metadata: it already states this engine's values. Snapmaker's loader has
+/// no "made by OrcaSlicer" flag (Format/bbs_3mf.hpp).
+bool snapmaker_engine_made(const std::map<std::string, std::string>& meta);
+
+/// The tower settings the arrange's tower estimate reads are all there:
+/// missing or empty coordinates, or a missing tower scalar, means no tower,
+/// as Snapmaker's check_plate_wipe_tower returns with has_wipe_tower false
+/// (Snapmaker_Orca.cpp:3186-3220 at bac6fd5).
+bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config);
 
 } // namespace slicer_cli
 

@@ -3773,30 +3773,8 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
                     plate_extruders.push_back(glb_support_extr);
             }
 #ifdef ENGINE_SNAPMAKER
-            // The fork's own rule (PartPlate.cpp:2075-2081 at bac6fd5): a wall or
-            // sparse-infill filament other than 1 is used, and solid infill falls
-            // back to the global when the object states none.
-            int obj_wall_extr = glb_wall_extr;
-            if (const ConfigOption* opt = object->config.option("wall_filament"))
-                obj_wall_extr = opt->getInt();
-            if (obj_wall_extr != 1)
-                plate_extruders.push_back(obj_wall_extr);
-
-            // An object's sparse-infill filament of 0 or less inherits the global
-            // one (resolve_sparse_infill_filament, PartPlate.cpp:83-87 at bac6fd5).
-            int obj_sparse_extr = glb_sparse_infill_extr;
-            if (const ConfigOption* opt = object->config.option("sparse_infill_filament"); opt != nullptr && opt->getInt() > 0)
-                obj_sparse_extr = opt->getInt();
-            if (obj_sparse_extr != 1)
-                plate_extruders.push_back(obj_sparse_extr);
-
-            int obj_solid_extr = 1;
-            if (const ConfigOption* opt = object->config.option("solid_infill_filament"))
-                obj_solid_extr = opt->getInt();
-            if (obj_solid_extr != 1)
-                plate_extruders.push_back(obj_solid_extr);
-            else if (glb_solid_infill_extr != 1)
-                plate_extruders.push_back(glb_solid_infill_extr);
+            slicer_cli::snapmaker_object_feature_filaments(*object, glb_wall_extr, glb_sparse_infill_extr,
+                                                           glb_solid_infill_extr, plate_extruders);
 #endif
 #if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
             // Orca also lists wall / infill / surface filaments, with or
@@ -4097,15 +4075,7 @@ static Slic3r::BoundingBoxf3 downward_plate_bbox(const Slic3r::Model& model, con
     // no tower rather than a crash: Snapmaker's check_plate_wipe_tower returns
     // with has_wipe_tower false (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:3186-3220
     // at bac6fd5).
-    const auto* wipe_x_guard = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_x"));
-    const auto* wipe_y_guard = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_y"));
-    if (wipe_x_guard == nullptr || wipe_y_guard == nullptr ||
-        wipe_x_guard->size() == 0 || wipe_y_guard->size() == 0)
-        return obj_bbox;
-    if (config.option("prime_tower_width") == nullptr || config.option("prime_tower_brim_width") == nullptr ||
-        config.option("prime_volume") == nullptr ||
-        config.option("prime_tower_brim_chamfer_max_width") == nullptr ||
-        config.option("prime_tower_brim_chamfer") == nullptr)
+    if (!slicer_cli::snapmaker_tower_settings_present(config))
         return obj_bbox;
 #endif
 
@@ -4643,23 +4613,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
 static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& config) {
     using namespace Slic3r;
 #ifdef ENGINE_SNAPMAKER
-    // Snapmaker's own defaults differ: x = WIPE_TOWER_DEFAULT_X_POS (13, the
-    // I3 printers 0) and y at the middle of the plate, not the top corner
-    // (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:3948-3962, 4206-4213,
-    // 4296-4303, and PartPlate.cpp:4094 for the desktop's setter, at bac6fd5;
-    // the constant is PartPlate.cpp:70). The plate depth there is the bed's.
-    double plate_depth = 0.;
-    if (const auto* area = config.option<ConfigOptionPoints>("printable_area"); area && !area->values.empty()) {
-        BoundingBoxf bed;
-        for (const Vec2d& pt : area->values)
-            bed.merge(pt);
-        plate_depth = bed.size().y();
-    }
-    Vec2d corner(13., plate_depth * 0.5);
-    if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
-        structure && structure->value == PrinterStructure::psI3)
-        corner.x() = 0.;   // I3_WIPE_TOWER_DEFAULT_X_POS
-    return corner;
+    return slicer_cli::snapmaker_tower_default_corner(config);
 #else
     Vec2d corner(165., 250.);   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
     if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
@@ -8316,13 +8270,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             bool is_orca_3mf = false;
             {
                 std::string model_xml;
-                if (read_zip_member(input_file, "3D/3dmodel.model", model_xml)) {
-                    const auto meta = model_metadata(model_xml);
-                    const auto app  = meta.find("Application");
-                    is_orca_3mf = meta.count("OrcaSlicer") != 0 ||
-                                  (app != meta.end() && (boost::starts_with(app->second, "Snapmaker_Orca-") ||
-                                                         boost::starts_with(app->second, "OrcaSlicer-")));
-                }
+                if (read_zip_member(input_file, "3D/3dmodel.model", model_xml))
+                    is_orca_3mf = slicer_cli::snapmaker_engine_made(model_metadata(model_xml));
             }
 #endif
             const bool bambu_made_project = is_bbl_3mf && !is_orca_3mf;
@@ -11055,39 +11004,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 std::cout << "Filament vectors: " << grown << " array(s) sized to the roster\n";
 #endif
 #ifdef ENGINE_SNAPMAKER
-            // Item 6: a run whose models come from a file with no plate tower
-            // position gets the desktop's defaults for the plate — x =
-            // WIPE_TOWER_DEFAULT_X_POS (13), y at the middle of the bed, each
-            // lifted to the tower's margin
-            // (references/SnapmakerOrca/src/slic3r/GUI/PartPlate.cpp:4094 and :70
-            // at bac6fd5; the same rule the CLI applies at
-            // Snapmaker_Orca.cpp:3948-3962). A 3MF states its own wipe_tower_x/y
-            // and keeps them.
-            // Only when nothing else decided the tower's place: a --wipe-tower-x/y
-            // from the command line, or an arrange that placed the objects around
-            // the tower, is the user's (or the layout's) choice, not a default.
+            // The plate's default tower corner for a run from a model file
+            // (cli_snapmaker.hpp: when nothing else placed the tower).
             // wipe_tower_x/y are official setting flags, so a value from the
             // command line shows up in the given-flag set, not in `overrides`.
             const bool user_set_tower = o.given_flag("wipe_tower_x") || o.given_flag("wipe_tower_y");
-            // Nor a position the run already holds: settings files that state
-            // wipe_tower_x/y, or the assemble list's or an arrange's placement.
-            // No Snapmaker system preset states them, so a position other than
-            // the engine's own default (PrintConfig.cpp:6196, 6204 at bac6fd5)
-            // was set by one of those.
-            const auto tower_at_engine_default = [&config](const char* key) {
-                const auto* values = config.option<Slic3r::ConfigOptionFloats>(key);
-                const auto* def = dynamic_cast<const Slic3r::ConfigOptionFloats*>(
-                    Slic3r::print_config_def.get(key)->default_value.get());
-                if (values == nullptr || def == nullptr || def->values.empty())
-                    return true;
-                for (double v : values->values)
-                    if (v != def->values.front())
-                        return false;
-                return true;
-            };
-            if (!boost::algorithm::iends_with(input_file, ".3mf") && !user_set_tower &&
-                !o.given_flag("arrange") && tower_at_engine_default("wipe_tower_x") &&
-                tower_at_engine_default("wipe_tower_y")) {
+            if (slicer_cli::snapmaker_tower_default_applies(config, !boost::algorithm::iends_with(input_file, ".3mf"),
+                                                            user_set_tower, o.given_flag("arrange"))) {
                 // The same writer the assemble and fixed-plate paths use, so the
                 // corner and its margin live in one place.
                 assemble_tower_default_corner(config, std::max(0, plate_id - 1),

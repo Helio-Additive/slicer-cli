@@ -15,6 +15,7 @@
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
 
+#include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/FilamentHotBedNozzleRules.hpp"
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/Print.hpp"
@@ -922,6 +923,96 @@ Slic3r::Vec2d snapmaker_wipe_tower_footprint(const Slic3r::DynamicPrintConfig& c
         footprint.y() = depth;
     }
     return footprint;
+}
+
+Slic3r::Vec2d snapmaker_tower_default_corner(const Slic3r::DynamicPrintConfig& config) {
+    using namespace Slic3r;
+    // Snapmaker's own defaults differ: x = WIPE_TOWER_DEFAULT_X_POS (13, the
+    // I3 printers 0) and y at the middle of the plate, not the top corner
+    // (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:3948-3962, 4206-4213,
+    // 4296-4303, and PartPlate.cpp:4094 for the desktop's setter, at bac6fd5;
+    // the constant is PartPlate.cpp:70). The plate depth there is the bed's.
+    double plate_depth = 0.;
+    if (const auto* area = config.option<ConfigOptionPoints>("printable_area"); area && !area->values.empty()) {
+        BoundingBoxf bed;
+        for (const Vec2d& pt : area->values)
+            bed.merge(pt);
+        plate_depth = bed.size().y();
+    }
+    Vec2d corner(13., plate_depth * 0.5);
+    if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
+        structure && structure->value == PrinterStructure::psI3)
+        corner.x() = 0.;   // I3_WIPE_TOWER_DEFAULT_X_POS
+    return corner;
+}
+
+bool snapmaker_tower_default_applies(const Slic3r::DynamicPrintConfig& config, bool model_file, bool tower_given,
+                                     bool arrange_given) {
+    // A position from settings files, the assemble list or an arrange is the
+    // run's own. No Snapmaker system preset states wipe_tower_x/y, so a value
+    // other than the engine's own default (PrintConfig.cpp:6196, 6204 at
+    // bac6fd5) was set by one of those.
+    const auto at_engine_default = [&config](const char* key) {
+        const auto* values = config.option<Slic3r::ConfigOptionFloats>(key);
+        const auto* def = dynamic_cast<const Slic3r::ConfigOptionFloats*>(
+            Slic3r::print_config_def.get(key)->default_value.get());
+        if (values == nullptr || def == nullptr || def->values.empty())
+            return true;
+        for (double v : values->values)
+            if (v != def->values.front())
+                return false;
+        return true;
+    };
+    return model_file && !tower_given && !arrange_given && at_engine_default("wipe_tower_x") &&
+           at_engine_default("wipe_tower_y");
+}
+
+void snapmaker_object_feature_filaments(const Slic3r::ModelObject& object, int glb_wall_extr, int glb_sparse_infill_extr,
+                                        int glb_solid_infill_extr, std::vector<int>& plate_extruders) {
+    using namespace Slic3r;
+    // The fork's own rule (PartPlate.cpp:2075-2081 at bac6fd5): a wall or
+    // sparse-infill filament other than 1 is used, and solid infill falls
+    // back to the global when the object states none.
+    int obj_wall_extr = glb_wall_extr;
+    if (const ConfigOption* opt = object.config.option("wall_filament"))
+        obj_wall_extr = opt->getInt();
+    if (obj_wall_extr != 1)
+        plate_extruders.push_back(obj_wall_extr);
+
+    // An object's sparse-infill filament of 0 or less inherits the global
+    // one (resolve_sparse_infill_filament, PartPlate.cpp:83-87 at bac6fd5).
+    int obj_sparse_extr = glb_sparse_infill_extr;
+    if (const ConfigOption* opt = object.config.option("sparse_infill_filament"); opt != nullptr && opt->getInt() > 0)
+        obj_sparse_extr = opt->getInt();
+    if (obj_sparse_extr != 1)
+        plate_extruders.push_back(obj_sparse_extr);
+
+    int obj_solid_extr = 1;
+    if (const ConfigOption* opt = object.config.option("solid_infill_filament"))
+        obj_solid_extr = opt->getInt();
+    if (obj_solid_extr != 1)
+        plate_extruders.push_back(obj_solid_extr);
+    else if (glb_solid_infill_extr != 1)
+        plate_extruders.push_back(glb_solid_infill_extr);
+}
+
+bool snapmaker_engine_made(const std::map<std::string, std::string>& meta) {
+    const auto app = meta.find("Application");
+    return meta.count("OrcaSlicer") != 0 ||
+           (app != meta.end() && (boost::starts_with(app->second, "Snapmaker_Orca-") ||
+                                  boost::starts_with(app->second, "OrcaSlicer-")));
+}
+
+bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config) {
+    using namespace Slic3r;
+    const auto* wipe_x = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_x"));
+    const auto* wipe_y = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_y"));
+    if (wipe_x == nullptr || wipe_y == nullptr || wipe_x->size() == 0 || wipe_y->size() == 0)
+        return false;
+    return config.option("prime_tower_width") != nullptr && config.option("prime_tower_brim_width") != nullptr &&
+           config.option("prime_volume") != nullptr &&
+           config.option("prime_tower_brim_chamfer_max_width") != nullptr &&
+           config.option("prime_tower_brim_chamfer") != nullptr;
 }
 
 } // namespace slicer_cli
