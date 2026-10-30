@@ -9,7 +9,9 @@
 #include <vector>
 
 #include "libslic3r/Model.hpp"
+#include "libslic3r/Print.hpp"
 #include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
 
 namespace slicer_cli {
@@ -40,6 +42,36 @@ void sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id
 
 /// The Snapmaker U1's plate types: an unsupported plate becomes Textured PEI.
 void force_u1_bed_type(Slic3r::DynamicPrintConfig& config, int plate_id);
+
+/// The named-preset path's switch to a printer that is not a U1: trims the
+/// bundle's filament count to the printer's extruder count, as the desktop
+/// does. True when the count changed.
+bool trim_named_filaments_for_switch(Slic3r::PresetBundle& bundle);
+
+/// The desktop's rules for presets picked by name: the 0.5 floor on
+/// filament_max_volumetric_speed (a warning when raised) and the process
+/// preset's mixed and dithering keys over the project's.
+void apply_named_preset_rules(Slic3r::DynamicPrintConfig& out, const Slic3r::PresetBundle& bundle);
+
+/// The desktop's notes after apply (the engine's hot-bed and nozzle rules,
+/// notify_filament_compatibility_after_apply) and its PLA/PETG warning, as
+/// warning events; the slice goes on.
+void post_apply_filament_notes(const Slic3r::Print& print, const Slic3r::DynamicPrintConfig& config, int plate_id);
+
+/// Item 4 (and 3f): the desktop's rule for filament indices that are out of
+/// range on load (GUI_ObjectList.cpp:750-793 at bac6fd5): an object's missing
+/// or too-large extruder becomes 0 and its too-large feature-filament keys are
+/// erased (a volume's only in an object of several volumes), against the
+/// physical + mixed count. A named-preset switch's paint remap (`id_remap`,
+/// over `id_total`) is applied first when the switch changed the count.
+void fix_out_of_range_filaments(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config, size_t physical_count,
+                                const std::vector<unsigned int>& id_remap, size_t id_total, bool count_changed);
+
+/// The tower's width and depth by Snapmaker's own arithmetic, line for line
+/// (references/SnapmakerOrca/src/slic3r/GUI/PartPlate.cpp:2177-2248 at bac6fd5).
+/// `rib_width` is the config's wipe_tower_rib_width.
+Slic3r::Vec2d snapmaker_wipe_tower_footprint(const Slic3r::DynamicPrintConfig& config, double w, double wipe_volume,
+                                            int plate_extruder_size, double layer_height, double rib_width);
 
 } // namespace slicer_cli
 

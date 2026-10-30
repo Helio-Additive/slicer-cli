@@ -5,6 +5,8 @@
 #ifdef ENGINE_SNAPMAKER
 
 #include <algorithm>
+#include <cmath>
+#include <iostream>
 #include <map>
 #include <set>
 #include <sstream>
@@ -13,7 +15,9 @@
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
 
+#include "libslic3r/FilamentHotBedNozzleRules.hpp"
 #include "libslic3r/Preset.hpp"
+#include "libslic3r/Print.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Utils.hpp"
 
@@ -701,6 +705,223 @@ void force_u1_bed_type(Slic3r::DynamicPrintConfig& config, int plate_id) {
                                    "' is not one of its plate types, so this run uses Textured PEI."}});
         }
     }
+}
+
+/// Item 3b: on a switch to a printer that is not a Snapmaker U1 the desktop
+/// trims the filament count to the printer's extruder count, while a U1 keeps
+/// the count it had (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:2247-2270
+/// at bac6fd5; set_num_filaments is its own call, Tab.cpp:2270). Tab.cpp:2246
+/// trims only for a printer that is not single_extruder_multi_material
+/// (fdm_klipper / fdm_toolchanger printers, the U1 among them, set it).
+bool trim_named_filaments_for_switch(Slic3r::PresetBundle& bundle) {
+    const Slic3r::DynamicPrintConfig& printer = bundle.printers.get_edited_preset().config;
+    const auto* nozzles = printer.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
+    const size_t extruders = nozzles != nullptr ? nozzles->values.size() : 0;
+    const bool single_extruder_multi_material =
+        printer.has("single_extruder_multi_material") && printer.opt_bool("single_extruder_multi_material");
+    if (single_extruder_multi_material || extruders == 0 || extruders == bundle.filament_presets.size())
+        return false;
+    bundle.set_num_filaments((unsigned int) extruders, std::vector<std::string>());
+    return true;
+}
+
+void apply_named_preset_rules(Slic3r::DynamicPrintConfig& out, const Slic3r::PresetBundle& bundle) {
+    // Item 1: check_filament_max_volumetric_speed (references/SnapmakerOrca/src/slic3r/GUI/ConfigManipulation.cpp:126-163
+    // at bac6fd5, run for the filament preset from Tab.cpp:4648): pad the list
+    // to the flow-variant count with its own first value and lift anything
+    // under 0.5 to 0.5. The desktop asks with a dialog; here it is a warning.
+    // The desktop runs it when a filament preset is edited or selected, not on
+    // the filaments a 3MF carries — those load into project_config and are
+    // never run through ConfigManipulation — so this runs on the named and STL
+    // paths, which is where presets by name become the run's filaments.
+    // The desktop pads one preset's list; in the merged config full_fff_config
+    // has already filled each filament's flow-variant group from that
+    // filament's own values (PresetBundle.cpp:2696-2710), so only the 0.5 floor
+    // is left, and the desktop says so only when a value was raised.
+    if (auto* speeds = out.option<Slic3r::ConfigOptionFloats>("filament_max_volumetric_speed");
+        speeds != nullptr && !speeds->values.empty()) {
+        bool lifted = false;
+        for (double& value : speeds->values)
+            if (value < 0.5) { value = 0.5; lifted = true; }
+        if (lifted)
+            emit({{"event","warning"}, {"tag","MaxVolumetricSpeedCorrected"},
+                        {"message","Too small max volumetric speed. Reset to 0.5."}});
+    }
+    // Item 2: the desktop copies the mixed and dithering keys from the process
+    // preset into the project config before PresetBundle applies that config
+    // last (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:2295-2316,
+    // GUI_App.cpp:6798-6826, libslic3r/PresetBundle.cpp:2525 at bac6fd5), so the
+    // process wins over a project's own values. Here `out` is that config.
+    {
+        static const Slic3r::t_config_option_keys mixed_keys = {
+            "mixed_filament_gradient_mode", "mixed_filament_height_lower_bound",
+            "mixed_filament_height_upper_bound", "mixed_filament_advanced_dithering",
+            "mixed_filament_component_bias_enabled", "mixed_filament_surface_indentation",
+            "mixed_filament_region_collapse", "mixed_color_layer_height_a", "mixed_color_layer_height_b",
+            "dithering_z_step_size", "dithering_local_z_mode", "dithering_local_z_whole_objects",
+            "dithering_local_z_infill", "dithering_local_z_direct_multicolor",
+            "dithering_step_painted_zones_only", "mixed_filament_pointillism_pixel_size",
+            "mixed_filament_pointillism_line_gap", "mixed_filament_definitions"};
+        out.apply_only(bundle.prints.get_edited_preset().config, mixed_keys, true);
+    }
+}
+
+void post_apply_filament_notes(const Slic3r::Print& print, const Slic3r::DynamicPrintConfig& config, int plate_id) {
+    // notify_filament_compatibility_after_apply
+    // (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:13388-13450 at
+    // bac6fd5): the engine's own hot-bed/nozzle rules, evaluated after
+    // apply. Each note is a warning and the slice goes on.
+    {
+        Slic3r::NozzleFilamentRuleMismatch nozzle_mismatch;
+        bool graphic_plate = false, pei_not_pla = false, pei_tpu = false;
+        print.filament_rule_mismatch_flags(nozzle_mismatch, graphic_plate, pei_not_pla, pei_tpu);
+        if (pei_tpu && pei_not_pla) pei_not_pla = false;   // as the desktop orders them
+        auto note = [&](const char* tag, const std::string& text) {
+            emit({{"event","warning"}, {"tag",tag}, {"plate_id",plate_id}, {"message",text}});
+            std::cout << "Warning: " << text << "\n";
+        };
+        if (graphic_plate)
+            note("GraphicEffectPlateAdhesion",
+                 "Note: Low adhesion to the graphic effect plate may cause failure."
+                 " Use a different filament instead.");
+        if (pei_not_pla)
+            note("SmoothPeiAdhesion",
+                 "Note: Filament may not adhere well to the smooth PEI plate on the first layer."
+                 " Apply glue before printing.");
+        if (nozzle_mismatch.has_mismatch)
+            note("NozzleFilamentNotRecommended",
+                 "Note: Using a " + nozzle_mismatch.nozzle_diameter_mm + " mm " +
+                     nozzle_mismatch.nozzle_type_key + " nozzle for " +
+                     (nozzle_mismatch.filament_preset_name.empty() ? std::string("(unknown)")
+                                                                   : nozzle_mismatch.filament_preset_name) +
+                     " is not recommended.");
+        if (pei_tpu)
+            note("SmoothPeiTpuAdhesion",
+                 "Note: Filament may stick too strongly to the smooth PEI plate."
+                 " Apply glue to protect the plate and ease part removal.");
+    }
+    // J: PLA and PETG on one plate
+    // (references/SnapmakerOrca/src/slic3r/GUI/GLCanvas3D.cpp:11061-11080 at
+    // bac6fd5) — a warning only; the desktop does not block on it.
+    if (const auto* plate_types = config.option<Slic3r::ConfigOptionStrings>("filament_type")) {
+        bool has_pla = false, has_petg = false;
+        for (const std::string& type : plate_types->values) {
+            if (type == "PLA") has_pla = true;
+            if (type == "PETG") has_petg = true;
+        }
+        if (has_pla && has_petg)
+            emit({{"event","warning"}, {"tag","PlaPetgMix"}, {"plate_id", plate_id},
+                        {"message","This plate uses both PLA and PETG filaments."
+                                   " PLA and PETG adhere poorly to each other; check the print."}});
+    }
+}
+
+void fix_out_of_range_filaments(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config, size_t physical_count,
+                                const std::vector<unsigned int>& id_remap, size_t id_total, bool count_changed) {
+    using json = nlohmann::json;
+    const size_t physical = std::max<size_t>(1, physical_count);
+    size_t total = physical;
+    {
+        size_t manager_physical = 0;
+        const Slic3r::MixedFilamentManager mixed = mixed_manager_from_config(config, manager_physical);
+        total = mixed.total_filaments(std::max<size_t>(manager_physical, 1));
+    }
+    const size_t range = std::max<size_t>(total, 1);
+    json reset = json::object();
+    json erased = json::array();
+    auto fix = [&](Slic3r::ModelConfigObject& cfg, const std::string& where, bool is_object) {
+        if (is_object && (!cfg.has("extruder") || (size_t) cfg.extruder() > range)) {
+            const int was = cfg.has("extruder") ? cfg.extruder() : -1;
+            cfg.set_key_value("extruder", new Slic3r::ConfigOptionInt(0));
+            reset[where] = {{"from", was}, {"to", 0}};
+        }
+        for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament",
+                                "support_filament", "support_interface_filament"}) {
+            if (cfg.has(key) && (size_t) cfg.opt_int(key) > range) {
+                erased.push_back(where + " " + key);
+                cfg.erase(key);
+            }
+        }
+    };
+    // The switch's filament-id remap, applied as the desktop does
+    // (Plater.cpp:22281-22290): an id past the physical + mixed total
+    // becomes NONE, otherwise the remap's target.
+    const auto apply_remap = [&](Slic3r::ModelVolume& volume) {
+        const size_t total = id_total > 0 ? id_total : range;
+        if (!id_remap.empty()) {
+            volume.remap_extruder_ids(total, paint_state_map(id_remap, total));
+        } else {
+            volume.update_extruder_count(total);
+        }
+    };
+    for (size_t oi = 0; oi < model.objects.size(); ++oi) {
+        Slic3r::ModelObject* object = model.objects[oi];
+        if (object == nullptr) continue;
+        if (!id_remap.empty() || count_changed)
+            for (Slic3r::ModelVolume* volume : object->volumes)
+                if (volume != nullptr)
+                    apply_remap(*volume);
+        fix(object->config, "object " + std::to_string(oi + 1), true);
+        if (object->volumes.size() > 1)
+            for (size_t vi = 0; vi < object->volumes.size(); ++vi)
+                if (object->volumes[vi] != nullptr)
+                    fix(object->volumes[vi]->config, "object " + std::to_string(oi + 1) + " volume " +
+                                                         std::to_string(vi + 1), false);
+    }
+    if (!reset.empty() || !erased.empty())
+        emit({{"event","config_normalized"},
+                    {"tag","FilamentIndexOutOfRangeReset"},
+                    {"reset_extruder", reset},
+                    {"erased_keys", erased},
+                    {"filament_range", int(range)},
+                    {"message","The project states filament indices outside this printer's " +
+                               std::to_string(range) + " filament(s) (physical and mixed): an object's "
+                               "extruder is reset to 0 (Default), and too-large feature-filament "
+                               "keys are dropped, as the desktop does on load"}});
+}
+
+Slic3r::Vec2d snapmaker_wipe_tower_footprint(const Slic3r::DynamicPrintConfig& config, double w, double wipe_volume,
+                                            int plate_extruder_size, double layer_height, double rib_width) {
+    using namespace Slic3r;
+    // The width starts at the wipe volume, kept when no branch below sets it
+    // (PartPlate.cpp:2184 at bac6fd5).
+    Vec2d footprint(wipe_volume, 0.);
+    const FullPrintConfig& print_defaults = FullPrintConfig::defaults();
+    // Snapmaker rewrote this sizing, so this is its arithmetic line for line
+    // (references/SnapmakerOrca/src/slic3r/GUI/PartPlate.cpp:2177-2248 at
+    // bac6fd5): the spacing from wipe_tower_extra_spacing, the change volume
+    // from the fresh plate Print's filament_multitool_ramming_volume (max, 0.5
+    // when unset), volume = prime_volume*n + change*(n-1), no minimum depth by
+    // height, and the rib depth without the 1/sqrt(2) factor.
+    auto timelapse_type_opt = config.option<ConfigOptionEnum<TimelapseType>>("timelapse_type");
+    const bool need_wipe_tower = timelapse_type_opt && timelapse_type_opt->value == TimelapseType::tlSmooth;
+    double extra_spacing = 1.0;
+    if (const ConfigOption* spacing_opt = config.option("wipe_tower_extra_spacing"))
+        extra_spacing = spacing_opt->getFloat() / 100.;
+    const auto* use_rib_wall_opt = config.option<ConfigOptionEnum<WipeTowerWallType>>("wipe_tower_wall_type");
+    bool use_rib_wall = use_rib_wall_opt ? use_rib_wall_opt->value == WipeTowerWallType::wtwRib : false;
+    const double extra_rib_length = print_defaults.wipe_tower_extra_rib_length.value;
+    double filament_change_volume = 0.5;
+    {
+        const std::vector<double>& change_volumes = print_defaults.filament_multitool_ramming_volume.values;
+        if (!change_volumes.empty())
+            filament_change_volume = *std::max_element(change_volumes.begin(), change_volumes.end());
+    }
+    const double volume = wipe_volume * plate_extruder_size + filament_change_volume * (plate_extruder_size - 1);
+    double depth;
+    if (use_rib_wall) {
+        depth = std::sqrt(volume / layer_height * extra_spacing);
+        if (need_wipe_tower || plate_extruder_size > 1) {
+            rib_width = std::min(rib_width, depth / 2);
+            depth = rib_width + std::max(depth + extra_rib_length, depth);
+            footprint.x() = footprint.y() = depth;
+        }
+    } else {
+        depth = volume / (layer_height * wipe_volume) * extra_spacing;
+        footprint.x() = w;
+        footprint.y() = depth;
+    }
+    return footprint;
 }
 
 } // namespace slicer_cli
