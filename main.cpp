@@ -11845,13 +11845,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     types = nozzle_types->values;
                 if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
                     types.resize(std::max<size_t>(types.size(), nozzles->size()), 0);
+                // The engine's flow-support values are "standard" and "high_flow"
+                // (references/SnapmakerOrca/src/libslic3r/PrintConfig.hpp:368-369 at
+                // bac6fd5), and its nozzle_volume_types() masks an unsupported
+                // high-flow nozzle back to standard before anything counts the
+                // distinct types (FlowTypeHelper.cpp:161-176, called from 187-208).
+                bool supports_high_flow = false;
+                if (const auto* support = config.option<ConfigOptionStrings>("printer_flow_support"))
+                    supports_high_flow = std::find(support->values.begin(), support->values.end(), "high_flow") !=
+                                         support->values.end();
+                if (!supports_high_flow)
+                    for (int& type : types) type = 0;
                 std::vector<int> distinct = types;
                 std::sort(distinct.begin(), distinct.end());
                 distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
-                bool supports_high_flow = false;
-                if (const auto* support = config.option<ConfigOptionStrings>("printer_flow_support"))
-                    supports_high_flow = std::find(support->values.begin(), support->values.end(), "High Flow") !=
-                                         support->values.end();
                 if (distinct.size() >= 2) {
                     emit_event({{"event","warning"}, {"tag","MixedNozzleFlowTypes"},
                                 {"plate_id", plate_id},
