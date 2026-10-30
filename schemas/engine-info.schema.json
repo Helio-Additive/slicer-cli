@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/engine-info.schema.json",
+  "title": "slicer-cli --engine-info",
+  "description": "The JSON document `--engine-info FILE` prints on stdout (run_info in main.cpp): what the file is and which binary of this package slices it. It is a report, or, with a non-zero exit code, an error. tests/test-complete-slice-path.sh checks every --engine-info document it makes against this schema, so a change to the output must change this file too.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/report"
+    },
+    {
+      "$ref": "#/$defs/error"
+    }
+  ],
+  "$defs": {
+    "binary": {
+      "description": "A binary of the package.",
+      "enum": [
+        "slicer_cli",
+        "slicer_cli-orcaslicer",
+        "slicer_cli-snapmaker"
+      ]
+    },
+    "kind": {
+      "description": "The file's last extension, lower case, when it is a model file the engine reads (cli_model_load.cpp kinds()); otherwise unknown.",
+      "enum": [
+        "3mf",
+        "stl",
+        "obj",
+        "amf",
+        "step",
+        "stp",
+        "glb",
+        "gltf",
+        "fbx",
+        "svg",
+        "unknown"
+      ]
+    },
+    "strings": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "report": {
+      "description": "Exit code 0.",
+      "type": "object",
+      "required": [
+        "file",
+        "kind",
+        "plates",
+        "engines",
+        "fits",
+        "recommended"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "The path as given."
+        },
+        "kind": {
+          "$ref": "#/$defs/kind"
+        },
+        "plates": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1 for a model file and for a geometry-only 3MF."
+        },
+        "printer_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A 3MF's printer_model, or the model of --printer-preset for a model file. Absent for a model file without --printer-preset."
+        },
+        "printer_preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A 3MF's printer_settings_id, or the --printer-preset given."
+        },
+        "process_preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A 3MF's print_settings_id. 3MF only."
+        },
+        "filament_presets": {
+          "$ref": "#/$defs/strings",
+          "description": "A 3MF's filament_settings_id. 3MF only."
+        },
+        "nozzle_diameter": {
+          "$ref": "#/$defs/strings",
+          "description": "A 3MF's nozzle_diameter, as the file writes it. 3MF only."
+        },
+        "maker": {
+          "description": "The app that made a 3MF, from its model metadata. 3MF only.",
+          "type": "object",
+          "required": [
+            "application",
+            "orcaslicer",
+            "app"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "application": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The Application metadata, such as BambuStudio-02.08.01.55."
+            },
+            "orcaslicer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The OrcaSlicer metadata, which OrcaSlicer writes beside Application."
+            },
+            "app": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The app's name: OrcaSlicer, BambuStudio, Snapmaker Orca (slicer_cli-snapmaker only), or the Application text before its first '-'."
+            }
+          }
+        },
+        "this_engine_reads": {
+          "description": "This binary's engine and the file's version. 3MF only.",
+          "type": "object",
+          "required": [
+            "version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "string",
+              "description": "This binary's engine version."
+            },
+            "file_version": {
+              "type": "string",
+              "description": "The version the file was made with. Absent when the file states none."
+            },
+            "file_newer_than_engine": {
+              "type": "boolean",
+              "description": "True when the slice refuses the file as newer than the engine. With file_version only."
+            }
+          }
+        },
+        "engines": {
+          "description": "This binary's engine, then the other one it names: slicer_cli and slicer_cli-orcaslicer name each other; slicer_cli-snapmaker names slicer_cli-orcaslicer.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "required": [
+              "app",
+              "binary",
+              "catalog_found",
+              "has_printer"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "app": {
+                "enum": [
+                  "BambuStudio",
+                  "OrcaSlicer",
+                  "Snapmaker Orca"
+                ]
+              },
+              "binary": {
+                "$ref": "#/$defs/binary"
+              },
+              "catalog_found": {
+                "type": "boolean",
+                "description": "The engine's printer profiles are in the package."
+              },
+              "has_printer": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "The engine has printer_model; null when the printer is not known."
+              }
+            }
+          }
+        },
+        "fits": {
+          "description": "The binaries that slice the file: those with the printer, or, when the printer is not known, those whose profiles are in the package.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binary"
+          }
+        },
+        "recommended": {
+          "description": "The binary to use: the fitting one of the app that made the file; else, when the printer is known, the first that fits; else null.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/binary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "error": {
+      "description": "A non-zero exit code, the official CLI's (Utils.hpp): -3 CLI_FILE_NOTFOUND, -6 CLI_DATA_FILE_ERROR (not a readable model file or 3MF) or -1 CLI_ENVIRONMENT_ERROR (the path cannot be checked). The sentence is the official one for that code, then the reason.",
+      "type": "object",
+      "required": [
+        "file",
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/kind"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

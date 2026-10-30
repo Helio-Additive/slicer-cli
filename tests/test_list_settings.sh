@@ -13,6 +13,7 @@ B="${1:?usage: $0 slicer_cli slicer_cli-orcaslicer}"
 O="${2:?usage: $0 slicer_cli slicer_cli-orcaslicer}"
 B="$(cd "$(dirname "$B")" && pwd -P)/$(basename "$B")"
 O="$(cd "$(dirname "$O")" && pwd -P)/$(basename "$O")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 fails=0
@@ -70,6 +71,9 @@ assert "min" not in by["enable_support"] and "max" not in by["enable_support"], 
 print("PASS: --list-settings [%s]: %d settings, sparse_infill_density 0-100 %%, "
       "sparse_infill_pattern %d values" % (engine, len(settings), len(p["enum"])))
 PY
+    # The shape callers code against (schemas/list-settings.schema.json).
+    python3 "$SCRIPT_DIR/tools/check_json_schema.py" "$SCRIPT_DIR/../schemas/list-settings.schema.json" "$doc" ||
+        { echo "FAIL: --list-settings [$e] does not match schemas/list-settings.schema.json"; fails=$((fails + 1)); }
 
     # --slice with it is refused like --list-presets, and the refusal leaves
     # result.json in --outputdir naming the reason.

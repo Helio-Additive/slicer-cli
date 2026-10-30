@@ -5275,6 +5275,39 @@ assert a == b, (a, b)
         { show f18bf; fail "F18b orca: the shipped U1 files do not heat the bed as the printer preset does"; f18b_ok=0; }
 fi
 [ $f18b_ok = 1 ] && echo "PASS: F18b the shipped U1 files slice on the U1's own plate with its bed temperature, through both routes (Orca build)"
+
+# The documents callers code against have the shapes schemas/ states. Every
+# one this script made is checked: the --engine-info documents (info*.json,
+# ei-*.json: both engines, 3MF and model files, reports and errors), the
+# --list-presets documents (list-*.json), every result.json a run wrote (a
+# file the script put there itself, "keep me", is not JSON and is skipped), and
+# every event line of every run. Plus the shapes no check above makes: a
+# missing file and a file of no model kind for --engine-info, and an unknown
+# printer and the full printer list for --list-presets.
+"$B" --engine-info missing.3mf > info-missing.json && fail "--engine-info accepted a missing file"
+echo "notes" > notes.txt
+"$O" --engine-info notes.txt > info-txt.json || fail "--engine-info refused a file of no model kind"
+"$B" --list-presets --printer "No such printer" > list-missing.json && fail "--list-presets accepted an unknown printer"
+"$O" --list-presets > list-all-orca.json || fail "--list-presets failed"
+mkdir -p schema-check
+cp "$SCRIPT_DIR"/../schemas/*.schema.json "$SCRIPT_DIR/tools/check_json_schema.py" schema-check/
+results=()
+while IFS= read -r -d '' f; do
+    [ "$(head -c 1 "$f")" = "{" ] && results+=("$f")
+done < <(find . -name result.json -type f -print0)
+event_files=()
+while IFS= read -r -d '' f; do event_files+=("$f"); done < <(find . -name stdout -print0)
+schemas_ok=1
+schema_check() { python3 schema-check/check_json_schema.py "$@"; }
+schema_check schema-check/engine-info.schema.json info*.json ei-*.json || schemas_ok=0
+schema_check schema-check/list-presets.schema.json list-*.json || schemas_ok=0
+schema_check schema-check/result.schema.json "${results[@]}" || schemas_ok=0
+schema_check --events schema-check/event.schema.json "${event_files[@]}" || schemas_ok=0
+if [ $schemas_ok = 1 ]; then
+    echo "PASS: every --engine-info, --list-presets, result.json and event document matches schemas/ (both engines)"
+else
+    fail "a document does not match its schema in schemas/ (see above)"
+fi
 # With E2E_CONTINUE=1 the run reaches here even after a FAIL (see fail()): say
 # how many there were, so the exit status still tells the truth.
 if [ "${E2E_CONTINUE:-0}" = "1" ] && [ "$FAILS" -gt 0 ]; then

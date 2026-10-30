@@ -332,6 +332,24 @@ Transforms run in the order given, before the objects are placed.
 | `--list-settings` | | This engine's settings table as JSON: every key with its type and edit mode (`simple`/`advanced`/`develop`, plus `expert` on the OrcaSlicer build), and where the engine has them, its label, tooltip, category, default, bounds (`min`/`max`), unit, the preset that holds it (`scope`: `process`, `filament` or `printer`; left out for a setting in none of them) and, for enums, the values it takes. A field the engine has no value for is left out | both binaries |
 | `--printer` | name | With `--list-presets`: only this printer's presets, with its defaults and plate type | both binaries |
 
+### Output schemas
+
+The JSON documents a caller reads have JSON Schemas (draft 2020-12) in
+[`schemas/`](../schemas):
+
+| Document | Schema |
+|-|-|
+| `--engine-info` | `engine-info.schema.json` |
+| `result.json` in `--outputdir` | `result.schema.json` |
+| `--list-presets` | `list-presets.schema.json` |
+| `--list-settings` | `list-settings.schema.json` |
+| An event line's JSON (`[[SLICER_EVENT]] {...}`) | `event.schema.json` |
+
+A change to one of these documents changes its schema in the same commit. The
+tests check every document they make against its schema, so the two cannot
+drift apart. A field the schema does not list is a test failure, so a new field
+is always a schema change that callers can see.
+
 `--list-settings` is how an agent driving this binary finds a setting without
 reading the engine's source: the keys, their meaning and their valid values are
 all in the engine's own settings table, so it is printed rather than guessed.
