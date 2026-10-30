@@ -128,7 +128,7 @@
                 "string",
                 "null"
               ],
-              "description": "The app's name: OrcaSlicer, BambuStudio, Snapmaker Orca, or the Application text before its first '-'."
+              "description": "The app's name: OrcaSlicer, BambuStudio, Snapmaker Orca (slicer_cli-snapmaker only), or the Application text before its first '-'."
             }
           }
         },
