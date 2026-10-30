@@ -2286,10 +2286,15 @@ static boost::filesystem::path orca_profiles_dir(const boost::filesystem::path& 
 #ifdef ENGINE_SNAPMAKER
 static boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir) {
     for (const auto& p : std::vector<boost::filesystem::path>{
+        // A package ships the tree once, under this engine's own resources root,
+        // because the engine reads its data files beside it at
+        // resources_dir()/profiles/Snapmaker/filament/... (FilamentHotBedNozzleRules.cpp:32
+        // at bac6fd5). Linux keeps the binaries in bin/, macOS and Windows at the
+        // package root.
+        exe_dir / ".." / "resources" / "snapmaker" / "profiles",
+        exe_dir / "resources" / "snapmaker" / "profiles",
         exe_dir / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
         exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
-        exe_dir / ".." / "resources" / "profiles-snapmaker",
-        exe_dir / "resources" / "profiles-snapmaker",
     }) {
         if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p))
             return boost::filesystem::canonical(p);
@@ -11650,6 +11655,39 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const int plate_slot = std::max(0, plate_id - 1);
                 config.option<ConfigOptionFloats>("wipe_tower_x", true)->set_at(&wt_x_opt, plate_slot, 0);
                 config.option<ConfigOptionFloats>("wipe_tower_y", true)->set_at(&wt_y_opt, plate_slot, 0);
+            }
+#endif
+#ifdef ENGINE_SNAPMAKER
+            // A switch to a printer that is not a Snapmaker U1 trims the filament
+            // list to that printer's extruder count and leaves the painted ids
+            // clamped to it (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:2247-2270
+            // and Plater.cpp:22281-22290 at bac6fd5: on_filaments_change runs
+            // remap_extruder_ids, else update_extruder_count). The staged 3MF path
+            // never reaches resolve_named_presets' setters, so the trim happens
+            // here, on the settings this plate slices with, with the same rule.
+            if (o.preset_switch && !o.printer_preset.empty() &&
+                o.printer_preset.find("Snapmaker U1") == std::string::npos) {
+                using namespace Slic3r;
+                size_t switch_extruders = 0;
+                if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+                    switch_extruders = nozzles->size();
+                const auto* colours = config.option<ConfigOptionStrings>("filament_colour");
+                if (switch_extruders > 0 && colours != nullptr && colours->values.size() > switch_extruders) {
+                    for (const std::string& key : Preset::filament_options())
+                        if (auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false)))
+                            if (vec->size() > switch_extruders)
+                                vec->resize(switch_extruders);
+                    config.option<ConfigOptionStrings>("filament_colour", true)->values.resize(switch_extruders);
+                    for (ModelObject* object : model.objects)
+                        for (ModelVolume* volume : object->volumes)
+                            if (volume != nullptr)
+                                volume->update_extruder_count(switch_extruders);
+                    emit_event({{"event","config_normalized"}, {"tag","FilamentsTrimmedForSwitch"},
+                                {"plate_id", plate_id}, {"printer", o.printer_preset},
+                                {"filaments", int(switch_extruders)},
+                                {"message","The switch to '" + o.printer_preset + "' trims the project's filaments to its " +
+                                           std::to_string(switch_extruders) + " extruder(s), as the desktop does"}});
+                }
             }
 #endif
             {
