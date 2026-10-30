@@ -1633,14 +1633,21 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // back afterwards rather than recomputing for the new extruder count
     // (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:6184-6189, 6200-6205 at
     // bac6fd5). Saved here, restored before this function returns.
-    const bool keep_switched_flush = new_printer_name.find("Snapmaker U1") != std::string::npos;
+    // The desktop only puts the old matrix back for the filaments it keeps, so
+    // this holds when the project's filament count is the one the old matrix
+    // describes; the fork's own CLI recomputes an N*N matrix from the project
+    // (Snapmaker_Orca.cpp:2839-2845 at bac6fd5), which is what happens when the
+    // count changed.
+    const bool switched_to_u1 = new_printer_name.find("Snapmaker U1") != std::string::npos;
     std::vector<double> kept_flush_matrix, kept_flush_vector;
-    if (keep_switched_flush) {
-        if (const auto* matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix"))
-            kept_flush_matrix = matrix->values;
-        if (const auto* vector = m_print_config.option<ConfigOptionFloats>("flush_volumes_vector"))
-            kept_flush_vector = vector->values;
-    }
+    if (const auto* matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix"))
+        kept_flush_matrix = matrix->values;
+    if (const auto* vector = m_print_config.option<ConfigOptionFloats>("flush_volumes_vector"))
+        kept_flush_vector = vector->values;
+    const size_t project_filaments_now = project_colors_option ? project_colors_option->values.size() : 0;
+    const bool keep_switched_flush =
+        switched_to_u1 && project_filaments_now > 0 &&
+        kept_flush_matrix.size() == project_filaments_now * project_filaments_now;
 #endif
     if (project_colors_option &&
         (selected_colors_option || !m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix") ||
