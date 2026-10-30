@@ -6208,7 +6208,8 @@ static bool desktop_plate_type_for_printer(const CliOptions& o, const std::strin
 
 #ifdef ENGINE_SNAPMAKER
 namespace {
-Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrintConfig& config, size_t& physical);
+Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrintConfig& config, size_t& physical,
+                                                       const Slic3r::MixedFilamentManager* before = nullptr);
 }
 #endif
 static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
@@ -8160,7 +8161,8 @@ std::set<int> desktop_used_filament_slots(const Slic3r::Model& model, const Slic
 /// the project's mixed_filament_definitions, and finally given the gradient
 /// settings. Skipping the auto_generate leaves it with no rows, which is why
 /// load_custom_entries alone found nothing.
-Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrintConfig& config, size_t& physical) {
+Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrintConfig& config, size_t& physical,
+                                                       const Slic3r::MixedFilamentManager* before) {
     using namespace Slic3r;
     std::vector<std::string> colours;
     if (const auto* colour = config.option<ConfigOptionStrings>("filament_colour"))
@@ -8200,12 +8202,40 @@ Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrin
     gradient_mode = std::clamp(gradient_mode, 0, 1);
     lower = std::max(0.01f, lower);
     upper = std::max(lower, upper);
+    if (before != nullptr) {
+        // A filament count change rebuilds the bundle's own manager, which
+        // keeps each surviving auto pair's stable_id, so the remap can follow
+        // it (PresetBundle.cpp:3896-3911 at bac6fd5; auto_generate keeps them,
+        // MixedFilament.cpp:1714-1778).
+        MixedFilamentManager mgr = *before;
+        mgr.auto_generate(colours);
+        mgr.clear_custom_entries();
+        mgr.load_custom_entries(definitions, colours);
+        mgr.apply_gradient_settings(gradient_mode, lower, upper, advanced);
+        return mgr;
+    }
     MixedFilamentManager mgr;
     mgr.clear_custom_entries();
     mgr.auto_generate(colours);
     mgr.load_custom_entries(definitions, colours);
     mgr.apply_gradient_settings(gradient_mode, lower, upper, advanced);
     return mgr;
+}
+
+/// The desktop's paint state map for a filament-id remap (Plater.cpp:22233-22250
+/// at bac6fd5): every id maps to itself, then each remapped id to its target, or
+/// to NONE when it was removed or lies past the physical + mixed total.
+Slic3r::EnforcerBlockerStateMap paint_state_map(const std::vector<unsigned int>& id_remap, size_t total) {
+    Slic3r::EnforcerBlockerStateMap state_map;
+    for (size_t i = 0; i < state_map.size(); ++i)
+        state_map[i] = Slic3r::EnforcerBlockerType(i);
+    for (size_t i = 1; i < state_map.size(); ++i) {
+        const unsigned int mapped = i < id_remap.size() ? id_remap[i] : 0;
+        state_map[i] = (mapped == 0 || mapped >= state_map.size() || mapped > total)
+                           ? Slic3r::EnforcerBlockerType::NONE
+                           : Slic3r::EnforcerBlockerType(mapped);
+    }
+    return state_map;
 }
 
 /// The filament categories the desktop's mixed-filament rule knows, in its enum
@@ -9315,18 +9345,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const auto apply_remap = [&](Slic3r::ModelVolume& volume) {
                     const size_t total = g_filament_id_total > 0 ? g_filament_id_total : range;
                     if (!g_filament_id_remap.empty()) {
-                        Slic3r::EnforcerBlockerStateMap state_map;
-                        // Every id maps to itself first (Plater.cpp:22233-22235 at
-                        // bac6fd5); only the remapped entries change.
-                        for (size_t i = 0; i < state_map.size(); ++i)
-                            state_map[i] = Slic3r::EnforcerBlockerType(i);
-                        for (size_t i = 1; i < state_map.size(); ++i) {
-                            const unsigned int mapped = i < g_filament_id_remap.size() ? g_filament_id_remap[i] : 0;
-                            state_map[i] = (mapped == 0 || mapped >= state_map.size() || mapped > total)
-                                               ? Slic3r::EnforcerBlockerType::NONE
-                                               : Slic3r::EnforcerBlockerType(mapped);
-                        }
-                        volume.remap_extruder_ids(total, state_map);
+                        volume.remap_extruder_ids(total, paint_state_map(g_filament_id_remap, total));
                     } else {
                         volume.update_extruder_count(total);
                     }
@@ -10960,22 +10979,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // (BambuStudio.cpp 4669-4914; OrcaSlicer.cpp 4006-4175). The
         // official checks the plates of a project (plate_obj_size_infos
         // exists only then, BambuStudio.cpp 4646-4658), every one of them.
-#ifdef ENGINE_SNAPMAKER
-        // Snapmaker Orca defines downward_check twice: a CLI action taking a
-        // list of machine files (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:8542
-        // at bac6fd5) and the on/off switch (8798). The command line here
-        // holds the list, so there is no on/off value to read; Snapmaker's
-        // own CLI checks for that before reading it (Snapmaker_Orca.cpp:1136-1140).
-        if (o.given_flag("downward_check") && o.cli.option<Slic3r::ConfigOptionBool>("downward_check") == nullptr) {
-            const std::string why =
-                "--downward-check cannot run in slicer_cli-snapmaker: Snapmaker Orca defines downward_check as an "
-                "action that takes a list of machine files, so the on/off check has no value to read here. Drop the "
-                "flag to slice; this build cannot run the downward check.";
-            std::cerr << "Error: " << why << "\n";
-            set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
-            return 1;
-        }
-#endif
         if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check") && g_downward_run.done) {
             // Every plate was checked by the run's first call.
             outcome.downward_checked = true;
@@ -11829,7 +11832,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // (Plater.cpp:22225-22283). The engine's own remap is used, on a
                     // bundle that only carries the new mixed filaments.
                     size_t physical_after = 0;
-                    const MixedFilamentManager mixed_after = mixed_manager_from_config(config, physical_after);
+                    const MixedFilamentManager mixed_after = mixed_manager_from_config(config, physical_after, &mixed_before);
                     const size_t paint_total = mixed_after.total_filaments(physical_after);
                     std::vector<unsigned int> id_remap;
                     {
@@ -11839,15 +11842,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                                                     physical_after);
                         id_remap = remap_bundle.consume_last_filament_id_remap();
                     }
-                    EnforcerBlockerStateMap state_map;
-                    for (size_t i = 0; i < state_map.size(); ++i)
-                        state_map[i] = EnforcerBlockerType(i);
-                    for (size_t i = 1; i < state_map.size(); ++i) {
-                        const unsigned int mapped = i < id_remap.size() ? id_remap[i] : 0;
-                        state_map[i] = (mapped == 0 || mapped >= state_map.size() || mapped > paint_total)
-                                           ? EnforcerBlockerType::NONE
-                                           : EnforcerBlockerType(mapped);
-                    }
+                    const EnforcerBlockerStateMap state_map = paint_state_map(id_remap, paint_total);
                     for (ModelObject* object : model.objects)
                         for (ModelVolume* volume : object->volumes)
                             if (volume != nullptr)
@@ -12718,15 +12713,12 @@ static int run_info(const std::string& argv0, const std::string& path, const std
         maker["orcaslicer"]  = orca != meta.end() ? json(orca->second) : json(nullptr);
         // OrcaSlicer writes "BambuStudio-<its Bambu base>" as Application and
         // its own version in the OrcaSlicer tag (bbs_3mf.cpp 6837 at 31f6803).
-#ifdef ENGINE_SNAPMAKER
         // Snapmaker Orca writes "Snapmaker_Orca-<version>" as Application
-        // (Format/bbs_3mf.cpp:6645-6646 at bac6fd5); its app is this engine's,
-        // named as engine_fit_for names it.
+        // (Format/bbs_3mf.cpp:6645-6646 at bac6fd5); every build names that app
+        // as engine_fit_for names the Snapmaker engine.
         if (app != meta.end() && boost::starts_with(app->second, "Snapmaker_Orca-"))
             maker_app = "Snapmaker Orca";
-        else
-#endif
-        if (orca != meta.end() || (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-")))
+        else if (orca != meta.end() || (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-")))
             maker_app = "OrcaSlicer";
         else if (app != meta.end() && boost::starts_with(app->second, "BambuStudio-"))
             maker_app = "BambuStudio";

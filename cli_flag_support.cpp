@@ -40,6 +40,18 @@ const std::map<std::string, std::string>& not_supported() {
         // progress comes as events on stdout instead (--progress).
         {"pipe",        "the official pipe exists on Linux only; slicer-cli reports progress on every OS as events on stdout (--progress)"},
 #endif
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker Orca defines downward_check twice: a CLI action taking a
+        // list of machine files (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:8542
+        // at bac6fd5) and the on/off switch (8798). The command line holds the
+        // list, so there is no on/off value to read; Snapmaker's own CLI checks
+        // for that before reading it (Snapmaker_Orca.cpp:1136-1140).
+        {"downward_check",    "Snapmaker Orca defines downward_check as an action that takes a list of machine files, "
+                              "so the on/off check has no value to read; this build cannot run the downward check. "
+                              "Drop the flag to slice"},
+        {"downward_settings", "it names the printers for --downward-check, which this build cannot run. Drop the flag "
+                              "to slice"},
+#endif
     };
     return why;
 }

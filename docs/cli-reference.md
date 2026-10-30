@@ -216,11 +216,12 @@ the engine names `--allow-newer-file`, and a value this engine does not know
 names the setting's own flag (`--<setting> <value>`) and `--allow-substitution`,
 which lets the engine use its own default instead.
 
-`--allow-mix-temp` (in the `slicer_cli-snapmaker` binary only): slice a plate
-whose filaments mix high- and low-temperature materials. Snapmaker Orca's engine
-has no `allow_mix_temp` setting, so this build takes the desktop's rule (a used
+`--allow-mix-temp` in the `slicer_cli-snapmaker` binary: slice a plate whose
+filaments mix high- and low-temperature materials. Snapmaker Orca's engine has
+no `allow_mix_temp` setting, so this build takes the desktop's rule (a used
 filament flagged `filament_is_high_temperature` next to one that is not) as a
-refusal, code `-62`, and this flag lifts it.
+refusal, code `-62`, and this flag lifts it. It is read as the other builds
+read theirs: bare or `=1` lifts the refusal, `=0` keeps it.
 
 A project moved to a printer with another bed (a machine file in
 `--load-settings`) has its plate moved onto the new bed, as the official

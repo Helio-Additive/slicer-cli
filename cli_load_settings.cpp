@@ -1625,8 +1625,10 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         kept_flush_matrix = matrix->values;
     if (const auto* vector = m_print_config.option<ConfigOptionFloats>("flush_volumes_vector"))
         kept_flush_vector = vector->values;
-    // The recompute below sets flush_multiplier to 1; the desktop never
-    // touches it on a switch, so a kept matrix keeps its multiplier too.
+    // The recompute below sets flush_multiplier to 1, as Snapmaker's CLI does
+    // when it recomputes the matrix (Snapmaker_Orca.cpp:2846 at bac6fd5). Where
+    // the desktop keeps the old matrix instead, it leaves the multiplier as the
+    // project has it, so a kept matrix keeps its multiplier too.
     const auto* project_multiplier = m_print_config.option<ConfigOptionFloat>("flush_multiplier");
     const bool   has_flush_multiplier  = project_multiplier != nullptr;
     const double kept_flush_multiplier = has_flush_multiplier ? project_multiplier->value : 1.;

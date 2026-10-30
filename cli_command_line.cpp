@@ -510,7 +510,18 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
             case Legacy::Input:     positional.insert(positional.begin(), value); break;
             case Legacy::NoNormalizeLegacyGcode: o.normalize_legacy_gcode = false; break;
 #ifdef ENGINE_SNAPMAKER
-            case Legacy::AllowMixTemp: o.allow_mix_temp = true; break;
+            case Legacy::AllowMixTemp:
+                // Read as the other builds read their own allow_mix_temp, a
+                // bool option: bare or =1 lifts the refusal, =0 keeps it.
+                if (!has_inline_value || value == "1")
+                    o.allow_mix_temp = true;
+                else if (value == "0")
+                    o.allow_mix_temp = false;
+                else {
+                    refusal = refuse("--allow-mix-temp takes =0 or =1, not '" + value + "'");
+                    return false;
+                }
+                break;
 #endif
             case Legacy::CalibMode: m.calib.mode = value; break;
             case Legacy::CalibStart:
@@ -699,8 +710,7 @@ void print_help(std::ostream& out, const char* prog) {
 #ifdef ENGINE_SNAPMAKER
         // A flag only this build defines works in this build alone; the shared
         // ones work in slicer_cli as well.
-        const std::string works_in_label =
-            f.id == Legacy::AllowMixTemp ? std::string("slicer_cli-snapmaker only") : all_binaries_label();
+        const std::string works_in_label = all_binaries_label();
         help_row(out, lhs, std::string(f.help) + "  [works in: " + works_in_label + "]");
 #else
         help_row(out, lhs, std::string(f.help) + "  [works in: " + all_binaries_label() + "]");
