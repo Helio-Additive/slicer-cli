@@ -387,8 +387,16 @@ bool parse_color4(const std::string& scolor, unsigned char* rgba_out) {
 /// long retraction when cutting already removed, per filament.
 std::vector<int> get_min_flush_volumes(const DynamicPrintConfig& full_config, size_t nozzle_id, size_t filament_count) {
     std::vector<int> extra_flush_volumes;
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca declares nozzle_volume one float (PrintConfig.cpp:4086 at
+    // bac6fd5), not the per-nozzle nullable list the other engines have, and
+    // reads it with getFloat (slic3r/GUI/Plater.cpp:1453-1454).
+    const ConfigOption* nozzle_volume_opt = full_config.option("nozzle_volume");
+    const int nozzle_volume_val = nozzle_volume_opt ? (int)nozzle_volume_opt->getFloat() : 0;
+#else
     const auto* nozzle_volume_opt = full_config.option<ConfigOptionFloatsNullable>("nozzle_volume");
     const int nozzle_volume_val = nozzle_volume_opt ? (int)nozzle_volume_opt->get_at(nozzle_id) : 0;
+#endif
     int machine_enabled_level = 0;
     if (const auto* opt = full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut"))
         machine_enabled_level = opt->value;
