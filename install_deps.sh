@@ -35,7 +35,7 @@ CGAL63_VERSION='5.6.3'
 CGAL63_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL63_VERSION}/CGAL-${CGAL63_VERSION}.tar.xz"
 CGAL63_ARCHIVE_SHA256='15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111'
 CGAL63_PREFIX=''
-if [ "${ENGINE:-bambu}" = 'orca' ]; then
+if [ "${ENGINE:-bambu}" != 'bambu' ]; then
     LIBNOISE_REPOSITORY='https://github.com/SoftFever/Orca-deps-libnoise.git'
     LIBNOISE_COMMIT='f25d5331570ae109f0e645cb729ecab155612714'
 else
@@ -447,7 +447,7 @@ elif [[ -f /etc/debian_version ]]; then
     if [ "${ENGINE:-bambu}" = 'bambu' ]; then
         CGAL5_PREFIX="/opt/slicer-cli/cgal-$CGAL5_VERSION"
         install_cgal5 "$CGAL5_PREFIX" yes
-    elif [ "${ENGINE:-bambu}" = 'orca' ]; then
+    elif [ "${ENGINE:-bambu}" != 'bambu' ]; then
         CGAL63_PREFIX="/opt/slicer-cli/cgal-$CGAL63_VERSION"
         install_cgal63 "$CGAL63_PREFIX" yes
     fi
