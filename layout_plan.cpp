@@ -290,7 +290,10 @@ static json to_json(const CapabilitiesV1& c) {
 
 int run_capabilities() {
     CapabilitiesV1 caps;
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    // The Snapmaker build reports its own engine name; result.json already does.
+    caps.engine = "snapmaker";
+#elif defined(ENGINE_ORCA)
     caps.engine = "orca";
 #else
     caps.engine = "bambu";
@@ -396,7 +399,12 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
             t.present = true;
         }
         out.engine = raw.value("engine", "");
+#ifdef ENGINE_SNAPMAKER
+        // This build's own engine name is one of the names a plan may carry.
+        if (out.engine != "orca" && out.engine != "bambu" && out.engine != "snapmaker") { err.error.code="INVALID_INPUT"; err.error.message="unknown engine"; return false; }
+#else
         if (out.engine != "orca" && out.engine != "bambu") { err.error.code="INVALID_INPUT"; err.error.message="unknown engine"; return false; }
+#endif
         out.profiles_dir = strip_dir(raw.value("profilesDir", ""));
         if (out.profiles_dir.empty()) { err.error.code="INVALID_INPUT"; err.error.message="profilesDir required"; return false; }
         if (!raw.contains("profiles") || !raw["profiles"].is_object()) { err.error.code="INVALID_INPUT"; err.error.message="profiles must be object"; return false; }
@@ -559,7 +567,9 @@ static bool fully_inside_bed(const ExPolygon& obj, const Polygon& bed_poly) {
 
 int run_layout_plan(const LayoutProblemV1& problem) {
     const char* be =
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+        "snapmaker";
+#elif defined(ENGINE_ORCA)
         "orca";
 #else
         "bambu";

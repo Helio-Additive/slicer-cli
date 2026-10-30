@@ -66,6 +66,10 @@ case "$ENGINE" in
            DEFAULT_PROFILES_DIR="$SCRIPT_DIR/../references/BambuStudio/resources/profiles" ;;
     orca)  BASE_3MF="$FIXTURES/calib_base_orca.3mf"
            DEFAULT_PROFILES_DIR="$SCRIPT_DIR/../references/OrcaSlicer/resources/profiles" ;;
+    # The Snapmaker engine refuses the BambuStudio-stamped fixtures under its
+    # version gate, so it reads its own twins, saved by slicer_cli-snapmaker.
+    snapmaker) BASE_3MF="$FIXTURES/calib_base_snapmaker.3mf"
+           DEFAULT_PROFILES_DIR="$SCRIPT_DIR/../references/SnapmakerOrca/resources/profiles" ;;
     *) echo "FAIL [engine-detect] 'layout capabilities --json' gave no engine (got '$ENGINE')"; exit 1 ;;
 esac
 echo "Engine: $ENGINE"

@@ -13813,7 +13813,9 @@ int main(int argc, char** argv) {
 
         json out;
         out["engine"] =
-        #ifdef ENGINE_ORCA
+        #ifdef ENGINE_SNAPMAKER
+            "snapmaker";
+        #elif defined(ENGINE_ORCA)
             "orca";
         #else
             "bambu";
