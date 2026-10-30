@@ -185,6 +185,14 @@ MixCategory mix_category_from_name(const std::string& name) {
 /// The compatibility table the desktop loads from the bundled
 /// filament_compatibility.json (MixedColorMatchHelpers.cpp:1056-1124): each
 /// category is compatible with itself and with the partners the file lists.
+/// Why the table could not be read, empty when it was: kept for the refusal
+/// sentence, since the load's warning event is emitted once and a multi-plate
+/// run's check pass drops the events it held when it passes.
+std::string& mix_compatibility_table_problem() {
+    static std::string problem;
+    return problem;
+}
+
 const std::vector<std::vector<bool>>& mix_compatibility_table() {
     static const std::vector<std::vector<bool>> table = [] {
         std::vector<std::vector<bool>> t(10, std::vector<bool>(10, false));
@@ -218,6 +226,7 @@ const std::vector<std::vector<bool>>& mix_compatibility_table() {
         } catch (const std::exception& e) {
             problem = "cannot read " + path + ": " + e.what();
         }
+        mix_compatibility_table_problem() = problem;
         if (!problem.empty())
             emit({{"event","warning"}, {"tag","FilamentCompatibilityTableNotLoaded"}, {"path", path},
                   {"message","The filament compatibility table was not loaded (" + problem + "); each filament type"
@@ -427,6 +436,9 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
                       " mixed_filament_definitions is a project setting, not a filament one, so correct it on the"
                       " command line with --mixed-filament-definitions \"<rows>\" (each row lists the two component"
                       " filaments it mixes), or in the process settings given with --load-settings.";
+            if (const std::string& problem = mix_compatibility_table_problem(); !problem.empty())
+                message += " The filament compatibility table was not loaded (" + problem +
+                           "), so only a mix of one material counts as compatible.";
             return code;
         }
     }
