@@ -2280,8 +2280,8 @@ static boost::filesystem::path orca_profiles_dir(const boost::filesystem::path& 
 }
 
 /// The Snapmaker Orca profiles tree beside this binary, or empty: a checkout
-/// has references/SnapmakerOrca; a package would ship it as
-/// resources/profiles-snapmaker (Linux: bin/../resources; macOS and Windows:
+/// has references/SnapmakerOrca; a package ships it as
+/// resources/snapmaker/profiles (Linux: bin/../resources; macOS and Windows:
 /// next to the binaries).
 #ifdef ENGINE_SNAPMAKER
 static boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir) {
@@ -3776,8 +3776,10 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
             if (obj_wall_extr != 1)
                 plate_extruders.push_back(obj_wall_extr);
 
+            // An object's sparse-infill filament of 0 or less inherits the global
+            // one (resolve_sparse_infill_filament, PartPlate.cpp:83-87 at bac6fd5).
             int obj_sparse_extr = glb_sparse_infill_extr;
-            if (const ConfigOption* opt = object->config.option("sparse_infill_filament"))
+            if (const ConfigOption* opt = object->config.option("sparse_infill_filament"); opt != nullptr && opt->getInt() > 0)
                 obj_sparse_extr = opt->getInt();
             if (obj_sparse_extr != 1)
                 plate_extruders.push_back(obj_sparse_extr);
@@ -6463,19 +6465,16 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // the filaments a 3MF carries — those load into project_config and are
     // never run through ConfigManipulation — so this runs on the named and STL
     // paths, which is where presets by name become the run's filaments.
+    // The desktop pads one preset's list; in the merged config full_fff_config
+    // has already filled each filament's flow-variant group from that
+    // filament's own values (PresetBundle.cpp:2696-2710), so only the 0.5 floor
+    // is left, and the desktop says so only when a value was raised.
     if (auto* speeds = out.option<Slic3r::ConfigOptionFloats>("filament_max_volumetric_speed");
         speeds != nullptr && !speeds->values.empty()) {
-        size_t variants = speeds->values.size();
-        if (const auto* flow = out.option<Slic3r::ConfigOptionStrings>("filament_flow_support");
-            flow != nullptr && !flow->values.empty())
-            variants = std::max(variants, flow->values.size());
-        const double fallback = speeds->values.front();
-        const bool padded = speeds->values.size() != variants;
-        speeds->values.resize(variants, fallback);
         bool lifted = false;
         for (double& value : speeds->values)
             if (value < 0.5) { value = 0.5; lifted = true; }
-        if (lifted || padded)
+        if (lifted)
             emit_event({{"event","warning"}, {"tag","MaxVolumetricSpeedCorrected"},
                         {"message","Too small max volumetric speed. Reset to 0.5."}});
     }
@@ -8367,7 +8366,9 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
 
     // get_cold_plate_compat_state (Plater.cpp:22820-22900): only under the Cool
     // Steel Plate, which reuses the Supertack bed type.
-    const BedType bed_type = config.opt_enum<BedType>("curr_bed_type");
+    // curr_bed_type is a project key; a run whose settings come from presets
+    // or settings files may not hold it, and opt_enum does not check.
+    const BedType bed_type = config.has("curr_bed_type") ? config.opt_enum<BedType>("curr_bed_type") : btCount;
     if (bed_type == btSuperTack) {
         std::vector<int> unsupported, tpu;
         const auto* supertack_temps = config.option<ConfigOptionInts>("supertack_plate_temp");
@@ -8475,8 +8476,10 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
     };
     std::vector<int> offenders;
     for (int slot : used) {
+        // Only a value that is there and not above zero blocks: the desktop
+        // reads each preset's own value and has nothing to block on otherwise.
         const size_t idx = group_start(slot);
-        if (flow_ratios == nullptr || idx >= flow_ratios->values.size() || flow_ratios->values[idx] <= 0.0)
+        if (flow_ratios != nullptr && idx < flow_ratios->values.size() && flow_ratios->values[idx] <= 0.0)
             offenders.push_back(slot + 1);
     }
     if (!offenders.empty()) {
@@ -11795,6 +11798,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     if (auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
                         step_sizes != nullptr && step_sizes->values.size() > switch_extruders)
                         step_sizes->values.resize(switch_extruders);
+                    // The other per-filament project lists set_num_filaments and the
+                    // filament roster keep at one entry per filament
+                    // (PresetBundle.cpp:2179-2201 at bac6fd5), so they report only the
+                    // filaments the slice keeps.
+                    for (const char* key : {"filament_settings_id", "filament_ids", "filament_multi_colors",
+                                            "filament_colour_mode"})
+                        if (auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
+                            vec != nullptr && vec->size() > switch_extruders)
+                            vec->resize(switch_extruders);
                     config.option<ConfigOptionStrings>("filament_colour", true)->values.resize(switch_extruders);
                     // Painting keeps the physical + mixed total the desktop passes
                     // (Plater.cpp:22236, 22283): a mixed id must survive the trim.
@@ -11850,6 +11862,83 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                 {"message","The switch to '" + o.printer_preset + "' trims the project's filaments from " +
                                            std::to_string(colours_before) + " to " + std::to_string(switch_extruders) +
                                            ", as the desktop does"}});
+                }
+            }
+#endif
+#ifdef ENGINE_SNAPMAKER
+            // G and H change the settings the slice runs with, so they come before
+            // Print::apply, which snapshots the config.
+            // G: sync_filament_volume_types_for_slice
+            // (references/SnapmakerOrca/src/slic3r/GUI/FlowTypeHelper.cpp:187-208 at
+            // bac6fd5), called before every slice. The nozzles' flow types come
+            // from nozzle_volume_type and the printer's printer_flow_support; when
+            // they all agree every filament follows that type, and when they mix
+            // the desktop asks the user — headless we keep the file's values and
+            // say so.
+            {
+                using namespace Slic3r;
+                const auto* nozzle_types = config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type");
+                std::vector<int> types;
+                if (nozzle_types != nullptr)
+                    types = nozzle_types->values;
+                if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+                    types.resize(std::max<size_t>(types.size(), nozzles->size()), 0);
+                // The engine's flow-support values are "standard" and "high_flow"
+                // (references/SnapmakerOrca/src/libslic3r/PrintConfig.hpp:368-369 at
+                // bac6fd5), and its nozzle_volume_types() masks an unsupported
+                // high-flow nozzle back to standard before anything counts the
+                // distinct types (FlowTypeHelper.cpp:161-176, called from 187-208).
+                bool supports_high_flow = false;
+                if (const auto* support = config.option<ConfigOptionStrings>("printer_flow_support"))
+                    supports_high_flow = std::find(support->values.begin(), support->values.end(), "high_flow") !=
+                                         support->values.end();
+                if (!supports_high_flow)
+                    for (int& type : types) type = 0;
+                std::vector<int> distinct = types;
+                std::sort(distinct.begin(), distinct.end());
+                distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
+                if (distinct.size() >= 2) {
+                    emit_event({{"event","warning"}, {"tag","MixedNozzleFlowTypes"},
+                                {"plate_id", plate_id},
+                                {"message","The nozzles mix standard and high-flow types. The desktop asks which flow"
+                                           " type the filaments should use; this run keeps the file's filament_volume_type"
+                                           " values."}});
+                } else {
+                    // 1 (nvtBigTraffic in nozzle_volume_type) is the high-flow type.
+                    const int wanted = (!types.empty() && types.front() == 1 && supports_high_flow) ? 1 : 0;
+                    auto* flow_opt = config.option<ConfigOptionEnumsGeneric>("filament_volume_type", true);
+                    const bool uniform = !flow_opt->values.empty() &&
+                                         std::all_of(flow_opt->values.begin(), flow_opt->values.end(),
+                                                     [wanted](int v) { return v == wanted; });
+                    if (!uniform) {
+                        size_t filament_count = 1;
+                        if (const auto* ftypes = config.option<ConfigOptionStrings>("filament_type"))
+                            filament_count = std::max<size_t>(ftypes->values.size(), 1);
+                        flow_opt->values.assign(filament_count, wanted);
+                    }
+                }
+            }
+            // H: the U1's bed types (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:3615,
+            // 3790-3802 at bac6fd5): without support_multi_bed_types a Snapmaker
+            // U1 takes Textured PEI, Smooth PEI or Graphic Effect only, and any
+            // other plate becomes Textured PEI.
+            {
+                using namespace Slic3r;
+                const std::string printer_model = config.has("printer_model") ? config.opt_string("printer_model") : std::string();
+                const bool is_u1 = boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1");
+                const bool multi_bed = config.has("support_multi_bed_types") && config.opt_bool("support_multi_bed_types");
+                if (is_u1 && !multi_bed && config.has("curr_bed_type")) {
+                    const BedType current = config.opt_enum<BedType>("curr_bed_type");
+                    if (current != btPTE && current != btPEI && current != btGESP) {
+                        const auto* bed_def = print_config_def.get("curr_bed_type");
+                        const std::string before = bed_def != nullptr && (size_t) current < bed_def->enum_labels.size()
+                                                       ? bed_def->enum_labels[(size_t) current] : std::string("(unknown)");
+                        config.option<ConfigOptionEnum<BedType>>("curr_bed_type", true)->value = btPTE;
+                        emit_event({{"event","warning"}, {"tag","BedTypeForcedForU1"},
+                                    {"plate_id", plate_id}, {"was", before},
+                                    {"message","Snapmaker U1 without support_multi_bed_types: plate '" + before +
+                                               "' is not one of its plate types, so this run uses Textured PEI."}});
+                    }
                 }
             }
 #endif
@@ -12073,79 +12162,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
 #endif
 #ifdef ENGINE_SNAPMAKER
-            // G: sync_filament_volume_types_for_slice
-            // (references/SnapmakerOrca/src/slic3r/GUI/FlowTypeHelper.cpp:187-208 at
-            // bac6fd5), called before every slice. The nozzles' flow types come
-            // from nozzle_volume_type and the printer's printer_flow_support; when
-            // they all agree every filament follows that type, and when they mix
-            // the desktop asks the user — headless we keep the file's values and
-            // say so.
-            {
-                using namespace Slic3r;
-                const auto* nozzle_types = config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type");
-                std::vector<int> types;
-                if (nozzle_types != nullptr)
-                    types = nozzle_types->values;
-                if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
-                    types.resize(std::max<size_t>(types.size(), nozzles->size()), 0);
-                // The engine's flow-support values are "standard" and "high_flow"
-                // (references/SnapmakerOrca/src/libslic3r/PrintConfig.hpp:368-369 at
-                // bac6fd5), and its nozzle_volume_types() masks an unsupported
-                // high-flow nozzle back to standard before anything counts the
-                // distinct types (FlowTypeHelper.cpp:161-176, called from 187-208).
-                bool supports_high_flow = false;
-                if (const auto* support = config.option<ConfigOptionStrings>("printer_flow_support"))
-                    supports_high_flow = std::find(support->values.begin(), support->values.end(), "high_flow") !=
-                                         support->values.end();
-                if (!supports_high_flow)
-                    for (int& type : types) type = 0;
-                std::vector<int> distinct = types;
-                std::sort(distinct.begin(), distinct.end());
-                distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
-                if (distinct.size() >= 2) {
-                    emit_event({{"event","warning"}, {"tag","MixedNozzleFlowTypes"},
-                                {"plate_id", plate_id},
-                                {"message","The nozzles mix standard and high-flow types. The desktop asks which flow"
-                                           " type the filaments should use; this run keeps the file's filament_volume_type"
-                                           " values."}});
-                } else {
-                    // 1 (nvtBigTraffic in nozzle_volume_type) is the high-flow type.
-                    const int wanted = (!types.empty() && types.front() == 1 && supports_high_flow) ? 1 : 0;
-                    auto* flow_opt = config.option<ConfigOptionEnumsGeneric>("filament_volume_type", true);
-                    const bool uniform = !flow_opt->values.empty() &&
-                                         std::all_of(flow_opt->values.begin(), flow_opt->values.end(),
-                                                     [wanted](int v) { return v == wanted; });
-                    if (!uniform) {
-                        size_t filament_count = 1;
-                        if (const auto* ftypes = config.option<ConfigOptionStrings>("filament_type"))
-                            filament_count = std::max<size_t>(ftypes->values.size(), 1);
-                        flow_opt->values.assign(filament_count, wanted);
-                    }
-                }
-            }
-            // H: the U1's bed types (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:3615,
-            // 3790-3802 at bac6fd5): without support_multi_bed_types a Snapmaker
-            // U1 takes Textured PEI, Smooth PEI or Graphic Effect only, and any
-            // other plate becomes Textured PEI.
-            {
-                using namespace Slic3r;
-                const std::string printer_model = config.has("printer_model") ? config.opt_string("printer_model") : std::string();
-                const bool is_u1 = boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1");
-                const bool multi_bed = config.has("support_multi_bed_types") && config.opt_bool("support_multi_bed_types");
-                if (is_u1 && !multi_bed) {
-                    const BedType current = config.opt_enum<BedType>("curr_bed_type");
-                    if (current != btPTE && current != btPEI && current != btGESP) {
-                        const auto* bed_def = print_config_def.get("curr_bed_type");
-                        const std::string before = bed_def != nullptr && (size_t) current < bed_def->enum_labels.size()
-                                                       ? bed_def->enum_labels[(size_t) current] : std::string("(unknown)");
-                        config.option<ConfigOptionEnum<BedType>>("curr_bed_type", true)->value = btPTE;
-                        emit_event({{"event","warning"}, {"tag","BedTypeForcedForU1"},
-                                    {"plate_id", plate_id}, {"was", before},
-                                    {"message","Snapmaker U1 without support_multi_bed_types: plate '" + before +
-                                               "' is not one of its plate types, so this run uses Textured PEI."}});
-                    }
-                }
-            }
             // J: PLA and PETG on one plate
             // (references/SnapmakerOrca/src/slic3r/GUI/GLCanvas3D.cpp:11061-11080 at
             // bac6fd5) — a warning only; the desktop does not block on it.
@@ -12174,8 +12190,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     filament_names = ids->values;
                 int blocker_code = 0;
                 std::string blocker_message, blocker_warning;
-                if (desktop_pre_slice_blockers(model, config, plate_id, switches.allow_mix_temp, filament_names,
-                                               blocker_code, blocker_message, blocker_warning) != 0) {
+                // Only this plate's objects count, as the desktop's
+                // collect_used_filament_slots_on_plate counts them.
+                int blocked = 0;
+                {
+                    PlateScope scope(model, rs.plate(plate_id));
+                    blocked = desktop_pre_slice_blockers(model, config, plate_id, switches.allow_mix_temp, filament_names,
+                                                         blocker_code, blocker_message, blocker_warning);
+                }
+                if (blocked != 0) {
                     std::cerr << blocker_message << "\n";
                     set_outcome_failure(outcome, blocker_code, blocker_message);
                     return 1;

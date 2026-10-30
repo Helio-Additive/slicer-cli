@@ -1648,8 +1648,10 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // ...and only when this merge did not change the colours: a --load-filaments
     // run that did keeps nothing, and the fork recomputes N*N from the project
     // (Snapmaker_Orca.cpp:2839-2845 at bac6fd5).
+    // filament_color_changed is only known once the colours below are compared,
+    // so the colour part of the test is made where the matrix is put back.
     const bool keep_switched_flush =
-        switched_to_u1 && !filament_color_changed && project_filaments_now > 0 &&
+        switched_to_u1 && project_filaments_now > 0 &&
         kept_flush_matrix.size() == project_filaments_now * project_filaments_now;
 #endif
     if (project_colors_option &&
@@ -1799,7 +1801,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     }
 
 #ifdef ENGINE_SNAPMAKER
-    if (keep_switched_flush) {
+    if (keep_switched_flush && !filament_color_changed) {
         if (!kept_flush_matrix.empty())
             if (auto* matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix"))
                 matrix->values = kept_flush_matrix;

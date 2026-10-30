@@ -4,8 +4,9 @@
 # Usage: tests/test-packaged-slice.sh /path/to/packaged/slicer_cli[.exe]
 set -euo pipefail
 
-BINARY="${1:?usage: $0 /path/to/packaged/slicer_cli [/path/to/packaged/slicer_cli-orcaslicer]}"
+BINARY="${1:?usage: $0 /path/to/packaged/slicer_cli [/path/to/packaged/slicer_cli-orcaslicer [/path/to/packaged/slicer_cli-snapmaker]]}"
 ORCA_BINARY="${2:-}"
+SNAP_BINARY="${3:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 FIXTURE="$SCRIPT_DIR/fixtures/calib_base.3mf"
 WORKDIR="$(mktemp -d)"
@@ -141,4 +142,25 @@ STL
         exit 1
     fi
     echo "PASS: packaged orca slice resolved its own resources root"
+fi
+
+# The Snapmaker engine finds its own profiles tree and resources root in the
+# package (resources/snapmaker, main.cpp snapmaker_profiles_dir): a named U1
+# printer must resolve there, and the engine's own data reads beside it
+# (info/, profiles/Snapmaker/filament/) must not be swallowed.
+if [ -n "$SNAP_BINARY" ]; then
+    printf 'solid snap\nfacet normal 0 0 -1\nouter loop\nvertex 0 0 0\nvertex 0 10 0\nvertex 10 0 0\nendloop\nendfacet\nfacet normal 0 -1 0\nouter loop\nvertex 0 0 0\nvertex 10 0 0\nvertex 0 0 10\nendloop\nendfacet\nfacet normal -1 0 0\nouter loop\nvertex 0 0 0\nvertex 0 0 10\nvertex 0 10 0\nendloop\nendfacet\nfacet normal 1 1 1\nouter loop\nvertex 10 0 0\nvertex 0 10 0\nvertex 0 0 10\nendloop\nendfacet\nendsolid snap\n' > "$WORKDIR/snap.stl"
+    if ! "$SNAP_BINARY" "$WORKDIR/snap.stl" --printer-preset "Snapmaker U1 (0.4 nozzle)" --arrange 1 --slice 1 \
+        --outputdir "$WORKDIR/snap" > "$WORKDIR/snap.log" 2>&1; then
+        cat "$WORKDIR/snap.log"
+        exit 1
+    fi
+    cat "$WORKDIR/snap.log"
+    grep -E "^  Engine resources: .*[/\\\\]resources[/\\\\]snapmaker$" "$WORKDIR/snap.log"
+    if grep -E 'parse (.*[/\\])?(info|flush|profiles)[/\\]|PresetBundle exception' "$WORKDIR/snap.log"; then
+        exit 1
+    fi
+    test -s "$WORKDIR/snap/plate_1.gcode"
+    grep -q '^; printer_settings_id = Snapmaker U1 (0.4 nozzle)' "$WORKDIR/snap/plate_1.gcode"
+    echo "PASS: packaged snapmaker slice resolved its own profiles and resources root"
 fi

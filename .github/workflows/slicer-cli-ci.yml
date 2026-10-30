@@ -1637,8 +1637,8 @@ jobs:
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-snapmaker --help >/dev/null
-          # Hang watchdog for the tests below: every 60 s, any slicer_cli or
-          # slicer_cli-orcaslicer process running for 20 min or more is sampled
+          # Hang watchdog for the tests below: every 60 s, any slicer_cli,
+          # slicer_cli-orcaslicer or slicer_cli-snapmaker process running for 20 min or more is sampled
           # to $RUNNER_TEMP/hang-<pid>.txt (uploaded on failure), its command
           # line and the first 80 lines of the sample are printed, and it is
           # killed, so a hung case fails instead of walling the job for hours.
@@ -1648,7 +1648,7 @@ jobs:
             while sleep 60; do
               ps -axo pid=,etime=,command= | while read -r pid etime cmd; do
                 exe="${cmd%% *}"; exe="${exe##*/}"
-                case "$exe" in slicer_cli|slicer_cli-orcaslicer) ;; *) continue ;; esac
+                case "$exe" in slicer_cli|slicer_cli-orcaslicer|slicer_cli-snapmaker) ;; *) continue ;; esac
                 secs=$(echo "$etime" | awk -F'[-:]' '{n=NF; s=$n+60*$(n-1); if (n>=3) s+=3600*$(n-2); if (n==4) s+=86400*$1; print s}')
                 [ "$secs" -ge 1200 ] || continue
                 echo "::error::hang watchdog: $exe (pid $pid) has run for $etime; sampling and killing it"
@@ -1665,7 +1665,7 @@ jobs:
           # A packaged slice must resolve presets from the package and read the
           # resource folders without a swallowed parse error (libslic3r logs
           # "parse info/…" and continues on its hardcoded tables).
-          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer dist/verify/slicer-cli/slicer_cli-snapmaker
           # The complete slice path (--slice, --arrange, presets by name, --export-3mf,
           # --info, --list-presets) and the default-path checks, on both engines.
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
@@ -1796,7 +1796,7 @@ jobs:
           & dist\verify\slicer-cli\slicer_cli-snapmaker.exe --help
           # A packaged slice must resolve presets from the package and read the
           # resource folders without a swallowed parse error.
-          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe
+          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe dist/verify/slicer-cli/slicer_cli-snapmaker.exe
           if ($LASTEXITCODE -ne 0) { throw "packaged slice assertion failed" }
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe
           if ($LASTEXITCODE -ne 0) { throw "complete slice path assertion failed" }

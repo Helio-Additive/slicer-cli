@@ -29,11 +29,12 @@ The engines are git submodules, pinned to one commit each:
 | OrcaSlicer | `references/OrcaSlicer` | `8500fcd` | 2.4.2 |
 | Snapmaker Orca | `references/SnapmakerOrca` | `bac6fd5` | 2.4.1 |
 
-The Snapmaker Orca engine is a Snapmaker fork of OrcaSlicer, so it builds with
-the OrcaSlicer engine's dependency pins above. All three engines are built, tested,
+The Snapmaker Orca engine is a Snapmaker fork of OrcaSlicer. It builds with the
+dependencies Snapmaker itself pins: its bundled Eigen 3.3.7 and the patched CGAL
+5.4 that BambuStudio also pins (the same archive and patch). All three engines are built, tested,
 packaged and released by the same workflow: `slicer_cli-snapmaker` ships beside
 `slicer_cli` and `slicer_cli-orcaslicer`, with Snapmaker's own profile tree at
-`resources/profiles-snapmaker`.
+`resources/snapmaker/profiles`.
 
 The submodules point at the upstream projects' official repositories and are
 pinned to the commit of the release tag: `bambulab/BambuStudio` tag
