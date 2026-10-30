@@ -3945,6 +3945,11 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
     double layer_height = 0.08f; // hard code layer height
     double max_height = 0.f;
     wipe_tower_size.setZero();
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker starts the width at the wipe volume, kept when no branch below
+    // sets it (references/SnapmakerOrca/src/slic3r/GUI/PartPlate.cpp:2184 at bac6fd5).
+    wipe_tower_size(0) = wipe_volume;
+#endif
 
     if (const ConfigOption* layer_height_opt = config.option("layer_height"))
         layer_height = layer_height_opt->getFloat();
@@ -6201,6 +6206,11 @@ static bool desktop_plate_type_for_printer(const CliOptions& o, const std::strin
     return true;
 }
 
+#ifdef ENGINE_SNAPMAKER
+namespace {
+Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrintConfig& config, size_t& physical);
+}
+#endif
 static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
                                   int& code, std::string& error) {
     namespace fs = boost::filesystem;
@@ -6432,18 +6442,8 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // this run actually slices with: physical + enabled mixed, counted the way
     // Print::apply counts them (PrintApply.cpp:1439-1449 at bac6fd5).
     {
-        std::vector<std::string> colours;
-        if (const auto* colour = out.option<Slic3r::ConfigOptionStrings>("filament_colour"))
-            colours = colour->values;
-        size_t physical = colours.size();
-        if (physical == 0)
-            physical = std::max<size_t>(1, bundle.filament_presets.size());
-        colours.resize(physical, "#26A69A");
-        Slic3r::MixedFilamentManager mixed;
-        mixed.clear_custom_entries();
-        mixed.auto_generate(colours);
-        if (const auto* defs = out.option<Slic3r::ConfigOptionString>("mixed_filament_definitions"))
-            mixed.load_custom_entries(defs->value, colours);
+        size_t physical = 0;
+        const Slic3r::MixedFilamentManager mixed = mixed_manager_from_config(out, physical);
         g_filament_id_total = mixed.total_filaments(physical);
     }
 #else
@@ -8915,8 +8915,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
             // The loader's own is_orca_3mf flag does not recognise every
             // OrcaSlicer-made file (it is false for an "OrcaSlicer-0.1.0-dev"
-            // project), so the maker is read from the file's own tags, the way
-            // --engine-info reads it.
+            // project), so the walls warning reads the maker from the file's own
+            // tags, the way --engine-info reads it. The rebase scope above stays
+            // the loader's flag: it is the OrcaSlicer build's behaviour on main,
+            // which this change leaves as it is.
             {
                 std::string maker_xml;
                 if (read_zip_member(input_file, "3D/3dmodel.model", maker_xml)) {
@@ -11786,6 +11788,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             variant_keep += i < step_sizes->values.size() ? (size_t) std::max(1, step_sizes->values[i]) : 1;
                     }
                     const size_t colours_before = colours->values.size();
+                    // The mixed filaments before the trim, for the paint remap below.
+                    size_t physical_before = 0;
+                    const MixedFilamentManager mixed_before = mixed_manager_from_config(config, physical_before);
+                    // Finding 9: the presets the switch drops, read before the
+                    // trim below cuts filament_settings_id.
+                    json dropped_filaments = json::array();
+                    if (const auto* names = config.option<ConfigOptionStrings>("filament_settings_id"))
+                        for (size_t i = switch_extruders; i < names->values.size(); ++i)
+                            dropped_filaments.push_back(names->values[i]);
                     for (const std::string& key : Preset::filament_options()) {
                         auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
                         if (vec == nullptr) continue;
@@ -11808,13 +11819,39 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             vec != nullptr && vec->size() > switch_extruders)
                             vec->resize(switch_extruders);
                     config.option<ConfigOptionStrings>("filament_colour", true)->values.resize(switch_extruders);
-                    // Painting keeps the physical + mixed total the desktop passes
-                    // (Plater.cpp:22236, 22283): a mixed id must survive the trim.
-                    const size_t paint_total = g_filament_id_total > 0 ? g_filament_id_total : switch_extruders;
+                    // The paint follows the desktop's switch: set_num_filaments
+                    // rebuilds the mixed filaments for the new count and builds the
+                    // old->new filament-id remap (PresetBundle.cpp:3905-3926,
+                    // build_filament_id_remap 3969-4100 at bac6fd5): a kept physical
+                    // id keeps its number, a dropped one becomes NONE, and a mixed id
+                    // follows its row to its new virtual number. The Plater applies
+                    // it with remap_extruder_ids over the physical + mixed total
+                    // (Plater.cpp:22225-22283). The engine's own remap is used, on a
+                    // bundle that only carries the new mixed filaments.
+                    size_t physical_after = 0;
+                    const MixedFilamentManager mixed_after = mixed_manager_from_config(config, physical_after);
+                    const size_t paint_total = mixed_after.total_filaments(physical_after);
+                    std::vector<unsigned int> id_remap;
+                    {
+                        PresetBundle remap_bundle;
+                        remap_bundle.mixed_filaments = mixed_after;
+                        remap_bundle.update_mixed_filament_id_remap(mixed_before.mixed_filaments(), physical_before,
+                                                                    physical_after);
+                        id_remap = remap_bundle.consume_last_filament_id_remap();
+                    }
+                    EnforcerBlockerStateMap state_map;
+                    for (size_t i = 0; i < state_map.size(); ++i)
+                        state_map[i] = EnforcerBlockerType(i);
+                    for (size_t i = 1; i < state_map.size(); ++i) {
+                        const unsigned int mapped = i < id_remap.size() ? id_remap[i] : 0;
+                        state_map[i] = (mapped == 0 || mapped >= state_map.size() || mapped > paint_total)
+                                           ? EnforcerBlockerType::NONE
+                                           : EnforcerBlockerType(mapped);
+                    }
                     for (ModelObject* object : model.objects)
                         for (ModelVolume* volume : object->volumes)
                             if (volume != nullptr)
-                                volume->update_extruder_count(paint_total);
+                                volume->remap_extruder_ids(paint_total, state_map);
                     // Finding 7: with fewer filaments, an index that was in range
                     // at load can be out of range now; the same reset runs again.
                     json shrunk = json::object();
@@ -11850,10 +11887,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                                + std::to_string(paint_total) + "-filament range were reset"}});
                     // Finding 9: report what the slice actually uses, and that the
                     // switch dropped the rest, so a caller can see it.
-                    json dropped_filaments = json::array();
-                    if (const auto* names = config.option<ConfigOptionStrings>("filament_settings_id"))
-                        for (size_t i = switch_extruders; i < names->values.size(); ++i)
-                            dropped_filaments.push_back(names->values[i]);
                     emit_event({{"event","config_normalized"}, {"tag","FilamentsTrimmedForSwitch"},
                                 {"plate_id", plate_id}, {"printer", o.printer_preset},
                                 {"filaments", int(switch_extruders)},
@@ -12685,6 +12718,14 @@ static int run_info(const std::string& argv0, const std::string& path, const std
         maker["orcaslicer"]  = orca != meta.end() ? json(orca->second) : json(nullptr);
         // OrcaSlicer writes "BambuStudio-<its Bambu base>" as Application and
         // its own version in the OrcaSlicer tag (bbs_3mf.cpp 6837 at 31f6803).
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker Orca writes "Snapmaker_Orca-<version>" as Application
+        // (Format/bbs_3mf.cpp:6645-6646 at bac6fd5); its app is this engine's,
+        // named as engine_fit_for names it.
+        if (app != meta.end() && boost::starts_with(app->second, "Snapmaker_Orca-"))
+            maker_app = "Snapmaker Orca";
+        else
+#endif
         if (orca != meta.end() || (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-")))
             maker_app = "OrcaSlicer";
         else if (app != meta.end() && boost::starts_with(app->second, "BambuStudio-"))
@@ -12713,7 +12754,10 @@ static int run_info(const std::string& argv0, const std::string& path, const std
         const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
         printer_model = preset_printer_model(this_engine_profiles_dir(argv0), printer_preset);
         if (printer_model.empty())
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+            // The other engine engine_fit_for names: OrcaSlicer.
+            printer_model = preset_printer_model(orca_profiles_dir(exe_dir), printer_preset);
+#elif defined(ENGINE_ORCA)
             printer_model = preset_printer_model(engine_profiles_dir(exe_dir), printer_preset);
 #else
             printer_model = preset_printer_model(orca_profiles_dir(exe_dir), printer_preset);

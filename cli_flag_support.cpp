@@ -80,18 +80,18 @@ std::string official_flag_refusal(const std::string& key) {
 #endif
 }
 
-#ifdef ENGINE_SNAPMAKER
 std::string all_binaries_label() {
     return "slicer_cli, slicer_cli-orcaslicer and slicer_cli-snapmaker";
 }
-#endif
 
 std::string works_in(const std::string& key) {
-#ifdef ENGINE_SNAPMAKER
-    return bambu_only_keys().count(key) ? "slicer_cli only (Bambu Studio engine)" : all_binaries_label();
-#else
-    return bambu_only_keys().count(key) ? "slicer_cli only (Bambu Studio engine)" : "both binaries";
-#endif
+    if (bambu_only_keys().count(key))
+        return "slicer_cli only (Bambu Studio engine)";
+    // The Snapmaker build refuses --downward-check: its engine defines
+    // downward_check as a list of machine files, not the on/off switch.
+    if (key == "downward_check" || key == "downward_settings")
+        return "slicer_cli and slicer_cli-orcaslicer";
+    return all_binaries_label();
 }
 
 std::string foreign_flag_refusal(const std::string& cli_name) {

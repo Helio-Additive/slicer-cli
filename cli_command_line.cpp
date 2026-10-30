@@ -703,7 +703,7 @@ void print_help(std::ostream& out, const char* prog) {
             f.id == Legacy::AllowMixTemp ? std::string("slicer_cli-snapmaker only") : all_binaries_label();
         help_row(out, lhs, std::string(f.help) + "  [works in: " + works_in_label + "]");
 #else
-        help_row(out, lhs, std::string(f.help) + "  [works in: both binaries]");
+        help_row(out, lhs, std::string(f.help) + "  [works in: " + all_binaries_label() + "]");
 #endif
     }
 

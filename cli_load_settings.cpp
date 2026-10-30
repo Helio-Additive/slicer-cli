@@ -58,25 +58,6 @@ const std::set<std::string> empty_options;
 // 0); OrcaSlicer 2.4 calls it nvtStandard. Same value.
 constexpr NozzleVolumeType nvtStandard = NozzleVolumeType::nvtNormal;
 
-// OrcaSlicer 2.4 has get/set_flush_volumes_matrix as static helpers in
-// PrintConfig.hpp:2133-2159; the Snapmaker fork predates them. These are the
-// same slicing rules, with the same signature, from that source, so the CLI's
-// per-nozzle matrix layout is unchanged.
-static std::vector<double> get_flush_volumes_matrix(const std::vector<double>& fv_matrix, size_t extruder_id = -1, size_t nozzle_nums = 1) {
-    if (extruder_id != -1 && nozzle_nums != 1) {
-        return std::vector<double>(fv_matrix.begin() + size_t(fv_matrix.size() / nozzle_nums * extruder_id + EPSILON),
-                                   fv_matrix.begin() + size_t(fv_matrix.size() / nozzle_nums * (extruder_id + 1) + EPSILON));
-    }
-    return fv_matrix;
-}
-
-static void set_flush_volumes_matrix(std::vector<double>& out_matrix, const std::vector<double>& fv_matrix, size_t extruder_id = -1, size_t nozzle_nums = 1) {
-    if (extruder_id != -1 && nozzle_nums != 1) {
-        std::copy(fv_matrix.begin(), fv_matrix.end(), out_matrix.begin() + size_t(out_matrix.size() / nozzle_nums * extruder_id + EPSILON));
-    } else {
-        out_matrix = std::vector<double>(fv_matrix.begin(), fv_matrix.end());
-    }
-}
 #endif
 
 // B 682-683 / O 545-546.
@@ -333,8 +314,8 @@ int update_full_config(DynamicPrintConfig& full_config, const DynamicPrintConfig
                     // ConfigOptionVectorBase::set_with_restore is OrcaSlicer 2.4
                     // only, and this engine has no variant key sets, so
                     // variant_count_changed is always false here: the differing
-                    // key is copied plainly below, as the OrcaSlicer CLI does
-                    // when no variant count changed (O 2709-2713).
+                    // key keeps the project's value and is not copied, as the
+                    // OrcaSlicer CLI skips it when no variant count changed.
                     (void) variant_count_changed;
                     (void) variant_index;
                     continue;
@@ -1644,6 +1625,11 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         kept_flush_matrix = matrix->values;
     if (const auto* vector = m_print_config.option<ConfigOptionFloats>("flush_volumes_vector"))
         kept_flush_vector = vector->values;
+    // The recompute below sets flush_multiplier to 1; the desktop never
+    // touches it on a switch, so a kept matrix keeps its multiplier too.
+    const auto* project_multiplier = m_print_config.option<ConfigOptionFloat>("flush_multiplier");
+    const bool   has_flush_multiplier  = project_multiplier != nullptr;
+    const double kept_flush_multiplier = has_flush_multiplier ? project_multiplier->value : 1.;
     const size_t project_filaments_now = project_colors_option ? project_colors_option->values.size() : 0;
     // ...and only when this merge did not change the colours: a --load-filaments
     // run that did keeps nothing, and the fork recomputes N*N from the project
@@ -1808,6 +1794,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (!kept_flush_vector.empty())
             if (auto* vector = m_print_config.option<ConfigOptionFloats>("flush_volumes_vector"))
                 vector->values = kept_flush_vector;
+        if (has_flush_multiplier)
+            if (auto* multiplier = m_print_config.option<ConfigOptionFloat>("flush_multiplier"))
+                multiplier->value = kept_flush_multiplier;
     }
 #endif
     out.machine_switch                   = machine_switch;
