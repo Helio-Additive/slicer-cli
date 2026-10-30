@@ -697,7 +697,11 @@ void print_help(std::ostream& out, const char* prog) {
         std::string lhs = (std::string(f.name).size() == 1 ? "-" : "--") + std::string(f.name);
         if (f.takes_value) lhs += std::string(" ") + f.help_value;
 #ifdef ENGINE_SNAPMAKER
-        help_row(out, lhs, std::string(f.help) + "  [works in: " + all_binaries_label() + "]");
+        // A flag only this build defines works in this build alone; the shared
+        // ones work in slicer_cli as well.
+        const std::string works_in_label =
+            f.id == Legacy::AllowMixTemp ? std::string("slicer_cli-snapmaker only") : all_binaries_label();
+        help_row(out, lhs, std::string(f.help) + "  [works in: " + works_in_label + "]");
 #else
         help_row(out, lhs, std::string(f.help) + "  [works in: both binaries]");
 #endif
