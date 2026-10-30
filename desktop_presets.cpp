@@ -1,6 +1,10 @@
 // desktop_presets.cpp — see desktop_presets.hpp.
 #include "desktop_presets.hpp"
 
+#ifdef ENGINE_ORCA
+#include "cli_events.hpp"   // rename_to_current's PresetRenamed event
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -654,5 +658,44 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
     // which is not that preset.
     return out;
 }
+
+#ifdef ENGINE_ORCA
+/// A preset named by a name its system preset has since been renamed from is
+/// that preset, as the desktop resolves it: load_presets builds the map from
+/// every system preset's "renamed_from" list (PresetBundle::update_system_maps,
+/// OrcaSlicer PresetBundle.cpp 2437-2447 at 8500fcd / Snapmaker 1651-1655 at
+/// bac6fd5) and a lookup by an old name goes through it
+/// (PresetCollection::get_preset_name_renamed; OrcaSlicer find_preset,
+/// Preset.cpp 3218-3225). The names given are rewritten to the current ones
+/// once, so every later use sees the preset the slice runs with, and an event
+/// tells the caller the current name.
+/// Rewrites `name` to its preset's current name and returns the old one, or
+/// returns empty when `name` is current or unknown. `announce` emits the
+/// PresetRenamed event; a JSON document mode (--list-presets) reports the
+/// rename in its own document instead, so stdout stays one JSON value.
+std::string rename_to_current(Slic3r::PresetCollection& collection, std::string& name, const char* kind,
+                              bool announce) {
+    if (name.empty()) return {};
+    if (const Slic3r::Preset* p = collection.find_preset(name, false); p != nullptr && p->name == name) return {};
+    const std::string* current = collection.get_preset_name_renamed(name);
+    if (current == nullptr || *current == name) return {};
+    if (announce)
+        emit({{"event","warning"}, {"tag","PresetRenamed"}, {"kind", kind},
+                    {"old_name", name}, {"name", *current},
+                    {"message", std::string(kind) + " preset '" + name + "' is now called '" + *current +
+                                "'; it was used under its current name. Pass the current name next time."}});
+    std::string old = name;
+    name = *current;
+    return old;
+}
+
+void apply_preset_renames(std::string& printer, std::string& process, std::vector<std::string>& filaments,
+                          Slic3r::PresetBundle& bundle) {
+    rename_to_current(bundle.printers, printer, "printer");
+    rename_to_current(bundle.prints, process, "process");
+    for (std::string& name : filaments)
+        rename_to_current(bundle.filaments, name, "filament");
+}
+#endif
 
 } // namespace slicer_cli

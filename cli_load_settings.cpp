@@ -401,13 +401,19 @@ static void merge_flow_variant_group(DynamicPrintConfig& project, const DynamicP
     if (const auto* sizes = project.option<ConfigOptionInts>("filament_flow_step_size"))
         for (size_t i = 0; i < filament_count && i < sizes->values.size(); ++i)
             steps[i] = std::max(1, sizes->values[i]);
-    size_t new_step = 1;
-    if (const auto* support = filament.option<ConfigOptionStrings>("filament_flow_support"); support && !support->values.empty())
-        new_step = support->values.size();
     size_t start = 0;
     for (size_t i = 0; i < index; ++i)
         start += size_t(steps[i]);
     const size_t old_step = size_t(steps[index]);
+    // The group is as long as the filament_flow_support the slot ends up with:
+    // the loaded preset's, or the project's own when the project changed it and
+    // keeps it, so the variants it keeps are not cut.
+    size_t new_step = old_step;
+    if (copy.count("filament_flow_support")) {
+        new_step = 1;
+        if (const auto* support = filament.option<ConfigOptionStrings>("filament_flow_support"); support && !support->values.empty())
+            new_step = support->values.size();
+    }
     for (const std::string& key : project.keys()) {
         if (!is_filament_flow_variant_option(key) && key != "filament_flow_support")
             continue;

@@ -6012,43 +6012,6 @@ static std::string default_replaced_note(const char* kind, const std::string& pi
     return std::string(kind) + " '" + picked + "' (" + why + ")";
 }
 
-#ifdef ENGINE_ORCA
-/// A preset named by a name its system preset has since been renamed from is
-/// that preset, as the desktop resolves it: load_presets builds the map from
-/// every system preset's "renamed_from" list (PresetBundle::update_system_maps,
-/// OrcaSlicer PresetBundle.cpp 2437-2447 at 8500fcd / Snapmaker 1651-1655 at
-/// bac6fd5) and a lookup by an old name goes through it
-/// (PresetCollection::get_preset_name_renamed; OrcaSlicer find_preset,
-/// Preset.cpp 3218-3225). The names given are rewritten to the current ones
-/// once, so every later use sees the preset the slice runs with, and an event
-/// tells the caller the current name.
-/// Rewrites `name` to its preset's current name and returns the old one, or
-/// returns empty when `name` is current or unknown. `announce` emits the
-/// PresetRenamed event; a JSON document mode (--list-presets) reports the
-/// rename in its own document instead, so stdout stays one JSON value.
-static std::string rename_to_current(Slic3r::PresetCollection& collection, std::string& name, const char* kind,
-                                     bool announce = true) {
-    if (name.empty()) return {};
-    if (const Slic3r::Preset* p = collection.find_preset(name, false); p != nullptr && p->name == name) return {};
-    const std::string* current = collection.get_preset_name_renamed(name);
-    if (current == nullptr || *current == name) return {};
-    if (announce)
-        emit_event({{"event","warning"}, {"tag","PresetRenamed"}, {"kind", kind},
-                    {"old_name", name}, {"name", *current},
-                    {"message", std::string(kind) + " preset '" + name + "' is now called '" + *current +
-                                "'; it was used under its current name. Pass the current name next time."}});
-    std::string old = name;
-    name = *current;
-    return old;
-}
-
-static void apply_preset_renames(CliOptions& o, Slic3r::PresetBundle& bundle) {
-    rename_to_current(bundle.printers, o.printer_preset, "printer");
-    rename_to_current(bundle.prints, o.process_preset, "process");
-    for (std::string& name : o.filament_presets)
-        rename_to_current(bundle.filaments, name, "filament");
-}
-#endif
 
 /// The named system preset of `collection`, made visible the way naming a
 /// preset installs it — a fresh AppConfig has no printer models installed, so
@@ -6135,7 +6098,7 @@ static bool stage_named_presets_for_project(CliOptions& o, const std::string& di
         return false;
     }
 #ifdef ENGINE_ORCA
-    apply_preset_renames(o, bundle);
+    slicer_cli::apply_preset_renames(o.printer_preset, o.process_preset, o.filament_presets, bundle);
     const std::string app = "OrcaSlicer";
 #else
     const std::string app = "BambuStudio";
@@ -6231,7 +6194,10 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
 #ifdef ENGINE_ORCA
     // main's options object is not const; the names are rewritten once here,
     // after the presets that know the renames have loaded.
-    apply_preset_renames(const_cast<CliOptions&>(o), bundle);
+    {
+        CliOptions& named = const_cast<CliOptions&>(o);
+        slicer_cli::apply_preset_renames(named.printer_preset, named.process_preset, named.filament_presets, bundle);
+    }
     const std::string app = "OrcaSlicer";
 #else
     const std::string app = "BambuStudio";
@@ -6553,7 +6519,7 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
 #ifdef ENGINE_ORCA
         // An old printer name lists its current preset (apply_preset_renames);
         // the name is main's own argument, so it is rewritten in place.
-        if (const std::string old = rename_to_current(bundle.printers, const_cast<std::string&>(printer_name),
+        if (const std::string old = slicer_cli::rename_to_current(bundle.printers, const_cast<std::string&>(printer_name),
                                                       "printer", /*announce=*/false);
             !old.empty())
             out["renamed_from"] = old;

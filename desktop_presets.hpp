@@ -95,4 +95,18 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
                                                     const std::vector<std::string>& current_compatible_printers,
                                                     const std::string& current_preset_name);
 
+#ifdef ENGINE_ORCA
+/// A preset named by a name its system preset has since been renamed from is
+/// that preset, as the desktop resolves it (PresetBundle::update_system_maps,
+/// PresetCollection::get_preset_name_renamed). Rewrites `name` to the current
+/// name and returns the old one, or empty when `name` is current or unknown;
+/// `announce` emits the PresetRenamed warning event.
+std::string rename_to_current(Slic3r::PresetCollection& collection, std::string& name, const char* kind,
+                              bool announce = true);
+
+/// rename_to_current for a run's named printer, process and filaments.
+void apply_preset_renames(std::string& printer, std::string& process, std::vector<std::string>& filaments,
+                          Slic3r::PresetBundle& bundle);
+#endif
+
 } // namespace slicer_cli
