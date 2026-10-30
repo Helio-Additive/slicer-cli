@@ -8397,24 +8397,25 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
 
     // check_flow_ratio_zero (Plater.cpp:22669-22770): a used filament whose
     // flow ratio is not above zero extrudes nothing.
-    // filament_flow_ratio is a flow-variant option: one group per filament, one
-    // value per filament_flow_support entry
-    // (PrintConfig.cpp:7440 filament_flow_variant_options, PresetBundle.cpp:
-    // 2696-2710 at bac6fd5). The flat index of filament `slot`'s group is
-    // slot * variants, so a flat slot index would read another filament's value.
+    // filament_flow_ratio is a flow-variant option: one group per filament,
+    // sized by that filament's filament_flow_step_size (PresetBundle.cpp:
+    // 2673-2710 at bac6fd5). The desktop reads each used filament's own first
+    // value (Plater.cpp:22764), which is its group's start, found as
+    // get_config_idx does (PrintConfig.cpp:7571-7583).
     const auto* flow_ratios = config.option<ConfigOptionFloats>("filament_flow_ratio");
-    size_t flow_variants = 1;
-    if (const auto* support = config.option<ConfigOptionStrings>("filament_flow_support");
-        support != nullptr && !support->values.empty())
-        flow_variants = support->values.size();
+    const auto* step_sizes  = config.option<ConfigOptionInts>("filament_flow_step_size");
+    const auto group_start = [step_sizes](int slot) {
+        if (step_sizes == nullptr || step_sizes->values.empty())
+            return (size_t) slot;
+        size_t start = 0;
+        for (int i = 0; i < slot; ++i)
+            start += i < (int) step_sizes->values.size() ? (size_t) std::max(1, step_sizes->values[i]) : 1;
+        return start;
+    };
     std::vector<int> offenders;
     for (int slot : used) {
-        const size_t group = (size_t) slot * flow_variants;
-        bool unprintable = flow_ratios == nullptr || group >= flow_ratios->values.size();
-        if (!unprintable)
-            for (size_t k = 0; k < flow_variants && group + k < flow_ratios->values.size(); ++k)
-                if (flow_ratios->values[group + k] <= 0.0) unprintable = true;
-        if (unprintable)
+        const size_t idx = group_start(slot);
+        if (flow_ratios == nullptr || idx >= flow_ratios->values.size() || flow_ratios->values[idx] <= 0.0)
             offenders.push_back(slot + 1);
     }
     if (!offenders.empty()) {
@@ -8424,8 +8425,9 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
         for (size_t i = 0; i < offenders.size(); ++i) {
             if (i != 0) message += "; ";
             const int slot = offenders[i] - 1;
-            const double ratio = flow_ratios != nullptr && slot < (int)flow_ratios->values.size()
-                                     ? flow_ratios->values[slot] : 0.;
+            const size_t idx = group_start(slot);
+            const double ratio = flow_ratios != nullptr && idx < flow_ratios->values.size()
+                                     ? flow_ratios->values[idx] : 0.;
             char ratio_text[32];
             std::snprintf(ratio_text, sizeof ratio_text, "%g", ratio);
             message += filament_slot_label(filament_names, offenders[i]) + " (filament_flow_ratio = " +
@@ -11707,23 +11709,31 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     config.has("single_extruder_multi_material") && config.opt_bool("single_extruder_multi_material");
                 if (!single_extruder_multi_material && switch_extruders > 0 && colours != nullptr &&
                     colours->values.size() > switch_extruders) {
-                    // A flow-variant option keeps one group of values per
-                    // filament (PrintConfig.cpp:7440, PresetBundle.cpp:2696-2710
-                    // at bac6fd5), so it is cut per group, not per value: a plain
-                    // resize would hand filament 2 filament 1's variants.
-                    size_t flow_variants = 1;
-                    if (const auto* support = config.option<ConfigOptionStrings>("filament_flow_support");
-                        support != nullptr && !support->values.empty())
-                        flow_variants = support->values.size();
-                    const std::vector<std::string>& variant_keys = filament_flow_variant_options();
+                    // A flow-variant option (and filament_flow_support) keeps one
+                    // group of values per filament, each group as long as that
+                    // filament's filament_flow_step_size (PresetBundle.cpp:2673-2710
+                    // at bac6fd5), so it is cut after the kept filaments' groups:
+                    // a plain resize would hand filament 2 filament 1's variants.
+                    size_t variant_keep = switch_extruders;
+                    if (const auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
+                        step_sizes != nullptr && !step_sizes->values.empty()) {
+                        variant_keep = 0;
+                        for (size_t i = 0; i < switch_extruders; ++i)
+                            variant_keep += i < step_sizes->values.size() ? (size_t) std::max(1, step_sizes->values[i]) : 1;
+                    }
                     const size_t colours_before = colours->values.size();
                     for (const std::string& key : Preset::filament_options()) {
                         auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
                         if (vec == nullptr) continue;
-                        const bool variant = std::find(variant_keys.begin(), variant_keys.end(), key) != variant_keys.end();
-                        const size_t want = variant ? switch_extruders * flow_variants : switch_extruders;
+                        const bool variant = is_filament_flow_variant_option(key) || key == "filament_flow_support";
+                        const size_t want = variant ? variant_keep : switch_extruders;
                         if (vec->size() > want) vec->resize(want);
                     }
+                    // The group sizes themselves are one per filament and are no
+                    // filament preset option, so the loop above skips them.
+                    if (auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
+                        step_sizes != nullptr && step_sizes->values.size() > switch_extruders)
+                        step_sizes->values.resize(switch_extruders);
                     config.option<ConfigOptionStrings>("filament_colour", true)->values.resize(switch_extruders);
                     // Painting keeps the physical + mixed total the desktop passes
                     // (Plater.cpp:22236, 22283): a mixed id must survive the trim.
