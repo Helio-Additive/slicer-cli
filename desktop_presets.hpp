@@ -109,4 +109,23 @@ void apply_preset_renames(std::string& printer, std::string& process, std::vecto
                           Slic3r::PresetBundle& bundle);
 #endif
 
+#ifdef ENGINE_SNAPMAKER
+/// A process name with the "mm" the tree's presets spell after the layer
+/// height: "0.20 Standard @Snapmaker U1 (0.4 nozzle)" →
+/// "0.20mm Standard @Snapmaker U1 (0.4 nozzle)". Unchanged when the name does
+/// not start with a number.
+std::string declared_with_mm_unit(const std::string& declared);
+
+/// The printer's stated default process, read the way the Snapmaker tree's
+/// presets spell it, when it is a listed, compatible preset; empty otherwise.
+std::string snapmaker_stated_default_process(const Slic3r::PresetCollection& prints, const std::string& declared,
+                                             bool (*is_listed_preset)(const Slic3r::Preset&));
+
+/// The printer's default material: the first listed, compatible preset of the
+/// stated default filament's vendor with its filament_type; empty when there
+/// is none.
+std::string snapmaker_default_material(const Slic3r::PresetCollection& filaments, const std::vector<std::string>& declared,
+                                       bool (*is_listed_preset)(const Slic3r::Preset&));
+#endif
+
 } // namespace slicer_cli

@@ -9,9 +9,12 @@
 #include <set>
 #include <sstream>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
 
+#include "libslic3r/Preset.hpp"
+#include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Utils.hpp"
 
 #include "cli_events.hpp"
@@ -488,6 +491,216 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
         return code;
     }
     return 0;
+}
+
+/// A switch to a printer that is not a Snapmaker U1 trims the filament list to
+/// that printer's extruder count and remaps the paint (Tab.cpp:2247-2270 and
+/// Plater.cpp:22281-22290 at bac6fd5). `paint_remapped` is the run's: the model
+/// is shared by every plate pass and is remapped once.
+void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model& model, const std::string& printer,
+                               int plate_id, bool& paint_remapped) {
+    using namespace Slic3r;
+    using json = nlohmann::json;
+    size_t switch_extruders = 0;
+    if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+        switch_extruders = nozzles->size();
+    const auto* colours = config.option<ConfigOptionStrings>("filament_colour");
+    // Tab.cpp:2246 at bac6fd5: only a printer that is not
+    // single_extruder_multi_material has its filament count trimmed.
+    const bool single_extruder_multi_material =
+        config.has("single_extruder_multi_material") && config.opt_bool("single_extruder_multi_material");
+    if (!single_extruder_multi_material && switch_extruders > 0 && colours != nullptr &&
+        colours->values.size() > switch_extruders) {
+        // A flow-variant option (and filament_flow_support) keeps one
+        // group of values per filament, each group as long as that
+        // filament's filament_flow_step_size (PresetBundle.cpp:2673-2710
+        // at bac6fd5), so it is cut after the kept filaments' groups:
+        // a plain resize would hand filament 2 filament 1's variants.
+        size_t variant_keep = switch_extruders;
+        if (const auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
+            step_sizes != nullptr && !step_sizes->values.empty()) {
+            variant_keep = 0;
+            for (size_t i = 0; i < switch_extruders; ++i)
+                variant_keep += i < step_sizes->values.size() ? (size_t) std::max(1, step_sizes->values[i]) : 1;
+        }
+        const size_t colours_before = colours->values.size();
+        // The mixed filaments before the trim, for the paint remap below.
+        size_t physical_before = 0;
+        const MixedFilamentManager mixed_before = mixed_manager_from_config(config, physical_before);
+        // Finding 9: the presets the switch drops, read before the
+        // trim below cuts filament_settings_id.
+        json dropped_filaments = json::array();
+        if (const auto* names = config.option<ConfigOptionStrings>("filament_settings_id"))
+            for (size_t i = switch_extruders; i < names->values.size(); ++i)
+                dropped_filaments.push_back(names->values[i]);
+        for (const std::string& key : Preset::filament_options()) {
+            auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
+            if (vec == nullptr) continue;
+            const bool variant = is_filament_flow_variant_option(key) || key == "filament_flow_support";
+            const size_t want = variant ? variant_keep : switch_extruders;
+            if (vec->size() > want) vec->resize(want);
+        }
+        // The group sizes themselves are one per filament and are no
+        // filament preset option, so the loop above skips them.
+        if (auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
+            step_sizes != nullptr && step_sizes->values.size() > switch_extruders)
+            step_sizes->values.resize(switch_extruders);
+        // The other per-filament project lists set_num_filaments and the
+        // filament roster keep at one entry per filament
+        // (PresetBundle.cpp:2179-2201 at bac6fd5), so they report only the
+        // filaments the slice keeps.
+        for (const char* key : {"filament_settings_id", "filament_ids", "filament_multi_colors",
+                                "filament_colour_mode"})
+            if (auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
+                vec != nullptr && vec->size() > switch_extruders)
+                vec->resize(switch_extruders);
+        config.option<ConfigOptionStrings>("filament_colour", true)->values.resize(switch_extruders);
+        // The paint follows the desktop's switch: set_num_filaments
+        // rebuilds the mixed filaments for the new count and builds the
+        // old->new filament-id remap (PresetBundle.cpp:3905-3926,
+        // build_filament_id_remap 3969-4100 at bac6fd5): a kept physical
+        // id keeps its number, a dropped one becomes NONE, and a mixed id
+        // follows its row to its new virtual number. The Plater applies
+        // it with remap_extruder_ids over the physical + mixed total
+        // (Plater.cpp:22225-22283). The engine's own remap is used, on a
+        // bundle that only carries the new mixed filaments.
+        size_t physical_after = 0;
+        const MixedFilamentManager mixed_after = mixed_manager_from_config(config, physical_after, &mixed_before);
+        const size_t paint_total = mixed_after.total_filaments(physical_after);
+        if (!paint_remapped) {
+            std::vector<unsigned int> id_remap;
+            {
+                PresetBundle remap_bundle;
+                remap_bundle.mixed_filaments = mixed_after;
+                remap_bundle.update_mixed_filament_id_remap(mixed_before.mixed_filaments(), physical_before,
+                                                            physical_after);
+                id_remap = remap_bundle.consume_last_filament_id_remap();
+            }
+            const EnforcerBlockerStateMap state_map = paint_state_map(id_remap, paint_total);
+            for (ModelObject* object : model.objects)
+                for (ModelVolume* volume : object->volumes)
+                    if (volume != nullptr)
+                        volume->remap_extruder_ids(paint_total, state_map);
+            paint_remapped = true;
+        }
+        // Finding 7: with fewer filaments, an index that was in range
+        // at load can be out of range now; the same reset runs again.
+        json shrunk = json::object();
+        json dropped = json::array();
+        for (size_t oi = 0; oi < model.objects.size(); ++oi) {
+            ModelObject* object = model.objects[oi];
+            if (object == nullptr) continue;
+            auto recheck = [&](ModelConfigObject& cfg, const std::string& where, bool is_object) {
+                if (is_object && (!cfg.has("extruder") || (size_t) cfg.extruder() > paint_total)) {
+                    const int was = cfg.has("extruder") ? cfg.extruder() : -1;
+                    cfg.set_key_value("extruder", new ConfigOptionInt(0));
+                    shrunk[where] = {{"from", was}, {"to", 0}};
+                }
+                for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament",
+                                        "support_filament", "support_interface_filament"})
+                    if (cfg.has(key) && (size_t) cfg.opt_int(key) > paint_total) {
+                        dropped.push_back(where + " " + key);
+                        cfg.erase(key);
+                    }
+            };
+            recheck(object->config, "object " + std::to_string(oi + 1), true);
+            if (object->volumes.size() > 1)
+                for (size_t vi = 0; vi < object->volumes.size(); ++vi)
+                    if (object->volumes[vi] != nullptr)
+                        recheck(object->volumes[vi]->config,
+                                "object " + std::to_string(oi + 1) + " volume " + std::to_string(vi + 1), false);
+        }
+        if (!shrunk.empty() || !dropped.empty())
+            emit({{"event","config_normalized"}, {"tag","FilamentIndexOutOfRangeReset"},
+                        {"reset_extruder", shrunk}, {"erased_keys", dropped},
+                        {"filament_range", int(paint_total)},
+                        {"message","After the switch trimmed the filaments, indices past the new "
+                                   + std::to_string(paint_total) + "-filament range were reset"}});
+        // Finding 9: report what the slice actually uses, and that the
+        // switch dropped the rest, so a caller can see it.
+        emit({{"event","config_normalized"}, {"tag","FilamentsTrimmedForSwitch"},
+                    {"plate_id", plate_id}, {"printer", printer},
+                    {"filaments", int(switch_extruders)},
+                    {"filaments_before", int(colours_before)},
+                    {"dropped_filaments", dropped_filaments},
+                    {"message","The switch to '" + printer + "' trims the project's filaments from " +
+                               std::to_string(colours_before) + " to " + std::to_string(switch_extruders) +
+                               ", as the desktop does"}});
+    }
+}
+
+/// G: sync_filament_volume_types_for_slice
+/// (references/SnapmakerOrca/src/slic3r/GUI/FlowTypeHelper.cpp:187-208 at
+/// bac6fd5), called before every slice. The nozzles' flow types come from
+/// nozzle_volume_type and the printer's printer_flow_support; when they all
+/// agree every filament follows that type, and when they mix the desktop asks
+/// the user — headless the file's values are kept and a warning says so.
+void sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id) {
+    using namespace Slic3r;
+    const auto* nozzle_types = config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type");
+    std::vector<int> types;
+    if (nozzle_types != nullptr)
+        types = nozzle_types->values;
+    if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+        types.resize(std::max<size_t>(types.size(), nozzles->size()), 0);
+    // The engine's flow-support values are "standard" and "high_flow"
+    // (references/SnapmakerOrca/src/libslic3r/PrintConfig.hpp:368-369 at
+    // bac6fd5), and its nozzle_volume_types() masks an unsupported
+    // high-flow nozzle back to standard before anything counts the
+    // distinct types (FlowTypeHelper.cpp:161-176, called from 187-208).
+    bool supports_high_flow = false;
+    if (const auto* support = config.option<ConfigOptionStrings>("printer_flow_support"))
+        supports_high_flow = std::find(support->values.begin(), support->values.end(), "high_flow") !=
+                             support->values.end();
+    if (!supports_high_flow)
+        for (int& type : types) type = 0;
+    std::vector<int> distinct = types;
+    std::sort(distinct.begin(), distinct.end());
+    distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
+    if (distinct.size() >= 2) {
+        emit({{"event","warning"}, {"tag","MixedNozzleFlowTypes"},
+                    {"plate_id", plate_id},
+                    {"message","The nozzles mix standard and high-flow types. The desktop asks which flow"
+                               " type the filaments should use; this run keeps the file's filament_volume_type"
+                               " values."}});
+    } else {
+        // 1 (nvtBigTraffic in nozzle_volume_type) is the high-flow type.
+        const int wanted = (!types.empty() && types.front() == 1 && supports_high_flow) ? 1 : 0;
+        auto* flow_opt = config.option<ConfigOptionEnumsGeneric>("filament_volume_type", true);
+        const bool uniform = !flow_opt->values.empty() &&
+                             std::all_of(flow_opt->values.begin(), flow_opt->values.end(),
+                                         [wanted](int v) { return v == wanted; });
+        if (!uniform) {
+            size_t filament_count = 1;
+            if (const auto* ftypes = config.option<ConfigOptionStrings>("filament_type"))
+                filament_count = std::max<size_t>(ftypes->values.size(), 1);
+            flow_opt->values.assign(filament_count, wanted);
+        }
+    }
+}
+
+/// H: the U1's bed types (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:3615,
+/// 3790-3802 at bac6fd5): without support_multi_bed_types a Snapmaker U1 takes
+/// Textured PEI, Smooth PEI or Graphic Effect only, and any other plate becomes
+/// Textured PEI.
+void force_u1_bed_type(Slic3r::DynamicPrintConfig& config, int plate_id) {
+    using namespace Slic3r;
+    const std::string printer_model = config.has("printer_model") ? config.opt_string("printer_model") : std::string();
+    const bool is_u1 = boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1");
+    const bool multi_bed = config.has("support_multi_bed_types") && config.opt_bool("support_multi_bed_types");
+    if (is_u1 && !multi_bed && config.has("curr_bed_type")) {
+        const BedType current = config.opt_enum<BedType>("curr_bed_type");
+        if (current != btPTE && current != btPEI && current != btGESP) {
+            const auto* bed_def = print_config_def.get("curr_bed_type");
+            const std::string before = bed_def != nullptr && (size_t) current < bed_def->enum_labels.size()
+                                           ? bed_def->enum_labels[(size_t) current] : std::string("(unknown)");
+            config.option<ConfigOptionEnum<BedType>>("curr_bed_type", true)->value = btPTE;
+            emit({{"event","warning"}, {"tag","BedTypeForcedForU1"},
+                        {"plate_id", plate_id}, {"was", before},
+                        {"message","Snapmaker U1 without support_multi_bed_types: plate '" + before +
+                                   "' is not one of its plate types, so this run uses Textured PEI."}});
+        }
+    }
 }
 
 } // namespace slicer_cli

@@ -29,6 +29,18 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
                                bool allow_mix_temp, const std::vector<std::string>& filament_names,
                                int& code, std::string& message, std::string& warning);
 
+/// A switch to a printer that is not a Snapmaker U1: trims the plate's filament
+/// settings to the printer's extruder count and, once per run, remaps the
+/// model's paint, as the desktop does.
+void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model& model, const std::string& printer,
+                               int plate_id, bool& paint_remapped);
+
+/// The desktop's flow-type sync before a slice (filament_volume_type).
+void sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id);
+
+/// The Snapmaker U1's plate types: an unsupported plate becomes Textured PEI.
+void force_u1_bed_type(Slic3r::DynamicPrintConfig& config, int plate_id);
+
 } // namespace slicer_cli
 
 #endif // ENGINE_SNAPMAKER

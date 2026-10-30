@@ -698,4 +698,74 @@ void apply_preset_renames(std::string& printer, std::string& process, std::vecto
 }
 #endif
 
+#ifdef ENGINE_SNAPMAKER
+std::string declared_with_mm_unit(const std::string& declared) {
+    const size_t space = declared.find(' ');
+    if (space == std::string::npos)
+        return declared;
+    const std::string head = declared.substr(0, space);
+    if (head.empty() || head.find_first_not_of("0123456789.") != std::string::npos)
+        return declared;
+    return head + "mm" + declared.substr(space);
+}
+
+std::string snapmaker_stated_default_process(const Slic3r::PresetCollection& prints, const std::string& declared,
+                                             bool (*is_listed_preset)(const Slic3r::Preset&)) {
+    // Snapmaker's own machine JSON names its default process without the "mm"
+    // the tree's process presets carry: "Snapmaker U1 (0.4 nozzle).json" states
+    // default_print_profile "0.20 Standard @Snapmaker U1 (0.4 nozzle)" while
+    // process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json is the preset.
+    // Snapmaker's own matcher compares names exactly (PreferedProfileMatch,
+    // PresetBundle.cpp:4140-4152 at bac6fd5), so taking the stated default
+    // means reading its number the way the presets spell it.
+    if (!declared.empty()) {
+        const std::string wanted = declared_with_mm_unit(declared);
+        for (const Slic3r::Preset& p : prints) {
+            if (!is_listed_preset(p) || !p.is_compatible) continue;
+            if (p.name == declared || p.name == wanted) {
+                const_cast<Slic3r::Preset&>(p).is_visible = true;
+                return p.name;
+            }
+        }
+    }
+    return {};
+}
+
+std::string snapmaker_default_material(const Slic3r::PresetCollection& filaments, const std::vector<std::string>& declared,
+                                       bool (*is_listed_preset)(const Slic3r::Preset&)) {
+    // The Snapmaker tree names "Snapmaker PLA" as the U1's default filament
+    // (machine/fdm_toolchanger.json default_filament_profile, inherited by
+    // machine/Snapmaker U1 (0.4 nozzle).json), but that preset's own
+    // compatible_printers lists the A-series printers only, so it is not one
+    // the U1 can print with. The printer's default therefore means its default
+    // material: the first compatible preset of this tree with the same
+    // filament_type, never another vendor's filament taken by collection order.
+    if (!declared.empty()) {
+        const Slic3r::Preset* wanted = filaments.find_preset(declared.front(), false);
+        // filament_type is a per-filament list (coStrings), as the desktop reads
+        // it (Plater.cpp:22874-22879 at bac6fd5): its first entry.
+        std::string wanted_type;
+        if (wanted != nullptr)
+            if (const auto* types = wanted->config.option<Slic3r::ConfigOptionStrings>("filament_type");
+                types != nullptr && !types->values.empty())
+                wanted_type = types->values.front();
+        if (!wanted_type.empty()) {
+            // Same vendor as the declared preset, so the printer's default
+            // material is one of its own maker's filaments and never another
+            // vendor's preset taken by collection order.
+            const Slic3r::VendorProfile* const wanted_vendor = wanted->vendor;
+            for (const Slic3r::Preset& p : filaments) {
+                if (!is_listed_preset(p) || !p.is_compatible) continue;
+                if (wanted_vendor != nullptr && p.vendor != wanted_vendor) continue;
+                const auto* types = p.config.option<Slic3r::ConfigOptionStrings>("filament_type");
+                if (types == nullptr || types->values.empty() || types->values.front() != wanted_type) continue;
+                const_cast<Slic3r::Preset&>(p).is_visible = true;
+                return p.name;
+            }
+        }
+    }
+    return {};
+}
+#endif
+
 } // namespace slicer_cli
