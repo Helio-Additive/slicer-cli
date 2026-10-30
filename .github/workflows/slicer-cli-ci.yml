@@ -1754,6 +1754,11 @@ jobs:
           # slice-resolvable by name via the orca engine. Browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           Copy-Item -Recurse references\OrcaSlicer\resources\profiles "$P\resources\profiles-orca"
+          # The Snapmaker engine's own tree, as the macOS and Linux packages carry
+          # it: snapmaker_profiles_dir() and engine_resources_root() look here.
+          Copy-Item -Recurse references\SnapmakerOrca\resources\profiles "$P\resources\profiles-snapmaker"
+          New-Item -ItemType Directory -Force "$P\resources\snapmaker" | Out-Null
+          Copy-Item -Recurse references\SnapmakerOrca\resources\info "$P\resources\snapmaker\info"
           # libslic3r reads these folders beside the profile trees at slice time:
           # Print.cpp:2687/2722/2755 (info/*.json),
           # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
@@ -1771,6 +1776,7 @@ jobs:
           Copy-Item LICENSE, NOTICE, README.md "$P\"
           Copy-Item references\BambuStudio\LICENSE "$P\BAMBUSTUDIO-LICENSE.txt"
           Copy-Item references\OrcaSlicer\LICENSE.txt "$P\ORCASLICER-LICENSE.txt"
+          Copy-Item references\SnapmakerOrca\LICENSE.txt "$P\SNAPMAKER-ORCA-LICENSE.txt"
           @{
             version = $version; gitSha = $env:GITHUB_SHA; platform = $platform
             executablePath = "slicer-cli/slicer_cli.exe"
