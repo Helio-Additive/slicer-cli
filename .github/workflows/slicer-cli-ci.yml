@@ -367,14 +367,14 @@ jobs:
           sudo chown -R "$USER" /opt/slicer-cli/cgal-5.4 /opt/slicer-cli/cgal-5.6.3
 
       - name: Restore Linux pinned CGAL (bambu)
-        if: runner.os == 'Linux' && matrix.engine == 'bambu'
+        if: runner.os == 'Linux' && (matrix.engine == 'bambu' || matrix.engine == 'snapmaker')
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.4
           key: linux-${{ matrix.arch }}-cgal-5.4-bambu-v3
 
       - name: Restore Linux pinned CGAL (orca)
-        if: runner.os == 'Linux' && matrix.engine != 'bambu'
+        if: runner.os == 'Linux' && matrix.engine == 'orca'
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.6.3
@@ -438,7 +438,7 @@ jobs:
           fi
           test -f "$LIBNOISE_PREFIX/include/noise/noise.h" -o -f "$LIBNOISE_PREFIX/include/libnoise/noise.h"
           test -f "$LIBNOISE_PREFIX/lib/libnoise.a" -o -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" -o -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a"
-          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+          if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             CGAL_VERSION=5.4
             CGAL_COMMIT=c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
             CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
@@ -537,7 +537,7 @@ jobs:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
           VCPKG_ARGS=()
-          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+          if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           fi
           for attempt in 1 2 3; do
@@ -624,7 +624,7 @@ jobs:
             # the directory directly so find_package(Eigen3) short-circuits search.
             EIGEN3_CMAKE_DIR="$(dirname "$(find /opt/homebrew -name "Eigen3Config.cmake" 2>/dev/null | head -1)" 2>/dev/null)"
             [[ -n "$EIGEN3_CMAKE_DIR" ]] && EXTRA+=(-DEigen3_DIR="$EIGEN3_CMAKE_DIR")
-            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
               CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
@@ -658,7 +658,7 @@ jobs:
             EXTRA+=(-DBOOST_ROOT="$BOOST_PREFIX" -DBoost_ROOT="$BOOST_PREFIX")
             EXTRA+=(-DBoost_NO_SYSTEM_PATHS=ON -DSLICER_CLI_REQUIRED_BOOST_VERSION=1.84.0)
             EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
-            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
@@ -945,13 +945,13 @@ jobs:
         run: ENGINE=${{ matrix.engine }} /bin/bash install_deps.sh
 
       - name: Prepare macOS pinned CGAL prefix (Orca)
-        if: runner.os == 'macOS' && matrix.engine != 'bambu'
+        if: runner.os == 'macOS' && matrix.engine == 'orca'
         run: |
           sudo mkdir -p /opt/slicer-cli/cgal-5.6.3
           sudo chown -R "$USER" /opt/slicer-cli/cgal-5.6.3
 
       - name: Restore macOS pinned CGAL (Orca)
-        if: runner.os == 'macOS' && matrix.engine != 'bambu'
+        if: runner.os == 'macOS' && matrix.engine == 'orca'
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.6.3
@@ -959,7 +959,7 @@ jobs:
           restore-keys: macos-${{ runner.arch }}-cgal-5.6.3-orca-v1
 
       - name: Build macOS pinned CGAL (Orca)
-        if: runner.os == 'macOS' && matrix.engine != 'bambu'
+        if: runner.os == 'macOS' && matrix.engine == 'orca'
         shell: /bin/bash -e {0}
         run: |
           CGAL_VERSION=5.6.3
@@ -1003,14 +1003,14 @@ jobs:
           key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
 
       - name: Restore Linux pinned CGAL (bambu)
-        if: runner.os == 'Linux' && matrix.engine == 'bambu'
+        if: runner.os == 'Linux' && (matrix.engine == 'bambu' || matrix.engine == 'snapmaker')
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.4
           key: linux-x86_64-cgal-5.4-bambu-v2
 
       - name: Restore Linux pinned CGAL (orca)
-        if: runner.os == 'Linux' && matrix.engine != 'bambu'
+        if: runner.os == 'Linux' && matrix.engine == 'orca'
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.6.3
@@ -1062,7 +1062,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=/usr/local \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           sudo cmake --build /tmp/libnoise/build --target install --parallel
-          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+          if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             CGAL_VERSION=5.4
             CGAL_COMMIT=c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
             CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
@@ -1146,7 +1146,7 @@ jobs:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
           VCPKG_ARGS=()
-          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+          if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           fi
           for attempt in 1 2 3; do
@@ -1212,32 +1212,6 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.9
         with:
           version: "v0.10.0"
-      # Snapmaker's bundled libigl uses Eigen 3.4's DynamicSparseMatrix, which
-      # Homebrew's Eigen 5 removed. Bambu and Orca keep the Homebrew Eigen; this
-      # leg builds 3.4.0 (headers only, quick) into its own prefix and points CMake at it.
-      - name: Eigen 3.4.0 (macOS, snapmaker only)
-        if: runner.os == 'macOS' && matrix.engine == 'snapmaker'
-        shell: bash
-        run: |
-          set -euo pipefail
-          EIGEN34_VERSION=3.4.0
-          EIGEN34_SUM=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
-          EIGEN34_PREFIX="$RUNNER_TEMP/eigen-$EIGEN34_VERSION"
-          if [ ! -f "$EIGEN34_PREFIX/share/eigen3/cmake/Eigen3Config.cmake" ]; then
-            rm -rf "$EIGEN34_PREFIX" /tmp/eigen-$EIGEN34_VERSION /tmp/eigen-build
-            curl -fsSL -o /tmp/eigen-$EIGEN34_VERSION.tar.gz \
-              "https://gitlab.com/libeigen/eigen/-/archive/$EIGEN34_VERSION/eigen-$EIGEN34_VERSION.tar.gz"
-            echo "$EIGEN34_SUM  /tmp/eigen-$EIGEN34_VERSION.tar.gz" | shasum -a 256 -c -
-            tar -xzf /tmp/eigen-$EIGEN34_VERSION.tar.gz -C /tmp
-            cmake -S /tmp/eigen-$EIGEN34_VERSION -B /tmp/eigen-build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_INSTALL_PREFIX="$EIGEN34_PREFIX" \
-              -DBUILD_TESTING=OFF -DEIGEN_BUILD_DOC=OFF
-            cmake --install /tmp/eigen-build
-          fi
-          test -f "$EIGEN34_PREFIX/share/eigen3/cmake/Eigen3Config.cmake"
-          echo "EIGEN34_PREFIX=$EIGEN34_PREFIX" >> "$GITHUB_ENV"
-
       - name: Configure (macOS / Linux)
         if: runner.os != 'Windows'
         run: |
@@ -1259,7 +1233,7 @@ jobs:
             # the directory directly so find_package(Eigen3) short-circuits search.
             EIGEN3_CMAKE_DIR="$(dirname "$(find /opt/homebrew -name "Eigen3Config.cmake" 2>/dev/null | head -1)" 2>/dev/null)"
             [[ -n "$EIGEN3_CMAKE_DIR" ]] && EXTRA+=(-DEigen3_DIR="$EIGEN3_CMAKE_DIR")
-            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
               CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
@@ -1289,7 +1263,7 @@ jobs:
             EXTRA+=(-DBOOST_ROOT="$BOOST_PREFIX" -DBoost_ROOT="$BOOST_PREFIX")
             EXTRA+=(-DBoost_NO_SYSTEM_PATHS=ON -DSLICER_CLI_REQUIRED_BOOST_VERSION=1.84.0)
             EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
-            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
@@ -1297,10 +1271,6 @@ jobs:
               CGAL63_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
               [[ -f "$CGAL63_DIR/CGALConfig.cmake" ]] || { echo "missing Orca-pinned CGAL 5.6.3 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL63_DIR")
-            fi
-            if [[ "${{ matrix.engine }}" == "snapmaker" && "${{ runner.os }}" == "macOS" ]]; then
-              [[ -f "$EIGEN34_PREFIX/share/eigen3/cmake/Eigen3Config.cmake" ]] || { echo "missing Eigen 3.4 prefix"; exit 1; }
-              EXTRA+=(-DEigen3_DIR="$EIGEN34_PREFIX/share/eigen3/cmake" -DEIGEN3_INCLUDE_DIR="$EIGEN34_PREFIX/include/eigen3")
             fi
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \

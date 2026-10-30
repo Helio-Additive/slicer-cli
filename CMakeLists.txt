@@ -173,7 +173,16 @@ endfunction()
 # ─── System dependencies ────────────────────────────────────────────────────
 find_package(Threads REQUIRED)
 find_package(TBB     REQUIRED)
-find_package(Eigen3  REQUIRED)
+if(ENGINE STREQUAL "snapmaker")
+  # Snapmaker's release build takes its bundled Eigen 3.3.7 (its
+  # CMakeLists.txt 650-658 at bac6fd5: static builds skip find_package and use
+  # deps_src/eigen; its deps/ has no Eigen). Its libigl also needs that Eigen:
+  # DynamicSparseMatrix is gone from Eigen 5.
+  set(EIGEN3_INCLUDE_DIR "${SUBLIB_DIR}/eigen")
+  set(EIGEN3_VERSION_STRING "3.3.7 (Snapmaker's bundled copy)")
+else()
+  find_package(Eigen3  REQUIRED)
+endif()
 find_package(PNG     REQUIRED)
 find_package(ZLIB    REQUIRED)
 find_package(EXPAT   REQUIRED)
@@ -211,7 +220,10 @@ if(DEFINED SLICER_CLI_REQUIRED_BOOST_VERSION AND SLICER_CLI_REQUIRED_BOOST_VERSI
 endif()
 
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
-if(ENGINE STREQUAL "bambu")
+# Snapmaker pins the same CGAL as BambuStudio: the v5.4 source archive with the
+# same SHA-256 and a byte-identical 0001-clang19.patch (deps/CGAL at bac6fd5 and
+# at BambuStudio's pin), so it takes Bambu's CGAL 5.4 package.
+if(ENGINE STREQUAL "bambu" OR ENGINE STREQUAL "snapmaker")
   # install_deps.sh installs Bambu-patched CGAL 5.4 in one of these
   # project-managed prefixes. Prefer them over the system CGAL 6 package so
   # the documented `./install_deps.sh && cmake ..` flow needs no extra flag.
@@ -224,7 +236,11 @@ if(ENGINE STREQUAL "bambu")
         /opt/homebrew/Cellar/cgal@5/5.4/lib/cmake/CGAL
         /usr/local/Cellar/cgal@5/5.4/lib/cmake/CGAL
       NO_DEFAULT_PATH)
-    if(NOT CGAL_FOUND)
+    if(NOT CGAL_FOUND AND ENGINE STREQUAL "snapmaker")
+      message(FATAL_ERROR
+        "Snapmaker Orca v2.4.1 requires the Bambu-patched CGAL 5.4 it pins. "
+        "Run ENGINE=snapmaker ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
+    elseif(NOT CGAL_FOUND)
       message(FATAL_ERROR
         "BambuStudio v02.08.02.61 requires Bambu-patched CGAL 5.4. "
         "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
@@ -395,8 +411,9 @@ elseif(TARGET Eigen3::Eigen)
   endif()
 endif()
 
-# On macOS, Homebrew Eigen may also live here
-if(EXISTS /opt/homebrew/opt/eigen/include/eigen3)
+# On macOS, Homebrew Eigen may also live here (never for Snapmaker, which
+# builds against its own bundled Eigen only).
+if(NOT ENGINE STREQUAL "snapmaker" AND EXISTS /opt/homebrew/opt/eigen/include/eigen3)
   include_directories(SYSTEM /opt/homebrew/opt/eigen/include/eigen3)
 endif()
 
@@ -694,9 +711,10 @@ target_include_directories(libslic3r_cgal SYSTEM BEFORE PRIVATE
 
 # CGAL 5.4's ConicCPA2 header uses CGAL_NTS is_zero without including the
 # declaration itself. Bambu's dependency build exposes it transitively; make
-# that requirement explicit only for Bambu's pinned 5.4 build.
+# that requirement explicit only for the pinned 5.4 builds (Bambu's, and
+# Snapmaker's, which pins the same CGAL).
 set(CGAL_54_COMPAT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio/cgal_54_compat.hpp")
-if(ENGINE STREQUAL "bambu")
+if(ENGINE STREQUAL "bambu" OR ENGINE STREQUAL "snapmaker")
     foreach(CGAL_54_CONSUMER IN ITEMS libslic3r_core libslic3r_cgal)
         if(MSVC)
             target_compile_options(${CGAL_54_CONSUMER} PRIVATE "/FI${CGAL_54_COMPAT_HEADER}")
