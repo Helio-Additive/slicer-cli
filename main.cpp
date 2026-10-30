@@ -6323,8 +6323,16 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     }
     // The remap the switch built, applied to the volumes once the model is loaded.
     g_filament_id_remap = bundle.consume_last_filament_id_remap();
+#endif
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca's PresetBundle::full_config() takes no argument and is
+    // full_fff_config() for FFF (references/SnapmakerOrca/src/libslic3r/PresetBundle.cpp:2491-2496
+    // at bac6fd5): the same settings OrcaSlicer's full_config(false) returns.
+    out = bundle.full_config();
+    // The filament total the switch's remap maps into, read from the settings
+    // this run actually slices with: physical + enabled mixed, counted the way
+    // Print::apply counts them (PrintApply.cpp:1439-1449 at bac6fd5).
     {
-        // physical + enabled mixed, the range the remap maps into
         std::vector<std::string> colours;
         if (const auto* colour = out.option<Slic3r::ConfigOptionStrings>("filament_colour"))
             colours = colour->values;
@@ -6339,12 +6347,6 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
             mixed.load_custom_entries(defs->value, colours);
         g_filament_id_total = mixed.total_filaments(physical);
     }
-#endif
-#ifdef ENGINE_SNAPMAKER
-    // Snapmaker Orca's PresetBundle::full_config() takes no argument and is
-    // full_fff_config() for FFF (references/SnapmakerOrca/src/libslic3r/PresetBundle.cpp:2491-2496
-    // at bac6fd5): the same settings OrcaSlicer's full_config(false) returns.
-    out = bundle.full_config();
 #else
     out = bundle.full_config(false);
 #endif
