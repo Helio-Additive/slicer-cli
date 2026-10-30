@@ -5404,9 +5404,20 @@ static std::string config_value_text(const Slic3r::ConfigBase& config, const cha
 /// found = false); this command line keeps the flat file config for the whole
 /// project instead, and says so in an event.
 static bool project_presets_shipped(Slic3r::PresetBundle& bundle, const std::string& printer, const std::string& process) {
+#ifdef ENGINE_SNAPMAKER
+    // A project saved under a preset's former name names that preset: the
+    // fork's load_external_preset matches the original name against the
+    // renamed_from map (Preset.cpp 2114-2120 at bac6fd5), though its
+    // find_preset, unlike upstream's, does not (Preset.cpp 2776-2783).
+    const auto shipped = [](Slic3r::PresetCollection& collection, const std::string& name) {
+        return collection.find_preset(name, false) != nullptr || collection.get_preset_name_renamed(name) != nullptr;
+    };
+    return !printer.empty() && !process.empty() && shipped(bundle.printers, printer) && shipped(bundle.prints, process);
+#else
     return !printer.empty() && !process.empty() &&
            bundle.printers.find_preset(printer, false) != nullptr &&
            bundle.prints.find_preset(process, false) != nullptr;
+#endif
 }
 #endif
 
@@ -5988,6 +5999,44 @@ static std::string default_replaced_note(const char* kind, const std::string& pi
     return std::string(kind) + " '" + picked + "' (" + why + ")";
 }
 
+#ifdef ENGINE_ORCA
+/// A preset named by a name its system preset has since been renamed from is
+/// that preset, as the desktop resolves it: load_presets builds the map from
+/// every system preset's "renamed_from" list (PresetBundle::update_system_maps,
+/// OrcaSlicer PresetBundle.cpp 2437-2447 at 8500fcd / Snapmaker 1651-1655 at
+/// bac6fd5) and a lookup by an old name goes through it
+/// (PresetCollection::get_preset_name_renamed; OrcaSlicer find_preset,
+/// Preset.cpp 3218-3225). The names given are rewritten to the current ones
+/// once, so every later use sees the preset the slice runs with, and an event
+/// tells the caller the current name.
+/// Rewrites `name` to its preset's current name and returns the old one, or
+/// returns empty when `name` is current or unknown. `announce` emits the
+/// PresetRenamed event; a JSON document mode (--list-presets) reports the
+/// rename in its own document instead, so stdout stays one JSON value.
+static std::string rename_to_current(Slic3r::PresetCollection& collection, std::string& name, const char* kind,
+                                     bool announce = true) {
+    if (name.empty()) return {};
+    if (const Slic3r::Preset* p = collection.find_preset(name, false); p != nullptr && p->name == name) return {};
+    const std::string* current = collection.get_preset_name_renamed(name);
+    if (current == nullptr || *current == name) return {};
+    if (announce)
+        emit_event({{"event","warning"}, {"tag","PresetRenamed"}, {"kind", kind},
+                    {"old_name", name}, {"name", *current},
+                    {"message", std::string(kind) + " preset '" + name + "' is now called '" + *current +
+                                "'; it was used under its current name. Pass the current name next time."}});
+    std::string old = name;
+    name = *current;
+    return old;
+}
+
+static void apply_preset_renames(CliOptions& o, Slic3r::PresetBundle& bundle) {
+    rename_to_current(bundle.printers, o.printer_preset, "printer");
+    rename_to_current(bundle.prints, o.process_preset, "process");
+    for (std::string& name : o.filament_presets)
+        rename_to_current(bundle.filaments, name, "filament");
+}
+#endif
+
 /// The named system preset of `collection`, made visible the way naming a
 /// preset installs it — a fresh AppConfig has no printer models installed, so
 /// system presets load invisible, and select_preset_by_name skips an invisible
@@ -6073,6 +6122,7 @@ static bool stage_named_presets_for_project(CliOptions& o, const std::string& di
         return false;
     }
 #ifdef ENGINE_ORCA
+    apply_preset_renames(o, bundle);
     const std::string app = "OrcaSlicer";
 #else
     const std::string app = "BambuStudio";
@@ -6166,6 +6216,9 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         return false;
     }
 #ifdef ENGINE_ORCA
+    // main's options object is not const; the names are rewritten once here,
+    // after the presets that know the renames have loaded.
+    apply_preset_renames(const_cast<CliOptions&>(o), bundle);
     const std::string app = "OrcaSlicer";
 #else
     const std::string app = "BambuStudio";
@@ -6497,6 +6550,14 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
                                         {"printer_model", p.config.has("printer_model") ? p.config.opt_string("printer_model") : std::string()}});
         out["printers"] = printers;
     } else {
+#ifdef ENGINE_ORCA
+        // An old printer name lists its current preset (apply_preset_renames);
+        // the name is main's own argument, so it is rewritten in place.
+        if (const std::string old = rename_to_current(bundle.printers, const_cast<std::string&>(printer_name),
+                                                      "printer", /*announce=*/false);
+            !old.empty())
+            out["renamed_from"] = old;
+#endif
         const Slic3r::Preset* printer = bundle.printers.find_preset(printer_name, false);
         if (!printer || printer->name != printer_name || !is_listed_preset(*printer)) {
             out["error"] = "No printer preset named '" + printer_name + "'.";
