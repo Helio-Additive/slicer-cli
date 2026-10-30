@@ -3691,7 +3691,16 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
     std::vector<int> plate_extruders;
     const int glb_support_intf_extr = arrange_opt(full_config, "support_interface_filament")->getInt();
     const int glb_support_extr      = arrange_opt(full_config, "support_filament")->getInt();
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+    // The fork keeps the 1-based feature-filament keys and filament 1 is its
+    // default, so only other values count for the tower
+    // (references/SnapmakerOrca/src/slic3r/GUI/PartPlate.cpp:1899-1937, 2042-2081
+    // at bac6fd5).
+    const int glb_wall_extr          = arrange_opt(full_config, "wall_filament")->getInt();
+    const int glb_sparse_infill_extr = arrange_opt(full_config, "sparse_infill_filament")->getInt();
+    const int glb_solid_infill_extr  = arrange_opt(full_config, "solid_infill_filament")->getInt();
+#endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
     // OrcaSlicer v2.4.2 renamed the feature-filament keys to `*_id`, where 0
     // means "Default" (PrintConfig.cpp handle_legacy, 8038-8058), and adds the
     // surface and inner-wall keys (PartPlate.cpp 1671-1681). The wall pair
@@ -3752,7 +3761,31 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
                 else if (glb_support_extr != 0)
                     plate_extruders.push_back(glb_support_extr);
             }
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+            // The fork's own rule (PartPlate.cpp:2075-2081 at bac6fd5): a wall or
+            // sparse-infill filament other than 1 is used, and solid infill falls
+            // back to the global when the object states none.
+            int obj_wall_extr = glb_wall_extr;
+            if (const ConfigOption* opt = object->config.option("wall_filament"))
+                obj_wall_extr = opt->getInt();
+            if (obj_wall_extr != 1)
+                plate_extruders.push_back(obj_wall_extr);
+
+            int obj_sparse_extr = glb_sparse_infill_extr;
+            if (const ConfigOption* opt = object->config.option("sparse_infill_filament"))
+                obj_sparse_extr = opt->getInt();
+            if (obj_sparse_extr != 1)
+                plate_extruders.push_back(obj_sparse_extr);
+
+            int obj_solid_extr = 1;
+            if (const ConfigOption* opt = object->config.option("solid_infill_filament"))
+                obj_solid_extr = opt->getInt();
+            if (obj_solid_extr != 1)
+                plate_extruders.push_back(obj_solid_extr);
+            else if (glb_solid_infill_extr != 1)
+                plate_extruders.push_back(glb_solid_infill_extr);
+#endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
             // Orca also lists wall / infill / surface filaments, with or
             // without support: the desktop's PartPlate::get_extruders, which
             // decides the plate's wipe tower (GLCanvas3D.cpp 2880), lists them
@@ -7324,11 +7357,9 @@ static bool is_staging_folder_name(const std::string& name) {
 static bool is_engine_binary_name(std::string name) {
     while (!name.empty() && (name.front() == '/' || name.front() == '\\'))
         name.erase(name.begin());
-#ifdef ENGINE_SNAPMAKER
+    // Every build knows all three program names: a Bambu or Orca run's temp
+    // sweep must recognise (and so never delete) a live Snapmaker run's folders.
     for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer", "slicer_cli-snapmaker"}) {
-#else
-    for (const char* binary : {"slicer_cli", "slicer_cli-orcaslicer"}) {
-#endif
         const std::string base(binary);
         if (boost::algorithm::iequals(name, base) || boost::algorithm::iequals(name, base + ".exe"))
             return true;
@@ -8313,15 +8344,19 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
                         {"message","The project states " + std::to_string(enabled_rows) + " enabled mixed filament(s): " +
                                    std::to_string(mixed.total_filaments(physical_filaments)) +
                                    " filaments in all, physical and mixed"}});
+        // The mixed manager numbers its rows after max(filament_colour, nozzle
+        // count) (mixed_manager_from_config, as Print::apply does), not after the
+        // filament_type list, so the virtual ids are counted against that.
+        const int physical_count = std::max<int>(1, (int) physical_filaments);
         std::set<unsigned int> used_virtual;
         for (const ModelObject* object : model.objects)
             for (const ModelVolume* volume : object->volumes)
                 for (int id : volume->get_extruders())
-                    if (id > num_filaments) used_virtual.insert((unsigned int) id);
+                    if (id > physical_count) used_virtual.insert((unsigned int) id);
         for (unsigned int id : used_virtual) {
-            const Slic3r::MixedFilament* mf = mixed.mixed_filament_from_id(id, (size_t) num_filaments);
+            const Slic3r::MixedFilament* mf = mixed.mixed_filament_from_id(id, (size_t) physical_count);
             if (mf == nullptr || !mf->enabled || mf->deleted) continue;
-            if (mixed_filament_compatible(*mf, (size_t) num_filaments, filament_types->values)) continue;
+            if (mixed_filament_compatible(*mf, (size_t) physical_count, filament_types->values)) continue;
             auto describe = [&](unsigned int component) {
                 const int index = (int) component - 1;
                 const std::string type = index >= 0 && index < (int) filament_types->values.size()
@@ -11597,7 +11632,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // at bac6fd5; the same rule the CLI applies at
             // Snapmaker_Orca.cpp:3948-3962). A 3MF states its own wipe_tower_x/y
             // and keeps them.
-            if (!boost::algorithm::iends_with(input_file, ".3mf")) {
+            // Only when nothing else decided the tower's place: a --wipe-tower-x/y
+            // from the command line, or an arrange that placed the objects around
+            // the tower, is the user's (or the layout's) choice, not a default.
+            // wipe_tower_x/y are official setting flags, so a value from the
+            // command line shows up in the given-flag set, not in `overrides`.
+            const bool user_set_tower = o.given_flag("wipe_tower_x") || o.given_flag("wipe_tower_y");
+            if (!boost::algorithm::iends_with(input_file, ".3mf") && !user_set_tower &&
+                !o.given_flag("arrange")) {
                 using namespace Slic3r;
                 const Vec2d corner = tower_default_corner(config);
                 const float tower_margin =
