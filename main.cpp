@@ -6354,7 +6354,13 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     if (!o.printer_preset.empty() && o.printer_preset.find("Snapmaker U1") == std::string::npos) {
         const auto* nozzles = bundle.printers.get_edited_preset().config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
         const size_t extruders = nozzles != nullptr ? nozzles->values.size() : 0;
-        if (extruders > 0 && extruders != bundle.filament_presets.size()) {
+        // Tab.cpp:2246 at bac6fd5 trims only for a printer that is not
+        // single_extruder_multi_material (fdm_klipper / fdm_toolchanger printers,
+        // the U1 among them, set it).
+        const bool single_extruder_multi_material =
+            bundle.printers.get_edited_preset().config.has("single_extruder_multi_material") &&
+            bundle.printers.get_edited_preset().config.opt_bool("single_extruder_multi_material");
+        if (!single_extruder_multi_material && extruders > 0 && extruders != bundle.filament_presets.size()) {
             bundle.set_num_filaments((unsigned int) extruders, std::vector<std::string>());
             g_filament_count_changed = true;
         }
@@ -8036,9 +8042,17 @@ std::set<int> desktop_used_filament_slots(const Slic3r::Model& model, const Slic
     std::set<int> slots;
     if (num_filaments <= 0)
         return slots;
-    auto from_config = [&](const DynamicPrintConfig& c) {
-        for (const char* key : {"support_filament", "support_interface_filament", "wall_filament",
-                                "sparse_infill_filament", "solid_infill_filament", "wipe_tower_filament"}) {
+    // Plater.cpp:540-557 at bac6fd5: wipe-tower and support filaments always
+    // apply; wall, sparse-infill and solid-infill only when an object on the
+    // plate uses the default extruder (and `extruder` itself only then, 559-563).
+    auto from_config = [&](const DynamicPrintConfig& c, bool default_extruder) {
+        for (const char* key : {"wipe_tower_filament", "support_filament", "support_interface_filament"}) {
+            if (const auto* opt = c.option<ConfigOptionInt>(key); opt && opt->value >= 1 && opt->value <= num_filaments)
+                slots.insert(opt->value - 1);
+        }
+        if (!default_extruder)
+            return;
+        for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"}) {
             if (const auto* opt = c.option<ConfigOptionInt>(key); opt && opt->value >= 1 && opt->value <= num_filaments)
                 slots.insert(opt->value - 1);
         }
@@ -8061,12 +8075,13 @@ std::set<int> desktop_used_filament_slots(const Slic3r::Model& model, const Slic
     // The driver has no Plater working config separate from the run's own:
     // `config` is the merged settings this plate slices with, so the plate's
     // and the process's keys are read from it.
-    from_config(config);
     bool uses_default_extruder = false;
-    for (const ModelObject* object : model.objects) {
-        from_model_config(object->config);
+    for (const ModelObject* object : model.objects)
         if (!object->config.has("extruder") || object->config.extruder() == 0)
             uses_default_extruder = true;
+    from_config(config, uses_default_extruder);
+    for (const ModelObject* object : model.objects) {
+        from_model_config(object->config);
         for (const ModelVolume* volume : object->volumes) {
             from_model_config(volume->config);
             for (int extruder_id : volume->get_extruders())
@@ -8092,10 +8107,13 @@ Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrin
     std::vector<std::string> colours;
     if (const auto* colour = config.option<ConfigOptionStrings>("filament_colour"))
         colours = colour->values;
+    // Print::apply counts the physical filaments as filament_diameter.size()
+    // (references/SnapmakerOrca/src/libslic3r/PrintApply.cpp:1357) and pads the
+    // colours to that count (1442), so the mixed rows are numbered against it.
     size_t extruders = 0;
-    if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
-        extruders = nozzles->size();
-    physical = std::max({colours.size(), extruders, size_t(1)});
+    if (const auto* diameters = dynamic_cast<const ConfigOptionVectorBase*>(config.option("filament_diameter")))
+        extruders = diameters->size();
+    physical = std::max(extruders, size_t(1));
     colours.resize(physical, "#26A69A");
     std::string definitions;
     if (const auto* defs = config.option<ConfigOptionString>("mixed_filament_definitions"))
@@ -9217,6 +9235,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     const size_t total = g_filament_id_total > 0 ? g_filament_id_total : range;
                     if (!g_filament_id_remap.empty()) {
                         Slic3r::EnforcerBlockerStateMap state_map;
+                        // Every id maps to itself first (Plater.cpp:22233-22235 at
+                        // bac6fd5); only the remapped entries change.
+                        for (size_t i = 0; i < state_map.size(); ++i)
+                            state_map[i] = Slic3r::EnforcerBlockerType(i);
                         for (size_t i = 1; i < state_map.size(); ++i) {
                             const unsigned int mapped = i < g_filament_id_remap.size() ? g_filament_id_remap[i] : 0;
                             state_map[i] = (mapped == 0 || mapped >= state_map.size() || mapped > total)
@@ -11672,7 +11694,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
                     switch_extruders = nozzles->size();
                 const auto* colours = config.option<ConfigOptionStrings>("filament_colour");
-                if (switch_extruders > 0 && colours != nullptr && colours->values.size() > switch_extruders) {
+                // Tab.cpp:2246 at bac6fd5: only a printer that is not
+                // single_extruder_multi_material has its filament count trimmed.
+                const bool single_extruder_multi_material =
+                    config.has("single_extruder_multi_material") && config.opt_bool("single_extruder_multi_material");
+                if (!single_extruder_multi_material && switch_extruders > 0 && colours != nullptr &&
+                    colours->values.size() > switch_extruders) {
                     for (const std::string& key : Preset::filament_options())
                         if (auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false)))
                             if (vec->size() > switch_extruders)
