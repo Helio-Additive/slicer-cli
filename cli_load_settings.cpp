@@ -382,6 +382,59 @@ bool parse_color4(const std::string& scolor, unsigned char* rgba_out) {
     return true;
 }
 
+#ifdef ENGINE_SNAPMAKER
+/// One loaded filament's flow-variant options, merged the way the desktop
+/// builds them (references/SnapmakerOrca/src/libslic3r/PresetBundle.cpp:2673-2710
+/// at bac6fd5): every flow-variant option holds one group per filament, as long
+/// as that filament's filament_flow_support list (at least 1), and
+/// filament_flow_step_size records the lengths. Filament `index` (0-based) gets
+/// a group as long as the loaded preset's list; the keys in `copy` take the
+/// preset's values (entry k, or its first past its end, as the desktop reads
+/// them), the others keep the project's group, padded with its first value.
+/// The groups after it move along. Snapmaker's own CLI writes each of these
+/// options at index-1 like a one-value option (Snapmaker_Orca.cpp:2756), which
+/// puts filament 2's values into filament 1's second variant once filament 1
+/// has two.
+static void merge_flow_variant_group(DynamicPrintConfig& project, const DynamicPrintConfig& filament, size_t index,
+                                     size_t filament_count, const std::set<std::string>& copy) {
+    std::vector<int> steps(filament_count, 1);
+    if (const auto* sizes = project.option<ConfigOptionInts>("filament_flow_step_size"))
+        for (size_t i = 0; i < filament_count && i < sizes->values.size(); ++i)
+            steps[i] = std::max(1, sizes->values[i]);
+    size_t new_step = 1;
+    if (const auto* support = filament.option<ConfigOptionStrings>("filament_flow_support"); support && !support->values.empty())
+        new_step = support->values.size();
+    size_t start = 0;
+    for (size_t i = 0; i < index; ++i)
+        start += size_t(steps[i]);
+    const size_t old_step = size_t(steps[index]);
+    for (const std::string& key : project.keys()) {
+        if (!is_filament_flow_variant_option(key) && key != "filament_flow_support")
+            continue;
+        auto* dst = dynamic_cast<ConfigOptionVectorBase*>(project.option(key));
+        if (dst == nullptr || dst->size() == 0)
+            continue;
+        const std::unique_ptr<ConfigOption> old_holder(dst->clone());
+        const auto* old = static_cast<const ConfigOptionVectorBase*>(old_holder.get());
+        const size_t old_size = old->size();
+        const size_t tail = old_size > start + old_step ? old_size - start - old_step : 0;
+        dst->resize(start + new_step + tail, old);
+        const auto* src = copy.count(key) ? dynamic_cast<const ConfigOptionVectorBase*>(filament.option(key)) : nullptr;
+        for (size_t k = 0; k < new_step; ++k) {
+            if (src != nullptr && src->size() > 0)
+                dst->set_at(src, start + k, k < src->size() ? k : 0);
+            else if (start < old_size)
+                dst->set_at(old, start + k, start + std::min(k, old_step - 1) < old_size ? start + std::min(k, old_step - 1) : start);
+        }
+        for (size_t j = 0; j < tail; ++j)
+            dst->set_at(old, start + new_step + j, start + old_step + j);
+    }
+    auto* sizes = project.option<ConfigOptionInts>("filament_flow_step_size", true);
+    sizes->values.resize(filament_count, 1);
+    sizes->values[index] = int(new_step);
+}
+#endif
+
 /// get_min_flush_volumes (BambuStudio slic3r/GUI/Plater.cpp 1121-1185;
 /// OrcaSlicer slic3r/GUI/Plater.cpp 752-816): the nozzle volume less what a
 /// long retraction when cutting already removed, per filament.
@@ -1498,6 +1551,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     }
 #endif // ENGINE_SNAPMAKER
             std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
+#ifdef ENGINE_SNAPMAKER
+            std::set<std::string> flow_variant_copy;   // merged by group below
+#endif
             const size_t diff_keys_size = different_keys_set.size();
             for (const t_config_option_key& opt_key : config.keys()) {
                 const ConfigOption* source_opt = config.option(opt_key);
@@ -1569,8 +1625,17 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         new_variant_counts[filament_index - 1] = int(opt_vec_src->size());
                 } else
 #endif // ENGINE_SNAPMAKER
+#ifdef ENGINE_SNAPMAKER
+                if (is_filament_flow_variant_option(opt_key) || opt_key == "filament_flow_support")
+                    flow_variant_copy.insert(opt_key);
+                else
+#endif
                     opt_vec_dst->set_at(opt_vec_src, filament_index - 1, 0);
             }
+#ifdef ENGINE_SNAPMAKER
+            merge_flow_variant_group(m_print_config, config, size_t(filament_index - 1), size_t(filament_count),
+                                     flow_variant_copy);
+#endif
             if (old_variant_count != new_variant_count)
                 for (int i = int(index) + 1; i < filament_count; i++)
                     old_start_indice[i] += new_variant_count - old_variant_count;

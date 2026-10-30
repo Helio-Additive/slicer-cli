@@ -190,26 +190,38 @@ const std::vector<std::vector<bool>>& mix_compatibility_table() {
         std::vector<std::vector<bool>> t(10, std::vector<bool>(10, false));
         for (size_t i = 0; i < 9; ++i) t[i][i] = true;
         const std::string path = Slic3r::resources_dir() + "/profiles/Snapmaker/filament/filament_compatibility.json";
+        // The desktop logs each way the load fails and keeps what it has
+        // (MixedColorMatchHelpers.cpp:1081-1121): here that is a warning event,
+        // so a refusal that cites the table can be told from a table never read.
+        std::string problem;
         try {
             boost::nowide::ifstream ifs(path);
-            if (ifs.is_open()) {
+            if (!ifs.is_open()) {
+                problem = "cannot open " + path;
+            } else {
                 nlohmann::json j;
                 ifs >> j;
-                for (auto& [a_name, partners] : j["compatibility"].items()) {
-                    const MixCategory a = mix_category_from_name(a_name);
-                    if (a == MixCategory::UNKNOWN || !partners.is_array()) continue;
-                    for (auto& b_val : partners) {
-                        const MixCategory b = mix_category_from_name(b_val.get<std::string>());
-                        if (b == MixCategory::UNKNOWN) continue;
-                        t[(size_t) a][(size_t) b] = true;
-                        t[(size_t) b][(size_t) a] = true;
+                if (!j.contains("compatibility"))
+                    problem = "no 'compatibility' key in " + path;
+                else
+                    for (auto& [a_name, partners] : j["compatibility"].items()) {
+                        const MixCategory a = mix_category_from_name(a_name);
+                        if (a == MixCategory::UNKNOWN || !partners.is_array()) continue;
+                        for (auto& b_val : partners) {
+                            const MixCategory b = mix_category_from_name(b_val.get<std::string>());
+                            if (b == MixCategory::UNKNOWN) continue;
+                            t[(size_t) a][(size_t) b] = true;
+                            t[(size_t) b][(size_t) a] = true;
+                        }
                     }
-                }
             }
-        } catch (...) {
-            // An unreadable table leaves self-compatibility only, as the
-            // desktop's own default does.
+        } catch (const std::exception& e) {
+            problem = "cannot read " + path + ": " + e.what();
         }
+        if (!problem.empty())
+            emit({{"event","warning"}, {"tag","FilamentCompatibilityTableNotLoaded"}, {"path", path},
+                  {"message","The filament compatibility table was not loaded (" + problem + "); each filament type"
+                             " is taken as compatible with itself only, as the desktop does"}});
         return t;
     }();
     return table;

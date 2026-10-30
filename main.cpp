@@ -11303,8 +11303,25 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // wipe_tower_x/y are official setting flags, so a value from the
             // command line shows up in the given-flag set, not in `overrides`.
             const bool user_set_tower = o.given_flag("wipe_tower_x") || o.given_flag("wipe_tower_y");
+            // Nor a position the run already holds: settings files that state
+            // wipe_tower_x/y, or the assemble list's or an arrange's placement.
+            // No Snapmaker system preset states them, so a position other than
+            // the engine's own default (PrintConfig.cpp:6196, 6204 at bac6fd5)
+            // was set by one of those.
+            const auto tower_at_engine_default = [&config](const char* key) {
+                const auto* values = config.option<Slic3r::ConfigOptionFloats>(key);
+                const auto* def = dynamic_cast<const Slic3r::ConfigOptionFloats*>(
+                    Slic3r::print_config_def.get(key)->default_value.get());
+                if (values == nullptr || def == nullptr || def->values.empty())
+                    return true;
+                for (double v : values->values)
+                    if (v != def->values.front())
+                        return false;
+                return true;
+            };
             if (!boost::algorithm::iends_with(input_file, ".3mf") && !user_set_tower &&
-                !o.given_flag("arrange")) {
+                !o.given_flag("arrange") && tower_at_engine_default("wipe_tower_x") &&
+                tower_at_engine_default("wipe_tower_y")) {
                 // The same writer the assemble and fixed-plate paths use, so the
                 // corner and its margin live in one place.
                 assemble_tower_default_corner(config, std::max(0, plate_id - 1),
