@@ -1645,8 +1645,11 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     if (const auto* vector = m_print_config.option<ConfigOptionFloats>("flush_volumes_vector"))
         kept_flush_vector = vector->values;
     const size_t project_filaments_now = project_colors_option ? project_colors_option->values.size() : 0;
+    // ...and only when this merge did not change the colours: a --load-filaments
+    // run that did keeps nothing, and the fork recomputes N*N from the project
+    // (Snapmaker_Orca.cpp:2839-2845 at bac6fd5).
     const bool keep_switched_flush =
-        switched_to_u1 && project_filaments_now > 0 &&
+        switched_to_u1 && !filament_color_changed && project_filaments_now > 0 &&
         kept_flush_matrix.size() == project_filaments_now * project_filaments_now;
 #endif
     if (project_colors_option &&
