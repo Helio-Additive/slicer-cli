@@ -28,6 +28,20 @@ Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrin
 /// The desktop's paint state map for a filament-id remap.
 Slic3r::EnforcerBlockerStateMap paint_state_map(const std::vector<unsigned int>& id_remap, size_t total);
 
+/// The desktop warns when a project's schema is newer than this build, and
+/// still loads it: a NewerProjectSchema warning event, never a refusal.
+void warn_newer_project_schema(const Slic3r::DynamicPrintConfig& config);
+
+/// The filament total a paint remap maps into: the physical filaments plus
+/// the enabled mixed ones, counted as Print::apply counts them.
+size_t snapmaker_filament_id_total(const Slic3r::DynamicPrintConfig& config);
+
+/// desktop_pre_slice_blockers for one plate, with the filament names from
+/// the settings: returns non-zero with (code, message) for a refusal, and
+/// reports a ColdPlateNotRecommended warning itself.
+int snapmaker_pre_slice_check(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config, int plate_id,
+                              bool allow_mix_temp, int& code, std::string& message);
+
 /// The desktop's pre-slice checks for one plate: a refusal (code, message) or
 /// a warning. Returns the code, 0 when the plate may slice.
 int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config, int plate_id,

@@ -48,18 +48,6 @@
 #include "libslic3r/ModelArrange.hpp"
 #include "libslic3r/Arrange.hpp"
 #include "libslic3r/GCode/WipeTower.hpp"
-#ifdef ENGINE_SNAPMAKER
-// ProjectSchemaRegistry: the desktop's newer-schema warning
-// (references/SnapmakerOrca/src/libslic3r/ProjectSchemaVersion.hpp at bac6fd5).
-#include "libslic3r/ProjectSchemaVersion.hpp"
-// NozzleFilamentRuleMismatch: the desktop's filament advice notes
-// (references/SnapmakerOrca/src/libslic3r/FilamentHotBedNozzleRules.hpp:17 at
-// bac6fd5).
-#include "libslic3r/FilamentHotBedNozzleRules.hpp"
-// MixedFilamentManager: the desktop's incompatible-mixed-filament rule
-// (references/SnapmakerOrca/src/libslic3r/MixedFilament.hpp:200 at bac6fd5).
-#include "libslic3r/MixedFilament.hpp"
-#endif
 #ifdef ENGINE_BAMBU
 #include "libslic3r/FilamentMixer.hpp"
 #endif
@@ -68,11 +56,6 @@
 #include "libslic3r/Semver.hpp"
 #include "libslic3r_version.h"
 #include "cli_snapmaker.hpp"
-#ifdef ENGINE_SNAPMAKER
-using slicer_cli::desktop_pre_slice_blockers;
-using slicer_cli::mixed_manager_from_config;
-using slicer_cli::paint_state_map;
-#endif
 
 // For JSON parsing (using libslic3r's built-in nlohmann/json)
 #include <nlohmann/json.hpp>
@@ -6258,14 +6241,8 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // full_fff_config() for FFF (references/SnapmakerOrca/src/libslic3r/PresetBundle.cpp:2491-2496
     // at bac6fd5): the same settings OrcaSlicer's full_config(false) returns.
     out = bundle.full_config();
-    // The filament total the switch's remap maps into, read from the settings
-    // this run actually slices with: physical + enabled mixed, counted the way
-    // Print::apply counts them (PrintApply.cpp:1439-1449 at bac6fd5).
-    {
-        size_t physical = 0;
-        const Slic3r::MixedFilamentManager mixed = mixed_manager_from_config(out, physical);
-        g_filament_id_total = mixed.total_filaments(physical);
-    }
+    // The filament total the switch's remap maps into.
+    g_filament_id_total = slicer_cli::snapmaker_filament_id_total(out);
 #else
     out = bundle.full_config(false);
 #endif
@@ -8177,17 +8154,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             emit_config_substitutions(config_subst, "3mf:project_settings.config");
             outcome.unknown_settings = config_subst.unrecogized_keys;   // sic — upstream spelling
 #ifdef ENGINE_SNAPMAKER
-            // The desktop warns when the project's schema is newer than this
-            // build, and still loads it (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:224-238,
-            // libslic3r/ProjectSchemaVersion.cpp:21-30 at bac6fd5). A warning
-            // here too, never a refusal: the version gate above stays ours.
-            if (result && Slic3r::ProjectSchemaRegistry::is_newer(config))
-                emit_event({{"event","warning"},
-                            {"tag","NewerProjectSchema"},
-                            {"file_schema", Slic3r::ProjectSchemaRegistry::version_from(config)},
-                            {"supported_schema", Slic3r::ProjectSchemaRegistry::definition().current_version},
-                            {"message","The current version of Snapmaker Orca cannot fully load this 3MF file."
-                                       " Please update to the latest version and try again."}});
+            if (result)
+                slicer_cli::warn_newer_project_schema(config);
 #endif
 
             if (!result) {
@@ -11220,28 +11188,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // Print::check_multi_filaments_compatibility, which the desktop does
             // not use. --allow-mix-temp lifts the temperature rule only.
             {
-                std::vector<std::string> filament_names;
-                if (const auto* ids = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id"))
-                    filament_names = ids->values;
                 int blocker_code = 0;
-                std::string blocker_message, blocker_warning;
+                std::string blocker_message;
                 // Only this plate's objects count, as the desktop's
                 // collect_used_filament_slots_on_plate counts them.
                 int blocked = 0;
                 {
                     PlateScope scope(model, rs.plate(plate_id));
-                    blocked = desktop_pre_slice_blockers(model, config, plate_id, switches.allow_mix_temp, filament_names,
-                                                         blocker_code, blocker_message, blocker_warning);
+                    blocked = slicer_cli::snapmaker_pre_slice_check(model, config, plate_id, switches.allow_mix_temp,
+                                                                    blocker_code, blocker_message);
                 }
                 if (blocked != 0) {
                     std::cerr << blocker_message << "\n";
                     set_outcome_failure(outcome, blocker_code, blocker_message);
                     return 1;
-                }
-                if (!blocker_warning.empty()) {
-                    emit_event({{"event","warning"}, {"tag","ColdPlateNotRecommended"},
-                                {"plate_id", plate_id}, {"message", blocker_warning}});
-                    std::cout << "Warning: " << blocker_warning << "\n";
                 }
             }
 #endif

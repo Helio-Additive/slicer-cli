@@ -21,6 +21,7 @@
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/ProjectSchemaVersion.hpp"
 #include "libslic3r/Utils.hpp"
 
 #include "cli_events.hpp"
@@ -1040,6 +1041,42 @@ bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config) 
            config.option("prime_volume") != nullptr &&
            config.option("prime_tower_brim_chamfer_max_width") != nullptr &&
            config.option("prime_tower_brim_chamfer") != nullptr;
+}
+
+void warn_newer_project_schema(const Slic3r::DynamicPrintConfig& config) {
+    // references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:224-238 and
+    // libslic3r/ProjectSchemaVersion.cpp:21-30 at bac6fd5: the desktop warns
+    // and loads; the file-version gate stays slicer-cli's own.
+    if (!Slic3r::ProjectSchemaRegistry::is_newer(config))
+        return;
+    emit({{"event","warning"},
+          {"tag","NewerProjectSchema"},
+          {"file_schema", Slic3r::ProjectSchemaRegistry::version_from(config)},
+          {"supported_schema", Slic3r::ProjectSchemaRegistry::definition().current_version},
+          {"message","The current version of Snapmaker Orca cannot fully load this 3MF file."
+                     " Please update to the latest version and try again."}});
+}
+
+size_t snapmaker_filament_id_total(const Slic3r::DynamicPrintConfig& config) {
+    // PrintApply.cpp:1439-1449 at bac6fd5.
+    size_t physical = 0;
+    const Slic3r::MixedFilamentManager mixed = mixed_manager_from_config(config, physical);
+    return mixed.total_filaments(physical);
+}
+
+int snapmaker_pre_slice_check(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config, int plate_id,
+                              bool allow_mix_temp, int& code, std::string& message) {
+    std::vector<std::string> filament_names;
+    if (const auto* ids = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id"))
+        filament_names = ids->values;
+    std::string warning;
+    const int blocked =
+        desktop_pre_slice_blockers(model, config, plate_id, allow_mix_temp, filament_names, code, message, warning);
+    if (blocked == 0 && !warning.empty()) {
+        emit({{"event","warning"}, {"tag","ColdPlateNotRecommended"}, {"plate_id", plate_id}, {"message", warning}});
+        std::cout << "Warning: " << warning << "\n";
+    }
+    return blocked;
 }
 
 boost::filesystem::path snapmaker_resources_root(const boost::filesystem::path& exe_dir) {
