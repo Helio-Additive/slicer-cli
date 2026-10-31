@@ -1016,24 +1016,6 @@ bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config) 
            config.option("prime_tower_brim_chamfer") != nullptr;
 }
 
-boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir) {
-    for (const auto& p : std::vector<boost::filesystem::path>{
-        // A package ships the tree once, under this engine's own resources root,
-        // because the engine reads its data files beside it at
-        // resources_dir()/profiles/Snapmaker/filament/... (FilamentHotBedNozzleRules.cpp:32
-        // at bac6fd5). Linux keeps the binaries in bin/, macOS and Windows at the
-        // package root.
-        exe_dir / ".." / "resources" / "snapmaker" / "profiles",
-        exe_dir / "resources" / "snapmaker" / "profiles",
-        exe_dir / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
-        exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
-    }) {
-        if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p))
-            return boost::filesystem::canonical(p);
-    }
-    return boost::filesystem::path();
-}
-
 boost::filesystem::path snapmaker_resources_root(const boost::filesystem::path& exe_dir) {
     // Snapmaker's own resources root (its flush data and info/*.json are its
     // own bytes): references/SnapmakerOrca/resources in a checkout,
@@ -1068,3 +1050,29 @@ void snapmaker_keep_data_dir(const std::string& fallback) {
 } // namespace slicer_cli
 
 #endif // ENGINE_SNAPMAKER
+
+#include <vector>
+
+#include <boost/filesystem.hpp>
+
+namespace slicer_cli {
+
+boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir) {
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        // A package ships the tree once, under this engine's own resources root,
+        // because the engine reads its data files beside it at
+        // resources_dir()/profiles/Snapmaker/filament/... (FilamentHotBedNozzleRules.cpp:32
+        // at bac6fd5). Linux keeps the binaries in bin/, macOS and Windows at the
+        // package root.
+        exe_dir / ".." / "resources" / "snapmaker" / "profiles",
+        exe_dir / "resources" / "snapmaker" / "profiles",
+        exe_dir / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
+        exe_dir / ".." / ".." / "references" / "SnapmakerOrca" / "resources" / "profiles",
+    }) {
+        if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+}
+
+} // namespace slicer_cli

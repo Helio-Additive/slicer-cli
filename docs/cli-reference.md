@@ -347,7 +347,7 @@ Transforms run in the order given, before the objects are placed.
 | `--export-stl` | | Write the objects as one STL and stop | all binaries |
 | `--export-stls` | folder | Write each object as its own STL and stop | all binaries |
 | `--info` | | Print each object's size, volume and facets, and stop | all binaries |
-| `--engine-info` | file | What a file is (printer, plates, the app that made it) and which program fits it, as JSON | all binaries |
+| `--engine-info` | file | What a file is (printer, plates, the app that made it), which of the package's programs fit it and which to use (`recommended`), as JSON | all binaries |
 | `--list-presets` | | This engine's system presets as JSON | all binaries |
 | `--list-settings` | | This engine's settings table as JSON: every key with its type and edit mode (`simple`/`advanced`/`develop`, plus `expert` on the OrcaSlicer build), and where the engine has them, its label, tooltip, category, default, bounds (`min`/`max`), unit, the preset that holds it (`scope`: `process`, `filament` or `printer`; left out for a setting in none of them) and, for enums, the values it takes. A field the engine has no value for is left out | all binaries |
 | `--printer` | name | With `--list-presets`: only this printer's presets, with its defaults and plate type | all binaries |

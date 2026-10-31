@@ -1,7 +1,7 @@
 # Building slicer-cli
 
-slicer-cli builds one engine per build tree. Build it twice to get both
-programs:
+slicer-cli builds one engine per build tree. Build it three times to get all
+three programs:
 
 | CMake option | Program | Engine source |
 |-|-|-|
@@ -11,7 +11,7 @@ programs:
 
 The release builds run in GitHub Actions
 (`.github/workflows/slicer-cli-ci.yml`) for Linux x86_64, Linux arm64, macOS
-arm64 and Windows x86_64, both engines each. That workflow is the full, tested recipe;
+arm64 and Windows x86_64, all three engines each. That workflow is the full, tested recipe;
 this page is the short form.
 
 ## Get the source
@@ -48,13 +48,13 @@ used as it is (see "The override layer" below); no Helio commit lives inside
 Each engine keeps the dependency versions its own project pins, where the
 platform allows it:
 
-| Dependency | Bambu Studio engine | OrcaSlicer engine |
-|-|-|-|
-| CGAL | 5.4, commit `c58ac97e`, with Bambu's `0001-clang19.patch` | 5.6.3 on Linux and in macOS CI; Homebrew's CGAL on a local macOS build; vcpkg CGAL 6 on Windows |
-| OpenCASCADE | 7.6.0 static on Linux; vcpkg 7.9.3 on Windows | the same |
-| libnoise | bambulab/libnoise `7e7c98c0` | SoftFever/Orca-deps-libnoise `f25d5331` |
-| Boost | 1.84.0 static on Linux, with Bambu's process patch | the same |
-| Assimp | required (model import) | not used |
+| Dependency | Bambu Studio engine | OrcaSlicer engine | Snapmaker Orca engine |
+|-|-|-|-|
+| CGAL | 5.4, commit `c58ac97e`, with Bambu's `0001-clang19.patch` | 5.6.3 on Linux and in macOS CI; Homebrew's CGAL on a local macOS build; vcpkg CGAL 6 on Windows | as Bambu Studio |
+| OpenCASCADE | 7.6.0 static on Linux; vcpkg 7.9.3 on Windows | the same | the same |
+| libnoise | bambulab/libnoise `7e7c98c0` | SoftFever/Orca-deps-libnoise `f25d5331` | as OrcaSlicer |
+| Boost | 1.84.0 static on Linux, with Bambu's process patch | the same | the same |
+| Assimp | required (model import) | not used | not used |
 
 The CGAL 5.4 headers need one Boost MPL include that newer Boost no longer
 pulls in; `libslic3r/bambustudio/cgal_54_compat.hpp` adds it without changing
@@ -99,12 +99,12 @@ Dependencies come from vcpkg at the commit the workflow pins
 ```powershell
 vcpkg install tbb eigen3 boost cgal "opencv[core]" assimp opencascade qhull cereal nlopt `
   openssl libpng zlib expat freetype libjpeg-turbo --triplet x64-windows
-# Bambu Studio engine: add --overlay-ports=ci/vcpkg-overlays for CGAL 5.4
+# Bambu Studio and Snapmaker Orca engines: add --overlay-ports=ci/vcpkg-overlays for CGAL 5.4
 ```
 
 libnoise is not in vcpkg, so build it before configuring, from the engine's own
 pinned fork — `bambulab/libnoise` `7e7c98c` for the Bambu Studio engine,
-`SoftFever/Orca-deps-libnoise` `f25d533` for OrcaSlicer. Install it into a
+`SoftFever/Orca-deps-libnoise` `f25d533` for OrcaSlicer and Snapmaker Orca. Install it into a
 prefix of its own and pass that prefix as `-DCMAKE_PREFIX_PATH` in the Windows
 command below; the workflow's "libnoise" steps do the same before they
 configure:

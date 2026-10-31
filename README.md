@@ -1,19 +1,22 @@
 # slicer-cli
 
-Command-line slicers built from the Bambu Studio and OrcaSlicer slicing
-engines. No user interface: give it a model or a project, get G-code.
+Command-line slicers built from the Bambu Studio, OrcaSlicer and Snapmaker
+Orca slicing engines. No user interface: give it a model or a project, get
+G-code.
 
-A release package holds two programs:
+A release package holds three programs:
 
 | Program | Engine |
 |-|-|
 | `slicer_cli` | Bambu Studio 02.08.02.61 (source pin `926a719`) |
 | `slicer_cli-orcaslicer` | OrcaSlicer 2.4.2 (source pin `8500fcd`) |
+| `slicer_cli-snapmaker` | Snapmaker Orca 2.4.1 (source pin `bac6fd5`) |
 
 Each program slices with its engine's own code and its own printer, process
 and filament profiles, so a file sliced here gives the G-code the desktop app
-gives for the same settings. Flags that share a name with Bambu Studio's or
-OrcaSlicer's own command line behave the same way.
+gives for the same settings. Flags that share a name with Bambu Studio's,
+OrcaSlicer's or Snapmaker Orca's own command line behave the same way.
+`--engine-info FILE` says which program to use for a file.
 
 ## Install
 
@@ -23,10 +26,10 @@ extract it:
 
 | System | Package | Programs |
 |-|-|-|
-| Linux x86_64 (glibc 2.35 or later) | `slicer-cli-v<version>-linux-x86_64.tar.gz` | `bin/slicer_cli`, `bin/slicer_cli-orcaslicer` |
-| Linux arm64 (glibc 2.35 or later) | `slicer-cli-v<version>-linux-arm64.tar.gz` | `bin/slicer_cli`, `bin/slicer_cli-orcaslicer` |
-| macOS arm64 | `slicer-cli-v<version>-macos-arm64.tar.gz` | `slicer_cli`, `slicer_cli-orcaslicer` |
-| Windows x86_64 | `slicer-cli-v<version>-windows-x86_64.zip` | `slicer_cli.exe`, `slicer_cli-orcaslicer.exe` |
+| Linux x86_64 (glibc 2.35 or later) | `slicer-cli-v<version>-linux-x86_64.tar.gz` | `bin/slicer_cli`, `bin/slicer_cli-orcaslicer`, `bin/slicer_cli-snapmaker` |
+| Linux arm64 (glibc 2.35 or later) | `slicer-cli-v<version>-linux-arm64.tar.gz` | `bin/slicer_cli`, `bin/slicer_cli-orcaslicer`, `bin/slicer_cli-snapmaker` |
+| macOS arm64 | `slicer-cli-v<version>-macos-arm64.tar.gz` | `slicer_cli`, `slicer_cli-orcaslicer`, `slicer_cli-snapmaker` |
+| Windows x86_64 | `slicer-cli-v<version>-windows-x86_64.zip` | `slicer_cli.exe`, `slicer_cli-orcaslicer.exe`, `slicer_cli-snapmaker.exe` |
 
 Keep the programs inside the extracted folder: they read their profiles and
 engine data from the `resources` folder beside them. The macOS and Windows
@@ -39,8 +42,14 @@ To build from source instead, see [docs/building.md](docs/building.md).
 The examples use the Linux paths; on macOS and Windows run the programs from
 the top of the extracted folder.
 
-Slice one plate of a Bambu Studio or OrcaSlicer project. The project's own
-printer, process and filaments are used:
+Ask which program fits a file:
+
+```sh
+./bin/slicer_cli --engine-info model.3mf    # "recommended": "slicer_cli-snapmaker", for example
+```
+
+Slice one plate of a project. The project's own printer, process and filaments
+are used:
 
 ```sh
 ./bin/slicer_cli model.3mf --plate 1 -o plate1.gcode
@@ -51,15 +60,14 @@ shows). The process and filament default to the printer's own:
 
 ```sh
 ./bin/slicer_cli part.stl --printer-preset "Bambu Lab A1 mini 0.4 nozzle" -o part.gcode
-./bin/slicer_cli-orcaslicer part.stl --printer-preset "Snapmaker U1 (0.4 nozzle)" \
-    --process-preset "0.20 Standard @Snapmaker U1 (0.4 nozzle)" -o part.gcode
+./bin/slicer_cli-snapmaker part.stl --printer-preset "Snapmaker U1 (0.4 nozzle)" -o part.gcode
 ```
 
 Move a saved project to another printer the same way, by the name the desktop
 app shows:
 
 ```sh
-./bin/slicer_cli-orcaslicer project.3mf --printer-preset "Snapmaker U1 (0.4 nozzle)" \
+./bin/slicer_cli-snapmaker project.3mf --printer-preset "Snapmaker U1 (0.4 nozzle)" \
     --slice 1 --outputdir out
 ```
 
@@ -91,7 +99,7 @@ material settings before you print.
 
 - [Command-line reference](docs/cli-reference.md): every flag, the outputs,
   `result.json`, the event lines and the return codes.
-- [Building from source](docs/building.md): both engines on Linux, macOS and
+- [Building from source](docs/building.md): all three engines on Linux, macOS and
   Windows, the pinned versions and the engine override layer.
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
@@ -100,7 +108,7 @@ material settings before you print.
 
 AGPL-3.0-or-later. See `LICENSE`.
 
-Both engines derive from PrusaSlicer and Slic3r under the AGPL. The
+All three engines derive from PrusaSlicer and Slic3r under the AGPL. The
 attribution chain and the third-party licenses are in `NOTICE` and in the
 package's `THIRD_PARTY_LICENSES` folder.
 

@@ -67,8 +67,8 @@
 #include "libslic3r/BuildVolume.hpp"
 #include "libslic3r/Semver.hpp"
 #include "libslic3r_version.h"
-#ifdef ENGINE_SNAPMAKER
 #include "cli_snapmaker.hpp"
+#ifdef ENGINE_SNAPMAKER
 using slicer_cli::desktop_pre_slice_blockers;
 using slicer_cli::mixed_manager_from_config;
 using slicer_cli::paint_state_map;
@@ -2314,13 +2314,21 @@ static std::set<std::string> catalog_printer_models(const boost::filesystem::pat
 }
 
 /// Which engine binary of this package has a printer model. "this" is the
-/// build running; "other" its sibling in the same package.
+/// build running; "other" its sibling in the same package, the one a
+/// refusal names; "third" the package's remaining binary.
 struct EngineFit {
     std::string this_app, this_binary, other_app, other_binary;
     bool this_catalog_found  = false;
     bool other_catalog_found = false;
     bool this_has  = false;
     bool other_has = false;
+    std::string third_app, third_binary;
+    boost::filesystem::path third_dir;
+    bool third_catalog_found = false;
+    bool third_has = false;
+    /// The printer is one of Snapmaker's own (the Snapmaker vendor file of
+    /// the Snapmaker Orca tree), whichever build runs.
+    bool snapmaker_own_printer = false;
 };
 
 /// The printer model of a printer system preset, read from the profiles tree:
@@ -2358,6 +2366,9 @@ static EngineFit engine_fit_for(const std::string& argv0, const std::string& pri
     // package ships beside it; the OrcaSlicer one is the one named.
     const boost::filesystem::path other_dir = orca_profiles_dir(exe_dir);
     EngineFit fit{"Snapmaker Orca", "slicer_cli-snapmaker", "OrcaSlicer", "slicer_cli-orcaslicer"};
+    fit.third_app = "BambuStudio";
+    fit.third_binary = "slicer_cli";
+    fit.third_dir = engine_profiles_dir(exe_dir);
 #elif defined(ENGINE_ORCA)
     const boost::filesystem::path this_dir  = orca_profiles_dir(exe_dir);
     const boost::filesystem::path other_dir = engine_profiles_dir(exe_dir);
@@ -2367,6 +2378,29 @@ static EngineFit engine_fit_for(const std::string& argv0, const std::string& pri
     const boost::filesystem::path other_dir = orca_profiles_dir(exe_dir);
     EngineFit fit{"BambuStudio", "slicer_cli", "OrcaSlicer", "slicer_cli-orcaslicer"};
 #endif
+#ifndef ENGINE_SNAPMAKER
+    fit.third_app = "Snapmaker Orca";
+    fit.third_binary = "slicer_cli-snapmaker";
+    fit.third_dir = slicer_cli::snapmaker_profiles_dir(exe_dir);
+#endif
+    const std::set<std::string> third_models = catalog_printer_models(fit.third_dir);
+    fit.third_catalog_found = !third_models.empty();
+    fit.third_has = third_models.count(printer_model) > 0;
+    // The Snapmaker Orca tree ships every vendor's printers, as OrcaSlicer's
+    // does; Snapmaker's own are the machine_model_list of its Snapmaker
+    // vendor file (the list catalog_printer_models reads).
+    const boost::filesystem::path snapmaker_dir = slicer_cli::snapmaker_profiles_dir(exe_dir);
+    if (!snapmaker_dir.empty() && !printer_model.empty()) {
+        try {
+            boost::filesystem::ifstream f(snapmaker_dir / "Snapmaker.json");
+            const json vendor = json::parse(f);
+            if (vendor.contains("machine_model_list"))
+                for (const auto& m : vendor["machine_model_list"])
+                    if (m.is_object() && m.contains("name") && m["name"] == printer_model)
+                        fit.snapmaker_own_printer = true;
+        } catch (...) {
+        }
+    }
     const std::set<std::string> this_models  = catalog_printer_models(this_dir);
     const std::set<std::string> other_models = catalog_printer_models(other_dir);
     fit.this_catalog_found  = !this_models.empty();
@@ -11616,6 +11650,7 @@ static int run_info(const std::string& argv0, const std::string& path, const std
 
     std::string printer_model;
     std::string maker_app;
+    std::string route_app;
     // A 3MF the slicer cannot open is not inspected: the archive must open and
     // its model part (3D/3dmodel.model, the part load_bbs_3mf reads the
     // objects from) must decompress intact, as the slice path would refuse it (-2).
@@ -11699,6 +11734,10 @@ static int run_info(const std::string& argv0, const std::string& path, const std
             maker_app = app->second.substr(0, app->second.find('-'));
         maker["app"] = maker_app.empty() ? json(nullptr) : json(maker_app);
         out["maker"] = maker;
+        // The engine whose app made the file, for "recommended": every build
+        // routes a Snapmaker Orca project to slicer_cli-snapmaker, while
+        // maker.app keeps the name each build printed before.
+        route_app = app != meta.end() && boost::starts_with(app->second, "Snapmaker_Orca-") ? "Snapmaker Orca" : maker_app;
 
         json this_engine = {{"version", engine_version_text()}};
         if (const auto v = engine_file_version(meta)) {
@@ -11727,6 +11766,8 @@ static int run_info(const std::string& argv0, const std::string& path, const std
 #else
             printer_model = preset_printer_model(orca_profiles_dir(exe_dir), printer_preset);
 #endif
+        if (printer_model.empty())
+            printer_model = preset_printer_model(engine_fit_for(argv0, {}).third_dir, printer_preset);
         out["printer_preset"] = printer_preset;
         out["printer_model"]  = printer_model.empty() ? json(nullptr) : json(printer_model);
     }
@@ -11742,14 +11783,30 @@ static int run_info(const std::string& argv0, const std::string& path, const std
     };
     add(fit.this_app, fit.this_binary, fit.this_catalog_found, fit.this_has);
     add(fit.other_app, fit.other_binary, fit.other_catalog_found, fit.other_has);
+    // The package's third binary comes last, so the first two entries stay
+    // as each build printed them (AGENTS.md: printed output is added to).
+    add(fit.third_app, fit.third_binary, fit.third_catalog_found, fit.third_has);
     out["engines"] = engines;
     out["fits"] = fits;
+    const auto fitting = [&](const std::string& binary) {
+        return std::find(fits.begin(), fits.end(), binary) != fits.end();
+    };
     json recommended = nullptr;
     for (const auto& e : engines)
-        if (std::find(fits.begin(), fits.end(), e["binary"]) != fits.end() && e["app"] == maker_app)
+        if (fitting(e["binary"]) && e["app"] == route_app)
             recommended = e["binary"];
-    if (recommended.is_null() && !fits.empty() && !printer_model.empty())
+    // No fitting engine made the file and the printer is one of Snapmaker's
+    // own: the Snapmaker engine, the printer maker's own app.
+    if (recommended.is_null() && fit.snapmaker_own_printer && fitting("slicer_cli-snapmaker"))
+        recommended = "slicer_cli-snapmaker";
+    // Otherwise the first that fits, the Snapmaker engine only when no other
+    // does: the other two builds list it last, so the Snapmaker build answers
+    // as they do.
+    if (recommended.is_null() && !fits.empty() && !printer_model.empty()) {
         recommended = fits.front();
+        for (const auto& b : fits)
+            if (b != "slicer_cli-snapmaker") { recommended = b; break; }
+    }
     out["recommended"] = recommended;
     std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
     return 0;

@@ -108,12 +108,6 @@ bool snapmaker_engine_made(const std::map<std::string, std::string>& meta);
 /// (Snapmaker_Orca.cpp:3186-3220 at bac6fd5).
 bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config);
 
-/// The Snapmaker Orca profiles tree beside this binary, or empty: a checkout
-/// has references/SnapmakerOrca; a package ships it as
-/// resources/snapmaker/profiles (Linux: bin/../resources; macOS and Windows:
-/// next to the binaries).
-boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir);
-
 /// Snapmaker's own resources root (its flush data and info/*.json are its own
 /// bytes), or empty: references/SnapmakerOrca/resources in a checkout,
 /// resources/snapmaker in a package.
@@ -130,3 +124,16 @@ void snapmaker_keep_data_dir(const std::string& fallback);
 } // namespace slicer_cli
 
 #endif // ENGINE_SNAPMAKER
+
+#include <boost/filesystem/path.hpp>
+
+namespace slicer_cli {
+
+/// The Snapmaker Orca profiles tree beside this binary, or empty: a checkout
+/// has references/SnapmakerOrca; a package ships it as
+/// resources/snapmaker/profiles (Linux: bin/../resources; macOS and Windows:
+/// next to the binaries). Every build reads it: --engine-info names the
+/// Snapmaker engine from all three binaries.
+boost::filesystem::path snapmaker_profiles_dir(const boost::filesystem::path& exe_dir);
+
+} // namespace slicer_cli
