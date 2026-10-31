@@ -5,8 +5,10 @@ Usage: check_json_schema.py SCHEMA DOC...
        check_json_schema.py --events SCHEMA FILE...   (each "[[SLICER_EVENT]] <JSON>" line of each file)
 
 Standard library only, so it runs on every CI runner. It knows the JSON Schema
-keywords schemas/ use and stops on any other, so a schema keyword it does not
-check can never pass silently.
+keywords schemas/ use and stops on any other anywhere in the schema, before it
+reads a document, so a schema keyword it does not check can never pass
+silently. A document with NaN or Infinity (not JSON numbers) and an event
+marker without its space fail.
 """
 import json, sys
 
@@ -20,12 +22,25 @@ def is_type(v, t):
     return isinstance(v, TYPES[t])
 
 
-def errors(v, s, root, at):
-    """The reasons v does not match schema s, as 'path: reason' strings."""
-    out = []
+def walk(s, at):
+    """Stops on a keyword this checker does not implement, at any depth."""
+    if not isinstance(s, dict):
+        return
     for k in s:
         if k not in ANNOTATIONS and k not in CHECKS:
             raise SystemExit(f"check_json_schema.py: unsupported keyword {k!r} at {at}")
+    for k in ("properties", "$defs"):
+        for name, sub in s.get(k, {}).items():
+            walk(sub, f"{at}/{k}/{name}")
+    for k in ("items", "additionalProperties"):
+        walk(s.get(k), f"{at}/{k}")
+    for i, sub in enumerate(s.get("oneOf", [])):
+        walk(sub, f"{at}/oneOf/{i}")
+
+
+def errors(v, s, root, at):
+    """The reasons v does not match schema s, as 'path: reason' strings."""
+    out = []
     for k, check in CHECKS.items():
         if k in s:
             out += check(v, s[k], s, root, at)
@@ -99,15 +114,32 @@ CHECKS = {
 }
 
 
+MARKER = "[[SLICER_EVENT]]"
+
+
+def no_constant(name):
+    raise ValueError(f"{name} is not a JSON number")
+
+
+def parse(text):
+    """(document, None), or (None, reason) when text is not strict JSON."""
+    try:
+        return json.loads(text, parse_constant=no_constant), None
+    except ValueError as e:
+        return None, f"not JSON: {e}"
+
+
 def documents(paths, events):
-    """(name, document) for each file, or for each event line of each file."""
+    """(name, document, reason) for each file, or for each event line of each file."""
     for path in paths:
         if not events:
-            yield path, json.load(open(path))
+            yield (path,) + parse(open(path, encoding="utf-8").read())
             continue
         for n, line in enumerate(open(path, errors="replace"), 1):
-            if line.startswith("[[SLICER_EVENT]] "):
-                yield f"{path}:{n}", json.loads(line[len("[[SLICER_EVENT]] "):])
+            if line.startswith(MARKER + " "):
+                yield (f"{path}:{n}",) + parse(line[len(MARKER) + 1:])
+            elif line.startswith(MARKER):
+                yield f"{path}:{n}", None, f"no space after {MARKER}"
 
 
 def main():
@@ -118,9 +150,10 @@ def main():
     if len(args) < 2:
         raise SystemExit(__doc__)
     schema = json.load(open(args[0]))
+    walk(schema, "#")
     total = bad = 0
-    for name, doc in documents(args[1:], events):
-        found = errors(doc, schema, schema, "$")
+    for name, doc, reason in documents(args[1:], events):
+        found = [f"$: {reason}"] if reason else errors(doc, schema, schema, "$")
         for e in found:
             print(f"{name}: {e}")
         total += 1

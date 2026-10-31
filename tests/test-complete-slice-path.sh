@@ -133,11 +133,11 @@ data[at] = ord("y")
 open("crc.3mf", "wb").write(bytes(data))
 '
 for bad in broken.3mf folder.3mf crc.3mf; do
-    if "$B" --engine-info "$bad" > info-bad.json; then fail "--engine-info accepted $bad"; fi
+    if "$B" --engine-info "$bad" > "info-bad-$bad.json"; then fail "--engine-info accepted $bad"; fi
     py '
-import json; d = json.load(open("info-bad.json"))
+import json, sys; d = json.load(open(sys.argv[1]))
 assert "error" in d and "3D/3dmodel.model" in d["error"], d
-'
+' "info-bad-$bad.json"
 done
 # A real STL is inspected; an unreadable one (a folder named .stl, or an
 # empty file) is refused (-2).
@@ -150,11 +150,11 @@ assert d["kind"] == "stl" and "error" not in d, d
 mkdir -p folder.stl
 : > empty.stl
 for bad in folder.stl empty.stl; do
-    if "$B" --engine-info "$bad" > info-bad.json; then fail "--engine-info accepted $bad"; fi
+    if "$B" --engine-info "$bad" > "info-bad-$bad.json"; then fail "--engine-info accepted $bad"; fi
     py '
-import json; d = json.load(open("info-bad.json"))
+import json, sys; d = json.load(open(sys.argv[1]))
 assert "error" in d and "STL" in d["error"], d
-'
+' "info-bad-$bad.json"
 done
 echo "PASS: --engine-info names the printer and the engine that fits"
 
@@ -3367,18 +3367,20 @@ for e in bambu orca; do
         local n=$1 i
         for i in $(seq 1 20); do
             rm -rf "bkrace-$e-w$n-$i"; mkdir -p "bkrace-$e-w$n-$i"
-            "$bin" "bkproj-$e/out/bk.3mf" --slice 1 --outputdir "bkrace-$e-w$n-$i" > "bkrace-$e-$n-$i.log" 2>&1 \
-                || echo 1 >> "bkrace-$e-failed"
+            "$bin" "bkproj-$e/out/bk.3mf" --slice 1 --outputdir "bkrace-$e-w$n-$i" > "bkrace-$e-$n-$i.log" \
+                2> "bkrace-$e-$n-$i.err" || echo 1 >> "bkrace-$e-failed"
             rm -rf "bkrace-$e-w$n-$i"
         done
     }
     for n in 1 2 3; do bkr "$n" & done
     wait
-    [ ! -e bkrace-$e-failed ] || { tail -n 3 bkrace-$e-*.log; fail "$e: a parallel slice failed"; }
-    if grep -q "parse_error" bkrace-$e-*.log 2>/dev/null; then
-        grep -l "parse_error" bkrace-$e-*.log | head -2 | xargs -r tail -n 3
+    [ ! -e bkrace-$e-failed ] || { tail -n 3 bkrace-$e-*.log bkrace-$e-*.err; fail "$e: a parallel slice failed"; }
+    if grep -q "parse_error" bkrace-$e-*.log bkrace-$e-*.err 2>/dev/null; then
+        grep -l "parse_error" bkrace-$e-*.log bkrace-$e-*.err | head -2 | xargs -r tail -n 3
         fail "$e: a parallel run parsed another run's half-written backup config"
     fi
+    # The runs' stdout stays for the event-line schema check at the end.
+    mkdir -p "bkrace-events-$e" && mv bkrace-$e-*.log "bkrace-events-$e/"
     rm -f bkrace-$e-*
 done
 echo "PASS: 3 parallel workers x 20 slices share no 3MF-load backup folder (both engines)"
@@ -5280,8 +5282,8 @@ fi
 # one this script made is checked: the --engine-info documents (info*.json,
 # ei-*.json: both engines, 3MF and model files, reports and errors), the
 # --list-presets documents (list-*.json), every result.json a run wrote (a
-# file the script put there itself, "keep me", is not JSON and is skipped), and
-# every event line of every run. Plus the shapes no check above makes: a
+# file whose whole content is the "keep me" the script put there itself is
+# skipped; anything else is checked), and every event line of every run. Plus the shapes no check above makes: a
 # missing file and a file of no model kind for --engine-info, and an unknown
 # printer and the full printer list for --list-presets.
 "$B" --engine-info missing.3mf > info-missing.json && fail "--engine-info accepted a missing file"
@@ -5293,13 +5295,13 @@ mkdir -p schema-check
 cp "$SCRIPT_DIR"/../schemas/*.schema.json "$SCRIPT_DIR/tools/check_json_schema.py" schema-check/
 results=()
 while IFS= read -r -d '' f; do
-    [ "$(head -c 1 "$f")" = "{" ] && results+=("$f")
+    [ "$(cat "$f")" = "keep me" ] || results+=("$f")
 done < <(find . -name result.json -type f -print0)
 event_files=()
-while IFS= read -r -d '' f; do event_files+=("$f"); done < <(find . -name stdout -print0)
+while IFS= read -r -d '' f; do event_files+=("$f"); done < <(find . \( -name stdout -o -path "./bkrace-events-*/*.log" \) -type f -print0)
 schemas_ok=1
 schema_check() { python3 schema-check/check_json_schema.py "$@"; }
-schema_check schema-check/engine-info.schema.json info*.json ei-*.json || schemas_ok=0
+schema_check schema-check/engine-info.schema.json info*.json ei-*.json eig-*/stdout || schemas_ok=0
 schema_check schema-check/list-presets.schema.json list-*.json || schemas_ok=0
 schema_check schema-check/result.schema.json "${results[@]}" || schemas_ok=0
 schema_check --events schema-check/event.schema.json "${event_files[@]}" || schemas_ok=0

@@ -348,7 +348,10 @@ The JSON documents a caller reads have JSON Schemas (draft 2020-12) in
 A change to one of these documents changes its schema in the same commit. The
 tests check every document they make against its schema, so the two cannot
 drift apart. A field the schema does not list is a test failure, so a new field
-is always a schema change that callers can see.
+is always a schema change that callers can see. The one exception is the event
+lines: `event.schema.json` states the progress event in full and lists every
+event kind, but the other events may carry fields it does not list, so a caller
+reads only the fields it knows.
 
 `--list-settings` is how an agent driving this binary finds a setting without
 reading the engine's source: the keys, their meaning and their valid values are
