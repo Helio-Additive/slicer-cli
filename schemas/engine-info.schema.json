@@ -155,10 +155,10 @@
           }
         },
         "engines": {
-          "description": "This binary's engine, then the other one it names: slicer_cli and slicer_cli-orcaslicer name each other; slicer_cli-snapmaker names slicer_cli-orcaslicer.",
+          "description": "This binary's engine, then the other one it names (slicer_cli and slicer_cli-orcaslicer name each other; slicer_cli-snapmaker names slicer_cli-orcaslicer), then, from a build that has it, the package's third binary. The first two entries are as earlier builds printed them.",
           "type": "array",
           "minItems": 2,
-          "maxItems": 2,
+          "maxItems": 3,
           "items": {
             "type": "object",
             "required": [
@@ -201,7 +201,7 @@
           }
         },
         "recommended": {
-          "description": "The binary to use: the fitting one of the app that made the file; else, when the printer is known, the first that fits; else null.",
+          "description": "The binary to use: the fitting one of the app that made the file (a Snapmaker Orca project: slicer_cli-snapmaker); else, for one of Snapmaker's own printers (the Snapmaker vendor of its profiles), slicer_cli-snapmaker when it fits; else, when the printer is known, the first that fits, slicer_cli-snapmaker only when no other does; else null.",
           "oneOf": [
             {
               "$ref": "#/$defs/binary"
