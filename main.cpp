@@ -10483,6 +10483,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             std::optional<Slic3r::DynamicPrintConfig> settings_to_export = project_settings;
             if (settings_to_export)
                 apply_command_line_overrides(*settings_to_export, overrides, /*report_rejections=*/false);
+#ifdef ENGINE_SNAPMAKER
+            // The switch's filament list, as each plate slices with it.
+            if (settings_to_export && slicer_cli::switch_trims_filaments(o.preset_switch, o.printer_preset))
+                slicer_cli::trim_project_roster_for_switch(*settings_to_export);
+#endif
             {
                 // The actions run once per run, also from the check pass:
                 // their events are not held.
@@ -11008,8 +11013,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // remap_extruder_ids, else update_extruder_count). The staged 3MF path
             // never reaches resolve_named_presets' setters, so the trim happens
             // here, on the settings this plate slices with, with the same rule.
-            if (o.preset_switch && !o.printer_preset.empty() &&
-                o.printer_preset.find("Snapmaker U1") == std::string::npos)
+            if (slicer_cli::switch_trims_filaments(o.preset_switch, o.printer_preset))
                 slicer_cli::trim_filaments_for_switch(config, model, o.printer_preset, plate_id, rs.switch_paint_remapped);
 #endif
 #ifdef ENGINE_SNAPMAKER
@@ -12576,6 +12580,14 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         try {
             Slic3r::DynamicPrintConfig project = rs.base;
             apply_command_line_overrides(project, o.overrides, /*report_rejections=*/false);
+#ifdef ENGINE_SNAPMAKER
+            // The switch trimmed each plate's filament list and remapped the
+            // model's paint to it, so the project carries that list too:
+            // otherwise a reopened project reads the paint against the
+            // untrimmed numbering.
+            if (slicer_cli::switch_trims_filaments(o.preset_switch, o.printer_preset))
+                slicer_cli::trim_project_roster_for_switch(project);
+#endif
             code = export_sliced_3mf(o, outdir, rs, outcomes, project, export_error);
         } catch (const std::exception& e) {
             code = CLI_EXPORT_3MF_ERROR;

@@ -34,6 +34,18 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
                                bool allow_mix_temp, const std::vector<std::string>& filament_names,
                                int& code, std::string& message, std::string& warning);
 
+/// A --printer-preset switch to a printer that is not a Snapmaker U1, the
+/// switch trim_filaments_for_switch follows (Tab.cpp:2247-2270 at bac6fd5).
+inline bool switch_trims_filaments(bool preset_switch, const std::string& printer) {
+    return preset_switch && !printer.empty() && printer.find("Snapmaker U1") == std::string::npos;
+}
+
+/// The same trim on the project's own settings, which --export-3mf and
+/// --export-settings write: the filament list the slice used, without the
+/// paint remap and events trim_filaments_for_switch does once per plate.
+/// Returns whether it trimmed.
+bool trim_project_roster_for_switch(Slic3r::DynamicPrintConfig& config);
+
 /// A switch to a printer that is not a Snapmaker U1: trims the plate's filament
 /// settings to the printer's extruder count and, once per run, remaps the
 /// model's paint, as the desktop does.

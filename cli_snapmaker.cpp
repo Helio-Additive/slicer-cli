@@ -503,32 +503,79 @@ int desktop_pre_slice_blockers(const Slic3r::Model& model, const Slic3r::Dynamic
 /// that printer's extruder count and remaps the paint (Tab.cpp:2247-2270 and
 /// Plater.cpp:22281-22290 at bac6fd5). `paint_remapped` is the run's: the model
 /// is shared by every plate pass and is remapped once.
-void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model& model, const std::string& printer,
-                               int plate_id, bool& paint_remapped) {
+namespace {
+/// The extruder count a switch trims the filament list to, or 0 when it
+/// keeps the list: Tab.cpp:2246 at bac6fd5 trims only a printer that is not
+/// single_extruder_multi_material, and only a list longer than its nozzles.
+size_t switch_filament_count(const Slic3r::DynamicPrintConfig& config) {
     using namespace Slic3r;
-    using json = nlohmann::json;
     size_t switch_extruders = 0;
     if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
         switch_extruders = nozzles->size();
     const auto* colours = config.option<ConfigOptionStrings>("filament_colour");
-    // Tab.cpp:2246 at bac6fd5: only a printer that is not
-    // single_extruder_multi_material has its filament count trimmed.
     const bool single_extruder_multi_material =
         config.has("single_extruder_multi_material") && config.opt_bool("single_extruder_multi_material");
-    if (!single_extruder_multi_material && switch_extruders > 0 && colours != nullptr &&
-        colours->values.size() > switch_extruders) {
-        // A flow-variant option (and filament_flow_support) keeps one
-        // group of values per filament, each group as long as that
-        // filament's filament_flow_step_size (PresetBundle.cpp:2673-2710
-        // at bac6fd5), so it is cut after the kept filaments' groups:
-        // a plain resize would hand filament 2 filament 1's variants.
-        size_t variant_keep = switch_extruders;
-        if (const auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
-            step_sizes != nullptr && !step_sizes->values.empty()) {
-            variant_keep = 0;
-            for (size_t i = 0; i < switch_extruders; ++i)
-                variant_keep += i < step_sizes->values.size() ? (size_t) std::max(1, step_sizes->values[i]) : 1;
-        }
+    if (single_extruder_multi_material || switch_extruders == 0 || colours == nullptr ||
+        colours->values.size() <= switch_extruders)
+        return 0;
+    return switch_extruders;
+}
+
+/// Cuts the per-filament settings to the first `switch_extruders` filaments.
+void cut_filament_roster(Slic3r::DynamicPrintConfig& config, size_t switch_extruders) {
+    using namespace Slic3r;
+    // A flow-variant option (and filament_flow_support) keeps one
+    // group of values per filament, each group as long as that
+    // filament's filament_flow_step_size (PresetBundle.cpp:2673-2710
+    // at bac6fd5), so it is cut after the kept filaments' groups:
+    // a plain resize would hand filament 2 filament 1's variants.
+    size_t variant_keep = switch_extruders;
+    if (const auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
+        step_sizes != nullptr && !step_sizes->values.empty()) {
+        variant_keep = 0;
+        for (size_t i = 0; i < switch_extruders; ++i)
+            variant_keep += i < step_sizes->values.size() ? (size_t) std::max(1, step_sizes->values[i]) : 1;
+    }
+    for (const std::string& key : Preset::filament_options()) {
+        auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
+        if (vec == nullptr) continue;
+        const bool variant = is_filament_flow_variant_option(key) || key == "filament_flow_support";
+        const size_t want = variant ? variant_keep : switch_extruders;
+        if (vec->size() > want) vec->resize(want);
+    }
+    // The group sizes themselves are one per filament and are no
+    // filament preset option, so the loop above skips them.
+    if (auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
+        step_sizes != nullptr && step_sizes->values.size() > switch_extruders)
+        step_sizes->values.resize(switch_extruders);
+    // The other per-filament project lists set_num_filaments and the
+    // filament roster keep at one entry per filament
+    // (PresetBundle.cpp:2179-2201 at bac6fd5), so they report only the
+    // filaments the slice keeps.
+    for (const char* key : {"filament_settings_id", "filament_ids", "filament_multi_colors",
+                            "filament_colour_mode"})
+        if (auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
+            vec != nullptr && vec->size() > switch_extruders)
+            vec->resize(switch_extruders);
+    config.option<ConfigOptionStrings>("filament_colour", true)->values.resize(switch_extruders);
+}
+} // namespace
+
+bool trim_project_roster_for_switch(Slic3r::DynamicPrintConfig& config) {
+    const size_t switch_extruders = switch_filament_count(config);
+    if (switch_extruders == 0)
+        return false;
+    cut_filament_roster(config, switch_extruders);
+    return true;
+}
+
+void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model& model, const std::string& printer,
+                               int plate_id, bool& paint_remapped) {
+    using namespace Slic3r;
+    using json = nlohmann::json;
+    const size_t switch_extruders = switch_filament_count(config);
+    if (switch_extruders > 0) {
+        const auto* colours = config.option<ConfigOptionStrings>("filament_colour");
         const size_t colours_before = colours->values.size();
         // The mixed filaments before the trim, for the paint remap below.
         size_t physical_before = 0;
@@ -539,28 +586,7 @@ void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model
         if (const auto* names = config.option<ConfigOptionStrings>("filament_settings_id"))
             for (size_t i = switch_extruders; i < names->values.size(); ++i)
                 dropped_filaments.push_back(names->values[i]);
-        for (const std::string& key : Preset::filament_options()) {
-            auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
-            if (vec == nullptr) continue;
-            const bool variant = is_filament_flow_variant_option(key) || key == "filament_flow_support";
-            const size_t want = variant ? variant_keep : switch_extruders;
-            if (vec->size() > want) vec->resize(want);
-        }
-        // The group sizes themselves are one per filament and are no
-        // filament preset option, so the loop above skips them.
-        if (auto* step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
-            step_sizes != nullptr && step_sizes->values.size() > switch_extruders)
-            step_sizes->values.resize(switch_extruders);
-        // The other per-filament project lists set_num_filaments and the
-        // filament roster keep at one entry per filament
-        // (PresetBundle.cpp:2179-2201 at bac6fd5), so they report only the
-        // filaments the slice keeps.
-        for (const char* key : {"filament_settings_id", "filament_ids", "filament_multi_colors",
-                                "filament_colour_mode"})
-            if (auto* vec = dynamic_cast<ConfigOptionVectorBase*>(config.option(key, false));
-                vec != nullptr && vec->size() > switch_extruders)
-                vec->resize(switch_extruders);
-        config.option<ConfigOptionStrings>("filament_colour", true)->values.resize(switch_extruders);
+        cut_filament_roster(config, switch_extruders);
         // The paint follows the desktop's switch: set_num_filaments
         // rebuilds the mixed filaments for the new count and builds the
         // old->new filament-id remap (PresetBundle.cpp:3905-3926,
