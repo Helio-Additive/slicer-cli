@@ -7,8 +7,8 @@ Usage: check_json_schema.py SCHEMA DOC...
 Standard library only, so it runs on every CI runner. It knows the JSON Schema
 keywords schemas/ use and stops on any other anywhere in the schema, before it
 reads a document, so a schema keyword it does not check can never pass
-silently. A document with NaN or Infinity (not JSON numbers) and an event
-marker without its space fail.
+silently. A document with NaN or Infinity (not JSON numbers), an event line
+that is not UTF-8 and an event marker without its space fail.
 """
 import json, sys
 
@@ -135,10 +135,16 @@ def documents(paths, events):
         if not events:
             yield (path,) + parse(open(path, encoding="utf-8").read())
             continue
-        for n, line in enumerate(open(path, errors="replace"), 1):
-            if line.startswith(MARKER + " "):
-                yield (f"{path}:{n}",) + parse(line[len(MARKER) + 1:])
-            elif line.startswith(MARKER):
+        # Bytes, so only an event line is decoded, and strictly: an invalid
+        # UTF-8 byte in an event fails, while other output lines are not read.
+        marker = MARKER.encode()
+        for n, line in enumerate(open(path, "rb"), 1):
+            if line.startswith(marker + b" "):
+                try:
+                    yield (f"{path}:{n}",) + parse(line[len(marker) + 1:].decode("utf-8"))
+                except UnicodeDecodeError as e:
+                    yield f"{path}:{n}", None, f"not UTF-8: {e}"
+            elif line.startswith(marker):
                 yield f"{path}:{n}", None, f"no space after {MARKER}"
 
 
