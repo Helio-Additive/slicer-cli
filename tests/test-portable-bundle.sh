@@ -8,15 +8,19 @@ FIXTURES="$SCRIPT_DIR/fixtures"
 
 test -x "$PACKAGE_ROOT/bin/slicer_cli"
 test -x "$PACKAGE_ROOT/bin/slicer_cli-orcaslicer"
+test -x "$PACKAGE_ROOT/bin/slicer_cli-snapmaker"
 test -f "$PACKAGE_ROOT/bin/manifest.json"
 # The archive publishes binaries only under bin/, with no symlinks anywhere.
 test ! -e "$PACKAGE_ROOT/slicer_cli"
 test ! -e "$PACKAGE_ROOT/slicer_cli-orcaslicer"
+test ! -e "$PACKAGE_ROOT/slicer_cli-snapmaker"
 test ! -e "$PACKAGE_ROOT/manifest.json"
 test -z "$(find "$PACKAGE_ROOT" -type l -print -quit)"
 test -d "$PACKAGE_ROOT/resources/profiles/BBL/machine"
 test -f "$PACKAGE_ROOT/resources/profiles/BBL.json"
 test -d "$PACKAGE_ROOT/resources/profiles-orca/Snapmaker/machine"
+# Snapmaker's own tree, once, under its resources root (main.cpp snapmaker_profiles_dir).
+test -d "$PACKAGE_ROOT/resources/snapmaker/profiles/Snapmaker/machine"
 test -n "$(find "$PACKAGE_ROOT/THIRD_PARTY_LICENSES" -type f -print -quit)"
 test -f "$FIXTURES/calib_base.3mf"
 
@@ -46,6 +50,7 @@ docker run --rm --platform "$DOCKER_PLATFORM" --network none -i \
 cp -R /package-input /package
 /package/bin/slicer_cli --help >/dev/null
 /package/bin/slicer_cli-orcaslicer --help >/dev/null
+/package/bin/slicer_cli-snapmaker --help >/dev/null
 test -f /package/bin/manifest.json
 test -z "$(find /package -type l -print -quit)"
 
@@ -127,7 +132,20 @@ if ! grep -Eq '^G1 .*X.*Y.*E([0-9]|\.[0-9])' /tmp/orca.gcode; then
     head -n 80 /tmp/orca.gcode
     exit 1
 fi
-echo 'PASS: both packaged engines sliced in the clean offline container'
+# The Snapmaker engine resolves a named U1 from its packaged profiles tree and
+# reads its own data beside it (resources/snapmaker): no swallowed read.
+if ! /package/bin/slicer_cli-snapmaker /tmp/model.stl --printer-preset 'Snapmaker U1 (0.4 nozzle)' \
+    --arrange 1 --slice 1 --outputdir /tmp/snap > /tmp/snap.log 2>&1; then
+    cat /tmp/snap.log
+    exit 1
+fi
+cat /tmp/snap.log
+grep -F "  Engine resources: /package/resources/snapmaker" /tmp/snap.log
+if grep -E 'parse (.*/)?(info|flush|profiles)/' /tmp/snap.log; then
+    exit 1
+fi
+grep -q '^; printer_settings_id = Snapmaker U1 (0.4 nozzle)' /tmp/snap/plate_1.gcode
+echo 'PASS: all three packaged engines sliced in the clean offline container'
 
 # Preset staging across filesystems: /package sits on the container's
 # overlayfs and /dev/shm is a tmpfs, so copy_file copies between two devices

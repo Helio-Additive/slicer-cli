@@ -12,6 +12,9 @@
 
 #include <algorithm>
 #include <cstdlib>
+#ifdef ENGINE_SNAPMAKER
+#include <cstring>   // strcmp, for SNAPMAKER_ORCA_ALLOW_NEWER_FILE
+#endif
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -29,7 +32,10 @@ namespace slicer_cli {
 namespace {
 
 // The engine this binary is built on, in the official app's own name.
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+const char* const kThisApp  = "Snapmaker Orca";
+const char* const kOtherApp = "OrcaSlicer";
+#elif defined(ENGINE_ORCA)
 const char* const kThisApp  = "OrcaSlicer";
 const char* const kOtherApp = "BambuStudio";
 #else
@@ -45,6 +51,9 @@ enum class Legacy {
     Verbose, Output, Machine, Filament, Process, Config,
     Infill, Perimeters, Nozzle, Temp, BedTemp,
     Plate, Input, NoNormalizeLegacyGcode,
+#ifdef ENGINE_SNAPMAKER
+    AllowMixTemp,
+#endif
     CalibMode, CalibStart, CalibEnd, CalibStep, CalibExtruderId, CalibNoNumbers,
     Layout, LayoutPlan, Progress,
     PrinterPreset, ProcessPreset, FilamentPreset, ListPresets, ListSettings, Printer,
@@ -96,6 +105,12 @@ const std::vector<LegacyFlag>& legacy_flags() {
         {"allow-substitution",        Legacy::AllowSubstitution, false, "",        "With --slice: slice a 3MF whose values this engine substitutes"},
         {"engine-info",               Legacy::EngineInfo,        true,  "FILE",    "What the file is and which engine binary fits it, as JSON"},
         {"single-instance",           Legacy::SingleInstance,    false, "",        "Accepted and ignored (the official app's one-window switch; commented out of its CLI)"},
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker Orca's engine has no allow_mix_temp setting (PrintConfig.cpp
+        // at bac6fd5), so this build takes the desktop's temperature rule as its
+        // own switch instead; the flag lifts it (desktop_pre_slice_blockers).
+        {"allow-mix-temp",            Legacy::AllowMixTemp,      false, "",        "Slice a plate whose filaments mix high and low temperature materials"},
+#endif
     };
     return flags;
 }
@@ -494,6 +509,20 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
                 break;
             case Legacy::Input:     positional.insert(positional.begin(), value); break;
             case Legacy::NoNormalizeLegacyGcode: o.normalize_legacy_gcode = false; break;
+#ifdef ENGINE_SNAPMAKER
+            case Legacy::AllowMixTemp:
+                // Read as the other builds read their own allow_mix_temp, a
+                // bool option: bare or =1 lifts the refusal, =0 keeps it.
+                if (!has_inline_value || value == "1")
+                    o.allow_mix_temp = true;
+                else if (value == "0")
+                    o.allow_mix_temp = false;
+                else {
+                    refusal = refuse("--allow-mix-temp takes =0 or =1, not '" + value + "'");
+                    return false;
+                }
+                break;
+#endif
             case Legacy::CalibMode: m.calib.mode = value; break;
             case Legacy::CalibStart:
             case Legacy::CalibEnd:
@@ -570,7 +599,24 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
     // m_extra_config: every print setting given (BambuStudio.cpp 1563-1564,
     // OrcaSlicer.cpp 1258-1259).
     o.extra_config.apply(cfg, true);
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's normalize_fdm reads nozzle_diameter whenever
+    // wipe_tower_filament is set (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:7892-7897
+    // at bac6fd5), so --wipe-tower-filament alone would crash; the value is
+    // held out of that one call (see load_config_file, cli_load_settings.cpp).
+    {
+        std::unique_ptr<Slic3r::ConfigOption> held;
+        if (o.extra_config.has("wipe_tower_filament") && !o.extra_config.has("nozzle_diameter")) {
+            held.reset(o.extra_config.option("wipe_tower_filament")->clone());
+            o.extra_config.erase("wipe_tower_filament");
+        }
+        o.extra_config.normalize_fdm();
+        if (held)
+            o.extra_config.set_key_value("wipe_tower_filament", held.release());
+    }
+#else
     o.extra_config.normalize_fdm();
+#endif
     if (const std::string why = extra_config_refusal(o.extra_config); !why.empty()) {
         refusal = refuse(why);
         return false;
@@ -595,6 +641,16 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
     o.outputdir        = o.given_flag("outputdir") ? cfg.opt_string("outputdir") : std::string();
     o.export_3mf       = o.given_flag("export_3mf") ? cfg.opt_string("export_3mf") : std::string();
     o.allow_newer_file = o.given_flag("allow_newer_file") && cfg.opt_bool("allow_newer_file");
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's CLI also takes the flag from the environment: any value but
+    // empty or "0" turns it on, with this warning
+    // (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:1274-1279 at bac6fd5).
+    if (const char* allow_newer_env = std::getenv("SNAPMAKER_ORCA_ALLOW_NEWER_FILE");
+        allow_newer_env != nullptr && *allow_newer_env != '\0' && std::strcmp(allow_newer_env, "0") != 0) {
+        std::cerr << "Forcing CLI newer-file compatibility from SNAPMAKER_ORCA_ALLOW_NEWER_FILE\n";
+        o.allow_newer_file = true;
+    }
+#endif
     if (o.given_flag("arrange"))
         o.arrange = cfg.opt_int("arrange");
     if (o.given_flag("help"))
@@ -642,13 +698,23 @@ void print_help(std::ostream& out, const char* prog) {
     out << "\nFlags that share a name with Bambu Studio's or OrcaSlicer's own command line behave the same way.\n"
         << "\"Works in\" names the binaries that take the flag: slicer_cli runs the Bambu Studio engine,\n"
         << "slicer_cli-orcaslicer the OrcaSlicer engine.\n";
+#ifdef ENGINE_SNAPMAKER
+    out << "This binary, slicer_cli-snapmaker, runs the Snapmaker Orca engine.\n";
+#endif
 
     out << "\n=== Files, presets and modes ===\n";
     for (const auto& f : legacy_flags()) {
         if (official_names().count(f.name)) continue;   // listed with the shared names below
         std::string lhs = (std::string(f.name).size() == 1 ? "-" : "--") + std::string(f.name);
         if (f.takes_value) lhs += std::string(" ") + f.help_value;
-        help_row(out, lhs, std::string(f.help) + "  [works in: both binaries]");
+#ifdef ENGINE_SNAPMAKER
+        // A flag only this build defines works in this build alone; the shared
+        // ones work in slicer_cli as well.
+        const std::string works_in_label = all_binaries_label();
+        help_row(out, lhs, std::string(f.help) + "  [works in: " + works_in_label + "]");
+#else
+        help_row(out, lhs, std::string(f.help) + "  [works in: " + all_binaries_label() + "]");
+#endif
     }
 
     out << "\n=== Slicing, transforms and exports ===\n";

@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for ENGINE in bambu orca; do
+          for ENGINE in bambu orca snapmaker; do
             if [[ "$ENGINE" == bambu ]]; then
               LIBNOISE_REPOSITORY=https://github.com/bambulab/libnoise.git
               LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
@@ -269,7 +269,7 @@ jobs:
         # Engine is a compile-time choice (-DENGINE=bambu|orca → mutually-exclusive
         # #ifdef paths against two libslic3r forks). Build both; the package job
         # fans them into one package and the app routes per printer at slice time.
-        engine: [bambu, orca]
+        engine: [bambu, orca, snapmaker]
         arch: [x86_64, arm64]
         include:
           - arch: x86_64
@@ -288,6 +288,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      # The Snapmaker build's program is slicer_cli-snapmaker (CMakeLists.txt
+      # OUTPUT_NAME); the other two engines' is slicer_cli. One place per job
+      # decides the path every later step uses.
+      - name: Engine binary path
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME=slicer_cli
+          if [ "${{ matrix.engine }}" = "snapmaker" ]; then NAME=slicer_cli-snapmaker; fi
+          # Ninja (the Windows legs' generator) writes the program to build\ directly.
+          {
+            printf 'ENGINE_BINARY=build/%s\n' "$NAME"
+            printf 'ENGINE_BINARY_EXE=build\\Release\\%s.exe\n' "$NAME"
+            printf 'ENGINE_BINARY_EXE_FLAT=build\\%s.exe\n' "$NAME"
+          } >> "$GITHUB_ENV"
 
       - name: Remove Mono framework (shadows libpng headers)
         if: runner.os == 'macOS'
@@ -351,7 +367,7 @@ jobs:
           sudo chown -R "$USER" /opt/slicer-cli/cgal-5.4 /opt/slicer-cli/cgal-5.6.3
 
       - name: Restore Linux pinned CGAL (bambu)
-        if: runner.os == 'Linux' && matrix.engine == 'bambu'
+        if: runner.os == 'Linux' && (matrix.engine == 'bambu' || matrix.engine == 'snapmaker')
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.4
@@ -422,7 +438,7 @@ jobs:
           fi
           test -f "$LIBNOISE_PREFIX/include/noise/noise.h" -o -f "$LIBNOISE_PREFIX/include/libnoise/noise.h"
           test -f "$LIBNOISE_PREFIX/lib/libnoise.a" -o -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" -o -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a"
-          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+          if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             CGAL_VERSION=5.4
             CGAL_COMMIT=c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
             CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
@@ -521,7 +537,7 @@ jobs:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
           VCPKG_ARGS=()
-          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+          if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           fi
           for attempt in 1 2 3; do
@@ -608,7 +624,7 @@ jobs:
             # the directory directly so find_package(Eigen3) short-circuits search.
             EIGEN3_CMAKE_DIR="$(dirname "$(find /opt/homebrew -name "Eigen3Config.cmake" 2>/dev/null | head -1)" 2>/dev/null)"
             [[ -n "$EIGEN3_CMAKE_DIR" ]] && EXTRA+=(-DEigen3_DIR="$EIGEN3_CMAKE_DIR")
-            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
               CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
@@ -642,7 +658,7 @@ jobs:
             EXTRA+=(-DBOOST_ROOT="$BOOST_PREFIX" -DBoost_ROOT="$BOOST_PREFIX")
             EXTRA+=(-DBoost_NO_SYSTEM_PATHS=ON -DSLICER_CLI_REQUIRED_BOOST_VERSION=1.84.0)
             EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
-            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
@@ -725,19 +741,19 @@ jobs:
 
       - name: Run nozzle-map provenance regression tests (bambu)
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
-        run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
+        run: bash tests/test_nozzle_map_provenance.sh "$ENGINE_BINARY"
 
       - name: Run structured-diagnostics event tests (${{ matrix.engine }})
         # Engine-aware: the script reads the engine from `layout capabilities`
         # and uses that engine's fixture and profiles.
         if: runner.os != 'Windows'
-        run: bash tests/test_diagnostic_events.sh build/slicer_cli
+        run: bash tests/test_diagnostic_events.sh "$ENGINE_BINARY"
 
       - name: Run feature-exclusion regression tests (${{ matrix.engine }})
         # Engine-aware: each engine slices its own fixtures; checks of a
         # Bambu-only feature (pressure_advance_pattern) SKIP on Orca with the reason.
         if: runner.os != 'Windows'
-        run: bash tests/test_excluded_features.sh build/slicer_cli
+        run: bash tests/test_excluded_features.sh "$ENGINE_BINARY"
 
       - name: Test diagnostic transport
         if: runner.os != 'Windows'
@@ -748,15 +764,15 @@ jobs:
         run: bash tests/test_find_nlopt.sh
 
       - name: Smoke --help (orca, macOS/Linux)
-        if: runner.os != 'Windows' && matrix.engine == 'orca'
-        run: build/slicer_cli --help
+        if: runner.os != 'Windows' && matrix.engine != 'bambu'
+        run: $ENGINE_BINARY --help
 
       - name: Run feature-exclusion regression tests (Windows)
         if: runner.os == 'Windows'
         run: |
           # Adapted for PowerShell; minimal smoke only
-          $b = "build\Release\slicer_cli.exe"
-          if (-not (Test-Path $b)) { $b = "build\slicer_cli.exe" }
+          $b = $env:ENGINE_BINARY_EXE
+          if (-not (Test-Path $b)) { $b = $env:ENGINE_BINARY_EXE_FLAT }
           & $b --help
           if ($LASTEXITCODE -ne 0) { Write-Error "slicer_cli --help failed"; exit 1 }
 
@@ -767,7 +783,7 @@ jobs:
         run: |
           # Use Homebrew bash 5 (installed via install_deps.sh) for declare -A support.
           # smoke-clean-host.sh is bash 3.2 compatible; plain bash is fine for it.
-          /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
+          /opt/homebrew/bin/bash scripts/bundle-macos.sh "$ENGINE_BINARY" dist
           bash scripts/smoke-clean-host.sh dist/slicer_cli
 
       # Stage this engine's binary under the in-package filename convention used by
@@ -779,11 +795,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BIN="build/slicer_cli"
+          BIN="$ENGINE_BINARY"
           [ -x "dist/slicer_cli" ] && BIN="dist/slicer_cli"
           mkdir -p staged
           if [ "${{ matrix.engine }}" = "bambu" ]; then
             cp "$BIN" staged/slicer_cli
+          elif [ "${{ matrix.engine }}" = "snapmaker" ]; then
+            cp "$BIN" staged/slicer_cli-snapmaker
           else
             cp "$BIN" staged/slicer_cli-orcaslicer
           fi
@@ -801,11 +819,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $bin = "build\Release\slicer_cli.exe"
-          if (-not (Test-Path $bin)) { $bin = "build\slicer_cli.exe" }
+          $bin = $env:ENGINE_BINARY_EXE
+          if (-not (Test-Path $bin)) { $bin = $env:ENGINE_BINARY_EXE_FLAT }
           New-Item -ItemType Directory -Force staged | Out-Null
           if ("${{ matrix.engine }}" -eq "bambu") {
             Copy-Item $bin staged\slicer_cli.exe
+          } elseif ("${{ matrix.engine }}" -eq "snapmaker") {
+            Copy-Item $bin staged\slicer_cli-snapmaker.exe
           } else {
             Copy-Item $bin staged\slicer_cli-orcaslicer.exe
           }
@@ -850,7 +870,7 @@ jobs:
         # tags: Windows is built and checked on a local Windows box, so CI is
         # not its trial (owner, CI spend cut). macOS (Apple Silicon, primary
         # dev target) runs on every event.
-        include: ${{ fromJSON((startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && '[{"engine":"bambu","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"orca","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"bambu","os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","cmake_preset":"-G Ninja -DCMAKE_BUILD_TYPE=Release"},{"engine":"orca","os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","cmake_preset":"-G Ninja -DCMAKE_BUILD_TYPE=Release"}]' || '[{"engine":"bambu","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"orca","os":"macOS-arm64","runner":"macos-15","cmake_preset":""}]') }}
+        include: ${{ fromJSON((startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && '[{"engine":"bambu","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"orca","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"snapmaker","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"bambu","os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","cmake_preset":"-G Ninja -DCMAKE_BUILD_TYPE=Release"},{"engine":"orca","os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","cmake_preset":"-G Ninja -DCMAKE_BUILD_TYPE=Release"},{"engine":"snapmaker","os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","cmake_preset":"-G Ninja -DCMAKE_BUILD_TYPE=Release"}]' || '[{"engine":"bambu","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"orca","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"snapmaker","os":"macOS-arm64","runner":"macos-15","cmake_preset":""}]') }}
           # - os: macOS-x86_64
           #   runner: macos-13
           #   cmake_preset: ""
@@ -865,6 +885,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      # The Snapmaker build's program is slicer_cli-snapmaker (CMakeLists.txt
+      # OUTPUT_NAME); the other two engines' is slicer_cli. One place per job
+      # decides the path every later step uses.
+      - name: Engine binary path
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME=slicer_cli
+          if [ "${{ matrix.engine }}" = "snapmaker" ]; then NAME=slicer_cli-snapmaker; fi
+          # Ninja (the Windows legs' generator) writes the program to build\ directly.
+          {
+            printf 'ENGINE_BINARY=build/%s\n' "$NAME"
+            printf 'ENGINE_BINARY_EXE=build\\Release\\%s.exe\n' "$NAME"
+            printf 'ENGINE_BINARY_EXE_FLAT=build\\%s.exe\n' "$NAME"
+          } >> "$GITHUB_ENV"
 
       - name: Remove Mono framework (shadows libpng headers)
         if: runner.os == 'macOS'
@@ -967,7 +1003,7 @@ jobs:
           key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
 
       - name: Restore Linux pinned CGAL (bambu)
-        if: runner.os == 'Linux' && matrix.engine == 'bambu'
+        if: runner.os == 'Linux' && (matrix.engine == 'bambu' || matrix.engine == 'snapmaker')
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.4
@@ -1026,7 +1062,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=/usr/local \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           sudo cmake --build /tmp/libnoise/build --target install --parallel
-          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+          if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             CGAL_VERSION=5.4
             CGAL_COMMIT=c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
             CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
@@ -1110,7 +1146,7 @@ jobs:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
           VCPKG_ARGS=()
-          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+          if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           fi
           for attempt in 1 2 3; do
@@ -1197,7 +1233,7 @@ jobs:
             # the directory directly so find_package(Eigen3) short-circuits search.
             EIGEN3_CMAKE_DIR="$(dirname "$(find /opt/homebrew -name "Eigen3Config.cmake" 2>/dev/null | head -1)" 2>/dev/null)"
             [[ -n "$EIGEN3_CMAKE_DIR" ]] && EXTRA+=(-DEigen3_DIR="$EIGEN3_CMAKE_DIR")
-            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
               CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
@@ -1227,7 +1263,7 @@ jobs:
             EXTRA+=(-DBOOST_ROOT="$BOOST_PREFIX" -DBoost_ROOT="$BOOST_PREFIX")
             EXTRA+=(-DBoost_NO_SYSTEM_PATHS=ON -DSLICER_CLI_REQUIRED_BOOST_VERSION=1.84.0)
             EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
-            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
@@ -1310,13 +1346,13 @@ jobs:
 
       - name: Run nozzle-map provenance regression tests (bambu)
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
-        run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
+        run: bash tests/test_nozzle_map_provenance.sh "$ENGINE_BINARY"
 
       - name: Run feature-exclusion regression tests (${{ matrix.engine }})
         # Engine-aware: each engine slices its own fixtures; checks of a
         # Bambu-only feature (pressure_advance_pattern) SKIP on Orca with the reason.
         if: runner.os != 'Windows'
-        run: bash tests/test_excluded_features.sh build/slicer_cli
+        run: bash tests/test_excluded_features.sh "$ENGINE_BINARY"
 
       - name: Run structured-diagnostics event tests (${{ matrix.engine }})
         # Asserts engine diagnostics reach stdout as [[SLICER_EVENT]] lines on
@@ -1324,7 +1360,7 @@ jobs:
         # paths (layout capabilities / --layout-plan) stay single-document.
         # Engine-aware: the script uses this engine's fixture and profiles.
         if: runner.os != 'Windows'
-        run: bash tests/test_diagnostic_events.sh build/slicer_cli
+        run: bash tests/test_diagnostic_events.sh "$ENGINE_BINARY"
 
       - name: Test diagnostic transport
         if: runner.os != 'Windows'
@@ -1335,15 +1371,15 @@ jobs:
         run: bash tests/test_find_nlopt.sh
 
       - name: Smoke --help (orca, macOS/Linux)
-        if: runner.os != 'Windows' && matrix.engine == 'orca'
-        run: build/slicer_cli --help
+        if: runner.os != 'Windows' && matrix.engine != 'bambu'
+        run: $ENGINE_BINARY --help
 
       - name: Run feature-exclusion regression tests (Windows)
         if: runner.os == 'Windows'
         run: |
           # Adapted for PowerShell; minimal smoke only
-          $b = "build\Release\slicer_cli.exe"
-          if (-not (Test-Path $b)) { $b = "build\slicer_cli.exe" }
+          $b = $env:ENGINE_BINARY_EXE
+          if (-not (Test-Path $b)) { $b = $env:ENGINE_BINARY_EXE_FLAT }
           & $b --help
           if ($LASTEXITCODE -ne 0) { Write-Error "slicer_cli --help failed"; exit 1 }
 
@@ -1354,7 +1390,7 @@ jobs:
         run: |
           # Use Homebrew bash 5 (installed via install_deps.sh) for declare -A support.
           # smoke-clean-host.sh is bash 3.2 compatible; plain bash is fine for it.
-          /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
+          /opt/homebrew/bin/bash scripts/bundle-macos.sh "$ENGINE_BINARY" dist
           bash scripts/smoke-clean-host.sh dist/slicer_cli
 
       # Stage this engine's binary under the in-package filename convention used by
@@ -1366,11 +1402,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BIN="build/slicer_cli"
+          BIN="$ENGINE_BINARY"
           [ -x "dist/slicer_cli" ] && BIN="dist/slicer_cli"
           mkdir -p staged
           if [ "${{ matrix.engine }}" = "bambu" ]; then
             cp "$BIN" staged/slicer_cli
+          elif [ "${{ matrix.engine }}" = "snapmaker" ]; then
+            cp "$BIN" staged/slicer_cli-snapmaker
           else
             cp "$BIN" staged/slicer_cli-orcaslicer
           fi
@@ -1388,11 +1426,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $bin = "build\Release\slicer_cli.exe"
-          if (-not (Test-Path $bin)) { $bin = "build\slicer_cli.exe" }
+          $bin = $env:ENGINE_BINARY_EXE
+          if (-not (Test-Path $bin)) { $bin = $env:ENGINE_BINARY_EXE_FLAT }
           New-Item -ItemType Directory -Force staged | Out-Null
           if ("${{ matrix.engine }}" -eq "bambu") {
             Copy-Item $bin staged\slicer_cli.exe
+          } elseif ("${{ matrix.engine }}" -eq "snapmaker") {
+            Copy-Item $bin staged\slicer_cli-snapmaker.exe
           } else {
             Copy-Item $bin staged\slicer_cli-orcaslicer.exe
           }
@@ -1456,6 +1496,12 @@ jobs:
           name: engine-${{ matrix.os }}-orca
           path: engine-orca
 
+      - name: Download engine binary (snapmaker)
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-${{ matrix.os }}-snapmaker
+          path: engine-snapmaker
+
       - name: Assemble + validate package (macOS arm64)
         if: matrix.os == 'macOS-arm64'
         shell: bash
@@ -1470,9 +1516,10 @@ jobs:
           mkdir -p "$P/resources/profiles" dist/release
           cp engine-bambu/slicer_cli "$P/slicer_cli"
           cp engine-orca/slicer_cli-orcaslicer "$P/slicer_cli-orcaslicer"
-          chmod +x "$P/slicer_cli" "$P/slicer_cli-orcaslicer"
+          cp engine-snapmaker/slicer_cli-snapmaker "$P/slicer_cli-snapmaker"
+          chmod +x "$P/slicer_cli" "$P/slicer_cli-orcaslicer" "$P/slicer_cli-snapmaker"
           # Union both engines' bundled Frameworks.
-          for d in engine-bambu engine-orca; do
+          for d in engine-bambu engine-orca engine-snapmaker; do
             if [ -d "$d/Frameworks" ]; then
               mkdir -p "$P/Frameworks"
               for framework in "$d"/Frameworks/*; do
@@ -1487,7 +1534,7 @@ jobs:
             fi
           done
           mkdir -p "$P/THIRD_PARTY_LICENSES"
-          for d in engine-bambu engine-orca; do
+          for d in engine-bambu engine-orca engine-snapmaker; do
             [ -d "$d/THIRD_PARTY_LICENSES" ] || continue
             while IFS= read -r license; do
               relative="${license#"$d/THIRD_PARTY_LICENSES/"}"
@@ -1509,6 +1556,17 @@ jobs:
           # slice-resolvable by name via the orca engine. The browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
+          # The Snapmaker engine's own tree (main.cpp snapmaker_profiles_dir /
+          # engine_resources_root, ENGINE_SNAPMAKER): its presets, defaults and
+          # info/flush bytes are its own, so it never shares the Orca folders.
+          # Snapmaker's profiles ship once, under the engine's own resources root:
+          # it reads profiles/Snapmaker/filament/*.json from there.
+          mkdir -p "$P/resources/snapmaker"
+          cp -R references/SnapmakerOrca/resources/profiles "$P/resources/snapmaker/profiles"
+          mkdir -p "$P/resources/snapmaker"
+          # Snapmaker's tree ships an "info" folder and its profiles; it has no
+          # "flush" folder at bac6fd5, so only what exists is packaged.
+          cp -R references/SnapmakerOrca/resources/info "$P/resources/snapmaker/info"
           # libslic3r reads these folders beside the profile trees at slice time:
           # Print.cpp:2687/2722/2755 (info/*.json),
           # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
@@ -1526,6 +1584,7 @@ jobs:
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
+          cp references/SnapmakerOrca/LICENSE.txt "$P/SNAPMAKER-ORCA-LICENSE.txt"
           cat > "$P/manifest.json" <<EOF
           {
             "version": "${VERSION}",
@@ -1536,7 +1595,8 @@ jobs:
             "orcaProfilesPath": "slicer-cli/resources/profiles-orca",
             "engines": [
               { "engine": "bambustudio", "path": "slicer-cli/slicer_cli" },
-              { "engine": "orcaslicer",  "path": "slicer-cli/slicer_cli-orcaslicer" }
+              { "engine": "orcaslicer",  "path": "slicer-cli/slicer_cli-orcaslicer" },
+              { "engine": "snapmaker",   "path": "slicer-cli/slicer_cli-snapmaker" }
             ]
           }
           EOF
@@ -1557,6 +1617,7 @@ jobs:
           tar -C dist/verify -xzf "dist/release/${ASSET}"
           test -x dist/verify/slicer-cli/slicer_cli
           test -x dist/verify/slicer-cli/slicer_cli-orcaslicer
+          test -x dist/verify/slicer-cli/slicer_cli-snapmaker
           test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
           test -d dist/verify/slicer-cli/resources/profiles/BBL/process
           test -d dist/verify/slicer-cli/resources/profiles/BBL/filament
@@ -1575,8 +1636,9 @@ jobs:
           test -f dist/verify/slicer-cli/resources/profiles/BBL.json
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
-          # Hang watchdog for the tests below: every 60 s, any slicer_cli or
-          # slicer_cli-orcaslicer process running for 20 min or more is sampled
+          dist/verify/slicer-cli/slicer_cli-snapmaker --help >/dev/null
+          # Hang watchdog for the tests below: every 60 s, any slicer_cli,
+          # slicer_cli-orcaslicer or slicer_cli-snapmaker process running for 20 min or more is sampled
           # to $RUNNER_TEMP/hang-<pid>.txt (uploaded on failure), its command
           # line and the first 80 lines of the sample are printed, and it is
           # killed, so a hung case fails instead of walling the job for hours.
@@ -1586,7 +1648,7 @@ jobs:
             while sleep 60; do
               ps -axo pid=,etime=,command= | while read -r pid etime cmd; do
                 exe="${cmd%% *}"; exe="${exe##*/}"
-                case "$exe" in slicer_cli|slicer_cli-orcaslicer) ;; *) continue ;; esac
+                case "$exe" in slicer_cli|slicer_cli-orcaslicer|slicer_cli-snapmaker) ;; *) continue ;; esac
                 secs=$(echo "$etime" | awk -F'[-:]' '{n=NF; s=$n+60*$(n-1); if (n>=3) s+=3600*$(n-2); if (n==4) s+=86400*$1; print s}')
                 [ "$secs" -ge 1200 ] || continue
                 echo "::error::hang watchdog: $exe (pid $pid) has run for $etime; sampling and killing it"
@@ -1603,7 +1665,7 @@ jobs:
           # A packaged slice must resolve presets from the package and read the
           # resource folders without a swallowed parse error (libslic3r logs
           # "parse info/…" and continues on its hardcoded tables).
-          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer dist/verify/slicer-cli/slicer_cli-snapmaker
           # The complete slice path (--slice, --arrange, presets by name, --export-3mf,
           # --info, --list-presets) and the default-path checks, on both engines.
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
@@ -1632,13 +1694,14 @@ jobs:
           New-Item -ItemType Directory -Force "$P\resources\profiles", dist\release | Out-Null
           Copy-Item engine-bambu\slicer_cli.exe "$P\slicer_cli.exe"
           Copy-Item engine-orca\slicer_cli-orcaslicer.exe "$P\slicer_cli-orcaslicer.exe"
+          Copy-Item engine-snapmaker\slicer_cli-snapmaker.exe "$P\slicer_cli-snapmaker.exe"
           # Union runtime DLLs from both engine artifacts (orca adds libjpeg).
           # Preserve the previously released package contract: both engines use
           # the same pinned vcpkg baseline and runtime DLLs are unioned in order.
-          Get-ChildItem engine-bambu, engine-orca -Filter *.dll -File -ErrorAction SilentlyContinue |
+          Get-ChildItem engine-bambu, engine-orca, engine-snapmaker -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination "$P\" -Force
           New-Item -ItemType Directory -Force "$P\THIRD_PARTY_LICENSES" | Out-Null
-          foreach ($engineDirectory in @("engine-bambu", "engine-orca")) {
+          foreach ($engineDirectory in @("engine-bambu", "engine-orca", "engine-snapmaker")) {
             $sourceRoot = Join-Path $engineDirectory "THIRD_PARTY_LICENSES"
             if (-not (Test-Path $sourceRoot)) { continue }
             $resolvedRoot = (Resolve-Path $sourceRoot).Path
@@ -1664,6 +1727,11 @@ jobs:
           # slice-resolvable by name via the orca engine. Browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           Copy-Item -Recurse references\OrcaSlicer\resources\profiles "$P\resources\profiles-orca"
+          # The Snapmaker engine's own tree, as the macOS and Linux packages carry
+          # it: snapmaker_profiles_dir() and engine_resources_root() look here.
+          New-Item -ItemType Directory -Force "$P\resources\snapmaker" | Out-Null
+          Copy-Item -Recurse references\SnapmakerOrca\resources\profiles "$P\resources\snapmaker\profiles"
+          Copy-Item -Recurse references\SnapmakerOrca\resources\info "$P\resources\snapmaker\info"
           # libslic3r reads these folders beside the profile trees at slice time:
           # Print.cpp:2687/2722/2755 (info/*.json),
           # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
@@ -1681,6 +1749,7 @@ jobs:
           Copy-Item LICENSE, NOTICE, README.md "$P\"
           Copy-Item references\BambuStudio\LICENSE "$P\BAMBUSTUDIO-LICENSE.txt"
           Copy-Item references\OrcaSlicer\LICENSE.txt "$P\ORCASLICER-LICENSE.txt"
+          Copy-Item references\SnapmakerOrca\LICENSE.txt "$P\SNAPMAKER-ORCA-LICENSE.txt"
           @{
             version = $version; gitSha = $env:GITHUB_SHA; platform = $platform
             executablePath = "slicer-cli/slicer_cli.exe"
@@ -1688,7 +1757,8 @@ jobs:
             orcaProfilesPath = "slicer-cli/resources/profiles-orca"
             engines = @(
               @{ engine = "bambustudio"; path = "slicer-cli/slicer_cli.exe" },
-              @{ engine = "orcaslicer";  path = "slicer-cli/slicer_cli-orcaslicer.exe" }
+              @{ engine = "orcaslicer";  path = "slicer-cli/slicer_cli-orcaslicer.exe" },
+              @{ engine = "snapmaker";   path = "slicer-cli/slicer_cli-snapmaker.exe" }
             )
           } | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 "$P\manifest.json"
           Compress-Archive -Path "$P" -DestinationPath "dist\release\$asset"
@@ -1704,6 +1774,7 @@ jobs:
           Expand-Archive -Path "dist\release\$asset" -DestinationPath dist\verify
           if (-not (Test-Path dist\verify\slicer-cli\slicer_cli.exe)) { throw "missing slicer_cli.exe" }
           if (-not (Test-Path dist\verify\slicer-cli\slicer_cli-orcaslicer.exe)) { throw "missing slicer_cli-orcaslicer.exe" }
+          if (-not (Test-Path dist\verify\slicer-cli\slicer_cli-snapmaker.exe)) { throw "missing slicer_cli-snapmaker.exe" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\machine)) { throw "missing machine profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\process)) { throw "missing process profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\filament)) { throw "missing filament profiles" }
@@ -1722,9 +1793,10 @@ jobs:
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL.json)) { throw "missing BBL.json vendor index" }
           & dist\verify\slicer-cli\slicer_cli.exe --help
           & dist\verify\slicer-cli\slicer_cli-orcaslicer.exe --help
+          & dist\verify\slicer-cli\slicer_cli-snapmaker.exe --help
           # A packaged slice must resolve presets from the package and read the
           # resource folders without a swallowed parse error.
-          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe
+          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe dist/verify/slicer-cli/slicer_cli-snapmaker.exe
           if ($LASTEXITCODE -ne 0) { throw "packaged slice assertion failed" }
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe
           if ($LASTEXITCODE -ne 0) { throw "complete slice path assertion failed" }
@@ -1795,6 +1867,12 @@ jobs:
           name: engine-${{ matrix.os }}-orca
           path: engine-orca
 
+      - name: Download Snapmaker engine binary
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-${{ matrix.os }}-snapmaker
+          path: engine-snapmaker
+
       - name: Assemble and validate Linux package
         shell: bash
         run: |
@@ -1811,7 +1889,8 @@ jobs:
           # and the archive carries no symlinks.
           cp engine-bambu/slicer_cli "$P/bin/slicer_cli"
           cp engine-orca/slicer_cli-orcaslicer "$P/bin/slicer_cli-orcaslicer"
-          chmod +x "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer"
+          cp engine-snapmaker/slicer_cli-snapmaker "$P/bin/slicer_cli-snapmaker"
+          chmod +x "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer" "$P/bin/slicer_cli-snapmaker"
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
           cp references/BambuStudio/resources/profiles/BBL.json "$P/resources/profiles/BBL.json"
           # libslic3r reads these folders beside the profile trees at slice time:
@@ -1829,9 +1908,21 @@ jobs:
           cp -R references/OrcaSlicer/resources/info "$P/resources/orca/info"
           cp -R references/OrcaSlicer/resources/flush "$P/resources/orca/flush"
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
+          # The Snapmaker engine's own tree (main.cpp snapmaker_profiles_dir /
+          # engine_resources_root, ENGINE_SNAPMAKER): its presets, defaults and
+          # info/flush bytes are its own, so it never shares the Orca folders.
+          # Snapmaker's profiles ship once, under the engine's own resources root:
+          # it reads profiles/Snapmaker/filament/*.json from there.
+          mkdir -p "$P/resources/snapmaker"
+          cp -R references/SnapmakerOrca/resources/profiles "$P/resources/snapmaker/profiles"
+          mkdir -p "$P/resources/snapmaker"
+          # Snapmaker's tree ships an "info" folder and its profiles; it has no
+          # "flush" folder at bac6fd5, so only what exists is packaged.
+          cp -R references/SnapmakerOrca/resources/info "$P/resources/snapmaker/info"
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
+          cp references/SnapmakerOrca/LICENSE.txt "$P/SNAPMAKER-ORCA-LICENSE.txt"
           # The manifest sits beside the binaries it describes, as the macOS and
           # Windows packages do, and its paths stay archive-relative.
           cat > "$P/bin/manifest.json" <<EOF
@@ -1844,11 +1935,12 @@ jobs:
             "orcaProfilesPath": "slicer-cli/resources/profiles-orca",
             "engines": [
               { "engine": "bambustudio", "path": "slicer-cli/bin/slicer_cli" },
-              { "engine": "orcaslicer", "path": "slicer-cli/bin/slicer_cli-orcaslicer" }
+              { "engine": "orcaslicer", "path": "slicer-cli/bin/slicer_cli-orcaslicer" },
+              { "engine": "snapmaker", "path": "slicer-cli/bin/slicer_cli-snapmaker" }
             ]
           }
           EOF
-          bash scripts/bundle-linux.sh "$P" "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer"
+          bash scripts/bundle-linux.sh "$P" "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer" "$P/bin/slicer_cli-snapmaker"
           # The published archive is symlink-free. Reject any symlink before
           # archiving it, whether we created it or it arrived inside a
           # third-party asset, rather than silently rewriting it.
@@ -1883,6 +1975,7 @@ jobs:
           tar -C dist/verify -xzf "dist/release/${ASSET}"
           test -x dist/verify/slicer-cli/bin/slicer_cli
           test -x dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
+          test -x dist/verify/slicer-cli/bin/slicer_cli-snapmaker
           # The relocated layout has no root binaries or symlinks, and the
           # manifest lives beside the binaries it describes.
           test ! -e dist/verify/slicer-cli/slicer_cli
@@ -1893,7 +1986,7 @@ jobs:
           test -d dist/verify/slicer-cli/lib
           jq -e '
             .executablePath == "slicer-cli/bin/slicer_cli"
-            and ([.engines[].path] | sort == ["slicer-cli/bin/slicer_cli", "slicer-cli/bin/slicer_cli-orcaslicer"])
+            and ([.engines[].path] | sort == ["slicer-cli/bin/slicer_cli", "slicer-cli/bin/slicer_cli-orcaslicer", "slicer-cli/bin/slicer_cli-snapmaker"])
           ' dist/verify/slicer-cli/bin/manifest.json >/dev/null
           test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
           test -d dist/verify/slicer-cli/resources/profiles/BBL/process

@@ -96,8 +96,8 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 #                     OrcaSlicer:  deps_src/   (admesh, clipper, …)
 #   * ENGINE_BAMBU / ENGINE_ORCA compile define → gates the divergent front-end
 #     blocks in main.cpp (preset/staging resolution, toolchanger normalizations).
-set(ENGINE "bambu" CACHE STRING "Slicing engine source: bambu (BambuStudio) or orca (OrcaSlicer)")
-set_property(CACHE ENGINE PROPERTY STRINGS bambu orca)
+set(ENGINE "bambu" CACHE STRING "Slicing engine source: bambu (BambuStudio), orca (OrcaSlicer) or snapmaker (Snapmaker Orca)")
+set_property(CACHE ENGINE PROPERTY STRINGS bambu orca snapmaker)
 set(ENGINE_EXTRA_LIBS "")   # engine-specific extra link libraries (populated below)
 
 if(ENGINE STREQUAL "orca")
@@ -112,8 +112,17 @@ elseif(ENGINE STREQUAL "bambu")
   set(SUBLIB_DIR "${ENGINE_ROOT}/src")        # BambuStudio bundles sub-libs under src/
   add_compile_definitions(ENGINE_BAMBU)
   message(STATUS "ENGINE = bambu (BambuStudio)")
+elseif(ENGINE STREQUAL "snapmaker")
+  get_filename_component(ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/SnapmakerOrca" ABSOLUTE)
+  get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/snapmaker"      ABSOLUTE)
+  set(SUBLIB_DIR "${ENGINE_ROOT}/deps_src")   # OrcaSlicer branch: sub-libs under deps_src/
+  # Snapmaker Orca is a Snapmaker fork of OrcaSlicer, so the OrcaSlicer driver
+  # paths are the right ones; ENGINE_SNAPMAKER marks the OrcaSlicer-2.4 APIs the
+  # fork does not have (see the ENGINE_SNAPMAKER guards in main.cpp).
+  add_compile_definitions(ENGINE_ORCA ENGINE_SNAPMAKER)
+  message(STATUS "ENGINE = snapmaker (Snapmaker Orca)")
 else()
-  message(FATAL_ERROR "Unknown ENGINE='${ENGINE}'. Use -DENGINE=bambu or -DENGINE=orca")
+  message(FATAL_ERROR "Unknown ENGINE='${ENGINE}'. Use -DENGINE=bambu, -DENGINE=orca or -DENGINE=snapmaker")
 endif()
 
 get_filename_component(REF_SRC "${ENGINE_ROOT}/src" ABSOLUTE)
@@ -164,7 +173,16 @@ endfunction()
 # ─── System dependencies ────────────────────────────────────────────────────
 find_package(Threads REQUIRED)
 find_package(TBB     REQUIRED)
-find_package(Eigen3  REQUIRED)
+if(ENGINE STREQUAL "snapmaker")
+  # Snapmaker's release build takes its bundled Eigen 3.3.7 (its
+  # CMakeLists.txt 650-658 at bac6fd5: static builds skip find_package and use
+  # deps_src/eigen; its deps/ has no Eigen). Its libigl also needs that Eigen:
+  # DynamicSparseMatrix is gone from Eigen 5.
+  set(EIGEN3_INCLUDE_DIR "${SUBLIB_DIR}/eigen")
+  set(EIGEN3_VERSION_STRING "3.3.7 (Snapmaker's bundled copy)")
+else()
+  find_package(Eigen3  REQUIRED)
+endif()
 find_package(PNG     REQUIRED)
 find_package(ZLIB    REQUIRED)
 find_package(EXPAT   REQUIRED)
@@ -202,7 +220,10 @@ if(DEFINED SLICER_CLI_REQUIRED_BOOST_VERSION AND SLICER_CLI_REQUIRED_BOOST_VERSI
 endif()
 
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
-if(ENGINE STREQUAL "bambu")
+# Snapmaker pins the same CGAL as BambuStudio: the v5.4 source archive with the
+# same SHA-256 and a byte-identical 0001-clang19.patch (deps/CGAL at bac6fd5 and
+# at BambuStudio's pin), so it takes Bambu's CGAL 5.4 package.
+if(ENGINE STREQUAL "bambu" OR ENGINE STREQUAL "snapmaker")
   # install_deps.sh installs Bambu-patched CGAL 5.4 in one of these
   # project-managed prefixes. Prefer them over the system CGAL 6 package so
   # the documented `./install_deps.sh && cmake ..` flow needs no extra flag.
@@ -215,7 +236,11 @@ if(ENGINE STREQUAL "bambu")
         /opt/homebrew/Cellar/cgal@5/5.4/lib/cmake/CGAL
         /usr/local/Cellar/cgal@5/5.4/lib/cmake/CGAL
       NO_DEFAULT_PATH)
-    if(NOT CGAL_FOUND)
+    if(NOT CGAL_FOUND AND ENGINE STREQUAL "snapmaker")
+      message(FATAL_ERROR
+        "Snapmaker Orca v2.4.1 requires the Bambu-patched CGAL 5.4 it pins. "
+        "Run ENGINE=snapmaker ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
+    elseif(NOT CGAL_FOUND)
       message(FATAL_ERROR
         "BambuStudio v02.08.02.61 requires Bambu-patched CGAL 5.4. "
         "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
@@ -386,8 +411,9 @@ elseif(TARGET Eigen3::Eigen)
   endif()
 endif()
 
-# On macOS, Homebrew Eigen may also live here
-if(EXISTS /opt/homebrew/opt/eigen/include/eigen3)
+# On macOS, Homebrew Eigen may also live here (never for Snapmaker, which
+# builds against its own bundled Eigen only).
+if(NOT ENGINE STREQUAL "snapmaker" AND EXISTS /opt/homebrew/opt/eigen/include/eigen3)
   include_directories(SYSTEM /opt/homebrew/opt/eigen/include/eigen3)
 endif()
 
@@ -404,9 +430,25 @@ endif()
 # All sub-libraries are compiled directly from the BambuStudio reference tree.
 # The VENDOR path is used only for the libslic3r override layer.
 #
+# Snapmaker's deps_src/admesh/CMakeLists.txt links a target named `eigen`
+# (deps_src/admesh/CMakeLists.txt:22) that the engine's own deps_src/CMakeLists.txt
+# provides over deps_src/eigen. We add only the sub-libraries we need, so that
+# header-only target is provided here; no other engine links it.
+if(ENGINE STREQUAL "snapmaker" AND NOT TARGET eigen AND EXISTS "${SUBLIB_DIR}/eigen")
+  add_library(eigen INTERFACE)
+  target_include_directories(eigen INTERFACE "${SUBLIB_DIR}/eigen")
+endif()
+
 add_subdirectory("${SUBLIB_DIR}/admesh"      "${CMAKE_CURRENT_BINARY_DIR}/admesh")
 add_subdirectory("${SUBLIB_DIR}/clipper"     "${CMAKE_CURRENT_BINARY_DIR}/clipper")
-add_subdirectory("${SUBLIB_DIR}/clipper2"    "${CMAKE_CURRENT_BINARY_DIR}/clipper2")
+# Snapmaker Orca carries no bundled Clipper2 (its OrcaSlicer base predates the
+# engine's use of it); skip the sub-directory and the link item when absent.
+if(EXISTS "${SUBLIB_DIR}/clipper2/CMakeLists.txt")
+  add_subdirectory("${SUBLIB_DIR}/clipper2"  "${CMAKE_CURRENT_BINARY_DIR}/clipper2")
+  set(SLICER_CLI_CLIPPER2_LIB Clipper2)
+else()
+  set(SLICER_CLI_CLIPPER2_LIB "")
+endif()
 add_subdirectory("${SUBLIB_DIR}/miniz"       "${CMAKE_CURRENT_BINARY_DIR}/miniz")
 add_subdirectory("${SUBLIB_DIR}/glu-libtess" "${CMAKE_CURRENT_BINARY_DIR}/glu-libtess")
 add_subdirectory("${SUBLIB_DIR}/semver"      "${CMAKE_CURRENT_BINARY_DIR}/semver")
@@ -417,7 +459,7 @@ add_subdirectory("${SUBLIB_DIR}/mcut"        "${CMAKE_CURRENT_BINARY_DIR}/mcut")
 # OrcaSlicer's GCode/Thumbnails.cpp compresses thumbnails as JPG (<jpeglib.h>) and
 # QOI (bundled deps_src/qoi). BambuStudio handles thumbnails differently and needs
 # neither. Wire them up only for the Orca engine.
-if(ENGINE STREQUAL "orca")
+if(ENGINE STREQUAL "orca" OR ENGINE STREQUAL "snapmaker")
   find_package(JPEG REQUIRED)
   add_subdirectory("${SUBLIB_DIR}/qoi" "${CMAKE_CURRENT_BINARY_DIR}/qoi")
   list(APPEND ENGINE_EXTRA_LIBS JPEG::JPEG qoi)
@@ -548,10 +590,14 @@ set(NANOSVG_IMPL "${CMAKE_CURRENT_BINARY_DIR}/nanosvg_impl.cpp")
 file(WRITE "${NANOSVG_IMPL}" "#define NANOSVG_IMPLEMENTATION\n#include \"nanosvg/nanosvg.h\"\n")
 
 libslic3r_src(_nsvg "NSVGUtils.cpp")
-list(APPEND LIBSLIC3R_SOURCES
-    "${_nsvg}"
-    "${NANOSVG_IMPL}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/standalone_stubs.cpp")
+list(APPEND LIBSLIC3R_SOURCES "${_nsvg}")
+# Snapmaker Orca compiles the nanosvg implementation from its own
+# src/libslic3r/Format/svg.cpp (`#define NANOSVG_IMPLEMENTATION`, line 1 at
+# bac6fd5), so the generated copy would be a second definition of nsvg__*.
+if(NOT ENGINE STREQUAL "snapmaker")
+  list(APPEND LIBSLIC3R_SOURCES "${NANOSVG_IMPL}")
+endif()
+list(APPEND LIBSLIC3R_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/standalone_stubs.cpp")
 
 # ─── libslic3r_core (main library) ─────────────────────────────────────────
 # Keep engine constructors in the executable's initialization domain so the
@@ -665,9 +711,10 @@ target_include_directories(libslic3r_cgal SYSTEM BEFORE PRIVATE
 
 # CGAL 5.4's ConicCPA2 header uses CGAL_NTS is_zero without including the
 # declaration itself. Bambu's dependency build exposes it transitively; make
-# that requirement explicit only for Bambu's pinned 5.4 build.
+# that requirement explicit only for the pinned 5.4 builds (Bambu's, and
+# Snapmaker's, which pins the same CGAL).
 set(CGAL_54_COMPAT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio/cgal_54_compat.hpp")
-if(ENGINE STREQUAL "bambu")
+if(ENGINE STREQUAL "bambu" OR ENGINE STREQUAL "snapmaker")
     foreach(CGAL_54_CONSUMER IN ITEMS libslic3r_core libslic3r_cgal)
         if(MSVC)
             target_compile_options(${CGAL_54_CONSUMER} PRIVATE "/FI${CGAL_54_COMPAT_HEADER}")
@@ -748,7 +795,7 @@ target_link_libraries(libslic3r_core PUBLIC
     Boost::atomic
     Boost::locale
     clipper
-    Clipper2
+    ${SLICER_CLI_CLIPPER2_LIB}
     nowide
     ${EXPAT_LIBRARIES}
     glu-libtess
@@ -841,8 +888,14 @@ add_library(libslic3r ALIAS libslic3r_core)
 # ─── CLI executable ────────────────────────────────────────────────────────
 add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_plan.cpp
     cli_command_line.cpp cli_flag_support.cpp desktop_presets.cpp cli_model_load.cpp cli_run_steps.cpp cli_load_settings.cpp cli_repetitions.cpp
-    cli_assemble.cpp cli_pipe.cpp cli_failure_reason.cpp)
+    cli_assemble.cpp cli_pipe.cpp cli_failure_reason.cpp cli_snapmaker.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
+# Both engines build a program called slicer_cli; the package renames the
+# OrcaSlicer one to slicer_cli-orcaslicer. Give the Snapmaker build its own name
+# at build time so it is not mistaken for either.
+if(ENGINE STREQUAL "snapmaker")
+  set_target_properties(slicer_cli PROPERTIES OUTPUT_NAME slicer_cli-snapmaker)
+endif()
 target_include_directories(slicer_cli PRIVATE
     "${VENDOR}"
     "${REF_SRC}"

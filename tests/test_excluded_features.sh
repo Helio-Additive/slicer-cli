@@ -88,7 +88,7 @@ skip() { SKIP=$((SKIP + 1)); echo "SKIP [$1] $2"; }
 ENGINE=$("$BINARY" layout capabilities --json 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["engine"])' 2>/dev/null || true)
 case "$ENGINE" in
-    bambu|orca) echo "Engine: $ENGINE" ;;
+    bambu|orca|snapmaker) echo "Engine: $ENGINE" ;;
     *) echo "FAIL [engine-detect] 'layout capabilities --json' gave no engine (got '$ENGINE')"; exit 1 ;;
 esac
 
@@ -105,7 +105,21 @@ esac
 # the gcode_file key, the slice_info plate block). legacy_token_orca.3mf adds the
 # same two `{initial_no_support_filament_id}` lines as legacy_token.3mf to
 # machine_start_gcode and filament_start_gcode.
-if [ "$ENGINE" = orca ]; then FIXTURE_SUFFIX=_orca; else FIXTURE_SUFFIX=; fi
+# The _snapmaker twins are made the same way by slicer_cli-snapmaker (engine
+# bac6fd5) with --printer-preset "Snapmaker U1 (0.4 nozzle)" --process-preset
+# "0.20mm Standard @Snapmaker U1 (0.4 nozzle)" --filament-preset "Generic PLA"
+# --export-3mf calib_base_snapmaker.3mf, with the same stripping and token lines.
+case "$ENGINE" in
+    orca)     FIXTURE_SUFFIX=_orca ;;
+    snapmaker) FIXTURE_SUFFIX=_snapmaker ;;
+    *)        FIXTURE_SUFFIX= ;;
+esac
+
+# Pressure-advance command in the sliced G-code. The Snapmaker fixture's
+# printer (U1) is a Klipper machine, so the engine writes SET_PRESSURE_ADVANCE
+# there instead of M900.
+PA_RE="M900 K[0-9.]+"
+[ "$ENGINE" = snapmaker ] && PA_RE="SET_PRESSURE_ADVANCE ADVANCE=[0-9.]+"
 
 # ── Binary launches ─────────────────────────────────────────────────────────
 check "binary-launches"           0 "Usage"    --help
@@ -165,9 +179,10 @@ if [ -f "$TOKEN_3MF" ]; then
     #     (GCode.cpp:2818, PrintConfig.cpp:10899), so on Orca the opt-out hands the
     #     engine an unknown variable: its placeholder parser refuses the custom
     #     G-code and no G-code is written. That is the engine's own behaviour.
+    #     Snapmaker Orca (bac6fd5) is the same: its parser refuses the token.
     GC=$(mktmp_gcode)
     run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode
-    if [ "$ENGINE" = orca ]; then
+    if [ "$ENGINE" != bambu ]; then
         if [ "$LAST_EXIT" -ne 0 ] \
            && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
            && grep -q "Not a variable name" <<<"$LAST_OUTPUT" \
@@ -256,7 +271,7 @@ if [ -f "$BASE_3MF" ]; then
     # pressure_advance_tower: varying pressure-advance (M900 K) up the tower.
     GC=$(mktmp_gcode)
     run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_tower --calib-start 0 --calib-end 0.1 --calib-step 0.002
-    N=$(distinct_count "$GC" "M900 K[0-9.]+")
+    N=$(distinct_count "$GC" "$PA_RE")
     [ "$LAST_EXIT" -eq 0 ] && [ "${N:-0}" -ge 3 ] \
         && record "calib-pa-tower" 1 \
         || record "calib-pa-tower" 0 "exit=$LAST_EXIT distinct-M900=$N (want exit 0, >=3)"
@@ -265,7 +280,7 @@ if [ -f "$BASE_3MF" ]; then
     # pressure_advance_line: engine builds the line test internally (M900 sweep).
     GC=$(mktmp_gcode)
     run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_line --calib-start 0 --calib-end 0.1 --calib-step 0.002
-    N=$(distinct_count "$GC" "M900 K[0-9.]+")
+    N=$(distinct_count "$GC" "$PA_RE")
     [ "$LAST_EXIT" -eq 0 ] && [ "${N:-0}" -ge 2 ] \
         && record "calib-pa-line" 1 \
         || record "calib-pa-line" 0 "exit=$LAST_EXIT distinct-M900=$N (want exit 0, >=2)"
@@ -278,7 +293,8 @@ if [ -f "$BASE_3MF" ]; then
     # (docs/cli-reference.md, --calib-mode pressure_advance_pattern: "slicer_cli
     # only"); slicer_cli-orcaslicer refuses the mode before any input check.
     PA_PATTERN_SKIP="pressure_advance_pattern is slicer_cli only (docs/cli-reference.md); slicer_cli-orcaslicer refuses the mode"
-    if [ "$ENGINE" = orca ]; then
+    # Snapmaker Orca is an OrcaSlicer fork and refuses the mode the same way.
+    if [ "$ENGINE" != bambu ]; then
         skip "calib-pa-pattern" "$PA_PATTERN_SKIP"
         GC=$(mktmp_gcode)
         run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
@@ -347,7 +363,7 @@ if [ -f "$BASE_3MF" ]; then
 
     # pressure_advance_pattern requires a .3mf --input (it discards the model but
     # needs the embedded config + plate setup). An STL must be rejected.
-    if [ "$ENGINE" = orca ]; then
+    if [ "$ENGINE" != bambu ]; then
         skip "calib-pa-pattern-stl-rejected" "$PA_PATTERN_SKIP"
     else
         STL_TMP=$(mktemp "${TMPDIR:-/tmp}/calib_stl.XXXXXX"); mv "$STL_TMP" "$STL_TMP.stl"; STL_TMP="$STL_TMP.stl"

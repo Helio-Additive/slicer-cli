@@ -5,9 +5,11 @@ are the authority.
 
 ## What this is
 
-A command-line slicer: one front end, two slicing engines. It ships two
-programs, `slicer_cli` (Bambu Studio engine, source pin `926a719`) and
-`slicer_cli-orcaslicer` (OrcaSlicer engine, pin `8500fcd`), for Linux x86_64,
+A command-line slicer: one front end, three slicing engines. It ships three
+programs, `slicer_cli` (Bambu Studio engine, source pin `926a719`),
+`slicer_cli-orcaslicer` (OrcaSlicer engine, pin `8500fcd`) and
+`slicer_cli-snapmaker` (Snapmaker Orca engine, a Snapmaker fork of OrcaSlicer,
+pin `bac6fd5`), for Linux x86_64,
 Linux arm64, macOS arm64 and Windows x86_64. Flags that share a name with the desktop apps'
 own command lines behave the same way.
 
@@ -20,27 +22,32 @@ Read first, and change here rather than copy: [README.md](README.md),
 
 | Path | What it is |
 |-|-|
-| `main.cpp` | The front end: option parsing, run modes, the engine-specific blocks (`ENGINE_BAMBU` / `ENGINE_ORCA`) |
+| `main.cpp` | The front end: option parsing, run modes, the engine-specific blocks (`ENGINE_BAMBU` / `ENGINE_ORCA` / `ENGINE_SNAPMAKER`) |
+| `cli_snapmaker.cpp` | The Snapmaker Orca build's desktop rules (mixed filaments, paint remap, pre-slice checks, the prime tower) and its profile lookup |
 | `cli_command_line.cpp`, `cli_flag_support.cpp` | Flag table, `--help`, the refusal sentences for flags a program does not take |
 | `cli_load_settings.cpp`, `desktop_presets.cpp` | Preset/profile resolution, `inherits` chains, desktop-equivalent selection |
 | `cli_model_load.cpp`, `cli_assemble.cpp`, `cli_run_steps.cpp`, `cli_repetitions.cpp` | Model and 3MF loading, plate assembly, the run itself, repeated plates |
 | `cli_pipe.cpp` | The official Linux progress pipe |
 | `layout_plan.cpp`, `calib_args.cpp`, `startup_logging.cpp` | `--layout` planning, calibration arguments, startup log |
-| `libslic3r/bambustudio/`, `libslic3r/orcaslicer/` | The override layer: files that replace engine source of the same relative path |
-| `references/BambuStudio`, `references/OrcaSlicer` | The pinned engine submodules. Read-only, upstream as-is |
+| `libslic3r/bambustudio/`, `libslic3r/orcaslicer/`, `libslic3r/snapmaker/` | The override layer: files that replace engine source of the same relative path |
+| `references/BambuStudio`, `references/OrcaSlicer`, `references/SnapmakerOrca` | The pinned engine submodules. Read-only, upstream as-is |
 | `tests/` | The test scripts, run against built or packaged programs |
 | `docs/` | `cli-reference.md` (every flag, outputs, `result.json`, event lines, return codes), `building.md` |
 | `ci/` | vcpkg overlay port and patches the build applies |
 | `.github/workflows/slicer-cli-ci.yml` | Build, test, package, release |
 
 The build picks its engine with the CMake cache variable `ENGINE`
-(`-DENGINE=bambu` default, `-DENGINE=orca`; `CMakeLists.txt`), which defines
-`ENGINE_BAMBU` or `ENGINE_ORCA` for the front-end blocks. Both engines build a
-program called `slicer_cli`; packaging renames the OrcaSlicer one.
+(`-DENGINE=bambu` default, `-DENGINE=orca`, `-DENGINE=snapmaker`;
+`CMakeLists.txt`), which defines `ENGINE_BAMBU`, `ENGINE_ORCA`, or
+`ENGINE_ORCA` and `ENGINE_SNAPMAKER` together for the front-end blocks: the
+Snapmaker build is an OrcaSlicer build, and `ENGINE_SNAPMAKER` marks what only
+it does. The Bambu Studio and OrcaSlicer engines build a program called
+`slicer_cli`, and packaging renames the OrcaSlicer one; the Snapmaker engine
+builds `slicer_cli-snapmaker`.
 
 ## Build and test
 
-One engine per build tree; build twice for both. Build per operating system and
+One engine per build tree; build three times for all three. Build per operating system and
 engine by [docs/building.md](docs/building.md): its "Dependencies" and "Configure
 and build" sections carry the pinned versions, the per-platform recipe and the
 prefix each engine needs. The tested recipe is the `Build & Test` job of
@@ -77,17 +84,17 @@ Windows) and the `Package - Linux-x86_64` and `Package - Linux-arm64` jobs. Linu
 put them at the package root, with `.exe` on Windows:
 
 ```sh
-# every OS, both programs, in that order
+# every OS, the first two programs, in that order
 bash tests/test-complete-slice-path.sh <slicer_cli> <slicer_cli-orcaslicer>
-# macOS and Windows; the second program is optional
-bash tests/test-packaged-slice.sh <slicer_cli> [<slicer_cli-orcaslicer>]
+# macOS and Windows; the second and third programs are optional
+bash tests/test-packaged-slice.sh <slicer_cli> [<slicer_cli-orcaslicer> [<slicer_cli-snapmaker>]]
 # macOS only; both programs required
 bash tests/test_list_settings.sh <slicer_cli> <slicer_cli-orcaslicer>
 # Linux package only; takes the package root and checks the bin/ layout
 bash tests/test-portable-bundle.sh <package root>
 ```
 
-`tests/test-complete-slice-path.sh` covers both engines: the flags, plate type
+`tests/test-complete-slice-path.sh` covers the Bambu Studio and OrcaSlicer engines: the flags, plate type
 rules, model formats, `result.json` and exported projects. Flags and outputs are
 documented in [docs/cli-reference.md](docs/cli-reference.md); a first build
 compiles about 1,500 engine files.
@@ -97,7 +104,7 @@ compiles about 1,500 engine files.
 - **Never edit anything under `references/`.** The pinned engine sources stay
   byte-identical upstream so an engine bump stays easy. A `libslic3r` fix goes
   in the override layer — a file at the same relative path under
-  `libslic3r/bambustudio/` or `libslic3r/orcaslicer/`, which CMake compiles in
+  `libslic3r/bambustudio/`, `libslic3r/orcaslicer/` or `libslic3r/snapmaker/`, which CMake compiles in
   place of the engine's file ([CONTRIBUTING.md](CONTRIBUTING.md), "Engine
   source"; docs/building.md, "The override layer") — or in the front end.
   An override freezes its file at the commit it was taken from; a bump has to
@@ -105,17 +112,20 @@ compiles about 1,500 engine files.
 - **Port, don't invent.** Behaviour follows the desktop app's code at the
   pinned references. A commit that ports behaviour cites the upstream file and
   line numbers (`BambuStudio.cpp 1234`, `OrcaSlicer.cpp 1234`).
-- **Both engines, all three operating systems, every change.** No single-OS or
+- **All engines, all three operating systems, every change.** No single-OS or
   single-engine code path. Where the engines differ, follow each engine's own
   code and say which one a line applies to; engine-only code is guarded by
-  `#ifdef ENGINE_ORCA` / `#ifndef ENGINE_ORCA`.
+  `#ifdef ENGINE_ORCA` / `#ifndef ENGINE_ORCA`, and Snapmaker-only code by
+  `#ifdef ENGINE_SNAPMAKER` (in `cli_snapmaker.cpp` where it is more than a
+  branch). A change for the Snapmaker build must leave the other two programs'
+  output as it was.
 - **New behaviour gets a new flag; an existing flag keeps its meaning.** What
   the program prints — messages, event kinds and tags, `result.json` keys,
   return codes — is read by other programs: add, never change.
 - **Refusals are clear sentences that say what to do**, and name the program
   that fits when the other engine does (`cli_flag_support.cpp`): a flag a
   program does not take is refused by name, before anything loads, and points
-  at `slicer_cli` and `slicer_cli-orcaslicer` as appropriate.
+  at `slicer_cli`, `slicer_cli-orcaslicer` or `slicer_cli-snapmaker` as appropriate.
 - **A test proves its fix:** it fails before the change and passes after.
 - **No machine-specific paths, hostnames or internal names** in code, docs or
   commits. This repository is public.

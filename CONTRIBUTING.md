@@ -35,13 +35,16 @@ Not accepted for now:
   pin.
 - Changes that break the release packages or their tests on any platform.
 
-## Both engines
+## All engines
 
-Every change to how slicing behaves must work in both programs, `slicer_cli`
-(Bambu Studio engine) and `slicer_cli-orcaslicer` (OrcaSlicer engine), on
-Linux, macOS and Windows. Where the engines differ, follow each engine's own
-code and say which one a line applies to. Code that only one engine compiles
-goes under `#ifdef ENGINE_ORCA` / `#ifndef ENGINE_ORCA`.
+Every change to how slicing behaves must work in all three programs,
+`slicer_cli` (Bambu Studio engine), `slicer_cli-orcaslicer` (OrcaSlicer engine)
+and `slicer_cli-snapmaker` (Snapmaker Orca engine), on Linux, macOS and
+Windows. Where the engines differ, follow each engine's own code and say which
+one a line applies to. Code that only one engine compiles goes under
+`#ifdef ENGINE_ORCA` / `#ifndef ENGINE_ORCA`; the Snapmaker build defines
+`ENGINE_ORCA` too, and code only it compiles goes under
+`#ifdef ENGINE_SNAPMAKER`.
 
 Text that slicer-cli prints while it runs (stdout, stderr, event lines,
 `result.json`) is read by other programs. Do not change existing messages,
@@ -50,15 +53,16 @@ ones instead.
 
 ## Engine source
 
-The engine source (`references/BambuStudio`, `references/OrcaSlicer`) is not
-edited. To change a `libslic3r` file for the command-line build, add a file
-at the same relative path under `libslic3r/bambustudio/libslic3r/` or
-`libslic3r/orcaslicer/libslic3r/`; CMake compiles it in place of the engine's
+The engine source (`references/BambuStudio`, `references/OrcaSlicer`,
+`references/SnapmakerOrca`) is not edited. To change a `libslic3r` file for the
+command-line build, add a file at the same relative path under
+`libslic3r/bambustudio/libslic3r/`, `libslic3r/orcaslicer/libslic3r/` or
+`libslic3r/snapmaker/libslic3r/`; CMake compiles it in place of the engine's
 file. See "The override layer" in [docs/building.md](docs/building.md).
 
 ## CI requirements
 
-PRs must build and pass the tests on every platform, for both engines:
+PRs must build and pass the tests on every platform, for all three engines:
 - Linux x86_64
 - Linux arm64
 - macOS arm64
@@ -71,5 +75,5 @@ The workflow is `.github/workflows/slicer-cli-ci.yml`. To build locally, see
 
 C++17, the same conventions as the engine source. New command-line code goes
 in its own files (`cli_*.cpp`), not in `main.cpp`. Comments cite the engine
-lines a behaviour comes from as `BambuStudio.cpp 1234` or `OrcaSlicer.cpp
-1234`, at the pinned commits.
+lines a behaviour comes from as `BambuStudio.cpp 1234`, `OrcaSlicer.cpp 1234`
+or `Snapmaker_Orca.cpp:1234`, at the pinned commits.

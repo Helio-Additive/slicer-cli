@@ -58,6 +58,11 @@ struct CliOptions {
     bool        progress    = false;
     // Official overrides of the refusals below (BambuStudio.cpp: allow_newer_file).
     bool        allow_newer_file   = false;
+#ifdef ENGINE_SNAPMAKER
+    // --allow-mix-temp: this build's own switch for the desktop's high/low
+    // temperature rule (Snapmaker's engine has no allow_mix_temp setting).
+    bool        allow_mix_temp     = false;
+#endif
     bool        allow_substitution = false;
     // --arrange N, official meaning (BambuStudio.cpp 5066-5081 at 5873b5f):
     // 0 = do not arrange, 1 = arrange, any other value = automatic. -1 = not given.

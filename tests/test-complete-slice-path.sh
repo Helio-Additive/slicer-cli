@@ -106,10 +106,17 @@ import json; d = json.load(open("info.json"))
 assert d["printer_model"] == "Bambu Lab X1 Carbon", d
 assert "slicer_cli" in d["fits"], d
 '
+# A Snapmaker U1 file (made by Bambu Studio here) fits the OrcaSlicer engine
+# and, when the package carries it, the Snapmaker one, which is recommended:
+# no fitting engine made the file and the U1 is one of Snapmaker's own.
 "$B" --engine-info u1.3mf > info-u1.json
 py '
 import json; d = json.load(open("info-u1.json"))
-assert d["fits"] == ["slicer_cli-orcaslicer"], d
+snap = [e for e in d["engines"] if e["binary"] == "slicer_cli-snapmaker"]
+assert len(snap) == 1 and [e["binary"] for e in d["engines"]][:2] == ["slicer_cli", "slicer_cli-orcaslicer"], d
+want = ["slicer_cli-orcaslicer"] + (["slicer_cli-snapmaker"] if snap[0]["catalog_found"] else [])
+assert d["fits"] == want, d
+assert d["recommended"] == want[-1], d
 '
 # The kind comes from the final extension, any case, not from a folder name.
 mkdir -p "dir.stl"
@@ -1681,7 +1688,9 @@ py '
 import json
 d = json.load(open("ei-obj.json"));  assert d["kind"] == "obj", d
 d = json.load(open("ei-a1m.json"));  assert d["kind"] == "obj" and d["printer_model"] == "Bambu Lab A1 mini" and "slicer_cli" in d["fits"], d
-d = json.load(open("ei-u1.json"));   assert d["printer_model"] == "Snapmaker U1" and d["fits"] == ["slicer_cli-orcaslicer"] and d["recommended"] == "slicer_cli-orcaslicer", d
+d = json.load(open("ei-u1.json"));   snap = d["engines"][2]["catalog_found"]
+assert d["printer_model"] == "Snapmaker U1" and d["fits"][0] == "slicer_cli-orcaslicer", d
+assert d["recommended"] == ("slicer_cli-snapmaker" if snap else "slicer_cli-orcaslicer"), d
 '
 echo "PASS: --engine-info reports model kinds and the printer of --printer-preset"
 
