@@ -615,6 +615,43 @@ void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model
                     if (volume != nullptr)
                         volume->remap_extruder_ids(paint_total, state_map);
             paint_remapped = true;
+            // The desktop remaps only the paint: an object or volume
+            // selector keeps its number and gets the range check below
+            // (GUI_ObjectList.cpp:749-791, 1079-1092 at bac6fd5). A kept
+            // number whose filament moved or was dropped now names a
+            // different filament; the slice keeps the desktop's choice
+            // and says so.
+            json moved = json::array();
+            for (size_t oi = 0; oi < model.objects.size(); ++oi) {
+                const ModelObject* object = model.objects[oi];
+                if (object == nullptr) continue;
+                auto check = [&](const ModelConfigObject& cfg, const std::string& where) {
+                    for (const char* key : {"extruder", "wall_filament", "sparse_infill_filament",
+                                            "solid_infill_filament", "support_filament",
+                                            "support_interface_filament"}) {
+                        if (!cfg.has(key)) continue;
+                        const int id = cfg.opt_int(key);
+                        if (id <= 0 || (size_t) id > paint_total) continue;
+                        const unsigned int to = (size_t) id < id_remap.size() ? id_remap[id] : 0;
+                        if (to == (unsigned int) id) continue;
+                        moved.push_back({{"where", where}, {"key", key}, {"filament", id},
+                                         {"old_filament_now", to == 0 || to > paint_total ? json(nullptr)
+                                                                                          : json(int(to))}});
+                    }
+                };
+                check(object->config, "object " + std::to_string(oi + 1));
+                for (size_t vi = 0; vi < object->volumes.size(); ++vi)
+                    if (object->volumes[vi] != nullptr)
+                        check(object->volumes[vi]->config,
+                              "object " + std::to_string(oi + 1) + " volume " + std::to_string(vi + 1));
+            }
+            if (!moved.empty())
+                emit({{"event","warning"}, {"tag","FilamentSelectorNowNamesOtherFilament"},
+                            {"plate_id", plate_id}, {"selectors", moved},
+                            {"message","After the switch, " + std::to_string(moved.size()) +
+                                       " object filament selection(s) keep their number, but that number now"
+                                       " names a different filament (see selectors). The desktop does the same;"
+                                       " set the object's filament again if this is not wanted"}});
         }
         // Finding 7: with fewer filaments, an index that was in range
         // at load can be out of range now; the same reset runs again.
