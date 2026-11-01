@@ -646,8 +646,10 @@ void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model
                               "object " + std::to_string(oi + 1) + " volume " + std::to_string(vi + 1));
             }
             if (!moved.empty())
+                // Once per run, over every object of the shared model, so
+                // it names no plate.
                 emit({{"event","warning"}, {"tag","FilamentSelectorNowNamesOtherFilament"},
-                            {"plate_id", plate_id}, {"selectors", moved},
+                            {"selectors", moved},
                             {"message","After the switch, " + std::to_string(moved.size()) +
                                        " object filament selection(s) keep their number, but that number now"
                                        " names a different filament (see selectors). The desktop does the same;"
