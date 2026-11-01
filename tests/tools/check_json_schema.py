@@ -18,7 +18,10 @@ TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "null": 
 
 def is_type(v, t):
     if t in ("integer", "number"):
-        return not isinstance(v, bool) and (isinstance(v, int) if t == "integer" else isinstance(v, (int, float)))
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return False
+        # Draft 2020-12: a number with no fractional part is an integer (1.0).
+        return t == "number" or isinstance(v, int) or v.is_integer()
     return isinstance(v, TYPES[t])
 
 
