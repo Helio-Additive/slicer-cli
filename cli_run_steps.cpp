@@ -333,6 +333,10 @@ PlateLoopSwitches plate_loop_switches(const CliOptions& o) {
     if (o.given_flag("mstpp"))  s.max_slicing_time_s = cfg.opt_int("mstpp");
     if (o.given_flag("no_check")) s.no_check = cfg.opt_bool("no_check");
     if (o.given_flag("allow_mix_temp")) s.allow_mix_temp = cfg.opt_bool("allow_mix_temp");
+#ifdef ENGINE_SNAPMAKER
+    // This engine has no allow_mix_temp setting, so the switch is our own flag.
+    if (o.allow_mix_temp) s.allow_mix_temp = true;
+#endif
     if (o.given_flag("normative_check")) s.normative_check = cfg.opt_bool("normative_check");
     if (o.given_flag("min_save")) s.min_save = cfg.opt_bool("min_save");
     return s;

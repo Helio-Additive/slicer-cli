@@ -1,6 +1,10 @@
 // desktop_presets.cpp — see desktop_presets.hpp.
 #include "desktop_presets.hpp"
 
+#ifdef ENGINE_ORCA
+#include "cli_events.hpp"   // rename_to_current's PresetRenamed event
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -42,12 +46,20 @@ std::vector<Slic3r::BedType> offered_bed_types(const Slic3r::VendorProfile::Prin
     if (def == nullptr)
         return out;
     int index = 0;
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca's PrinterModel carries no not_support_bed_types
+    // (references/SnapmakerOrca/src/libslic3r/Preset.hpp:111 at bac6fd5), so no
+    // bed type is excluded for a model and every label is offered.
+    (void)pm;
+#endif
     for (const std::string& label : def->enum_labels) {
         ++index;
+#ifndef ENGINE_SNAPMAKER
         if (pm && def->enum_keys_map &&
             std::find(pm->not_support_bed_types.begin(), pm->not_support_bed_types.end(), label) !=
                 pm->not_support_bed_types.end())
             continue;
+#endif
         out.push_back(Slic3r::BedType(index));
     }
     return out;
@@ -646,5 +658,120 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
     // which is not that preset.
     return out;
 }
+
+#ifdef ENGINE_ORCA
+/// A preset named by a name its system preset has since been renamed from is
+/// that preset, as the desktop resolves it: load_presets builds the map from
+/// every system preset's "renamed_from" list (PresetBundle::update_system_maps,
+/// OrcaSlicer PresetBundle.cpp 2437-2447 at 8500fcd / Snapmaker 1651-1655 at
+/// bac6fd5) and a lookup by an old name goes through it
+/// (PresetCollection::get_preset_name_renamed; OrcaSlicer find_preset,
+/// Preset.cpp 3218-3225). The names given are rewritten to the current ones
+/// once, so every later use sees the preset the slice runs with, and an event
+/// tells the caller the current name.
+/// Rewrites `name` to its preset's current name and returns the old one, or
+/// returns empty when `name` is current or unknown. `announce` emits the
+/// PresetRenamed event; a JSON document mode (--list-presets) reports the
+/// rename in its own document instead, so stdout stays one JSON value.
+std::string rename_to_current(Slic3r::PresetCollection& collection, std::string& name, const char* kind,
+                              bool announce) {
+    if (name.empty()) return {};
+    if (const Slic3r::Preset* p = collection.find_preset(name, false); p != nullptr && p->name == name) return {};
+    const std::string* current = collection.get_preset_name_renamed(name);
+    if (current == nullptr || *current == name) return {};
+    if (announce)
+        emit({{"event","warning"}, {"tag","PresetRenamed"}, {"kind", kind},
+                    {"old_name", name}, {"name", *current},
+                    {"message", std::string(kind) + " preset '" + name + "' is now called '" + *current +
+                                "'; it was used under its current name. Pass the current name next time."}});
+    std::string old = name;
+    name = *current;
+    return old;
+}
+
+void apply_preset_renames(std::string& printer, std::string& process, std::vector<std::string>& filaments,
+                          Slic3r::PresetBundle& bundle) {
+    rename_to_current(bundle.printers, printer, "printer");
+    rename_to_current(bundle.prints, process, "process");
+    for (std::string& name : filaments)
+        rename_to_current(bundle.filaments, name, "filament");
+}
+#endif
+
+#ifdef ENGINE_SNAPMAKER
+std::string declared_with_mm_unit(const std::string& declared) {
+    const size_t space = declared.find(' ');
+    if (space == std::string::npos)
+        return declared;
+    const std::string head = declared.substr(0, space);
+    if (head.empty() || head.find_first_not_of("0123456789.") != std::string::npos)
+        return declared;
+    return head + "mm" + declared.substr(space);
+}
+
+std::string snapmaker_stated_default_process(const Slic3r::PresetCollection& prints, const std::string& declared,
+                                             bool (*is_listed_preset)(const Slic3r::Preset&)) {
+    // Snapmaker's own machine JSON names its default process without the "mm"
+    // the tree's process presets carry: "Snapmaker U1 (0.4 nozzle).json" states
+    // default_print_profile "0.20 Standard @Snapmaker U1 (0.4 nozzle)" while
+    // process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json is the preset.
+    // Snapmaker's own matcher compares names exactly (PreferedProfileMatch,
+    // PresetBundle.cpp:4140-4152 at bac6fd5), so taking the stated default
+    // means reading its number the way the presets spell it.
+    if (!declared.empty()) {
+        const std::string wanted = declared_with_mm_unit(declared);
+        for (const Slic3r::Preset& p : prints) {
+            if (!is_listed_preset(p) || !p.is_compatible) continue;
+            if (p.name == declared || p.name == wanted) {
+                const_cast<Slic3r::Preset&>(p).is_visible = true;
+                return p.name;
+            }
+        }
+    }
+    return {};
+}
+
+std::string snapmaker_default_material(const Slic3r::PresetCollection& filaments, const std::vector<std::string>& declared,
+                                       bool (*is_listed_preset)(const Slic3r::Preset&)) {
+    // The Snapmaker tree names "Snapmaker PLA" as the U1's default filament
+    // (machine/fdm_toolchanger.json default_filament_profile, inherited by
+    // machine/Snapmaker U1 (0.4 nozzle).json), but that preset's own
+    // compatible_printers lists the A-series printers only, so it is not one
+    // the U1 can print with. The printer's default therefore means its default
+    // material: the first compatible preset of this tree with the same
+    // filament_type, never another vendor's filament taken by collection order.
+    if (!declared.empty()) {
+        const Slic3r::Preset* wanted = filaments.find_preset(declared.front(), false);
+        // filament_type is a per-filament list (coStrings), as the desktop reads
+        // it (Plater.cpp:22874-22879 at bac6fd5): its first entry.
+        std::string wanted_type;
+        if (wanted != nullptr)
+            if (const auto* types = wanted->config.option<Slic3r::ConfigOptionStrings>("filament_type");
+                types != nullptr && !types->values.empty())
+                wanted_type = types->values.front();
+        if (!wanted_type.empty()) {
+            // Same vendor as the declared preset, so the printer's default
+            // material is one of its own maker's filaments and never another
+            // vendor's preset taken by collection order.
+            const Slic3r::VendorProfile* const wanted_vendor = wanted->vendor;
+            for (const Slic3r::Preset& p : filaments) {
+                if (!is_listed_preset(p) || !p.is_compatible) continue;
+                if (wanted_vendor != nullptr && p.vendor != wanted_vendor) continue;
+                const auto* types = p.config.option<Slic3r::ConfigOptionStrings>("filament_type");
+                if (types == nullptr || types->values.empty() || types->values.front() != wanted_type) continue;
+                const_cast<Slic3r::Preset&>(p).is_visible = true;
+                return p.name;
+            }
+        }
+    }
+    return {};
+}
+#endif
+
+#ifdef ENGINE_SNAPMAKER
+bool preset_shipped_or_renamed(const Slic3r::PresetCollection& collection, const std::string& name) {
+    return collection.find_preset(name, false) != nullptr || collection.get_preset_name_renamed(name) != nullptr;
+}
+#endif
 
 } // namespace slicer_cli

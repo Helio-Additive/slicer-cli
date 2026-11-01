@@ -3,13 +3,15 @@
 Flags that share a name with Bambu Studio's or OrcaSlicer's own command line
 behave the same way.
 
-A package holds two programs. `slicer_cli` slices with the Bambu Studio
-engine, `slicer_cli-orcaslicer` with the OrcaSlicer engine. The "Works in"
-column of each table names the program that takes the flag:
+A package holds three programs. `slicer_cli` slices with the Bambu Studio
+engine, `slicer_cli-orcaslicer` with the OrcaSlicer engine and
+`slicer_cli-snapmaker` with the Snapmaker Orca engine. The "Works in" column of
+each table names the programs that take the flag:
 
-- both binaries
+- all binaries
 - slicer_cli only (Bambu Studio engine)
-- slicer_cli-orcaslicer only
+- slicer_cli-orcaslicer and slicer_cli-snapmaker (the OrcaSlicer engines)
+- slicer_cli and slicer_cli-orcaslicer
 
 A flag that a program does not take is refused by name, with the program that
 has it, before anything is loaded.
@@ -46,11 +48,11 @@ OrcaSlicer or slicer-cli) comes first; other files are added to its plate.
 
 | Kind | Extensions | Works in |
 |-|-|-|
-| Project or geometry 3MF | `.3mf` | both binaries |
-| STL, OBJ, AMF | `.stl`, `.obj`, `.amf` | both binaries |
-| STEP | `.step`, `.stp` | both binaries |
+| Project or geometry 3MF | `.3mf` | all binaries |
+| STL, OBJ, AMF | `.stl`, `.obj`, `.amf` | all binaries |
+| STEP | `.step`, `.stp` | all binaries |
 | glTF, FBX | `.glb`, `.gltf`, `.fbx` | slicer_cli only (Bambu Studio engine) |
-| SVG | `.svg` | slicer_cli-orcaslicer only |
+| SVG | `.svg` | slicer_cli-orcaslicer and slicer_cli-snapmaker (the OrcaSlicer engines) |
 
 A project 3MF brings its printer, process, filaments and plates. Any other
 file needs a printer: name one with `--printer-preset`, or give settings files
@@ -176,32 +178,50 @@ flag takes its value as the next word or after `=`.
 
 | Flag | Value | What it does | Works in |
 |-|-|-|-|
-| `-o`, `--output` | file | G-code file of the default call (default `output.gcode`) | both binaries |
-| `--plate` | N | Default call: the plate of a 3MF to slice (1-based) | both binaries |
-| `--printer-preset` | name | A printer system preset by name, every parent applied; on a project 3MF, the printer the project moves to | both binaries |
-| `--process-preset` | name | A process system preset by name (default: the printer's) | both binaries |
-| `--filament-preset` | name | A filament system preset by name; repeat for more filaments | both binaries |
-| `--machine` | file | A printer settings file (JSON) | both binaries |
-| `--process` | file | A process settings file (JSON) | both binaries |
-| `--filament` | file | A filament settings file (JSON) | both binaries |
-| `--config` | file | A settings bundle (JSON) | both binaries |
-| `--load-settings` | "machine.json;process.json" | Printer and process settings files, merged over the project's | both binaries |
-| `--load-filaments` | "f1.json;f2.json;..." | Filament settings files, one per filament | both binaries |
-| `--load-defaultfila` | `=0` or `=1` | Use the first filament file for filaments without one | both binaries |
-| `--uptodate` | | Update the project's settings to the current system presets | both binaries |
-| `--uptodate-settings` | "machine.json;process.json" | The system printer and process files for `--uptodate` | both binaries |
-| `--uptodate-filaments` | "f1.json;..." | The system filament files for `--uptodate` | both binaries |
+| `-o`, `--output` | file | G-code file of the default call (default `output.gcode`) | all binaries |
+| `--plate` | N | Default call: the plate of a 3MF to slice (1-based) | all binaries |
+| `--printer-preset` | name | A printer system preset by name, every parent applied; on a project 3MF, the printer the project moves to | all binaries |
+| `--process-preset` | name | A process system preset by name (default: the printer's) | all binaries |
+| `--filament-preset` | name | A filament system preset by name; repeat for more filaments | all binaries |
+| `--machine` | file | A printer settings file (JSON) | all binaries |
+| `--process` | file | A process settings file (JSON) | all binaries |
+| `--filament` | file | A filament settings file (JSON) | all binaries |
+| `--config` | file | A settings bundle (JSON) | all binaries |
+| `--load-settings` | "machine.json;process.json" | Printer and process settings files, merged over the project's | all binaries |
+| `--load-filaments` | "f1.json;f2.json;..." | Filament settings files, one per filament | all binaries |
+| `--load-defaultfila` | `=0` or `=1` | Use the first filament file for filaments without one | all binaries |
+| `--uptodate` | | Update the project's settings to the current system presets | all binaries |
+| `--uptodate-settings` | "machine.json;process.json" | The system printer and process files for `--uptodate` | all binaries |
+| `--uptodate-filaments` | "f1.json;..." | The system filament files for `--uptodate` | all binaries |
 | `--estimate-mode` | | After a printer change, fill filament presets and extruder state for an estimate | slicer_cli only (Bambu Studio engine) |
-| `--load-filament-ids` | "1,2,3" | The filament of each loaded object | both binaries |
-| `--clone-objects` | "1,3" | Copies of each loaded object | both binaries |
-| `--load-custom-gcodes` | file | Plate custom G-code (tool changes, pauses) from JSON | both binaries |
-| `--skip-modified-gcodes` | `=0` or `=1` | Keep the system presets' G-code where the project changed it | both binaries |
-| `--allow-newer-file` | `=0` or `=1` | Slice a 3MF saved by a newer app version | both binaries |
-| `--allow-substitution` | | With `--slice`: slice a 3MF whose values this engine has to substitute | both binaries |
-| `--datadir` | folder | Accepted; no effect (slicer-cli keeps no settings between runs) | both binaries |
+| `--load-filament-ids` | "1,2,3" | The filament of each loaded object | all binaries |
+| `--clone-objects` | "1,3" | Copies of each loaded object | all binaries |
+| `--load-custom-gcodes` | file | Plate custom G-code (tool changes, pauses) from JSON | all binaries |
+| `--skip-modified-gcodes` | `=0` or `=1` | Keep the system presets' G-code where the project changed it | all binaries |
+| `--allow-newer-file` | `=0` or `=1` | Slice a 3MF saved by a newer app version | all binaries |
+| `--allow-substitution` | | With `--slice`: slice a 3MF whose values this engine has to substitute | all binaries |
+| `--datadir` | folder | Accepted; no effect (slicer-cli keeps no settings between runs) | all binaries |
 
 Settings priority, highest first: setting flags on the command line, then
 `--load-settings` and `--load-filaments`, then the 3MF.
+
+`SNAPMAKER_ORCA_ALLOW_NEWER_FILE` (in the `slicer_cli-snapmaker` binary only):
+any value but empty or `0` turns on `--allow-newer-file`, as Snapmaker Orca's
+own CLI does (`Snapmaker_Orca.cpp:1274-1279`). It prints
+`Forcing CLI newer-file compatibility from SNAPMAKER_ORCA_ALLOW_NEWER_FILE` to
+stderr.
+
+A refusal that a flag gets past says so in its own sentence: a file newer than
+the engine names `--allow-newer-file`, and a value this engine does not know
+names the setting's own flag (`--<setting> <value>`) and `--allow-substitution`,
+which lets the engine use its own default instead.
+
+`--allow-mix-temp` in the `slicer_cli-snapmaker` binary: slice a plate whose
+filaments mix high- and low-temperature materials. Snapmaker Orca's engine has
+no `allow_mix_temp` setting, so this build takes the desktop's rule (a used
+filament flagged `filament_is_high_temperature` next to one that is not) as a
+refusal, code `-62`, and this flag lifts it. It is read as the other builds
+read theirs: bare or `=1` lifts the refusal, `=0` keeps it.
 
 A project moved to a printer with another bed (a machine file in
 `--load-settings`) has its plate moved onto the new bed, as the official
@@ -253,32 +273,32 @@ These older shortcuts set one setting each and keep working:
 
 | Flag | Value | Sets | Works in |
 |-|-|-|-|
-| `--infill` | percent | `sparse_infill_density` | both binaries |
-| `--perimeters` | N | `wall_loops` | both binaries |
-| `--nozzle` | mm | `nozzle_diameter` | both binaries |
-| `--temp` | °C | `nozzle_temperature` | both binaries |
-| `--bed-temp` | °C | `bed_temperature` | both binaries |
+| `--infill` | percent | `sparse_infill_density` | all binaries |
+| `--perimeters` | N | `wall_loops` | all binaries |
+| `--nozzle` | mm | `nozzle_diameter` | all binaries |
+| `--temp` | °C | `nozzle_temperature` | all binaries |
+| `--bed-temp` | °C | `bed_temperature` | all binaries |
 
 ### Slicing and plates
 
 | Flag | Value | What it does | Works in |
 |-|-|-|-|
-| `--slice` | 0 or N | Slice every plate (0) or plate N; writes `plate_N.gcode` and `result.json` | both binaries |
-| `--outputdir` | folder | Where `--slice` writes (default: the current folder) | both binaries |
-| `--skip-objects` | "3,5,10" | Leave out the objects with these ids (the 3MF's object ids) | both binaries |
-| `--mtcpp` | count | Refuse a plate with more triangles (-59) | both binaries |
-| `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | both binaries |
-| `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | both binaries |
-| `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate | both binaries |
-| `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19), or with a mixed filament (-25, Bambu Studio). On by default with `--slice` | both binaries |
-| `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | both binaries |
-| `--load-slicedata` | folder | Slice each plate from the slicing data saved in `<folder>/<plate>`; a plate without usable data is sliced normally | both binaries |
-| `--export-slicedata` | folder | Save each plate's slicing data in `<folder>/<plate>` | both binaries |
-| `--downward-check` | | List the other printers the plates also fit on, in `result.json` | both binaries |
-| `--downward-settings` | "m1.json;m2.json" | The printers (system machine files) for `--downward-check` | both binaries |
-| `--progress` | | Progress events (on with `--slice`) | both binaries |
-| `--load-assemble-list` | file.json | Build the plates from a JSON list of STL and OBJ parts, then slice every plate (needs `--slice`) | both binaries |
-| `--pipe` | name | Linux only: write the official progress lines into the named pipe (a FIFO the caller made and reads) | both binaries |
+| `--slice` | 0 or N | Slice every plate (0) or plate N; writes `plate_N.gcode` and `result.json` | all binaries |
+| `--outputdir` | folder | Where `--slice` writes (default: the current folder) | all binaries |
+| `--skip-objects` | "3,5,10" | Leave out the objects with these ids (the 3MF's object ids) | all binaries |
+| `--mtcpp` | count | Refuse a plate with more triangles (-59) | all binaries |
+| `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | all binaries |
+| `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | all binaries |
+| `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate | all binaries |
+| `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19), or with a mixed filament (-25, Bambu Studio). On by default with `--slice` | all binaries |
+| `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | all binaries |
+| `--load-slicedata` | folder | Slice each plate from the slicing data saved in `<folder>/<plate>`; a plate without usable data is sliced normally | all binaries |
+| `--export-slicedata` | folder | Save each plate's slicing data in `<folder>/<plate>` | all binaries |
+| `--downward-check` | | List the other printers the plates also fit on, in `result.json` | slicer_cli and slicer_cli-orcaslicer |
+| `--downward-settings` | "m1.json;m2.json" | The printers (system machine files) for `--downward-check` | slicer_cli and slicer_cli-orcaslicer |
+| `--progress` | | Progress events (on with `--slice`) | all binaries |
+| `--load-assemble-list` | file.json | Build the plates from a JSON list of STL and OBJ parts, then slice every plate (needs `--slice`) | all binaries |
+| `--pipe` | name | Linux only: write the official progress lines into the named pipe (a FIFO the caller made and reads) | all binaries |
 
 `--load-slicedata` is refused with `--repetitions`; slicer_cli-orcaslicer also
 refuses it together with `--export-slicedata`, as OrcaSlicer's command line
@@ -298,39 +318,39 @@ Transforms run in the order given, before the objects are placed.
 
 | Flag | Value | What it does | Works in |
 |-|-|-|-|
-| `--scale` | factor | Scale every object | both binaries |
-| `--rotate` | degrees | Rotate every object around Z | both binaries |
-| `--rotate-x` | degrees | Rotate every object around X | both binaries |
-| `--rotate-y` | degrees | Rotate every object around Y | both binaries |
-| `--orient` | 0 or 1 | Turn each object to its best printing face | both binaries |
-| `--assemble` | | Merge the model files into one object | both binaries |
-| `--convert-unit` | | Convert a model saved in meters or inches to mm | both binaries |
-| `--ensure-on-bed` | | Lift an object that is partly below the bed | both binaries |
-| `--repetitions` | count | Print the plate's objects this many times in all (count - 1 copies), as many as fit; needs `--slice N` | both binaries |
-| `--arrange` | 0, 1 or other | 0: keep the positions (a model file keeps its own coordinates); 1: arrange the plate (needs `--slice`); other or not given: with `--slice`, model files with more than one object are arranged | both binaries |
-| `--allow-rotations` | | Let the arrange turn objects (off by default) | both binaries |
-| `--allow-multicolor-oneplate` | | Let the arrange put several colours on one plate (on by default) | both binaries |
-| `--avoid-extrusion-cali-region` | | Keep the arrange off the extrusion calibration area | both binaries |
+| `--scale` | factor | Scale every object | all binaries |
+| `--rotate` | degrees | Rotate every object around Z | all binaries |
+| `--rotate-x` | degrees | Rotate every object around X | all binaries |
+| `--rotate-y` | degrees | Rotate every object around Y | all binaries |
+| `--orient` | 0 or 1 | Turn each object to its best printing face | all binaries |
+| `--assemble` | | Merge the model files into one object | all binaries |
+| `--convert-unit` | | Convert a model saved in meters or inches to mm | all binaries |
+| `--ensure-on-bed` | | Lift an object that is partly below the bed | all binaries |
+| `--repetitions` | count | Print the plate's objects this many times in all (count - 1 copies), as many as fit; needs `--slice N` | all binaries |
+| `--arrange` | 0, 1 or other | 0: keep the positions (a model file keeps its own coordinates); 1: arrange the plate (needs `--slice`); other or not given: with `--slice`, model files with more than one object are arranged | all binaries |
+| `--allow-rotations` | | Let the arrange turn objects (off by default) | all binaries |
+| `--allow-multicolor-oneplate` | | Let the arrange put several colours on one plate (on by default) | all binaries |
+| `--avoid-extrusion-cali-region` | | Keep the arrange off the extrusion calibration area | all binaries |
 
 ### Exports and reports
 
 | Flag | Value | What it does | Works in |
 |-|-|-|-|
-| `--export-3mf` | file | With `--slice`: the sliced project, written into `--outputdir`; a name that would overwrite one of the run's own input files (`../project.3mf` onto the input project itself, or a file a model's loader reads beside it, such as the `.mtl` an OBJ's `mtllib` names), or a file the run writes (`result.json`, `plate_N.gcode`, the `--export-settings` file, an `--export-stl`/`--export-stls` object STL, anything under `--export-slicedata`), is refused (-2), as is a name that differs from one of the run's own outputs only by letter case. An input is overwritten only when the name is that file, so `../PART.STL` beside an input `part.stl` writes where the file system tells the two apart (Linux). The same check runs, with or without `--export-3mf`, between any two files a run writes (`result.json`, the plates' G-code, `-o`, `--export-settings`, `--export-stl`/`--export-stls`, `--export-slicedata`) and between each of them and the run's inputs, before anything is sliced | both binaries |
-| `--min-save` | `=0` or `=1` | Write the 3MF without the model geometry | both binaries |
-| `--metadata-name` | "n1;n2" | Metadata names for the 3MF (pair with `--metadata-value`) | both binaries |
-| `--metadata-value` | "v1;v2" | Metadata values for the 3MF | both binaries |
-| `--makerlab-name` | name | MakerLab name in the 3MF | both binaries |
-| `--makerlab-version` | version | MakerLab version in the 3MF | both binaries |
+| `--export-3mf` | file | With `--slice`: the sliced project, written into `--outputdir`; a name that would overwrite one of the run's own input files (`../project.3mf` onto the input project itself, or a file a model's loader reads beside it, such as the `.mtl` an OBJ's `mtllib` names), or a file the run writes (`result.json`, `plate_N.gcode`, the `--export-settings` file, an `--export-stl`/`--export-stls` object STL, anything under `--export-slicedata`), is refused (-2), as is a name that differs from one of the run's own outputs only by letter case. An input is overwritten only when the name is that file, so `../PART.STL` beside an input `part.stl` writes where the file system tells the two apart (Linux). The same check runs, with or without `--export-3mf`, between any two files a run writes (`result.json`, the plates' G-code, `-o`, `--export-settings`, `--export-stl`/`--export-stls`, `--export-slicedata`) and between each of them and the run's inputs, before anything is sliced | all binaries |
+| `--min-save` | `=0` or `=1` | Write the 3MF without the model geometry | all binaries |
+| `--metadata-name` | "n1;n2" | Metadata names for the 3MF (pair with `--metadata-value`) | all binaries |
+| `--metadata-value` | "v1;v2" | Metadata values for the 3MF | all binaries |
+| `--makerlab-name` | name | MakerLab name in the 3MF | all binaries |
+| `--makerlab-version` | version | MakerLab version in the 3MF | all binaries |
 | `--skip-useless-pick` | `=0` or `=1` | Leave pick pictures out of the 3MF | slicer_cli only (Bambu Studio engine) |
-| `--export-settings` | file | Write the project's settings as JSON (not a plate's own) and stop; with `--slice` the slice goes on | both binaries |
-| `--export-stl` | | Write the objects as one STL and stop | both binaries |
-| `--export-stls` | folder | Write each object as its own STL and stop | both binaries |
-| `--info` | | Print each object's size, volume and facets, and stop | both binaries |
-| `--engine-info` | file | What a file is (printer, plates, the app that made it) and which program fits it, as JSON | both binaries |
-| `--list-presets` | | This engine's system presets as JSON | both binaries |
-| `--list-settings` | | This engine's settings table as JSON: every key with its type and edit mode (`simple`/`advanced`/`develop`, plus `expert` on the OrcaSlicer build), and where the engine has them, its label, tooltip, category, default, bounds (`min`/`max`), unit, the preset that holds it (`scope`: `process`, `filament` or `printer`; left out for a setting in none of them) and, for enums, the values it takes. A field the engine has no value for is left out | both binaries |
-| `--printer` | name | With `--list-presets`: only this printer's presets, with its defaults and plate type | both binaries |
+| `--export-settings` | file | Write the project's settings as JSON (not a plate's own) and stop; with `--slice` the slice goes on | all binaries |
+| `--export-stl` | | Write the objects as one STL and stop | all binaries |
+| `--export-stls` | folder | Write each object as its own STL and stop | all binaries |
+| `--info` | | Print each object's size, volume and facets, and stop | all binaries |
+| `--engine-info` | file | What a file is (printer, plates, the app that made it), which of the package's programs fit it and which to use (`recommended`), as JSON | all binaries |
+| `--list-presets` | | This engine's system presets as JSON | all binaries |
+| `--list-settings` | | This engine's settings table as JSON: every key with its type and edit mode (`simple`/`advanced`/`develop`, plus `expert` on the OrcaSlicer build), and where the engine has them, its label, tooltip, category, default, bounds (`min`/`max`), unit, the preset that holds it (`scope`: `process`, `filament` or `printer`; left out for a setting in none of them) and, for enums, the values it takes. A field the engine has no value for is left out | all binaries |
+| `--printer` | name | With `--list-presets`: only this printer's presets, with its defaults and plate type | all binaries |
 
 `--list-settings` is how an agent driving this binary finds a setting without
 reading the engine's source: the keys, their meaning and their valid values are
@@ -362,7 +382,7 @@ thumbnail block.
 | Flag | Works in | Why |
 |-|-|-|
 | `--export-png`, `--camera-view` | slicer_cli only (Bambu Studio engine) | slicer-cli makes no pictures |
-| `--pipe` on macOS and Windows | both binaries | the official pipe exists on Linux only; progress goes to stdout as events on every system (`--progress`) |
+| `--pipe` on macOS and Windows | all binaries | the official pipe exists on Linux only; progress goes to stdout as events on every system (`--progress`) |
 
 Names that both official command lines only mention in comments (such as
 `--cut`, `--export-obj`, `--center`, `--repair`) are refused as not being flags
@@ -372,24 +392,24 @@ of either.
 
 | Flag | Value | What it does | Works in |
 |-|-|-|-|
-| `-h`, `--help` | | The flags of this program | both binaries |
-| `-v`, `--verbose` | | The engine's log on stdout | both binaries |
-| `--debug` | 0-5 | The engine's log level | both binaries |
-| `--single-instance` | | Accepted and ignored | both binaries |
-| `--calib-mode` | mode | A calibration print: `temp_tower`, `retraction_tower`, `pressure_advance_line`, `pressure_advance_tower` | both binaries |
+| `-h`, `--help` | | The flags of this program | all binaries |
+| `-v`, `--verbose` | | The engine's log on stdout | all binaries |
+| `--debug` | 0-5 | The engine's log level | all binaries |
+| `--single-instance` | | Accepted and ignored | all binaries |
+| `--calib-mode` | mode | A calibration print: `temp_tower`, `retraction_tower`, `pressure_advance_line`, `pressure_advance_tower` | all binaries |
 | `--calib-mode` | `pressure_advance_pattern` | The pressure advance pattern calibration print (slicer_cli-orcaslicer refuses it: the OrcaSlicer engine's pattern calibration differs) | slicer_cli only (Bambu Studio engine) |
-| `--calib-start`, `--calib-end`, `--calib-step` | number | The calibration range | both binaries |
-| `--calib-extruder-id` | N | The extruder to calibrate (default 0) | both binaries |
-| `--calib-no-numbers` | | No number labels (`pressure_advance_line`) | both binaries |
-| `--input` | file | The input file (layout modes, or the model file) | both binaries |
-| `--layout` | file | Arrange objects from an older JSON form, no slicing; refused with `--slice` | both binaries |
-| `--layout-plan` | | Arrange objects from a versioned JSON request (stdin or `--input`), no slicing; refused with `--slice` | both binaries |
-| `--no-normalize-legacy-gcode` | | Keep unbound legacy placeholders in custom G-code as they are | both binaries |
+| `--calib-start`, `--calib-end`, `--calib-step` | number | The calibration range | all binaries |
+| `--calib-extruder-id` | N | The extruder to calibrate (default 0) | all binaries |
+| `--calib-no-numbers` | | No number labels (`pressure_advance_line`) | all binaries |
+| `--input` | file | The input file (layout modes, or the model file) | all binaries |
+| `--layout` | file | Arrange objects from an older JSON form, no slicing; refused with `--slice` | all binaries |
+| `--layout-plan` | | Arrange objects from a versioned JSON request (stdin or `--input`), no slicing; refused with `--slice` | all binaries |
+| `--no-normalize-legacy-gcode` | | Keep unbound legacy placeholders in custom G-code as they are | all binaries |
 
 ### `--layout-plan` request, schemaVersion 3
 
 The request and answer types are in `layout_plan.hpp`. `layout capabilities --json`
-reports the schema versions a binary takes. Version 3 adds, both binaries:
+reports the schema versions a binary takes. Version 3 adds, all binaries:
 
 - `"beds": "all"`: every bed the arrange fills is a placement. A model's `bed_idx`
   is 0, 1, 2… (bed k becomes plate k+1), and its `x_mm`/`y_mm` are on that bed.

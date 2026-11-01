@@ -144,7 +144,17 @@ bool convert_obj_cluster_colors(std::vector<RGBA>& input_colors, std::vector<RGB
 #ifdef ENGINE_ORCA
     (void)first_time_using_makerlab;
     (void)mtl_colors;
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca has no obj_color_deal_algo — that wrapper came in with
+    // OrcaSlicer 2.4 (references/OrcaSlicer/src/libslic3r/ObjColorUtils.cpp:3-15,
+    // a QuantKMeans(10) doing the work). Its tree still calls the quantizer
+    // directly (references/SnapmakerOrca/src/libslic3r/ObjColorUtils.hpp:47-56).
+    QuantKMeans quant(10);
+    quant.apply(input_colors, cluster_colors, cluster_labels, (int) cluster_number,
+                (int) EnforcerBlockerType::ExtruderMax);
+#else
     obj_color_deal_algo(input_colors, cluster_colors, cluster_labels, cluster_number, (int) EnforcerBlockerType::ExtruderMax);
+#endif
 #else
     if (first_time_using_makerlab && mtl_colors.size() < (int) EnforcerBlockerType::ExtruderMax) {
         cluster_colors = mtl_colors;
@@ -394,10 +404,16 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                 bool result = load_obj(path_str, &mesh, obj_info, message);
                 if (!result)
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " holds no usable mesh: " + message + "; check the file");
+#ifndef ENGINE_SNAPMAKER
+                // ObjInfo::lost_material_name is OrcaSlicer 2.4 only; the
+                // Snapmaker fork's ObjInfo carries no such field
+                // (references/SnapmakerOrca/src/libslic3r/Format/OBJ.hpp:12-25
+                // at bac6fd5), so an unmatched MTL material cannot be named.
                 if (!obj_info.lost_material_name.empty())
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " uses the material " +
                                                          obj_info.lost_material_name +
                                                          ", which its MTL file lacks; check the file");
+#endif
                 if (!obj_info.face_colors.empty() && obj_info.face_colors.size() < mesh.facets_count())
                     return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " gives some faces no colour; check its MTL and OBJ files.");
                 object_name.erase(object_name.end() - 4, object_name.end());

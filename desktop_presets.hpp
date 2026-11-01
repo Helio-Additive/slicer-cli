@@ -95,4 +95,45 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
                                                     const std::vector<std::string>& current_compatible_printers,
                                                     const std::string& current_preset_name);
 
+#ifdef ENGINE_ORCA
+/// A preset named by a name its system preset has since been renamed from is
+/// that preset, as the desktop resolves it (PresetBundle::update_system_maps,
+/// PresetCollection::get_preset_name_renamed). Rewrites `name` to the current
+/// name and returns the old one, or empty when `name` is current or unknown;
+/// `announce` emits the PresetRenamed warning event.
+std::string rename_to_current(Slic3r::PresetCollection& collection, std::string& name, const char* kind,
+                              bool announce = true);
+
+/// rename_to_current for a run's named printer, process and filaments.
+void apply_preset_renames(std::string& printer, std::string& process, std::vector<std::string>& filaments,
+                          Slic3r::PresetBundle& bundle);
+#endif
+
+#ifdef ENGINE_SNAPMAKER
+/// A process name with the "mm" the tree's presets spell after the layer
+/// height: "0.20 Standard @Snapmaker U1 (0.4 nozzle)" →
+/// "0.20mm Standard @Snapmaker U1 (0.4 nozzle)". Unchanged when the name does
+/// not start with a number.
+std::string declared_with_mm_unit(const std::string& declared);
+
+/// The printer's stated default process, read the way the Snapmaker tree's
+/// presets spell it, when it is a listed, compatible preset; empty otherwise.
+std::string snapmaker_stated_default_process(const Slic3r::PresetCollection& prints, const std::string& declared,
+                                             bool (*is_listed_preset)(const Slic3r::Preset&));
+
+/// The printer's default material: the first listed, compatible preset of the
+/// stated default filament's vendor with its filament_type; empty when there
+/// is none.
+std::string snapmaker_default_material(const Slic3r::PresetCollection& filaments, const std::vector<std::string>& declared,
+                                       bool (*is_listed_preset)(const Slic3r::Preset&));
+#endif
+
+#ifdef ENGINE_SNAPMAKER
+/// A preset this tree ships, by its name or a former one: the fork's
+/// load_external_preset matches a name against the renamed_from map
+/// (Preset.cpp 2114-2120 at bac6fd5), though its find_preset does not
+/// (Preset.cpp 2776-2783).
+bool preset_shipped_or_renamed(const Slic3r::PresetCollection& collection, const std::string& name);
+#endif
+
 } // namespace slicer_cli

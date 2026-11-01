@@ -7,7 +7,10 @@
 namespace slicer_cli {
 namespace {
 
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
+const char* const kThisApp  = "Snapmaker Orca";
+const char* const kOtherApp = "OrcaSlicer";
+#elif defined(ENGINE_ORCA)
 const char* const kThisApp  = "OrcaSlicer";
 const char* const kOtherApp = "BambuStudio";
 #else
@@ -37,6 +40,18 @@ const std::map<std::string, std::string>& not_supported() {
         // progress comes as events on stdout instead (--progress).
         {"pipe",        "the official pipe exists on Linux only; slicer-cli reports progress on every OS as events on stdout (--progress)"},
 #endif
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker Orca defines downward_check twice: a CLI action taking a
+        // list of machine files (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:8542
+        // at bac6fd5) and the on/off switch (8798). The command line holds the
+        // list, so there is no on/off value to read; Snapmaker's own CLI checks
+        // for that before reading it (Snapmaker_Orca.cpp:1136-1140).
+        {"downward_check",    "Snapmaker Orca defines downward_check as an action that takes a list of machine files, "
+                              "so the on/off check has no value to read; this build cannot run the downward check. "
+                              "Drop the flag to slice"},
+        {"downward_settings", "it names the printers for --downward-check, which this build cannot run. Drop the flag "
+                              "to slice"},
+#endif
     };
     return why;
 }
@@ -65,13 +80,30 @@ std::string official_flag_refusal(const std::string& key) {
     auto it = not_supported().find(key);
     if (it == not_supported().end())
         return {};
+#ifdef ENGINE_SNAPMAKER
+    // --pipe is an active CLI flag at bac6fd5 too
+    // (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp CLI defs).
+    return "--" + dashed(key) + " is a flag of Snapmaker Orca's own command line that slicer-cli does not support: " +
+           it->second;
+#else
     return "--" + dashed(key) + " is a flag of " +
            (bambu_only_keys().count(key) ? std::string("Bambu Studio's") : std::string("Bambu Studio's and OrcaSlicer's")) +
            " own command line that slicer-cli does not support: " + it->second;
+#endif
+}
+
+std::string all_binaries_label() {
+    return "slicer_cli, slicer_cli-orcaslicer and slicer_cli-snapmaker";
 }
 
 std::string works_in(const std::string& key) {
-    return bambu_only_keys().count(key) ? "slicer_cli only (Bambu Studio engine)" : "both binaries";
+    if (bambu_only_keys().count(key))
+        return "slicer_cli only (Bambu Studio engine)";
+    // The Snapmaker build refuses --downward-check: its engine defines
+    // downward_check as a list of machine files, not the on/off switch.
+    if (key == "downward_check" || key == "downward_settings")
+        return "slicer_cli and slicer_cli-orcaslicer";
+    return all_binaries_label();
 }
 
 std::string foreign_flag_refusal(const std::string& cli_name) {
@@ -79,11 +111,22 @@ std::string foreign_flag_refusal(const std::string& cli_name) {
     for (const std::string& key : bambu_only_keys())
         if (dashed(key) == cli_name)
             return "--" + cli_name + " works only in slicer_cli (the Bambu Studio engine); "
+#ifdef ENGINE_SNAPMAKER
+                   "slicer_cli-snapmaker runs the Snapmaker Orca engine, which has no such flag.";
+#else
                    "slicer_cli-orcaslicer runs the OrcaSlicer engine, which has no such flag.";
 #endif
+#endif
     if (commented_out_names().count(cli_name))
+#ifdef ENGINE_SNAPMAKER
+        // Commented out in Snapmaker's CLI defs as well (block comments in
+        // references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp 8454-8900 at bac6fd5).
+        return "--" + cli_name + " is not a flag of slicer-cli: Snapmaker Orca's own command line does not "
+               "have it either (it is commented out there)";
+#else
         return "--" + cli_name + " is not a flag of slicer-cli: Bambu Studio's and OrcaSlicer's own "
                "command lines do not have it either (it is commented out in both)";
+#endif
     (void)kOtherApp;
     return {};
 }

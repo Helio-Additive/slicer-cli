@@ -1,0 +1,17 @@
+#ifndef __SLIC3R_VERSION_H
+#define __SLIC3R_VERSION_H
+
+// Snapmaker Orca ships no libslic3r/libslic3r_version.h.in: its identity macros
+// live in src/common_func/common_func.hpp (SLIC3R_APP_NAME "Snapmaker Orca",
+// SLIC3R_APP_KEY "Snapmaker_Orca", SLIC3R_VERSION, Snapmaker_VERSION, ... —
+// references/SnapmakerOrca/src/common_func/common_func.hpp:6-18 at bac6fd5) and
+// the engine's own sources include that header directly. Include it so anything
+// that reads libslic3r_version.h gets the same identity the engine reports.
+#include "common_func/common_func.hpp"
+
+// The driver reads the OrcaSlicer-era version macro (main.cpp:2082,
+// cli_run_steps.cpp:25); the Snapmaker tree names it Snapmaker_VERSION
+// (version.inc:17).
+#define SoftFever_VERSION "@Snapmaker_VERSION@"
+
+#endif /* __SLIC3R_VERSION_H */

@@ -13,10 +13,13 @@ namespace slicer_cli {
 /// refusal sentence, which names the flag and says why.
 std::string official_flag_refusal(const std::string& key);
 
-/// Which slicer-cli binaries take the official flag `key`: "both binaries"
-/// or "slicer_cli only (Bambu Studio engine)".
+/// Which slicer-cli binaries take the official flag `key`: all of them
+/// (all_binaries_label) or "slicer_cli only (Bambu Studio engine)".
 std::string works_in(const std::string& key);
 
+/// The label for a flag every build takes: the three binaries the package
+/// ships, by name.
+std::string all_binaries_label();
 /// For a name that is not a flag of this binary: a sentence when it is an
 /// official flag of the other engine's CLI, or a flag the official CLIs have
 /// commented out. Empty when slicer-cli knows nothing about it.
