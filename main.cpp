@@ -11373,6 +11373,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // slice (BambuStudio.cpp 7076-7099; OrcaSlicer.cpp 6067-6090).
             const int cache_plate = plate_id > 0 ? plate_id : 1;
             const std::string load_dir = slicer_cli::slicedata_dir(o, "load_slicedata", cache_plate);
+#ifdef ENGINE_SNAPMAKER
+            // Again here: the project rebase and the desktop plate type load
+            // presets after the call at the top of this function, and each
+            // points data_dir() at a staging folder its scope then removes.
+            slicer_cli::snapmaker_keep_data_dir(run_backup_path());
+#endif
             std::cout << "Slicing...\n";
             if (!load_dir.empty() && print.load_cached_data(load_dir) == 0) {
                 emit_event({{"event","model_loaded"}, {"tag","SliceDataLoaded"}, {"path", load_dir},
