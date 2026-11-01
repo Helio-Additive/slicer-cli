@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/result.schema.json",
+  "title": "slicer-cli result.json",
+  "description": "The result.json a --slice run writes into --outputdir (write_result_json in main.cpp): the official CLI's record_exit_reson keys (BambuStudio.cpp 476-593 at 5873b5f), plus engine, error_reason, unknown_settings and, per plate, warnings, gcode_file, objects and filaments. tests/test-complete-slice-path.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
+  "type": "object",
+  "required": [
+    "plate_index",
+    "return_code",
+    "error_string",
+    "prepare_time",
+    "export_time",
+    "engine",
+    "layer_height",
+    "wall_loops",
+    "sparse_infill_density",
+    "unknown_settings",
+    "sliced_plates"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "plate_index": {
+      "type": "integer",
+      "description": "The plate the run sliced (--slice N), or 0 for every plate."
+    },
+    "return_code": {
+      "type": "integer",
+      "description": "0, or the official CLI_* code of the failure (Utils.hpp). The process exit code is the same value."
+    },
+    "error_string": {
+      "type": "string",
+      "description": "The official sentence for return_code, then the specifics."
+    },
+    "error_reason": {
+      "type": "string",
+      "description": "Why the failed plate failed, beyond error_string. Only on a failure that has one."
+    },
+    "prepare_time": {
+      "type": "integer",
+      "description": "Milliseconds."
+    },
+    "export_time": {
+      "type": "integer",
+      "description": "Milliseconds."
+    },
+    "engine": {
+      "description": "The build that wrote it.",
+      "enum": [
+        "bambustudio",
+        "orcaslicer",
+        "snapmaker"
+      ]
+    },
+    "layer_height": {
+      "type": "number",
+      "description": "The project's layer height in mm; 0 when nothing was sliced."
+    },
+    "wall_loops": {
+      "type": "integer"
+    },
+    "sparse_infill_density": {
+      "type": "number",
+      "description": "Percent."
+    },
+    "unknown_settings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Settings the file states that this engine has no definition for; the engine ignores them."
+    },
+    "downward_compatible_machine": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "--downward-check: the printers every checked plate fits. Only when there is one."
+    },
+    "upward_compatible_machine": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "slicer_cli with the settings merge: the newer printers the plates fit. Only when there is one."
+    },
+    "upward_compatibility_taint": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "slicer_cli with --downward-check: PrintSequenceByObject when a plate prints by object."
+    },
+    "sliced_plates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/plate"
+      },
+      "description": "The plates that were written, in slice order."
+    }
+  },
+  "$defs": {
+    "plate": {
+      "type": "object",
+      "required": [
+        "id",
+        "sliced_time",
+        "sliced_time_with_cache",
+        "triangle_count",
+        "warning_message",
+        "total_predication",
+        "main_predication",
+        "filament_change_times",
+        "warnings",
+        "gcode_file",
+        "unknown_settings"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "The plate's number in the project, from 1."
+        },
+        "sliced_time": {
+          "type": "integer",
+          "description": "Milliseconds."
+        },
+        "sliced_time_with_cache": {
+          "type": "integer"
+        },
+        "triangle_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning_message": {
+          "type": "string",
+          "description": "The last slicing warning, as the official CLI keeps it; empty when none."
+        },
+        "total_predication": {
+          "type": "number",
+          "description": "The estimated print time in seconds."
+        },
+        "main_predication": {
+          "type": "number",
+          "description": "The estimated time of the model's own extrusions in seconds."
+        },
+        "filament_change_times": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "feature_type_times": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Seconds per extrusion role (and Travel). Only when the G-code has them."
+        },
+        "objects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/object"
+          },
+          "description": "The objects printed on this plate. Only when there are any."
+        },
+        "filaments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/filament"
+          },
+          "description": "The filaments this plate uses. Only when there are any."
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/warning"
+          },
+          "description": "Every slicing warning of this plate."
+        },
+        "gcode_file": {
+          "type": "string"
+        },
+        "unknown_settings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "object": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "triangle_count",
+        "bbox"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "The engine's object id, the G-code's label id."
+        },
+        "name": {
+          "type": "string"
+        },
+        "triangle_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bbox": {
+          "type": "object",
+          "required": [
+            "x",
+            "y",
+            "z",
+            "width",
+            "depth",
+            "height"
+          ],
+          "additionalProperties": false,
+          "description": "The object's box on the bed in mm: its minimum corner and its size.",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "z": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number"
+            },
+            "depth": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "filament": {
+      "type": "object",
+      "required": [
+        "id",
+        "filament_id",
+        "total_used_g",
+        "main_used_g"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The filament's slot, from 1."
+        },
+        "filament_id": {
+          "type": "string",
+          "description": "The preset's filament_id, or unknown."
+        },
+        "total_used_g": {
+          "type": "number"
+        },
+        "main_used_g": {
+          "type": "number",
+          "description": "Grams in the model and its supports, without the tower and flushes."
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "required": [
+        "message",
+        "level",
+        "tag"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "level": {
+          "enum": [
+            "critical",
+            "non_critical",
+            "warning"
+          ]
+        },
+        "tag": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

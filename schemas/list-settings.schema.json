@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/list-settings.schema.json",
+  "title": "slicer-cli --list-settings",
+  "description": "The JSON document --list-settings prints on stdout (run_list_settings in main.cpp): this engine's settings table, exit code 0. tests/test_list_settings.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
+  "type": "object",
+  "required": [
+    "engine",
+    "engine_version",
+    "settings"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "engine": {
+      "description": "The build that wrote it.",
+      "enum": [
+        "bambustudio",
+        "orcaslicer",
+        "snapmaker"
+      ]
+    },
+    "engine_version": {
+      "type": "string"
+    },
+    "settings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/setting"
+      }
+    }
+  },
+  "$defs": {
+    "setting": {
+      "type": "object",
+      "required": [
+        "key",
+        "type",
+        "vector",
+        "mode"
+      ],
+      "additionalProperties": false,
+      "description": "One setting. A field the engine has no value for is left out.",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "float",
+            "floats",
+            "int",
+            "ints",
+            "string",
+            "strings",
+            "percent",
+            "percents",
+            "float_or_percent",
+            "floats_or_percents",
+            "point",
+            "points",
+            "point3",
+            "bool",
+            "bools",
+            "enum",
+            "enums",
+            "points_groups",
+            "ints_groups",
+            "none"
+          ]
+        },
+        "vector": {
+          "type": "boolean",
+          "description": "One value per filament, extruder or variant."
+        },
+        "mode": {
+          "enum": [
+            "simple",
+            "advanced",
+            "expert",
+            "develop"
+          ],
+          "description": "expert is the OrcaSlicer engines' only."
+        },
+        "label": {
+          "type": "string"
+        },
+        "full_label": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "tooltip": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "default": {
+          "type": "string",
+          "description": "The default as the engine writes it in a config file."
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "scope": {
+          "enum": [
+            "printer",
+            "filament",
+            "process"
+          ],
+          "description": "The preset that holds it; left out for a setting in none of them."
+        },
+        "enum": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "value",
+              "label"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

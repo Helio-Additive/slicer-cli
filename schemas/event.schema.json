@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/event.schema.json",
+  "title": "slicer-cli event line",
+  "description": "One event a run prints on stdout, as a line \"[[SLICER_EVENT]] <JSON>\" (diagnostic_output.hpp). This is the JSON. Every event has its kind; most have a tag (what happened, in CamelCase) and a message for people, plus fields of their own. The progress event is stated in full. tests/test-complete-slice-path.sh checks every event line it makes against this schema, so a new kind or a change to progress must change this file too.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/progress"
+    },
+    {
+      "$ref": "#/$defs/other"
+    }
+  ],
+  "$defs": {
+    "progress": {
+      "description": "--progress: how far the run is.",
+      "type": "object",
+      "required": [
+        "event",
+        "tag",
+        "percent",
+        "plate_id",
+        "plate_index",
+        "plate_count",
+        "plate_percent",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "progress"
+        },
+        "tag": {
+          "const": "SliceProgress"
+        },
+        "percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "The whole run, by the official CLI's formula."
+        },
+        "plate_id": {
+          "type": "integer"
+        },
+        "plate_index": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The plate's position in this run, from 1."
+        },
+        "plate_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "plate_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "other": {
+      "type": "object",
+      "required": [
+        "event"
+      ],
+      "properties": {
+        "event": {
+          "enum": [
+            "arranged",
+            "clearance_violation",
+            "config_load_failed",
+            "config_normalized",
+            "config_refused",
+            "config_substituted",
+            "config_unknown_keys",
+            "config_value_rejected",
+            "engine_log",
+            "engine_mismatch",
+            "export",
+            "export_note",
+            "exported_3mf",
+            "filament_map_limited",
+            "filament_unprintable",
+            "gcode_check",
+            "input_error",
+            "load_error",
+            "mesh_repaired",
+            "model_loaded",
+            "model_warning",
+            "output_error",
+            "override_rejected",
+            "plate_error",
+            "preset_error",
+            "preset_resolution_failed",
+            "preset_warning",
+            "presets_resolved",
+            "slice_warning",
+            "slicing_error",
+            "timelapse_warning",
+            "toolpath_conflict",
+            "toolpath_outside_bed",
+            "validation_error",
+            "validation_warning",
+            "warning"
+          ]
+        },
+        "tag": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
