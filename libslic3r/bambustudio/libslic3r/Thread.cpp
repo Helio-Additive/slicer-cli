@@ -232,9 +232,11 @@ void name_tbb_thread_pool_threads_set_locale()
 	std::condition_variable cv;
 	std::mutex				cv_m;
 	auto					master_thread_id = std::this_thread::get_id();
+	// slicer-cli override: one deadline for the whole barrier (see the wait below).
+	const auto				deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, nthreads, 1),
-        [&nthreads_running, nthreads, &master_thread_id, &cv, &cv_m](const tbb::blocked_range<size_t> &range) {
+        [&nthreads_running, nthreads, &master_thread_id, &cv, &cv_m, deadline](const tbb::blocked_range<size_t> &range) {
         	assert(range.begin() + 1 == range.end());
 			if (std::unique_lock<std::mutex> lk(cv_m);  ++nthreads_running == nthreads) {
 				lk.unlock();
@@ -245,15 +247,17 @@ void name_tbb_thread_pool_threads_set_locale()
         		// Wait for the last thread to wake the others.
 			    // slicer-cli override (the only change from the reference file,
 			    // identical at BambuStudio 926a719, OrcaSlicer 8500fcd and
-			    // Snapmaker Orca bac6fd5): the reference waits with no limit, and
-			    // TBB does not promise to run all nthreads tasks at once, so one
-			    // worker that is never woken holds every other thread here for
-			    // ever (a macOS CI slice hung 21 min in this wait). After 1 s a
-			    // thread goes on; a task that runs later still counts and wakes
-			    // the rest. A thread that misses this only goes unnamed: the CLI
-			    // never changes the process locale from "C", so its number format
-			    // is already the "C" one set per thread below.
-			    cv.wait_for(lk, std::chrono::seconds(1), [&nthreads_running, nthreads]{return nthreads_running == nthreads;});
+			    // Snapmaker Orca bac6fd5, with the deadline above): the reference
+			    // waits with no limit, and TBB does not promise to run all
+			    // nthreads tasks at once, so one worker that is never woken holds
+			    // every other thread here for ever (a macOS CI slice hung 21 min
+			    // in this wait). Every task waits until one shared deadline 1 s
+			    // after the start, so tasks TBB runs in later waves do not wait
+			    // again; a task that runs later still counts and wakes the rest.
+			    // A thread that misses this only goes unnamed: the CLI never
+			    // changes the process locale from "C", so its number format is
+			    // already the "C" one set per thread below.
+			    cv.wait_until(lk, deadline, [&nthreads_running, nthreads]{return nthreads_running == nthreads;});
         	}
         	auto thread_id = std::this_thread::get_id();
 			if (thread_id == master_thread_id) {
