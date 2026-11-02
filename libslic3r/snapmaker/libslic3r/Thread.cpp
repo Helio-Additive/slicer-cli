@@ -247,7 +247,8 @@ void name_tbb_thread_pool_threads_set_locale()
         		// Wait for the last thread to wake the others.
 			    // slicer-cli override (the only change from the reference file,
 			    // identical at BambuStudio 926a719, OrcaSlicer 8500fcd and
-			    // Snapmaker Orca bac6fd5, with the deadline above): the reference
+			    // Snapmaker Orca bac6fd5, with the deadline above and the calling
+			    // thread's assert below): the reference
 			    // waits with no limit, and TBB does not promise to run all
 			    // nthreads tasks at once, so one worker that is never woken holds
 			    // every other thread here for ever (a macOS CI slice hung 21 min
@@ -261,8 +262,11 @@ void name_tbb_thread_pool_threads_set_locale()
         	}
         	auto thread_id = std::this_thread::get_id();
 			if (thread_id == master_thread_id) {
-				// The calling thread runs the 0'th task.
-				assert(range.begin() == 0);
+				// The calling thread runs the 0'th task first.
+				// slicer-cli override: the reference asserts range.begin() == 0
+				// here, which holds only while every task waits for all the
+				// others. After the deadline above the calling thread may go on
+				// to run a later task too; it keeps its own name either way.
 			} else {
 				assert(range.begin() > 0);
 				std::ostringstream name;
