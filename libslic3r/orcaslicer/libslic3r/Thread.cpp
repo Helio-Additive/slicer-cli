@@ -255,9 +255,10 @@ void name_tbb_thread_pool_threads_set_locale()
 			    // in this wait). Every task waits until one shared deadline 1 s
 			    // after the start, so tasks TBB runs in later waves do not wait
 			    // again; a task that runs later still counts and wakes the rest.
-			    // A thread that misses this only goes unnamed: the CLI never
-			    // changes the process locale from "C", so its number format is
-			    // already the "C" one set per thread below.
+			    // A task that stops waiting at the deadline still names its thread
+			    // below. Only a worker that never gets one of these tasks stays
+			    // unnamed and keeps the process locale, which the CLI never changes
+			    // from "C", the one set per thread below.
 			    cv.wait_until(lk, deadline, [&nthreads_running, nthreads]{return nthreads_running == nthreads;});
         	}
         	auto thread_id = std::this_thread::get_id();
