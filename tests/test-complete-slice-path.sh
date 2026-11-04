@@ -2110,6 +2110,46 @@ model = z.read("Metadata/model_settings.config").decode()
 assert len(re.findall(r"<plate>", model)) == 2, model
 assert "\"placed\"" in model and "\"arranged\"" in model, "plate names missing"
 ' asml-$e/out/result.json asml-$e/out/asm.3mf
+    # A height range that states no layer_height keeps the object's own: the
+    # engine reads one out of every range without a check (Slicing.cpp
+    # layer_height_profile_from_ranges), so the run fills it before slicing
+    # rather than dereferencing null there.
+    py '
+import json
+json.dump({"plates": [{"plate_name": "range", "need_arrange": True,
+                       "objects": [{"path": "cube.stl", "count": 1, "filaments": [1],
+                                    "height_ranges": [{"min_z": 0, "max_z": 5,
+                                                       "range_params": {"sparse_infill_density": "80%"}}]}]}]},
+          open("asm-range.json", "w"))
+'
+    run asmr-$e "$bin" --load-assemble-list asm-range.json --slice 1 --printer-preset "$A1M" --outputdir asmr-$e/out
+    [ "$(rc asmr-$e)" = 0 ] || { show asmr-$e; fail "$e: a height range that states no layer_height exit $(rc asmr-$e)"; }
+    events asmr-$e/stdout config_normalized | grep RangeLayerHeightFilled > /dev/null || fail "$e: the height range's layer height was not filled"
+    hdr=$(grep -m1 '^; layer_height = ' asmr-$e/out/plate_1.gcode | sed 's/.* = //')
+    events asmr-$e/stdout config_normalized | grep "\"layer_height\":$hdr" > /dev/null || fail "$e: the filled layer height is not the object's ($hdr)"
+    echo "PASS: $e: a height range with no layer_height keeps the object's height"
+    # Each plate fills its own ranges with its own settings, on every pass: two
+    # plates of 0.2 and 0.28 mm, sliced together, report one fill each, at that
+    # plate's height (the run-wide model is not left holding plate 1's value,
+    # and the pre-check pass does not swallow the reports).
+    py '
+import json
+rng = [{"min_z": 0, "max_z": 5, "range_params": {"sparse_infill_density": "80%"}}]
+obj = {"path": "cube.stl", "count": 1, "filaments": [1], "height_ranges": rng}
+json.dump({"plates": [{"plate_name": "a", "need_arrange": True, "plate_params": {"layer_height": "0.2"}, "objects": [obj]},
+                      {"plate_name": "b", "need_arrange": True, "plate_params": {"layer_height": "0.28"}, "objects": [obj]}]},
+          open("asm-range2.json", "w"))
+'
+    run asmr2-$e "$bin" --load-assemble-list asm-range2.json --slice 0 --printer-preset "$A1M" --outputdir asmr2-$e/out
+    [ "$(rc asmr2-$e)" = 0 ] || { show asmr2-$e; fail "$e: two plates with settings-only height ranges exit $(rc asmr2-$e)"; }
+    py '
+import json, sys
+fills = [json.loads(l[len("[[SLICER_EVENT]] "):]) for l in open(sys.argv[1], errors="replace")
+         if l.startswith("[[SLICER_EVENT]] ") and "RangeLayerHeightFilled" in l]
+assert sorted(round(f["layer_height"], 3) for f in fills) == [0.2, 0.28], fills
+' asmr2-$e/stdout || { show asmr2-$e; fail "$e: each plate does not fill its ranges with its own layer height"; }
+    echo "PASS: $e: each plate fills its height ranges with its own layer height"
+
     # With a model file: -2. A part the list names that does not exist: -3.
     # A per-copy list of the wrong length: -5.
     for c in "files:cube.stl --load-assemble-list asm.json:-2" "missing:--load-assemble-list asm-missing.json:-3" \

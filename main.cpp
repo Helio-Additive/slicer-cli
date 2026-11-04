@@ -106,6 +106,7 @@
 #include "cli_load_settings.hpp"
 #include "cli_repetitions.hpp"
 #include "cli_assemble.hpp"
+#include "cli_layer_ranges.hpp"
 #include "cli_pipe.hpp"
 
 #ifdef __APPLE__
@@ -11026,6 +11027,31 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // (PrintApply.cpp 1553 / 1298), so the run's model stays in
                 // the scene.
                 PlateScope scope(model, rs.plate(plate_id));
+                // Every height range carries a layer height before the engine
+                // builds the layer height profile: it reads one out of each range
+                // without a check (Slicing.cpp layer_height_profile_from_ranges,
+                // `it_range->second.option("layer_height")->getFloat()`), and a
+                // range from an assemble list or a 3MF that states
+                // only its settings would crash the slice. A range that states none
+                // keeps the object's height, so nothing about the print changes.
+                // Filled for this plate's objects with this plate's settings, and
+                // taken out again when the scope ends: Print::apply copies the
+                // model, so the print keeps the heights, while the run's model
+                // stays as it was read for the next plate and the next pass.
+                struct RangeFill {
+                    std::vector<slicer_cli::FilledRangeHeight> filled;
+                    ~RangeFill() { slicer_cli::clear_filled_range_layer_heights(filled); }
+                } range_fill{slicer_cli::fill_range_layer_heights(model, config)};
+                const auto mm = [](double v) { std::ostringstream s; s << v; return s.str(); };
+                for (const slicer_cli::FilledRangeHeight& filled : range_fill.filled)
+                    emit_event({{"event", "config_normalized"}, {"tag", "RangeLayerHeightFilled"},
+                                {"object", filled.object},
+                                {"min_z", filled.min_z}, {"max_z", filled.max_z},
+                                {"layer_height", filled.layer_height},
+                                {"message", "The height range " + mm(filled.min_z) + "-" + mm(filled.max_z) +
+                                                " mm of '" + filled.object +
+                                                "' states no layer height; it keeps the object's " +
+                                                mm(filled.layer_height) + " mm."}});
                 print.apply(model, config);
 #ifdef ENGINE_ORCA
                 // The Orca desktop applies again before Slice (Plater.cpp 15855/15893 at v2.4.2).
