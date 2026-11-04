@@ -165,7 +165,9 @@ if [ -n "$SNAP_BINARY" ]; then
     echo "PASS: packaged snapmaker slice resolved its own profiles and resources root"
 
     # An explicit Snapmaker selection reports the resolved names, without
-    # changing the default-profile coverage above.
+    # changing the default-profile coverage above. The process is named by its
+    # old name, which resolves through renamed_from and is reported by its
+    # current one.
     if ! "$SNAP_BINARY" "$WORKDIR/snap.stl" --printer-preset "Snapmaker U1 (0.4 nozzle)" \
         --process-preset "0.20 Standard @Snapmaker U1 (0.4 nozzle)" --filament-preset "Generic PLA" --arrange 1 --slice 1 \
         --outputdir "$WORKDIR/snap-explicit" > "$WORKDIR/snap-explicit.log" 2>&1; then
@@ -177,7 +179,7 @@ if [ -n "$SNAP_BINARY" ]; then
 import json, sys
 d = json.load(open(sys.argv[1]))
 assert d["printer_preset"] == "Snapmaker U1 (0.4 nozzle)", d
-assert d["process_preset"] == "0.20 Standard @Snapmaker U1 (0.4 nozzle)", d
+assert d["process_preset"] == "0.20mm Standard @Snapmaker U1 (0.4 nozzle)", d
 assert d["filament_presets"] == ["Generic PLA"], d
 PY
     echo "PASS: packaged snapmaker explicit presets are reported from trusted resolution"
