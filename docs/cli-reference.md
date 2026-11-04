@@ -112,6 +112,13 @@ Every plate of the list is sliced, whatever plate `--slice` names. The list:
 
 - `plate_params` are the plate's own settings; `print_params` and
   `height_ranges` an object's.
+- A height range's `range_params` are the settings that band slices with. The
+  band's layer height is `layer_height` in `range_params`; a band that states
+  none keeps the object's own layer height (its `layer_height`, else the
+  project's), and the run says so with a `config_normalized` event,
+  `RangeLayerHeightFilled`. The same holds for a 3MF's own height ranges
+  (`Metadata/layer_config_ranges.xml`): one that states no layer height keeps
+  the object's, as the desktop's height-range editor always writes one.
 - `count` copies of each part. Each per-copy list (`filaments`,
   `assemble_index`, `pos_x`, `pos_y`, `pos_z`) holds one value per copy or one
   value for all.
