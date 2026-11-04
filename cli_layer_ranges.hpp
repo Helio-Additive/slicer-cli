@@ -23,12 +23,14 @@
 namespace Slic3r {
 class DynamicPrintConfig;
 class Model;
+class ModelObject;
 } // namespace Slic3r
 
 namespace slicer_cli {
 
 /// One range the run filled, for the event line that reports it.
 struct FilledRangeHeight {
+    Slic3r::ModelObject* model_object = nullptr;
     std::string object;
     double      min_z        = 0.;
     double      max_z        = 0.;
@@ -36,9 +38,13 @@ struct FilledRangeHeight {
 };
 
 /// Give every height range of every object a layer height, where the range and
-/// the object state none. Returns what it filled, in model order; a run calls
-/// this once per slice, and a second call fills nothing.
+/// the object state none. Returns what it filled, in model order; a second call
+/// fills nothing.
 std::vector<FilledRangeHeight> fill_range_layer_heights(Slic3r::Model&             model,
                                                         const Slic3r::DynamicPrintConfig& project);
+
+/// Take the filled layer heights out again, so the ranges state what they did
+/// before fill_range_layer_heights.
+void clear_filled_range_layer_heights(const std::vector<FilledRangeHeight>& filled);
 
 } // namespace slicer_cli

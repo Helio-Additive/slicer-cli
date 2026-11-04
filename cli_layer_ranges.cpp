@@ -32,10 +32,18 @@ std::vector<FilledRangeHeight> fill_range_layer_heights(Slic3r::Model&          
             if (config.has("layer_height"))
                 continue;
             config.set_key_value("layer_height", new Slic3r::ConfigOptionFloat(height));
-            filled.push_back({object->name, range.first, range.second, height});
+            filled.push_back({object, object->name, range.first, range.second, height});
         }
     }
     return filled;
+}
+
+void clear_filled_range_layer_heights(const std::vector<FilledRangeHeight>& filled) {
+    for (const FilledRangeHeight& f : filled) {
+        auto range = f.model_object->layer_config_ranges.find({f.min_z, f.max_z});
+        if (range != f.model_object->layer_config_ranges.end())
+            range->second.erase("layer_height");
+    }
 }
 
 } // namespace slicer_cli

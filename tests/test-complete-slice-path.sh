@@ -2093,6 +2093,27 @@ json.dump({"plates": [{"plate_name": "range", "need_arrange": True,
     hdr=$(grep -m1 '^; layer_height = ' asmr-$e/out/plate_1.gcode | sed 's/.* = //')
     events asmr-$e/stdout config_normalized | grep "\"layer_height\":$hdr" > /dev/null || fail "$e: the filled layer height is not the object's ($hdr)"
     echo "PASS: $e: a height range with no layer_height keeps the object's height"
+    # Each plate fills its own ranges with its own settings, on every pass: two
+    # plates of 0.2 and 0.28 mm, sliced together, report one fill each, at that
+    # plate's height (the run-wide model is not left holding plate 1's value,
+    # and the pre-check pass does not swallow the reports).
+    py '
+import json
+rng = [{"min_z": 0, "max_z": 5, "range_params": {"sparse_infill_density": "80%"}}]
+obj = {"path": "cube.stl", "count": 1, "filaments": [1], "height_ranges": rng}
+json.dump({"plates": [{"plate_name": "a", "need_arrange": True, "plate_params": {"layer_height": "0.2"}, "objects": [obj]},
+                      {"plate_name": "b", "need_arrange": True, "plate_params": {"layer_height": "0.28"}, "objects": [obj]}]},
+          open("asm-range2.json", "w"))
+'
+    run asmr2-$e "$bin" --load-assemble-list asm-range2.json --slice 0 --printer-preset "$A1M" --outputdir asmr2-$e/out
+    [ "$(rc asmr2-$e)" = 0 ] || { show asmr2-$e; fail "$e: two plates with settings-only height ranges exit $(rc asmr2-$e)"; }
+    py '
+import json, sys
+fills = [json.loads(l[len("[[SLICER_EVENT]] "):]) for l in open(sys.argv[1], errors="replace")
+         if l.startswith("[[SLICER_EVENT]] ") and "RangeLayerHeightFilled" in l]
+assert sorted(round(f["layer_height"], 3) for f in fills) == [0.2, 0.28], fills
+' asmr2-$e/stdout || { show asmr2-$e; fail "$e: each plate does not fill its ranges with its own layer height"; }
+    echo "PASS: $e: each plate fills its height ranges with its own layer height"
 
     # With a model file: -2. A part the list names that does not exist: -3.
     # A per-copy list of the wrong length: -5.
