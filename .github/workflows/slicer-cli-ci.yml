@@ -1582,6 +1582,9 @@ jobs:
           cp -R references/OrcaSlicer/resources/info "$P/resources/orca/info"
           cp -R references/OrcaSlicer/resources/flush "$P/resources/orca/flush"
           cp LICENSE NOTICE README.md "$P/"
+          # The JSON Schemas for the documents a caller reads (docs/cli-reference.md,
+          # "Output schemas"), so a caller can check them against this exact build.
+          cp -R schemas "$P/schemas"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
           cp references/SnapmakerOrca/LICENSE.txt "$P/SNAPMAKER-ORCA-LICENSE.txt"
@@ -1618,6 +1621,7 @@ jobs:
           test -x dist/verify/slicer-cli/slicer_cli
           test -x dist/verify/slicer-cli/slicer_cli-orcaslicer
           test -x dist/verify/slicer-cli/slicer_cli-snapmaker
+          test -f dist/verify/slicer-cli/schemas/result.schema.json
           test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
           test -d dist/verify/slicer-cli/resources/profiles/BBL/process
           test -d dist/verify/slicer-cli/resources/profiles/BBL/filament
@@ -1747,6 +1751,9 @@ jobs:
           Copy-Item -Recurse references\OrcaSlicer\resources\info "$P\resources\orca\info"
           Copy-Item -Recurse references\OrcaSlicer\resources\flush "$P\resources\orca\flush"
           Copy-Item LICENSE, NOTICE, README.md "$P\"
+          # The JSON Schemas for the documents a caller reads (docs/cli-reference.md,
+          # "Output schemas"), so a caller can check them against this exact build.
+          Copy-Item -Recurse schemas "$P\schemas"
           Copy-Item references\BambuStudio\LICENSE "$P\BAMBUSTUDIO-LICENSE.txt"
           Copy-Item references\OrcaSlicer\LICENSE.txt "$P\ORCASLICER-LICENSE.txt"
           Copy-Item references\SnapmakerOrca\LICENSE.txt "$P\SNAPMAKER-ORCA-LICENSE.txt"
@@ -1775,6 +1782,7 @@ jobs:
           if (-not (Test-Path dist\verify\slicer-cli\slicer_cli.exe)) { throw "missing slicer_cli.exe" }
           if (-not (Test-Path dist\verify\slicer-cli\slicer_cli-orcaslicer.exe)) { throw "missing slicer_cli-orcaslicer.exe" }
           if (-not (Test-Path dist\verify\slicer-cli\slicer_cli-snapmaker.exe)) { throw "missing slicer_cli-snapmaker.exe" }
+          if (-not (Test-Path dist\verify\slicer-cli\schemas\result.schema.json)) { throw "missing schemas" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\machine)) { throw "missing machine profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\process)) { throw "missing process profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\filament)) { throw "missing filament profiles" }
@@ -1920,6 +1928,9 @@ jobs:
           # "flush" folder at bac6fd5, so only what exists is packaged.
           cp -R references/SnapmakerOrca/resources/info "$P/resources/snapmaker/info"
           cp LICENSE NOTICE README.md "$P/"
+          # The JSON Schemas for the documents a caller reads (docs/cli-reference.md,
+          # "Output schemas"), so a caller can check them against this exact build.
+          cp -R schemas "$P/schemas"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
           cp references/SnapmakerOrca/LICENSE.txt "$P/SNAPMAKER-ORCA-LICENSE.txt"
@@ -1976,6 +1987,7 @@ jobs:
           test -x dist/verify/slicer-cli/bin/slicer_cli
           test -x dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
           test -x dist/verify/slicer-cli/bin/slicer_cli-snapmaker
+          test -f dist/verify/slicer-cli/schemas/result.schema.json
           # The relocated layout has no root binaries or symlinks, and the
           # manifest lives beside the binaries it describes.
           test ! -e dist/verify/slicer-cli/slicer_cli

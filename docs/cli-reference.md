@@ -355,7 +355,8 @@ Transforms run in the order given, before the objects are placed.
 ### Output schemas
 
 The JSON documents a caller reads have JSON Schemas (draft 2020-12) in
-[`schemas/`](../schemas):
+[`schemas/`](../schemas). Every release package carries the same files in its
+own `schemas/` folder, so a caller checks against the build it runs:
 
 | Document | Schema |
 |-|-|
