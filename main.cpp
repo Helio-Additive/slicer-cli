@@ -10999,16 +10999,17 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // range from an assemble list or a 3MF that states
             // only its settings would crash the slice. A range that states none
             // keeps the object's height, so nothing about the print changes.
+            const auto mm = [](double v) { std::ostringstream s; s << v; return s.str(); };
             for (const slicer_cli::FilledRangeHeight& filled :
                  slicer_cli::fill_range_layer_heights(model, config))
                 emit_event({{"event", "config_normalized"}, {"tag", "RangeLayerHeightFilled"},
                             {"object", filled.object},
                             {"min_z", filled.min_z}, {"max_z", filled.max_z},
                             {"layer_height", filled.layer_height},
-                            {"message", "The height range " + std::to_string(filled.min_z) + "-" +
-                                            std::to_string(filled.max_z) + " mm of '" + filled.object +
+                            {"message", "The height range " + mm(filled.min_z) + "-" + mm(filled.max_z) +
+                                            " mm of '" + filled.object +
                                             "' states no layer height; it keeps the object's " +
-                                            std::to_string(filled.layer_height) + " mm."}});
+                                            mm(filled.layer_height) + " mm."}});
             {
                 // The plate's instances only, on the plate (see the Print's
                 // origin above). Print::apply copies the model it is given

@@ -157,6 +157,19 @@ if [ -n "$SNAP_BINARY" ]; then
     fi
     cat "$WORKDIR/snap.log"
     grep -E "^  Engine resources: .*[/\\\\]resources[/\\\\]snapmaker$" "$WORKDIR/snap.log"
+    # A height range that states no layer height keeps the object's (the
+    # engine reads one from every range, Slicing.cpp:189 at the Snapmaker pin).
+    # Relative paths: the list is read by the native program.
+    SNAP_ABS="$(cd "$(dirname "$SNAP_BINARY")" && pwd -P)/$(basename "$SNAP_BINARY")"
+    printf '{"plates": [{"plate_name": "range", "need_arrange": true, "objects": [{"path": "snap.stl", "count": 1, "filaments": [1], "height_ranges": [{"min_z": 0, "max_z": 5, "range_params": {"sparse_infill_density": "80%%"}}]}]}]}\n' > "$WORKDIR/asm-range.json"
+    if ! (cd "$WORKDIR" && "$SNAP_ABS" --load-assemble-list asm-range.json --slice 1 \
+        --printer-preset "Snapmaker U1 (0.4 nozzle)" --outputdir snap-range > snap-range.log 2>&1); then
+        cat "$WORKDIR/snap-range.log"
+        exit 1
+    fi
+    test -s "$WORKDIR/snap-range/plate_1.gcode"
+    grep -q RangeLayerHeightFilled "$WORKDIR/snap-range.log"
+    echo "PASS: packaged snapmaker height range with no layer height keeps the object's"
     if grep -E 'parse (.*[/\\])?(info|flush|profiles)[/\\]|PresetBundle exception' "$WORKDIR/snap.log"; then
         exit 1
     fi
