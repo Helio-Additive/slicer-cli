@@ -248,11 +248,26 @@ test -s slice/out/plate_1.gcode || fail "no plate_1.gcode"
 py '
 import json; d = json.load(open("slice/out/result.json"))
 assert d["return_code"] == 0 and d["error_string"] == "Success.", d
+assert not {"printer_preset", "process_preset", "filament_presets"} & d.keys(), d
 p = d["sliced_plates"][0]
 assert p["id"] == 1 and p["total_predication"] > 0 and p["objects"], p
 '
 grep -q '"event":"progress".*"percent":100' slice/stdout || fail "no progress event at 100"
-echo "PASS: --slice writes plate_1.gcode, result.json and progress events"
+echo "PASS: --slice writes plate_1.gcode, result.json, and progress events"
+
+# Raw settings files can carry arbitrary *_settings_id text. That text must
+# not replace the trusted names of presets selected by name.
+py 'import json; json.dump({"printer_settings_id":"spoof printer", "print_settings_id":"spoof process", "filament_settings_id":["spoof filament"]}, open("spoof-ids.json", "w"))'
+run spoof-ids "$B" cube.stl --slice 1 --printer-preset "$A1M" --machine spoof-ids.json --outputdir spoof-ids/out
+[ "$(rc spoof-ids)" = 0 ] || { show spoof-ids; fail "a named preset plus spoofed raw ids exit $(rc spoof-ids)"; }
+py '
+import json
+d = json.load(open("spoof-ids/out/result.json"))
+assert d["printer_preset"] == "Bambu Lab A1 mini 0.4 nozzle", d
+assert d["process_preset"] == "0.20mm Standard @BBL A1M", d
+assert d["filament_presets"] == ["Bambu PLA Basic @BBL A1M"], d
+' || { show spoof-ids; fail "raw settings ids replaced the trusted named-preset result"; }
+echo "PASS: raw settings ids cannot spoof named-preset result names"
 
 # A missing input is "not found" (-3), not an unparseable model.
 run missing "$B" no-such-file.3mf --slice 1 --outputdir missing/out
@@ -260,8 +275,21 @@ run missing "$B" no-such-file.3mf --slice 1 --outputdir missing/out
 py '
 import json; d = json.load(open("missing/out/result.json"))
 assert d["return_code"] == -3, d
+assert not {"printer_preset", "process_preset", "filament_presets"} & d.keys(), d
 '
 echo "PASS: a missing --slice input is reported as not found"
+
+# Named preset resolution happens before the missing model is reported, but
+# no preset names are emitted until the model reaches per-plate slicing.
+run missing-named "$B" no-such-file.stl --slice 1 --printer-preset "$A1M" --outputdir missing-named/out
+[ "$(rc missing-named)" != 0 ] || fail "a missing named-preset STL was sliced"
+py '
+import json
+d = json.load(open("missing-named/out/result.json"))
+assert d["return_code"] == -3, d
+assert not {"printer_preset", "process_preset", "filament_presets"} & d.keys(), d
+' || { show missing-named; fail "a missing named-preset model reported names before per-plate capture"; }
+echo "PASS: a missing named-preset model has no preset names before per-plate capture"
 
 # A result.json that cannot be written fails the run (a directory stands in its place).
 mkdir -p noresult/out/result.json
@@ -1188,6 +1216,13 @@ echo "PASS: --arrange keeps clear of the bed exclusion area (both engines)"
 run ftproj "$O" cube.stl --slice 1 --printer-preset "$X1C" --filament-preset "Bambu PLA Basic @BBL X1C" \
     --filament-preset "Bambu PLA Matte @BBL X1C" --outputdir ftproj/out --export-3mf ftproj.3mf
 [ "$(rc ftproj)" = 0 ] || { show ftproj; fail "the two-filament Orca project exit $(rc ftproj)"; }
+py '
+import json
+d = json.load(open("ftproj/out/result.json"))
+assert d["printer_preset"] == "Bambu Lab X1 Carbon 0.4 nozzle", d
+assert d["process_preset"] == "0.20mm Standard @BBL X1C", d
+assert d["filament_presets"] == ["Bambu PLA Basic @BBL X1C", "Bambu PLA Matte @BBL X1C"], d
+' || { show ftproj; fail "the two-filament Orca project result has no trusted preset names"; }
 py '
 import json, zipfile
 with zipfile.ZipFile("ftproj/out/ftproj.3mf") as zin, zipfile.ZipFile("ftsurf.3mf", "w", zipfile.ZIP_DEFLATED) as zout:

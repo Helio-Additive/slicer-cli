@@ -145,6 +145,13 @@ if grep -E 'parse (.*/)?(info|flush|profiles)/' /tmp/snap.log; then
     exit 1
 fi
 grep -q '^; printer_settings_id = Snapmaker U1 (0.4 nozzle)' /tmp/snap/plate_1.gcode
+python3 - /tmp/snap/result.json <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["printer_preset"] == "Snapmaker U1 (0.4 nozzle)", d
+assert d["process_preset"] == "0.20 Standard @Snapmaker U1 (0.4 nozzle)", d
+assert d["filament_presets"] == ["Generic PLA"], d
+PY
 echo 'PASS: all three packaged engines sliced in the clean offline container'
 
 # Preset staging across filesystems: /package sits on the container's

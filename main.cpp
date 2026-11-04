@@ -3000,6 +3000,11 @@ struct PlateOutcome {
     float       layer_height = 0.f;
     int         wall_loops   = 0;
     float       sparse_infill_density = 0.f;
+    // Trusted identifiers from catalog-validated named preset selection.
+    // Empty means this run did not select presets by name.
+    std::string printer_preset;
+    std::string process_preset;
+    std::vector<std::string> filament_presets;
 
     // --export-3mf: what the sliced project needs from this plate.
     std::shared_ptr<Slic3r::PlateData>          plate_data;     // slice result, as the GUI stores it
@@ -3338,6 +3343,15 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
     j["layer_height"]          = summary ? summary->layer_height : 0.f;
     j["wall_loops"]            = summary ? summary->wall_loops : 0;
     j["sparse_infill_density"] = summary ? summary->sparse_infill_density : 0.f;
+    // Keep these optional: only catalog-validated named selections are
+    // reported, never mutable project or settings-file id fields.
+    if (summary && !summary->printer_preset.empty())
+        j["printer_preset"] = summary->printer_preset;
+    if (summary && !summary->process_preset.empty())
+        j["process_preset"] = summary->process_preset;
+    if (summary && std::any_of(summary->filament_presets.begin(), summary->filament_presets.end(),
+                               [](const std::string& name) { return !name.empty(); }))
+        j["filament_presets"] = summary->filament_presets;
     // Settings the file states that this engine has no definition for (the
     // engine ignores them; the GUI lists them as incompatible settings).
     std::set<std::string> unknown;
@@ -9135,6 +9149,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // printer, process and filaments, over the engine defaults.
         if (g_preset_config)
             config.apply(*g_preset_config);
+        // Capture preset names before raw settings files can replace their
+        // id fields. A settings file is configuration input, not proof that
+        // its arbitrary ids were selected from this engine's preset catalog.
+        // Project inputs, including named project switches, are deliberately
+        // omitted: an embedded id can be arbitrary and switch defaults are
+        // decided later in the settings merge.
+        if (g_preset_config) {
+            if (const auto* id = config.option<Slic3r::ConfigOptionString>("printer_settings_id"))
+                outcome.printer_preset = id->value;
+            if (const auto* id = config.option<Slic3r::ConfigOptionString>("print_settings_id"))
+                outcome.process_preset = id->value;
+            if (const auto* ids = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id"))
+                outcome.filament_presets = ids->values;
+        }
         load_profile(bundle_config,   "bundle");
         load_profile(machine_config,  "machine");
         load_profile(process_config,  "process");

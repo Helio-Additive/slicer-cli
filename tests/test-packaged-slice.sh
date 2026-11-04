@@ -163,4 +163,22 @@ if [ -n "$SNAP_BINARY" ]; then
     test -s "$WORKDIR/snap/plate_1.gcode"
     grep -q '^; printer_settings_id = Snapmaker U1 (0.4 nozzle)' "$WORKDIR/snap/plate_1.gcode"
     echo "PASS: packaged snapmaker slice resolved its own profiles and resources root"
+
+    # An explicit Snapmaker selection reports the resolved names, without
+    # changing the default-profile coverage above.
+    if ! "$SNAP_BINARY" "$WORKDIR/snap.stl" --printer-preset "Snapmaker U1 (0.4 nozzle)" \
+        --process-preset "0.20 Standard @Snapmaker U1 (0.4 nozzle)" --filament-preset "Generic PLA" --arrange 1 --slice 1 \
+        --outputdir "$WORKDIR/snap-explicit" > "$WORKDIR/snap-explicit.log" 2>&1; then
+        cat "$WORKDIR/snap-explicit.log"
+        exit 1
+    fi
+    test -s "$WORKDIR/snap-explicit/plate_1.gcode"
+    python3 - "$WORKDIR/snap-explicit/result.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["printer_preset"] == "Snapmaker U1 (0.4 nozzle)", d
+assert d["process_preset"] == "0.20 Standard @Snapmaker U1 (0.4 nozzle)", d
+assert d["filament_presets"] == ["Generic PLA"], d
+PY
+    echo "PASS: packaged snapmaker explicit presets are reported from trusted resolution"
 fi
