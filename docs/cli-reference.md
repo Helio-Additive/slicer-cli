@@ -490,9 +490,12 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
     "engine": "bambustudio",
     "error_string": "Success.",
     "export_time": 0,
+    "filament_presets": ["Bambu PLA Basic @BBL A1M"],
     "layer_height": 0.20000000298023224,
     "plate_index": 1,
     "prepare_time": 1,
+    "printer_preset": "Bambu Lab A1 mini 0.4 nozzle",
+    "process_preset": "0.20mm Standard @BBL A1M",
     "return_code": 0,
     "sliced_plates": [
         {
@@ -544,6 +547,7 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `plate_index` | The `--slice` value |
 | `prepare_time`, `export_time` | Milliseconds |
 | `engine` | `bambustudio` or `orcaslicer` |
+| `printer_preset`, `process_preset`, `filament_presets` | Optional catalog-validated names of the printer, process, and filament presets a model-file run with `--printer-preset` used. A process or filament not named is the printer's default, and every name is the preset's current one (an old name from its `renamed_from` is reported as the current name). They are captured before raw `--machine`/`--process`/`--filament` settings files can supply arbitrary ids, once the model reaches per-plate slicing; they are absent for 3MF projects, settings-file-only runs, project printer switches, and failures before that capture point. |
 | `layer_height`, `wall_loops`, `sparse_infill_density` | The first sliced plate's values |
 | `unknown_settings` | Settings in the file this engine does not have |
 | `sliced_plates[]` | One entry per sliced plate |
@@ -562,7 +566,7 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `upward_compatible_machine` | slicer_cli, after a settings merge: the newer printers the project suits |
 | `upward_compatibility_taint` | slicer_cli with `--downward-check`: `PrintSequenceByObject` when a plate prints by object |
 
-The last three are written only when they have entries.
+The preset-name fields and the last three compatibility fields are optional.
 
 ### Event lines
 

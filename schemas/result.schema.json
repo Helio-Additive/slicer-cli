@@ -62,6 +62,21 @@
       "type": "number",
       "description": "Percent."
     },
+    "printer_preset": {
+      "type": "string",
+      "description": "The catalog-validated printer preset a model-file run with named presets used, under its current name, captured before raw settings-file overlays once the model reaches per-plate slicing. Absent for projects, settings-file-only runs, project printer switches, and failures before that capture point."
+    },
+    "process_preset": {
+      "type": "string",
+      "description": "The catalog-validated process preset a model-file run with named presets used, under its current name (the printer's default when not named), captured before raw settings-file overlays once the model reaches per-plate slicing. Absent for projects, settings-file-only runs, project printer switches, and failures before that capture point."
+    },
+    "filament_presets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The catalog-validated filament presets a model-file run with named presets used, under its current name (the printer's default when not named), captured before raw settings-file overlays once the model reaches per-plate slicing. Absent for projects, settings-file-only runs, project printer switches, and failures before that capture point."
+    },
     "unknown_settings": {
       "type": "array",
       "items": {

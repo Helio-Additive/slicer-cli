@@ -27,7 +27,9 @@ test -f "$FIXTURES/calib_base.3mf"
 # The CLI reads explicit JSON overrides; it does not walk `inherits`. Resolve
 # the packaged Snapmaker parents on the test host, as a calling app must do.
 CONFIG_DIR="$(mktemp -d)"
-trap 'rm -rf "$CONFIG_DIR"' EXIT
+# The container has no Python: it copies result.json out for the host to check.
+RESULT_DIR="$(mktemp -d)"
+trap 'rm -rf "$CONFIG_DIR" "$RESULT_DIR"' EXIT
 python3 "$SCRIPT_DIR/resolve-orca-profiles.py" "$PACKAGE_ROOT/resources/profiles-orca/Snapmaker" "$CONFIG_DIR/config.json"
 
 # The container runs the package's own architecture.
@@ -42,6 +44,7 @@ docker run --rm --platform "$DOCKER_PLATFORM" --network none -i \
     -v "$PACKAGE_ROOT:/package-input:ro" \
     -v "$FIXTURES:/fixtures:ro" \
     -v "$CONFIG_DIR:/resolved:ro" \
+    -v "$RESULT_DIR:/result" \
     --workdir /tmp \
     ubuntu:22.04 \
     sh -seu <<'CONTAINER'
@@ -145,6 +148,7 @@ if grep -E 'parse (.*/)?(info|flush|profiles)/' /tmp/snap.log; then
     exit 1
 fi
 grep -q '^; printer_settings_id = Snapmaker U1 (0.4 nozzle)' /tmp/snap/plate_1.gcode
+cp /tmp/snap/result.json /result/snap-result.json
 echo 'PASS: all three packaged engines sliced in the clean offline container'
 
 # Preset staging across filesystems: /package sits on the container's
@@ -168,3 +172,14 @@ fi
 test -s /tmp/xdev.gcode
 echo 'PASS: presets staged from overlayfs into a tmpfs TMPDIR'
 CONTAINER
+
+# The U1's default process is listed under its old name; result.json reports
+# the preset's current name (its renamed_from holds the old one).
+python3 - "$RESULT_DIR/snap-result.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["printer_preset"] == "Snapmaker U1 (0.4 nozzle)", d
+assert d["process_preset"] == "0.20mm Standard @Snapmaker U1 (0.4 nozzle)", d
+assert d["filament_presets"] == ["Generic PLA"], d
+PY
+echo 'PASS: the packaged Snapmaker result names its resolved presets'
