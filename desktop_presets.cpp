@@ -504,19 +504,22 @@ std::string apply_printer_pick(Slic3r::PresetBundle& bundle) {
     (void)bundle;
     return {};
 #else
-    // The desktop resets the extruder nozzle statistics when the printer
-    // model changes (Plater.cpp 8756, Tab.cpp 5640 at 5873b5f):
-    // ExtruderNozzleStat::on_printer_model_change (PresetBundle.cpp 301-317),
-    // which full_config() writes as extruder_nozzle_stats (PresetBundle.cpp
-    // 3526). The official CLI does the same for a file without the key
-    // (BambuStudio.cpp 4144-4157, on_printer_model_change_cli).
+    // The desktop re-reads the nozzle inventory when the printer changes
+    // (Plater.cpp 2179, Tab.cpp 6155 and 6187 at v02.09.01.70):
+    // NozzleInventory::select_printer (NozzleInventory.cpp 642-646) resolves
+    // the installed nozzles from the preset's extruder_max_nozzle_count and
+    // nozzle_volume_type defaults (no project, machine or user layer here)
+    // and writes nozzle_volume_type, extruder_nozzle_stats(_new) and the
+    // per-slot keys into the project config (export_to, 785-808), which
+    // full_config() carries (PresetBundle.cpp 5061). The official CLI builds
+    // the same counts for a file without the key (BambuStudio.cpp
+    // 4536-4553, on_printer_model_change_cli).
     const Slic3r::Preset& printer = bundle.printers.get_selected_preset();
     const auto* max_count = printer.config.option<Slic3r::ConfigOptionIntsNullable>("extruder_max_nozzle_count");
-    const auto* volume    = bundle.project_config.option<Slic3r::ConfigOptionEnumsGeneric>("nozzle_volume_type");
-    if (max_count == nullptr || max_count->values.empty() || volume == nullptr)
+    if (max_count == nullptr || max_count->values.empty())
         return {};
-    bundle.extruder_nozzle_stat.on_printer_model_change(&bundle);
-    return "extruder nozzle statistics set from the printer model";
+    bundle.nozzle_inventory.select_printer(bundle.printers);
+    return "nozzle inventory resolved from the printer model";
 #endif
 }
 

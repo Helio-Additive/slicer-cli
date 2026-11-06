@@ -5362,6 +5362,87 @@ assert a == b, (a, b)
 fi
 [ $f18b_ok = 1 ] && echo "PASS: F18b the shipped U1 files slice on the U1's own plate with its bed temperature, through both routes (Orca build)"
 
+# Bambu Studio 2.9.1 (Bambu build). A project this engine writes carries its
+# own version, so it slices again without --allow-newer-file (the 2.8.2
+# engine refused a 2.9.1 project: FileVersionNewerThanEngine).
+run v291export "$B" cube.stl --printer-preset "Bambu Lab A1 mini 0.4 nozzle" --slice 1 --outputdir v291export/out --export-3mf v291.3mf
+[ "$(rc v291export)" = 0 ] && [ -s v291export/out/v291.3mf ] || { show v291export; fail "2.9.1: the export of a sliced project failed"; }
+run v291again "$B" v291export/out/v291.3mf --slice 1 --outputdir v291again/out
+[ "$(rc v291again)" = 0 ] || { show v291again; fail "2.9.1: a project this engine wrote was refused (exit $(rc v291again))"; }
+grep -q '"tag":"FileVersionNewerThanEngine"' v291again/stdout && fail "2.9.1: the engine calls its own project newer than itself"
+echo "PASS: a project written by this engine slices again without --allow-newer-file (Bambu build)"
+
+# The Bambu Lab H3C, new in 2.9.1: a four-slot nozzle rack. The STL slices on
+# the named preset, and the nozzle inventory the desktop resolves for a rack
+# (NozzleInventory::select_printer) reaches the G-code as extruder_nozzle_stats.
+run h3c "$B" cube.stl --printer-preset "Bambu Lab H3C 0.4 nozzle" --slice 1 --outputdir h3c/out
+[ "$(rc h3c)" = 0 ] && [ -s h3c/out/plate_1.gcode ] || { show h3c; fail "H3C: the named preset does not slice (exit $(rc h3c))"; }
+h3c_stats=$(hdr h3c/out/plate_1.gcode extruder_nozzle_stats)
+[ -n "$h3c_stats" ] && [ "$h3c_stats" != ";" ] || fail "H3C: no extruder_nozzle_stats in the G-code ('$h3c_stats')"
+echo "PASS: the Bambu Lab H3C slices on its named preset with nozzle statistics"
+
+# Conformal infill and the alternating-layer modifier, two 2.9.1 settings, as
+# object settings of an assemble list: both accepted, the plate slices.
+printf '{"plates":[{"plate_name":"p","need_arrange":true,"objects":[{"path":"cube.stl","count":1,"filaments":[1],"assemble_index":[0],"pos_x":[60],"pos_y":[60],"pos_z":[0],"print_params":{"conformal_infill":"1","periodic_modifier":"1","periodic_modifier_apply_layers":"2","periodic_modifier_skip_layers":"1","sparse_infill_density":"20%%"}}]}]}\n' > asm-291.json
+run asm291 "$B" --load-assemble-list asm-291.json --printer-preset "Bambu Lab A1 mini 0.4 nozzle" --slice 0 --outputdir asm291/out
+[ "$(rc asm291)" = 0 ] && [ -s asm291/out/plate_1.gcode ] || { show asm291; fail "2.9.1: conformal_infill / periodic_modifier as object settings refused (exit $(rc asm291))"; }
+grep -q '"tag":"UnrecognizedConfigKeys"' asm291/stdout && fail "2.9.1: conformal_infill or periodic_modifier is unknown to the engine"
+echo "PASS: conformal infill and the alternating-layer modifier are accepted as object settings (Bambu build)"
+
+# Mixed nozzle diameters (BambuStudio.cpp 2673-2849, 3289-3401, 5066-5086 at
+# v02.09.01.70) on the H3C through settings files. Without a map every
+# loaded filament takes the printer's diameter; with the project mode on, a
+# map that selects one diameter is refused in the merge, and a plate whose
+# filaments use one diameter is refused before slicing (-108, read from
+# result.json: the shell's view of a negative code differs per OS). The colours make the merge size the flush matrix for two
+# filaments, as a project does; two loaded filaments without colours fail
+# the engine's matrix check on 2.8.2 and 2.9.1 alike.
+flat_presets bambu h3c "Bambu Lab H3C 0.4 nozzle"
+py '
+import json, os, sys
+vendor = sys.argv[1]
+want = {"Bambu PLA Basic @BBL H3C", "Bambu PLA Basic @BBL H3C 0.2 nozzle"}
+P = {}
+for root, _, files in os.walk(os.path.join(vendor, "filament")):
+    for f in files:
+        if f.endswith(".json"):
+            try: d = json.load(open(os.path.join(root, f), encoding="utf-8"))
+            except Exception: continue
+            P[d.get("name", f[:-5])] = d
+def resolve(name, seen=()):
+    d = P[name]
+    r = resolve(d["inherits"], seen + (name,)) if d.get("inherits") and name not in seen else {}
+    r.update(d); r.pop("inherits", None); return r
+for i, name in enumerate(sorted(want)):
+    d = resolve(name); d.update({"type": "filament", "from": "system", "name": name, "instantiation": "true"})
+    json.dump(d, open("h3c-fil%d.json" % i, "w", encoding="utf-8"), indent=1)
+' "$RES/profiles/BBL"
+h3c_ok=1
+run h3cmap0 "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
+    --slice 1 --outputdir h3cmap0/out --export-settings h3cmap0.json
+[ "$(rc h3cmap0)" = 0 ] || { show h3cmap0; fail "H3C: two filaments with no diameter map refused (exit $(rc h3cmap0))"; h3c_ok=0; }
+py '
+import json, sys
+m = json.load(open("h3cmap0.json")).get("filament_diameter_map")
+assert m == ["0.4", "0.4"], m
+' || { h3c_ok=0; fail "H3C: without a map the filaments did not take the printer's 0.4 diameter"; }
+run h3cmap1 "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
+    --multi-nozzle-diameter-mode=1 --filament-diameter-map "0.4;0.4" --slice 1 --outputdir h3cmap1/out
+py '
+import json; d = json.load(open("h3cmap1/out/result.json")); assert d["return_code"] == -108, d
+' || { show h3cmap1; fail "H3C: multi-diameter mode with one selected diameter was not refused with -108 (exit $(rc h3cmap1))"; h3c_ok=0; }
+run h3cmap2 "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
+    --multi-nozzle-diameter-mode=1 --filament-diameter-map "0.4;0.2" --slice 1 --outputdir h3cmap2/out
+py '
+import json; d = json.load(open("h3cmap2/out/result.json")); assert d["return_code"] == -108, d
+' || { show h3cmap2; fail "H3C: a plate printing with one nozzle diameter in multi-diameter mode was not refused with -108 (exit $(rc h3cmap2))"; h3c_ok=0; }
+grep -q '"tag":"PlateSingleNozzleDiameter"' h3cmap2/stdout || { h3c_ok=0; fail "H3C: no PlateSingleNozzleDiameter event"; }
+run h3cmap3 "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
+    --multi-nozzle-diameter-mode=0 --filament-diameter-map "0.4;0.2" --slice 1 --outputdir h3cmap3/out --export-settings h3cmap3.json
+[ "$(rc h3cmap3)" = 0 ] || { show h3cmap3; fail "H3C: multi-diameter mode off refused the run (exit $(rc h3cmap3))"; h3c_ok=0; }
+grep -q '"tag":"PlateSingleNozzleDiameter"' h3cmap3/stdout && { h3c_ok=0; fail "H3C: the plate check ran with the mode off"; }
+[ $h3c_ok = 1 ] && echo "PASS: mixed nozzle diameters: the map fills from the printer, mode off checks nothing, and single-diameter maps and plates are refused (-108)"
+
 # The documents callers code against have the shapes schemas/ states. Every
 # one this script made is checked: the --engine-info documents (info*.json,
 # ei-*.json: both engines, 3MF and model files, reports and errors), the

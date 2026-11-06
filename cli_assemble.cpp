@@ -479,7 +479,12 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                     assemble_object.filaments.resize(1, 0);
                 assemble_object.filaments[0] = 0;
                 for (const ModelVolume* mv : object->volumes) {
+#ifdef ENGINE_ORCA
                     std::vector<int> volume_extruders = mv->get_extruders();
+#else
+                    // The process config is not loaded yet; global feature filaments are added before arranging (BambuStudio.cpp at v02.09.01.70).
+                    std::vector<int> volume_extruders = mv->get_extruders({});
+#endif
                     used_filaments.insert(volume_extruders.begin(), volume_extruders.end());
                 }
             }

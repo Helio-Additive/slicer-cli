@@ -1,4 +1,4 @@
-# Exact Bambu-patched CGAL 5.4, required by BambuStudio v02.08.02.61.
+# Exact Bambu-patched CGAL 5.4, required by BambuStudio v02.09.01.70.
 vcpkg_buildpath_length_warning(37)
 
 vcpkg_from_git(
