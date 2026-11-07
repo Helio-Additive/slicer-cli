@@ -148,6 +148,9 @@ std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra) {
     //   filament_map, filament_volume_map, filament_nozzle_map 6662-6837.
     //   OrcaSlicer.cpp at 31f6803: nozzle_volume_type 2950-2951, 3383-3384; filament_map_mode,
     //   filament_map 5778-5854.
+    //   BambuStudio.cpp at v02.09.01.70: the per-slot layout keys extruder_nozzle_diameter,
+    //   extruder_nozzle_slot and ams_nozzle_idx rebuild the nozzle layout with
+    //   extruder_nozzle_count / extruder_nozzle_volume_type (7104-7172).
     static const std::map<std::string, const char*> special = {
         {"nozzle_volume_type",          "the official CLI re-derives the nozzle setup from it"},
         {"filament_map_mode",           "the official CLI re-derives the filament-to-nozzle grouping from it"},
@@ -156,6 +159,9 @@ std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra) {
         {"filament_nozzle_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
         {"extruder_nozzle_count",       "the official CLI re-derives the nozzle setup from it"},
         {"extruder_nozzle_volume_type", "the official CLI re-derives the nozzle setup from it"},
+        {"extruder_nozzle_diameter",    "the official CLI re-derives the nozzle setup from it"},
+        {"extruder_nozzle_slot",        "the official CLI re-derives the nozzle setup from it"},
+        {"ams_nozzle_idx",              "the official CLI re-derives the nozzle setup from it"},
     };
     for (const std::string& key : extra.keys()) {
         // Neither official CLI runs post-processing scripts (the call is

@@ -42,11 +42,11 @@ Every item is a port of the official command line at `v02.09.01.70`
 | Boost.Log's header included before any engine header | `main.cpp` | 2.9.1's `libslic3r/Log.hpp` replaces `BOOST_LOG_TRIVIAL` with its own logger and occupies boost's include guard; the engine-log bridge still works, as `LogStream` hands every record to Boost.Log (`Log.cpp:300-313`) |
 | A headless `LogSink.cpp` in the override layer | `libslic3r/bambustudio/libslic3r/LogSink.cpp` | `Log.cpp` links the desktop's log-file sink, which needs the desktop's HTTP client and AES code for encrypted log files; the copy writes plain text and the CLI never opens a log file; the three `LogSinkBackend` stubs `standalone_stubs.cpp` carried for the same reason are gone (MSVC refused the duplicate definitions; GNU ld had silently picked one) |
 | `MeshBooleanOpenMeshCraft.cpp` excluded | `CMakeLists.txt` | the OpenMeshCraft backend needs GMP/MPFR and the OpenMeshCraft package; `MeshBoolean.cpp` keeps MCUT when `SLIC3R_ENABLE_OPENMESHCRAFT_BOOLEAN` is unset, as upstream's own `LINUX_CLI_COMPILE` does |
-| `get_extruders({})` | `cli_assemble.cpp`, `main.cpp` | `ModelVolume::get_extruders` takes the global feature filaments; the assemble path passes none, as the official does (process config not loaded yet) |
+| `get_extruders(...)` takes the global feature filaments | `cli_assemble.cpp`, `main.cpp` | the plate's filament list passes `GlobalFeatureFilaments::from_full_config` and reads `wall_filament` / `sparse_infill_filament` / `solid_infill_filament` from layer ranges too, as `PartPlate::get_extruders_under_cli` does (`PartPlate.cpp 1321, 1336, 1343`); the assemble path passes none, as the official does (process config not loaded yet) |
 | `--allow-mix-temp` has no engine hook on Bambu | `main.cpp` | 2.9.1 removed the plate-level high/low temperature mix check and `Print::set_check_multi_filaments_compatibility`; the official CLI parses the flag and no longer uses it |
 | `Print::validate` returns a list of warnings | `main.cpp` | joined with newlines as the official does (`BambuStudio.cpp 7531-7536`), so `validation_warning` keeps its shape |
 | Nozzle inventory on a printer pick | `desktop_presets.cpp` | `PresetBundle::extruder_nozzle_stat` is gone; the desktop calls `NozzleInventory::select_printer` (`Plater.cpp 2179`, `Tab.cpp 6155`), which writes `extruder_nozzle_stats(_new)` and the per-slot keys into the project config |
-| Nozzle statistics for settings-file input | `main.cpp` | the official CLI's 2.9.1 route: Hybrid slots take the preset's per-slot defaults (`4544-4553`), the per-slot nozzle keys are derived from the counts when the input lacks them (`7170-7191`) |
+| Nozzle statistics for settings-file input | `main.cpp` | the official CLI's 2.9.1 route: Hybrid slots take the preset's per-slot defaults (`4544-4553`), the per-slot nozzle keys are derived from the counts when the input lacks them (`7170-7191`), for carried stats too (`extruder_nozzle_stats_new` read first, `4496, 4555-4559`): a 2.8.x H2D/H2C project carries the stats but none of the per-slot keys. Carried stats are dropped on a printer change, as the official does (`4530`) |
 | Mixed nozzle diameters | `cli_nozzle_diameter.{cpp,hpp}` (new), `cli_load_settings.cpp`, `main.cpp` | `filament_diameter_map` filled from the printer when not given (`2673-2849`); `multi_nozzle_diameter_mode` gate (`3289-3401`); a single-diameter plate refused with -108 (`5066-5086`); `--downward-check` fails a printer that mounts fewer nozzles than the diameters used (`5218-5258`) |
 | The system-preset `AppConfig` outlives the bundles | `main.cpp` | `load_presets` now stores a pointer to it as the nozzle inventory's history (`PresetBundle.cpp 580, 2382`); a local one left `select_printer` reading a dead object (an access violation on Windows, found on the Windows box; silent on Linux) |
 | `FillFloatingConcentric.cpp` override regenerated | `libslic3r/bambustudio/libslic3r/Fill/` | upstream changed the file (Arachne thresholds follow the fill's nozzle); the override is the 2.9.1 copy with the five fixes re-applied, now with LF line endings like the engine file |
@@ -56,8 +56,13 @@ Not ported, on purpose:
 - The per-slot nozzle keys given as flags (`extruder_nozzle_count`,
   `extruder_nozzle_volume_type`, `extruder_nozzle_diameter`,
   `extruder_nozzle_slot`, `ams_nozzle_idx`): the first two were already
-  refused as flags (the engine derives them), and the rest belong to the
-  same flow.
+  refused as flags (the engine derives them); the other three are now
+  refused the same way (`BambuStudio.cpp 7104-7172`).
+- The single-diameter plate refusal (-108) runs where slicer-cli checks a
+  plate: before any plate is sliced for `--slice 0` (the pre-check pass
+  visits every plate first), on the one plate for `--slice N`. The
+  official CLI checks every plate of the project before slicing even when
+  one plate is asked for (`5066-5086`).
 - `check_preset` (the official's compatible_printers validation of loaded
   filaments): it existed at 2.8.2 and was not ported then either.
 - The import/prepare/export timings the official CLI now records: nothing
@@ -67,7 +72,9 @@ Not ported, on purpose:
 
 - The three engines' settings, flags and event shapes: every existing event
   keeps its kind and tag. New: `config_refused` / `PlateSingleNozzleDiameter`,
-  `warning` / `PrinterNozzleCountTooSmall`, return code -108.
+  `warning` / `PrinterNozzleCountTooSmall`, `warning` / `AllowMixTempIgnored`
+  (Bambu build, when the flag is given), the `MultiNozzleDiameters` entry of
+  `upward_compatibility_taint`, return code -108.
 - PR #55's height-range fill: the unchecked `layer_height` read is still
   there at the tag (`Slicing.cpp 229, 251`).
 - The Linux, macOS and Windows dependency pins (Boost 1.84, CGAL 5.4 with
@@ -117,4 +124,8 @@ Linux box, all three engines built from this branch (Orca and Snapmaker on their
 
 The four new Bambu cases all pass on Linux: re-slice of a project this engine wrote without `--allow-newer-file`, the Bambu Lab H3C on its named preset with nozzle statistics, conformal infill and the alternating-layer modifier as object settings, and the mixed-diameter block (map filled from the printer, mode off checks nothing, single-diameter map and plate refused with -108).
 
-Windows box (VS 2022 x64, vcpkg, Bambu 2.9.1 build): the same four cases pass, `FAILS=0`. The first Windows run crashed the named-preset route with an access violation; that run is what found the `AppConfig` lifetime bug.
+The mixed-diameter block also asserts that `--extruder-nozzle-diameter` is refused by name and that `--allow-mix-temp` reports `AllowMixTempIgnored`.
+
+Windows box (VS 2022 x64, vcpkg, Bambu 2.9.1 build): the same cases pass, `FAILS=0`. The first Windows run crashed the named-preset route with an access violation; that run is what found the `AppConfig` lifetime bug.
+
+The review-fix pass (plate filament list with the global feature filaments, per-slot derivation for carried stats, the taint entry, the refused per-slot flags, the `--allow-mix-temp` warning) was rebuilt and rerun on both boxes with the same results: Linux 325 PASS / 0 FAIL on all three engines, Windows `FAILS=0`. One regression surfaced and was fixed on the way: re-serialising carried `extruder_nozzle_stats` unconditionally (as the official does) rewrote a project's own value, so the write-back now happens only when the stats were computed or derived.

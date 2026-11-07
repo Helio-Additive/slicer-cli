@@ -3028,6 +3028,9 @@ struct PlateOutcome {
     std::vector<std::string>                    downward_printers;
     std::vector<std::string>                    downward_failed;
     bool                                        sequence_plate = false;
+    // The project's filaments select more than one nozzle diameter
+    // (BambuStudio.cpp 5241, 5392-5393).
+    bool                                        multi_nozzle_diameters = false;
     std::vector<int>                            skipped_objects;
     bool                                        no_check = false;
     bool                                        actions_only = false;
@@ -3374,13 +3377,14 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
     {
         std::vector<std::string> checked;
         std::set<std::string> failed;
-        bool any_checked = false, sequence_plates = false;
+        bool any_checked = false, sequence_plates = false, multi_nozzle_diameters = false;
         for (const PlateOutcome& p : outcomes) {
             if (!p.downward_checked) continue;
             if (!any_checked) checked = p.downward_printers;
             any_checked = true;
             failed.insert(p.downward_failed.begin(), p.downward_failed.end());
             sequence_plates |= p.sequence_plate;
+            multi_nozzle_diameters |= p.multi_nozzle_diameters;
         }
         std::vector<std::string> downward;
         for (const std::string& name : checked)
@@ -3397,9 +3401,14 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
                      upward.end());
         if (!upward.empty())
             j["upward_compatible_machine"] = upward;
-        // BambuStudio.cpp 4913-4914.
+        // BambuStudio.cpp 5389-5393 at v02.09.01.70.
+        std::vector<std::string> taint;
         if (any_checked && sequence_plates)
-            j["upward_compatibility_taint"] = std::vector<std::string>{"PrintSequenceByObject"};
+            taint.push_back("PrintSequenceByObject");
+        if (any_checked && multi_nozzle_diameters)
+            taint.push_back("MultiNozzleDiameters");
+        if (!taint.empty())
+            j["upward_compatibility_taint"] = taint;
 #endif
     }
     j["sliced_plates"] = json::array();
@@ -3699,15 +3708,22 @@ void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
 /// 1625-1739): each printable instance's volumes, its layer ranges, its support
 /// filaments when it has support, the plate's tool-change G-codes, sorted and
 /// unique. The model holds only this plate's objects (load_bbs_3mf with the
-/// plate id), so every instance is the plate's. Bambu's per-feature block
-/// (separate_filaments_for_features) is not ported: no such setting is defined
-/// in src/libslic3r at 5873b5f, so the official's block never runs.
+/// plate id), so every instance is the plate's. Bambu (v02.09.01.70): the
+/// global wall / sparse-infill / solid-infill filaments count for every
+/// volume (GlobalFeatureFilaments::from_full_config, Model.cpp 3409-3413;
+/// PartPlate.cpp 1321, 1336) and a layer range may name them too (1343).
 static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
                                                 const Slic3r::DynamicPrintConfig& full_config, int plate_index) {
     using namespace Slic3r;
     std::vector<int> plate_extruders;
     const int glb_support_intf_extr = arrange_opt(full_config, "support_interface_filament")->getInt();
     const int glb_support_extr      = arrange_opt(full_config, "support_filament")->getInt();
+#ifndef ENGINE_ORCA
+    const GlobalFeatureFilaments global_features = GlobalFeatureFilaments::from_full_config(full_config);
+    static const char* const range_keys[] = {"extruder", "wall_filament", "sparse_infill_filament", "solid_infill_filament"};
+#else
+    static const char* const range_keys[] = {"extruder"};
+#endif
 #ifdef ENGINE_SNAPMAKER
     // The fork keeps the 1-based feature-filament keys and filament 1 is its
     // default, so only other values count for the tower
@@ -3744,15 +3760,17 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
 #ifdef ENGINE_ORCA
                 const std::vector<int> volume_extruders = mv->get_extruders();
 #else
-                const std::vector<int> volume_extruders = mv->get_extruders({});
+                const std::vector<int> volume_extruders = mv->get_extruders(global_features);
 #endif
                 plate_extruders.insert(plate_extruders.end(), volume_extruders.begin(), volume_extruders.end());
             }
             // layer range
             for (const auto& layer_range : object->layer_config_ranges) {
-                if (layer_range.second.has("extruder")) {
-                    if (auto id = layer_range.second.option("extruder")->getInt(); id > 0)
-                        plate_extruders.push_back(id);
+                for (const char* key : range_keys) {
+                    if (layer_range.second.has(key)) {
+                        if (auto id = layer_range.second.option(key)->getInt(); id > 0)
+                            plate_extruders.push_back(id);
+                    }
                 }
             }
             bool obj_support = false;
@@ -9649,37 +9667,49 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // plate's flow type, the per-slot nozzle keys derived from the counts,
         // and the stats written to m_print_config on a printer with several
         // extruders or nozzles (BambuStudio.cpp 7088, 7170-7191;
-        // new_nozzle_volume_type from 3804-3825). Unlike the official CLI, a
-        // value the input carries is never recomputed (the official also does
-        // it on a printer change): the product writes the value into every
-        // 3MF and it is kept as it is.
+        // new_nozzle_volume_type from 3804-3825). Stats the input carries are
+        // read as they are (extruder_nozzle_stats_new first, 4496, 4555-4559)
+        // unless the printer changed, when the official recomputes them from
+        // the new printer (4530). A 2.8.x project carries the stats but none
+        // of the per-slot keys, so the per-slot derivation below runs for
+        // carried stats too (7173-7189).
         {
-            const auto* stats = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats");
-            const bool carried = stats != nullptr &&
-                std::any_of(stats->values.begin(), stats->values.end(), [](const std::string& s) { return !s.empty(); });
+            const auto has_values = [](const Slic3r::ConfigOptionStrings* o) {
+                return o != nullptr && std::any_of(o->values.begin(), o->values.end(),
+                                                   [](const std::string& s) { return !s.empty(); });
+            };
+            const auto* stats_new = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats_new");
+            const auto* stats     = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats");
+            const Slic3r::ConfigOptionStrings* carried =
+                rs.settings_merge.machine_switch ? nullptr : has_values(stats_new) ? stats_new : has_values(stats) ? stats : nullptr;
             const auto* max_opt = config.option<Slic3r::ConfigOptionIntsNullable>("extruder_max_nozzle_count");
             const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
-            if (!carried && max_opt != nullptr && !max_opt->values.empty() && nozzles != nullptr) {
+            if (max_opt != nullptr && !max_opt->values.empty() && nozzles != nullptr) {
                 const std::vector<int> max_nozzle_count = max_opt->values;
                 const size_t slot_count = max_nozzle_count.size();
                 const int new_extruder_count = int(nozzles->values.size());
                 const auto* opt_nvt = dynamic_cast<const Slic3r::ConfigOptionEnumsGeneric*>(config.option("nozzle_volume_type"));
-                // BambuStudio.cpp 4536-4553.
-                std::vector<int> curr_volume_map_value(slot_count, static_cast<int>(Slic3r::NozzleVolumeType::nvtStandard));
-                if (opt_nvt && !opt_nvt->values.empty())
-                    for (size_t idx = 0; idx < slot_count; ++idx)
-                        curr_volume_map_value[idx] = idx < opt_nvt->values.size() ? opt_nvt->values[idx] : opt_nvt->values.back();
                 Slic3r::ExtruderNozzleStat nozzle_stats_obj;
-                nozzle_stats_obj.on_printer_model_change_cli(curr_volume_map_value, max_nozzle_count);
-                // Hybrid only summarises mixed slots, so take the real mix
-                // from the preset's per-slot defaults (4544-4553).
-                for (size_t eid = 0; eid < slot_count; ++eid) {
-                    if (curr_volume_map_value[eid] != int(Slic3r::NozzleVolumeType::nvtHybrid))
-                        continue;
-                    bool first = true;
-                    for (const auto& [vt, cnt] : Slic3r::count_default_nozzle_volume_types(config, int(eid), max_nozzle_count[eid])) {
-                        nozzle_stats_obj.set_extruder_nozzle_count(int(eid), vt, cnt, first);
-                        first = false;
+                if (carried != nullptr) {
+                    // BambuStudio.cpp 4555-4559.
+                    nozzle_stats_obj.set_raw_stat(Slic3r::get_extruder_nozzle_stats(carried->values));
+                } else {
+                    // BambuStudio.cpp 4536-4553.
+                    std::vector<int> curr_volume_map_value(slot_count, static_cast<int>(Slic3r::NozzleVolumeType::nvtStandard));
+                    if (opt_nvt && !opt_nvt->values.empty())
+                        for (size_t idx = 0; idx < slot_count; ++idx)
+                            curr_volume_map_value[idx] = idx < opt_nvt->values.size() ? opt_nvt->values[idx] : opt_nvt->values.back();
+                    nozzle_stats_obj.on_printer_model_change_cli(curr_volume_map_value, max_nozzle_count);
+                    // Hybrid only summarises mixed slots, so take the real mix
+                    // from the preset's per-slot defaults (4544-4553).
+                    for (size_t eid = 0; eid < slot_count; ++eid) {
+                        if (curr_volume_map_value[eid] != int(Slic3r::NozzleVolumeType::nvtHybrid))
+                            continue;
+                        bool first = true;
+                        for (const auto& [vt, cnt] : Slic3r::count_default_nozzle_volume_types(config, int(eid), max_nozzle_count[eid])) {
+                            nozzle_stats_obj.set_extruder_nozzle_count(int(eid), vt, cnt, first);
+                            first = false;
+                        }
                     }
                 }
                 // BambuStudio.cpp 3804-3825: the flow type per extruder.
@@ -9702,7 +9732,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // single-extruder nozzle rack keeps its count of the target
                     // flow type, any other extruder keeps its total and takes the
                     // plate's flow type (7173-7189).
-                    if (!Slic3r::per_slot_nozzle_options_consistent(config)) {
+                    const bool derived = !Slic3r::per_slot_nozzle_options_consistent(config);
+                    if (derived) {
                         for (size_t eid = 0; eid < new_nozzle_volume_type.size(); ++eid) {
                             if (Slic3r::is_single_ext_multi_nozzle(config))
                                 nozzle_stats_obj.on_volume_type_switch(int(eid), new_nozzle_volume_type[eid]);
@@ -9714,8 +9745,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             nozzle_stats_obj, max_nozzle_count, config.opt_string("printer_variant"));
                         Slic3r::sync_per_slot_nozzle_options_from_full_stat(config, full_stat);
                     }
-                    config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats", true)->values =
-                        Slic3r::save_extruder_nozzle_stats_to_string(nozzle_stats_obj.get_raw_stat());
+                    // The official re-serialises the stats every time (7191); a
+                    // value the input carries and nothing changed is kept as
+                    // written (the parser drops what it does not know, 1232-1237).
+                    if (carried == nullptr || derived)
+                        config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats", true)->values =
+                            Slic3r::save_extruder_nozzle_stats_to_string(nozzle_stats_obj.get_raw_stat());
                 }
             }
         }
@@ -10388,6 +10423,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 }
                 if (!found_used_filament)
                     used_diameters = slicer_cli::selected_filament_map_diameters(config);
+                outcome.multi_nozzle_diameters = used_diameters.size() > 1;
                 if (used_diameters.size() > 1)
                     for (const slicer_cli::DownwardPrinter& p : printers)
                         if ((int)used_diameters.size() > p.max_nozzle_count &&
@@ -11306,7 +11342,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #elif defined(ENGINE_BAMBU)
             // Bambu 2.9.1 dropped the plate-level high/low temperature mix check and
             // its setter (no set_check_multi_filaments_compatibility in Print at
-            // v02.09.01.70; the official CLI parses allow_mix_temp and no longer uses it).
+            // v02.09.01.70; the official CLI parses allow_mix_temp and no longer uses
+            // it). The flag is kept for callers that pass it; they are told it did
+            // nothing.
+            if (o.given_flag("allow_mix_temp"))
+                emit_event({{"event","warning"},
+                            {"tag","AllowMixTempIgnored"},
+                            {"message", "--allow-mix-temp has no effect: Bambu Studio 2.9.1 has no plate-level "
+                                        "temperature-mix check to lift"}});
 #else
             if (o.given_flag("allow_mix_temp"))
                 print.set_check_multi_filaments_compatibility(!switches.allow_mix_temp);

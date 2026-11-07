@@ -11,6 +11,7 @@
 #include <map>
 #include <sstream>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -1189,7 +1190,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                 std::to_string(used_diameters.size()) +
                                 " nozzle diameter(s); give each filament its nozzle diameter with --filament-diameter-map"
                                 " (two or more different ones), or turn the mode off");
-            if (const auto* map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map")) {
+            // The official CLI always loads its filaments from files (3330-3338);
+            // a project sliced as it is keeps the map the desktop wrote with
+            // its own filaments, so only loaded files are checked against it.
+            // A map given on the command line over the project's filaments
+            // still needs one entry per filament.
+            const auto* map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map");
+            if (map != nullptr && load_filaments_config.empty() && cli_has_map &&
+                map->values.size() != static_cast<size_t>(std::max(filament_count, 0)))
+                return fail(CLI_CONFIG_FILE_ERROR,
+                            "filament_diameter_map has " + std::to_string(map->values.size()) + " entries; the project has " +
+                                std::to_string(std::max(filament_count, 0)) + " filaments. Give one nozzle diameter per filament");
+            if (map != nullptr && !load_filaments_config.empty()) {
                 if (map->values.size() != load_filaments_config.size())
                     return fail(CLI_CONFIG_FILE_ERROR,
                                 "filament_diameter_map has " + std::to_string(map->values.size()) + " entries; " +
@@ -1213,11 +1225,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     const std::string selected = format_diameter_to_str(std::atof(raw.c_str()));
                     if (supported.count(selected) != 0)
                         continue;
-                    std::string supported_str;
-                    for (const std::string& d : supported)
-                        supported_str += (supported_str.empty() ? "" : ",") + d;
                     return fail(CLI_CONFIG_FILE_ERROR, "The nozzle diameter " + selected + " of " + slot +
-                                                           " is not one its preset supports [" + supported_str + "]");
+                                                           " is not one its preset supports [" +
+                                                           boost::algorithm::join(supported, ",") + "]");
                 }
             }
         }

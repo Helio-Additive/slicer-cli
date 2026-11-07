@@ -554,9 +554,6 @@ endif()
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*OpenVDBUtils\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*SLA/Hollowing\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*TryCatchSignalSEH\\.cpp$")
-# The reference LogSink.cpp needs the desktop's Http/BBLUtil (encrypted log files);
-# Bambu 2.9.1's Log.cpp links the sink, so the override layer carries a headless one.
-list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX "^${LIBSLIC3R_REF_DIR}/LogSink\\.cpp$")
 # OpenMeshCraft boolean backend (Bambu 2.9.1): needs GMP/MPFR and the OpenMeshCraft
 # package; MeshBoolean.cpp keeps MCUT when SLIC3R_ENABLE_OPENMESHCRAFT_BOOLEAN is unset.
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*MeshBooleanOpenMeshCraft\\.cpp$")

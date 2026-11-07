@@ -5441,6 +5441,16 @@ run h3cmap3 "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-proc
     --multi-nozzle-diameter-mode=0 --filament-diameter-map "0.4;0.2" --slice 1 --outputdir h3cmap3/out --export-settings h3cmap3.json
 [ "$(rc h3cmap3)" = 0 ] || { show h3cmap3; fail "H3C: multi-diameter mode off refused the run (exit $(rc h3cmap3))"; h3c_ok=0; }
 grep -q '"tag":"PlateSingleNozzleDiameter"' h3cmap3/stdout && { h3c_ok=0; fail "H3C: the plate check ran with the mode off"; }
+# A per-slot layout key as a flag is refused by name (the official CLI rebuilds
+# the layout from it); --allow-mix-temp is taken and reported as having no effect.
+run h3cslot "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
+    --extruder-nozzle-diameter 0.4 --slice 1 --outputdir h3cslot/out
+[ "$(rc h3cslot)" != 0 ] && grep -q "extruder-nozzle-diameter is a .* setting that slicer-cli does not take on the command line" h3cslot/stderr \
+    || { show h3cslot; fail "H3C: --extruder-nozzle-diameter was not refused by name (exit $(rc h3cslot))"; h3c_ok=0; }
+run h3cmix "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
+    --allow-mix-temp=1 --slice 1 --outputdir h3cmix/out
+[ "$(rc h3cmix)" = 0 ] || { show h3cmix; fail "H3C: --allow-mix-temp refused the run (exit $(rc h3cmix))"; h3c_ok=0; }
+grep -q '"tag":"AllowMixTempIgnored"' h3cmix/stdout || { h3c_ok=0; fail "H3C: no AllowMixTempIgnored warning for --allow-mix-temp"; }
 [ $h3c_ok = 1 ] && echo "PASS: mixed nozzle diameters: the map fills from the printer, mode off checks nothing, and single-diameter maps and plates are refused (-108)"
 
 # The documents callers code against have the shapes schemas/ states. Every
