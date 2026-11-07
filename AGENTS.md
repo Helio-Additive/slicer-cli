@@ -6,7 +6,7 @@ are the authority.
 ## What this is
 
 A command-line slicer: one front end, three slicing engines. It ships three
-programs, `slicer_cli` (Bambu Studio engine, source pin `926a719`),
+programs, `slicer_cli` (Bambu Studio engine, source pin `56a57d0`),
 `slicer_cli-orcaslicer` (OrcaSlicer engine, pin `8500fcd`) and
 `slicer_cli-snapmaker` (Snapmaker Orca engine, a Snapmaker fork of OrcaSlicer,
 pin `bac6fd5`), for Linux x86_64,

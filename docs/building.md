@@ -25,7 +25,7 @@ The engines are git submodules, pinned to one commit each:
 
 | Engine | Submodule | Pin | Version |
 |-|-|-|-|
-| Bambu Studio | `references/BambuStudio` | `926a719` | 02.08.02.61 |
+| Bambu Studio | `references/BambuStudio` | `56a57d0` | 02.09.01.70 |
 | OrcaSlicer | `references/OrcaSlicer` | `8500fcd` | 2.4.2 |
 | Snapmaker Orca | `references/SnapmakerOrca` | `bac6fd5` | 2.4.1 |
 
@@ -38,7 +38,7 @@ packaged and released by the same workflow: `slicer_cli-snapmaker` ships beside
 
 The submodules point at the upstream projects' official repositories and are
 pinned to the commit of the release tag: `bambulab/BambuStudio` tag
-`v02.08.02.61` and `OrcaSlicer/OrcaSlicer` tag `v2.4.2`, and
+`v02.09.01.70` and `OrcaSlicer/OrcaSlicer` tag `v2.4.2`, and
 `Snapmaker/OrcaSlicer` commit `bac6fd5` (version 2.4.1). The engine source is
 used as it is (see "The override layer" below); no Helio commit lives inside
 `references/`.
@@ -194,7 +194,7 @@ that file are lost.
 
 | File | What it changes | In the current pin? | Can it move to the front end? |
 |-|-|-|-|
-| `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp` | Five crash/UB fixes: `is_floating` is kept the same length as `points` in both `rebase_at` (write the closure flag in place, never append); the floating-vertical-shell flag is read from the surviving line rather than one just erased; the extracted line's float flags are captured before `erase`/`insert` invalidate it; `prev`/`next` fall back to `curr` at the path ends instead of reading `path[-1]`/`path[size]`; the grid point buffer is owned by a vector that outlives the `EdgeGrid::Grid` query. Plus the engine's local `"../X.hpp"` includes rewritten as `<libslic3r/X.hpp>`. | No. The file is byte-identical between the previous pin and v02.08.02.61, and between v02.08.02.61 and the newest tag v02.08.04.61; no upstream commit has touched it since 2025-05-17. | No. All five are inside the fill path, and there is no front-end call site: the corrupting reads happen while a contour is resampled. The motivating input is `LV_nano_bag_rel_multipart.3mf` plates 2 and 3 (PR #25), where Windows PageHeap reported heap failure `0xC0000374`; the two use-after-frees were measured on a build whose only difference from the pin was elsewhere in the front end. |
+| `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp` | Five crash/UB fixes: `is_floating` is kept the same length as `points` in both `rebase_at` (write the closure flag in place, never append); the floating-vertical-shell flag is read from the surviving line rather than one just erased; the extracted line's float flags are captured before `erase`/`insert` invalidate it; `prev`/`next` fall back to `curr` at the path ends instead of reading `path[-1]`/`path[size]`; the grid point buffer is owned by a vector that outlives the `EdgeGrid::Grid` query. Plus the engine's local `"../X.hpp"` includes rewritten as `<libslic3r/X.hpp>`. | Regenerated at v02.09.01.70: upstream changed the file once since v02.08.02.61 (the Arachne thresholds follow the nozzle that prints the fill, not the smallest one, and `wall_transition_length` is one nozzle diameter), and the override is that copy with the five fixes re-applied. | No. All five are inside the fill path, and there is no front-end call site: the corrupting reads happen while a contour is resampled. The motivating input is `LV_nano_bag_rel_multipart.3mf` plates 2 and 3 (PR #25), where Windows PageHeap reported heap failure `0xC0000374`; the two use-after-frees were measured on a build whose only difference from the pin was elsewhere in the front end. |
 | `libslic3r/bambustudio/libslic3r/Thread.cpp`, `libslic3r/orcaslicer/libslic3r/Thread.cpp`, `libslic3r/snapmaker/libslic3r/Thread.cpp` | In `name_tbb_thread_pool_threads_set_locale()`, the wait for every TBB worker to reach the naming barrier (`cv.wait` at line 246 of the engine's `Thread.cpp`) gets one deadline, 1 s after the barrier starts, shared by every task (`cv.wait_until`). TBB does not promise to run all `max_concurrency` tasks at once, and a worker that is never woken held every other thread in that wait for ever: a macOS CI slice hung 21 min there. After the deadline a thread goes on, and tasks TBB runs in later waves do not wait again; a task that runs later still counts and wakes the rest. A task that stops waiting at the deadline still names its thread. Only a worker that never gets one of these tasks stays unnamed and keeps the process locale, which the command line never changes from "C". | No. `Thread.cpp` is byte-identical at all three pins (BambuStudio 926a719, OrcaSlicer 8500fcd, Snapmaker Orca bac6fd5), and the wait has no limit in any of them. | No. `Print::process` calls it (BambuStudio `Print.cpp:1946`, OrcaSlicer `Print.cpp:2181`, Snapmaker Orca `Print.cpp:2411`), once per process, and the wait is local to it; the front end cannot reach it. |
 
 The rest of the layer is dependency compatibility, not engine logic:

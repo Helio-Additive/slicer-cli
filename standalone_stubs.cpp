@@ -4,11 +4,6 @@
 
 #include <string>
 #include <functional>
-#ifdef ENGINE_BAMBU
-// LogSink is a BambuStudio-only facility (encrypted remote logging). OrcaSlicer
-// has no LogSink.hpp / LogSink.cpp, and nothing in its libslic3r references it.
-#include "libslic3r/LogSink.hpp"
-#endif
 
 namespace Slic3r {
 
@@ -43,23 +38,7 @@ bool load_drc(const char* /*path*/, TriangleMesh* /*meshptr*/) { return false; }
 bool load_drc(const char* /*path*/, Model* /*model*/, const char* /*object_name*/) { return false; }
 #endif // ENGINE_ORCA
 
-#ifdef ENGINE_BAMBU
-// LogSinkBackend implementations - we excluded LogSink.cpp but utils.cpp still references it
-// (BambuStudio only — OrcaSlicer has no LogSink).
-LogSinkBackend::LogSinkBackend(const std::string& base_path, const LogEncOptions& options)
-    : boost::log::sinks::text_file_backend(), m_log_enc_options(options) {
-    // Minimal initialization - no encryption in standalone
-}
-
-bool LogSinkBackend::update_enc_option(const std::string& base_path, const LogEncOptions& enc_options) {
-    m_log_enc_options = enc_options;
-    return true;
-}
-
-void LogSinkBackend::consume(const boost::log::record_view& rec, const std::string& formatted_message) {
-    // In standalone, just write to the base text_file_backend without encryption
-    boost::log::sinks::text_file_backend::consume(rec, formatted_message);
-}
-#endif // ENGINE_BAMBU
+// The Bambu engine's log-file sink lives in the override layer
+// (libslic3r/bambustudio/libslic3r/LogSink.cpp) since Bambu Studio 2.9.1.
 
 } // namespace Slic3r

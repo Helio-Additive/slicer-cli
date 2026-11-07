@@ -242,7 +242,7 @@ if(ENGINE STREQUAL "bambu" OR ENGINE STREQUAL "snapmaker")
         "Run ENGINE=snapmaker ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
     elseif(NOT CGAL_FOUND)
       message(FATAL_ERROR
-        "BambuStudio v02.08.02.61 requires Bambu-patched CGAL 5.4. "
+        "BambuStudio v02.09.01.70 requires Bambu-patched CGAL 5.4. "
         "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
     endif()
   endif()
@@ -554,7 +554,9 @@ endif()
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*OpenVDBUtils\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*SLA/Hollowing\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*TryCatchSignalSEH\\.cpp$")
-list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*LogSink\\.cpp$")
+# OpenMeshCraft boolean backend (Bambu 2.9.1): needs GMP/MPFR and the OpenMeshCraft
+# package; MeshBoolean.cpp keeps MCUT when SLIC3R_ENABLE_OPENMESHCRAFT_BOOLEAN is unset.
+list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*MeshBooleanOpenMeshCraft\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*NSVGUtils\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*Print\\.cpp\\.ANNOTATED$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*PostProcessor\\.cpp$")
@@ -888,7 +890,8 @@ add_library(libslic3r ALIAS libslic3r_core)
 # ─── CLI executable ────────────────────────────────────────────────────────
 add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_plan.cpp
     cli_command_line.cpp cli_flag_support.cpp desktop_presets.cpp cli_model_load.cpp cli_run_steps.cpp cli_load_settings.cpp cli_repetitions.cpp
-    cli_assemble.cpp cli_layer_ranges.cpp cli_pipe.cpp cli_failure_reason.cpp cli_snapmaker.cpp)
+    cli_assemble.cpp cli_layer_ranges.cpp cli_pipe.cpp cli_failure_reason.cpp cli_snapmaker.cpp
+    cli_nozzle_diameter.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 # Both engines build a program called slicer_cli; the package renames the
 # OrcaSlicer one to slicer_cli-orcaslicer. Give the Snapmaker build its own name

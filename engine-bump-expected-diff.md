@@ -1,292 +1,135 @@
 # Engine bump: expected diff
 
-The engine bump moves the two pinned engines from the Helio forks to the
-untouched upstream releases:
+This bump moves the Bambu Studio engine to the current public release. The
+Orca and Snapmaker engines stay where they are (OrcaSlicer 2.5.0 was at
+release candidate when this was written).
 
 | engine | was | is |
 |-|-|-|
-| OrcaSlicer | `31f6803` (upstream `42cce53`, 2.4.0-alpha, plus one Helio arrange fix) | **`8500fcd`** = upstream **v2.4.2** |
-| BambuStudio | `5873b5f` (Helio fork) | **`926a719`** = upstream **v02.08.02.61** |
+| BambuStudio | `926a719` = v02.08.02.61 (2.8.2) | **`56a57d0`** = upstream **v02.09.01.70** (2.9.1, 3 Nov 2026) |
+| OrcaSlicer | `8500fcd` = v2.4.2 | unchanged |
+| Snapmaker Orca | `bac6fd5` = 2.4.1 | unchanged |
 
-The fork arrange commits go away with them. The front end seeds bed 0 before
-arrange instead — the desktop's own value — and a locked model is a fixed
-obstacle again rather than a movable one.
+Upstream: 1,566 commits, 217 `libslic3r` files (+36,554 / -5,339), 53 setting
+keys added, `nozzle_type` dropped, the Bambu Lab H3C (a four-slot nozzle
+rack), mixed nozzle diameters, conformal infill, alternating-layer modifiers,
+a separate sub-top-surface pattern, and a new mesh-boolean backend
+(OpenMeshCraft). Every claim below names the run or the source line it comes
+from. A version bump is expected to change G-code everywhere; this file
+records what the change *is*, so a reviewer can tell expected drift from a
+defect.
 
-**This is the candidate for the overseer's test: branch `lane-bump4` at
-`78bad3a`**, which is the bump `6009651` stacked on #35's `e99b4bb`. Its own
-tree is the pins, the removal of the two override-layer `Print.cpp` copies, the
-front-end adjustments the new engine needs, and the doc and test updates. The
-16 files it touches are listed at the end of this file.
+## Why now
 
-## Where each number comes from
+A 3MF saved by Bambu Studio 2.9.1 carries a newer major.minor than the 2.8.2
+engine, which refuses it (`CLI_FILE_VERSION_NOT_SUPPORTED`, -24) unless
+`--allow-newer-file` is passed. Proven on the Linux box with a project the
+2.9.1 build wrote (`--export-3mf` of a sliced cube, then `--slice 1` on each
+binary; the suite's "a project written by this engine slices again" case
+repeats the new-binary half):
 
-Every claim below cites the run that produced it. The gate, sweep and H2D runs
-were made earlier in the lap on `~/bump-pkg-m3` (head `8ed665f`); the test
-totals are from the candidate itself. **The engine pins are the same upstream
-commits in both**, and only the front end differs between them, so the
-engine-level drift those runs establish carries over unchanged.
-
-| what it establishes | run | package and head |
-|-|-|-|
-| tier 1 and tier 3 outcomes, settings, print time, filament | `gateA.sh run bumpm3` (tiers 1 and 3), then `compare.py f1 bumpm3 --noise base1 base2` | `~/bump-pkg-m3` (head `8ed665f`) against `runs/f1`, noise `base1`/`base2` |
-| the printer sweep, the 14 refusals, Raise3D | `~/bedsweep/sweep.sh bumpm3` | `~/bump-pkg-m3` against the `pr35` baseline |
-| the official verdict on those 14 printers | `bump-official-own2.sh`: the official release AppImage, driven by its own presets | official OrcaSlicer v2.4.2 |
-| H2D against the official, the locked arrange, the layout corpus | jobs `bump-m3-h2d` and `bump-m3-rest2` | `~/bump-pkg-m3` against `~/bump-pkg-old` |
-| the candidate's own test totals | job `bump-m8-cases` | `~/bump-pkg-m8` (head `78bad3a`) |
-
-The gate compares against `runs/f1`, a run that predates both this bump and
-#35's conversions, so the tier-3 figures carry the two together; section 0
-separates them. The first tier-3 pass filled the box's disk at 17:44 — 13
-`No space left on device` lines — so two unit dirs were never created and two
-lost their files; all four were re-run on the same package (`bump-m3-recheck`,
-`bump-m3-gate3`), and the figures below are after those re-runs.
-
-A version bump is expected to change G-code everywhere. This file records what
-the change *is*, so a reviewer can tell expected drift from a defect.
-
-## 0. Outcomes
-
-Run: `gateA.sh run bumpm3` tiers 1 and 3 against `runs/f1`, judged by
-`compare.py f1 bumpm3 --noise base1 base2`.
-
-Every unit that ran kept its exit code on the Bambu build, and on the Orca
-build the change is one-way — units `f1` refused now slice, and nothing that
-sliced stopped:
-
-| engine | units | rc 0 → 0 | refused → slices | still refused | slices → refused |
-|-|-|-|-|-|-|
-| tier 1 (Bambu) | 140 | **140** | 0 | 0 | 0 |
-| tier 3 (Orca) | 141 | 8 | **71** | 62 | **0** |
-
-The 71 tier-3 units are the Bambu projects #35's desktop-parity conversions
-now carry across the `*_id` rename and the value encodings; `f1` refused them
-for values this engine could not read. `13ab99508c843d4d.p1.o` — the H2D tower
-unit that hung for ten hours on the previous branch, held alive by the
-fork-in-handler deadlock #35 fixes — ends **rc=0 in 1292 s**, inside its
-2400 s timeout.
-
-## 1. Filament keys and the reset
-
-`OrcaSlicer v2.4.2` numbers every feature filament from 0, where 0 is
-"Default" (`outer_wall_filament_id`, `PrintConfig.cpp` 5011-5018, min 0,
-default 0), and `handle_legacy` renames the old 1-based `wall_filament` /
-`sparse_infill_filament` / `solid_infill_filament` to their `*_id` spelling,
-mapping a legacy `"1"` to `"0"` (`PrintConfig.cpp` 8038-8058).
-
-That makes half of #35's filament-index reset redundant — a Bambu Studio
-file's own 0 is already a value this engine reads — so the front end keeps
-only what the desktop still does on load (both cited at v2.4.2): an index
-outside `[0, N]` falls back to 0 for the six feature filaments
-(`PresetBundle.cpp` 4127-4136), and `support_filament` /
-`support_interface_filament` / `wipe_tower_filament` clamp to `[0, N]`
-(`PresetBundle.cpp` 4119-4125).
-
-`PartPlate::get_extruders_under_cli` is carried to the new names the same way
-(`PartPlate.cpp` 1671-1681 and 1744-1800).
-
-## 2. Settings
-
-`config_md5` changes on 160 units.
-
-### Tier 1 (Bambu build): 12 keys
-
-| key | units | value |
-|-|-|-|
-| `ams_filament_load_time_ams`, `ams_filament_load_time_ams_lite`, `ams_filament_load_time_n3f_s`, `ams_filament_unload_time_ams`, `ams_filament_unload_time_ams_lite`, `ams_filament_unload_time_n3f_s` | 140 | new key, `0` |
-| `default_ams_type` | 140 | new key, `-1` |
-| `bed_heat_soak_area` | 140 | new key, empty |
-| `extruder_nozzle_stats_new` | 131 | new key, empty |
-| `filament_map`, `filament_map_2`, `filament_nozzle_map` | 2 | value order changes, e.g. `1,1,1,1,1,2,1,2,1,1` → `1,1,1,1,2,1,1,2,1,1` |
-
-The nine new keys are new BambuStudio options at their defaults; no existing
-key changes value except the three filament maps on 2 units.
-
-### Tier 3 (Orca build)
-
-The rename, on the 8 units that name one:
-
-| old key (gone) | new key (appears) |
+| binary | result |
 |-|-|
-| `wall_filament` = `1` | `outer_wall_filament_id` = `0` |
-| `sparse_infill_filament` = `1` | `sparse_infill_filament_id` = `0` |
-| `solid_infill_filament` = `1` | `internal_solid_filament_id` = `0` |
-| | `inner_wall_filament_id`, `top_surface_filament_id`, `bottom_surface_filament_id` = `0` |
+| 2.8.2, no flag | refused, rc 232 (-24), `FileVersionNewerThanEngine` |
+| 2.8.2 with `--allow-newer-file` | rc 0 |
+| 2.9.1 | rc 0 |
 
-Plus the v2.4.2 options at their defaults on 8 units — `bridge_line_width`
-`100%`, `chamber_minimal_temperature` `0`, `lightning_overhang_angle`,
-`lightning_prune_angle`, `lightning_straightening_angle` `45`,
-`parallel_printheads_bed_exclude_areas`, `parallel_printheads_count` `1`,
-`relative_bridge_angle` `0`, `support_parallel_printheads` `0`, `use_3mf`
-`0` — and, on the 71 units that now slice, every vector the Orca alignment
-sizes to the roster (`activate_chamber_temp_control 0` → `0,0,0,0`,
-`additional_fan_full_speed_layer 0` → `0,0,0,0`, `filament_change_length`
-`10` → `10,10,10,10`, …), the desktop's own shape.
+## What the front end had to change
 
-One existing value changes: `slowdown_for_curled_perimeters` `1` → `0` on 7
-units (the engine's default for it changed between the pins).
+Every item is a port of the official command line at `v02.09.01.70`
+(`src/BambuStudio.cpp`) or of the desktop, cited in the code.
 
-## 3. Print time and filament
+| Change | Where | Why |
+|-|-|-|
+| Boost.Log's header included before any engine header | `main.cpp` | 2.9.1's `libslic3r/Log.hpp` replaces `BOOST_LOG_TRIVIAL` with its own logger and occupies boost's include guard; the engine-log bridge still works, as `LogStream` hands every record to Boost.Log (`Log.cpp:300-313`) |
+| A headless `LogSink.cpp` in the override layer | `libslic3r/bambustudio/libslic3r/LogSink.cpp` | `Log.cpp` links the desktop's log-file sink, which needs the desktop's HTTP client and AES code for encrypted log files; the copy writes plain text and the CLI never opens a log file; the three `LogSinkBackend` stubs `standalone_stubs.cpp` carried for the same reason are gone (MSVC refused the duplicate definitions; GNU ld had silently picked one) |
+| `MeshBooleanOpenMeshCraft.cpp` excluded | `CMakeLists.txt` | the OpenMeshCraft backend needs GMP/MPFR and the OpenMeshCraft package; `MeshBoolean.cpp` keeps MCUT when `SLIC3R_ENABLE_OPENMESHCRAFT_BOOLEAN` is unset, as upstream's own `LINUX_CLI_COMPILE` does |
+| `get_extruders(...)` takes the global feature filaments | `cli_assemble.cpp`, `main.cpp` | the plate's filament list passes `GlobalFeatureFilaments::from_full_config` and reads `wall_filament` / `sparse_infill_filament` / `solid_infill_filament` from layer ranges too, as `PartPlate::get_extruders_under_cli` does (`PartPlate.cpp 1321, 1336, 1343`); the assemble path passes none, as the official does (process config not loaded yet) |
+| `--allow-mix-temp` has no engine hook on Bambu | `main.cpp` | 2.9.1 removed the plate-level high/low temperature mix check and `Print::set_check_multi_filaments_compatibility`; the official CLI parses the flag and no longer uses it |
+| `Print::validate` returns a list of warnings | `main.cpp` | joined with newlines as the official does (`BambuStudio.cpp 7531-7536`), so `validation_warning` keeps its shape |
+| Nozzle inventory on a printer pick | `desktop_presets.cpp` | `PresetBundle::extruder_nozzle_stat` is gone; the desktop calls `NozzleInventory::select_printer` (`Plater.cpp 2179`, `Tab.cpp 6155`), which writes `extruder_nozzle_stats(_new)` and the per-slot keys into the project config |
+| Nozzle statistics for settings-file input | `main.cpp` | the official CLI's 2.9.1 route: Hybrid slots take the preset's per-slot defaults (`4544-4553`), the per-slot nozzle keys are derived from the counts when the input lacks them (`7170-7191`), for carried stats too (`extruder_nozzle_stats_new` read first, `4496, 4555-4559`): a 2.8.x H2D/H2C project carries the stats but none of the per-slot keys. Carried stats are dropped on a printer change, as the official does (`4530`) |
+| Mixed nozzle diameters | `cli_nozzle_diameter.{cpp,hpp}` (new), `cli_load_settings.cpp`, `main.cpp` | `filament_diameter_map` filled from the printer when not given (`2673-2849`); `multi_nozzle_diameter_mode` gate (`3289-3401`); a single-diameter plate refused with -108 (`5066-5086`); `--downward-check` fails a printer that mounts fewer nozzles than the diameters used (`5218-5258`) |
+| The system-preset `AppConfig` outlives the bundles | `main.cpp` | `load_presets` now stores a pointer to it as the nozzle inventory's history (`PresetBundle.cpp 580, 2382`); a local one left `select_printer` reading a dead object (an access violation on Windows, found on the Windows box; silent on Linux) |
+| `FillFloatingConcentric.cpp` override regenerated | `libslic3r/bambustudio/libslic3r/Fill/` | upstream changed the file (Arachne thresholds follow the fill's nozzle); the override is the 2.9.1 copy with the five fixes re-applied, now with LF line endings like the engine file |
 
-Run: the same gate run; the numbers come from each unit's own `digest.json`.
+Not ported, on purpose:
 
-Measured on the 143 units whose footer carries both numbers.
+- The per-slot nozzle keys given as flags (`extruder_nozzle_count`,
+  `extruder_nozzle_volume_type`, `extruder_nozzle_diameter`,
+  `extruder_nozzle_slot`, `ams_nozzle_idx`): the first two were already
+  refused as flags (the engine derives them); the other three are now
+  refused the same way (`BambuStudio.cpp 7104-7172`).
+- The single-diameter plate refusal (-108) runs where slicer-cli checks a
+  plate: before any plate is sliced for `--slice 0` (the pre-check pass
+  visits every plate first), on the one plate for `--slice N`. The
+  official CLI checks every plate of the project before slicing even when
+  one plate is asked for (`5066-5086`).
+- `check_preset` (the official's compatible_printers validation of loaded
+  filaments): it existed at 2.8.2 and was not ported then either.
+- The import/prepare/export timings the official CLI now records: nothing
+  reads them.
 
-| | units | median | min | max |
+## What stays the same
+
+- The three engines' settings, flags and event shapes: every existing event
+  keeps its kind and tag. New: `config_refused` / `PlateSingleNozzleDiameter`,
+  `warning` / `PrinterNozzleCountTooSmall`, `warning` / `AllowMixTempIgnored`
+  (Bambu build, when the flag is given), the `MultiNozzleDiameters` entry of
+  `upward_compatibility_taint`, return code -108.
+- PR #55's height-range fill: the unchecked `layer_height` read is still
+  there at the tag (`Slicing.cpp 229, 251`).
+- The Linux, macOS and Windows dependency pins (Boost 1.84, CGAL 5.4 with
+  Bambu's patch, OpenCASCADE 7.6.0): the upstream deps changes are
+  Windows-ARM64 and macOS-GMP work that this build does not use.
+
+## Expected G-code drift
+
+Old (2.8.2, package `fix55b`) against new (2.9.1, package `fix291`) on every
+Bambu-printer project in the suite corpus, plate 1 (`--slice 1` with each
+binary, `rc` and layer count read from the G-code header, times from
+`result.json`):
+
+| project printer | rc old / new | layers old / new | time old | time new |
 |-|-|-|-|-|
-| model time | 143 | 0 s | -1130 s | +632 s |
-| filament weight | 140 | 0.00 g | -0.56 g | +1.66 g |
+| A1 mini 0.4 | 0 / 0 | 68 / 68 | 26m 59s | 26m 52s |
+| A1 0.6 | 0 / 0 | 646 / 646 | 10h 55m 30s | 9h 59m 16s |
+| X2D 0.4 | 0 / 0 | 1242 / 1242 | 1d 20h 31m | 1d 20h 30m |
+| H2D 0.4 | 0 / 0 | 512 / 512 | 4h 29m 48s | 4h 36m 25s |
+| P2S 0.4 | 0 / 0 | 799 / 799 | 2h 47m 5s | 2h 47m 13s |
+| A1 mini 0.4 | 0 / 0 | 870 / 870 | 5h 52m 32s | 5h 49m 6s |
+| P1S 0.4 | 0 / 0 | 236 / 236 | 2h 22m 57s | 2h 23m 48s |
+| X1 Carbon 0.4 | 0 / 0 | 108 / 108 | 10h 31m 30s | 10h 34m 32s |
 
-The largest time moves are on the Orca build: `95b94b99835a2810.p1.o`
-16034 s → 14904 s (-19 min) and its `.p2.o` 15827 s → 14775 s. The largest
-gain is `15dcdfa8584738a0.p1.b` and `3d611b6090ed84cc.p1.b`, 2558 s →
-3190 s (+10.5 min) with 2.59 g → 4.25 g, the same move on both units.
+Every project slices on both engines with the same layer count. The time
+moves because of upstream changes to the same input: the top-surface
+monotonic travel optimisation and the sub-top-surface pattern default
+(monotonic, was rectilinear) on every printer, and the multi-nozzle rework
+(`PrintObject.cpp`, `ToolOrdering.cpp`, `WipeTower.cpp`, `TreeSupport.cpp`)
+on the H2D. The largest moves are the A1 0.6 project (9% faster) and the H2D
+project (2.5% slower).
 
-### `~/h2d-nomods.3mf`, as it is, `--slice 1`
+On every project saved by 2.8.x the new engine reports `nozzle_type` as an
+unknown key (`config_unknown_keys` / `UnrecognizedConfigKeys`): 2.9.1 ignores
+the key on load (`PrintConfig.cpp 8482`).
 
-A Snapmaker U1 project with four filaments, sliced by the Orca build with no
-modifiers of any kind, and by the official OrcaSlicer v2.4.2 on the same file:
+## Test results
 
-| | filament used | estimated printing time | G-code |
-|-|-|-|-|
-| this build | **565.92 g** | **1d 17h 37m 46s** | 376,203,089 B |
-| official OrcaSlicer 2.4.2 | 564.80 g | 1d 17h 33m 45s | 375,654,060 B |
+Both boxes ran the final head (the binaries carry the `AppConfig` lifetime fix and the removed LogSink stubs).
 
-+1.12 g (+0.198 %), +4m01s (+0.16 %) and +0.146 % of G-code — the same order
-as the per-unit drift section 3 describes, on a real four-filament project.
+Linux box, all three engines built from this branch (Orca and Snapmaker on their unchanged pins):
 
-## 4. What does not change
-
-- `--layout-plan` placements: 103 corpus units, both engines, identical
-  placement or identical refusal, 0 differing.
-- The product's own checks. On the candidate itself (`~/bump-pkg-m8`, head
-  `78bad3a`, job `bump-m8-cases`, `TMPDIR` on the home filesystem):
-  `test-complete-slice-path.sh` 239, `test_refusal_sentences.sh` 79,
-  `test-pr35-findings.sh` 42, `test-inherits-inputs.sh` 11 — **371 PASS,
-  0 FAIL**, plus one documented skip (`F7 orca`: OrcaSlicer orients without
-  the process settings). The wider set on the earlier package (job
-  `bump-m3-cases`, head `8ed665f`) was **337 PASS, 0 FAIL** across six
-  scripts, the U1 end-to-end, the export-3mf case and the SIGTERM pair. The
-  four suites are re-run on #35's final base before this goes up.
-- The export-3mf case on the real corpus unit `40fd25289c325186` (an X1
-  Carbon project that states **no `filament_ids`**) — the defect #35's
-  215fb0a fixes — exits 0 and writes a ~6.69 MB project (6,686,099 /
-  6,686,200 / 6,686,319 bytes on three runs; the project carries timestamps).
-- SIGTERM 0.5 s and 1.5 s into the load of `44e597511c7d5abd`, both engines:
-  the run is still live at the signal, exits **143** in 19–80 ms.
-
-## 5. `--layout-plan` with a locked model
-
-A `"locked": true` model is a real obstacle again. The Helio forks existed to
-make the nester accept the items at all, and as a side effect a locked model
-stopped being fixed in a bin: it was packed as a free item and its result
-thrown away. Seeding bed 0 (the desktop's own value, `ModelArrange.cpp:98`)
-restores the desktop behaviour; on Orca v2.4.2 the engine seeds itself
-(`ModelArrange.cpp:25`).
-
-`bump-locked-check.py` — a 40 mm locked square at the bed centre and eight
-free 20 mm cubes, `oldpins` against this build:
-
-| engine | `oldpins` places over the locked square | this build | reserves after the bump |
-|-|-|-|-|
-| Bambu | `f3` | none | yes |
-| Orca | none | none | already correct |
-
-The Bambu pair is the defect: the fork build packed `f3` over the locked
-square, this build reserves it. Orca's old build already placed nothing over
-it, so the same check reports no change on that engine. The product sends no
-locked models, so its corpus results are unaffected; this is the defect it
-worked around with a bed cut-out.
-
-## 6. Printer sweep
-
-Run: `~/bedsweep/sweep.sh bumpm3` against the `pr35` baseline — every printer
-each binary lists, a 20 mm cube, `--slice 1`. This run completed on both
-engines (`bump-m3-sweep`, rc=0): Bambu 56/56, Orca 1001/1001.
-
-| engine | baseline | this build | common | new printers | rc changed |
-|-|-|-|-|-|-|
-| Bambu | 56 | 56 | 56 | 0 | 0 |
-| Orca | 916 | 1001 | 897 | 104 | 3 |
-
-Three Orca printers change exit code, all common with the baseline:
-
-| printer | pr35 | this build | cause |
-|-|-|-|-|
-| `Creality K2 0.4 nozzle` | 0 | 238 | `retraction_distances_when_cut: 30` not in `[10,18]` |
-| `Snapmaker U1 (0.4+0.6 nozzle)` | 0 | 238 | `bridge_line_width` > nozzle `0.6` |
-| `Raise3D Pro3 0.4 nozzle (Dual)` | 139 | **0** | now slices (crashed on the baseline) |
-
-Twelve printers new in Orca 2.4.2 also refuse 238: `Anycubic Kobra S1 Max`
-0.25/0.4/0.6/0.8, `Creality SPARKX i7` 0.2/0.4/0.6/0.8, `SeeMeCNC BOSSdelta
-500 0521` 0.4/0.5/0.7/1.0. `filament_printable` is unchanged on every common
-printer, and one error text changed.
-
-### Known upstream: all 14 refusals are the official's own
-
-Every one of those 14 printers was run on the **official OrcaSlicer v2.4.2
-Linux binary** (the release AppImage, extracted) with the same input — the
-same cube, `--slice 1` — driven by its **own** machine/process/filament
-presets, values verbatim (only `type`, `from: system` and `name` normalized
-for the loader; the vendor files disagree on `System` vs `system`).
-
-| printer | official | this build | official's own message |
-|-|-|-|-|
-| `Creality K2 0.4 nozzle` | **238** | 238 | `retraction_distances_when_cut: 30 not in range [10,18]` |
-| `Snapmaker U1 (0.4+0.6 nozzle)` | **238** | 238 | `bridge_line_width: Bridge line width must not exceed nozzle diameter: 0.600000` |
-| `Anycubic Kobra S1 Max` 0.25/0.4/0.6/0.8 | **238** ×4 | 238 | `invalid parameter value(s) included in the 3mf file` |
-| `Creality SPARKX i7` 0.2/0.4/0.6/0.8 | **238** ×4 | 238 | `invalid parameter value(s) included in the 3mf file` |
-| `SeeMeCNC BOSSdelta 500 0521` 0.4/0.5/0.7/1.0 | **238** ×4 | 238 | `invalid parameter value(s) included in the 3mf file` |
-
-The offending values are the official's own preset data —
-`retraction_distances_when_cut` is `30` on `Creality K2 0.4 nozzle`, `28` on
-`Creality SPARKX i7 0.4 nozzle` and `0` on `Anycubic Kobra S1 Max 0.4 nozzle`
-— so these are upstream preset values meeting upstream validation, not a
-defect in this build. Our build refuses them for the same reason, with the
-same code; nothing to port and nothing to fix.
-
-## Appendix: the 71 tier-3 units that stop refusing
-
-`f1` refuses `rc=1`, this build slices `rc=0`. The other 70 tier-3 units keep
-their outcome: 62 refuse in both, 8 slice in both. Nothing slices in `f1` and
-refuses here, on either tier.
-
-```
-0668e4f26885db61.p1 0ac8987b7752cad5.p1 0bd9ebcc662ed7d1.p1 0c146c45f6339874.p1
-10f3db76169aaf66.p1 11baf75010b7bb8e.p1 133b2b96cbce86c0.p1 13ab99508c843d4d.p1
-16074018fca42544.p1 164107857dc07674.p1 18fafc72af617173.p1 2120be8346a4d0c2.p1
-269148b2b3d630ee.p1 29dca2d58a528eec.p1 2bcaf84a1f079eee.p1 38df8a7cb3ae2564.p1
-4075dc2e8666b12b.p1 40fd25289c325186.p1 447ce69e8b90953b.p1 44e597511c7d5abd.p1
-457bd9a6e032b36e.p1 4e7f97c1c867f8d1.p1 59e0a82c976257c6.p1 63e68e1f94b77f1f.p1
-75f6cd969f1cb638.p1 7685e5d1e03aba75.p1 7685e5d1e03aba75.p2 7685e5d1e03aba75.p3
-7685e5d1e03aba75.p4 7685e5d1e03aba75.p5 7685e5d1e03aba75.p6 7685e5d1e03aba75.p7
-79e8a7240a0db89e.p1 83c349c1fc91d352.p1 84d898b1c175a7d7.p1 8d04ca592bf68527.p1
-8e88573327bc80f8.p1 921c764ecb14c980.p1 92d5b8580685a566.p1 96b4ca075a6c2946.p1
-994466ad27b144c6.p1 9b9488dd40d5d18a.p1 9e3304518440373d.p1 9ee725aac7c3a0d6.p1
-abb0b218b93e0c1a.p1 aced112fffd85832.p3 ae90ff769d9dcacd.p3 b2a4e712c23fb3ff.p1
-ba87d1af5cab9bd2.p1 bcaebec4528224a9.p1 c21a41f81cab52cb.p1 c35f493ce7b336c6.p1
-c5178c79a385baa9.p1 c64bc16caac84404.p1 c7989cf82523da7e.p1 c9615f3c53fde3e2.p1
-cc782a63669ebb70.p1 cc782a63669ebb70.p2 d750095f6f477b5a.p1 dcc02d7b07a20fdd.p1
-e0c2a7603ed2e27d.p1 e203da8f17a56f73.p1 e48995025625eaf2.p1 e79f9ef79027dd9e.p1
-ea3c917387914d44.p1 eaa9ec91992b5133.p1 eef459ac860086b3.p1 f0151b84da3265ea.p1
-f3d18b4656b860d0.p1 f77de0d66c59506a.p1 fe4a96acf7e856a3.p1
-```
-
-Tier 1 has no outcome change at all: 140 units, `rc=0` under `f1` and here.
-
-## The bump's own tree
-
-`e99b4bb..78bad3a` is two commits — `6009651` (the bump) and `78bad3a` (this
-file) — and touches 16 files:
-
-| file | what it does, and why |
+| Check | Result |
 |-|-|
-| `.gitmodules`, `references/OrcaSlicer`, `references/BambuStudio` | the pins: upstream v2.4.2 and v02.08.02.61, both untouched upstream commits |
-| `libslic3r/orcaslicer/libslic3r/Print.cpp`, `libslic3r/bambustudio/libslic3r/Print.cpp` | **deleted** — the two override-layer copies. The filament-vector sizing they carried is the desktop's own rule (`Preset::normalize`, `Preset.cpp` 444-486), which reaches it without them; the Orca path now does the same in the front end |
-| `main.cpp` | the front-end adjustments the new engine needs: the `*_id` rename and 0-based feature-filament indices in `arrange_plate_extruders` and the three `slice_one_plate` sites, the filament-index reset, `normalize_filament_config_vectors` just before `Print::apply`, and bed-0 seeding for the legacy `--layout` path |
-| `layout_plan.cpp`, `arrange_harness.cpp` | bed-0 seeding before arrange, on both item lists |
-| `CMakeLists.txt`, `ci/vcpkg-overlays/cgal/portfile.cmake`, `install_deps.sh` | version strings only (`v02.08.01.55` → `v02.08.02.61`) |
-| `README.md`, `docs/building.md` | the version table and the build notes |
-| `tests/test-complete-slice-path.sh` | the cases the new engine changes |
-| `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp` | **kept as an override** (the owner-approved PR #25 fix) — upstream carries none of these fixes at any tag through v02.08.04.61 and has not touched the file since 2025-05-17, so it stays a copy of the v02.08.02.61 file plus its fixes, and keeps the file's original CRLF line endings. Its diff here is exactly four lines: the provenance header naming the upstream commit it copies |
-| `engine-bump-expected-diff.md` | this file |
+| engine entry points (bambustu_main, orcaslicer_main, Snapmaker_Orca_main) | one each |
+| `tests/test-packaged-slice.sh` | rc 0, 6 PASS |
+| `tests/test-complete-slice-path.sh` (Bambu + Orca) | rc 0, 325 PASS, 0 FAIL |
+| `tests/test_list_settings.sh` on the Bambu package | PASS |
 
+The four new Bambu cases all pass on Linux: re-slice of a project this engine wrote without `--allow-newer-file`, the Bambu Lab H3C on its named preset with nozzle statistics, conformal infill and the alternating-layer modifier as object settings, and the mixed-diameter block (map filled from the printer, mode off checks nothing, single-diameter map and plate refused with -108).
+
+The mixed-diameter block also asserts that `--extruder-nozzle-diameter` is refused by name and that `--allow-mix-temp` reports `AllowMixTempIgnored`.
+
+Windows box (VS 2022 x64, vcpkg, Bambu 2.9.1 build): the same cases pass, `FAILS=0`. The first Windows run crashed the named-preset route with an access violation; that run is what found the `AppConfig` lifetime bug.
+
+The review-fix pass (plate filament list with the global feature filaments, per-slot derivation for carried stats, the taint entry, the refused per-slot flags, the `--allow-mix-temp` warning) was rebuilt and rerun on both boxes with the same results: Linux 325 PASS / 0 FAIL on all three engines, Windows `FAILS=0`. One regression surfaced and was fixed on the way: re-serialising carried `extruder_nozzle_stats` unconditionally (as the official does) rewrote a project's own value, so the write-back now happens only when the stats were computed or derived.

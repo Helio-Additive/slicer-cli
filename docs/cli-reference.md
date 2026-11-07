@@ -273,8 +273,26 @@ setting. `post_process` is refused: neither official command line runs
 post-processing scripts. The nozzle and filament mapping settings
 (`nozzle_volume_type`, `filament_map_mode`, `filament_map`,
 `filament_volume_map`, `filament_nozzle_map`, `extruder_nozzle_count`,
-`extruder_nozzle_volume_type`) are refused as flags; the engine sets them
-from the printer and the filaments.
+`extruder_nozzle_volume_type`, `extruder_nozzle_diameter`,
+`extruder_nozzle_slot`, `ams_nozzle_idx`) are refused as flags; the engine
+sets them from the printer and the filaments.
+
+Mixed nozzle diameters (`slicer_cli`, Bambu Studio 2.9.1): `filament_diameter_map`
+names the nozzle diameter each filament prints with, one entry per filament
+(`--filament-diameter-map "0.4;0.2"`). Without the flag every loaded
+filament takes the printer's diameter, as the official command line fills
+it. The project's `multi_nozzle_diameter_mode` turns the checks on (or
+`--multi-nozzle-diameter-mode=1`, which wins over the project's): the map
+must then select two or more diameters, one entry per filament; with
+`--load-filaments` each entry is also checked against the diameters the
+filament's preset supports (`compatible_printers`), while a map given on
+the command line over a project's own filaments is checked for its entry
+count only. Every plate must use two or more diameters; a
+plate that uses one is refused (-108, `config_refused` /
+`PlateSingleNozzleDiameter`). With the mode off, the project's map is set to
+the printer's diameter and nothing is checked (a map given on the command
+line still applies, as every setting flag does). `--downward-check` fails a printer that mounts fewer nozzles than
+the diameters the project uses (`warning` / `PrinterNozzleCountTooSmall`).
 
 These older shortcuts set one setting each and keep working:
 
@@ -296,7 +314,7 @@ These older shortcuts set one setting each and keep working:
 | `--mtcpp` | count | Refuse a plate with more triangles (-59) | all binaries |
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | all binaries |
 | `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | all binaries |
-| `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate | all binaries |
+| `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate. `slicer_cli` accepts it and does nothing with it: Bambu Studio 2.9.1 dropped the plate-level temperature-mix check, so there is nothing to lift; the `slicer_cli` run says so once with a `warning` / `AllowMixTempIgnored` event. `slicer_cli-snapmaker` applies it to its own pre-slice temperature check | all binaries |
 | `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19), or with a mixed filament (-25, Bambu Studio). On by default with `--slice` | all binaries |
 | `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | all binaries |
 | `--load-slicedata` | folder | Slice each plate from the slicing data saved in `<folder>/<plate>`; a plate without usable data is sliced normally | all binaries |
@@ -571,7 +589,7 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `sliced_plates[].gcode_file` | The plate's G-code file |
 | `downward_compatible_machine` | With `--downward-check`: the printers every plate fits |
 | `upward_compatible_machine` | slicer_cli, after a settings merge: the newer printers the project suits |
-| `upward_compatibility_taint` | slicer_cli with `--downward-check`: `PrintSequenceByObject` when a plate prints by object |
+| `upward_compatibility_taint` | slicer_cli with `--downward-check`: `PrintSequenceByObject` when a plate prints by object; `MultiNozzleDiameters` when the project's filaments select more than one nozzle diameter (the upward printers were then judged on their nozzle count) |
 
 The preset-name fields and the last three compatibility fields are optional.
 
@@ -651,6 +669,7 @@ for -2):
 | -103 | A filament cannot print on the first layer of this plate type |
 | -104 | G-code outside the printable area |
 | -105 | G-code in the wrapping detection area |
+| -108 | Mixed nozzle diameters: a plate uses one nozzle diameter, or the map selects fewer than two (`slicer_cli`) |
 
 `result.json` gives the sentence for each code.
 
