@@ -46,4 +46,16 @@ std::set<std::string> selected_filament_map_diameters(const Slic3r::DynamicPrint
 /// (machine_max_nozzle_count, 1529-1549).
 int machine_max_nozzle_count(const Slic3r::DynamicPrintConfig& config);
 
+/// With multi_nozzle_diameter_mode on, a plate whose filaments all select one
+/// nozzle diameter cannot be uploaded: that diameter, else empty (a plate with
+/// no filament, or with two or more diameters, passes; BambuStudio.cpp
+/// 5066-5086).
+std::string plate_single_nozzle_diameter(const Slic3r::DynamicPrintConfig& config, const std::vector<int>& plate_filaments);
+
+/// The diameters the project's plates select, one list of filaments per
+/// plate; when no plate uses a filament, every map slot counts
+/// (BambuStudio.cpp 5218-5236).
+std::set<std::string> project_nozzle_diameters(const Slic3r::DynamicPrintConfig& config,
+                                               const std::vector<std::vector<int>>& plates_filaments);
+
 } // namespace slicer_cli

@@ -24,7 +24,9 @@ defect.
 A 3MF saved by Bambu Studio 2.9.1 carries a newer major.minor than the 2.8.2
 engine, which refuses it (`CLI_FILE_VERSION_NOT_SUPPORTED`, -24) unless
 `--allow-newer-file` is passed. Proven on the Linux box with a project the
-2.9.1 build wrote (`~/snapbuild/cmp291/ver3/ver.txt`):
+2.9.1 build wrote (`--export-3mf` of a sliced cube, then `--slice 1` on each
+binary; the suite's "a project written by this engine slices again" case
+repeats the new-binary half):
 
 | binary | result |
 |-|-|
@@ -84,7 +86,9 @@ Not ported, on purpose:
 ## Expected G-code drift
 
 Old (2.8.2, package `fix55b`) against new (2.9.1, package `fix291`) on every
-Bambu-printer project in the suite corpus, plate 1 (`~/snapbuild/cmp291/table3.txt`):
+Bambu-printer project in the suite corpus, plate 1 (`--slice 1` with each
+binary, `rc` and layer count read from the G-code header, times from
+`result.json`):
 
 | project printer | rc old / new | layers old / new | time old | time new |
 |-|-|-|-|-|

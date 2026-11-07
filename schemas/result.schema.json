@@ -103,7 +103,7 @@
       "items": {
         "type": "string"
       },
-      "description": "slicer_cli with --downward-check: PrintSequenceByObject when a plate prints by object."
+      "description": "slicer_cli with --downward-check: PrintSequenceByObject when a plate prints by object; MultiNozzleDiameters when the project's filaments select more than one nozzle diameter."
     },
     "sliced_plates": {
       "type": "array",

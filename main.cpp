@@ -3776,6 +3776,18 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
             bool obj_support = false;
             const ConfigOption* obj_support_opt = object->config.option("enable_support");
             const ConfigOption* obj_raft_opt    = object->config.option("raft_layers");
+#ifndef ENGINE_ORCA
+            // Bambu keeps the two overrides independent (PartPlate.cpp
+            // 1351-1363 at v02.09.01.70): an object overriding only raft_layers
+            // keeps the global enable_support, and the other way round.
+            bool obj_enable_support = arrange_opt(full_config, "enable_support")->getBool();
+            int  obj_raft_layers    = arrange_opt(full_config, "raft_layers")->getInt();
+            if (obj_support_opt != nullptr)
+                obj_enable_support = obj_support_opt->getBool();
+            if (obj_raft_opt != nullptr)
+                obj_raft_layers = obj_raft_opt->getInt();
+            obj_support = obj_enable_support || obj_raft_layers > 0;
+#else
             if (obj_support_opt != nullptr || obj_raft_opt != nullptr) {
                 if (obj_support_opt != nullptr)
                     obj_support = obj_support_opt->getBool();
@@ -3783,6 +3795,7 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
                     obj_support |= obj_raft_opt->getInt() > 0;
             } else
                 obj_support = glb_support;
+#endif
             if (obj_support) {
                 int obj_support_intf_extr = 0;
                 if (const ConfigOption* opt = object->config.option("support_interface_filament"))
@@ -9674,9 +9687,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // of the per-slot keys, so the per-slot derivation below runs for
         // carried stats too (7173-7189).
         {
-            const auto has_values = [](const Slic3r::ConfigOptionStrings* o) {
-                return o != nullptr && std::any_of(o->values.begin(), o->values.end(),
-                                                   [](const std::string& s) { return !s.empty(); });
+            const auto has_values = [](const Slic3r::ConfigOptionStrings* opt) {
+                return opt != nullptr && std::any_of(opt->values.begin(), opt->values.end(),
+                                                     [](const std::string& s) { return !s.empty(); });
             };
             const auto* stats_new = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats_new");
             const auto* stats     = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats");
@@ -10414,15 +10427,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // its own, so a printer that mounts fewer nozzles than that fails.
             // With no plate using a filament, the whole map counts.
             if (Slic3r::multi_nozzle_diameter_mode_enabled(config)) {
-                std::set<std::string> used_diameters;
-                bool found_used_filament = false;
-                for (const DownwardPlate& plate : downward_plates) {
-                    const std::vector<int> filaments = arrange_plate_extruders(*plate.model, config, plate.index + 1);
-                    found_used_filament |= !filaments.empty();
-                    slicer_cli::collect_selected_filament_diameters(config, filaments, used_diameters);
-                }
-                if (!found_used_filament)
-                    used_diameters = slicer_cli::selected_filament_map_diameters(config);
+                std::vector<std::vector<int>> plates_filaments;
+                for (const DownwardPlate& plate : downward_plates)
+                    plates_filaments.push_back(arrange_plate_extruders(*plate.model, config, plate.index + 1));
+                const std::set<std::string> used_diameters = slicer_cli::project_nozzle_diameters(config, plates_filaments);
                 outcome.multi_nozzle_diameters = used_diameters.size() > 1;
                 if (used_diameters.size() > 1)
                     for (const slicer_cli::DownwardPrinter& p : printers)
@@ -11343,13 +11351,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // Bambu 2.9.1 dropped the plate-level high/low temperature mix check and
             // its setter (no set_check_multi_filaments_compatibility in Print at
             // v02.09.01.70; the official CLI parses allow_mix_temp and no longer uses
-            // it). The flag is kept for callers that pass it; they are told it did
-            // nothing.
-            if (o.given_flag("allow_mix_temp"))
-                emit_event({{"event","warning"},
-                            {"tag","AllowMixTempIgnored"},
-                            {"message", "--allow-mix-temp has no effect: Bambu Studio 2.9.1 has no plate-level "
-                                        "temperature-mix check to lift"}});
+            // it). The flag is kept for callers that pass it; the run says so once,
+            // before the plate loop (AllowMixTempIgnored).
 #else
             if (o.given_flag("allow_mix_temp"))
                 print.set_check_multi_filaments_compatibility(!switches.allow_mix_temp);
@@ -11392,19 +11395,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // print with one nozzle diameter is refused (the single-diameter
             // map was refused in the settings merge).
             if (Slic3r::multi_nozzle_diameter_mode_enabled(config)) {
-                std::set<std::string> plate_diameters;
-                slicer_cli::collect_selected_filament_diameters(config, arrange_plate_extruders(model, config, plate_id),
-                                                               plate_diameters);
-                if (plate_diameters.size() == 1) {
+                const std::string single_diameter =
+                    slicer_cli::plate_single_nozzle_diameter(config, arrange_plate_extruders(model, config, plate_id));
+                if (!single_diameter.empty()) {
                     // A model file has one plate, numbered 1 (plate_id 0 here, as
                     // curr_plate_index = max(0, plate_id - 1) below).
                     const int plate_number = std::max(1, plate_id);
                     const std::string detail = "Plate " + std::to_string(plate_number) + " uses only nozzle diameter " +
-                                               *plate_diameters.begin() + " with multi_nozzle_diameter_mode on.";
+                                               single_diameter + " with multi_nozzle_diameter_mode on.";
                     emit_event({{"event","config_refused"},
                                 {"tag","PlateSingleNozzleDiameter"},
                                 {"plate", plate_number},
-                                {"nozzle_diameter", *plate_diameters.begin()},
+                                {"nozzle_diameter", single_diameter},
                                 {"message", cli_error_sentence(CLI_MULTI_NOZZLE_DIAMETER_INVALID) + " " + detail}});
                     std::cerr << "Error: " << cli_error_sentence(CLI_MULTI_NOZZLE_DIAMETER_INVALID) << " " << detail << "\n";
                     set_outcome_failure(outcome, CLI_MULTI_NOZZLE_DIAMETER_INVALID, detail);
@@ -12672,6 +12674,15 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     if (const int refused = check_run_outputs(o, plates, &rs.model, nullptr))
         return refused;
 
+#ifdef ENGINE_BAMBU
+    // --allow-mix-temp has no engine hook on Bambu 2.9.1 (no plate-level
+    // temperature-mix check to lift); a caller that passes it is told once.
+    if (code == 0 && o.given_flag("allow_mix_temp"))
+        emit_event({{"event","warning"},
+                    {"tag","AllowMixTempIgnored"},
+                    {"message", "--allow-mix-temp has no effect: Bambu Studio 2.9.1 has no plate-level "
+                                "temperature-mix check to lift"}});
+#endif
     const bool pre_check = code == 0 && o.slice_plate == 0 && plates.size() > 1;
     for (size_t i = 0; pre_check && i < plates.size(); ++i) {
         PlateOutcome outcome;

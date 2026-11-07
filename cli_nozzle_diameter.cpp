@@ -152,6 +152,29 @@ int machine_max_nozzle_count(const DynamicPrintConfig& config)
     return total > 0 ? total : 1;
 }
 
+std::string plate_single_nozzle_diameter(const DynamicPrintConfig& config, const std::vector<int>& plate_filaments)
+{
+    if (plate_filaments.empty())
+        return {};
+    std::set<std::string> plate_diameters;
+    collect_selected_filament_diameters(config, plate_filaments, plate_diameters);
+    return plate_diameters.size() == 1 ? *plate_diameters.begin() : std::string();
+}
+
+std::set<std::string> project_nozzle_diameters(const DynamicPrintConfig& config,
+                                               const std::vector<std::vector<int>>& plates_filaments)
+{
+    std::set<std::string> used_diameters;
+    bool found_used_filament = false;
+    for (const std::vector<int>& filaments : plates_filaments) {
+        found_used_filament |= !filaments.empty();
+        collect_selected_filament_diameters(config, filaments, used_diameters);
+    }
+    if (!found_used_filament)
+        used_diameters = selected_filament_map_diameters(config);
+    return used_diameters;
+}
+
 } // namespace slicer_cli
 
 #endif // ENGINE_ORCA
