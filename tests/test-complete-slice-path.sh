@@ -5401,7 +5401,7 @@ flat_presets bambu h3c "Bambu Lab H3C 0.4 nozzle"
 py '
 import json, os, sys
 vendor = sys.argv[1]
-want = {"Bambu PLA Basic @BBL H3C", "Bambu PLA Basic @BBL H3C 0.2 nozzle"}
+want = ["Bambu PLA Basic @BBL H3C", "Bambu PLA Basic @BBL H3C 0.2 nozzle", "Bambu PETG HF @BBL H3C"]
 P = {}
 for root, _, files in os.walk(os.path.join(vendor, "filament")):
     for f in files:
@@ -5413,7 +5413,7 @@ def resolve(name, seen=()):
     d = P[name]
     r = resolve(d["inherits"], seen + (name,)) if d.get("inherits") and name not in seen else {}
     r.update(d); r.pop("inherits", None); return r
-for i, name in enumerate(sorted(want)):
+for i, name in enumerate(want):
     d = resolve(name); d.update({"type": "filament", "from": "system", "name": name, "instantiation": "true"})
     json.dump(d, open("h3c-fil%d.json" % i, "w", encoding="utf-8"), indent=1)
 ' "$RES/profiles/BBL"
@@ -5455,6 +5455,23 @@ grep -q '"tag":"PlateSingleNozzleDiameter"' h3cmap5/stdout || { show h3cmap5; fa
 run h3cmap6 "$B" cube.stl --printer-preset "Bambu Lab H3C 0.4 nozzle" --filament-preset "Bambu PLA Basic @BBL H3C" --filament-preset "Bambu PETG HF @BBL H3C" \
     --load-filaments "h3c-fil0.json" --multi-nozzle-diameter-mode=1 --filament-diameter-map "0.4;0.2" --slice 1 --outputdir h3cmap6/out
 grep -q '"tag":"PlateSingleNozzleDiameter"' h3cmap6/stdout || { show h3cmap6; fail "H3C: a diameter map over two named presets with one slot replaced did not reach the plate check (exit $(rc h3cmap6))"; h3c_ok=0; }
+# Three loaded filament files with two colours over a one-filament settings
+# file: the exported project's inherits_group and different_settings_to_system
+# hold one entry per preset (process, three filaments, printer), not the
+# settings file's or the colours' count. (Two files with no colours is the
+# engine's flush-matrix refusal, not this check.)
+run h3cinh "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json;h3c-fil2.json" \
+    --filament-colour "#FF0000;#00FF00" --slice 1 --outputdir h3cinh/out --export-3mf h3cinh.3mf
+[ "$(rc h3cinh)" = 0 ] && [ -s h3cinh/out/h3cinh.3mf ] || { show h3cinh; fail "H3C: three loaded filaments over a settings file exit $(rc h3cinh)"; h3c_ok=0; }
+[ -s h3cinh/out/h3cinh.3mf ] && { py '
+import json, sys, zipfile
+ps = json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config"))
+n = len(ps["filament_settings_id"])
+assert n == 3, "filament_settings_id has %d entries, want 3" % n
+for k in ("inherits_group", "different_settings_to_system"):
+    v = ps.get(k)
+    assert v is None or len(v) == n + 2, "%s has %d entries, want %d" % (k, len(v), n + 2)
+' h3cinh/out/h3cinh.3mf || { fail "H3C: the exported project's inherits_group/different_settings_to_system are not one entry per preset after --load-filaments"; h3c_ok=0; }; }
 # A per-slot layout key as a flag is refused by name (the official CLI rebuilds
 # the layout from it); --allow-mix-temp is taken and reported as having no effect.
 run h3cslot "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \

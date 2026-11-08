@@ -1302,7 +1302,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // a two-entry list is an out-of-bounds read, SIGSEGV (rc 139) on every
     // --slice N of the exported project. Size them from the roster the settings
     // already carry instead, exactly as the file-fed path already did.
-    const int inherits_count = retained_filament_count();
+    // The metadata lists hold one entry per filament the run ends with: the
+    // retained roster, or the loaded files when there are more of them.
+    const int inherits_count = std::max(retained_filament_count(), filament_count);
 
     std::vector<std::string>& different_settings = m_print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
     std::vector<std::string>& inherits_group     = m_print_config.option<ConfigOptionStrings>("inherits_group", true)->values;
