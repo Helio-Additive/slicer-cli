@@ -928,6 +928,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #endif
     if (filament_count == 0)
         filament_count = load_filament_count;
+    // The filaments the run has when the project names none: the ones the
+    // settings already carry (a model file with named presets, a settings
+    // file), as the largest per-filament list.
+    const auto retained_filament_count = [&]() {
+        int count = filament_count;
+        if (count == 0)
+            for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
+                                    "filament_type", "filament_diameter"})
+                if (const auto* vec = dynamic_cast<const ConfigOptionVectorBase*>(m_print_config.option(key, false)))
+                    count = std::max(count, int(vec->size()));
+        return count;
+    };
     if (is_bbl_3mf && load_filament_count > 0 && load_filaments_set.size() == 1 && !estimate_mode)
         disable_wipe_tower_after_mapping = true;   // B 2630-2634; O 2252-2256
 
@@ -1192,28 +1204,27 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                 " (two or more different ones), or turn the mode off");
             // The official CLI always loads its filaments from files (3330-3338);
             // a project sliced as it is keeps the map the desktop wrote with
-            // its own filaments, so only loaded files are checked against it.
-            // A map given on the command line over the project's filaments
-            // still needs one entry per filament.
+            // its own filaments, so only loaded files are checked against it,
+            // each in the slot it replaces (load_filaments_index: a slot left
+            // empty keeps the project's filament). A map given on the command
+            // line needs one entry per filament of the run: the project's or
+            // the named presets', plus any slot --load-filaments adds.
             const auto* map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map");
-            if (map != nullptr && load_filaments_config.empty() && cli_has_map &&
-                map->values.size() != static_cast<size_t>(std::max(filament_count, 0)))
+            const size_t roster = static_cast<size_t>(std::max(retained_filament_count(), load_filament_count));
+            if (map != nullptr && cli_has_map && map->values.size() != roster)
                 return fail(CLI_CONFIG_FILE_ERROR,
-                            "filament_diameter_map has " + std::to_string(map->values.size()) + " entries; the project has " +
-                                std::to_string(std::max(filament_count, 0)) + " filaments. Give one nozzle diameter per filament");
-            if (map != nullptr && !load_filaments_config.empty()) {
-                if (map->values.size() != load_filaments_config.size())
-                    return fail(CLI_CONFIG_FILE_ERROR,
-                                "filament_diameter_map has " + std::to_string(map->values.size()) + " entries; " +
-                                    std::to_string(load_filaments_config.size()) + " filaments were loaded. Give one"
-                                    " nozzle diameter per --load-filaments file");
-                for (size_t index = 0; index < map->values.size(); ++index) {
+                            "filament_diameter_map has " + std::to_string(map->values.size()) + " entries; the run has " +
+                                std::to_string(roster) + " filaments. Give one nozzle diameter per filament");
+            if (map != nullptr) {
+                for (size_t index = 0; index < load_filaments_config.size(); ++index) {
+                    const size_t slot_index = index < load_filaments_index.size() && load_filaments_index[index] > 0
+                                                  ? static_cast<size_t>(load_filaments_index[index] - 1) : index;
                     const std::string filament_name = index < load_filaments_name.size() ? load_filaments_name[index] : "";
-                    const std::string& raw = map->values[index];
-                    const std::string slot = "filament " + std::to_string(index + 1) + " (" + filament_name + ")";
-                    if (raw.empty())
+                    const std::string slot = "filament " + std::to_string(slot_index + 1) + " (" + filament_name + ")";
+                    if (slot_index >= map->values.size() || map->values[slot_index].empty())
                         return fail(CLI_CONFIG_FILE_ERROR, "filament_diameter_map names no nozzle diameter for " + slot +
                                                                " in multi-diameter mode");
+                    const std::string& raw = map->values[slot_index];
                     const auto* compatible = load_filaments_config[index].option<ConfigOptionStrings>("compatible_printers");
                     if (compatible == nullptr || compatible->values.empty())
                         return fail(CLI_CONFIG_FILE_ERROR, "The preset of " + slot + " names no compatible_printers, so its"
@@ -1286,12 +1297,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // a two-entry list is an out-of-bounds read, SIGSEGV (rc 139) on every
     // --slice N of the exported project. Size them from the roster the settings
     // already carry instead, exactly as the file-fed path already did.
-    int inherits_count = filament_count;
-    if (inherits_count == 0)
-        for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
-                                "filament_type", "filament_diameter"})
-            if (const auto* vec = dynamic_cast<const ConfigOptionVectorBase*>(m_print_config.option(key, false)))
-                inherits_count = std::max(inherits_count, int(vec->size()));
+    const int inherits_count = retained_filament_count();
 
     std::vector<std::string>& different_settings = m_print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
     std::vector<std::string>& inherits_group     = m_print_config.option<ConfigOptionStrings>("inherits_group", true)->values;

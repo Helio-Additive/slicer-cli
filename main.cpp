@@ -10429,7 +10429,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (Slic3r::multi_nozzle_diameter_mode_enabled(config)) {
                 std::vector<std::vector<int>> plates_filaments;
                 for (const DownwardPlate& plate : downward_plates)
-                    plates_filaments.push_back(arrange_plate_extruders(*plate.model, config, plate.index + 1));
+                    plates_filaments.push_back(arrange_plate_extruders(*plate.model, config, plate.index));
                 const std::set<std::string> used_diameters = slicer_cli::project_nozzle_diameters(config, plates_filaments);
                 outcome.multi_nozzle_diameters = used_diameters.size() > 1;
                 if (used_diameters.size() > 1)
@@ -11395,12 +11395,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // print with one nozzle diameter is refused (the single-diameter
             // map was refused in the settings merge).
             if (Slic3r::multi_nozzle_diameter_mode_enabled(config)) {
-                const std::string single_diameter =
-                    slicer_cli::plate_single_nozzle_diameter(config, arrange_plate_extruders(model, config, plate_id));
+                // Only this plate's objects count, and the plate's tool changes
+                // are keyed 0-based (plates_custom_gcodes, bbs_3mf.cpp 3872).
+                // A model file has one plate, numbered 1 (plate_id 0 here, as
+                // curr_plate_index = max(0, plate_id - 1) below).
+                const int plate_number = std::max(1, plate_id);
+                std::vector<int> plate_filaments;
+                {
+                    PlateScope scope(model, rs.plate(plate_id));
+                    plate_filaments = arrange_plate_extruders(model, config, plate_number - 1);
+                }
+                const std::string single_diameter = slicer_cli::plate_single_nozzle_diameter(config, plate_filaments);
                 if (!single_diameter.empty()) {
-                    // A model file has one plate, numbered 1 (plate_id 0 here, as
-                    // curr_plate_index = max(0, plate_id - 1) below).
-                    const int plate_number = std::max(1, plate_id);
                     const std::string detail = "Plate " + std::to_string(plate_number) + " uses only nozzle diameter " +
                                                single_diameter + " with multi_nozzle_diameter_mode on.";
                     emit_event({{"event","config_refused"},

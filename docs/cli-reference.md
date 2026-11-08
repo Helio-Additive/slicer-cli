@@ -283,11 +283,12 @@ names the nozzle diameter each filament prints with, one entry per filament
 filament takes the printer's diameter, as the official command line fills
 it. The project's `multi_nozzle_diameter_mode` turns the checks on (or
 `--multi-nozzle-diameter-mode=1`, which wins over the project's): the map
-must then select two or more diameters, one entry per filament; with
-`--load-filaments` each entry is also checked against the diameters the
-filament's preset supports (`compatible_printers`), while a map given on
-the command line over a project's own filaments is checked for its entry
-count only. Every plate must use two or more diameters; a
+must then select two or more diameters, one entry per filament of the run
+(the project's or the named presets', plus any slot `--load-filaments`
+adds); each file `--load-filaments` loads is also checked, in the slot it
+fills, against the diameters its preset supports (`compatible_printers`),
+while the project's own filaments are checked for the entry count only.
+Every plate must use two or more diameters; a
 plate that uses one is refused (-108, `config_refused` /
 `PlateSingleNozzleDiameter`). With the mode off, the project's map is set to
 the printer's diameter and nothing is checked (a map given on the command

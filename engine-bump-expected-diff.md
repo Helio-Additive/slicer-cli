@@ -122,8 +122,8 @@ Linux box, all three engines built from this branch (Orca and Snapmaker on their
 | Check | Result |
 |-|-|
 | engine entry points (bambustu_main, orcaslicer_main, Snapmaker_Orca_main) | one each |
-| `tests/test-packaged-slice.sh` | rc 0, 6 PASS |
-| `tests/test-complete-slice-path.sh` (Bambu + Orca) | rc 0, 325 PASS, 0 FAIL |
+| `tests/test-packaged-slice.sh` (Bambu, Orca and Snapmaker packages; three of the six cases are the Snapmaker's) | rc 0, 6 PASS |
+| `tests/test-complete-slice-path.sh` (takes the Bambu and Orca binaries; its catalog cases also look for the Snapmaker binary beside them) | rc 0, 325 PASS, 0 FAIL |
 | `tests/test_list_settings.sh` on the Bambu package | PASS |
 
 The four new Bambu cases all pass on Linux: re-slice of a project this engine wrote without `--allow-newer-file`, the Bambu Lab H3C on its named preset with nozzle statistics, conformal infill and the alternating-layer modifier as object settings, and the mixed-diameter block (map filled from the printer, mode off checks nothing, single-diameter map and plate refused with -108).
@@ -132,4 +132,4 @@ The mixed-diameter block also asserts that `--extruder-nozzle-diameter` is refus
 
 Windows box (VS 2022 x64, vcpkg, Bambu 2.9.1 build): the same cases pass, `FAILS=0`. The first Windows run crashed the named-preset route with an access violation; that run is what found the `AppConfig` lifetime bug.
 
-The review-fix pass (plate filament list with the global feature filaments, per-slot derivation for carried stats, the taint entry, the refused per-slot flags, the `--allow-mix-temp` warning) was rebuilt and rerun on both boxes with the same results: Linux 325 PASS / 0 FAIL on all three engines, Windows `FAILS=0`. One regression surfaced and was fixed on the way: re-serialising carried `extruder_nozzle_stats` unconditionally (as the official does) rewrote a project's own value, so the write-back now happens only when the stats were computed or derived.
+The review-fix pass (plate filament list with the global feature filaments, per-slot derivation for carried stats, the taint entry, the refused per-slot flags, the `--allow-mix-temp` warning) was rebuilt and rerun on both boxes with the same results: Linux 325 PASS / 0 FAIL (the two suites above, over the three rebuilt engines), Windows `FAILS=0`. One regression surfaced and was fixed on the way: re-serialising carried `extruder_nozzle_stats` unconditionally (as the official does) rewrote a project's own value, so the write-back now happens only when the stats were computed or derived.
