@@ -5459,6 +5459,10 @@ run h3cmix "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-proce
     --allow-mix-temp=1 --slice 1 --outputdir h3cmix/out
 [ "$(rc h3cmix)" = 0 ] || { show h3cmix; fail "H3C: --allow-mix-temp refused the run (exit $(rc h3cmix))"; h3c_ok=0; }
 grep -q '"tag":"AllowMixTempIgnored"' h3cmix/stdout || { h3c_ok=0; fail "H3C: no AllowMixTempIgnored warning for --allow-mix-temp"; }
+run h3cmix2 "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
+    --allow-mix-temp=1 -o h3cmix2/out.gcode
+[ "$(rc h3cmix2)" = 0 ] || { show h3cmix2; fail "H3C: --allow-mix-temp refused the single-file call (exit $(rc h3cmix2))"; h3c_ok=0; }
+grep -q '"tag":"AllowMixTempIgnored"' h3cmix2/stdout || { h3c_ok=0; fail "H3C: no AllowMixTempIgnored warning on the single-file call"; }
 [ $h3c_ok = 1 ] && echo "PASS: mixed nozzle diameters: the map fills from the printer, mode off checks nothing, and single-diameter maps and plates are refused (-108)"
 
 # The documents callers code against have the shapes schemas/ states. Every

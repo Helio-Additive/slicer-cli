@@ -11352,7 +11352,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // its setter (no set_check_multi_filaments_compatibility in Print at
             // v02.09.01.70; the official CLI parses allow_mix_temp and no longer uses
             // it). The flag is kept for callers that pass it; the run says so once,
-            // before the plate loop (AllowMixTempIgnored).
+            // at its start (AllowMixTempIgnored, run_cli_slice).
 #else
             if (o.given_flag("allow_mix_temp"))
                 print.set_check_multi_filaments_compatibility(!switches.allow_mix_temp);
@@ -12680,15 +12680,6 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     if (const int refused = check_run_outputs(o, plates, &rs.model, nullptr))
         return refused;
 
-#ifdef ENGINE_BAMBU
-    // --allow-mix-temp has no engine hook on Bambu 2.9.1 (no plate-level
-    // temperature-mix check to lift); a caller that passes it is told once.
-    if (code == 0 && o.given_flag("allow_mix_temp"))
-        emit_event({{"event","warning"},
-                    {"tag","AllowMixTempIgnored"},
-                    {"message", "--allow-mix-temp has no effect: Bambu Studio 2.9.1 has no plate-level "
-                                "temperature-mix check to lift"}});
-#endif
     const bool pre_check = code == 0 && o.slice_plate == 0 && plates.size() > 1;
     for (size_t i = 0; pre_check && i < plates.size(); ++i) {
         PlateOutcome outcome;
@@ -12833,6 +12824,16 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
 }
 
 static int run_cli_slice(const CliOptions& o, Slic3r::Calib_Params& calib_params) {
+#ifdef ENGINE_BAMBU
+    // --allow-mix-temp has no engine hook on Bambu 2.9.1 (no plate-level
+    // temperature-mix check to lift); a caller that passes it is told once,
+    // on the --slice path and on the single-file call alike.
+    if (o.given_flag("allow_mix_temp"))
+        emit_event({{"event","warning"},
+                    {"tag","AllowMixTempIgnored"},
+                    {"message", "--allow-mix-temp has no effect: Bambu Studio 2.9.1 has no plate-level "
+                                "temperature-mix check to lift"}});
+#endif
     if (o.slice_mode)
         return run_slice_mode(o, calib_params);
     PlateOutcome outcome;

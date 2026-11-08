@@ -288,6 +288,10 @@ must then select two or more diameters, one entry per filament of the run
 adds); each file `--load-filaments` loads is also checked, in the slot it
 fills, against the diameters its preset supports (`compatible_printers`),
 while the project's own filaments are checked for the entry count only.
+The entry count is checked when the run loads settings (`--load-settings`,
+`--load-filaments`, named presets, `--filament-colour`, `--uptodate`); a
+project sliced as it is with only a map skips it, and the plate check
+below still refuses a plate that ends up with one diameter.
 Every plate must use two or more diameters; a
 plate that uses one is refused (-108, `config_refused` /
 `PlateSingleNozzleDiameter`). With the mode off, the project's map is set to
