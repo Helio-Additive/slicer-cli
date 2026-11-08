@@ -220,6 +220,11 @@ double normal_seconds(const Slic3r::GCodeProcessor &processor) {
 
 } // namespace
 
+void write_gcode_timing_unavailable(int &exit_code) {
+    write_error("TIMING_UNAVAILABLE");
+    exit_code = 1;
+}
+
 bool run_gcode_timing_command(int argc, char **argv, int &exit_code) {
     if (!gcode_timing_requested(argc, argv))
         return false;

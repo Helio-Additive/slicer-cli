@@ -7,4 +7,7 @@ namespace slicer_cli {
 /// one JSON response and placed its process status in `exit_code`.
 bool run_gcode_timing_command(int argc, char **argv, int &exit_code);
 
+/// Writes the timing command's schema-valid unavailable response.
+void write_gcode_timing_unavailable(int &exit_code);
+
 } // namespace slicer_cli

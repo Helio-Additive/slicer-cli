@@ -68,12 +68,19 @@ binary, label, original, optimized, stdout, stderr = sys.argv[1:]
 command = [binary, "--gcode-timing", original, optimized]
 if label != "BAMBU":
     command += ["--printer-vendor-bbl", "false"]
+stdout_path = pathlib.Path(stdout)
+stderr_path = pathlib.Path(stderr)
+# Do not let a timeout leave a previous valid response at a reused path.
+stdout_path.write_text("")
+stderr_path.write_text("")
 try:
     result = subprocess.run(command, text=True, capture_output=True, timeout=10)
 except subprocess.TimeoutExpired as error:
-    raise SystemExit(f"timing command did not return within 10 seconds: {error}")
-pathlib.Path(stdout).write_text(result.stdout)
-pathlib.Path(stderr).write_text(result.stderr)
+    stdout_path.write_text(error.stdout or "")
+    stderr_path.write_text(error.stderr or "")
+    raise SystemExit(124)
+stdout_path.write_text(result.stdout)
+stderr_path.write_text(result.stderr)
 raise SystemExit(result.returncode)
 PY_TIMEOUT
 }

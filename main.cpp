@@ -12893,11 +12893,13 @@ int main(int argc, char** argv) {
     if (slicer_cli::gcode_timing_requested(argc, argv)) {
         try {
             boost::nowide::nowide_filesystem();
-        } catch (const std::runtime_error&) {
-            // The timing command owns stdout; it reports bootstrap failures as
-            // its schema-valid unavailable result below.
+            configure_engine_resources(argv[0], true);
+        } catch (...) {
+            // Timing owns stdout. Resource discovery may throw before the
+            // importer's own boundary, so preserve its one-document contract.
+            slicer_cli::write_gcode_timing_unavailable(gcode_timing_exit);
+            return gcode_timing_exit;
         }
-        configure_engine_resources(argv[0], true);
         if (slicer_cli::run_gcode_timing_command(argc, argv, gcode_timing_exit))
             return gcode_timing_exit;
     }
