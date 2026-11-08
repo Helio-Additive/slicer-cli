@@ -365,6 +365,40 @@ CommandLineFiles command_line_files(const std::vector<std::string>& words) {
     return out;
 }
 
+bool gcode_timing_requested(int argc, char** argv) {
+    Slic3r::DynamicPrintAndCLIConfig cfg;
+    const auto& names = official_names();
+    bool parse_options = true;
+    for (int i = 1; i < argc; ++i) {
+        std::string token = argv[i];
+        if (!parse_options || !boost::starts_with(token, "-") || token == "-")
+            continue;
+        if (token == "--") {
+            parse_options = false;
+            continue;
+        }
+        token.erase(token.begin(), token.begin() + (boost::starts_with(token, "--") ? 2 : 1));
+        bool inline_value = false;
+        if (const size_t eq = token.find('='); eq != std::string::npos) {
+            token.erase(eq);
+            inline_value = true;
+        }
+        if (token == "gcode-timing")
+            return true;
+
+        bool takes_value = false;
+        if (const auto it = names.find(token); it != names.end()) {
+            const Slic3r::ConfigOptionDef& def = cfg.def()->options.at(it->second);
+            takes_value = def.type != Slic3r::coBool && def.type != Slic3r::coBools;
+        } else if (const LegacyFlag* lf = find_legacy(token)) {
+            takes_value = lf->takes_value;
+        }
+        if (takes_value && !inline_value && i + 1 < argc)
+            ++i;
+    }
+    return false;
+}
+
 bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, ParseRefusal& refusal) {
     o.argv0 = argc > 0 ? argv[0] : "slicer_cli";
     Slic3r::DynamicPrintAndCLIConfig& cfg = o.cli;

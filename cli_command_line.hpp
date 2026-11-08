@@ -67,6 +67,11 @@ struct CommandLineFiles {
 };
 CommandLineFiles command_line_files(const std::vector<std::string>& words);
 
+/// Whether --gcode-timing is an option token, rather than a value consumed by
+/// another option or a positional word after --. This uses the same value
+/// consumption rules as parse_command_line().
+bool gcode_timing_requested(int argc, char** argv);
+
 /// Reads argv into `o` and `m`. Returns false with `refusal` filled when the
 /// run must stop; `o.slice_mode` and `o.outputdir` are filled even then, so
 /// the caller can write result.json the way --slice always does.

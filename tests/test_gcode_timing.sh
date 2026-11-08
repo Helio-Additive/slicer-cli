@@ -60,6 +60,28 @@ run_timing() {
     fi
 }
 
+run_timing_with_timeout() {
+    local binary="$1" label="$2" original="$3" optimized="$4" stdout="$5" stderr="$6"
+    python3 - "$binary" "$label" "$original" "$optimized" "$stdout" "$stderr" <<'PY_TIMEOUT'
+import pathlib, subprocess, sys
+binary, label, original, optimized, stdout, stderr = sys.argv[1:]
+command = [binary, "--gcode-timing", original, optimized]
+if label != "BAMBU":
+    command += ["--printer-vendor-bbl", "false"]
+try:
+    result = subprocess.run(command, text=True, capture_output=True, timeout=10)
+except subprocess.TimeoutExpired as error:
+    raise SystemExit(f"timing command did not return within 10 seconds: {error}")
+pathlib.Path(stdout).write_text(result.stdout)
+pathlib.Path(stderr).write_text(result.stderr)
+raise SystemExit(result.returncode)
+PY_TIMEOUT
+}
+
+assert_schema() {
+    python3 "$SCRIPT_DIR/tools/check_json_schema.py" "$SCRIPT_DIR/../schemas/gcode-timing.schema.json" "$1"
+}
+
 index=0
 for binary in "${BINARIES[@]}"; do
     label="${LABELS[$index]}"
@@ -68,7 +90,7 @@ for binary in "${BINARIES[@]}"; do
     run_timing "$binary" "$label" "$ORIGINAL" "$OPTIMIZED" "$stdout" "$stderr"
     test ! -s "$stderr"
     test "$(wc -l < "$stdout" | tr -d ' ')" = 1
-    python3 "$SCRIPT_DIR/tools/check_json_schema.py" "$SCRIPT_DIR/../schemas/gcode-timing.schema.json" "$stdout"
+    assert_schema "$stdout"
     python3 - "$stdout" "$label" <<'PY'
 import json, math, sys
 d = json.load(open(sys.argv[1]))
@@ -90,27 +112,35 @@ PY
     cmp "$stdout" "$stdout.unicode"
     # Missing, empty, directory, and FIFO inputs must fail as JSON rather than
     # crashing a native importer or blocking on a special file.
-    python3 - "$binary" "$label" "$OPTIMIZED" "$WORKDIR" <<'PY_INPUTS'
-import json, os, pathlib, subprocess, sys
-binary, engine, optimized, directory = sys.argv[1:]
-root = pathlib.Path(directory)
-empty = root / "empty.gcode"
-empty.touch()
-inputs = [empty, root, root / "missing.gcode"]
+    empty="$WORKDIR/empty-$index.gcode"
+    : > "$empty"
+    inputs=("$empty" "$WORKDIR" "$WORKDIR/missing-$index.gcode")
+    fifo="$WORKDIR/$label.fifo"
+    if python3 - "$fifo" <<'PY_FIFO'
+import os, sys
 if hasattr(os, "mkfifo"):
-    fifo = root / (engine + ".fifo")
-    os.mkfifo(fifo)
-    inputs.append(fifo)
-for path in inputs:
-    command = [binary, "--gcode-timing", str(path), optimized]
-    if engine != "BAMBU":
-        command += ["--printer-vendor-bbl", "false"]
-    result = subprocess.run(command, text=True, capture_output=True, timeout=10)
-    assert result.returncode == 1, result.returncode
-    assert not result.stderr, result.stderr
-    assert json.loads(result.stdout)["error_code"] == "TIMING_UNAVAILABLE", result.stdout
-    assert str(path) not in result.stdout
-PY_INPUTS
+    os.mkfifo(sys.argv[1])
+else:
+    raise SystemExit(1)
+PY_FIFO
+    then
+        inputs+=("$fifo")
+    fi
+    for input in "${inputs[@]}"; do
+        set +e
+        run_timing_with_timeout "$binary" "$label" "$input" "$OPTIMIZED" "$stdout.input" "$stderr.input"
+        rc=$?
+        set -e
+        test "$rc" -eq 1
+        test ! -s "$stderr.input"
+        assert_schema "$stdout.input"
+        python3 - "$stdout.input" "$input" <<'PY_INPUT'
+import json, sys
+payload = json.load(open(sys.argv[1]))
+assert payload["error_code"] == "TIMING_UNAVAILABLE", payload
+assert sys.argv[2] not in open(sys.argv[1]).read()
+PY_INPUT
+    done
     "$binary" --help > "$stdout.help" 2> "$stderr.help"
     grep -q -- '--gcode-timing' "$stdout.help"
     # Identical imports must produce identical normal-mode estimates.
@@ -138,10 +168,66 @@ PY
     set -e
     test "$rc" -ne 0
     test ! -s "$stderr.conflict"
-    python3 "$SCRIPT_DIR/tools/check_json_schema.py" "$SCRIPT_DIR/../schemas/gcode-timing.schema.json" "$stdout.conflict"
+    assert_schema "$stdout.conflict"
     python3 - "$stdout.conflict" <<'PY'
 import json, sys
 assert json.load(open(sys.argv[1]))["error_code"] == "CONFLICTING_ARGUMENTS"
+PY
+    # A timing-looking word consumed as an option value, or after --, stays on
+    # the normal parser path. A genuine mixed timing option remains a strict
+    # timing refusal even when another option appears before it.
+    for args in '--printer-preset --gcode-timing' '-- --gcode-timing'; do
+        set +e
+        # shellcheck disable=SC2086
+        "$binary" $args > "$stdout.literal" 2> "$stderr.literal"
+        rc=$?
+        set -e
+        test "$rc" -ne 64
+        ! grep -q '"error_code"' "$stdout.literal"
+    done
+    set +e
+    if [ "$label" != BAMBU ]; then
+        "$binary" --slice 1 --gcode-timing "$ORIGINAL" "$OPTIMIZED" --printer-vendor-bbl false > "$stdout.mixed" 2> "$stderr.mixed"
+    else
+        "$binary" --slice 1 --gcode-timing "$ORIGINAL" "$OPTIMIZED" > "$stdout.mixed" 2> "$stderr.mixed"
+    fi
+    rc=$?
+    set -e
+    test "$rc" -eq 64
+    test ! -s "$stderr.mixed"
+    assert_schema "$stdout.mixed"
+    python3 - "$stdout.mixed" <<'PY'
+import json, sys
+assert json.load(open(sys.argv[1]))["error_code"] == "CONFLICTING_ARGUMENTS"
+PY
+    # A Python exec harness closes both stdin and stderr in the executable
+    # process. This exercises CRT descriptor allocation on Windows too, unlike
+    # a shell redirection which can leave a Windows child with a replacement
+    # standard handle.
+    python3 - "$binary" "$label" "$ORIGINAL" "$OPTIMIZED" "$stdout.closed-stderr" <<'PY_CLOSED_FDS'
+import os, pathlib, subprocess, sys
+binary, label, original, optimized, stdout = sys.argv[1:]
+command = [binary, "--gcode-timing", original, optimized]
+if label != "BAMBU":
+    command += ["--printer-vendor-bbl", "false"]
+launcher = """import os, sys
+for fd in (0, 2):
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+os.execv(sys.argv[1], sys.argv[1:])
+"""
+result = subprocess.run([sys.executable, "-c", launcher] + command,
+                        text=True, capture_output=True, timeout=10)
+pathlib.Path(stdout).write_text(result.stdout)
+assert result.returncode == 1, result.returncode
+assert not result.stderr, result.stderr
+PY_CLOSED_FDS
+    assert_schema "$stdout.closed-stderr"
+    python3 - "$stdout.closed-stderr" <<'PY'
+import json, sys
+assert json.load(open(sys.argv[1]))["error_code"] == "UNAVAILABLE"
 PY
     if [ "$label" = BAMBU ]; then
         set +e
@@ -150,6 +236,7 @@ PY
         set -e
         test "$rc" -eq 64
         test ! -s "$stderr.context-foreign"
+        assert_schema "$stdout.context-foreign"
         python3 - "$stdout.context-foreign" <<'PY'
 import json, sys
 assert json.load(open(sys.argv[1]))["error_code"] == "CONFLICTING_ARGUMENTS"
@@ -167,7 +254,7 @@ PY
     test "$rc" -ne 0
     test ! -s "$stderr.error"
     ! grep -F "$missing" "$stdout.error"
-    python3 "$SCRIPT_DIR/tools/check_json_schema.py" "$SCRIPT_DIR/../schemas/gcode-timing.schema.json" "$stdout.error"
+    assert_schema "$stdout.error"
     python3 - "$stdout.error" <<'PY'
 import json, sys
 assert json.load(open(sys.argv[1]))["error_code"] == "TIMING_UNAVAILABLE"
@@ -179,6 +266,7 @@ PY
         set -e
         test "$rc" -eq 64
         test ! -s "$stderr.context-required"
+        assert_schema "$stdout.context-required"
         python3 - "$stdout.context-required" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
@@ -191,6 +279,7 @@ PY
         set -e
         test "$rc" -eq 64
         test ! -s "$stderr.context-invalid"
+        assert_schema "$stdout.context-invalid"
         python3 - "$stdout.context-invalid" <<'PY'
 import json, sys
 assert json.load(open(sys.argv[1]))["error_code"] == "CONFLICTING_ARGUMENTS"
@@ -201,6 +290,7 @@ PY
         set -e
         test "$rc" -eq 64
         test ! -s "$stderr.context-missing"
+        assert_schema "$stdout.context-missing"
         python3 - "$stdout.context-missing" <<'PY'
 import json, sys
 assert json.load(open(sys.argv[1]))["error_code"] == "CONFLICTING_ARGUMENTS"
@@ -211,16 +301,37 @@ PY
         set -e
         test "$rc" -eq 64
         test ! -s "$stderr.context-extra"
+        assert_schema "$stdout.context-extra"
         python3 - "$stdout.context-extra" <<'PY'
 import json, sys
 assert json.load(open(sys.argv[1]))["error_code"] == "CONFLICTING_ARGUMENTS"
 PY
         "$binary" --gcode-timing "$ORIGINAL" "$OPTIMIZED" --printer-vendor-bbl true > "$stdout.context-true" 2> "$stderr.context-true"
         test ! -s "$stderr.context-true"
-        python3 "$SCRIPT_DIR/tools/check_json_schema.py" "$SCRIPT_DIR/../schemas/gcode-timing.schema.json" "$stdout.context-true"
+        assert_schema "$stdout.context-true"
         python3 - "$stdout.context-true" <<'PY'
 import json, sys
 assert json.load(open(sys.argv[1]))["original_seconds"] > 0
+PY
+        # Metadata-free imports must use the selected executable's resources,
+        # never an arbitrary CWD info/nozzle_info.json.
+        clean_dir="$WORKDIR/$label-clean"
+        poison_dir="$WORKDIR/$label-poison"
+        mkdir -p "$clean_dir" "$poison_dir/info"
+        printf '%s\n' '{"nozzle_hrc":{"undefine":"invalid"}}' > "$poison_dir/info/nozzle_info.json"
+        binary_dir="$(cd "$(dirname "$binary")" && pwd -P)"
+        binary_from_cwd="$binary_dir/$(basename "$binary")"
+        (cd "$clean_dir" && "$binary_from_cwd" --gcode-timing "$ORIGINAL" "$OPTIMIZED" --printer-vendor-bbl false > "$stdout.cwd-clean" 2> "$stderr.cwd-clean")
+        (cd "$poison_dir" && "$binary_from_cwd" --gcode-timing "$ORIGINAL" "$OPTIMIZED" --printer-vendor-bbl false > "$stdout.cwd-poison" 2> "$stderr.cwd-poison")
+        test ! -s "$stderr.cwd-clean"
+        test ! -s "$stderr.cwd-poison"
+        assert_schema "$stdout.cwd-clean"
+        assert_schema "$stdout.cwd-poison"
+        python3 - "$stdout.cwd-clean" "$stdout.cwd-poison" <<'PY'
+import json, sys
+clean, poison = (json.load(open(path)) for path in sys.argv[1:])
+assert clean["original_seconds"] == poison["original_seconds"], (clean, poison)
+assert clean["optimized_seconds"] == poison["optimized_seconds"], (clean, poison)
 PY
     fi
     if [ "$label" = ORCA ]; then

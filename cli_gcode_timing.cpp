@@ -1,5 +1,6 @@
 // cli_gcode_timing.cpp -- native import timing, never slicing or rewriting.
 #include "cli_gcode_timing.hpp"
+#include "cli_command_line.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -9,6 +10,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/filesystem.hpp>
@@ -38,12 +40,12 @@ class OutputSilencer {
     OutputSilencer() {
         flush_streams();
 #if defined(_WIN32)
-        m_stdout = _dup(_fileno(stdout));
-        m_stderr = _dup(_fileno(stderr));
+        m_stdout = duplicate_saved_fd(_fileno(stdout));
+        m_stderr = duplicate_saved_fd(_fileno(stderr));
         m_null = _open("NUL", _O_WRONLY);
 #else
-        m_stdout = dup(STDOUT_FILENO);
-        m_stderr = dup(STDERR_FILENO);
+        m_stdout = duplicate_saved_fd(STDOUT_FILENO);
+        m_stderr = duplicate_saved_fd(STDERR_FILENO);
         m_null = open("/dev/null", O_WRONLY);
 #endif
         if (m_stdout < 0 || m_stderr < 0 || m_null < 0) {
@@ -96,6 +98,36 @@ class OutputSilencer {
     }
 
   private:
+    // Saved streams must never occupy stdout/stderr: a closed descriptor can
+    // otherwise make dup(stdout) return 2, which the stderr redirect then
+    // overwrites before restore writes the JSON response.
+    static int duplicate_saved_fd(int fd) {
+#if defined(_WIN32)
+        // _dup() may successively fill every closed standard descriptor. Keep
+        // each low duplicate live until a later duplicate is above them: with
+        // both stdin and stderr closed, closing fd 0 before the next _dup()
+        // would simply allocate fd 0 again and let the later stderr redirect
+        // overwrite the saved stdout at fd 2.
+        std::vector<int> low_duplicates;
+        for (;;) {
+            const int saved = _dup(fd);
+            if (saved < 0) {
+                for (const int low : low_duplicates)
+                    _close(low);
+                return -1;
+            }
+            if (saved > 2) {
+                for (const int low : low_duplicates)
+                    _close(low);
+                return saved;
+            }
+            low_duplicates.push_back(saved);
+        }
+#else
+        return fcntl(fd, F_DUPFD, STDERR_FILENO + 1);
+#endif
+    }
+
     static void flush_streams() {
         std::cout.flush();
         std::cerr.flush();
@@ -189,10 +221,7 @@ double normal_seconds(const Slic3r::GCodeProcessor &processor) {
 } // namespace
 
 bool run_gcode_timing_command(int argc, char **argv, int &exit_code) {
-    bool requested = false;
-    for (int i = 1; i < argc; ++i)
-        requested = requested || std::string(argv[i]) == "--gcode-timing";
-    if (!requested)
+    if (!gcode_timing_requested(argc, argv))
         return false;
 
     // Timing deliberately has no slicing/config/output/probe switches.  Its
