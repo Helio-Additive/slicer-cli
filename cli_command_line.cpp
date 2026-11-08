@@ -703,6 +703,12 @@ void print_help(std::ostream& out, const char* prog) {
 #endif
 
     out << "\n=== Files, presets and modes ===\n";
+    help_row(out, "--gcode-timing ORIGINAL OPTIMIZED",
+             "Import existing G-code files and report native normal-mode estimates as JSON; never slice or rewrite.");
+#ifdef ENGINE_ORCA
+    help_row(out, "--printer-vendor-bbl true|false",
+             "Required with --gcode-timing: the original printer preset's BBL-vendor context.");
+#endif
     for (const auto& f : legacy_flags()) {
         if (official_names().count(f.name)) continue;   // listed with the shared names below
         std::string lhs = (std::string(f.name).size() == 1 ? "-" : "--") + std::string(f.name);

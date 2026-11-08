@@ -379,9 +379,26 @@ Transforms run in the order given, before the objects are placed.
 | `--export-stls` | folder | Write each object as its own STL and stop | all binaries |
 | `--info` | | Print each object's size, volume and facets, and stop | all binaries |
 | `--engine-info` | file | What a file is (printer, plates, the app that made it), which of the package's programs fit it and which to use (`recommended`), as JSON | all binaries |
+| `--gcode-timing` | `ORIGINAL OPTIMIZED` | Import two existing G-code files with this binary's native processor and print their normal-mode estimates as one JSON document. It never slices or rewrites either input, and it cannot be combined with any slicing, output, or probe flag. Orca and Snapmaker also require the printer vendor context described below | all binaries |
 | `--list-presets` | | This engine's system presets as JSON | all binaries |
 | `--list-settings` | | This engine's settings table as JSON: every key with its type and edit mode (`simple`/`advanced`/`develop`, plus `expert` on the OrcaSlicer build), and where the engine has them, its label, tooltip, category, default, bounds (`min`/`max`), unit, the preset that holds it (`scope`: `process`, `filament` or `printer`; left out for a setting in none of them) and, for enums, the values it takes. A field the engine has no value for is left out | all binaries |
 | `--printer` | name | With `--list-presets`: only this printer's presets, with its defaults and plate type | all binaries |
+
+For Orca and Snapmaker, pass the original printer preset's BBL-vendor Boolean explicitly:
+
+```sh
+slicer_cli-orcaslicer --gcode-timing original.gcode optimized.gcode --printer-vendor-bbl false
+slicer_cli-snapmaker --gcode-timing original.gcode optimized.gcode --printer-vendor-bbl false
+```
+
+Use `true` only when the original selected printer preset belongs to the `BBL`
+vendor; otherwise use `false`. This is the same context the Snapmaker and Orca
+desktops pass to their native G-code importers. It selects printer semantics
+and the comment dialect, including pause and color-change timing boundaries; it is not inferred from the engine
+name. Omitting it returns `PRINTER_CONTEXT_REQUIRED` with a nonzero exit code.
+Bambu uses the two-path form without this option. Orca can further refine this
+initial context from its embedded `printer_model`, as its desktop importer does.
+An unavailable estimate produces an error JSON document and a nonzero exit code.
 
 ### Output schemas
 
@@ -392,6 +409,7 @@ own `schemas/` folder, so a caller checks against the build it runs:
 | Document | Schema |
 |-|-|
 | `--engine-info` | `engine-info.schema.json` |
+| `--gcode-timing ORIGINAL OPTIMIZED` | `gcode-timing.schema.json` |
 | `result.json` in `--outputdir` | `result.schema.json` |
 | `--list-presets` | `list-presets.schema.json` |
 | `--list-settings` | `list-settings.schema.json` |

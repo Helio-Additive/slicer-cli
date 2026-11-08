@@ -60,6 +60,7 @@
 #include "libslic3r/Semver.hpp"
 #include "libslic3r_version.h"
 #include "cli_snapmaker.hpp"
+#include "cli_gcode_timing.hpp"
 
 // For JSON parsing (using libslic3r's built-in nlohmann/json)
 #include <nlohmann/json.hpp>
@@ -12884,6 +12885,11 @@ int main(int argc, char** argv) {
     // (nowide_filesystem, BambuStudio.cpp 1510-1523; OrcaSlicer.cpp 1233-1246).
     // Elsewhere both are no-ops.
     boost::nowide::args utf8_args(argc, argv);
+    // Timing needs the same UTF-8 paths and main-thread setup as other modes,
+    // but returns before logging, resource loading, or any slicing path.
+    int gcode_timing_exit = 0;
+    if (slicer_cli::run_gcode_timing_command(argc, argv, gcode_timing_exit))
+        return gcode_timing_exit;
     try {
         boost::nowide::nowide_filesystem();
     } catch (const std::runtime_error& ex) {

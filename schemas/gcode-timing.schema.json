@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "slicer-cli existing G-code timing result",
+  "description": "The single stdout document from --gcode-timing ORIGINAL OPTIMIZED. The files are imported by the selected engine and are never rewritten.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "engine",
+    "engine_revision"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "engine": {
+      "enum": [
+        "BAMBU",
+        "ORCA",
+        "SNAPMAKER"
+      ]
+    },
+    "engine_revision": {
+      "type": "string"
+    },
+    "original_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "optimized_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "error_code": {
+      "enum": [
+        "CONFLICTING_ARGUMENTS",
+        "PRINTER_CONTEXT_REQUIRED",
+        "TIMING_UNAVAILABLE",
+        "UNAVAILABLE"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "original_seconds",
+        "optimized_seconds"
+      ],
+      "properties": {
+        "schema_version": {},
+        "engine": {},
+        "engine_revision": {},
+        "original_seconds": {},
+        "optimized_seconds": {}
+      },
+      "additionalProperties": false
+    },
+    {
+      "required": [
+        "error_code"
+      ],
+      "properties": {
+        "schema_version": {},
+        "engine": {},
+        "engine_revision": {},
+        "error_code": {}
+      },
+      "additionalProperties": false
+    }
+  ],
+  "additionalProperties": false
+}

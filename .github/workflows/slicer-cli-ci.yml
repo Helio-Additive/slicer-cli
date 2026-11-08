@@ -721,6 +721,19 @@ jobs:
         if: runner.os == 'Windows'
         run: cmake --build build --config Release --parallel 16
 
+      - name: Test existing G-code timing (${{ matrix.engine }})
+        shell: bash
+        run: |
+          TIMING_BINARY="$ENGINE_BINARY"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            TIMING_BINARY="${ENGINE_BINARY_EXE//\\//}"
+            if [[ ! -f "$TIMING_BINARY" ]]; then
+              TIMING_BINARY="${ENGINE_BINARY_EXE_FLAT//\\//}"
+            fi
+          fi
+          TIMING_ENGINE="$(printf '%s' '${{ matrix.engine }}' | tr '[:lower:]' '[:upper:]')"
+          bash tests/test_gcode_timing.sh --engine "$TIMING_ENGINE" "$TIMING_BINARY"
+
       - name: Show sccache stats
         shell: bash
         run: sccache --show-stats
@@ -1325,6 +1338,19 @@ jobs:
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: cmake --build build --config Release --parallel 16
+
+      - name: Test existing G-code timing (${{ matrix.engine }})
+        shell: bash
+        run: |
+          TIMING_BINARY="$ENGINE_BINARY"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            TIMING_BINARY="${ENGINE_BINARY_EXE//\\//}"
+            if [[ ! -f "$TIMING_BINARY" ]]; then
+              TIMING_BINARY="${ENGINE_BINARY_EXE_FLAT//\\//}"
+            fi
+          fi
+          TIMING_ENGINE="$(printf '%s' '${{ matrix.engine }}' | tr '[:lower:]' '[:upper:]')"
+          bash tests/test_gcode_timing.sh --engine "$TIMING_ENGINE" "$TIMING_BINARY"
 
       - name: Show sccache stats
         shell: bash

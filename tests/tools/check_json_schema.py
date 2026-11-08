@@ -113,6 +113,7 @@ CHECKS = {
     "minItems": lambda v, n, *_: [f"{_[-1]}: fewer than {n} items"] if isinstance(v, list) and len(v) < n else [],
     "maxItems": lambda v, n, *_: [f"{_[-1]}: more than {n} items"] if isinstance(v, list) and len(v) > n else [],
     "minimum": lambda v, n, *_: [f"{_[-1]}: {v} is below {n}"] if is_type(v, "number") and v < n else [],
+    "exclusiveMinimum": lambda v, n, *_: [f"{_[-1]}: {v} is not above {n}"] if is_type(v, "number") and v <= n else [],
     "maximum": lambda v, n, *_: [f"{_[-1]}: {v} is above {n}"] if is_type(v, "number") and v > n else [],
 }
 
