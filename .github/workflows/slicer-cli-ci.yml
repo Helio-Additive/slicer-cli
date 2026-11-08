@@ -731,8 +731,7 @@ jobs:
               TIMING_BINARY="${ENGINE_BINARY_EXE_FLAT//\\//}"
             fi
           fi
-          TIMING_ENGINE="$(printf '%s' '${{ matrix.engine }}' | tr '[:lower:]' '[:upper:]')"
-          bash tests/test_gcode_timing.sh --engine "$TIMING_ENGINE" "$TIMING_BINARY"
+          bash tests/test_gcode_timing.sh --engine "${{ matrix.engine }}" "$TIMING_BINARY"
 
       - name: Show sccache stats
         shell: bash
@@ -1349,8 +1348,7 @@ jobs:
               TIMING_BINARY="${ENGINE_BINARY_EXE_FLAT//\\//}"
             fi
           fi
-          TIMING_ENGINE="$(printf '%s' '${{ matrix.engine }}' | tr '[:lower:]' '[:upper:]')"
-          bash tests/test_gcode_timing.sh --engine "$TIMING_ENGINE" "$TIMING_BINARY"
+          bash tests/test_gcode_timing.sh --engine "${{ matrix.engine }}" "$TIMING_BINARY"
 
       - name: Show sccache stats
         shell: bash

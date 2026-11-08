@@ -164,13 +164,16 @@ class OutputSilencer {
     bool m_stderr_redirected = false;
 };
 
+// The program names result.json and --engine-info already use (main.cpp
+// 3350-3354 and 6358-6362), so a caller correlates the documents without a
+// mapping table.
 const char *engine_name() {
 #ifdef ENGINE_SNAPMAKER
-    return "SNAPMAKER";
-#elif defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
-    return "ORCA";
+    return "snapmaker";
+#elif defined(ENGINE_ORCA)
+    return "orcaslicer";
 #else
-    return "BAMBU";
+    return "bambustudio";
 #endif
 }
 
@@ -201,6 +204,9 @@ void write_success(double original_seconds, double optimized_seconds) {
               << '\n';
 }
 
+// The native Bambu importer can dereference a null file handle on an
+// unreadable path, and a FIFO would block the import.  Only a non-empty
+// regular file reaches either importer.
 bool readable_input(const char *path) {
     boost::system::error_code error;
     if (!boost::filesystem::is_regular_file(path, error) || error)
@@ -218,135 +224,123 @@ double normal_seconds(const Slic3r::GCodeProcessor &processor) {
     return mode.time;
 }
 
+#ifndef ENGINE_ORCA
+using NozzleGroup = std::shared_ptr<Slic3r::MultiNozzleUtils::NozzleGroupResultBase>;
+
+// One import the way the Bambu desktop does it.  A plain import is Plater.cpp
+// 25408-25413 at the pin: a fresh processor, the import-only filament maps,
+// process_file.  The optimized file of a pair follows HelioDragon.cpp
+// 3061-3067 (load_helio_file_to_viwer): the processor is seeded with the
+// plate's nozzle grouping when the plate has one and imports unseeded
+// otherwise.  GCodeProcessor.cpp 2734-2736 clears that grouping for a G-code
+// from an unknown producer, so a null seed is an expected case.
+double time_file(const char *path, const NozzleGroup &seed, NozzleGroup *grouping_out) {
+    Slic3r::GCodeProcessor processor;
+    if (seed)
+        processor.initialize_from_context(seed);
+    else
+        processor.init_filament_maps_when_import_only_gcode();
+    processor.process_file(path);
+    if (grouping_out)
+        *grouping_out = processor.get_result().nozzle_group_result;
+    return normal_seconds(processor);
+}
+#else
+// One import the way the Orca-derived desktops do it.  OrcaSlicer Plater.cpp
+// 13662-13667 at the Orca pin: a fresh processor, init_filament_maps_and_
+// nozzle_type_when_import_only_gcode, s_IsBBLPrinter from the selected
+// preset's vendor, process_file.  Snapmaker_Orca Plater.cpp 19111-19115 at
+// its pin is the same without the initializer, which that pin lacks.  Both
+// desktops take the vendor flag from the selected printer preset; this command
+// takes it from --printer-vendor-bbl and never infers it.  process_file may
+// refine the flag from an embedded printer_model (Orca GCodeProcessor.cpp
+// 2632), so it is set again before each file.
+double time_file(const char *path, bool printer_vendor_bbl) {
+    Slic3r::GCodeProcessor processor;
+#ifndef ENGINE_SNAPMAKER
+    processor.init_filament_maps_and_nozzle_type_when_import_only_gcode();
+#endif
+    Slic3r::GCodeProcessor::s_IsBBLPrinter = printer_vendor_bbl;
+    processor.process_file(path);
+    return normal_seconds(processor);
+}
+#endif
+
 } // namespace
 
-void write_gcode_timing_unavailable(int &exit_code) {
-    write_error("TIMING_UNAVAILABLE");
-    exit_code = 1;
+int write_gcode_timing_unavailable() {
+    write_error("UNAVAILABLE");
+    return 1;
 }
 
-bool run_gcode_timing_command(int argc, char **argv, int &exit_code) {
-    if (!gcode_timing_requested(argc, argv))
-        return false;
-
+int run_gcode_timing_command(int argc, char **argv) {
     // Timing deliberately has no slicing/config/output/probe switches.  Its
     // two files are imported only, and accepting any other argument would make
     // the selected native importer context ambiguous.
     if (std::string(argv[1]) != "--gcode-timing") {
         write_error("CONFLICTING_ARGUMENTS");
-        exit_code = 64;
-        return true;
+        return 64;
     }
 
 #ifdef ENGINE_ORCA
-    // OrcaSlicer Plater.cpp:13663 and Snapmaker_Orca Plater.cpp:19114 take
-    // this from the selected desktop preset. Both require that context when
-    // the file has no embedded printer model; never default it to BBL.
     if (argc == 4) {
         write_error("PRINTER_CONTEXT_REQUIRED");
-        exit_code = 64;
-        return true;
+        return 64;
     }
     if (argc != 6 || std::string(argv[4]) != "--printer-vendor-bbl" ||
         (std::string(argv[5]) != "true" && std::string(argv[5]) != "false")) {
         write_error("CONFLICTING_ARGUMENTS");
-        exit_code = 64;
-        return true;
+        return 64;
     }
     const bool printer_vendor_bbl = std::string(argv[5]) == "true";
 #else
     if (argc != 4) {
         write_error("CONFLICTING_ARGUMENTS");
-        exit_code = 64;
-        return true;
+        return 64;
     }
 #endif
+
+    // A failing nowide_filesystem() is the caller's environment, as main()
+    // treats it (CLI_ENVIRONMENT_ERROR); a bad file is the caller's input.
+    // Each gets its own code so an agent knows what to fix.
+    try {
+        boost::nowide::nowide_filesystem();
+    } catch (const std::exception &) {
+        write_error("UNAVAILABLE");
+        return 1;
+    }
+    if (!readable_input(argv[2]) || !readable_input(argv[3])) {
+        write_error("INPUT_UNREADABLE");
+        return 1;
+    }
 
     OutputSilencer silence;
     if (!silence.active()) {
         silence.restore();
         write_error("UNAVAILABLE");
-        exit_code = 1;
-        return true;
+        return 1;
     }
 
     try {
-        boost::nowide::nowide_filesystem();
-        // The native Bambu importer can dereference a null file handle on an
-        // unreadable path. Reject missing, empty, and non-regular inputs before
-        // either native import; this mode must never block reading a FIFO.
-        if (!readable_input(argv[2]) || !readable_input(argv[3]))
-            throw std::runtime_error("unreadable input");
         double original_seconds = 0.0;
         double optimized_seconds = 0.0;
 #ifndef ENGINE_ORCA
-        // BambuStudio GCode.cpp: the desktop carries this result from an
-        // original import into its optimized import.  The Bambu pin exposes
-        // that handoff; neither Orca-derived pin does.
-        std::shared_ptr<Slic3r::MultiNozzleUtils::NozzleGroupResultBase> nozzle_group_result;
-        {
-            Slic3r::GCodeProcessor original;
-            original.init_filament_maps_when_import_only_gcode();
-            original.process_file(argv[2]);
-            original_seconds = normal_seconds(original);
-            nozzle_group_result = original.get_result().nozzle_group_result;
-        }
-        {
-            Slic3r::GCodeProcessor optimized;
-            optimized.initialize_from_context(nozzle_group_result);
-            optimized.process_file(argv[3]);
-            optimized_seconds = normal_seconds(optimized);
-        }
-#elif defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
-        // OrcaSlicer Plater.cpp:13662-13667 imports a G-code with a fresh
-        // processor and this initializer.  s_IsBBLPrinter is selected there
-        // from the GUI's already-selected preset; process_file also reads an
-        // embedded printer_model where the G-code supplies one. This command
-        // adds no inferred printer mapping.
-        {
-            Slic3r::GCodeProcessor original;
-            original.init_filament_maps_and_nozzle_type_when_import_only_gcode();
-            Slic3r::GCodeProcessor::s_IsBBLPrinter = printer_vendor_bbl;
-            original.process_file(argv[2]);
-            original_seconds = normal_seconds(original);
-        }
-        {
-            Slic3r::GCodeProcessor optimized;
-            optimized.init_filament_maps_and_nozzle_type_when_import_only_gcode();
-            Slic3r::GCodeProcessor::s_IsBBLPrinter = printer_vendor_bbl;
-            optimized.process_file(argv[3]);
-            optimized_seconds = normal_seconds(optimized);
-        }
+        NozzleGroup grouping;
+        original_seconds = time_file(argv[2], nullptr, &grouping);
+        optimized_seconds = time_file(argv[3], grouping, nullptr);
 #else
-        // Snapmaker_Orca Plater.cpp:19111-19115 imports with a fresh processor
-        // and process_file alone; this pin has no Orca initializer. Its desktop
-        // preset context is required above, never inferred from either path.
-        {
-            Slic3r::GCodeProcessor original;
-            Slic3r::GCodeProcessor::s_IsBBLPrinter = printer_vendor_bbl;
-            original.process_file(argv[2]);
-            original_seconds = normal_seconds(original);
-        }
-        {
-            Slic3r::GCodeProcessor optimized;
-            Slic3r::GCodeProcessor::s_IsBBLPrinter = printer_vendor_bbl;
-            optimized.process_file(argv[3]);
-            optimized_seconds = normal_seconds(optimized);
-        }
+        original_seconds = time_file(argv[2], printer_vendor_bbl);
+        optimized_seconds = time_file(argv[3], printer_vendor_bbl);
 #endif
         silence.restore();
         write_success(original_seconds, optimized_seconds);
-        exit_code = 0;
-    } catch (const std::exception &) {
-        silence.restore();
-        write_error("TIMING_UNAVAILABLE");
-        exit_code = 1;
+        return 0;
     } catch (...) {
+        // The importer's diagnostics stayed private; the code is the contract.
         silence.restore();
         write_error("TIMING_UNAVAILABLE");
-        exit_code = 1;
+        return 1;
     }
-    return true;
 }
 
 } // namespace slicer_cli

@@ -12885,23 +12885,20 @@ int main(int argc, char** argv) {
     // (nowide_filesystem, BambuStudio.cpp 1510-1523; OrcaSlicer.cpp 1233-1246).
     // Elsewhere both are no-ops.
     boost::nowide::args utf8_args(argc, argv);
-    // Timing needs the same UTF-8 paths and packaged resources as other modes,
-    // but returns before logging or any slicing path. In particular, the Orca
-    // importer's nozzle lookup must not resolve info/nozzle_info.json from the
-    // current working directory when a G-code has no embedded metadata.
-    int gcode_timing_exit = 0;
+    // Timing needs the same UTF-8 paths and the engine's resources root as the
+    // other modes (an Orca-derived import reads info/nozzle_info.json through
+    // Print::get_hrc_by_nozzle_type, Print.cpp 3084 at the Orca pin), but
+    // returns before logging or any slicing path.  Quiet: its stdout and
+    // stderr are the one JSON document and nothing.
     if (slicer_cli::gcode_timing_requested(argc, argv)) {
         try {
-            boost::nowide::nowide_filesystem();
-            configure_engine_resources(argv[0], true);
+            configure_engine_resources(argv[0], /*quiet=*/true);
         } catch (...) {
-            // Timing owns stdout. Resource discovery may throw before the
-            // importer's own boundary, so preserve its one-document contract.
-            slicer_cli::write_gcode_timing_unavailable(gcode_timing_exit);
-            return gcode_timing_exit;
+            // Timing owns stdout: resource discovery may throw before the
+            // command's own boundary, so keep its one-document contract.
+            return slicer_cli::write_gcode_timing_unavailable();
         }
-        if (slicer_cli::run_gcode_timing_command(argc, argv, gcode_timing_exit))
-            return gcode_timing_exit;
+        return slicer_cli::run_gcode_timing_command(argc, argv);
     }
     try {
         boost::nowide::nowide_filesystem();

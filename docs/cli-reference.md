@@ -397,8 +397,20 @@ desktops pass to their native G-code importers. It selects printer semantics
 and the comment dialect, including pause and color-change timing boundaries; it is not inferred from the engine
 name. Omitting it returns `PRINTER_CONTEXT_REQUIRED` with a nonzero exit code.
 Bambu uses the two-path form without this option. Orca can further refine this
-initial context from its embedded `printer_model`, as its desktop importer does.
-An unavailable estimate produces an error JSON document and a nonzero exit code.
+initial context from its embedded `printer_model`, as its desktop importer does,
+and it does so for each file on its own: a pair whose optimized file lost its
+embedded configuration is timed in two different printer contexts, and a
+non-BBL context counts 260 s for each `G29` where a BBL context counts none.
+
+The document names the engine the way `result.json` and `--engine-info` do
+(`bambustudio`, `orcaslicer`, `snapmaker`) and carries the pinned engine
+commit as `engine_revision`. A refusal is the same one-line JSON document with
+an `error_code` instead of the two times. `CONFLICTING_ARGUMENTS` (any other
+flag, or the pair not given first) and `PRINTER_CONTEXT_REQUIRED` exit 64.
+`INPUT_UNREADABLE` (a missing, empty or non-regular input), `UNAVAILABLE`
+(the environment) and `TIMING_UNAVAILABLE` (the importer gave no estimate)
+exit 1. These codes are this mode's own; the slicing return codes below do
+not apply to it.
 
 ### Output schemas
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "slicer-cli existing G-code timing result",
-  "description": "The single stdout document from --gcode-timing ORIGINAL OPTIMIZED. The files are imported by the selected engine and are never rewritten.",
+  "description": "The single stdout document from --gcode-timing ORIGINAL OPTIMIZED. The files are imported by the selected engine and are never rewritten. `engine` uses the program names of result.json and --engine-info.",
   "type": "object",
   "required": [
     "schema_version",
@@ -14,9 +14,9 @@
     },
     "engine": {
       "enum": [
-        "BAMBU",
-        "ORCA",
-        "SNAPMAKER"
+        "bambustudio",
+        "orcaslicer",
+        "snapmaker"
       ]
     },
     "engine_revision": {
@@ -31,9 +31,11 @@
       "exclusiveMinimum": 0
     },
     "error_code": {
+      "description": "CONFLICTING_ARGUMENTS and PRINTER_CONTEXT_REQUIRED exit 64; INPUT_UNREADABLE (a missing, empty or non-regular input), UNAVAILABLE (the environment) and TIMING_UNAVAILABLE (the importer gave no estimate) exit 1.",
       "enum": [
         "CONFLICTING_ARGUMENTS",
         "PRINTER_CONTEXT_REQUIRED",
+        "INPUT_UNREADABLE",
         "TIMING_UNAVAILABLE",
         "UNAVAILABLE"
       ]

@@ -3,11 +3,17 @@
 
 namespace slicer_cli {
 
-/// Runs --gcode-timing when present.  Returns true when it printed the command's
-/// one JSON response and placed its process status in `exit_code`.
-bool run_gcode_timing_command(int argc, char **argv, int &exit_code);
+// gcode_timing_requested() lives in cli_command_line.hpp: it applies the
+// parser's own value-consumption rules to tell the option from a value.
 
-/// Writes the timing command's schema-valid unavailable response.
-void write_gcode_timing_unavailable(int &exit_code);
+/// Runs --gcode-timing: prints the command's one JSON response document on
+/// stdout and returns the process exit status (0 timed, 64 bad arguments,
+/// 1 unreadable input, environment or importer failure).
+int run_gcode_timing_command(int argc, char **argv);
+
+/// Prints the schema-valid UNAVAILABLE response for an environment failure
+/// before the command runs (resource discovery threw) and returns its exit
+/// status, 1.
+int write_gcode_timing_unavailable();
 
 } // namespace slicer_cli
