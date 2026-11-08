@@ -3749,8 +3749,13 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
     if (glb_top_surface_extr == 0)    glb_top_surface_extr    = glb_internal_solid_extr;
     if (glb_bottom_surface_extr == 0) glb_bottom_surface_extr = glb_internal_solid_extr;
 #endif
+#ifdef ENGINE_ORCA
     bool glb_support = arrange_opt(full_config, "enable_support")->getBool();
     glb_support |= arrange_opt(full_config, "raft_layers")->getInt() > 0;
+#else
+    const bool glb_enable_support = arrange_opt(full_config, "enable_support")->getBool();
+    const int  glb_raft_layers    = arrange_opt(full_config, "raft_layers")->getInt();
+#endif
 
     for (const ModelObject* object : model.objects) {
         for (const ModelInstance* instance : object->instances) {
@@ -3780,8 +3785,8 @@ static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
             // Bambu keeps the two overrides independent (PartPlate.cpp
             // 1351-1363 at v02.09.01.70): an object overriding only raft_layers
             // keeps the global enable_support, and the other way round.
-            bool obj_enable_support = arrange_opt(full_config, "enable_support")->getBool();
-            int  obj_raft_layers    = arrange_opt(full_config, "raft_layers")->getInt();
+            bool obj_enable_support = glb_enable_support;
+            int  obj_raft_layers    = glb_raft_layers;
             if (obj_support_opt != nullptr)
                 obj_enable_support = obj_support_opt->getBool();
             if (obj_raft_opt != nullptr)
@@ -4077,6 +4082,7 @@ struct DownwardRun {
     bool done = false;
     std::vector<std::string> printers, failed;
     bool sequence_plate = false;
+    bool multi_nozzle_diameters = false;
 };
 static DownwardRun g_downward_run;
 
@@ -5357,15 +5363,16 @@ static void apply_file_inherits(const std::string& argv0, const std::string& fil
     }
 }
 
-#ifdef ENGINE_ORCA
 /// A string setting of `config`, empty when the key is not there. The project's
 /// preset ids are read this way: a 3MF that states none is not a project this
-/// command line rebases.
+/// command line rebases. Bambu reads printer_variant the same way for the
+/// nozzle statistics.
 static std::string config_id_text(const Slic3r::DynamicPrintConfig& config, const char* key) {
     const auto* opt = config.option<Slic3r::ConfigOptionString>(key);
     return opt != nullptr ? opt->value : std::string();
 }
 
+#ifdef ENGINE_ORCA
 /// Any setting's value as the engine writes it (`serialize`), empty when the key
 /// is not there: a coEnum such as support_type has no ConfigOptionString behind
 /// it, so the text a decision reads is the serialized one. Takes the config
@@ -9755,7 +9762,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                                                            nozzle_stats_obj.get_extruder_nozzle_count(int(eid), std::nullopt), true);
                         }
                         const Slic3r::ExtruderFullStat full_stat = Slic3r::build_extruder_full_stat_from_nozzle_stat(
-                            nozzle_stats_obj, max_nozzle_count, config.opt_string("printer_variant"));
+                            nozzle_stats_obj, max_nozzle_count, config_id_text(config, "printer_variant"));
                         Slic3r::sync_per_slot_nozzle_options_from_full_stat(config, full_stat);
                     }
                     // The official re-serialises the stats every time (7191); a
@@ -10328,6 +10335,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             outcome.downward_printers = g_downward_run.printers;
             outcome.downward_failed = g_downward_run.failed;
             outcome.sequence_plate = g_downward_run.sequence_plate;
+            outcome.multi_nozzle_diameters = g_downward_run.multi_nozzle_diameters;
         } else if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check")) {
             if (plate_data.empty()) {
                 const std::string why = "--downward-check checks the plates of a 3MF project; this input has none";
@@ -10465,6 +10473,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             g_downward_run.printers = outcome.downward_printers;
             g_downward_run.failed = outcome.downward_failed;
             g_downward_run.sequence_plate = outcome.sequence_plate;
+            g_downward_run.multi_nozzle_diameters = outcome.multi_nozzle_diameters;
         }
 
         // --pipe: the files are loaded (BambuStudio.cpp 4923-4926;

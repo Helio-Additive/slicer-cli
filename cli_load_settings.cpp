@@ -938,6 +938,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                     "filament_type", "filament_diameter"})
                 if (const auto* vec = dynamic_cast<const ConfigOptionVectorBase*>(m_print_config.option(key, false)))
                     count = std::max(count, int(vec->size()));
+        // --filament-colour names one filament per colour (B 2877 for an OBJ's colours).
+        if (const auto* colours = m_extra_config.option<ConfigOptionStrings>("filament_colour"))
+            count = std::max(count, int(colours->values.size()));
         return count;
     };
     if (is_bbl_3mf && load_filament_count > 0 && load_filaments_set.size() == 1 && !estimate_mode)
