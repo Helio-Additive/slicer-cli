@@ -135,6 +135,10 @@ struct DownwardPrinter {
     int    wrapping_width = 0, wrapping_depth = 0;
     double shared_width = 0., shared_depth = 0., shared_height = 0.;
     float  height_to_lid = 0.f, height_to_rod = 0.f, cleareance_radius = 0.f, distance_to_rod = 0.f;
+    // How many nozzles the machine mounts at once (BambuStudio.cpp 5133 at
+    // v02.09.01.70): with mixed nozzle diameters, a printer that cannot hold
+    // every diameter the project uses fails the check (5218-5258).
+    int    max_nozzle_count = 1;
 };
 
 /// The machine files of --downward-settings, or with none the printer's list

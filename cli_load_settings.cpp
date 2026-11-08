@@ -11,6 +11,7 @@
 #include <map>
 #include <sstream>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -24,6 +25,7 @@
 #include "libslic3r/Utils.hpp"
 
 #include "cli_events.hpp"
+#include "cli_nozzle_diameter.hpp"
 #include "desktop_presets.hpp"
 
 namespace slicer_cli {
@@ -749,6 +751,21 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     int current_index = 0;
     std::string default_load_fila_name, default_load_fila_id, default_filament_file, default_filament_inherit;
     DynamicPrintConfig default_load_fila_config;
+#ifndef ENGINE_ORCA
+    // filament_diameter_map (B 2673-2690 at v02.09.01.70): the nozzle
+    // diameter each filament prints with. A map given on the command line
+    // (--filament-diameter-map) wins; without one every loaded slot takes the
+    // machine preset's diameter, --load-settings' machine before the project's,
+    // which still describes the previous printer.
+    const bool cli_has_map = m_extra_config.has("filament_diameter_map");
+    const bool machine_from_settings = !new_printer_name.empty();
+    const DynamicPrintConfig& machine_config = machine_from_settings ? load_machine_config : m_print_config;
+    const std::string machine_preset_name = machine_from_settings
+        ? (new_printer_system_name.empty() ? new_printer_name : new_printer_system_name)
+        : (facts.current_printer_system_name.empty() ? facts.current_printer_name : facts.current_printer_system_name);
+    const std::string machine_nozzle_diameter = default_filament_nozzle_diameter(machine_preset_name, machine_config);
+    std::string default_filament_diameter;
+#endif
     if (use_first_fila_as_default) {
         for (int index = 0; index < load_filament_count; index++) {
             const std::string& file = load_filaments[index];
@@ -765,6 +782,13 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 default_load_fila_name   = config_name;
                 default_load_fila_id     = filament_id;
                 default_load_fila_config = std::move(config);
+#ifndef ENGINE_ORCA
+                // B 2723-2725: with a command-line map an empty slot takes the
+                // default filament's own diameter, else the machine's.
+                default_filament_diameter = cli_has_map
+                    ? filament_preset_nozzle_diameter(default_load_fila_name, default_load_fila_config)
+                    : machine_nozzle_diameter;
+#endif
                 break;
             }
         }
@@ -788,6 +812,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                                "check the paths given to --load-filaments");
         }
     }
+#ifndef ENGINE_ORCA
+    // B 2738-2746: the map the slots are filled into; a project map missing
+    // or shorter than --load-filaments grows to one entry per loaded slot.
+    ConfigOptionStrings* dia_map = cli_has_map
+        ? m_extra_config.option<ConfigOptionStrings>("filament_diameter_map")
+        : m_print_config.option<ConfigOptionStrings>("filament_diameter_map");
+    if (!cli_has_map && !machine_nozzle_diameter.empty() && load_filament_count > 0) {
+        dia_map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map", true);
+        if (dia_map->values.size() < static_cast<size_t>(load_filament_count))
+            dia_map->values.resize(static_cast<size_t>(load_filament_count));
+    }
+#endif
     for (int index = 0; index < load_filament_count; index++) {
         const std::string& file = load_filaments[index];
         current_index++;
@@ -821,6 +857,12 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 }
 #endif
             }
+#ifndef ENGINE_ORCA
+            // B 2802-2805: no command-line map, so the slot takes the machine's diameter.
+            if (!cli_has_map && !machine_nozzle_diameter.empty() && dia_map != nullptr &&
+                static_cast<size_t>(index) < dia_map->values.size())
+                dia_map->values[index] = machine_nozzle_diameter;
+#endif
             load_filaments_inherit.push_back(inherits);
             load_filaments_id.push_back(filament_id);
             load_filaments_name.push_back(config_name);
@@ -834,8 +876,20 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             load_filaments_index.push_back(current_index);
             load_filaments_inherit.push_back(default_filament_inherit);
             load_filaments_set.emplace(default_load_fila_name);
+#ifndef ENGINE_ORCA
+            // B 2828-2840: an empty slot takes the default filament's diameter;
+            // with none known the slot stays empty.
+            if (dia_map != nullptr && static_cast<size_t>(index) < dia_map->values.size() && !default_filament_diameter.empty())
+                dia_map->values[index] = default_filament_diameter;
+#endif
         }
     }
+#ifndef ENGINE_ORCA
+    // B 2846-2849: the filled command-line map replaces the project's, so the
+    // multi-diameter checks below read it.
+    if (const auto* cli_map = m_extra_config.option<ConfigOptionStrings>("filament_diameter_map"))
+        m_print_config.option<ConfigOptionStrings>("filament_diameter_map", true)->values = cli_map->values;
+#endif
 
 #ifndef ENGINE_ORCA
     // The colours of an assemble list's OBJ files (B 2573-2620): one filament
@@ -874,6 +928,23 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #endif
     if (filament_count == 0)
         filament_count = load_filament_count;
+    // The filaments the run has when the project names none: the ones the
+    // settings already carry (a model file with named presets, a settings
+    // file), as the largest per-filament list. Starts from the project's own
+    // count, not the load count that replaced a zero above: a replacement
+    // file over named presets keeps the other presets' slots.
+    const auto retained_filament_count = [&]() {
+        int count = facts.filament_count;
+        if (count == 0)
+            for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
+                                    "filament_type", "filament_diameter"})
+                if (const auto* vec = dynamic_cast<const ConfigOptionVectorBase*>(m_print_config.option(key, false)))
+                    count = std::max(count, int(vec->size()));
+        // --filament-colour names one filament per colour (B 2877 for an OBJ's colours).
+        if (const auto* colours = m_extra_config.option<ConfigOptionStrings>("filament_colour"))
+            count = std::max(count, int(colours->values.size()));
+        return count;
+    };
     if (is_bbl_3mf && load_filament_count > 0 && load_filaments_set.size() == 1 && !estimate_mode)
         disable_wipe_tower_after_mapping = true;   // B 2630-2634; O 2252-2256
 
@@ -1108,6 +1179,77 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     "The process does not suit the printer; give a process that printer suits "
                     "(--load-settings or --process-preset)");
 #ifndef ENGINE_ORCA
+    // Mixed nozzle diameters (B 3289-3401 at v02.09.01.70). The project's
+    // multi_nozzle_diameter_mode decides, or the command line's, which wins
+    // over the project's as every setting flag does: off forces every map
+    // slot to the machine's diameter; on needs at least two selected
+    // diameters, one per loaded filament, each among the diameters the
+    // filament's compatible_printers name. Input that states no mode is left
+    // as it is.
+    {
+        const auto* file_multi_mode = m_print_config.option<ConfigOptionBool>("multi_nozzle_diameter_mode");
+        if (const auto* cli_multi_mode = m_extra_config.option<ConfigOptionBool>("multi_nozzle_diameter_mode"))
+            file_multi_mode = cli_multi_mode;
+        const bool multi_nozzle_diameter_mode = file_multi_mode != nullptr && file_multi_mode->value;
+        if (file_multi_mode != nullptr && !file_multi_mode->value) {
+            if (!machine_nozzle_diameter.empty()) {
+                auto* forced_map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map", true);
+                const size_t slot_count = std::max(forced_map->values.size(),
+                                                   std::max(static_cast<size_t>(std::max(filament_count, 0)),
+                                                            static_cast<size_t>(std::max(load_filament_count, 0))));
+                forced_map->values.assign(slot_count, machine_nozzle_diameter);
+            }
+        } else if (multi_nozzle_diameter_mode) {
+            const std::set<std::string> used_diameters = selected_filament_map_diameters(m_print_config);
+            if (used_diameters.size() < 2)
+                return fail(CLI_MULTI_NOZZLE_DIAMETER_INVALID,
+                            "The project has multi_nozzle_diameter_mode on, but filament_diameter_map selects " +
+                                std::to_string(used_diameters.size()) +
+                                " nozzle diameter(s); give each filament its nozzle diameter with --filament-diameter-map"
+                                " (two or more different ones), or turn the mode off");
+            // The official CLI always loads its filaments from files (3330-3338);
+            // a project sliced as it is keeps the map the desktop wrote with
+            // its own filaments, so only loaded files are checked against it,
+            // each in the slot it replaces (load_filaments_index: a slot left
+            // empty keeps the project's filament). A map given on the command
+            // line needs one entry per filament of the run: the project's or
+            // the named presets', plus any slot --load-filaments adds.
+            const auto* map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map");
+            const size_t roster = static_cast<size_t>(std::max(retained_filament_count(), load_filament_count));
+            if (map != nullptr && cli_has_map && map->values.size() != roster)
+                return fail(CLI_CONFIG_FILE_ERROR,
+                            "filament_diameter_map has " + std::to_string(map->values.size()) + " entries; the run has " +
+                                std::to_string(roster) + " filaments. Give one nozzle diameter per filament");
+            if (map != nullptr) {
+                for (size_t index = 0; index < load_filaments_config.size(); ++index) {
+                    const size_t slot_index = index < load_filaments_index.size() && load_filaments_index[index] > 0
+                                                  ? static_cast<size_t>(load_filaments_index[index] - 1) : index;
+                    const std::string filament_name = index < load_filaments_name.size() ? load_filaments_name[index] : "";
+                    const std::string slot = "filament " + std::to_string(slot_index + 1) + " (" + filament_name + ")";
+                    if (slot_index >= map->values.size() || map->values[slot_index].empty())
+                        return fail(CLI_CONFIG_FILE_ERROR, "filament_diameter_map names no nozzle diameter for " + slot +
+                                                               " in multi-diameter mode");
+                    const std::string& raw = map->values[slot_index];
+                    const auto* compatible = load_filaments_config[index].option<ConfigOptionStrings>("compatible_printers");
+                    if (compatible == nullptr || compatible->values.empty())
+                        return fail(CLI_CONFIG_FILE_ERROR, "The preset of " + slot + " names no compatible_printers, so its"
+                                                               " nozzle diameter '" + raw + "' cannot be checked");
+                    const std::set<std::string> supported = filament_supported_diameters(compatible->values);
+                    if (supported.empty())
+                        return fail(CLI_CONFIG_FILE_ERROR, "The compatible_printers of " + slot + " name no nozzle"
+                                                               " diameters, so its nozzle diameter '" + raw + "' cannot be checked");
+                    const std::string selected = format_diameter_to_str(std::atof(raw.c_str()));
+                    if (supported.count(selected) != 0)
+                        continue;
+                    return fail(CLI_CONFIG_FILE_ERROR, "The nozzle diameter " + selected + " of " + slot +
+                                                           " is not one its preset supports [" +
+                                                           boost::algorithm::join(supported, ",") + "]");
+                }
+            }
+        }
+    }
+#endif
+#ifndef ENGINE_ORCA
     if (estimate_mode && (new_printer_name.empty() || facts.current_printer_name.empty() || new_printer_name == facts.current_printer_name))
         return fail(CLI_INVALID_PARAMS, "--estimate-mode needs --load-settings with a different printer");   // B 3041-3045
 #endif
@@ -1160,12 +1302,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // a two-entry list is an out-of-bounds read, SIGSEGV (rc 139) on every
     // --slice N of the exported project. Size them from the roster the settings
     // already carry instead, exactly as the file-fed path already did.
-    int inherits_count = filament_count;
-    if (inherits_count == 0)
-        for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
-                                "filament_type", "filament_diameter"})
-            if (const auto* vec = dynamic_cast<const ConfigOptionVectorBase*>(m_print_config.option(key, false)))
-                inherits_count = std::max(inherits_count, int(vec->size()));
+    // The metadata lists hold one entry per filament the run ends with: the
+    // retained roster, or the loaded files when there are more of them.
+    const int inherits_count = std::max(retained_filament_count(), filament_count);
 
     std::vector<std::string>& different_settings = m_print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
     std::vector<std::string>& inherits_group     = m_print_config.option<ConfigOptionStrings>("inherits_group", true)->values;
@@ -2103,6 +2242,9 @@ StepResult load_downward_printers(const CliOptions& o, const ProjectFacts& facts
         }
         DownwardPrinter printer;
         printer.name = config_name;
+#ifndef ENGINE_ORCA
+        printer.max_nozzle_count = machine_max_nozzle_count(config);
+#endif
         const Pointfs printable_area = config.option<ConfigOptionPoints>("printable_area", true)->values;
         const Pointfs exclude_area   = config.option<ConfigOptionPoints>("bed_exclude_area", true)->values;
 #ifdef ENGINE_SNAPMAKER
