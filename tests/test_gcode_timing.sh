@@ -183,15 +183,20 @@ PY
     # A timing-looking word consumed as an option value, or after --, stays on
     # the normal parser path. A genuine mixed timing option remains a strict
     # timing refusal even when another option appears before it.
-    for args in '--printer-preset --gcode-timing' '-- --gcode-timing'; do
-        set +e
-        # shellcheck disable=SC2086
-        "$binary" $args > "$stdout.literal" 2> "$stderr.literal"
-        rc=$?
-        set -e
-        test "$rc" -ne 64
-        ! grep -q '"error_code"' "$stdout.literal"
-    done
+    set +e
+    "$binary" --printer-preset --gcode-timing > "$stdout.literal-preset" 2> "$stderr.literal-preset"
+    rc=$?
+    set -e
+    test "$rc" -eq 1
+    ! grep -q '"error_code"' "$stdout.literal-preset"
+    grep -Fq "has no printer preset named '--gcode-timing'" "$stderr.literal-preset"
+    set +e
+    "$binary" -- --gcode-timing > "$stdout.literal-after-double-dash" 2> "$stderr.literal-after-double-dash"
+    rc=$?
+    set -e
+    test "$rc" -eq 1
+    ! grep -q '"error_code"' "$stdout.literal-after-double-dash"
+    grep -Fq 'Unsupported file format.' "$stderr.literal-after-double-dash"
     set +e
     if [ "$label" != BAMBU ]; then
         "$binary" --slice 1 --gcode-timing "$ORIGINAL" "$OPTIMIZED" --printer-vendor-bbl false > "$stdout.mixed" 2> "$stderr.mixed"
@@ -207,7 +212,7 @@ PY
 import json, sys
 assert json.load(open(sys.argv[1]))["error_code"] == "CONFLICTING_ARGUMENTS"
 PY
-    # A Python exec harness closes both stdin and stderr in the executable
+    # A Python launcher closes both stdin and stderr in the executable
     # process. This exercises CRT descriptor allocation on Windows too, unlike
     # a shell redirection which can leave a Windows child with a replacement
     # standard handle.
@@ -223,6 +228,27 @@ for fd in (0, 2):
         os.close(fd)
     except OSError:
         pass
+if os.name == "nt":
+    import _winapi
+    # CRT spawn preserves the closed descriptors. Bound and reap the direct
+    # child before the outer launcher timeout can fire and orphan its pipes.
+    handle = os.spawnv(os.P_NOWAIT, sys.argv[1], sys.argv[1:])
+    try:
+        if _winapi.WaitForSingleObject(handle, 8000) == _winapi.WAIT_TIMEOUT:
+            _winapi.TerminateProcess(handle, 124)
+            _winapi.WaitForSingleObject(handle, _winapi.INFINITE)
+            status = 124
+        else:
+            status = _winapi.GetExitCodeProcess(handle)
+    except BaseException:
+        _winapi.TerminateProcess(handle, 125)
+        _winapi.WaitForSingleObject(handle, _winapi.INFINITE)
+        raise
+    finally:
+        _winapi.CloseHandle(handle)
+    # Windows exception statuses exceed the portable exit-code range. Keep
+    # them distinct from the expected normal exit 1 instead of overflowing _exit.
+    os._exit(status if 0 <= status <= 255 else 126)
 os.execv(sys.argv[1], sys.argv[1:])
 """
 result = subprocess.run([sys.executable, "-c", launcher] + command,
