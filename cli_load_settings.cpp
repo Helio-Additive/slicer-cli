@@ -930,9 +930,11 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         filament_count = load_filament_count;
     // The filaments the run has when the project names none: the ones the
     // settings already carry (a model file with named presets, a settings
-    // file), as the largest per-filament list.
+    // file), as the largest per-filament list. Starts from the project's own
+    // count, not the load count that replaced a zero above: a replacement
+    // file over named presets keeps the other presets' slots.
     const auto retained_filament_count = [&]() {
-        int count = filament_count;
+        int count = facts.filament_count;
         if (count == 0)
             for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
                                     "filament_type", "filament_diameter"})

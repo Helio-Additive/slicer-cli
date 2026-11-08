@@ -5452,6 +5452,9 @@ grep -q '"tag":"PlateSingleNozzleDiameter"' h3cmap4/stdout || { show h3cmap4; fa
 run h3cmap5 "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --filament-colour "#FF0000;#00FF00" \
     --multi-nozzle-diameter-mode=1 --filament-diameter-map "0.4;0.2" --slice 1 --outputdir h3cmap5/out
 grep -q '"tag":"PlateSingleNozzleDiameter"' h3cmap5/stdout || { show h3cmap5; fail "H3C: a diameter map over two command-line colours did not reach the plate check (exit $(rc h3cmap5))"; h3c_ok=0; }
+run h3cmap6 "$B" cube.stl --printer-preset "Bambu Lab H3C 0.4 nozzle" --filament-preset "Bambu PLA Basic @BBL H3C" --filament-preset "Bambu PETG HF @BBL H3C" \
+    --load-filaments "h3c-fil0.json" --multi-nozzle-diameter-mode=1 --filament-diameter-map "0.4;0.2" --slice 1 --outputdir h3cmap6/out
+grep -q '"tag":"PlateSingleNozzleDiameter"' h3cmap6/stdout || { show h3cmap6; fail "H3C: a diameter map over two named presets with one slot replaced did not reach the plate check (exit $(rc h3cmap6))"; h3c_ok=0; }
 # A per-slot layout key as a flag is refused by name (the official CLI rebuilds
 # the layout from it); --allow-mix-temp is taken and reported as having no effect.
 run h3cslot "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
