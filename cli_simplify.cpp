@@ -93,7 +93,9 @@ std::string simplify_flags_refusal(const CliOptions& o) {
     // at bac6fd5, clear_before_change_mesh).
     if (s.keep_paint)
         return "--simplify-keep-paint is not available in slicer_cli-snapmaker: its engine has no way to carry "
-               "paint onto a changed mesh; drop the flag to simplify without the paint";
+               "paint onto a changed mesh. Drop the flag to simplify without the paint, or keep it with "
+               "slicer_cli-orcaslicer (OrcaSlicer) for a file an Orca printer can take, or slicer_cli "
+               "(BambuStudio) for a Bambu Studio project";
 #endif
     return "";
 }

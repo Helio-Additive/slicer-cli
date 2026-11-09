@@ -381,6 +381,8 @@ exports and the slice all see the reduced meshes. Each part reports a
 collapse leaves at its count is left untouched, paint included, and says so.
 `--simplify-keep-paint` is refused by `slicer_cli-snapmaker`: its engine has
 no way to carry paint onto a changed mesh, and its desktop clears the paint.
+The refusal names the binaries that keep it: `slicer_cli-orcaslicer` for a
+file an Orca printer can take, `slicer_cli` for a Bambu Studio project.
 
 A single-part object that still has a million triangles or more after this
 step gets the desktop's suggestion as a `warning` / `LargeMesh` event; the

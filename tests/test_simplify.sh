@@ -21,6 +21,15 @@ else
     exit 64
 fi
 
+# The binaries are run from the work directory below: a relative path
+# (CI's build/slicer_cli) is made absolute first.
+for i in "${!BINARIES[@]}"; do
+    case "${BINARIES[$i]}" in
+        /*|[A-Za-z]:*) ;;
+        *) BINARIES[$i]="$PWD/${BINARIES[$i]}" ;;
+    esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/simplify.XXXXXX")"
 trap 'rm -rf "$WORKDIR"' EXIT
