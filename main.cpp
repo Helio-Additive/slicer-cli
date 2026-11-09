@@ -60,6 +60,7 @@
 #include "libslic3r/Semver.hpp"
 #include "libslic3r_version.h"
 #include "cli_snapmaker.hpp"
+#include "cli_gcode_timing.hpp"
 
 // For JSON parsing (using libslic3r's built-in nlohmann/json)
 #include <nlohmann/json.hpp>
@@ -12884,6 +12885,25 @@ int main(int argc, char** argv) {
     // (nowide_filesystem, BambuStudio.cpp 1510-1523; OrcaSlicer.cpp 1233-1246).
     // Elsewhere both are no-ops.
     boost::nowide::args utf8_args(argc, argv);
+    // Timing needs the same UTF-8 paths and the engine's resources root as the
+    // other modes (an Orca-derived import reads info/nozzle_info.json through
+    // Print::get_hrc_by_nozzle_type, Print.cpp 3084 at the Orca pin), but
+    // returns before logging or any slicing path.  Quiet: its stdout and
+    // stderr are the one JSON document and nothing.
+    if (slicer_cli::gcode_timing_requested(argc, argv)) {
+        try {
+            // UTF-8 paths first: resource discovery converts the executable's
+            // path with root.string(), which on Windows needs this locale for
+            // a non-ASCII install directory (BambuStudio.cpp 1510-1523).
+            boost::nowide::nowide_filesystem();
+            configure_engine_resources(argv[0], /*quiet=*/true);
+        } catch (...) {
+            // Timing owns stdout: either step may throw before the command's
+            // own boundary, so keep its one-document contract.
+            return slicer_cli::write_gcode_timing_unavailable();
+        }
+        return slicer_cli::run_gcode_timing_command(argc, argv);
+    }
     try {
         boost::nowide::nowide_filesystem();
     } catch (const std::runtime_error& ex) {
