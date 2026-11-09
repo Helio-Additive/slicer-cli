@@ -300,15 +300,9 @@ int run_gcode_timing_command(int argc, char **argv) {
     }
 #endif
 
-    // A failing nowide_filesystem() is the caller's environment, as main()
-    // treats it (CLI_ENVIRONMENT_ERROR); a bad file is the caller's input.
-    // Each gets its own code so an agent knows what to fix.
-    try {
-        boost::nowide::nowide_filesystem();
-    } catch (const std::exception &) {
-        write_error("UNAVAILABLE");
-        return 1;
-    }
+    // main() has set up UTF-8 paths and the resources root (UNAVAILABLE when
+    // that failed); a bad file is the caller's input and gets its own code so
+    // an agent knows what to fix.
     if (!readable_input(argv[2]) || !readable_input(argv[3])) {
         write_error("INPUT_UNREADABLE");
         return 1;
