@@ -227,6 +227,8 @@ for binary in "${BINARIES[@]}"; do
     refuse "expects one of extra-high, high, medium, low, extra-low" --simplify huge
     refuse "above 0 and below 100" --simplify-ratio 0
     refuse "above 0 and below 100" --simplify-ratio 100
+    refuse "above 0 and below 100" --simplify-ratio nan
+    refuse "above 0 and below 100" --simplify-ratio inf
     refuse "expects a number" --simplify-ratio half
     refuse "at least 1" --simplify-triangles 0
     refuse "expects an integer" --simplify-triangles many
@@ -241,7 +243,10 @@ for binary in "${BINARIES[@]}"; do
         test "$(field "$(events "$d/keep.out" MeshSimplified)" paint_kept)" = False
     fi
 
-    echo "PASS: $label: --simplify reduces by level, ratio and count like the desktop tool; the slice, result.json and exports carry the reduced mesh; the 1M-triangle suggestion and the refusals are as documented"
+    # Every event line this engine wrote matches the packaged event schema.
+    python3 "$SCRIPT_DIR/tools/check_json_schema.py" --events "$SCRIPT_DIR/../schemas/event.schema.json" "$d"/*.out >&2
+
+    echo "PASS: $label: --simplify reduces by level, ratio and count like the desktop tool; the slice, result.json and exports carry the reduced mesh; the 1M-triangle suggestion and the refusals are as documented, and every event matches the event schema"
     index=$((index + 1))
 done
 

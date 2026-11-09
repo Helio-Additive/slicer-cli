@@ -11,6 +11,7 @@
 #include "cli_command_line.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #ifdef ENGINE_SNAPMAKER
 #include <cstring>   // strcmp, for SNAPMAKER_ORCA_ALLOW_NEWER_FILE
@@ -615,7 +616,8 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
                 }
                 // 0 keeps every triangle and 100 keeps none (fix_count_by_ratio,
                 // GLGizmoSimplify.cpp 859-867 at 56a57d0): neither is a reduction.
-                if (d <= 0. || d >= 100.) {
+                // std::stod also reads "nan" and "inf": not percents either.
+                if (!std::isfinite(d) || d <= 0. || d >= 100.) {
                     refusal = refuse("--simplify-ratio expects a percent above 0 and below 100, got '" + value + "'");
                     return false;
                 }
