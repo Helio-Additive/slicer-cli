@@ -362,6 +362,29 @@ Transforms run in the order given, before the objects are placed.
 | `--allow-rotations` | | Let the arrange turn objects (off by default) | all binaries |
 | `--allow-multicolor-oneplate` | | Let the arrange put several colours on one plate (on by default) | all binaries |
 | `--avoid-extrusion-cali-region` | | Keep the arrange off the extrusion calibration area | all binaries |
+| `--simplify` | `extra-high`, `high`, `medium`, `low` or `extra-low` | Reduce every part's triangles like the desktop Simplify tool, at that detail level (`medium` is the tool's default) | all binaries |
+| `--simplify-ratio` | percent | Simplify: remove this share of each part's triangles, the tool's decimate ratio; above 0 and below 100 | all binaries |
+| `--simplify-triangles` | count | Simplify: reduce each part to about this many triangles; a part already at or under it is left as it is | all binaries |
+| `--simplify-objects` | "3,5" | Simplify only these objects, by the 3MF's object ids (what `--skip-objects` takes); default: every object. A plain model file has no ids | all binaries |
+| `--simplify-keep-paint` | | Simplify: carry painted colours, supports, seams and fuzzy skin onto the reduced mesh, as the desktop's "preserve painting" / "keep painting" setting does. Off, the paint is cleared, as the desktop clears it | `slicer_cli`, `slicer_cli-orcaslicer` |
+
+`--simplify`, `--simplify-ratio` and `--simplify-triangles` are the desktop
+Simplify dialog's two controls, headless: the detail level bounds the error
+each collapse may add (extra-high 0.001, high 0.01, medium 0.1, low 0.5,
+extra-low 1.0), the ratio and the count bound how many triangles stay. Give
+one of the three; the other simplify flags need one of them. The reduction
+is the engine's own quadric edge collapse, run on each model part (modifiers
+and negative parts are not touched) after the transforms above and before
+the objects are placed, so the placement, the bed check, `--mtcpp`, the
+exports and the slice all see the reduced meshes. Each part reports a
+`mesh_simplified` event with its triangle count before and after; a part the
+collapse leaves at its count is left untouched, paint included, and says so.
+`--simplify-keep-paint` is refused by `slicer_cli-snapmaker`: its engine has
+no way to carry paint onto a changed mesh, and its desktop clears the paint.
+
+A single-part object that still has a million triangles or more after this
+step gets the desktop's suggestion as a `warning` / `LargeMesh` event; the
+run goes on.
 
 ### Exports and reports
 
@@ -652,6 +675,7 @@ The `event` kinds:
 | `progress` | Progress of the run (`--progress`, on with `--slice`) |
 | `presets_resolved`, `preset_resolution_failed`, `preset_error`, `preset_warning` | Named presets and system preset files: `ProjectPrinterSwitch` when `--printer-preset` moves a project 3MF, `ProcessSwitched` / `ProcessKept` when the new printer takes another process or keeps the project's |
 | `model_loaded`, `model_warning`, `load_error`, `mesh_repaired` | Reading the model files |
+| `mesh_simplified` | `--simplify`: `MeshSimplified` per reduced part (`triangles_before`, `triangles_after`), `SimplifySkipped` for a part left as it is: already at or under the asked count, or nothing to collapse at the asked detail level. A `warning` / `LargeMesh` is the desktop's suggestion for a single-part object of a million triangles or more |
 | `config_normalized`, `config_substituted`, `config_unknown_keys`, `config_value_rejected`, `config_load_failed`, `config_refused`, `override_rejected` | Reading and merging settings |
 | `engine_mismatch` | A file made for the other engine |
 | `arranged` | Placement, arrange and `--repetitions` |
