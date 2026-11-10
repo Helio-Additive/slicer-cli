@@ -606,3 +606,91 @@ pub fn format_g6(f: f64) -> String {
     let s = if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.') } else { &s };
     if s == "-0" { "0".to_string() } else { s.to_string() }
 }
+/// R812 — process a template the way the C++ PlaceholderParser treats its
+/// text: a `{if}` / `{elsif}` / `{else}` / `{endif}` tag is removed and nothing
+/// else is, so the indentation in front of a tag and the newline behind it stay
+/// in the output; the text of a branch that is not taken is dropped whole.
+/// `{expr}` and `[name]` are replaced by their value when they evaluate, and
+/// left as they are when they do not.
+///
+/// [`process`] works line by line and drops a line that held only a tag. That
+/// suits templates whose tags start in the first column; the H2D timelapse
+/// template indents them, and the oracle's output keeps those blank indented
+/// lines.
+pub fn process_text(template: &str, ctx: &Context) -> String {
+    // (this branch is being emitted, some branch of this `if` was already taken,
+    //  the enclosing block is being emitted)
+    let mut stack: Vec<(bool, bool, bool)> = Vec::new();
+    let mut out = String::with_capacity(template.len());
+    let bytes = template.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let active = stack.last().map_or(true, |f| f.0);
+        let c = bytes[i];
+        if c == b'{' {
+            if let Some(len) = template[i + 1..].find('}') {
+                let inner = template[i + 1..i + 1 + len].trim();
+                let after = i + len + 2;
+                let cond = |text: &str| eval_expr(text, ctx).map(|v| v.as_bool()).unwrap_or(false);
+                if let Some(rest) = inner.strip_prefix("if ").or_else(|| inner.strip_prefix("if(").map(|_| &inner[2..])) {
+                    let taken = active && cond(rest);
+                    stack.push((taken, taken, active));
+                    i = after;
+                    continue;
+                }
+                if let Some(rest) = inner.strip_prefix("elsif ").or_else(|| inner.strip_prefix("elsif(").map(|_| &inner[5..])) {
+                    if let Some(frame) = stack.last_mut() {
+                        let taken = frame.2 && !frame.1 && cond(rest);
+                        frame.0 = taken;
+                        frame.1 |= taken;
+                    }
+                    i = after;
+                    continue;
+                }
+                if inner == "else" {
+                    if let Some(frame) = stack.last_mut() {
+                        frame.0 = frame.2 && !frame.1;
+                        frame.1 = true;
+                    }
+                    i = after;
+                    continue;
+                }
+                if inner == "endif" {
+                    stack.pop();
+                    i = after;
+                    continue;
+                }
+                if active {
+                    match eval_expr(inner, ctx) {
+                        Ok(v) => out.push_str(&v.render()),
+                        Err(_) => out.push_str(&template[i..after]),
+                    }
+                }
+                i = after;
+                continue;
+            }
+        } else if c == b'[' && active {
+            if let Some(len) = template[i + 1..].find(']') {
+                let inner = &template[i + 1..i + 1 + len];
+                if !inner.is_empty()
+                    && inner.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                {
+                    if let Ok(v) = eval_expr(inner, ctx) {
+                        out.push_str(&v.render());
+                        i += len + 2;
+                        continue;
+                    }
+                }
+            }
+        }
+        if active {
+            // Copy one UTF-8 character.
+            let ch_len = template[i..].chars().next().map_or(1, char::len_utf8);
+            out.push_str(&template[i..i + ch_len]);
+            i += ch_len;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}

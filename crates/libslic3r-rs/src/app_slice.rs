@@ -133,6 +133,7 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
         print_object.paint_tb_trafo = Some(place.trafo16);
         print_object.raw_local_mesh = Some(place.local_mesh);
         print_object.slice_center_override = Some(place.center_mm);
+        print_object.occlusion_place = Some((place.volume_offset, place.object_translation));
     }
 
     // Create Print and add object.
@@ -273,6 +274,9 @@ struct DesktopPlacement {
     center_mm: (f64, f64),
     /// The mesh in plate coordinates, for everything that is not the slicer.
     placed_mesh: TriangleMesh,
+    /// The volume matrix's translation, then `trafo_centered()`'s.
+    volume_offset: [f64; 3],
+    object_translation: [f64; 3],
 }
 
 /// The bounding box of the `printable_area` points (cli_model_load.cpp `bed_box`;
@@ -442,7 +446,15 @@ fn desktop_place_stl(mesh: &TriangleMesh, settings: &serde_json::Value) -> Deskt
         tris,
     );
 
-    DesktopPlacement { local_mesh, trafo16, shift, center_mm, placed_mesh }
+    DesktopPlacement {
+        local_mesh,
+        trafo16,
+        shift,
+        center_mm,
+        placed_mesh,
+        volume_offset: vo,
+        object_translation: [-(co.0 as f64 * sf), -(co.1 as f64 * sf), inst_z],
+    }
 }
 
 /// Slice a 3MF model file to G-code using the Rust engine.

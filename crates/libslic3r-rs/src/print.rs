@@ -186,6 +186,165 @@ pub struct Print {
 }
 
 impl Print {
+    /// R812 — GCode::compute_farthest_point (GCode.cpp 4582-4733) and the inline
+    /// timelapse block of generate_timelapse_gcode (4735-4840, skip_pos_pick).
+    ///
+    /// Returns the farthest point in G-code millimetres and the block, when
+    /// farthest-point timelapse is on for this layer and the head that prints
+    /// the farthest point is the one that takes the photo.
+    ///
+    /// Enabled (5030-5032): `farthest_point_timelapse`, traditional timelapse
+    /// (`timelapse_type` 0), printer structure not i3. The farthest point is the
+    /// external-perimeter path point with the largest squared distance from the
+    /// plate origin, the first one found on a tie; infill points when the layer
+    /// has no external perimeter. Supports are not scanned (none are ported on
+    /// this path).
+    ///
+    /// `farthest_is_photo_head` (4731) needs the extruder of the farthest point
+    /// and the print's most used extruder. They are the same when the print uses
+    /// one filament, which is the only multi-nozzle case taken here; a print that
+    /// uses several filaments on a multi-nozzle printer returns None.
+    fn farthest_point_timelapse(
+        &self,
+        group: &[(usize, &crate::layer::Layer)],
+        print_z: f64,
+        layer_index: i32,
+    ) -> Option<((f64, f64), String)> {
+        let settings = self.raw_settings.as_ref()?;
+        let text = |key: &str| -> String {
+            match settings.get(key) {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(serde_json::Value::Array(a)) => {
+                    a.first().and_then(|v| v.as_str()).unwrap_or("").to_owned()
+                }
+                _ => String::new(),
+            }
+        };
+        if text("farthest_point_timelapse") != "1"
+            || self.config.timelapse_type != 0
+            || text("printer_structure") == "i3"
+        {
+            return None;
+        }
+        let nozzles = match settings.get("nozzle_diameter") {
+            Some(serde_json::Value::Array(a)) => a.len(),
+            Some(serde_json::Value::String(s)) => s.split(',').count(),
+            _ => 1,
+        };
+        let single_nozzle = nozzles <= 1 || text("handle_hotend_as_extruder") == "1";
+        let filaments = match settings.get("filament_type") {
+            Some(serde_json::Value::Array(a)) => a.len(),
+            _ => 1,
+        };
+        if !single_nozzle && filaments > 1 {
+            return None;
+        }
+
+        use crate::extrusion_entity::ExtrusionRole as R;
+        let sf = crate::libslic3r::SCALING_FACTOR;
+        let (mut max_ext, mut far_ext) = (-1i64, (0i64, 0i64));
+        let (mut max_fb, mut far_fb) = (-1i64, (0i64, 0i64));
+        let update = |max: &mut i64, far: &mut (i64, i64), p: (i64, i64), shift: (i64, i64)| {
+            let g = (p.0 + shift.0, p.1 + shift.1);
+            let dsq = g.0.wrapping_mul(g.0).wrapping_add(g.1.wrapping_mul(g.1));
+            if dsq > *max {
+                *max = dsq;
+                *far = g;
+            }
+        };
+        let collect = |max: &mut i64,
+                       far: &mut (i64, i64),
+                       path: &crate::extrusion_entity::ExtrusionPath,
+                       shift: (i64, i64)| {
+            let pts = path.polyline.points();
+            if pts.is_empty() {
+                return;
+            }
+            let fit = &path.polyline.fitting_result;
+            if !fit.is_empty() {
+                use crate::arc_fitter::EMovePathType as M;
+                if fit[0].start_point_index < pts.len() {
+                    let p = pts[fit[0].start_point_index];
+                    update(max, far, (p.x, p.y), shift);
+                }
+                for seg in fit {
+                    match seg.path_type {
+                        M::LinearMove => {
+                            let mut k = seg.start_point_index;
+                            while k <= seg.end_point_index && k < pts.len() {
+                                update(max, far, (pts[k].x, pts[k].y), shift);
+                                k += 1;
+                            }
+                        }
+                        M::ArcMoveCw | M::ArcMoveCcw => {
+                            let e = seg.arc_data.end_point;
+                            update(max, far, (e.x, e.y), shift);
+                        }
+                        _ => {}
+                    }
+                }
+            } else {
+                for p in pts {
+                    update(max, far, (p.x, p.y), shift);
+                }
+            }
+        };
+        for (object_idx, layer) in group {
+            let (cx, cy) = self.objects[*object_idx].slice_center_offset;
+            // The instance's shift (scaled); slice_center_offset is unscale(shift).
+            let shift = ((cx / sf).round() as i64, (cy / sf).round() as i64);
+            for region in layer.regions() {
+                for path in region.perimeters.flatten_paths() {
+                    if path.role == R::ExternalPerimeter {
+                        collect(&mut max_ext, &mut far_ext, path, shift);
+                    }
+                }
+                for path in region.fills.flatten_paths() {
+                    if matches!(path.role, R::InternalInfill | R::SolidInfill | R::TopSolidInfill) {
+                        collect(&mut max_fb, &mut far_fb, path, shift);
+                    }
+                }
+            }
+        }
+        let (max, far) = if max_ext > 0 { (max_ext, far_ext) } else { (max_fb, far_fb) };
+        if max <= 0 {
+            return None;
+        }
+        let pos = (far.0 as f64 * sf, far.1 as f64 * sf);
+
+        // generate_timelapse_gcode(..., skip_pos_pick = true): the template with
+        // the inline-photo context, plus a newline (4762-4780).
+        let template = text("time_lapse_gcode");
+        if template.is_empty() {
+            return None;
+        }
+        use crate::gcode::gcode_template::{Context, Value};
+        let mut ctx = Context::new();
+        ctx.set_int("layer_num", layer_index as i64);
+        ctx.set_float("layer_z", print_z);
+        let max_z = self
+            .objects
+            .iter()
+            .flat_map(|o| o.layers.iter())
+            .map(|l| l.print_z)
+            .fold(0.0_f64, f64::max);
+        ctx.set_float("max_layer_z", max_z);
+        ctx.set_int("most_used_physical_extruder_id", 0);
+        ctx.set_int("curr_physical_extruder_id", 0);
+        // DefaultTimelapsePos, so has_timelapse_safe_pos is false.
+        ctx.set_int("timelapse_pos_x", 0);
+        ctx.set_int("timelapse_pos_y", 0);
+        ctx.set("has_timelapse_safe_pos", Value::Bool(false));
+        ctx.set("timelapse_inline_photo", Value::Bool(true));
+        ctx.set("farthest_point_timelapse_enabled", Value::Bool(true));
+        ctx.set("clear_to_x0", Value::Bool(false));
+        ctx.set("spiral_mode", Value::Bool(self.config.spiral_vase));
+        ctx.set_int("timelapse_type", self.config.timelapse_type as i64);
+        let mut block = crate::gcode::gcode_template::process_text(&template, &ctx);
+        block.push('\n');
+        Some((pos, block))
+    }
+
     /// `Print::is_BBL_Printer()` as `slicer_cli` sets it (main.cpp 11010-11023):
     /// the settings' `printer_model` starts with "Bambu Lab"; when there is no
     /// `printer_model`, the printer preset's name (`printer_settings_id`) does.
@@ -703,9 +862,25 @@ impl Print {
                 writer.z_hop_linear(print_z, hop_z, travel_feedrate);
             }
 
+            // R812 FARTHEST_TIMELAPSE (faithful ON) — GCode.cpp 5030-5035, 5536,
+            // 5604: with farthest_point_timelapse the photo is taken where the
+            // head already is, at the layer's farthest point, and nothing is
+            // inserted at the layer change.
+            let farthest = if crate::faithful_gate("FARTHEST_TIMELAPSE") {
+                let group: Vec<(usize, &crate::layer::Layer)> =
+                    all_layers[i..j].iter().map(|l| (l.object_idx, l.layer)).collect();
+                self.farthest_point_timelapse(&group, print_z, layer_index)
+            } else {
+                None
+            };
+            let farthest_inline = farthest.is_some();
+            writer.set_farthest_timelapse(farthest);
+
             // GCode.cpp:4412-4416 -- timelapse gcode (non-traditional mode, i.e. X1C)
             // insert_timelapse_gcode() processes time_lapse_gcode template with layer_z
-            if let Some(ref settings) = self.raw_settings {
+            if farthest_inline {
+                // 5604: skipped; check_and_insert_timelapse writes it inline.
+            } else if let Some(ref settings) = self.raw_settings {
                 let tl_tmpl = settings
                     .get("time_lapse_gcode")
                     .and_then(|v| v.as_str())

@@ -298,6 +298,10 @@ pub struct PrintObject {
     /// caller placed the object (`unscale` of the print instance's shift).
     /// Replaces the bounding-box centre that `slice()` derives otherwise.
     pub slice_center_override: Option<(f64, f64)>,
+    /// R811 — the translations the seam placer's occlusion mesh goes through in
+    /// C++ when the caller placed the object: the volume matrix's, then
+    /// `trafo_centered()`'s (SeamPlacer.cpp 577-604). With `raw_local_mesh`.
+    pub occlusion_place: Option<([f64; 3], [f64; 3])>,
     /// R805 — negative volumes as (volume-local mesh, exact 4x4 slicing transform).
     pub negative_volumes_raw: Vec<(crate::triangle_mesh::TriangleMesh, [f64; 16])>,
 
@@ -342,6 +346,7 @@ impl PrintObject {
             paint_tb_trafo: None,
             raw_local_mesh: None,
             slice_center_override: None,
+            occlusion_place: None,
             negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
@@ -375,6 +380,7 @@ impl PrintObject {
             paint_tb_trafo: None,
             raw_local_mesh: None,
             slice_center_override: None,
+            occlusion_place: None,
             negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
@@ -2049,6 +2055,7 @@ impl PrintObject {
         /// C++: m_print->throw_if_canceled();
         let mut slice_surfaces_cpy: Vec<Vec<SurfaceCollection>> = Vec::new();
         pi_phase!("detect_surfaces_type", self.detect_surfaces_type(&mut slice_surfaces_cpy)?);
+        crate::stage_dump::pp_typed("a_detect", &self.layers);
 
         /// PrintObject.cpp:649-655
         /// C++: for (auto *layer : m_layers)
@@ -2080,7 +2087,9 @@ impl PrintObject {
         /// PrintObject.cpp:657-658
         /// C++: this->discover_vertical_shells();
         /// C++: m_print->throw_if_canceled();
+        crate::stage_dump::pp_typed("b_prepfill", &self.layers);
         pi_phase!("discover_vertical_shells", self.discover_vertical_shells()?);
+        crate::stage_dump::pp_typed("c_vshell", &self.layers);
         // TOPDBG (diagnostics only, env-gated): Top state after discover_vertical_shells.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -2103,6 +2112,7 @@ impl PrintObject {
         /// C++: this->process_external_surfaces();
         /// C++: m_print->throw_if_canceled();
         pi_phase!("process_external_surfaces", self.process_external_surfaces()?);
+        crate::stage_dump::pp_typed("d_external", &self.layers);
         // TOPDBG (diagnostics only, env-gated): Top state after process_external_surfaces.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -2125,6 +2135,7 @@ impl PrintObject {
         /// C++: this->discover_horizontal_shells();
         /// C++: m_print->throw_if_canceled();
         pi_phase!("discover_horizontal_shells", self.discover_horizontal_shells()?);
+        crate::stage_dump::pp_typed("e_hshell", &self.layers);
         // TOPDBG (diagnostics only, env-gated): Top state after discover_horizontal_shells.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -2165,6 +2176,7 @@ impl PrintObject {
         /// C++: this->bridge_over_infill();
         /// C++: m_print->throw_if_canceled();
         pi_phase!("bridge_over_infill", self.bridge_over_infill()?);
+        crate::stage_dump::pp_typed("g_bridge", &self.layers);
         if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Cancelled);
         }

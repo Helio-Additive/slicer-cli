@@ -1798,6 +1798,8 @@ pub fn extrude_path_with_arc_fitting(
                         } else {
                             writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
                         }
+                        // GCode.cpp:8030 check_and_insert_timelapse(line.b).
+                        writer.check_and_insert_timelapse(unscale(to.x()), unscale(to.y()));
                     }
                 }
                 EMovePathType::ArcMoveCw | EMovePathType::ArcMoveCcw => {
@@ -1844,6 +1846,11 @@ pub fn extrude_path_with_arc_fitting(
                         arc.direction,
                         None,
                     );
+                    // GCode.cpp:8049 check_and_insert_timelapse(arc.end_point).
+                    writer.check_and_insert_timelapse(
+                        unscale(arc.end_point.x()),
+                        unscale(arc.end_point.y()),
+                    );
                 }
                 EMovePathType::NoopMove => {}
             }
@@ -1871,6 +1878,8 @@ pub fn extrude_path_with_arc_fitting(
             }
             let de = line_length * e_per_mm;
             writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
+            // GCode.cpp:8009 check_and_insert_timelapse(line.b).
+            writer.check_and_insert_timelapse(unscale(to.x()), unscale(to.y()));
         }
     }
 

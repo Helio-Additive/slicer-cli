@@ -1027,8 +1027,35 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
         let c = mesh.compute_bounding_box().center();
         (c.x as f32, c.y as f32, c.z as f32)
     };
+    // R811 SEAM_OCCL_LOCAL (faithful ON): when the caller placed the object, C++
+    // builds this mesh from the volume's own f32 mesh — its_transform by the
+    // volume matrix, then by trafo_centered() (SeamPlacer.cpp 577-604), each
+    // `(t * v.cast<double>()).cast<float>()`. Rounding the plate-frame mesh
+    // (coordinates near the bed centre) instead loses the low bits.
+    let local_place = if crate::faithful_gate("SEAM_OCCL_LOCAL") {
+        po.occlusion_place.zip(po.raw_local_mesh.as_ref())
+    } else {
+        None
+    };
     let mut triangle_set = indexed_triangle_set {
-        vertices: mesh
+        vertices: if let Some(((vo, ot), local)) = local_place {
+            local
+                .vertices()
+                .iter()
+                .map(|v| {
+                    // 587: its_transform(model_its, model_transformation), before
+                    // the decimation. trafo_centered() is applied after it, below.
+                    let _ = ot;
+                    let step = |x: f64, a: f64| -> f32 { (x as f32 as f64 + a) as f32 };
+                    Vec3f::new(
+                        n0(step(v.x, vo[0])),
+                        n0(step(v.y, vo[1])),
+                        n0(step(v.z, vo[2])),
+                    )
+                })
+                .collect()
+        } else {
+          mesh
             .vertices()
             .iter()
             .map(|v| {
@@ -1043,7 +1070,8 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
                     Vec3f::new(v.x as f32, v.y as f32, v.z as f32)
                 }
             })
-            .collect(),
+            .collect()
+        },
         indices: mesh
             .indices()
             .iter()
@@ -1114,7 +1142,15 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
     // WITHOUT this the occlusion mesh stays in the volume frame while the seam
     // candidates live in the centered slicing frame — every visibility raycast
     // was skewed by the centering offset (~0.8245mm in x for Benchy).
-    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+    if let Some(((_, ot), _)) = local_place {
+        // 604: its_transform(triangle_set, obj_transform), after the decimation.
+        for v in &mut triangle_set.vertices {
+            v.x = ((v.x as f64) + ot[0]) as f32;
+            v.y = ((v.y as f64) + ot[1]) as f32;
+            v.z = ((v.z as f64) + ot[2]) as f32;
+        }
+    }
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") && local_place.is_none() {
         let (cx, cy) = po.slice_center_offset;
         for v in &mut triangle_set.vertices {
             v.x = ((v.x as f64) - cx) as f32;

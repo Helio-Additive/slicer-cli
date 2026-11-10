@@ -407,6 +407,11 @@ pub struct GCodeWriter {
     /// Relative I/J are NOT offset by this.
     gcode_origin_x: f64,
     gcode_origin_y: f64,
+    /// R812 — GCode::m_farthest_point_timelapse for the layer being written:
+    /// the farthest point in G-code millimetres, and the inline timelapse block
+    /// to write once an extrusion ends within 0.5 mm of it (GCode.cpp 7946-7973).
+    farthest_timelapse: Option<((f64, f64), String)>,
+    farthest_timelapse_inserted: bool,
 
     /// Last emitted extrusion role, for `; FEATURE:` comment deduplication.
     /// C++ `GCode::m_last_extrusion_role` (GCode.hpp:538) — a PERSISTENT member
@@ -484,6 +489,8 @@ impl GCodeWriter {
             last_width_tag: 0.0,
             gcode_origin_x: 0.0,
             gcode_origin_y: 0.0,
+            farthest_timelapse: None,
+            farthest_timelapse_inserted: false,
             last_extrusion_role: None,
             config,
         }
@@ -491,6 +498,40 @@ impl GCodeWriter {
 
     /// Set the G-code export origin (mm) subtracted from absolute XY emits
     /// (C++ GCode::set_origin / m_origin). FRAME_PAIR: = slice center_offset.
+    /// Arm (or clear) the inline timelapse for the layer about to be written.
+    pub fn set_farthest_timelapse(&mut self, state: Option<((f64, f64), String)>) {
+        self.farthest_timelapse = state;
+        self.farthest_timelapse_inserted = false;
+    }
+
+    /// `m_farthest_point_timelapse.inserted_this_layer`.
+    pub fn farthest_timelapse_inserted(&self) -> bool {
+        self.farthest_timelapse_inserted
+    }
+
+    /// GCode.cpp 7946-7973 `check_and_insert_timelapse`, called by `_extrude`
+    /// after each extruded segment with the segment's end point (slice frame,
+    /// mm). `unscale(endpoint) + m_origin` is compared with the farthest point.
+    pub fn check_and_insert_timelapse(&mut self, x: f64, y: f64) {
+        if self.farthest_timelapse_inserted {
+            return;
+        }
+        let Some(((fx, fy), _)) = self.farthest_timelapse.as_ref() else {
+            return;
+        };
+        // m_origin = -gcode_origin (see write_command).
+        let ex = x - self.gcode_origin_x;
+        let ey = y - self.gcode_origin_y;
+        if ((ex - fx) * (ex - fx) + (ey - fy) * (ey - fy)).sqrt() >= 0.5 {
+            return;
+        }
+        let block = self.farthest_timelapse.as_ref().map(|s| s.1.clone()).unwrap_or_default();
+        if !block.is_empty() {
+            self.write_raw_content(&block);
+            self.farthest_timelapse_inserted = true;
+        }
+    }
+
     pub fn set_gcode_origin(&mut self, x: f64, y: f64) {
         self.gcode_origin_x = x;
         self.gcode_origin_y = y;
@@ -2243,7 +2284,13 @@ impl GCodeWriter {
                         self.flush_pending_accel();
                     }
                     self.write_raw("; WIPE_START");
-                    if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") {
+                    // R811 WIPE_ACCEL_AFTER_SPEED (faithful ON): the pending
+                    // acceleration surfaces in the wipe's first extrude_to_xy,
+                    // which comes after Wipe::wipe's set_speed line (GCode.cpp
+                    // 496-510). Where the wipe writes no F line the two orders
+                    // are the same, which is all R651 could see on Majora.
+                    let accel_after_speed = crate::faithful_gate("WIPE_ACCEL_AFTER_SPEED");
+                    if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") && !accel_after_speed {
                         self.flush_pending_accel();
                     }
                     // R610: the decisive marker. Written into the stream immediately
@@ -2269,6 +2316,9 @@ impl GCodeWriter {
                         let fs = fs.trim_end_matches('0').trim_end_matches('.');
                         self.write_raw(&format!("G1 F{};_WIPE", fs));
                         self.last_emitted_f = wipe_f;
+                    }
+                    if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") && accel_after_speed {
+                        self.flush_pending_accel();
                     }
                     for i in 1..kept.len() {
                         let dx = kept[i].0 - kept[i - 1].0;

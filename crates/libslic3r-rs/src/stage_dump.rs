@@ -225,5 +225,59 @@ pub fn pp_perimeter_detail(layers: &[crate::layer::Layer]) {
         for region in layer.regions() {
             pp_detail("perim", &region.perimeters, 0);
         }
+        // `PPF c|h x y`: every point of the fill surfaces the perimeter step left.
+        for region in layer.regions() {
+            for s in &region.fill_surfaces.surfaces {
+                for p in &s.expolygon.contour.points {
+                    eprintln!("PPF c {} {}", p.x, p.y);
+                }
+                for h in &s.expolygon.holes {
+                    for p in h.points() {
+                        eprintln!("PPF h {} {}", p.x, p.y);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `PP=1`: the typed surfaces of every layer after one step of
+/// `prepare_infill` — `PP <stage>_s_<type>` for the region slices and
+/// `PP <stage>_f_<type>` for the fill surfaces.
+pub fn pp_typed(stage: &str, layers: &[crate::layer::Layer]) {
+    if !pp_enabled() {
+        return;
+    }
+    use crate::surface::SurfaceType as T;
+    let name = |t: T| match t {
+        T::Top => "top",
+        T::Bottom => "bottom",
+        T::BottomBridge => "bottombridge",
+        T::Internal => "internal",
+        T::FloatingVerticalShell => "fvs",
+        T::InternalSolid => "internalsolid",
+        T::InternalBridge => "internalbridge",
+        T::InternalVoid => "internalvoid",
+        T::Perimeter => "perimeter",
+        #[allow(unreachable_patterns)]
+        _ => "other",
+    };
+    for (i, layer) in layers.iter().enumerate() {
+        let mut accs: std::collections::BTreeMap<String, PpAcc> = Default::default();
+        for region in layer.regions() {
+            for s in &region.slices.surfaces {
+                accs.entry(format!("{}_s_{}", stage, name(s.surface_type)))
+                    .or_default()
+                    .add_expolygon(&s.expolygon);
+            }
+            for s in &region.fill_surfaces.surfaces {
+                accs.entry(format!("{}_f_{}", stage, name(s.surface_type)))
+                    .or_default()
+                    .add_expolygon(&s.expolygon);
+            }
+        }
+        for (k, acc) in &accs {
+            acc.print(k, i);
+        }
     }
 }
