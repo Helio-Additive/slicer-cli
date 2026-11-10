@@ -60,6 +60,22 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
 
+    // R809 STL_DESKTOP_PLACE (faithful ON; `=0` restores the as-is frame of the
+    // pre-R809 driver): `slicer_cli` places a model file on the plate the way
+    // the desktop does on load (cli_model_load.cpp `desktop_place_on_bed`).
+    let frame_origin_legacy = (0.0, 0.0);
+    let desktop_place = if crate::faithful_gate("STL_DESKTOP_PLACE") {
+        Some(desktop_place_stl(&mesh, &settings_value))
+    } else {
+        None
+    };
+    if let Some(place) = &desktop_place {
+        info!(
+            "Placed on the plate: instance shift ({}, {}) scaled, z {:.6}",
+            place.shift.0, place.shift.1, place.trafo16[11]
+        );
+        mesh = place.placed_mesh.clone();
+    } else {
     // Match the C++ `slicer_cli` (the parity reference): it slices a bare STL
     // AS-IS in XY — it does NOT bed-center it (that's a GUI-only behavior). The
     // earlier XY auto-centering shifted every body coordinate by ~bed_center,
@@ -103,11 +119,20 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
         let co = mesh.slice_center_xy();
         info!("FRAME_PAIR slice-centered by ({:.4},{:.4})", co.0, co.1);
     }
-    let frame_origin = (0.0, 0.0);
+
+    }
+    let frame_origin = if desktop_place.is_some() { (0.0, 0.0) } else { frame_origin_legacy };
 
     // Create PrintObject — slicing happens internally during Print::process().
     info!("Creating PrintObject...");
-    let print_object = PrintObject::with_config(mesh, object_config);
+    let mut print_object = PrintObject::with_config(mesh, object_config);
+    if let Some(place) = desktop_place {
+        // The volume-local mesh goes through the exact composed f32 slicing
+        // transform (SLICE_VOLUME_TRAFO, R805), as the 3MF path's volumes do.
+        print_object.paint_tb_trafo = Some(place.trafo16);
+        print_object.raw_local_mesh = Some(place.local_mesh);
+        print_object.slice_center_override = Some(place.center_mm);
+    }
 
     // Create Print and add object.
     info!("Creating Print...");
@@ -166,6 +191,191 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     );
 
     Ok(())
+}
+
+/// What `desktop_place_stl` works out for one model file.
+struct DesktopPlacement {
+    /// The volume's own mesh: the file's vertices minus the bounding-box centre,
+    /// in f32 (ModelVolume::center_geometry_after_creation, Model.cpp:3513).
+    local_mesh: TriangleMesh,
+    /// `trafo_centered() * volume.get_matrix()` (PrintObjectSlice.cpp), row-major.
+    trafo16: [f64; 16],
+    /// The print instance's shift, scaled (PrintApply.cpp + PrintObject.cpp:114).
+    shift: (i64, i64),
+    /// `unscale(shift)`: what the G-code export adds to every slice coordinate.
+    center_mm: (f64, f64),
+    /// The mesh in plate coordinates, for everything that is not the slicer.
+    placed_mesh: TriangleMesh,
+}
+
+/// The bounding box of the `printable_area` points (cli_model_load.cpp `bed_box`;
+/// 200 x 200 when the setting is absent).
+fn bed_box_center(settings: &serde_json::Value) -> (f64, f64) {
+    let (mut xl, mut yl, mut xh, mut yh) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    let mut defined = false;
+    let mut take = |text: &str| {
+        for point in text.split(',') {
+            if let Some((x, y)) = point.trim().split_once('x') {
+                if let (Ok(x), Ok(y)) = (x.trim().parse::<f64>(), y.trim().parse::<f64>()) {
+                    xl = xl.min(x);
+                    xh = xh.max(x);
+                    yl = yl.min(y);
+                    yh = yh.max(y);
+                    defined = true;
+                }
+            }
+        }
+    };
+    match settings.get("printable_area") {
+        Some(serde_json::Value::Array(points)) => {
+            for point in points {
+                if let Some(text) = point.as_str() {
+                    take(text);
+                }
+            }
+        }
+        Some(serde_json::Value::String(text)) => take(text),
+        _ => {}
+    }
+    if !defined {
+        return (100.0, 100.0);
+    }
+    // BoundingBoxBase::center: (min + max) / 2.
+    ((xl + xh) / 2.0, (yl + yh) / 2.0)
+}
+
+/// Place one model file on the plate as `slicer_cli` does.
+///
+/// Port of the single-object, single-volume path of `desktop_place_on_bed`
+/// (cli_model_load.cpp 280-378 on main) with the libslic3r calls it makes
+/// (Model.cpp at 56a57d0), every step in the arithmetic the C++ uses, because
+/// the residues decide slice-plane rounding:
+///
+/// 1. `ModelVolume::center_geometry_after_creation` (3513): the mesh is stored
+///    minus its bounding-box centre, subtracted in f32; the volume offset takes
+///    the centre in f64.
+/// 2. `center_around_origin(false)` then `center_around_origin()` (1870): each
+///    moves the volume offset by minus the centre of the f64 bounding box of the
+///    transformed mesh (`transformed_bounding_box`, 1760).
+/// 3. `ensure_on_bed()` (1883) with the new instance: the instance's z offset is
+///    minus `get_instance_min_z` (3021).
+/// 4. The instance's xy offset is the bed centre.
+/// 5. `print_objects_from_model_object` (PrintApply.cpp): the instance shift is
+///    `Point::new_scale` of that offset, which truncates (Point.hpp:185).
+/// 6. `PrintObject` (PrintObject.cpp:82-114): `m_center_offset` is `new_scale` of
+///    the raw bounding box's centre and is added to the shift;
+///    `trafo_centered()` (Print.hpp) takes it off again in mm.
+fn desktop_place_stl(mesh: &TriangleMesh, settings: &serde_json::Value) -> DesktopPlacement {
+    let sf = crate::libslic3r::SCALING_FACTOR;
+    let verts = mesh.vertices();
+
+    // 1. f32 bounding box of the file's vertices; its centre in f64.
+    let mut lo = [f32::MAX; 3];
+    let mut hi = [f32::MIN; 3];
+    for v in verts {
+        let p = [v.x as f32, v.y as f32, v.z as f32];
+        for a in 0..3 {
+            lo[a] = lo[a].min(p[a]);
+            hi[a] = hi[a].max(p[a]);
+        }
+    }
+    let mut vo = [0.0f64; 3];
+    for a in 0..3 {
+        vo[a] = (lo[a] as f64 + hi[a] as f64) / 2.0;
+    }
+    let c32 = [vo[0] as f32, vo[1] as f32, vo[2] as f32];
+    // translate(-(float)shift): v + (-c) in f32.
+    let local: Vec<[f32; 3]> = verts
+        .iter()
+        .map(|v| {
+            [
+                v.x as f32 + (-c32[0]),
+                v.y as f32 + (-c32[1]),
+                v.z as f32 + (-c32[2]),
+            ]
+        })
+        .collect();
+
+    // f64 bounding box of `translation * v.cast<double>()`.
+    let bbox = |t: &[f64; 3]| -> ([f64; 3], [f64; 3]) {
+        let mut lo = [f64::MAX; 3];
+        let mut hi = [f64::MIN; 3];
+        for p in &local {
+            for a in 0..3 {
+                let x = p[a] as f64 + t[a];
+                lo[a] = lo[a].min(x);
+                hi[a] = hi[a].max(x);
+            }
+        }
+        (lo, hi)
+    };
+
+    // 2. center_around_origin(false), center_around_origin().
+    for _ in 0..2 {
+        let (lo, hi) = bbox(&vo);
+        for a in 0..3 {
+            let shift = -((lo[a] + hi[a]) / 2.0);
+            vo[a] += shift;
+        }
+    }
+
+    // 3. ensure_on_bed: z_offset = -get_min_z(); the instance offset was zero.
+    let (lo, hi) = bbox(&vo);
+    let min_z = lo[2] + 0.0;
+    let z_offset = -min_z;
+    let inst_z = if z_offset != 0.0 { 0.0 + z_offset } else { 0.0 };
+
+    // 4./5. The instance at the bed centre; its shift truncates.
+    let (bed_x, bed_y) = bed_box_center(settings);
+    let mut shift = ((bed_x / sf) as i64, (bed_y / sf) as i64);
+
+    // 6. m_center_offset from raw_bounding_box (instance matrix without its
+    //    translation, so the box above), added to the shift.
+    let co = (
+        (((lo[0] + hi[0]) / 2.0) / sf) as i64,
+        (((lo[1] + hi[1]) / 2.0) / sf) as i64,
+    );
+    shift.0 += co.0;
+    shift.1 += co.1;
+
+    // trafo_centered() * volume.get_matrix(): pure translations.
+    let tx = vo[0] + (-(co.0 as f64 * sf));
+    let ty = vo[1] + (-(co.1 as f64 * sf));
+    let tz = vo[2] + inst_z;
+    let trafo16 = [
+        1.0, 0.0, 0.0, tx,
+        0.0, 1.0, 0.0, ty,
+        0.0, 0.0, 1.0, tz,
+        0.0, 0.0, 0.0, 1.0,
+    ];
+    let center_mm = (shift.0 as f64 * sf, shift.1 as f64 * sf);
+
+    let tris: Vec<crate::triangle_mesh::Triangle> = (0..mesh.triangle_count())
+        .map(|i| {
+            let idx = mesh.triangle_indices(i);
+            crate::triangle_mesh::Triangle::new(idx[0], idx[1], idx[2])
+        })
+        .collect();
+    let local_mesh = TriangleMesh::from_parts(
+        local
+            .iter()
+            .map(|p| Point3F { x: p[0] as f64, y: p[1] as f64, z: p[2] as f64 })
+            .collect(),
+        tris.clone(),
+    );
+    let placed_mesh = TriangleMesh::from_parts(
+        local
+            .iter()
+            .map(|p| Point3F {
+                x: p[0] as f64 + tx + center_mm.0,
+                y: p[1] as f64 + ty + center_mm.1,
+                z: p[2] as f64 + tz,
+            })
+            .collect(),
+        tris,
+    );
+
+    DesktopPlacement { local_mesh, trafo16, shift, center_mm, placed_mesh }
 }
 
 /// Slice a 3MF model file to G-code using the Rust engine.

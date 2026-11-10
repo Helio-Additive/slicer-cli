@@ -3,6 +3,8 @@
 > **Scope of this file:** it covers rounds up to **R471**. Rounds R472–R808 are summarized in
 > [`parity/rounds-R472-R808.md`](parity/rounds-R472-R808.md). The branch name and the
 > "Current parity (ROUND 107 …" heading below are historical and no longer current.
+> From R809 the oracle is this repository's `slicer_cli` (02.09.01.70); those rounds and their
+> scores are in [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 > Headline at R808 (`scripts/seq_parity.py`, in-order matched lines): Majora 1,787,698 (66.06%),
 > prime tower 83.0% (R808); Benchy classic 121,714 and Benchy arachne 138,771 (R807); suite 9/9.
 

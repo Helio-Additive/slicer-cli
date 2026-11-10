@@ -294,6 +294,10 @@ pub struct PrintObject {
     /// R805 — raw VOLUME-LOCAL f32 mesh of the main volume (same triangles as
     /// `mesh`), sliced through `paint_tb_trafo` under SLICE_VOLUME_TRAFO.
     pub raw_local_mesh: Option<crate::triangle_mesh::TriangleMesh>,
+    /// R809 — the slice frame's offset from the mesh frame in mm, when the
+    /// caller placed the object (`unscale` of the print instance's shift).
+    /// Replaces the bounding-box centre that `slice()` derives otherwise.
+    pub slice_center_override: Option<(f64, f64)>,
     /// R805 — negative volumes as (volume-local mesh, exact 4x4 slicing transform).
     pub negative_volumes_raw: Vec<(crate::triangle_mesh::TriangleMesh, [f64; 16])>,
 
@@ -337,6 +341,7 @@ impl PrintObject {
             paint_frame_offset: None,
             paint_tb_trafo: None,
             raw_local_mesh: None,
+            slice_center_override: None,
             negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
@@ -369,6 +374,7 @@ impl PrintObject {
             paint_frame_offset: None,
             paint_tb_trafo: None,
             raw_local_mesh: None,
+            slice_center_override: None,
             negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
@@ -526,6 +532,7 @@ impl PrintObject {
         let bbcy = (bb.min.y as f64 + bb.max.y as f64) * 0.5;
         let cx_mm = (bbcx / sf).trunc() * sf; // unscale(new_scale(bbcx))
         let cy_mm = (bbcy / sf).trunc() * sf;
+        let (cx_mm, cy_mm) = self.slice_center_override.unwrap_or((cx_mm, cy_mm));
         slicer.set_slice_center_offset(cx_mm, cy_mm);
         // Record for the export origin (consumed by Print after process): gcode =
         // unscale(centered) + center → C++'s raw frame (R81: m_origin = unscale(shift)
