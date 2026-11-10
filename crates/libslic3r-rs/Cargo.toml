@@ -1,0 +1,112 @@
+[package]
+name = "slicer"
+version = "0.1.0"
+edition = "2021"
+authors = ["alexdaima"]
+description = "A Rust rewrite of the BambuStudio core slicing algorithm"
+license = "AGPL-3.0"
+repository = "https://github.com/alexdaima/slicer"
+keywords = ["3d-printing", "slicer", "gcode", "stl"]
+categories = ["graphics", "rendering"]
+
+[lib]
+name = "slicer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "slicer-cli"
+path = "src/bin/slicer-cli.rs"
+
+[[bin]]
+name = "generate-test-meshes"
+path = "src/bin/generate-test-meshes.rs"
+
+[dependencies]
+# Geometry & Math
+nalgebra = "0.32"
+geo = "0.27"
+geo-clipper = "0.8"
+clipper2 = "0.5"
+# Raw Clipper2 FFI (already linked transitively via `clipper2`). Exposes the
+# native PolyTree64 / ClipperOffset / Clipper64::Execute(closed, open) APIs that
+# the safe `clipper2` wrapper hides, which Clipper2Utils.cpp depends on for
+# byte-exact PolyTreeToExPolygons and open-subject (solution_open) recovery.
+clipper2c-sys = "0.1.6"
+# Vendored BambuStudio ClipperLib_Z (Z-tagged open-path clipping) via a C shim.
+# Provides the faithful `clip_extrusion` primitive (OverhangDetector.cpp) that
+# Clipper2 cannot express (no Z-aware open-subject clip with a user fill callback).
+clipper-z-sys = { path = "../clipper-z-sys" }
+# Vendored Clipper2 (v1.5.4, USINGZ) via a C shim — the Z-callback intersection
+# engine for the faithful RegionExpansion `wave_seeds` (cz2_intersect_open_z) +
+# Z-preserving open-path offset (cz2_offset_z). ClipperLib_Z (clipper-z-sys) does
+# the propagation; Clipper2-Z does the seed intersection. (R131+ classification port.)
+clipper2-z-sys = { path = "../clipper2-z-sys" }
+# Eigen FFI shim for the bit-exact slice-time vertex transform (R86): calls the
+# real Eigen so the f32 matmul matches C++ exactly (sidesteps the pure-rust
+# Eigen-reproduction 1-ULP wall, R85).
+eigen-transform-sys = { path = "../eigen-transform-sys" }
+# R772 — exact-backend boost::polygon voronoi (AWALL 0/726 exact: the rust
+# boostvoronoi port drifts by ULPs against the -O3 native headers).
+boost-voronoi-sys = { path = "../boost-voronoi-sys" }
+ordered-float = "4.2"
+boostvoronoi = "0.12"
+# Polygon tessellation (pure-Rust earcut; wasm-safe). Backend for Tesselate.cpp.
+# C++ uses native glu-libtess which is not wasm-safe; see src/tesselate.rs.
+earcutr = "0.4"
+
+# Time handling
+chrono = "0.4"
+
+# Bitflags for state management
+bitflags = "2.4"
+
+# Mesh Processing
+stl_io = "0.7"
+rstar = "0.11"
+
+# Parallelism
+rayon = "1.8"
+parking_lot = "0.12"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Error Handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Random number generation (for monotonic infill ant colony optimization)
+rand = "0.8"
+
+# Utilities
+log = "0.4"
+env_logger = "0.10"
+clap = { version = "4.4", features = ["derive"] }
+indicatif = "0.17"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+quick-xml = "0.31"
+# PNG codec backend for PNGReadWrite.cpp (libpng replacement).
+# C++ uses native libpng (<png.h>) which is not wasm-safe; flate2 + miniz_oxide
+# is pure-Rust and wasm-safe, already present transitively via `zip`.
+flate2 = "1.0"
+
+# Async (for MCP server)
+tokio = { version = "1.34", features = ["full"] }
+
+# Windows-specific dependencies
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["processthreadsapi", "psapi", "winnt"] }
+
+[dev-dependencies]
+criterion = "0.5"
+approx = "0.5"
+tempfile = "3.8"
+pretty_assertions = "1.4"
+
+[[bench]]
+name = "slicing_benchmarks"
+harness = false
+
+# Profiles live in the workspace root Cargo.toml (`parity` among them).

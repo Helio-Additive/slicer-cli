@@ -1,0 +1,10 @@
+[package]
+name = "clipper2-z-sys"
+version = "0.1.0"
+edition = "2021"
+links = "clipper2z"
+description = "Vendored Clipper2 (v1.5.4) built with USINGZ (Z-tagged open-path clipping) via a C shim, namespace-isolated (Clipper2ZSys) from clipper2c-sys's non-Z Clipper2 to avoid ODR collisions."
+publish = false
+
+[build-dependencies]
+cc = "1"

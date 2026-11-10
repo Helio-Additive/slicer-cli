@@ -1,0 +1,31 @@
+# The Rust engine: slicer_cli-rust and the crates it is built from.
+# The three C++ programs are built by CMake (CMakeLists.txt); nothing here
+# takes part in their build.
+[workspace]
+resolver = "2"
+members = [
+    "crates/slicer-cli-rust",
+    "crates/libslic3r-rs",
+    "crates/clipper-z-sys",
+    "crates/clipper2-z-sys",
+    "crates/eigen-transform-sys",
+    "crates/boost-voronoi-sys",
+]
+default-members = ["crates/slicer-cli-rust"]
+
+# The Rust engine mirrors C++ libslic3r's `assert()`s as `debug_assert!`.
+# A C++ release build (NDEBUG) compiles those to no-ops, and the C++ G-code the
+# port is scored against comes from a release build — so the engine must run
+# with debug assertions off even in a dev `cargo build` (otherwise, for example,
+# the degenerate slice-line assert in triangle_mesh_slicer.rs fires on Benchy).
+# opt-level 3 on this one package keeps a dev build usable: an unoptimized
+# Benchy slice takes minutes.
+[profile.dev.package.slicer]
+debug-assertions = false
+opt-level = 3
+
+# `cargo build --profile parity`: the dev profile with debug assertions off
+# everywhere, for running the engine crate's own programs against C++ output.
+[profile.parity]
+inherits = "dev"
+debug-assertions = false

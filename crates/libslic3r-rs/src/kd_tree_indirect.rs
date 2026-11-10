@@ -1,0 +1,1056 @@
+//! KD-tree for N-dimensional spatial search using indirect indexing
+//!
+//! C++ Reference: KDTreeIndirect.hpp
+//!
+//! This module provides a generic K-dimensional tree for efficient spatial queries:
+//! - Closest point search
+//! - K-nearest neighbors search
+//! - Range queries (find all points within a distance)
+//! - Bounding box queries
+//!
+//! The tree uses indirect indexing - it stores indices into external data rather
+//! than copying the data itself. This allows efficient tree construction and
+//! memory usage when working with large datasets.
+//!
+//! # Type Parameters
+//!
+//! The tree is generic over:
+//! - `N`: Number of dimensions (const generic)
+//! - `T`: Coordinate type (typically f64 or i64)
+//! - `F`: Coordinate accessor function
+//!
+//! # Example
+//!
+//! ```ignore
+//! use slicer::kd_tree_indirect::{KDTreeIndirect, find_closest_point};
+//!
+//! // Build a 2D tree over point data
+//! let points = vec![(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)];
+//! let coord_fn = |idx: usize, dim: usize| -> f64 {
+//!     if dim == 0 { points[idx].0 } else { points[idx].1 }
+//! };
+//!
+//! let mut tree = KDTreeIndirect::<2, f64, _>::new(coord_fn);
+//! tree.build(points.len());
+//!
+//! // Find closest point to (0.5, 0.5)
+//! let closest = find_closest_point(&tree, &[0.5, 0.5], |_| true);
+//! ```
+
+use crate::libslic3r::EPSILON;
+use crate::utils::next_highest_power_of_2;
+
+/// Sentinel value indicating "no position"
+/// KDTreeIndirect.hpp:29-31  enum : size_t { npos = size_t(-1) }
+pub const NPOS: usize = usize::MAX;
+
+/// Visitor return mask controlling tree traversal
+/// KDTreeIndirect.hpp:14-18
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisitorReturnMask {
+    /// Continue traversing left subtree
+    ContinueLeft = 1,
+    /// Continue traversing right subtree
+    ContinueRight = 2,
+    /// Stop traversal
+    Stop = 4,
+}
+
+/// KD-tree for N-dimensional spatial search using indirect indexing
+/// KDTreeIndirect.hpp:21-190  template<size_t ANumDimensions, typename ACoordType, typename ACoordinateFn> class KDTreeIndirect
+pub struct KDTreeIndirect<const N: usize, T, F>
+where
+    T: Copy + PartialOrd,
+    F: Fn(usize, usize) -> T,
+{
+    /// Tree nodes storing indices into external data
+    /// KDTreeIndirect.hpp:189  std::vector<size_t> m_nodes;
+    nodes: Vec<usize>,
+
+    /// Coordinate accessor function
+    /// KDTreeIndirect.hpp:79  CoordinateFn coordinate;
+    coordinate: F,
+
+    /// Phantom data for type parameter
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<const N: usize, T, F> KDTreeIndirect<N, T, F>
+where
+    T: Copy + PartialOrd + Default + std::ops::AddAssign + std::ops::Mul<Output = T>,
+    F: Fn(usize, usize) -> T,
+{
+    /// Create a new empty KD-tree with the given coordinate accessor
+    /// KDTreeIndirect.hpp:33  KDTreeIndirect(CoordinateFn coordinate) : coordinate(coordinate) {}
+    pub fn new(coordinate: F) -> Self {
+        Self {
+            nodes: Vec::new(),
+            coordinate,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Rebuild a tree from an ALREADY-BUILT node array (R523).
+    ///
+    /// The expensive part of `with_indices` is `build()` (recursive
+    /// nth-element partitioning); `nodes` is the whole result. Callers that
+    /// query the same point set repeatedly can build once, keep `nodes`, and
+    /// reconstruct cheaply here with a fresh coordinate closure. Mirrors C++,
+    /// which builds `points_tree` once per layer (SeamPlacer.cpp:944-945) and
+    /// stores it in the layer.
+    pub fn from_nodes(coordinate: F, nodes: Vec<usize>) -> Self {
+        Self {
+            nodes,
+            coordinate,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Borrow the built node array (see [`Self::from_nodes`]).
+    pub fn nodes(&self) -> &[usize] {
+        &self.nodes
+    }
+
+    /// Create a new KD-tree and build it with the given number of indices
+    /// KDTreeIndirect.hpp:35  KDTreeIndirect(CoordinateFn coordinate, size_t num_indices)
+    pub fn with_indices(coordinate: F, num_indices: usize) -> Self {
+        let mut tree = Self::new(coordinate);
+        tree.build(num_indices);
+        tree
+    }
+
+    /// Create a new KD-tree and build it with the given index vector
+    /// KDTreeIndirect.hpp:34  KDTreeIndirect(CoordinateFn coordinate, std::vector<size_t> indices)
+    pub fn with_index_vec(coordinate: F, indices: Vec<usize>) -> Self {
+        let mut tree = Self::new(coordinate);
+        tree.build_from_vec(indices);
+        tree
+    }
+
+    /// Clear the tree
+    /// KDTreeIndirect.hpp:38  void clear() { m_nodes.clear(); }
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+    }
+
+    /// Build tree from 0..num_indices
+    /// KDTreeIndirect.hpp:40-47  void build(size_t num_indices)
+    pub fn build(&mut self, num_indices: usize) {
+        let indices: Vec<usize> = (0..num_indices).collect();
+        self.build_from_vec(indices);
+    }
+
+    /// Build tree from index vector
+    /// KDTreeIndirect.hpp:49-59  void build(std::vector<size_t> &indices)
+    pub fn build_from_vec(&mut self, mut indices: Vec<usize>) {
+        // KDTreeIndirect.hpp:51-52
+        if indices.is_empty() {
+            self.clear();
+        } else {
+            // Allocate enough memory for a full binary tree.
+            // std::vector::assign replaces the entire contents, resetting every node to npos.
+            // KDTreeIndirect.hpp:55
+            let size = next_highest_power_of_2(indices.len() + 1);
+            self.nodes.clear();
+            self.nodes.resize(size, NPOS);
+            // KDTreeIndirect.hpp:56
+            let indices_len = indices.len();
+            self.build_recursive(&mut indices, 0, 0, 0, indices_len - 1);
+        }
+        // indices.clear(); // KDTreeIndirect.hpp:58 (input vector consumed by value)
+        indices.clear();
+    }
+
+    /// Check if tree is empty
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    /// Get number of nodes in the tree
+    pub fn len(&self) -> usize {
+        self.nodes.iter().filter(|&&n| n != NPOS).count()
+    }
+
+    /// Build a balanced tree recursively
+    /// KDTreeIndirect.hpp:83-108  void build_recursive(...)
+    fn build_recursive(
+        &mut self,
+        input: &mut [usize],
+        node: usize,
+        dimension: usize,
+        left: usize,
+        right: usize,
+    ) {
+        if left > right {
+            return;
+        }
+
+        debug_assert!(node < self.nodes.len());
+
+        if left == right {
+            // Insert a node into the balanced tree
+            self.nodes[node] = input[left];
+            return;
+        }
+
+        // Partition to produce a balanced tree
+        let center = (left + right) / 2;
+        self.partition_input(input, dimension, left, right, center);
+
+        // Insert node into tree
+        self.nodes[node] = input[center];
+
+        // Build left/right subtrees
+        // KDTreeIndirect.hpp:102-104  next_dimension = dimension; if (++next_dimension == NumDimensions) next_dimension = 0;
+        // (dimension < N always, so wrapping modulo is equivalent to the C++ increment-and-reset.)
+        let next_dimension = (dimension + 1) % N;
+        if center > left {
+            self.build_recursive(input, node * 2 + 1, next_dimension, left, center - 1);
+        }
+        self.build_recursive(input, node * 2 + 2, next_dimension, center + 1, right);
+    }
+
+    // Partition the input m_nodes <left, right> at "k" and "dimension" using the QuickSelect method:
+    // https://en.wikipedia.org/wiki/Quickselect
+    // Items left of the k'th item are lower than the k'th item in the "dimension",
+    // items right of the k'th item are higher than the k'th item in the "dimension",
+    /// KDTreeIndirect.hpp:114-167
+    fn partition_input(
+        &self,
+        input: &mut [usize],
+        dimension: usize,
+        mut left: usize,
+        mut right: usize,
+        k: usize,
+    ) {
+        while left < right {
+            // KDTreeIndirect.hpp:117
+            let center = (left + right) / 2;
+            let pivot: T;
+            {
+                // Bubble sort the input[left], input[center], input[right], so that a median of the three values
+                // will end up in input[center].
+                // KDTreeIndirect.hpp:122-124
+                let mut left_value = (self.coordinate)(input[left], dimension);
+                let mut center_value = (self.coordinate)(input[center], dimension);
+                let mut right_value = (self.coordinate)(input[right], dimension);
+                // KDTreeIndirect.hpp:125-128
+                if left_value > center_value {
+                    input.swap(left, center);
+                    std::mem::swap(&mut left_value, &mut center_value);
+                }
+                // KDTreeIndirect.hpp:129-132
+                if left_value > right_value {
+                    input.swap(left, right);
+                    right_value = left_value;
+                }
+                // KDTreeIndirect.hpp:133-136
+                if center_value > right_value {
+                    input.swap(center, right);
+                    center_value = right_value;
+                }
+                // KDTreeIndirect.hpp:137
+                pivot = center_value;
+            }
+            // KDTreeIndirect.hpp:139-141
+            if right <= left + 2 {
+                // The <left, right> interval is already sorted.
+                break;
+            }
+            // KDTreeIndirect.hpp:142-144
+            let mut i = left;
+            let mut j = right - 1;
+            input.swap(center, j);
+            // Partition the set based on the pivot.
+            // KDTreeIndirect.hpp:146
+            loop {
+                // Skip left points that are already at correct positions.
+                // Search will certainly stop at position (right - 1), which stores the pivot.
+                // KDTreeIndirect.hpp:149
+                loop {
+                    i += 1;
+                    if !((self.coordinate)(input[i], dimension) < pivot) {
+                        break;
+                    }
+                }
+                // Skip right points that are already at correct positions.
+                // KDTreeIndirect.hpp:151
+                loop {
+                    j -= 1;
+                    if !((self.coordinate)(input[j], dimension) > pivot && i < j) {
+                        break;
+                    }
+                }
+                // KDTreeIndirect.hpp:152-153
+                if i >= j {
+                    break;
+                }
+                // KDTreeIndirect.hpp:154
+                input.swap(i, j);
+            }
+            // Restore pivot to the center of the sequence.
+            // KDTreeIndirect.hpp:157
+            input.swap(i, right - 1);
+            // Which side the kth element is in?
+            // KDTreeIndirect.hpp:159-165
+            if k < i {
+                right = i - 1;
+            } else if k == i {
+                // Sequence is partitioned, kth element is at its place.
+                break;
+            } else {
+                left = i + 1;
+            }
+        }
+    }
+
+    /// Calculate descent mask for tree traversal with an explicit `epsilon`.
+    /// KDTreeIndirect.hpp:61-70  template<typename CoordType> unsigned int descent_mask(...)
+    ///
+    /// Identical to [`Self::descent_mask`] except the `CoordType(EPSILON)` term is
+    /// supplied by the caller as `epsilon` rather than via `T::from(EPSILON)`. This
+    /// drops the `T: From<f64>` bound so that an `f32`-coordinate tree (the C++
+    /// `KDTreeIndirect<3, float, ...>` used by the seam placer) can be queried with
+    /// `epsilon = EPSILON as f32`, reproducing the `float(EPSILON)` cast exactly.
+    pub fn descent_mask_eps(
+        &self,
+        point_coord: T,
+        search_radius: T,
+        epsilon: T,
+        idx: usize,
+        dimension: usize,
+    ) -> u32
+    where
+        T: std::ops::Sub<Output = T> + std::ops::Add<Output = T>,
+    {
+        // KDTreeIndirect.hpp:64  CoordType dist = point_coord - this->coordinate(idx, dimension);
+        let dist = point_coord - (self.coordinate)(idx, dimension);
+        // KDTreeIndirect.hpp:65-69  (dist * dist < search_radius + CoordType(EPSILON)) ? ...
+        if dist * dist < search_radius + epsilon {
+            (VisitorReturnMask::ContinueLeft as u32) | (VisitorReturnMask::ContinueRight as u32)
+        } else if dist > T::default() {
+            VisitorReturnMask::ContinueRight as u32
+        } else {
+            VisitorReturnMask::ContinueLeft as u32
+        }
+    }
+
+    /// Calculate descent mask for tree traversal
+    /// KDTreeIndirect.hpp:61-70  template<typename CoordType> unsigned int descent_mask(...)
+    ///
+    /// In C++ this is its own template over `CoordType` (the type of `point_coord` /
+    /// `search_radius`), distinct from but in practice identical to the tree's
+    /// `CoordType`. We model both with `T`, matching every concrete instantiation.
+    pub fn descent_mask(
+        &self,
+        point_coord: T,
+        search_radius: T,
+        idx: usize,
+        dimension: usize,
+    ) -> u32
+    where
+        T: std::ops::Sub<Output = T> + std::ops::Add<Output = T> + From<f64>,
+    {
+        // KDTreeIndirect.hpp:64  CoordType dist = point_coord - this->coordinate(idx, dimension);
+        let dist = point_coord - (self.coordinate)(idx, dimension);
+        // KDTreeIndirect.hpp:65-69  (dist * dist < search_radius + CoordType(EPSILON)) ? ...
+        //
+        // FIDELITY-NOTE(F2): C++ writes `CoordType(EPSILON)` — a C-style numeric
+        // conversion of the `double` EPSILON (libslic3r.h:52 = 1e-4). For `CoordType`
+        // a floating type this is the rounded value; for an *integer* `CoordType` the
+        // conversion truncates to 0, so the `+ EPSILON` term vanishes. Here `T: From<f64>`
+        // reproduces only the floating-point case faithfully (the only instantiations in
+        // this crate are f64/f32 trees); an integer-coordinate KD tree would need a local
+        // `as i32`/`as i64` truncating conversion to match C++ exactly. No integer tree
+        // is instantiated today, so this is left as a note rather than a divergence.
+        if dist * dist < search_radius + T::from(EPSILON) {
+            // The plane intersects a hypersphere centered at point_coord of search_radius.
+            (VisitorReturnMask::ContinueLeft as u32) | (VisitorReturnMask::ContinueRight as u32)
+        } else if dist > T::default() {
+            // The plane does not intersect the hypersphere.  KDTreeIndirect.hpp:69  (dist > CoordType(0))
+            VisitorReturnMask::ContinueRight as u32
+        } else {
+            VisitorReturnMask::ContinueLeft as u32
+        }
+    }
+
+    /// Visit tree nodes with a visitor function
+    /// KDTreeIndirect.hpp:73-77  void visit(Visitor &visitor) const { visit_recursive(0, 0, visitor); }
+    ///
+    /// C++ calls `visit_recursive(0, 0, visitor)` unconditionally and relies on the
+    /// `node >= m_nodes.size()` guard inside it (after a debug `assert(!m_nodes.empty())`)
+    /// to no-op on an empty tree. The explicit non-empty guard here matches that release
+    /// behaviour without tripping a debug assertion.
+    pub fn visit<V>(&self, mut visitor: V)
+    where
+        V: FnMut(usize, usize) -> u32,
+    {
+        if !self.nodes.is_empty() {
+            self.visit_recursive(0, 0, &mut visitor);
+        }
+    }
+
+    /// Visit tree recursively
+    /// KDTreeIndirect.hpp:169-187  void visit_recursive(size_t node, size_t dimension, Visitor &visitor) const
+    fn visit_recursive<V>(&self, node: usize, dimension: usize, visitor: &mut V)
+    where
+        V: FnMut(usize, usize) -> u32,
+    {
+        if node >= self.nodes.len() || self.nodes[node] == NPOS {
+            return;
+        }
+
+        let left = node * 2 + 1;
+        let right = left + 1;
+
+        let mask = visitor(self.nodes[node], dimension);
+
+        if (mask & (VisitorReturnMask::Stop as u32)) == 0 {
+            let next_dimension = (dimension + 1) % N;
+
+            if (mask & (VisitorReturnMask::ContinueLeft as u32)) != 0 {
+                self.visit_recursive(left, next_dimension, visitor);
+            }
+            if (mask & (VisitorReturnMask::ContinueRight as u32)) != 0 {
+                self.visit_recursive(right, next_dimension, visitor);
+            }
+        }
+    }
+}
+
+/// Find K closest points to a target point
+/// KDTreeIndirect.hpp:194-252  template<size_t K, ...> std::array<size_t, K> find_closest_points(...)
+pub fn find_closest_points<const K: usize, const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    point: &P,
+    filter: Filter,
+) -> [usize; K]
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + From<f64>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    // results.fill(std::make_pair(npos, numeric_limits<CoordT>::max()));
+    // KDTreeIndirect.hpp:218-220
+    //
+    // FIDELITY-NOTE(F2): C++ seeds every slot's distance with
+    // `std::numeric_limits<CoordT>::max()`. `T::from(f64::MAX)` reproduces that for the
+    // `f64` tree (the dominant instantiation). For an `f32` tree this would round to
+    // +inf rather than `f32::MAX`; that is still a strictly-larger sentinel that every
+    // real squared distance compares below, so closest-point selection is unaffected.
+    let mut results = [(NPOS, T::from(f64::MAX)); K];
+
+    // KDTreeIndirect.hpp:221-244
+    let visitor = |idx: usize, dimension: usize| -> u32 {
+        if filter(idx) {
+            // KDTreeIndirect.hpp:224-228
+            let mut dist = T::default();
+            for i in 0..N {
+                let d = point[i] - (kdtree.coordinate)(idx, i);
+                dist += d * d;
+            }
+
+            // auto res = std::make_pair(idx, dist);
+            // KDTreeIndirect.hpp:230
+            let res = (idx, dist);
+            // auto it = std::lower_bound(results.begin(), results.end(), res,
+            //     [](auto &r1, auto &r2) { return r1.second < r2.second; });
+            // lower_bound returns the first position whose value does not compare less than dist,
+            // i.e. the first i for which !(results[i].1 < dist).
+            // KDTreeIndirect.hpp:231-234
+            let mut it = K;
+            for i in 0..K {
+                if !(results[i].1 < dist) {
+                    it = i;
+                    break;
+                }
+            }
+
+            // KDTreeIndirect.hpp:236-239
+            if it != K {
+                // std::rotate(it, std::prev(results.end()), results.end());
+                // Move the last element to position `it`, shifting [it, K-1) right by one.
+                for i in ((it + 1)..K).rev() {
+                    results[i] = results[i - 1];
+                }
+                // *it = res;
+                results[it] = res;
+            }
+        }
+
+        // KDTreeIndirect.hpp:241-243
+        kdtree.descent_mask(point[dimension], results[0].1, idx, dimension)
+    };
+
+    // KDTreeIndirect.hpp:247
+    kdtree.visit(visitor);
+    // KDTreeIndirect.hpp:248-249
+    let mut ret = [NPOS; K];
+    for i in 0..K {
+        ret[i] = results[i].0;
+    }
+    // KDTreeIndirect.hpp:251
+    ret
+}
+
+/// `find_closest_points` variant with explicit `epsilon` / `max_sentinel`.
+///
+/// Mirrors [`find_closest_points`] exactly but takes the `CoordType(EPSILON)` term
+/// (`epsilon`) and the `numeric_limits<CoordType>::max()` seed (`max_sentinel`) as
+/// parameters, dropping the `T: From<f64>` bound. This lets an `f32` tree (the C++
+/// `KDTreeIndirect<3, float, ...>` of the seam placer) be queried by passing
+/// `epsilon = EPSILON as f32` and `max_sentinel = f32::MAX`.
+pub fn find_closest_points_eps<const K: usize, const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    point: &P,
+    epsilon: T,
+    max_sentinel: T,
+    filter: Filter,
+) -> [usize; K]
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    // KDTreeIndirect.hpp:218-220
+    let mut results = [(NPOS, max_sentinel); K];
+
+    // KDTreeIndirect.hpp:221-244
+    let visitor = |idx: usize, dimension: usize| -> u32 {
+        if filter(idx) {
+            // KDTreeIndirect.hpp:224-228
+            let mut dist = T::default();
+            for i in 0..N {
+                let d = point[i] - (kdtree.coordinate)(idx, i);
+                dist += d * d;
+            }
+
+            // KDTreeIndirect.hpp:230
+            let res = (idx, dist);
+            // KDTreeIndirect.hpp:231-234  std::lower_bound
+            let mut it = K;
+            for i in 0..K {
+                if !(results[i].1 < dist) {
+                    it = i;
+                    break;
+                }
+            }
+
+            // KDTreeIndirect.hpp:236-239
+            if it != K {
+                for i in ((it + 1)..K).rev() {
+                    results[i] = results[i - 1];
+                }
+                results[it] = res;
+            }
+        }
+
+        // KDTreeIndirect.hpp:241-243
+        kdtree.descent_mask_eps(point[dimension], results[0].1, epsilon, idx, dimension)
+    };
+
+    // KDTreeIndirect.hpp:247
+    kdtree.visit(visitor);
+    // KDTreeIndirect.hpp:248-251
+    let mut ret = [NPOS; K];
+    for i in 0..K {
+        ret[i] = results[i].0;
+    }
+    ret
+}
+
+/// `find_closest_point` variant with explicit `epsilon` / `max_sentinel`.
+/// KDTreeIndirect.hpp:264-271  size_t find_closest_point(...)
+pub fn find_closest_point_eps<const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    point: &P,
+    epsilon: T,
+    max_sentinel: T,
+    filter: Filter,
+) -> usize
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    find_closest_points_eps::<1, N, T, F, P, Filter>(kdtree, point, epsilon, max_sentinel, filter)[0]
+}
+
+/// `find_nearby_points` variant with explicit `epsilon`.
+/// KDTreeIndirect.hpp:280-314  std::vector<size_t> find_nearby_points(...)
+///
+/// Mirrors [`find_nearby_points`] but takes the `CoordType(EPSILON)` term as a
+/// parameter, dropping the `T: From<f64>` bound so an `f32` tree can be queried
+/// (pass `epsilon = EPSILON as f32`).
+pub fn find_nearby_points_eps<const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    center: &P,
+    max_distance: T,
+    epsilon: T,
+    filter: Filter,
+) -> Vec<usize>
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    // KDTreeIndirect.hpp:295  max_distance_squared(max_distance*max_distance)
+    let max_distance_squared = max_distance * max_distance;
+    let mut result = Vec::new();
+
+    let visitor = |idx: usize, dimension: usize| -> u32 {
+        // KDTreeIndirect.hpp:297-307
+        if filter(idx) {
+            let mut dist = T::default();
+            for i in 0..N {
+                let d = center[i] - (kdtree.coordinate)(idx, i);
+                dist += d * d;
+            }
+            // KDTreeIndirect.hpp:304-306
+            if dist < max_distance_squared {
+                result.push(idx);
+            }
+        }
+        // KDTreeIndirect.hpp:308
+        kdtree.descent_mask_eps(center[dimension], max_distance_squared, epsilon, idx, dimension)
+    };
+
+    kdtree.visit(visitor);
+    result
+}
+
+/// Find K closest points without filter
+/// KDTreeIndirect.hpp:254-259  find_closest_points<K>(kdtree, point, [](size_t) { return true; })
+pub fn find_closest_points_unfiltered<const K: usize, const N: usize, T, F, P>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    point: &P,
+) -> [usize; K]
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + From<f64>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+{
+    find_closest_points(kdtree, point, |_| true)
+}
+
+/// Find single closest point with filter
+/// KDTreeIndirect.hpp:261-271  size_t find_closest_point(kdtree, point, filter) { return find_closest_points<1>(...)[0]; }
+pub fn find_closest_point<const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    point: &P,
+    filter: Filter,
+) -> usize
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + From<f64>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    find_closest_points::<1, N, T, F, P, Filter>(kdtree, point, filter)[0]
+}
+
+/// Find single closest point without filter
+/// KDTreeIndirect.hpp:273-277  size_t find_closest_point(kdtree, point) { return find_closest_point(..., [](size_t){return true;}); }
+pub fn find_closest_point_unfiltered<const N: usize, T, F, P>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    point: &P,
+) -> usize
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + From<f64>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+{
+    find_closest_point(kdtree, point, |_| true)
+}
+
+/// Find all points within a spherical radius
+/// KDTreeIndirect.hpp:280-314  std::vector<size_t> find_nearby_points(kdtree, center, max_distance, filter)
+pub fn find_nearby_points<const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    center: &P,
+    max_distance: T,
+    filter: Filter,
+) -> Vec<usize>
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + From<f64>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    // KDTreeIndirect.hpp:295  max_distance_squared(max_distance*max_distance)
+    let max_distance_squared = max_distance * max_distance;
+    let mut result = Vec::new();
+
+    let visitor = |idx: usize, dimension: usize| -> u32 {
+        // KDTreeIndirect.hpp:297-307  unsigned int operator()(size_t idx, size_t dimension)
+        if filter(idx) {
+            // KDTreeIndirect.hpp:299-303
+            let mut dist = T::default();
+            for i in 0..N {
+                let d = center[i] - (kdtree.coordinate)(idx, i);
+                dist += d * d;
+            }
+            // KDTreeIndirect.hpp:304-306
+            if dist < max_distance_squared {
+                result.push(idx);
+            }
+        }
+
+        // KDTreeIndirect.hpp:308  return kdtree.descent_mask(center[dimension], max_distance_squared, idx, dimension);
+        kdtree.descent_mask(center[dimension], max_distance_squared, idx, dimension)
+    };
+
+    kdtree.visit(visitor);
+    result
+}
+
+/// Find all points within a spherical radius (no filter)
+/// KDTreeIndirect.hpp:316-323  find_nearby_points(kdtree, center, max_distance, [](size_t){return true;})
+pub fn find_nearby_points_unfiltered<const N: usize, T, F, P>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    center: &P,
+    max_distance: T,
+) -> Vec<usize>
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + From<f64>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+{
+    find_nearby_points(kdtree, center, max_distance, |_| true)
+}
+
+/// Find all points within an axis-aligned bounding box
+/// KDTreeIndirect.hpp:326-370  std::vector<size_t> find_nearby_points(kdtree, bb_min, bb_max, filter)
+pub fn find_nearby_points_bbox<const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    bb_min: &P,
+    bb_max: &P,
+    filter: Filter,
+) -> Vec<usize>
+where
+    T: Copy + PartialOrd + Default + std::ops::AddAssign + std::ops::Mul<Output = T>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    let mut result = Vec::new();
+
+    let visitor = |idx: usize, dimension: usize| -> u32 {
+        let mut ret =
+            (VisitorReturnMask::ContinueLeft as u32) | (VisitorReturnMask::ContinueRight as u32);
+
+        // KDTreeIndirect.hpp:347-362
+        if filter(idx) {
+            // C++ stores every p(i) in a full PointType `p`, then reads p(dimension)
+            // after the loop. Since the loop covers i == dimension, p(dimension) is
+            // exactly the value captured here as `p_dim` — equivalent without a full point.
+            let mut contains = true;
+            let mut p_dim = T::default();
+
+            // KDTreeIndirect.hpp:350-353
+            for i in 0..N {
+                let p = (kdtree.coordinate)(idx, i);
+                if i == dimension {
+                    p_dim = p;
+                }
+                contains = contains && bb_min[i] <= p && p <= bb_max[i];
+            }
+
+            // KDTreeIndirect.hpp:355-356
+            if p_dim < bb_min[dimension] {
+                ret = VisitorReturnMask::ContinueRight as u32;
+            }
+            // KDTreeIndirect.hpp:357-358
+            if p_dim > bb_max[dimension] {
+                ret = VisitorReturnMask::ContinueLeft as u32;
+            }
+
+            // KDTreeIndirect.hpp:360-361
+            if contains {
+                result.push(idx);
+            }
+        }
+
+        ret
+    };
+
+    kdtree.visit(visitor);
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kdtree_2d_creation() {
+        let points = vec![(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, points.len());
+        assert_eq!(tree.len(), 3);
+        assert!(!tree.is_empty());
+    }
+
+    #[test]
+    fn test_kdtree_clear() {
+        let points = vec![(0.0, 0.0), (1.0, 1.0)];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let mut tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, points.len());
+        assert_eq!(tree.len(), 2);
+
+        tree.clear();
+        assert_eq!(tree.len(), 0);
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn test_find_closest_point() {
+        let points = vec![(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, points.len());
+
+        // Find closest to (0.1, 0.1) - should be (0, 0)
+        let query = [0.1, 0.1];
+        let closest = find_closest_point_unfiltered(&tree, &query);
+
+        assert_eq!(closest, 0);
+    }
+
+    #[test]
+    fn test_find_k_closest_points() {
+        let points = vec![(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (2.0, 0.0), (0.0, 2.0)];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, points.len());
+
+        // Find 3 closest to origin
+        let query = [0.0, 0.0];
+        let closest = find_closest_points_unfiltered::<3, 2, _, _, _>(&tree, &query);
+
+        assert_eq!(closest[0], 0); // (0, 0) - distance 0
+                                   // Next two should be (1, 0) and (0, 1) in some order
+        assert!(closest[1] == 1 || closest[1] == 2);
+        assert!(closest[2] == 1 || closest[2] == 2);
+        assert_ne!(closest[1], closest[2]);
+    }
+
+    #[test]
+    fn test_find_nearby_points() {
+        let points = vec![(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (5.0, 5.0)];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, points.len());
+
+        // Find all points within distance 1.5 of origin
+        let center = [0.0, 0.0];
+        let nearby = find_nearby_points_unfiltered(&tree, &center, 1.5);
+
+        assert_eq!(nearby.len(), 3);
+        assert!(nearby.contains(&0));
+        assert!(nearby.contains(&1));
+        assert!(nearby.contains(&2));
+        assert!(!nearby.contains(&3)); // (5, 5) is too far
+    }
+
+    #[test]
+    fn test_find_nearby_points_bbox() {
+        let points = vec![(0.0, 0.0), (1.0, 1.0), (2.0, 2.0), (5.0, 5.0)];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, points.len());
+
+        // Find all points in bbox [0, 0] to [2.5, 2.5]
+        let bb_min = [0.0, 0.0];
+        let bb_max = [2.5, 2.5];
+        let in_bbox = find_nearby_points_bbox(&tree, &bb_min, &bb_max, |_| true);
+
+        assert_eq!(in_bbox.len(), 3);
+        assert!(in_bbox.contains(&0));
+        assert!(in_bbox.contains(&1));
+        assert!(in_bbox.contains(&2));
+        assert!(!in_bbox.contains(&3)); // (5, 5) is outside
+    }
+
+    #[test]
+    fn test_filter_functionality() {
+        let points = vec![(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, points.len());
+
+        // Find closest point with even index
+        let query = [0.5, 0.5];
+        let closest = find_closest_point(&tree, &query, |idx| idx % 2 == 0);
+
+        assert!(closest == 0 || closest == 2);
+    }
+
+    #[test]
+    fn test_3d_tree() {
+        let points = vec![
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+        ];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            match dim {
+                0 => points[idx].0,
+                1 => points[idx].1,
+                2 => points[idx].2,
+                _ => 0.0,
+            }
+        };
+
+        let tree = KDTreeIndirect::<3, f64, _>::with_indices(coord_fn, points.len());
+        assert_eq!(tree.len(), 4);
+
+        let query = [0.1, 0.1, 0.1];
+        let closest = find_closest_point_unfiltered(&tree, &query);
+        assert_eq!(closest, 0);
+    }
+
+    #[test]
+    fn test_empty_tree() {
+        let points: Vec<(f64, f64)> = vec![];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, 0);
+        assert_eq!(tree.len(), 0);
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn test_single_point() {
+        let points = vec![(1.0, 2.0)];
+        let coord_fn = |idx: usize, dim: usize| -> f64 {
+            if dim == 0 {
+                points[idx].0
+            } else {
+                points[idx].1
+            }
+        };
+
+        let tree = KDTreeIndirect::<2, f64, _>::with_indices(coord_fn, 1);
+        assert_eq!(tree.len(), 1);
+
+        let query = [0.0, 0.0];
+        let closest = find_closest_point_unfiltered(&tree, &query);
+        assert_eq!(closest, 0);
+    }
+}

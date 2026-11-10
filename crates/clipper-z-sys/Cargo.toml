@@ -1,0 +1,10 @@
+[package]
+name = "clipper-z-sys"
+version = "0.1.0"
+edition = "2021"
+links = "clipperz"
+description = "Vendored BambuStudio ClipperLib / ClipperLib_Z (Z-tagged open-path clipping) via a C shim."
+publish = false
+
+[build-dependencies]
+cc = "1"

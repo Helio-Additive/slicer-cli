@@ -28,3 +28,11 @@ nanosvg_impl.cpp
 .DS_Store
 /bin/
 .worktrees/
+
+# Rust engine build outputs (cargo)
+target/
+
+# Rust engine parity runs: outputs, and the fixtures that are not redistributable
+tests/rust-engine/.tmp/
+tests/rust-engine/fixtures/*.3mf
+tests/rust-engine/fixtures/3DBenchy.stl
