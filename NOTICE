@@ -40,6 +40,11 @@ preserved under AGPLv3.
                         https://github.com/OrcaSlicer/OrcaSlicer
                         AGPLv3.
 
+  Snapmaker Orca      — Fork of OrcaSlicer maintained by Snapmaker. The
+                        Snapmaker CLI binary and profiles use its pinned source.
+                        https://github.com/Snapmaker/OrcaSlicer
+                        AGPLv3.
+
 `slicer-cli` carries forward this lineage. Modifications made for the
 CLI build (CGAL 6.x compatibility patches, Eigen 3.4 SparseMatrix
 migration in libigl, Boost ≥ 1.85 compatibility shims, headless
@@ -118,22 +123,31 @@ External dependencies (linked; portable packages also bundle runtime libraries)
   Freetype /         — Their respective licenses (FTL, MIT, Unicode).
   Fontconfig / ICU
 
-The combined work is distributed under the AGPLv3 in compliance with the
-upstream copyleft chain. License compatibility for each linked dependency
-is verified against the AGPLv3 distribution requirement; see
-docs/slicer-cli-license-compatibility.md (TODO — separate audit doc) if
-re-checking before a release.
+This summary does not replace the licence texts in the pinned source or the
+records in a particular package's THIRD_PARTY_LICENSES directory. Dependencies
+and bundled runtime libraries differ by engine, platform and release.
 
 ================================================================================
 AGPL § 13 — Network use
 ================================================================================
 
-If you run a modified version of this program on a server, AGPL § 13
-requires you to offer the source code to users interacting with that
-server over a network. The recommended way is to display a "Source" link
-in the user-facing UI of any service that wraps `slicer-cli`. The Helio
-closed apps (commercial Tauri shell + cloud server) wrap `slicer-cli`
-via subprocess invocation only — they do NOT link the AGPL code, so
-their UI is not bound by AGPL § 13. Direct consumers of `slicer-cli`
-(for example, third-party services) ARE bound by § 13 and must offer
-the source.
+Users of Helio's hosted slicer functionality can obtain source code, licence
+texts and acknowledgements here, without a Helio account:
+
+  https://github.com/Helio-Additive/slicer-cli/blob/main/docs/open-source.md
+
+The page explains how to select the release used by the service and retrieve
+its CLI code, pinned engines, override files, patches and build instructions.
+The public source repository and releases are:
+
+  https://github.com/Helio-Additive/slicer-cli
+  https://github.com/Helio-Additive/slicer-cli/releases
+
+AGPL § 13 requires a modified program to offer its Corresponding Source to
+users interacting with it remotely through a computer network. A service
+should expose the source link to those users and identify the version it runs.
+Subprocess invocation alone is not a basis for claiming an exemption from
+that source offer. This notice does not assign a licence to separate plugins
+or services; each component retains its applicable terms. See LICENSE and:
+
+  https://www.gnu.org/licenses/gpl-faq.html#AGPLProxy
