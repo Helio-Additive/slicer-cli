@@ -2345,7 +2345,22 @@ pub fn generate_fill_rectilinear(
     // Top surface -9. Those two are the next thing to look at, not a reason to hold
     // back a change that is verbatim `FillBase.cpp:224-239`.
     let used_bridge = config.bridge_angle >= 0.0;
-    let angle_rad = if crate::faithful_gate("FILL_BRIDGE_ANGLE") && used_bridge {
+    let angle_rad = if faithful_dir && crate::faithful_gate("RECT_ANGLE_F32") {
+        // Fill::_infill_direction (FillBase.cpp:204-244) in its own type: the
+        // float `angle`, replaced by float(bridge_angle) on a bridge, else plus
+        // the float layer angle, then plus float(M_PI/2). The polygon is
+        // rotated by this float and the lines are rotated back by it.
+        // RECT_ANGLE_F32=0 sums the angle in double.
+        let half_pi = std::f64::consts::FRAC_PI_2 as f32;
+        let mut out_angle: f32 = (std::f64::consts::PI * config.angle / 180.0) as f32;
+        if crate::faithful_gate("FILL_BRIDGE_ANGLE") && used_bridge {
+            out_angle = config.bridge_angle as f32;
+        } else {
+            out_angle += if layer_index & 1 == 1 { half_pi } else { 0.0f32 };
+        }
+        out_angle += half_pi;
+        out_angle as f64
+    } else if crate::faithful_gate("FILL_BRIDGE_ANGLE") && used_bridge {
         config.bridge_angle + std::f64::consts::FRAC_PI_2
     } else {
         angle_deg.to_radians()
@@ -2484,7 +2499,32 @@ pub fn generate_grid_raw_lines(
         if pwo.n_contours_outer == 0 {
             continue;
         }
-        make_fill_lines_raw(&pwo, a, line_spacing, &mut out);
+        // GRID_FILL_LINES_FAITHFUL (on): make_fill_lines (FillRectilinear.cpp
+        // 2993-3030) works from the bounding box of the rotated SOURCE polygon
+        // and drops the lines within `x_margin` = scaled spacing + SCALED_EPSILON
+        // of its left and right side, "which fully overlap with the infill
+        // perimeter". =0 takes the box of the offset contour and keeps them.
+        if crate::faithful_gate("GRID_FILL_LINES_FAITHFUL") {
+            let mut src_bbox = crate::geometry::BoundingBox::default();
+            let mut add = |ring: &Polygon| {
+                let mut r = ring.clone();
+                if (-a).abs() > 1e-10 {
+                    r.rotate(-a);
+                }
+                for p in r.points() {
+                    src_bbox.merge_point(*p);
+                }
+            };
+            add(&base.polygons_src.contour);
+            for h in &base.polygons_src.holes {
+                add(h);
+            }
+            let x_margin = (spacing / crate::libslic3r::SCALING_FACTOR) as Coord
+                + crate::libslic3r::SCALED_EPSILON as Coord;
+            make_fill_lines_raw_bbox(&pwo, a, line_spacing, Some((src_bbox, x_margin)), &mut out);
+        } else {
+            make_fill_lines_raw(&pwo, a, line_spacing, &mut out);
+        }
     }
     (out, base.polygons_outer)
 }
@@ -2498,7 +2538,73 @@ fn make_fill_lines_raw(
     line_spacing: Coord,
     out: &mut Vec<Polyline>,
 ) {
+    make_fill_lines_raw_bbox(pwo, angle, line_spacing, None, out)
+}
+
+/// [`make_fill_lines_raw`] with the source bounding box and `x_margin` of
+/// FillRectilinear.cpp:2995-3003, 3011-3013 when `src` is given.
+fn make_fill_lines_raw_bbox(
+    pwo: &ExPolygonWithOffset,
+    angle: f64,
+    line_spacing: Coord,
+    src: Option<(crate::geometry::BoundingBox, Coord)>,
+    out: &mut Vec<Polyline>,
+) {
     if line_spacing <= 0 {
+        return;
+    }
+    if let Some((src_bbox, x_margin)) = src {
+        if !src_bbox.is_defined() {
+            return;
+        }
+        // FillRectilinear.cpp:2995-3003 — refpt is the centre of the object's
+        // bounding box, the origin, and pattern_shift is 0.
+        let x_min = src_bbox.min.x + x_margin;
+        let x_max = src_bbox.max.x - x_margin;
+        let aligned = crate::geometry::Point::new(
+            crate::geometry::align_to_grid(src_bbox.min.x, line_spacing),
+            crate::geometry::align_to_grid(src_bbox.min.y, line_spacing),
+        );
+        let mut bbox = src_bbox;
+        bbox.merge_point(aligned);
+        // FillRectilinear.cpp:3007
+        let n_vlines = ((bbox.max.x - bbox.min.x + line_spacing - 1) / line_spacing).max(0) as usize;
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+        // FillRectilinear.cpp:3010-3029
+        for vline in &slice_region_by_vertical_lines(pwo, n_vlines, bbox.min.x, line_spacing) {
+            if vline.pos < x_min {
+                continue;
+            }
+            if vline.pos > x_max {
+                break;
+            }
+            let mut i = 0;
+            while i < vline.intersections.len() {
+                let low = i;
+                i += 1;
+                if vline.intersections[low].itype != SegmentIntersectionType::OuterLow {
+                    continue;
+                }
+                if i < vline.intersections.len()
+                    && vline.intersections[i].itype == SegmentIntersectionType::OuterHigh
+                {
+                    let (p1, p2) = if angle == 0.0 {
+                        (
+                            Point::new(vline.pos, vline.intersections[low].pos()),
+                            Point::new(vline.pos, vline.intersections[i].pos()),
+                        )
+                    } else {
+                        (
+                            rotate_back(vline.pos, vline.intersections[low].pos(), cos_a, sin_a),
+                            rotate_back(vline.pos, vline.intersections[i].pos(), cos_a, sin_a),
+                        )
+                    };
+                    out.push(Polyline::from_points(vec![p1, p2]));
+                    i += 1;
+                }
+            }
+        }
         return;
     }
     // bbox of the OFFSET geometry (this pwo is built from rotated outer polys, so

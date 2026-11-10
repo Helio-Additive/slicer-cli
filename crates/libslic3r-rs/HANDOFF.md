@@ -9,9 +9,9 @@ are the exception). How to build, run and score it in this repository:
 
 ## Where things stand
 
-- **Parity (R816), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
-  Benchy classic 149,309 lines in order (80.28%), Benchy arachne 145,799 (61.61%), Majora
-  1,527,592 (56.34%), prime tower 83.6%. `docs/rust-engine/README.md` has what the numbers
+- **Parity (R817), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
+  Benchy classic 149,451 lines in order (80.36%), Benchy arachne 145,850 (61.64%), Majora
+  1,527,621 (56.34%), prime tower 83.6%. `docs/rust-engine/README.md` has what the numbers
   rest on and where each fixture stands; `docs/rust-engine/parity/rounds-R809-on.md` is the
   round log from R809, `docs/rust-engine/PARITY_STATUS.md` (to R471) and
   `docs/rust-engine/parity/rounds-R472-R808.md` the rounds against the 02.06.00.51 engine.
