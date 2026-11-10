@@ -1,5 +1,6 @@
 // cli_simplify.cpp — the desktop Simplify tool, headless (see cli_simplify.hpp).
 #include "cli_simplify.hpp"
+#include "cli_engine_info.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -75,6 +76,21 @@ int modes_given(const CliOptions::Simplify& s) {
 
 } // namespace
 
+std::string simplify_keep_paint_refusal() {
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca's engine has neither Orca's save_painting/restore_painting
+    // (Model.hpp 884-887 at 8500fcd) nor Bambu's reproject_paint_keep (Model.hpp
+    // 1057 at 56a57d0); its Simplify clears the paint (GLGizmoSimplify.cpp 538
+    // at bac6fd5, clear_before_change_mesh).
+    return "--simplify-keep-paint is not available in slicer_cli-snapmaker: its engine has no way to carry "
+           "paint onto a changed mesh. Drop the flag to simplify without the paint, or keep it with "
+           "slicer_cli-orcaslicer (OrcaSlicer) for a file an Orca printer can take, or slicer_cli "
+           "(BambuStudio) for a Bambu Studio project";
+#else
+    return {};
+#endif
+}
+
 std::string simplify_flags_refusal(const CliOptions& o) {
     const CliOptions::Simplify& s = o.simplify;
     if (modes_given(s) > 1)
@@ -86,21 +102,13 @@ std::string simplify_flags_refusal(const CliOptions& o) {
             return "--simplify-keep-paint needs --simplify, --simplify-ratio or --simplify-triangles";
         return "";
     }
-#ifdef ENGINE_SNAPMAKER
-    // Snapmaker Orca's engine has neither Orca's save_painting/restore_painting
-    // (Model.hpp 884-887 at 8500fcd) nor Bambu's reproject_paint_keep (Model.hpp
-    // 1057 at 56a57d0); its Simplify clears the paint (GLGizmoSimplify.cpp 538
-    // at bac6fd5, clear_before_change_mesh).
     if (s.keep_paint)
-        return "--simplify-keep-paint is not available in slicer_cli-snapmaker: its engine has no way to carry "
-               "paint onto a changed mesh. Drop the flag to simplify without the paint, or keep it with "
-               "slicer_cli-orcaslicer (OrcaSlicer) for a file an Orca printer can take, or slicer_cli "
-               "(BambuStudio) for a Bambu Studio project";
-#endif
+        if (const std::string why = simplify_keep_paint_refusal(); !why.empty())
+            return why;
     return "";
 }
 
-StepResult simplify_meshes(const CliOptions& o, Slic3r::Model& model) {
+StepResult simplify_meshes(const CliOptions& o, Slic3r::Model& model, const std::set<int>& known_object_ids) {
     StepResult r;
     const CliOptions::Simplify& s = o.simplify;
     if (modes_given(s) == 0)
@@ -109,20 +117,10 @@ StepResult simplify_meshes(const CliOptions& o, Slic3r::Model& model) {
     // --simplify-objects: the 3MF's object ids, the ids --skip-objects takes
     // (ModelInstance::loaded_id). An id no object has is a mistake, not a no-op.
     const std::set<int> wanted(s.objects.begin(), s.objects.end());
-    if (!wanted.empty()) {
-        std::set<int> present, missing;
-        for (const Slic3r::ModelObject* obj : model.objects)
-            for (const Slic3r::ModelInstance* inst : obj->instances)
-                present.insert(inst->loaded_id);
-        for (int id : wanted)
-            if (!present.count(id))
-                missing.insert(id);
-        if (!missing.empty()) {
-            r.code    = CLI_INVALID_PARAMS;
-            r.message = "--simplify-objects: no object has id " + join_ints(missing) + "; the file's object ids are " +
-                        join_ints(present);
-            return r;
-        }
+    if (const std::string why = unknown_object_ids_refusal("--simplify-objects", s.objects, known_object_ids); !why.empty()) {
+        r.code    = CLI_INVALID_PARAMS;
+        r.message = why;
+        return r;
     }
 
     const DetailLevel* level = s.level.empty() ? nullptr : find_level(s.level);

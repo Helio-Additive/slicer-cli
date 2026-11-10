@@ -9,6 +9,7 @@
 // export and slice sees the reduced meshes.
 #pragma once
 
+#include <set>
 #include <string>
 
 #include "cli_run_steps.hpp"
@@ -18,13 +19,21 @@ struct CliOptions;
 
 namespace slicer_cli {
 
+/// The sentence that refuses --simplify-keep-paint in a build whose engine
+/// cannot carry paint onto a changed mesh (the Snapmaker build), or "" where
+/// the flag works. --list-flags reports it as the flag's refusal.
+std::string simplify_keep_paint_refusal();
+
 /// The sentence that refuses the simplify flags as given (two modes at once, a
 /// lever without a mode, a lever this build cannot honour), or "" when they agree.
 std::string simplify_flags_refusal(const CliOptions& o);
 
 /// Reduces the selected model parts as the flags ask. One `mesh_simplified`
 /// event per part. Returns the official code and sentence on a refusal.
-StepResult simplify_meshes(const CliOptions& o, Slic3r::Model& model);
+/// `known_object_ids` is the set --simplify-objects is checked against: the
+/// project's ids on every plate (cli_engine_info.hpp), so an id on another
+/// plate than the one sliced is left alone, not refused.
+StepResult simplify_meshes(const CliOptions& o, Slic3r::Model& model, const std::set<int>& known_object_ids);
 
 /// The desktop's suggestion (GLGizmoSimplify.cpp 97-101 at 56a57d0): one
 /// `warning` / `LargeMesh` event per single-part object of a million triangles

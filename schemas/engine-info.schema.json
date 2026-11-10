@@ -99,6 +99,56 @@
           "$ref": "#/$defs/strings",
           "description": "A 3MF's nozzle_diameter, as the file writes it. 3MF only."
         },
+        "objects": {
+          "description": "The placed objects a project 3MF declares in Metadata/model_settings.config, in plate order. `id` is the identify_id the engine's loader gives the placed object: the id --skip-objects and --simplify-objects take. Absent for a model file and for a 3MF without that member.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "object",
+              "instance",
+              "plate",
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The identify_id; null when the file states none, and the object flags cannot name this object."
+              },
+              "object": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The file's object id (the <object id> of the model part)."
+              },
+              "instance": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The instance index within the object."
+              },
+              "plate": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The 1-based plate the instance is on, as --slice N counts plates."
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The object's name in the file; null when it states none."
+              }
+            }
+          }
+        },
         "maker": {
           "description": "The app that made a 3MF, from its model metadata. 3MF only.",
           "type": "object",

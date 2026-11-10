@@ -105,6 +105,65 @@ py '
 import json; d = json.load(open("info.json"))
 assert d["printer_model"] == "Bambu Lab X1 Carbon", d
 assert "slicer_cli" in d["fits"], d
+# The placed objects with the id --skip-objects and --simplify-objects take
+# (the plate instance identify_id, bbs_3mf.cpp 2443), their file object id,
+# instance, plate and name.
+assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube"}], d["objects"]
+'
+# A plain model file gives its objects no ids; the warning says so and the
+# slice goes on.
+run skip-stl "$B" cube.stl --slice 1 --outputdir skip-stl/out --printer-preset "Bambu Lab A1 mini 0.4 nozzle" --skip-objects 1
+[ "$(rc skip-stl)" = 0 ] || { show skip-stl; fail "--skip-objects on a plain model file exit $(rc skip-stl)"; }
+py '
+w = [l for l in open("skip-stl/stdout") if "SkipObjectsUnknownIds" in l]
+assert len(w) == 1 and "gives its objects no ids" in w[0], w
+'
+# A project followed by a model file: the project's ids are still known, so
+# naming one of them is not warned about.
+run skip-mixed "$B" "$FIXTURE" cube.stl --plate 1 --skip-objects 3521 -o skip-mixed/out.gcode
+[ "$(rc skip-mixed)" = 0 ] || { show skip-mixed; fail "a project with a model file and --skip-objects exit $(rc skip-mixed)"; }
+py '
+w = [l for l in open("skip-mixed/stdout") if "SkipObjectsUnknownIds" in l]
+assert not w, w
+'
+# The same file with its metadata written the other XML ways (single quotes,
+# attributes on their own lines, spaces around '=') reads the same.
+py '
+import re, zipfile
+src = zipfile.ZipFile("'"$FIXTURE"'")
+with zipfile.ZipFile("quoted.3mf", "w", zipfile.ZIP_DEFLATED) as out:
+    for item in src.infolist():
+        data = src.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            text = data.decode()
+            text = re.sub(r" key=\"([^\"]*)\" value=\"([^\"]*)\"", lambda m: "\n      key = \x27%s\x27\n      value=\x27%s\x27 " % (m.group(1), m.group(2)), text)
+            text = text.replace("<object id=\"", "<object\n    id = \x27").replace("\">\n    <metadata", "\x27>\n    <metadata", 1)
+            # a value that looks like another attribute, written before the real one
+            text = text.replace("key = \x27name\x27\n      value=\x27Cube\x27 ", "value=\x27Cube key=\"other\"\x27 key = \x27name\x27 ", 1)
+            data = text.encode()
+        out.writestr(item, data)
+'
+"$B" --engine-info quoted.3mf > info-quoted.json
+py '
+import json; d = json.load(open("info-quoted.json"))
+assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube key=\"other\""}], d["objects"]
+'
+# An object name is reported as written, with the XML entities decoded; a
+# literal '>' inside the quoted value does not end the tag.
+py '
+import zipfile
+src = zipfile.ZipFile("'"$FIXTURE"'")
+with zipfile.ZipFile("named.3mf", "w", zipfile.ZIP_DEFLATED) as out:
+    for item in src.infolist():
+        data = src.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            data = data.replace(b"value=\"Cube\"", b"value=\"A &amp; B &lt;c&gt; &quot;d&quot; &#233; > e\"", 1)
+        out.writestr(item, data)
+'
+"$B" --engine-info named.3mf > info-named.json
+py '
+import json; d = json.load(open("info-named.json"))
+assert d["objects"][0]["name"] == "A & B <c> \"d\" \u00e9 > e", d["objects"]
 '
 # A Snapmaker U1 file (made by Bambu Studio here) fits the OrcaSlicer engine
 # and, when the package carries it, the Snapmaker one, which is recommended:
@@ -1859,9 +1918,19 @@ if [ "$(uname -s)" = Linux ] && unshare -rm true 2>/dev/null; then
     echo "PASS: --export-stl onto a full disk fails and leaves no STL (both engines, Linux)"
 fi
 
-# --skip-objects leaves the named object out; skipping all of them is -60.
+# --skip-objects leaves the named object out; skipping all of them is -60. An
+# id the file has on no plate is ignored, as the official command line ignores
+# it, and a warning / SkipObjectsUnknownIds event names the file's ids (the
+# ones --engine-info lists), where --simplify-objects, a new flag, refuses.
 run skipall "$B" "$FIXTURE" --slice 1 --skip-objects 999999 --outputdir skipall/out
 [ "$(rc skipall)" = 0 ] || { show skipall; fail "--skip-objects of an id the file lacks exit $(rc skipall)"; }
+py '
+import json
+events = [json.loads(l[len("[[SLICER_EVENT]] "):]) for l in open("skipall/stdout") if l.startswith("[[SLICER_EVENT]] ")]
+w = [e for e in events if e.get("event") == "warning" and e.get("tag") == "SkipObjectsUnknownIds"]
+assert len(w) == 1, w
+assert "--skip-objects: no object has id 999999; the file\x27s object ids are 3521" in w[0]["message"], w[0]
+'
 ID=$(py '
 import re, zipfile
 m = zipfile.ZipFile("base.3mf").read("Metadata/model_settings.config").decode()
@@ -1872,7 +1941,7 @@ py '
 import json; d = json.load(open("skipone/out/result.json"))
 assert d["return_code"] == -60, d
 '
-echo "PASS: --skip-objects skips by the file's object id; nothing left is -60"
+echo "PASS: --skip-objects skips by the file's object id; nothing left is -60; an id the file lacks is ignored with a warning naming its ids"
 
 # --skip-objects belongs to the slice action (BambuStudio.cpp 6541-6581;
 # OrcaSlicer.cpp 5645-5720): a run of model actions only skips nothing, so
