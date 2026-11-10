@@ -1739,6 +1739,7 @@ impl PrintObject {
         let __slice_s = __t_slice.elapsed().as_secs_f64();
         let __t_peri = std::time::Instant::now();
 
+        crate::stage_dump::pp_slices(&self.layers);
         if let Some(sd_key) = crate::stage_dump::stagedump_key() {
             if sd_key < self.layers.len() {
                 let ly = &self.layers[sd_key];

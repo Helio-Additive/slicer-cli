@@ -8,27 +8,50 @@ the earlier rounds were scored against. Scores are in-order matched lines from
 Majora), with both programs built on the same machine against the same Eigen
 (5.0.1) and Boost (1.90) headers.
 
+## How the scores are taken
+
+`slicer_cli` is not reproducible run to run (about 900 lines on Majora), so from
+R810 each fixture's oracle G-code is sliced once and kept, and every round's Rust
+G-code is scored against that same file. The earlier state of the Rust engine is
+re-measured against it through the gates (`NAME=0`), which is where the "before"
+numbers come from. From R810 the STL jobs' settings bundle also keeps
+`printer_model`, so `slicer_cli` treats the printer as the Bambu Lab printer it
+is (main.cpp 11010-11023); without it the oracle left out the Bambu-only lines.
+
 ## Baseline
 
-Taken before R809, with the STL jobs resolving their profiles from
-`references/BambuStudio` (02.09.01.70 profiles):
+The Rust engine as it came from R808, against the kept oracle files:
 
 | Fixture | In order | Content |
 |-|-|-|
-| Benchy classic | 30,501 (15.72%) | 41,420 (21.35%) |
-| Benchy arachne | 32,785 (13.69%) | 55,455 (23.15%) |
-| Majora | 1,513,431 (55.92%) | 1,745,602 (64.50%) |
+| Benchy classic | 30,486 (15.72%) | 41,423 (21.36%) |
+| Benchy arachne | 32,769 (13.68%) | 55,458 (23.15%) |
+| Majora | 1,512,438 (55.88%) | 1,745,378 (64.49%) |
 | Majora, prime tower | 83.5% | |
 
 ## Rounds
 
-| Round | What | Gate | Benchy classic | Benchy arachne | Majora |
+| Round | What | Gates | Benchy classic | Benchy arachne | Majora |
 |-|-|-|-|-|-|
-| R809 | STL placed on the plate as `slicer_cli` does (`desktop_place_on_bed`, cli_model_load.cpp 280-378): mesh stored minus its bounding-box centre in f32, volume offset re-centred twice in f64, instance at the bed centre with a truncating `new_scale` shift (160 mm scales to 15999999), sliced through the exact composed f32 transform | `STL_DESKTOP_PLACE` (on) | 30,501 → 50,372 (25.94%) | 32,785 → 67,721 (28.29%) | unchanged (3MF path) |
+| R809 | STL placed on the plate as `slicer_cli` does (`desktop_place_on_bed`, cli_model_load.cpp 280-378): mesh stored minus its bounding-box centre in f32, volume offset re-centred twice in f64, instance at the bed centre with a truncating `new_scale` shift (160 mm scales to 15999999), sliced through the exact composed f32 transform | `STL_DESKTOP_PLACE` (on) | 30,486 → 50,316 (25.91%) | 32,769 → 67,675 (28.27%) | unchanged (3MF path) |
+| R810 | (1) Perimeter simplification read `enable_arc_fitting` as always on; the 02.09.01.70 H2D process profiles turn it off, and walls and gap fills are then simplified at the full `resolution` (PerimeterGenerator.cpp 924, 1521). (2) The 02.09.01.70 machine G-code placeholders `initial_no_support_hotend`, `current_hotend`, `initial_nozzle_id`, `nozzle_diameter_at_nozzle_id`, `long_retraction_when_ec`, `retraction_distance_when_ec` (GCode.cpp 2918-2937). (3) `slicer_cli`'s alias of `initial_no_support_filament_id` (main.cpp 486-580). (4) What `_do_export` writes after the last layer: power-loss line, final retract with a spiral lift, fans off, `M981 S0`, the role tag, `filament_end_gcode` through `writeln` (GCode.cpp 3548-3627). (5) `is_BBL_Printer` by `slicer_cli`'s rule. (6) Probe `PP=1`: per-layer checksums at the step boundaries, with a C++ twin kept out of the repository | `PG_ARC_FITTING_CFG`, `START_GCODE_2091`, `GCODE_TOKEN_ALIAS`, `END_SEQUENCE_CPP`, `BBL_PRINTER_RULE` (all on) | 50,316 → 124,330 (66.46%) | 67,675 → 126,359 (53.35%) | 1,512,438 → 1,512,509 |
 
 ## Findings
 
 - R809: after placement, straight-wall coordinates agree to the last digit, so
-  the frame is exact. What still differs on Benchy is where long wall lines are
-  split for per-segment speed, the seam start, and feed rates; the point sets
-  agree least on the first ten layers.
+  the frame is exact.
+- R810, from the `PP` checksums on Benchy classic: the slices of both engines
+  are identical on 299 of 300 layers (layer 76 differs; layer 0 differs in the
+  region slices, the elephant-foot contour). After the fix the perimeters are
+  identical on 298 of 300 layers and the gap fills on 248 of 254. The fill
+  surfaces left by the perimeter step agree on 77 of 204 layers; where they
+  differ it is by a few scaled units on single points. After `prepare_infill`
+  almost no layer's internal or solid surfaces agree, and the fills agree on
+  109 of 289 layers. That is where the next rounds go.
+- R810: the new `stSubTop` surface type (the `sub_top_surface_pattern` setting)
+  appears on three Benchy layers in the oracle and is not ported.
+- R810, open after it: on walls whose geometry now agrees, the seam is at a
+  different vertex, feed rates differ, and `G1 F` and `M204` come out in the
+  other order around wipes. In the start G-code `{max(...)}` is not evaluated,
+  `first_layer_print_min` is 144.9995 where the oracle prints 145, `;VT0` lacks
+  ` H-1`, and the `M73` progress lines are fewer.

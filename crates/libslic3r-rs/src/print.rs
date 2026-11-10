@@ -186,6 +186,34 @@ pub struct Print {
 }
 
 impl Print {
+    /// `Print::is_BBL_Printer()` as `slicer_cli` sets it (main.cpp 11010-11023):
+    /// the settings' `printer_model` starts with "Bambu Lab"; when there is no
+    /// `printer_model`, the printer preset's name (`printer_settings_id`) does.
+    /// Settings that name no printer at all are not a Bambu Lab printer.
+    /// Gate BBL_PRINTER_RULE (on); `=0` restores "always".
+    pub fn is_bbl_printer(&self) -> bool {
+        if !crate::faithful_gate("BBL_PRINTER_RULE") {
+            return true;
+        }
+        let Some(settings) = self.raw_settings.as_ref() else {
+            return true;
+        };
+        let text = |key: &str| -> String {
+            match settings.get(key) {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(serde_json::Value::Array(a)) => {
+                    a.first().and_then(|v| v.as_str()).unwrap_or("").to_owned()
+                }
+                _ => String::new(),
+            }
+        };
+        let model = text("printer_model");
+        if !model.is_empty() {
+            return model.starts_with("Bambu Lab");
+        }
+        text("printer_settings_id").starts_with("Bambu Lab")
+    }
+
     /// Create a new empty Print
     /// Print.cpp:57
     pub fn new() -> Self {
@@ -427,6 +455,11 @@ impl Print {
         let mut max_layer_z: f64 = 0.0;
         let mut layer_index: i32 = 0;
         let mut second_layer_things_done = false;
+        // R810 — Print::is_BBL_Printer as `slicer_cli` sets it (main.cpp
+        // 11010-11023): the settings' printer_model starts with "Bambu Lab"; with
+        // no printer_model, the printer preset's name does.
+        let is_bbl_printer = self.is_bbl_printer();
+        let end_sequence_cpp = crate::faithful_gate("END_SEQUENCE_CPP");
         let mut skirt_done = false;
 
         let default_config = crate::print_config::PrintObjectConfig::default();
@@ -882,11 +915,39 @@ impl Print {
             }
 
             // GCode.cpp:4806-4828 -- end of layer retraction
-            if !writer.is_retracted() {
+            // R810 END_SEQUENCE_CPP: after the last layer the retraction is the
+            // one GCode::_do_export issues itself (below), behind the power-loss
+            // line, so it is not issued here.
+            let last_layer_group = j >= all_layers.len();
+            if !writer.is_retracted() && !(last_layer_group && end_sequence_cpp) {
                 writer.retract();
             }
 
             i = j;
+        }
+
+        // R810 END_SEQUENCE_CPP (faithful ON) — what GCode::_do_export writes
+        // between the last layer and the machine end G-code (GCode.cpp 3548-3598).
+        if end_sequence_cpp {
+            // 3548-3554: close powerlost recovery.
+            if second_layer_things_done && is_bbl_printer {
+                writer.write_raw("; close powerlost recovery");
+                writer.write_raw("M1003 S0");
+            }
+            // 3566: this->retract(false, true, LiftType::SpiralLift, true).
+            writer.retract_with_lift_type(1, true);
+            // 3584: m_writer.set_fan(0).
+            writer.write_raw("M106 S0");
+            // 3586-3588: every additional fan is closed at the end.
+            if self.config.auxiliary_fan {
+                writer.write_raw("M106 P2 S0");
+            }
+            // 3591-3592: close spaghetti detector.
+            if is_bbl_printer {
+                writer.write_raw("M981 S0 P20000 ; close spaghetti detector");
+            }
+            // 3595: the role tag for the processor.
+            writer.write_raw("; FEATURE: Custom");
         }
 
         // Finish G-code generation and collect stats
@@ -899,6 +960,7 @@ impl Print {
                 __gen_loop_t.elapsed().as_secs_f64() * 1000.0
             );
         }
+        let end_filament_id = writer.extruder();
         let mut layer_gcode = writer.finish();
         let export_t_gen = export_t0.elapsed();
 
@@ -1265,7 +1327,41 @@ impl Print {
             let settings = &settings;
             body.extend_from_slice(b"; MACHINE_END_GCODE_START\n");
             // Filament end gcode
-            if let Some(filament_end) = settings.get("filament_end_gcode").and_then(|v| v.as_str())
+            if crate::faithful_gate("END_SEQUENCE_CPP") {
+                // GCode.cpp 3611-3627: with single_extruder_multi_material the
+                // active filament's filament_end_gcode only, else every
+                // filament's, each through file.writeln (a newline is added when
+                // the text does not end in one).
+                let texts: Vec<String> = match settings.get("filament_end_gcode") {
+                    Some(serde_json::Value::Array(a)) => {
+                        a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect()
+                    }
+                    Some(serde_json::Value::String(t)) => vec![t.clone()],
+                    _ => Vec::new(),
+                };
+                // Read from the settings themselves: the typed config does not
+                // carry this key on every load path.
+                let single = match settings.get("single_extruder_multi_material") {
+                    Some(serde_json::Value::String(t)) => t == "1" || t == "true",
+                    Some(serde_json::Value::Bool(b)) => *b,
+                    _ => self.config.single_extruder_multi_material,
+                };
+                let take: Vec<&String> = if single {
+                    let active = end_filament_id.min(texts.len().saturating_sub(1));
+                    texts.get(active).into_iter().collect()
+                } else {
+                    texts.iter().collect()
+                };
+                for text in take {
+                    let processed =
+                        crate::gcode::process_gcode_template(text, settings, &self.config);
+                    body.extend_from_slice(processed.as_bytes());
+                    if !processed.is_empty() && !processed.ends_with('\n') {
+                        body.push(b'\n');
+                    }
+                }
+            } else if let Some(filament_end) =
+                settings.get("filament_end_gcode").and_then(|v| v.as_str())
             {
                 let processed =
                     crate::gcode::process_gcode_template(filament_end, settings, &self.config);
@@ -1812,6 +1908,8 @@ impl Print {
                 // TODO: Port make_perimeters with caching logic
                 phase!("perimeters(+slice)", {
                     obj.make_perimeters()?;
+                    crate::stage_dump::pp_perimeters(obj.layers());
+                crate::stage_dump::pp_perimeter_detail(obj.layers());
                 });
             }
 
@@ -1836,6 +1934,7 @@ impl Print {
                 // TODO: Port infill with caching logic
                 phase!("infill", {
                     obj.infill()?;
+                    crate::stage_dump::pp_infill(obj.layers());
                 });
             }
 
@@ -1924,7 +2023,10 @@ impl Print {
                 // }
                 // TODO: Port cached path with step marking
                 obj.make_perimeters()?;
+                crate::stage_dump::pp_perimeters(obj.layers());
+                crate::stage_dump::pp_perimeter_detail(obj.layers());
                 obj.infill()?;
+                crate::stage_dump::pp_infill(obj.layers());
                 obj.ironing()?;
                 // Print.cpp:2018: unconditional; the callee gates internally.
                 obj.generate_support_material()?;

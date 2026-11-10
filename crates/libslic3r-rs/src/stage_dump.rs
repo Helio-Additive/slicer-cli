@@ -46,3 +46,184 @@ pub fn dump(stage: &str, key: usize, eps: &[ExPolygon]) {
     }
     eprintln!("SD key={} stage={} n={} np={} sx={} sy={}", key, stage, n, np, sx, sy);
 }
+
+// ---------------------------------------------------------------------------
+// R810 — `PP=1`: order-independent checksums of every layer at the step
+// boundaries (after slice, after make_perimeters, after infill). One line per
+// layer and stage: `PP <stage> L<idx> n=<pieces> np=<points> sx=<sum x> sy=<sum y>`.
+// The C++ twin prints the same lines from PrintObject.cpp, so the first stage
+// and layer where the two engines differ can be read off a diff. Diagnostics
+// only; nothing here changes output.
+
+/// One checksum accumulator.
+#[derive(Default)]
+pub struct PpAcc {
+    n: usize,
+    np: usize,
+    sx: i64,
+    sy: i64,
+}
+
+impl PpAcc {
+    fn add_points<'a, I: IntoIterator<Item = &'a crate::geometry::Point>>(&mut self, pts: I) {
+        self.n += 1;
+        for p in pts {
+            self.np += 1;
+            self.sx = self.sx.wrapping_add(p.x);
+            self.sy = self.sy.wrapping_add(p.y);
+        }
+    }
+
+    pub fn add_expolygon(&mut self, ex: &ExPolygon) {
+        self.add_points(ex.contour.points.iter());
+        for h in &ex.holes {
+            self.add_points(h.points().iter());
+        }
+    }
+
+    pub fn add_entities(&mut self, coll: &crate::extrusion_entity::ExtrusionEntityCollection) {
+        for path in coll.flatten_paths() {
+            self.add_points(path.polyline.points().iter());
+        }
+    }
+
+    pub fn print(&self, stage: &str, layer: usize) {
+        if self.n == 0 {
+            return;
+        }
+        eprintln!(
+            "PP {} L{} n={} np={} sx={} sy={}",
+            stage, layer, self.n, self.np, self.sx, self.sy
+        );
+    }
+}
+
+pub fn pp_enabled() -> bool {
+    crate::probe_enabled("PP")
+}
+
+/// After `slice()`.
+pub fn pp_slices(layers: &[crate::layer::Layer]) {
+    if !pp_enabled() {
+        return;
+    }
+    for (i, layer) in layers.iter().enumerate() {
+        let mut a = PpAcc::default();
+        for ex in &layer.lslices {
+            a.add_expolygon(ex);
+        }
+        a.print("lslices", i);
+        let mut b = PpAcc::default();
+        for region in layer.regions() {
+            for s in &region.slices.surfaces {
+                b.add_expolygon(&s.expolygon);
+            }
+        }
+        b.print("rslices", i);
+    }
+}
+
+/// After `make_perimeters()`.
+pub fn pp_perimeters(layers: &[crate::layer::Layer]) {
+    if !pp_enabled() {
+        return;
+    }
+    for (i, layer) in layers.iter().enumerate() {
+        let (mut a, mut b, mut c) = (PpAcc::default(), PpAcc::default(), PpAcc::default());
+        for region in layer.regions() {
+            a.add_entities(&region.perimeters);
+            c.add_entities(&region.thin_fills);
+            for s in &region.fill_surfaces.surfaces {
+                b.add_expolygon(&s.expolygon);
+            }
+        }
+        a.print("perim", i);
+        b.print("perim_fillsurf", i);
+        c.print("perim_thin", i);
+    }
+}
+
+/// After `infill()`.
+pub fn pp_infill(layers: &[crate::layer::Layer]) {
+    if !pp_enabled() {
+        return;
+    }
+    use crate::surface::SurfaceType as T;
+    for (i, layer) in layers.iter().enumerate() {
+        let mut by_type: std::collections::BTreeMap<&'static str, PpAcc> = Default::default();
+        let mut fills = PpAcc::default();
+        for region in layer.regions() {
+            for s in &region.fill_surfaces.surfaces {
+                let name = match s.surface_type {
+                    T::Top => "prep_top",
+                    T::Bottom => "prep_bottom",
+                    T::BottomBridge => "prep_bottombridge",
+                    T::Internal => "prep_internal",
+                    T::FloatingVerticalShell => "prep_fvs",
+                    T::InternalSolid => "prep_internalsolid",
+                    T::InternalBridge => "prep_internalbridge",
+                    T::InternalVoid => "prep_internalvoid",
+                    T::Perimeter => "prep_perimeter",
+                    #[allow(unreachable_patterns)]
+                    _ => "prep_other",
+                };
+                by_type.entry(name).or_default().add_expolygon(&s.expolygon);
+            }
+            fills.add_entities(&region.fills);
+        }
+        for name in [
+            "prep_top", "prep_bottom", "prep_bottombridge", "prep_internal", "prep_fvs",
+            "prep_internalsolid", "prep_subtop", "prep_internalbridge", "prep_internalvoid",
+            "prep_perimeter", "prep_other",
+        ] {
+            if let Some(acc) = by_type.get(name) {
+                acc.print(name, i);
+            }
+        }
+        fills.print("fills", i);
+    }
+}
+
+/// `PPL=<layer>` with `PP=1`: every entity of that layer's perimeters, one line
+/// each (`PPD perim ...`), in the form the C++ twin prints.
+fn pp_detail(tag: &str, coll: &crate::extrusion_entity::ExtrusionEntityCollection, depth: usize) {
+    use crate::extrusion_entity::ExtrusionEntityType as E;
+    let pad = " ".repeat(depth * 2);
+    eprintln!("PPD {} {}coll n={} no_sort={}", tag, pad, coll.entities.len(), coll.no_sort as i32);
+    let path_line = |p: &crate::extrusion_entity::ExtrusionPath, depth: usize| {
+        let pad = " ".repeat(depth * 2);
+        let q = p.polyline.points();
+        let (f, l) = (q.first(), q.last());
+        eprintln!(
+            "PPD {} {}path role={:?} np={} od={:.3} w={:.5} mm3={:.6} first=({},{}) last=({},{})",
+            tag, pad, p.role, q.len(), p.overhang_degree, p.width, p.mm3_per_mm,
+            f.map_or(0, |p| p.x), f.map_or(0, |p| p.y), l.map_or(0, |p| p.x), l.map_or(0, |p| p.y)
+        );
+    };
+    for e in &coll.entities {
+        match e {
+            E::Path(p) => path_line(p, depth + 1),
+            E::Loop(l) => {
+                eprintln!("PPD {} {}  loop paths={}", tag, pad, l.paths.len());
+                for p in &l.paths {
+                    path_line(p, depth + 2);
+                }
+            }
+            E::Collection(c) => pp_detail(tag, c, depth + 1),
+        }
+    }
+}
+
+pub fn pp_perimeter_detail(layers: &[crate::layer::Layer]) {
+    if !pp_enabled() {
+        return;
+    }
+    let Some(l) = std::env::var("PPL").ok().and_then(|v| v.parse::<usize>().ok()) else {
+        return;
+    };
+    if let Some(layer) = layers.get(l) {
+        for region in layer.regions() {
+            pp_detail("perim", &region.perimeters, 0);
+        }
+    }
+}

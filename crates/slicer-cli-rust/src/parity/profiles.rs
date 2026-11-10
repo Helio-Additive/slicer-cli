@@ -29,7 +29,6 @@ const STRIP_KEYS: &[&str] = &[
     "compatible_prints",
     "default_filament_profile",
     "default_print_profile",
-    "printer_model",
     "printer_variant",
     "upward_compatible_machine",
 ];

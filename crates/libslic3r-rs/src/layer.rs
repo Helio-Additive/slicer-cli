@@ -619,8 +619,15 @@ impl LayerRegion {
             surface_simplify_resolution: print_config.resolution,
             // PerimeterGenerator.cpp:914 uses print_config->enable_arc_fitting to pick the
             // surface simplify resolution factor (0.2x when arc fitting + no fuzzy skin).
-            // Mirrors PrintConfig default enable_arc_fitting = true / resolved config "1".
-            arc_fitting_enabled: true,
+            // R810 PG_ARC_FITTING_CFG (faithful ON; `=0` restores the constant):
+            // this was hard-wired to true, which is right only for profiles that
+            // enable arc fitting. The 02.09.01.70 H2D process profiles turn it off,
+            // and the walls are then simplified at the full resolution.
+            arc_fitting_enabled: if crate::faithful_gate("PG_ARC_FITTING_CFG") {
+                print_config.arc_fitting_enabled
+            } else {
+                true
+            },
             // LayerRegion.cpp:176
             // C++: if (this->layer()->object()->config().wall_generator.value == PerimeterGeneratorType::Arachne && !spiral_mode)
             // C++:     g.process_arachne();
@@ -847,9 +854,11 @@ impl LayerRegion {
             let scaled_resolution = crate::scale(print_config.resolution) as f64;
             let surface_simplify_resolution = if config.fuzzy_skin_mode
                 == crate::region_config::FuzzySkinMode::None
+                && (print_config.arc_fitting_enabled
+                    || !crate::faithful_gate("PG_ARC_FITTING_CFG"))
             {
-                // arc_fitting is enabled in this profile (matches PerimeterConfig
-                // arc_fitting_enabled = true above).
+                // R810: the 0.2 factor needs enable_arc_fitting, which was
+                // assumed here as it was in PerimeterConfig above.
                 0.2 * scaled_resolution
             } else {
                 scaled_resolution

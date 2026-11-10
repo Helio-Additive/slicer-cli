@@ -56,6 +56,7 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
         .with_context(|| format!("Failed to read settings: {:?}", settings_json))?;
     let mut settings_value: serde_json::Value = serde_json::from_str(&settings_str)
         .with_context(|| format!("Failed to parse settings JSON: {:?}", settings_json))?;
+    normalize_legacy_gcode_tokens(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
@@ -191,6 +192,72 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     );
 
     Ok(())
+}
+
+/// `slicer_cli` rewrites the placeholder `initial_no_support_filament_id` to
+/// `initial_no_support_extruder` in every custom G-code setting before the
+/// engine sees the settings (main.cpp `normalize_legacy_gcode_tokens`, 486-580):
+/// whole tokens only, the character on either side must not be an identifier
+/// character. Gate GCODE_TOKEN_ALIAS, on.
+fn normalize_legacy_gcode_tokens(settings: &mut serde_json::Value) {
+    if !crate::faithful_gate("GCODE_TOKEN_ALIAS") {
+        return;
+    }
+    const LEGACY: &str = "initial_no_support_filament_id";
+    const BOUND: &str = "initial_no_support_extruder";
+    // main.cpp kGcodeStringKeys and kGcodeStringsKeys (the Bambu engine's own).
+    const KEYS: &[&str] = &[
+        "machine_start_gcode", "machine_end_gcode", "before_layer_change_gcode",
+        "layer_change_gcode", "change_filament_gcode", "time_lapse_gcode",
+        "machine_pause_gcode", "printing_by_object_gcode", "template_custom_gcode",
+        "wrapping_detection_gcode", "filament_start_gcode", "filament_end_gcode",
+    ];
+    fn is_ident(c: u8) -> bool {
+        c.is_ascii_alphanumeric() || c == b'_'
+    }
+    fn rewrite(v: &str) -> String {
+        let bytes = v.as_bytes();
+        let mut out = String::with_capacity(v.len());
+        let mut pos = 0;
+        while pos < v.len() {
+            let Some(found) = v[pos..].find(LEGACY).map(|i| i + pos) else {
+                out.push_str(&v[pos..]);
+                break;
+            };
+            let after = found + LEGACY.len();
+            let left_ok = found == 0 || !is_ident(bytes[found - 1]);
+            let right_ok = after >= v.len() || !is_ident(bytes[after]);
+            if left_ok && right_ok {
+                out.push_str(&v[pos..found]);
+                out.push_str(BOUND);
+                pos = after;
+            } else {
+                out.push_str(&v[pos..found + 1]);
+                pos = found + 1;
+            }
+        }
+        out
+    }
+    let Some(map) = settings.as_object_mut() else {
+        return;
+    };
+    for key in KEYS {
+        match map.get_mut(*key) {
+            Some(serde_json::Value::String(text)) if text.contains(LEGACY) => {
+                *text = rewrite(text);
+            }
+            Some(serde_json::Value::Array(items)) => {
+                for item in items {
+                    if let serde_json::Value::String(text) = item {
+                        if text.contains(LEGACY) {
+                            *text = rewrite(text);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// What `desktop_place_stl` works out for one model file.
@@ -452,6 +519,7 @@ pub fn slice_3mf_to_gcode(
 
     let mut settings_value: serde_json::Value =
         serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
+    normalize_legacy_gcode_tokens(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;

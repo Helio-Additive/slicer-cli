@@ -1169,6 +1169,63 @@ pub fn process_gcode_template(
                             .unwrap_or(0);
                         Some(v.to_string())
                     }
+                    // R810 — placeholders the 02.09.01.70 machine G-code uses
+                    // (GCode.cpp 2918-2937). Gate START_GCODE_2091 (`=0` leaves
+                    // them unresolved, as before).
+                    //
+                    // `initial_no_support_hotend` / `current_hotend` are
+                    // NOZZLE_ID_FOR_GCODE (GCode.cpp:118): the nozzle's group id
+                    // only when the printer maps nozzles dynamically, else -1.
+                    // No dynamic-map printer is ported, so -1.
+                    "initial_no_support_hotend" | "current_hotend"
+                        if crate::faithful_gate("START_GCODE_2091") =>
+                    {
+                        Some("-1".to_string())
+                    }
+                    // The group id of the first nozzle of the initial filament
+                    // (2924). One nozzle group is modelled: 0.
+                    "initial_nozzle_id" | "initial_no_support_nozzle_id"
+                        if crate::faithful_gate("START_GCODE_2091") =>
+                    {
+                        Some("0".to_string())
+                    }
+                    // get_nozzle_diameters_by_nozzle_id (GCode.cpp:120): the
+                    // diameter of the nozzle with that id, rendered as a float.
+                    n if n.starts_with("nozzle_diameter_at_nozzle_id")
+                        && crate::faithful_gate("START_GCODE_2091") =>
+                    {
+                        settings
+                            .get("nozzle_diameter")
+                            .and_then(|v| match v {
+                                serde_json::Value::Array(a) => a.first().and_then(|x| x.as_str()),
+                                serde_json::Value::String(s) => Some(s.as_str()),
+                                _ => None,
+                            })
+                            .and_then(|s| s.split(',').next())
+                            .and_then(|s| s.trim().parse::<f64>().ok())
+                            .map(crate::gcode::gcode_template::format_g6)
+                    }
+                    // Scalars of the initial filament (2932-2937).
+                    "long_retraction_when_ec" | "long_retraction_when_cut"
+                    | "retraction_distance_when_ec" | "retraction_distance_when_cut"
+                        if crate::faithful_gate("START_GCODE_2091") =>
+                    {
+                        let key = match name {
+                            "long_retraction_when_ec" => "long_retractions_when_ec",
+                            "long_retraction_when_cut" => "long_retractions_when_cut",
+                            "retraction_distance_when_ec" => "retraction_distances_when_ec",
+                            _ => "retraction_distances_when_cut",
+                        };
+                        settings.get(key).and_then(|v| match v {
+                            serde_json::Value::Array(a) => {
+                                a.first().and_then(|x| x.as_str()).map(|s| s.to_string())
+                            }
+                            serde_json::Value::String(s) => {
+                                s.split(',').next().map(|s| s.trim().to_string())
+                            }
+                            _ => None,
+                        })
+                    }
                     "bed_temperature_initial_layer_single" => {
                         // Resolve from curr_bed_type
                         let bed_type = settings
