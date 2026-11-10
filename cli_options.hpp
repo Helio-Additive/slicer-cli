@@ -83,6 +83,16 @@ struct CliOptions {
     bool preset_switch = false;
     // --export-3mf NAME: the sliced project, written into --outputdir.
     std::string export_3mf;
+    // --simplify LEVEL / --simplify-ratio PCT / --simplify-triangles N and
+    // their levers: the desktop Simplify dialog, headless (cli_simplify.cpp).
+    struct Simplify {
+        std::string      level;             // extra-high, high, medium, low, extra-low
+        double           ratio     = -1.;   // percent of each part's triangles to remove, inside (0, 100)
+        long long        triangles = -1;    // wanted triangle count per part
+        std::vector<int> objects;           // --simplify-objects: the 3MF's object ids; empty = every object
+        bool             objects_given = false;
+        bool             keep_paint    = false;  // --simplify-keep-paint
+    } simplify;
     bool uses_presets() const {
         return !printer_preset.empty() || !process_preset.empty() || !filament_presets.empty();
     }

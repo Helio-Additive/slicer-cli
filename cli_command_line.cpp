@@ -11,6 +11,7 @@
 #include "cli_command_line.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #ifdef ENGINE_SNAPMAKER
 #include <cstring>   // strcmp, for SNAPMAKER_ORCA_ALLOW_NEWER_FILE
@@ -58,6 +59,7 @@ enum class Legacy {
     Layout, LayoutPlan, Progress,
     PrinterPreset, ProcessPreset, FilamentPreset, ListPresets, ListSettings, Printer,
     AllowSubstitution, EngineInfo, LayerHeight, SingleInstance,
+    Simplify, SimplifyRatio, SimplifyTriangles, SimplifyObjects, SimplifyKeepPaint,
 };
 
 struct LegacyFlag {
@@ -105,6 +107,11 @@ const std::vector<LegacyFlag>& legacy_flags() {
         {"allow-substitution",        Legacy::AllowSubstitution, false, "",        "With --slice: slice a 3MF whose values this engine substitutes"},
         {"engine-info",               Legacy::EngineInfo,        true,  "FILE",    "What the file is and which engine binary fits it, as JSON"},
         {"single-instance",           Legacy::SingleInstance,    false, "",        "Accepted and ignored (the official app's one-window switch; commented out of its CLI)"},
+        {"simplify",                  Legacy::Simplify,          true,  "LEVEL",   "Reduce every part's triangles like the desktop Simplify tool: extra-high, high, medium, low or extra-low detail"},
+        {"simplify-ratio",            Legacy::SimplifyRatio,     true,  "PERCENT", "Simplify: remove this share of each part's triangles (0-100, exclusive), the tool's decimate ratio"},
+        {"simplify-triangles",        Legacy::SimplifyTriangles, true,  "N",       "Simplify: reduce each part to about N triangles"},
+        {"simplify-objects",          Legacy::SimplifyObjects,   true,  "IDS",     "Simplify only these objects (the 3MF's object ids, as --skip-objects takes them); default: every object"},
+        {"simplify-keep-paint",       Legacy::SimplifyKeepPaint, false, "",        "Simplify: carry painted colours, supports and seams onto the reduced mesh (slicer_cli, slicer_cli-orcaslicer)"},
 #ifdef ENGINE_SNAPMAKER
         // Snapmaker Orca's engine has no allow_mix_temp setting (PrintConfig.cpp
         // at bac6fd5), so this build takes the desktop's temperature rule as its
@@ -590,6 +597,68 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
             case Legacy::AllowSubstitution: o.allow_substitution = true; break;
             case Legacy::EngineInfo:     m.engine_info_file = value; break;
             case Legacy::SingleInstance: break;
+            case Legacy::Simplify: {
+                // The dialog's five detail levels (GLGizmoSimplify.cpp 301-307 at 56a57d0).
+                static const char* const levels[] = {"extra-high", "high", "medium", "low", "extra-low"};
+                if (std::find(std::begin(levels), std::end(levels), value) == std::end(levels)) {
+                    refusal = refuse("--simplify expects one of extra-high, high, medium, low, extra-low, got '" +
+                                     value + "'");
+                    return false;
+                }
+                o.simplify.level = value;
+                break;
+            }
+            case Legacy::SimplifyRatio: {
+                double d = 0;
+                if (!parse_double_text(value, d)) {
+                    refusal = refuse_number("--simplify-ratio", value, false);
+                    return false;
+                }
+                // 0 keeps every triangle and 100 keeps none (fix_count_by_ratio,
+                // GLGizmoSimplify.cpp 859-867 at 56a57d0): neither is a reduction.
+                // std::stod also reads "nan" and "inf": not percents either.
+                if (!std::isfinite(d) || d <= 0. || d >= 100.) {
+                    refusal = refuse("--simplify-ratio expects a percent above 0 and below 100, got '" + value + "'");
+                    return false;
+                }
+                o.simplify.ratio = d;
+                break;
+            }
+            case Legacy::SimplifyTriangles: {
+                int n = 0;
+                if (!parse_int_text(value, n)) {
+                    refusal = refuse_number("--simplify-triangles", value, true);
+                    return false;
+                }
+                if (n < 1) {
+                    refusal = refuse("--simplify-triangles expects a count of at least 1, got '" + value + "'");
+                    return false;
+                }
+                o.simplify.triangles = n;
+                break;
+            }
+            case Legacy::SimplifyObjects: {
+                // "3,5,10": the form --skip-objects takes.
+                std::vector<int> ids;
+                std::stringstream list(value);
+                std::string item;
+                bool ok = !value.empty();
+                while (ok && std::getline(list, item, ',')) {
+                    int id = 0;
+                    ok = parse_int_text(item, id);
+                    if (ok)
+                        ids.push_back(id);
+                }
+                if (!ok) {
+                    refusal = refuse("--simplify-objects expects object ids separated by commas, like 3,5,10, got '" +
+                                     value + "'");
+                    return false;
+                }
+                o.simplify.objects       = ids;
+                o.simplify.objects_given = true;
+                break;
+            }
+            case Legacy::SimplifyKeepPaint: o.simplify.keep_paint = true; break;
             }
             continue;
         }

@@ -107,6 +107,7 @@
 #include "cli_model_load.hpp"
 #include "cli_failure_reason.hpp"
 #include "cli_run_steps.hpp"
+#include "cli_simplify.hpp"
 #include "cli_load_settings.hpp"
 #include "cli_repetitions.hpp"
 #include "cli_assemble.hpp"
@@ -10511,6 +10512,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
             outcome.duplicate_count = duplicate_count;
         }
+        // --simplify: the desktop Simplify tool, after the transforms and
+        // before the objects are placed, so the placement, the bed check,
+        // --mtcpp, every export and the slice see the reduced meshes. The
+        // desktop's "more than 1M triangles" suggestion follows, on the
+        // meshes as they now stand (cli_simplify.cpp).
+        if (first_call) {
+            const slicer_cli::StepResult sm = slicer_cli::simplify_meshes(o, model);
+            if (sm.code != 0) {
+                std::cerr << "Error: " << sm.message << "\n";
+                set_outcome_failure(outcome, sm.code, sm.message);
+                return 1;
+            }
+            slicer_cli::warn_large_meshes(model);
+        }
         {
             const slicer_cli::StepResult sd = slicer_cli::check_slicedata_flags(o, outcome.duplicate_count);
             if (sd.code != 0) {
@@ -13206,6 +13221,8 @@ int main(int argc, char** argv) {
         std::cerr << "Error: --export-3mf needs --slice\n";
         return 1;
     }
+    if (const std::string why = slicer_cli::simplify_flags_refusal(o); !why.empty())
+        return refuse_run(CLI_INVALID_PARAMS, why);
     if (o.arrange_forced() && !o.slice_mode) {
         std::cerr << "Error: --arrange needs --slice (the official CLI arranges inside its plate loop)\n";
         return 1;

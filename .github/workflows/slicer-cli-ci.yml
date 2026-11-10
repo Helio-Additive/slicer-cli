@@ -736,6 +736,21 @@ jobs:
           fi
           bash tests/test_gcode_timing.sh --engine "${{ matrix.engine }}" "$TIMING_BINARY"
 
+      - name: Test mesh simplify (${{ matrix.engine }})
+        # Like the other build-tree tests: Windows is proven on the local
+        # Windows box, and its legs here run only for release tags.
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          SIMPLIFY_BINARY="$ENGINE_BINARY"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            SIMPLIFY_BINARY="${ENGINE_BINARY_EXE//\\//}"
+            if [[ ! -f "$SIMPLIFY_BINARY" ]]; then
+              SIMPLIFY_BINARY="${ENGINE_BINARY_EXE_FLAT//\\//}"
+            fi
+          fi
+          bash tests/test_simplify.sh --engine "${{ matrix.engine }}" "$SIMPLIFY_BINARY"
+
       - name: Show sccache stats
         shell: bash
         run: sccache --show-stats
@@ -1355,6 +1370,21 @@ jobs:
             fi
           fi
           bash tests/test_gcode_timing.sh --engine "${{ matrix.engine }}" "$TIMING_BINARY"
+
+      - name: Test mesh simplify (${{ matrix.engine }})
+        # Like the other build-tree tests: Windows is proven on the local
+        # Windows box, and its legs here run only for release tags.
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          SIMPLIFY_BINARY="$ENGINE_BINARY"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            SIMPLIFY_BINARY="${ENGINE_BINARY_EXE//\\//}"
+            if [[ ! -f "$SIMPLIFY_BINARY" ]]; then
+              SIMPLIFY_BINARY="${ENGINE_BINARY_EXE_FLAT//\\//}"
+            fi
+          fi
+          bash tests/test_simplify.sh --engine "${{ matrix.engine }}" "$SIMPLIFY_BINARY"
 
       - name: Show sccache stats
         shell: bash

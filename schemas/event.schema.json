@@ -88,6 +88,7 @@
             "input_error",
             "load_error",
             "mesh_repaired",
+            "mesh_simplified",
             "model_loaded",
             "model_warning",
             "output_error",
