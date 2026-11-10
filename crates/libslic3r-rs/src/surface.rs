@@ -56,6 +56,9 @@ pub enum SurfaceType {
     // Full infill, supporting the top surfaces and/or defining the verticall wall thickness.
     /// Surface.hpp:20 stInternalSolid
     InternalSolid,
+    // Internal solid immediately below a visible top fill island (sub-top).
+    /// Surface.hpp:22 stSubTop
+    SubTop,
     // 1st layer of dense infill over sparse infill, printed with a bridging extrusion flow.
     /// Surface.hpp:22 stInternalBridge
     InternalBridge,
@@ -73,7 +76,7 @@ pub enum SurfaceType {
 impl SurfaceType {
     /// Number of SurfaceType enums (C++ stCount).
     /// Surface.hpp:29
-    pub const COUNT: usize = 9;
+    pub const COUNT: usize = 10;
 
     /// Convert from u8 index (for array indexing from C++).
     /// Inverse of `self as u8`; ordering matches Surface.hpp:9-30.
@@ -85,9 +88,10 @@ impl SurfaceType {
             3 => SurfaceType::Internal,
             4 => SurfaceType::FloatingVerticalShell,
             5 => SurfaceType::InternalSolid,
-            6 => SurfaceType::InternalBridge,
-            7 => SurfaceType::InternalVoid,
-            8 => SurfaceType::Perimeter,
+            6 => SurfaceType::SubTop,
+            7 => SurfaceType::InternalBridge,
+            8 => SurfaceType::InternalVoid,
+            9 => SurfaceType::Perimeter,
             _ => SurfaceType::Internal, // Default fallback
         }
     }
@@ -150,8 +154,15 @@ impl SurfaceType {
             || self.is_floating_vertical_shell()
             || matches!(
                 self,
-                SurfaceType::InternalSolid | SurfaceType::InternalBridge
+                SurfaceType::InternalSolid | SurfaceType::SubTop | SurfaceType::InternalBridge
             )
+    }
+
+    // bool is_sub_top() const { return this->surface_type == stSubTop; }
+    /// Surface.hpp:113
+    #[inline]
+    pub fn is_sub_top(&self) -> bool {
+        matches!(self, SurfaceType::SubTop)
     }
 
     // bool is_solid_infill() const { return this->surface_type == stInternalSolid; }
@@ -171,6 +182,7 @@ impl SurfaceType {
             SurfaceType::Internal => "internal",
             SurfaceType::FloatingVerticalShell => "floating vertical shell",
             SurfaceType::InternalSolid => "internal solid",
+            SurfaceType::SubTop => "sub-top",
             SurfaceType::InternalBridge => "internal bridge",
             SurfaceType::InternalVoid => "internal void",
             SurfaceType::Perimeter => "perimeter",

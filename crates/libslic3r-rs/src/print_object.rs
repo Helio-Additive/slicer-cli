@@ -2186,6 +2186,19 @@ impl PrintObject {
         /// C++: m_print->throw_if_canceled();
         // TODO: Port combine_infill()
 
+        /// PrintObject.cpp:1051-1052
+        /// C++: this->discover_sub_top_surfaces();
+        /// C++: m_print->throw_if_canceled();
+        // SUB_TOP_SURFACES=0 leaves the solid layer under a top surface as
+        // stInternalSolid, as before the 02.09 engine.
+        if crate::faithful_gate("SUB_TOP_SURFACES") {
+            pi_phase!("discover_sub_top_surfaces", self.discover_sub_top_surfaces()?);
+        }
+        crate::stage_dump::pp_typed("i_subtop", &self.layers);
+        if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(crate::Error::Cancelled);
+        }
+
         if __pi_t {
             let __tot: f64 = __pi.iter().map(|(_, s)| s).sum();
             eprintln!("    prepare_infill sub-steps (s), total {__tot:.2}:");
@@ -2197,6 +2210,125 @@ impl PrintObject {
         /// PrintObject.cpp:748
         /// C++: this->set_done(posPrepareInfill);
         self.set_step_done(PrintObjectStep::PrepareInfill);
+        Ok(())
+    }
+
+    /// Port of `PrintObject::discover_sub_top_surfaces()` (PrintObject.cpp:5839-5920).
+    ///
+    /// Retypes to `stSubTop` every `stInternalSolid` fill surface that lies
+    /// under a top fill surface of the layer above which is wide enough to
+    /// matter. The surface keeps its geometry and every other field.
+    fn discover_sub_top_surfaces(&mut self) -> Result<()> {
+        use crate::clipper_utils::{
+            clip_clipper_polygons_with_subject_bbox_expolygon, intersection_clib_safety,
+            offset2_ex_clib, offset_expolygons_clib_scaled, union_ex_clib, OffsetJoinType,
+        };
+        use crate::flow::FlowRole;
+        use crate::geometry::{BoundingBox, ExPolygon, ExPolygons, Polygon};
+        use crate::surface::SurfaceType;
+
+        // PrintObject.cpp:5837 — a top island that an erosion of this radius
+        // wipes out is too narrow to justify a sub-top band underneath it.
+        const SUB_TOP_MIN_TOP_EROSION_MM: f64 = 1.5;
+
+        // PrintObject.cpp:5842-5843
+        if self.layers.len() < 2 {
+            return Ok(());
+        }
+
+        fn get_extents(expolygon: &ExPolygon) -> BoundingBox {
+            BoundingBox::from_points(expolygon.contour.points())
+        }
+
+        // PrintObject.cpp:5903-5917 — a layer reads the tops of the layer above
+        // and retypes its own fill surfaces only, so the order of the layers
+        // does not change the result; they are visited in sequence here.
+        for idx_layer in 0..self.layers.len() - 1 {
+            // PrintObject.cpp:5850-5856
+            let mut top_mask: ExPolygons = Vec::new();
+            for upper_region in self.layers[idx_layer + 1].regions() {
+                for s in &upper_region.fill_surfaces.surfaces {
+                    if s.surface_type == SurfaceType::Top {
+                        top_mask.push(s.expolygon.clone());
+                    }
+                }
+            }
+            if top_mask.is_empty() {
+                continue;
+            }
+
+            // PrintObject.cpp:5858-5872
+            let erosion: f32 = (SUB_TOP_MIN_TOP_EROSION_MM / crate::libslic3r::SCALING_FACTOR) as f32;
+            let min_extent: crate::Coord =
+                (2.0 * SUB_TOP_MIN_TOP_EROSION_MM / crate::libslic3r::SCALING_FACTOR) as crate::Coord;
+            let mut large_tops: ExPolygons = Vec::new();
+            let top_polygons: Vec<Polygon> = top_mask.iter().flat_map(|e| e.to_polygons()).collect();
+            for top in union_ex_clib(&top_polygons, 1) {
+                // An island narrower than the erosion diameter cannot survive it.
+                let extents = get_extents(&top).size();
+                if extents.x < min_extent || extents.y < min_extent {
+                    continue;
+                }
+                if !offset_expolygons_clib_scaled(
+                    std::slice::from_ref(&top),
+                    -(erosion as f64),
+                    OffsetJoinType::Miter,
+                )
+                .is_empty()
+                {
+                    large_tops.push(top);
+                }
+            }
+            if large_tops.is_empty() {
+                continue;
+            }
+            let top_mask = large_tops;
+
+            // PrintObject.cpp:5874-5880
+            let top_extents: Vec<BoundingBox> = top_mask.iter().map(get_extents).collect();
+
+            // PrintObject.cpp:5882-5901
+            let layer_height = self.layers[idx_layer].height;
+            for layerm in self.layers[idx_layer].regions_mut() {
+                let min_width: f32 = layerm.flow(FlowRole::SolidInfill, layer_height)?.scaled_spacing() as f32;
+                for surface in layerm.fill_surfaces.surfaces.iter_mut() {
+                    if surface.surface_type != SurfaceType::InternalSolid {
+                        continue;
+                    }
+                    // Trim the mask to the island first. Opening then drops what
+                    // only grazes the mask: an island is claimed on real
+                    // overlap, not on a shared edge.
+                    let island_bbox = get_extents(&surface.expolygon)
+                        .expanded(crate::libslic3r::SCALED_EPSILON as crate::Coord);
+                    let mut local_mask: Vec<Polygon> = Vec::new();
+                    for i in 0..top_mask.len() {
+                        if top_extents[i].intersects(&island_bbox) {
+                            local_mask.extend(clip_clipper_polygons_with_subject_bbox_expolygon(
+                                &top_mask[i],
+                                &island_bbox,
+                                false,
+                            ));
+                        }
+                    }
+                    if local_mask.is_empty() {
+                        continue;
+                    }
+                    let local_mask: ExPolygons =
+                        local_mask.into_iter().map(ExPolygon::new).collect();
+                    let overlap = intersection_clib_safety(
+                        std::slice::from_ref(&surface.expolygon),
+                        &local_mask,
+                    );
+                    // opening_ex(…, 0.5f * min_width) = offset2_ex(-d, +d).
+                    let d_mm = (0.5f32 * min_width) as f64 * crate::libslic3r::SCALING_FACTOR;
+                    if !overlap.is_empty()
+                        && !offset2_ex_clib(&overlap, -d_mm, d_mm, OffsetJoinType::Miter).is_empty()
+                    {
+                        surface.surface_type = SurfaceType::SubTop;
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -5410,7 +5542,7 @@ lines={} grown_polys={} grown_verts={}",
                 // scaled_spacing) — trunc(v/1e-5) int → f32 arithmetic
                 // (PrintObject.cpp:1793/1850 top_bottom_expansion = f32(S)*0.05f;
                 // :1945 expand-by-ext = f32(S_ext)).
-                if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
+                if faithful() && crate::faithful_gate("VSHELL_REG_QUANT") {
                     let e_int = (ext_flow.spacing() / 0.00001).trunc();
                     ext_spacing_mm.push((e_int as f32 as f64) / crate::SCALING_FACTOR);
                 } else {
@@ -5422,7 +5554,7 @@ lines={} grown_polys={} grown_verts={}",
                     continue;
                 }
                 // PrintObject.cpp:1850 — top_bottom_expansion = scaled_spacing * 0.05 (mm here).
-                let exp = if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
+                let exp = if faithful() && crate::faithful_gate("VSHELL_REG_QUANT") {
                     (((sp / 0.00001).trunc() as f32 * 0.05f32) as f64) / crate::SCALING_FACTOR
                 } else {
                     sp * TOP_BOTTOM_EXPANSION_COEFF
@@ -5487,7 +5619,7 @@ lines={} grown_polys={} grown_verts={}",
                 // (PrintObject.cpp:1905) — f32 on the scaled int; keep the f32 for the
                 // radius/threshold exprs below.
                 let min_pis_sc: f32 = ((solid_spacing_mm[idx] / 0.00001).trunc() as f32) * 1.05f32;
-                let min_pis = if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
+                let min_pis = if faithful() && crate::faithful_gate("VSHELL_REG_QUANT") {
                     (min_pis_sc as f64) / crate::SCALING_FACTOR
                 } else {
                     solid_spacing_mm[idx] * 1.05 // min_perimeter_infill_spacing (mm)
@@ -5665,7 +5797,7 @@ lines={} grown_polys={} grown_verts={}",
                 // PrintObject.cpp:2007-2055 — regularize (open then close), then drop scattered tiny bits.
                 // Native radii are f32 chains on min_pis_sc (PrintObject.cpp:2012-2017).
                 let (narrow_wall_r, narrow_sparse_r, tiny_overlap_r) = if faithful()
-                    && std::env::var("VSHELL_REG_QUANT").is_ok()
+                    && crate::faithful_gate("VSHELL_REG_QUANT")
                 {
                     (
                         ((0.5f32 * 0.65f32 * min_pis_sc) as f64) / crate::SCALING_FACTOR,
@@ -5724,7 +5856,7 @@ lines={} grown_polys={} grown_verts={}",
                 };
                 // Native: p.area() < min_pis_f32 * scaled(1.5) — f32 * coord_t(150000)
                 // in FLOAT, promoted to double for the compare (PrintObject.cpp:2047-2048).
-                let (thr15, thr8) = if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
+                let (thr15, thr8) = if faithful() && crate::faithful_gate("VSHELL_REG_QUANT") {
                     (
                         (min_pis_sc * 150_000f32) as f64,
                         (min_pis_sc * 800_000f32) as f64,

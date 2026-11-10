@@ -1591,6 +1591,72 @@ pub fn difference_polygons_clib(subject: &[Polygon], clip: &[ExPolygon]) -> Vec<
     all_paths
 }
 
+/// Raw closed-path boolean over the ClipperLib shim: `_clipper(clipType,
+/// PolygonsProvider(subject), PolygonsProvider(clip), ApplySafetyOffset::No)`
+/// (ClipperUtils.cpp:669-673) — one `clipper_do<Paths>(…, pftNonZero)`, the
+/// output paths taken as they come. `intersection` selects ctIntersection,
+/// otherwise ctDifference. The operation always runs, an empty clip included.
+fn clib_boolean_polygons_raw(subject: &[Polygon], clip: &[Polygon], intersection: bool) -> Vec<Polygon> {
+    let (subject_xy, subject_lens, subject_num) = clib_flatten_polygons(subject);
+    let (clip_xy, clip_lens, clip_num) = clib_flatten_polygons(clip);
+    if subject_num == 0 {
+        return vec![];
+    }
+    let clip_xy_ptr = if clip_xy.is_empty() { std::ptr::null() } else { clip_xy.as_ptr() };
+    let clip_lens_ptr = if clip_lens.is_empty() { std::ptr::null() } else { clip_lens.as_ptr() };
+    // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
+    // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
+    // out then free via cz_free_zpaths.
+    let raw = unsafe {
+        if intersection {
+            clipper_z_sys::cz_intersection_closed(
+                subject_xy.as_ptr(), subject_lens.as_ptr(), subject_num, clip_xy_ptr, clip_lens_ptr, clip_num,
+            )
+        } else {
+            clipper_z_sys::cz_difference_closed(
+                subject_xy.as_ptr(), subject_lens.as_ptr(), subject_num, clip_xy_ptr, clip_lens_ptr, clip_num,
+            )
+        }
+    };
+    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
+                cursor += 1;
+            }
+            all_paths.push(Polygon::from_points(pts));
+        }
+    }
+    // SAFETY: `raw` came from the shim call above and is not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    all_paths
+}
+
+/// `diff(const Polygons &subject, const Polygons &clip)` (ClipperUtils.cpp:677),
+/// raw `Polygons` out.
+pub fn diff_polygons_raw_clib(subject: &[Polygon], clip: &[Polygon]) -> Vec<Polygon> {
+    clib_boolean_polygons_raw(subject, clip, false)
+}
+
+/// `intersection(const Polygons &subject, const Polygons &clip)`
+/// (ClipperUtils.cpp `_clipper(ctIntersection, …)`), raw `Polygons` out.
+pub fn intersection_polygons_raw_clib(subject: &[Polygon], clip: &[Polygon]) -> Vec<Polygon> {
+    if clip.is_empty() {
+        return vec![];
+    }
+    clib_boolean_polygons_raw(subject, clip, true)
+}
+
 /// ClipperLib-backed `diff_ex(subject, clip, ApplySafetyOffset::No)`
 /// (ClipperUtils.cpp:742-768): closed-path boolean DIFFERENCE (subject - clip)
 /// over the vertex-exact vendored ClipperLib (clipper-z-sys @ 1e5), instead of
@@ -2385,6 +2451,18 @@ pub fn simplify_polygons_clib(loops: &[Polygon], fill_type: i32) -> Vec<Polygon>
 /// `WallToolPaths::generate` depends on (its `simplify` walks from index 0).
 /// `delta` is SCALED; callers pass it f32-rounded like the C++ float parameter.
 pub fn offset_polygons_clib(loops: &[Polygon], delta: f64, join_type: OffsetJoinType) -> Vec<Polygon> {
+    offset_polygons_clib_ml(loops, delta, join_type, 3.0)
+}
+
+/// [`offset_polygons_clib`] with the `miterLimit` argument of the C++ `offset`
+/// spelled out: the unitless miter limit for jtMiter, the arc tolerance in
+/// scaled units for jtRound (ClipperUtils.cpp `raw_offset`).
+pub fn offset_polygons_clib_ml(
+    loops: &[Polygon],
+    delta: f64,
+    join_type: OffsetJoinType,
+    miter_limit: f64,
+) -> Vec<Polygon> {
     if loops.is_empty() {
         return vec![];
     }
@@ -2414,7 +2492,7 @@ pub fn offset_polygons_clib(loops: &[Polygon], delta: f64, join_type: OffsetJoin
     };
     // SAFETY: live, correctly-sized buffers; shim only reads them, returns malloc'd
     // output we copy out then free.
-    let raw = unsafe { clipper_z_sys::cz_offset_paths(xy.as_ptr(), lens.as_ptr(), num, delta, jt, 3.0) };
+    let raw = unsafe { clipper_z_sys::cz_offset_paths(xy.as_ptr(), lens.as_ptr(), num, delta, jt, miter_limit) };
     let mut out: Vec<Polygon> = Vec::new();
     if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
         let path_lens =

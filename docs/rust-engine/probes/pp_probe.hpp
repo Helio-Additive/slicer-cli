@@ -1,17 +1,20 @@
-// PP probe, C++ side: order-independent checksums per layer and stage, the twin of
-// crates/libslic3r-rs/src/stage_dump.rs (pp_*). For local diagnosis builds only: see
-// docs/rust-engine/README.md, "Finding the first stage that differs". Never commit a
-// probed engine file.
+// PP probe, C++ side: checksums per layer and stage (sums that do not depend on the order,
+// and an order-sensitive hash `h=`), the twin of crates/libslic3r-rs/src/stage_dump.rs (pp_*).
+// `PPL=<layer>` with `PPS=<stage>` prints that layer's fill-surface points as `PPT` lines.
+// For local diagnosis builds only: see docs/rust-engine/README.md, "Finding the first stage
+// that differs". Never commit a probed engine file.
 #pragma once
 #include <cstdio>
+#include <string>
 #include <cstdlib>
 #include "Layer.hpp"
 #include "ExtrusionEntity.hpp"
 #include "ExtrusionEntityCollection.hpp"
 namespace Slic3r { namespace pp {
-struct Acc { size_t n = 0, np = 0; long long sx = 0, sy = 0; };
+struct Acc { size_t n = 0, np = 0; long long sx = 0, sy = 0; unsigned long long h = 1469598103934665603ULL; };
+inline void mix(Acc &a, long long v) { a.h ^= (unsigned long long)v; a.h *= 1099511628211ULL; }
 inline bool on() { static int v = -1; if (v < 0) v = ::getenv("PP") ? 1 : 0; return v == 1; }
-inline void add(Acc &a, const Points &pts) { a.n++; for (const Point &p : pts) { a.np++; a.sx += p.x(); a.sy += p.y(); } }
+inline void add(Acc &a, const Points &pts) { a.n++; mix(a, -1); for (const Point &p : pts) { a.np++; a.sx += p.x(); a.sy += p.y(); mix(a, p.x()); mix(a, p.y()); } }
 inline void add(Acc &a, const ExPolygon &e) { add(a, e.contour.points); for (const Polygon &h : e.holes) add(a, h.points); }
 inline void add(Acc &a, const ExtrusionEntity *e) {
     if (auto *c = dynamic_cast<const ExtrusionEntityCollection*>(e)) { for (const ExtrusionEntity *x : c->entities) add(a, x); }
@@ -21,7 +24,7 @@ inline void add(Acc &a, const ExtrusionEntity *e) {
 }
 inline void print(const char *stage, size_t layer, const Acc &a) {
     if (a.n == 0) return;
-    fprintf(stderr, "PP %s L%zu n=%zu np=%zu sx=%lld sy=%lld\n", stage, layer, a.n, a.np, a.sx, a.sy);
+    fprintf(stderr, "PP %s L%zu n=%zu np=%zu sx=%lld sy=%lld h=%llx\n", stage, layer, a.n, a.np, a.sx, a.sy, a.h);
 }
 inline void slices(const LayerPtrs &layers) {
     if (!on()) return;
@@ -60,10 +63,16 @@ inline void typed(const char *stage, const LayerPtrs &layers) {
             for (const Surface &x : r->fill_surfaces.surfaces) { int k = int(x.surface_type); if (k >= 0 && k < 12) add(f[k], x.expolygon); }
         }
         for (int k = 0; k < 12; ++k) { snprintf(buf, sizeof(buf), "%s_s_%s", stage, names[k]); print(buf, i, s[k]); snprintf(buf, sizeof(buf), "%s_f_%s", stage, names[k]); print(buf, i, f[k]); }
+        { const char *ppl = ::getenv("PPL"); const char *pps = ::getenv("PPS");
+          if (ppl && pps && (size_t)atoi(ppl) == i && std::string(pps) == stage)
+            for (const LayerRegion *r : layers[i]->regions()) for (const Surface &x : r->fill_surfaces.surfaces) { int k = int(x.surface_type); if (k < 0 || k >= 12) continue;
+                for (const Point &q : x.expolygon.contour.points) fprintf(stderr, "PPT %s c %lld %lld\n", names[k], (long long)q.x(), (long long)q.y());
+                for (const Polygon &hh : x.expolygon.holes) for (const Point &q : hh.points) fprintf(stderr, "PPT %s h %lld %lld\n", names[k], (long long)q.x(), (long long)q.y()); } }
     }
 }
 inline void infill(const LayerPtrs &layers) {
     if (!on()) return;
+    if (const char *ppl = ::getenv("PPL")) { size_t L = (size_t)atoi(ppl); if (L < layers.size()) for (const LayerRegion *r : layers[L]->regions()) detail("fills", &r->fills, 0); }
     static const char *names[] = {"prep_top","prep_bottom","prep_bottombridge","prep_internal","prep_fvs","prep_internalsolid","prep_subtop","prep_internalbridge","prep_internalvoid","prep_perimeter","prep_other10","prep_other11"};
     for (size_t i = 0; i < layers.size(); ++i) {
         Acc t[12]; Acc f;

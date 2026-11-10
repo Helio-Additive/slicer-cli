@@ -56,21 +56,36 @@ pub fn dump(stage: &str, key: usize, eps: &[ExPolygon]) {
 // only; nothing here changes output.
 
 /// One checksum accumulator.
-#[derive(Default)]
 pub struct PpAcc {
     n: usize,
     np: usize,
     sx: i64,
     sy: i64,
+    /// FNV-1a over the points in the order they are stored: equal only when the
+    /// pieces, their order and each ring's start vertex are the same.
+    h: u64,
+}
+
+impl Default for PpAcc {
+    fn default() -> Self {
+        Self { n: 0, np: 0, sx: 0, sy: 0, h: 1469598103934665603 }
+    }
 }
 
 impl PpAcc {
     fn add_points<'a, I: IntoIterator<Item = &'a crate::geometry::Point>>(&mut self, pts: I) {
+        let mix = |h: &mut u64, v: i64| {
+            *h ^= v as u64;
+            *h = h.wrapping_mul(1099511628211);
+        };
         self.n += 1;
+        mix(&mut self.h, -1);
         for p in pts {
             self.np += 1;
             self.sx = self.sx.wrapping_add(p.x);
             self.sy = self.sy.wrapping_add(p.y);
+            mix(&mut self.h, p.x);
+            mix(&mut self.h, p.y);
         }
     }
 
@@ -92,8 +107,8 @@ impl PpAcc {
             return;
         }
         eprintln!(
-            "PP {} L{} n={} np={} sx={} sy={}",
-            stage, layer, self.n, self.np, self.sx, self.sy
+            "PP {} L{} n={} np={} sx={} sy={} h={:x}",
+            stage, layer, self.n, self.np, self.sx, self.sy, self.h
         );
     }
 }
@@ -148,6 +163,15 @@ pub fn pp_infill(layers: &[crate::layer::Layer]) {
     if !pp_enabled() {
         return;
     }
+    if let Some(layer) = std::env::var("PPL")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .and_then(|l| layers.get(l))
+    {
+        for region in layer.regions() {
+            pp_detail("fills", &region.fills, 0);
+        }
+    }
     use crate::surface::SurfaceType as T;
     for (i, layer) in layers.iter().enumerate() {
         let mut by_type: std::collections::BTreeMap<&'static str, PpAcc> = Default::default();
@@ -161,6 +185,7 @@ pub fn pp_infill(layers: &[crate::layer::Layer]) {
                     T::Internal => "prep_internal",
                     T::FloatingVerticalShell => "prep_fvs",
                     T::InternalSolid => "prep_internalsolid",
+                    T::SubTop => "prep_subtop",
                     T::InternalBridge => "prep_internalbridge",
                     T::InternalVoid => "prep_internalvoid",
                     T::Perimeter => "prep_perimeter",
@@ -256,6 +281,7 @@ pub fn pp_typed(stage: &str, layers: &[crate::layer::Layer]) {
         T::Internal => "internal",
         T::FloatingVerticalShell => "fvs",
         T::InternalSolid => "internalsolid",
+        T::SubTop => "subtop",
         T::InternalBridge => "internalbridge",
         T::InternalVoid => "internalvoid",
         T::Perimeter => "perimeter",
@@ -278,6 +304,23 @@ pub fn pp_typed(stage: &str, layers: &[crate::layer::Layer]) {
         }
         for (k, acc) in &accs {
             acc.print(k, i);
+        }
+        // `PPL=<layer> PPS=<stage>`: every fill-surface point, `PPT <type> c|h x y`.
+        let want_layer = std::env::var("PPL").ok().and_then(|v| v.parse::<usize>().ok());
+        if want_layer == Some(i) && std::env::var("PPS").ok().as_deref() == Some(stage) {
+            for region in layer.regions() {
+                for s in &region.fill_surfaces.surfaces {
+                    let t = name(s.surface_type);
+                    for p in &s.expolygon.contour.points {
+                        eprintln!("PPT {} c {} {}", t, p.x, p.y);
+                    }
+                    for h in &s.expolygon.holes {
+                        for p in h.points() {
+                            eprintln!("PPT {} h {} {}", t, p.x, p.y);
+                        }
+                    }
+                }
+            }
         }
     }
 }

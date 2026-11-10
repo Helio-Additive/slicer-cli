@@ -120,11 +120,11 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R813) |
+| Fixture | As brought over (R808) | Now (R814) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 140,457 (76.41%) |
-| Benchy arachne | 32,769 (13.68%) | 139,010 (59.31%) |
-| Majora | 1,512,438 (55.88%) | 1,512,564 (55.89%) |
+| Benchy classic | 30,486 (15.72%) | 148,085 (79.65%) |
+| Benchy arachne | 32,769 (13.68%) | 143,944 (60.82%) |
+| Majora | 1,512,438 (55.88%) | 1,524,497 (56.18%) |
 | Majora, prime tower | 83.5% | 83.5% |
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
@@ -137,10 +137,11 @@ Where each fixture stands, from the `PP` probe (below):
 
 - **Benchy classic.** Slices identical on 299 of 300 layers, perimeters on 298
   of 300, gap fills on 248 of 254. The fill surfaces the perimeter step leaves
-  differ by a few scaled units on 127 of 204 layers, and from
-  `discover_vertical_shells` on almost no layer's internal or solid surfaces
-  are identical. Walls are 85% in order; solid infill 73%, sparse infill 41%,
-  top surface 32%, bridges 8%.
+  are identical on 197 of 204 layers, the top surfaces on all 48 through
+  `prepare_infill`, the sub-top surfaces on all 3. The internal bridges of
+  `bridge_over_infill` differ on every layer that has one, and the fills are
+  identical on 134 of 289 layers. Walls are 86% in order; top surface 92%,
+  solid infill 76%, sparse infill 48%, bridges 7%.
 - **Benchy arachne.** Slices as classic. No layer's perimeters are identical:
   the arachne walls have the same structure with junctions 1 to about 130 scaled
   units off. About a quarter of the matching lines are out of order.
@@ -166,6 +167,13 @@ names `a_detect`, `b_prepfill`, `c_vshell`, `d_external`, `e_hshell`, `f_clip`,
 the one the oracle comes from, give it to `slicer-parity slice --engine bambu
 --bambu-binary`, and delete the copied file afterwards: it must never be
 committed, and a configure run of any other build tree would pick it up.
+
+`FBIS=1` prints the same kind of line for the stages inside the classic
+perimeter generator that lead to the fill boundary (`last`, `notfilled`,
+`infillraw`, `topfills`, `fillclip`, `topinfill`, `final`, `nooverlap`, and
+`t_*` inside the top-one-wall branch), and `FBISL=<layer>` every point of one
+layer; the C++ twin is the same `fprintf` at the same places of a probed
+`PerimeterGenerator.cpp`.
 
 Sort the `PP` lines of both engines and diff them. A stage whose lines all
 agree is done; the first stage with differing layers is where to look.

@@ -38,6 +38,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R811 | (1) The seam placer's occlusion mesh is built from the volume's own f32 mesh, through the volume matrix before the decimation and `trafo_centered()` after it (SeamPlacer.cpp 577-604); rounding the plate-frame mesh lost the low bits and flipped the seam between symmetric candidates. (2) In a wipe the pending acceleration comes after the wipe's speed line (GCode.cpp 496-510) | `SEAM_OCCL_LOCAL`, `WIPE_ACCEL_AFTER_SPEED` (on) | 124,330 → 137,832 (73.77%) | 126,359 → 136,442 (57.48%) | 1,512,509 → 1,512,563 |
 | R812 | Farthest-point timelapse, new in 02.09: `compute_farthest_point` (GCode.cpp 4582-4733), the inline photo block of `generate_timelapse_gcode` (4735-4840), `check_and_insert_timelapse` after each extruded segment (7946-7973), no timelapse at the layer change (5604). `process_text`: template processing that keeps the whitespace around `{if}` tags as the C++ parser does | `FARTHEST_TIMELAPSE` (on) | 137,832 → 140,456 (76.41%) | 136,442 → 139,009 (59.31%) | unchanged (the X1C settings do not turn it on) |
 | R813 | `;VT0 H-1`: the hotend id GCode.cpp 3235-3236 writes after the filament start G-code | `VT_HOTEND` (on) | 140,456 → 140,457 | 139,009 → 139,010 | 1,512,563 → 1,512,564 |
+| R814 | Fills, Benchy first. (1) A fill's non-extruding connectors (`ExtrusionPath` with `no_extrusion`, the hops of a monotonic-line top surface) are E-less moves on the linear branch of `_extrude` too (GCode.cpp 7993-7996); they were extruded. (2) `_extrude` does not simplify: with arc fitting off the one simplification is `simplify_path`'s at the print resolution (LayerRegion.cpp 1053-1069), also for sparse infill. (3) Top-one-wall: `fill_clip` is offset on the scaled value through the `float` parameter, and `top_polygons = diff_ex(fill_clip, inner_polygons, ApplySafetyOffset::Yes)` runs on the ClipperLib grid with the safety offset (PerimeterGenerator.cpp 1152, 1176, 1187). (4) `discover_sub_top_surfaces` and `stSubTop` with `sub_top_surface_pattern` (PrintObject.cpp 5839-5920, Fill.cpp 273-274, 556-558, 600). (5) Bridges of one overlap group that run 10 degrees or more apart become separate surfaces and share out their anchors: `separate_bridge_directions`, `partition_bridge_anchors`, the new `merge_bridges` (LayerRegion.cpp 372-637). (6) `polygons_covered_by_width` takes its delta in `float` (ExtrusionEntity.cpp); the fill boundary runs `simplify_polygons` after the Douglas-Peucker pass (`ExPolygon::simplify_p`); `Point::new_scale` truncation at the seam (SeamPlacer.cpp); the `float` radii of `discover_vertical_shells`; `FillGrid` reverses its polylines on odd layers (FillRectilinear.cpp 3127-3129); `intersection_ex(…, ApplySafetyOffset::Yes)` for a fill's no-overlap area (Fill.cpp 837). (7) Four arms that were parked because they lowered the score against the 02.06 oracle now raise it and are on | new, on: `NO_EXTRUSION_LINEAR`, `EXPORT_NO_RESIMPLIFY`, `TOPFILL_CLIP_FAITHFUL`, `SUB_TOP_SURFACES`, `BRIDGE_DIR_SPLIT`, `COVERED_WIDTH_F32`, `TAIL_SIMPLIFY_POLYGONS`, `SEAM_NEW_SCALE_TRUNC`, `GRID_ODD_REVERSE`; turned on: `VSHELL_REG_QUANT`, `FILL_NOOVERLAP_SAFETY`, `ARACHNE_SIMPLIFY_FAITHFUL`, `WIPE_TOWER_FORCE_TAGS`, `LINEWIDTH_BEFORE_SPEED`, `NO_COLLECTION_PRESPEED` | 140,457 → 148,085 (79.65%) | 139,010 → 143,944 (60.82%) | 1,512,564 → 1,524,497 (56.18%) |
 
 ## Findings
 
@@ -81,3 +82,34 @@ The Rust engine as it came from R808, against the kept oracle files:
   - Benchy arachne, layer 100: the same paths, widths and flows as the oracle
     with coordinates 1 to 133 scaled units apart; the arachne input preparation
     is the first suspect.
+- R814, what each part moved on Benchy classic / arachne, measured one at a
+  time from the R813 state plus the gates of (6): E-less connectors +2,861 /
+  +2,014; no second simplification +2,904 / +1,479; sub-top surfaces +76 /
+  +256; the top-one-wall clip +303 / 0; the bridge split +20 / -21. The gates
+  of (6) together +1,231 / +1,195, of which `FILL_NOOVERLAP_SAFETY` +825 / +786.
+- R814, the parked gates, each alone against the new oracle (Benchy classic /
+  arachne / Majora): `LINEWIDTH_BEFORE_SPEED` +215 / +14 / -91;
+  `NO_COLLECTION_PRESPEED` +203 / +3 / 0; `WIPE_TOWER_FORCE_TAGS` 0 / 0 / +118;
+  `ARACHNE_SIMPLIFY_FAITHFUL` 0 / 0 / +3,969. Left off: `GEO_SCALE_COORDT`
+  (+335 / +876 / +1,713, but the 1e5 geo-clipper grid makes round offsets take
+  minutes in the unit tests; the call sites have to move to the ClipperLib
+  helpers instead), `TOWER_PRE_RETRACT` (Majora -14,271), `ISLAND_FLATTEN`
+  (-25,803 / -4,104 / -84,842), `WRITER_POS_CLEAR_CPP` (Majora -1,311),
+  `RASTER_QUANT` (-74 / +151 / +3), `MMS_PAINT_FMA` and `MMSEG_DIFF_CLIB` (no
+  change).
+- R814, from the `PP` and `FBIS` probes on Benchy classic after the round: the
+  fill surfaces the perimeter step leaves agree on 197 of 204 layers (from 77),
+  the top surfaces on 48 of 48 at every step of `prepare_infill`, the sub-top
+  surfaces on 3 of 3. Still different: the internal bridges of
+  `bridge_over_infill` (11 surfaces against 10, none equal), the bottom bridge
+  of layer 2, and the fills on 155 of 289 layers.
+- R814, looked at and left: `FillGrid::_layer_angle` is 0 in C++
+  (FillRectilinear.hpp 75) and the port turns the grid by 90 degrees on odd
+  layers; dropping the turn, or always turning, moves the scores by less than
+  the noise between runs (-117 to +118 lines), because both sweeps of a grid
+  are 90 degrees apart anyway. Sparse infill is 48% in order: on the layers
+  looked at the polylines are the oracle's, started from the other end and
+  taken in another order. With the same end point of the previous fill the
+  oracle starts at the farther end of the first polyline, so the order comes
+  from the chaining of the fill collections, not from the grid.
+

@@ -2484,6 +2484,31 @@ impl Layer {
         let mut lock_param = crate::fill::LockRegionParam::default();
         let __gf_t = if crate::probe_enabled("FILLPROF") { Some(std::time::Instant::now()) } else { None };
         let surface_fills = crate::fill::group_fills(self, lower_internal_areas, &mut lock_param)?;
+        // `PP=1`: the surface fills in the order make_fills walks them, `PPG ...`.
+        if crate::stage_dump::pp_enabled() {
+            for (k, sf) in surface_fills.iter().enumerate() {
+                for (e, ex) in sf.expolygons.iter().enumerate() {
+                    let (mut sx, mut sy, mut np) = (0i64, 0i64, ex.contour.points.len());
+                    for p in &ex.contour.points {
+                        sx += p.x;
+                        sy += p.y;
+                    }
+                    for h in &ex.holes {
+                        np += h.points().len();
+                        for p in h.points() {
+                            sx += p.x;
+                            sy += p.y;
+                        }
+                    }
+                    let f = ex.contour.points.first();
+                    eprintln!(
+                        "PPG L{} fill={} ex={} type={:?} pattern={:?} np={} sx={} sy={} first=({},{})",
+                        self.id, k, e, sf.surface.surface_type, sf.params.pattern, np, sx, sy,
+                        f.map_or(0, |p| p.x), f.map_or(0, |p| p.y)
+                    );
+                }
+            }
+        }
         if let Some(t) = __gf_t {
             FILLPROF_GROUP_NS.fetch_add(
                 t.elapsed().as_nanos() as usize,
@@ -2663,7 +2688,7 @@ impl Layer {
                             continue;
                         }
                         vec![expoly.clone()]
-                    } else if crate::opt_in_gate("FILL_NOOVERLAP_SAFETY") {
+                    } else if crate::faithful_gate("FILL_NOOVERLAP_SAFETY") {
                         // Fill.cpp:740 passes ApplySafetyOffset::Yes; the plain
                         // `intersection` below drops it. R721 measured the fill
                         // input as bit-identical to C++ on only 2 of 391 records
@@ -3270,6 +3295,14 @@ impl Layer {
                         &fp,
                     );
                     polylines = connected;
+                    // R814 GRID_ODD_REVERSE (faithful ON): FillGrid::fill_surface
+                    // reverses every polyline on odd layers
+                    // (FillRectilinear.cpp:3127-3129).
+                    if (self.id as usize) % 2 == 1 && crate::faithful_gate("GRID_ODD_REVERSE") {
+                        for pl in polylines.iter_mut() {
+                            pl.points.reverse();
+                        }
+                    }
                 } else if infill_config.connect_infill && !is_monotonic && !fss_connected {
                     let mut connected = Vec::new();
                     if crate::faithful_gate("FILL_CONNECT_FAITHFUL") {

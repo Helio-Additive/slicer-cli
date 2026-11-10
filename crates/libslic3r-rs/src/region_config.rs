@@ -70,6 +70,11 @@ pub struct PrintRegionConfig {
     /// PrintConfig.hpp:952
     pub solid_fill_pattern: InfillPattern,
 
+    /// Line pattern of the solid layer that supports a visible top surface.
+    /// BambuStudio: `sub_top_surface_pattern` (PrintConfig.cpp:2730-2738,
+    /// default ipMonotonic).
+    pub sub_top_surface_pattern: InfillPattern,
+
     /// Top solid infill pattern
     /// PrintConfig.hpp:950
     pub top_fill_pattern: InfillPattern,
@@ -653,6 +658,10 @@ impl PrintRegionConfig {
                 self.solid_fill_pattern = InfillPattern::from_str_bambu(value);
                 true
             }
+            "sub_top_surface_pattern" => {
+                self.sub_top_surface_pattern = InfillPattern::from_str_bambu(value);
+                true
+            }
             "locked_skin_infill_pattern" => {
                 self.locked_skin_infill_pattern = InfillPattern::from_str_bambu(value);
                 true
@@ -1072,6 +1081,7 @@ impl Default for PrintRegionConfig {
             fill_density: 0.2,
             fill_pattern: InfillPattern::Grid,
             solid_fill_pattern: InfillPattern::Rectilinear,
+            sub_top_surface_pattern: InfillPattern::Monotonic,
             top_fill_pattern: InfillPattern::Rectilinear,
             bottom_fill_pattern: InfillPattern::Rectilinear,
             fill_angle: 45.0,

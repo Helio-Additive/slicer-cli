@@ -1106,7 +1106,8 @@ pub fn extrude_collection(
                 // 4 blocks vs native 2). PARKED OFF: byte-inert on benchy (the
                 // cooling rewrite deletes the duplicates) but −51 in-order on
                 // arachne — re-score after the arachne width-segmentation gap.
-                || (crate::opt_in_gate("NO_COLLECTION_PRESPEED")
+                // R814: on. Against the 02.09 oracle it is +203 / +3 / 0.
+                || (crate::faithful_gate("NO_COLLECTION_PRESPEED")
                     && matches!(
                         entity,
                         crate::extrusion_entity::ExtrusionEntityType::Path(_)
@@ -1161,7 +1162,7 @@ pub fn extrude_collection(
             // tag (GCode.cpp:6607) and only then `set_speed` (:6663). Defer ours
             // to just after the tag rather than dropping it, so the line count is
             // untouched and only its position changes.
-            if crate::opt_in_gate("LINEWIDTH_BEFORE_SPEED") {
+            if crate::faithful_gate("LINEWIDTH_BEFORE_SPEED") {
                 writer.set_speed_pending(feature_speed * 60.0, cooling_comment);
             } else {
                 writer.set_speed(feature_speed * 60.0, cooling_comment);
@@ -1532,7 +1533,9 @@ pub fn extrude_path_with_arc_fitting(
     // The fallback pre-registered for exactly this: park it, stop adding tags,
     // and re-run this A/B once the Arachne width-variety gap is closed. Two
     // flips then land together — this and `LINEWIDTH_BEFORE_SPEED`.
-    let force_tags = crate::opt_in_gate("WIPE_TOWER_FORCE_TAGS")
+    // R814: both on. Against the 02.09 oracle this one is +118 on Majora and
+    // `LINEWIDTH_BEFORE_SPEED` +215 / +14 / -91.
+    let force_tags = crate::faithful_gate("WIPE_TOWER_FORCE_TAGS")
         && writer.take_force_analyzer_tags();
 
     if *LW_PERPATH.get_or_init(|| crate::faithful_gate("LINEWIDTH_PERPATH"))
@@ -1858,7 +1861,12 @@ pub fn extrude_path_with_arc_fitting(
     } else {
         // Plain Douglas-Peucker + linear emission (GCode.cpp:6670-6686 G1 path).
         // Polyline::simplify -> MultiPoint::_douglas_peucker (Polyline.cpp:146-150).
-        if work_points.len() > 2 {
+        // GCode.cpp:7980-7998 walks path.polyline.lines() as they are: the one
+        // simplification is LayerRegion::simplify_path's (LayerRegion.cpp:
+        // 1053-1069), at the print resolution when arc fitting is off — also
+        // for sparse infill, whose coarser 0.04 mm applies to the arc-fitting
+        // arm only. EXPORT_NO_RESIMPLIFY=0 runs the second pass here as before.
+        if work_points.len() > 2 && !crate::faithful_gate("EXPORT_NO_RESIMPLIFY") {
             let simplified = Polyline::douglas_peucker(
                 &Polyline::from_points(work_points.clone()),
                 tolerance_mm,
@@ -1877,7 +1885,15 @@ pub fn extrude_path_with_arc_fitting(
                 continue;
             }
             let de = line_length * e_per_mm;
-            writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
+            // GCode.cpp:7993-7996: extrude_to_xy(…, path.is_force_no_extrusion())
+            // — the connectors of a monotonic-line fill are E-less moves here
+            // too, not only on the arc-fitted branch. NO_EXTRUSION_LINEAR=0
+            // extrudes them as before.
+            if path.no_extrusion && crate::faithful_gate("NO_EXTRUSION_LINEAR") {
+                writer.wipe_to(unscale(to.x()), unscale(to.y()), None);
+            } else {
+                writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
+            }
             // GCode.cpp:8009 check_and_insert_timelapse(line.b).
             writer.check_and_insert_timelapse(unscale(to.x()), unscale(to.y()));
         }
@@ -4884,7 +4900,7 @@ fn width_tag_before_speed(writer: &mut GCodeWriter, path: &ExtrusionPath) {
 }
 
 fn set_speed_before_path(writer: &mut GCodeWriter, speed: crate::CoordF, comment: &str) {
-    if crate::opt_in_gate("LINEWIDTH_BEFORE_SPEED") {
+    if crate::faithful_gate("LINEWIDTH_BEFORE_SPEED") {
         writer.set_speed_pending(speed, comment);
     } else {
         writer.set_speed(speed, comment);

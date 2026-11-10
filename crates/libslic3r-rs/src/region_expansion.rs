@@ -1309,7 +1309,16 @@ pub fn process_external_surfaces_wave(
                 Some(angle),
             )
         } else {
-            expand_bridges_detect_orientations(layer_surfaces, &mut expansion_zones, closing_radius)
+            // LayerRegion.cpp:839 — this->flow(frSolidInfill).scaled_spacing(),
+            // a coord_t passed as float.
+            let solid_spacing =
+                ((config.solid_infill_spacing / crate::libslic3r::SCALING_FACTOR) as crate::Coord) as f32;
+            expand_bridges_detect_orientations(
+                layer_surfaces,
+                &mut expansion_zones,
+                closing_radius,
+                solid_spacing,
+            )
         };
 
         let __t_bridges = __t_start.elapsed().as_secs_f64();
@@ -1510,6 +1519,9 @@ struct BridgeInfo {
     /// Index into expansions vec where this bridge's expansions start.
     #[allow(dead_code)]
     expansion_begin: usize,
+    /// Group of the overlapping anchors before splitting by direction, the
+    /// bridge itself if it overlaps no other bridge (LayerRegion.cpp:237-238).
+    overlap_group_id: u32,
 }
 
 /// Result of expanding bridge expolygons with anchor tracking.
@@ -1690,6 +1702,7 @@ fn get_grouped_bridges(
             group_id: i as u32,
             angle: None,
             expansion_begin: usize::MAX, // sentinel — set later in merge_bridges
+            overlap_group_id: i as u32,
         })
         .collect();
 
@@ -2183,19 +2196,313 @@ to_pl={:.3}s grow={:.3}s diff_pl={:.3}s to_lines={:.3}s",
     }
 }
 
+/// Port of `separate_bridge_directions()` (LayerRegion.cpp:372-403).
+///
+/// Returns per overlap group, indexed by the id of its head, whether the group
+/// was split by direction.
+fn separate_bridge_directions(bridges: &mut [BridgeInfo]) -> Vec<bool> {
+    // LayerRegion.cpp:375-378
+    let mut overlap_groups: Vec<u32> = Vec::with_capacity(bridges.len());
+    for bridge_id in 0..bridges.len() as u32 {
+        overlap_groups.push(resolve_group_id(bridges, bridge_id));
+    }
+
+    // LayerRegion.cpp:380-401 — get_grouped_bridges() always makes the lower id
+    // the head, so the head is the lowest id of its group: when bridge_id is
+    // reached, all candidates below it are already regrouped by direction.
+    let mut split = vec![false; bridges.len()];
+    for bridge_id in 0..bridges.len() {
+        debug_assert!(overlap_groups[bridge_id] as usize <= bridge_id);
+        bridges[bridge_id].overlap_group_id = overlap_groups[bridge_id];
+        bridges[bridge_id].group_id = bridge_id as u32;
+        for candidate_id in overlap_groups[bridge_id] as usize..bridge_id {
+            if overlap_groups[candidate_id] == overlap_groups[bridge_id]
+                && bridges[candidate_id].group_id == candidate_id as u32
+            {
+                if let (Some(angle), Some(candidate_angle)) =
+                    (bridges[bridge_id].angle, bridges[candidate_id].angle)
+                {
+                    // Only split bridges running in clearly different
+                    // directions, 10 degrees apart or more.
+                    if crate::geometry::directions_parallel(
+                        angle % PI,
+                        candidate_angle % PI,
+                        PI * 10.0 / 180.0,
+                    ) {
+                        bridges[bridge_id].group_id = candidate_id as u32;
+                        break;
+                    }
+                }
+            }
+        }
+        if bridges[bridge_id].group_id != overlap_groups[bridge_id] {
+            split[overlap_groups[bridge_id] as usize] = true;
+        }
+    }
+    split
+}
+
+/// Bridges of one direction group, merged with their anchors
+/// (LayerRegion.cpp:405-412).
+struct BridgeGroupArea {
+    overlap_group_id: u32,
+    angle: f64,
+    /// Bridge bodies without anchors, only collected when anchors have to be
+    /// partitioned.
+    bodies: ExPolygons,
+    area: ExPolygons,
+}
+
+/// Port of `partition_bridge_anchors()` (LayerRegion.cpp:414-570).
+///
+/// Partition the anchors shared by bridge groups, which overlap but run in
+/// different directions. Each contested point goes to the group with the
+/// nearest bridge body: all bodies grow in lock step, so the dividing line is
+/// off by at most one step, ties within a step go to the lower group.
+/// `members` indexes `all`; `overlap_area` is the whole overlap group closed at
+/// once; `solid_spacing` is the scaled solid infill spacing as a C++ `float`.
+fn partition_bridge_anchors(
+    all: &mut [BridgeGroupArea],
+    members: &[usize],
+    overlap_area: &[ExPolygon],
+    solid_spacing: f32,
+) {
+    use crate::clipper_utils::{
+        diff_polygons_raw_clib, intersection_polygons_raw_clib, offset_polygons_clib,
+        offset_polygons_clib_ml, union_ex_clib, union_flat_clib,
+    };
+    fn to_polys(expolygons: &[ExPolygon]) -> Vec<Polygon> {
+        expolygons.iter().flat_map(|e| e.to_polygons()).collect()
+    }
+    fn get_extents(polygons: &[Polygon]) -> BoundingBox {
+        let mut bbox = BoundingBox::new();
+        for polygon in polygons {
+            for p in polygon.points() {
+                bbox.merge_point(*p);
+            }
+        }
+        bbox
+    }
+    // diff_ex / intersection_ex: the raw operation, then the PolyTree union
+    // (ClipperUtils.cpp:641-653 clipper_do_polytree).
+    let diff_ex = |subject: &[Polygon], clip: &[Polygon]| -> ExPolygons {
+        union_ex_clib(&diff_polygons_raw_clib(subject, clip), 1)
+    };
+    let intersection_ex = |subject: &[Polygon], clip: &[Polygon]| -> ExPolygons {
+        union_ex_clib(&intersection_polygons_raw_clib(subject, clip), 1)
+    };
+    let n = members.len();
+
+    // LayerRegion.cpp:420-427 — a bridge body always belongs to its own group.
+    for i in 0..n {
+        let mut other_bodies: Vec<Polygon> = Vec::new();
+        for j in 0..n {
+            if j != i {
+                other_bodies.extend(to_polys(&all[members[j]].bodies));
+            }
+        }
+        all[members[i]].area = diff_ex(&to_polys(&all[members[i]].area), &other_bodies);
+    }
+
+    // LayerRegion.cpp:429-442 — closing each group alone leaves the narrow gaps
+    // between the groups open, closing the whole overlap group fills them.
+    // Offer the gaps to every group, the growth below hands them to the
+    // nearest body.
+    {
+        let mut covered: Vec<Polygon> = Vec::new();
+        for &m in members {
+            covered.extend(to_polys(&all[m].area));
+        }
+        let gaps = diff_polygons_raw_clib(&to_polys(overlap_area), &covered);
+        if !gaps.is_empty() {
+            for &m in members {
+                let mut area = to_polys(&all[m].area);
+                area.extend(gaps.iter().cloned());
+                all[m].area = union_ex_clib(&area, 1);
+            }
+        }
+    }
+
+    // LayerRegion.cpp:444-456
+    let mut contested: Vec<Polygon> = Vec::new();
+    {
+        let mut covered: Vec<Polygon> = Vec::new();
+        for &m in members {
+            let area = to_polys(&all[m].area);
+            if !covered.is_empty() {
+                contested.extend(intersection_polygons_raw_clib(&area, &covered));
+            }
+            covered.extend(area);
+        }
+        contested = union_flat_clib(&contested);
+    }
+    if contested.is_empty() {
+        return;
+    }
+
+    // LayerRegion.cpp:458-471 — anchors scale with the extrusion width, so does
+    // the step. Slivers of numeric noise are only dropped from the candidates
+    // and from the area still unreached.
+    let step: f32 = 0.25f32 * solid_spacing;
+    let arc_tol: f64 = 0.01 / crate::libslic3r::SCALING_FACTOR;
+    let min_area: f64 = 0.01 * step as f64 * step as f64;
+    let drop_noise = |mut expolygons: ExPolygons| -> Vec<Polygon> {
+        expolygons.retain(|e| !(e.area() < min_area));
+        to_polys(&expolygons)
+    };
+
+    // LayerRegion.cpp:473-483 — contested area each group may claim, the part
+    // of the contested area inside the group.
+    let mut candidates: Vec<Vec<Polygon>> = vec![Vec::new(); n];
+    let mut claimed: Vec<Vec<Polygon>> = vec![Vec::new(); n];
+    let mut bodies: Vec<Vec<Polygon>> = vec![Vec::new(); n];
+    let contested_bbox = get_extents(&contested);
+    let mut bbox = contested_bbox;
+    for i in 0..n {
+        candidates[i] = drop_noise(intersection_ex(&to_polys(&all[members[i]].area), &contested));
+        bodies[i] = to_polys(&all[members[i]].bodies);
+        let body_bbox = get_extents(&bodies[i]);
+        if body_bbox.is_defined() {
+            bbox.merge(&body_bbox);
+        }
+    }
+
+    // LayerRegion.cpp:485-524 — every step works on the fixed inputs above and
+    // on the reach of the previous step only. A point is claimed by the group
+    // reaching it first, ties within a step go to the lower group.
+    let size = bbox.size();
+    let norm = ((size.x as f64) * (size.x as f64) + (size.y as f64) * (size.y as f64)).sqrt();
+    let max_steps = (norm / step as f64).ceil() as usize + 1;
+    let mut all_reached = false;
+    let mut reached_before: Vec<Polygon> = Vec::new();
+    for istep in 1..=max_steps {
+        let dist: f32 = step * istep as f32;
+        // BoundingBox::inflated(coordf_t) offsets by Point(delta, delta), lrint.
+        let inflate = ((dist + step) as f64).round_ties_even() as crate::Coord;
+        let clip_box = vec![contested_bbox.expanded(inflate).polygon()];
+        // Reached before this step or by a lower group in this step.
+        let mut taken = reached_before.clone();
+        // Reached by any group up to this step.
+        let mut reached_now: Vec<Polygon> = Vec::new();
+        for i in 0..n {
+            if candidates[i].is_empty() {
+                continue;
+            }
+            let body = intersection_polygons_raw_clib(&bodies[i], &clip_box);
+            if body.is_empty() {
+                continue;
+            }
+            let reach = intersection_polygons_raw_clib(
+                &candidates[i],
+                &offset_polygons_clib_ml(&body, dist as f64, OffsetJoinType::Round, arc_tol),
+            );
+            if reach.is_empty() {
+                continue;
+            }
+            if taken.is_empty() {
+                claimed[i].extend(reach.iter().cloned());
+            } else {
+                claimed[i].extend(diff_polygons_raw_clib(&reach, &taken));
+            }
+            taken.extend(reach.iter().cloned());
+            reached_now.extend(reach);
+        }
+        // The reach of a group only grows from step to step, so this step
+        // alone covers all the earlier ones.
+        reached_before = union_flat_clib(&reached_now);
+        if drop_noise(diff_ex(&contested, &reached_before)).is_empty() {
+            all_reached = true;
+            break;
+        }
+    }
+    let _ = all_reached;
+    // LayerRegion.cpp:527-534 — dropped noise and unreached leftovers still
+    // have to be covered, the lower group takes them.
+    {
+        let mut all_claimed: Vec<Polygon> = Vec::new();
+        for area in &claimed {
+            all_claimed.extend(area.iter().cloned());
+        }
+        let rest = diff_polygons_raw_clib(&contested, &all_claimed);
+        claimed[0].extend(rest);
+    }
+
+    // LayerRegion.cpp:536-540
+    for i in 0..n {
+        let mut area = diff_polygons_raw_clib(&to_polys(&all[members[i]].area), &contested);
+        area.append(&mut claimed[i]);
+        all[members[i]].area = union_ex_clib(&area, 1);
+    }
+
+    // LayerRegion.cpp:542-551 — pieces cut off from their own body follow a
+    // touching group instead of becoming a separate bridge.
+    let touch: f32 = (0.01 / crate::libslic3r::SCALING_FACTOR) as f32;
+    let mut orphans: Vec<ExPolygons> = vec![Vec::new(); n];
+    for i in 0..n {
+        let body_touch = offset_polygons_clib(
+            &to_polys(&all[members[i]].bodies),
+            touch as f64,
+            OffsetJoinType::Miter,
+        );
+        let mut kept: ExPolygons = Vec::new();
+        for piece in std::mem::take(&mut all[members[i]].area) {
+            if intersection_ex(&piece.to_polygons(), &body_touch).is_empty() {
+                orphans[i].push(piece);
+            } else {
+                kept.push(piece);
+            }
+        }
+        all[members[i]].area = kept;
+    }
+    // LayerRegion.cpp:552-566 — touch areas are taken before any orphan moves,
+    // so the result does not depend on the visiting order. An orphan touching
+    // no other group stays where it is.
+    let mut area_touch: Vec<Vec<Polygon>> = Vec::with_capacity(n);
+    for i in 0..n {
+        area_touch.push(offset_polygons_clib(
+            &to_polys(&all[members[i]].area),
+            touch as f64,
+            OffsetJoinType::Miter,
+        ));
+    }
+    let had_orphans: Vec<bool> = orphans.iter().map(|o| !o.is_empty()).collect();
+    for i in 0..n {
+        for orphan in std::mem::take(&mut orphans[i]) {
+            let mut owner = i;
+            for j in 0..n {
+                if j != i && !intersection_ex(&orphan.to_polygons(), &area_touch[j]).is_empty() {
+                    owner = j;
+                    break;
+                }
+            }
+            all[members[owner]].area.push(orphan);
+        }
+    }
+    // LayerRegion.cpp:567-569
+    for i in 0..n {
+        if had_orphans[i] || all[members[i]].area.len() > 1 {
+            all[members[i]].area = union_ex_clib(&to_polys(&all[members[i]].area), 1);
+        }
+    }
+}
+
 /// Merge bridges by group, producing output surfaces.
 ///
-/// Port of `merge_bridges()` from LayerRegion.cpp:341-387.
+/// Port of `merge_bridges()` from LayerRegion.cpp:572-637.
 ///
 /// For each group head (bridge whose group_id == its own index):
 /// 1. Collects all bridge expolygons + their expansions from the group
 /// 2. Unions everything together
 /// 3. Applies morphological closing
-/// 4. Creates Surface with the group head's bridge angle
+/// Groups of one overlap group that was split by direction then share out
+/// their common anchors (`partition_bridge_anchors`), and every group becomes
+/// surfaces carrying the group head's bridge angle.
 fn merge_bridges(
     bridges: &mut [BridgeInfo],
     bridge_expansions: &[RegionExpansionEx],
     closing_radius: CoordF,
+    solid_spacing: f32,
+    split_overlap_groups: &[bool],
 ) -> Vec<crate::surface::Surface> {
     // Record where each bridge's expansions start in the sorted expansions vec.
     // The expansions are sorted by src_id from expand_expolygons_with_anchors
@@ -2223,18 +2530,45 @@ fn merge_bridges(
         }
     }
 
-    let mut result: Vec<crate::surface::Surface> = Vec::new();
+    // Apply closing to fill small unassigned regions.
+    // C++ LayerRegion::process_external_surfaces bridge path (LayerRegion.cpp:616):
+    // `closing_ex(acc, closing_radius)` = offset2_ex(+r, −r, jtMiter) via ClipperLib
+    // @1e5. Rust legacy used geo-clipper `closing(...Round)` @1µm (R128 class). Route
+    // through offset2_ex_clib Miter under F1_UNION; default keeps geo Round (byte-locked).
+    let closing_ex = |acc: &ExPolygons| -> ExPolygons {
+        if closing_radius > 0.0 && !acc.is_empty() {
+            let unioned = union_ex(acc);
+            if crate::faithful_gate("F1_UNION") {
+                offset2_ex_clib(&unioned, closing_radius, -closing_radius, OffsetJoinType::Miter)
+            } else {
+                closing(&unioned, closing_radius, OffsetJoinType::Round)
+            }
+        } else {
+            union_ex(acc)
+        }
+    };
+
+    let mut groups: Vec<BridgeGroupArea> = Vec::new();
+    // Unclosed area of each overlap group split by direction.
+    let mut overlap_areas: std::collections::BTreeMap<u32, ExPolygons> =
+        std::collections::BTreeMap::new();
 
     for bridge_id in 0..bridges.len() {
         // Only process group heads
         if resolve_group_id(bridges, bridge_id as u32) != bridge_id as u32 {
             continue;
         }
+        let overlap_group_id = bridges[bridge_id].overlap_group_id;
+        let split = split_overlap_groups[overlap_group_id as usize];
 
         // Collect all polygons from bridges in this group
         let mut acc: ExPolygons = Vec::new();
+        let mut bodies: ExPolygons = Vec::new();
         for bridge_id2 in bridge_id..bridges.len() {
             if resolve_group_id(bridges, bridge_id2 as u32) == bridge_id as u32 {
+                if split {
+                    bodies.push(bridges[bridge_id2].expolygon.clone());
+                }
                 // Add the bridge expolygon itself
                 acc.push(bridges[bridge_id2].expolygon.clone());
 
@@ -2249,21 +2583,13 @@ fn merge_bridges(
         // Get the angle from the group head
         let angle = bridges[bridge_id].angle.unwrap_or(0.0);
 
-        // Apply closing to fill small unassigned regions.
-        // C++ LayerRegion::process_external_surfaces bridge path (LayerRegion.cpp:375):
-        // `closing_ex(acc, closing_radius)` = offset2_ex(+r, −r, jtMiter) via ClipperLib
-        // @1e5. Rust legacy used geo-clipper `closing(...Round)` @1µm (R128 class). Route
-        // through offset2_ex_clib Miter under F1_UNION; default keeps geo Round (byte-locked).
-        let merged = if closing_radius > 0.0 && !acc.is_empty() {
-            let unioned = union_ex(&acc);
-            if crate::faithful_gate("F1_UNION") {
-                offset2_ex_clib(&unioned, closing_radius, -closing_radius, OffsetJoinType::Miter)
-            } else {
-                closing(&unioned, closing_radius, OffsetJoinType::Round)
-            }
-        } else {
-            union_ex(&acc)
-        };
+        if split {
+            overlap_areas
+                .entry(overlap_group_id)
+                .or_default()
+                .extend(acc.iter().cloned());
+        }
+        let merged = closing_ex(&acc);
 
         if crate::probe_enabled("BRGROUP") && acc.len() >= 8 {
             let aa: f64 = merged.iter().map(|e| e.area()).sum();
@@ -2275,10 +2601,29 @@ fn merge_bridges(
                 closing_radius
             );
         }
-        // Create surfaces
-        for ep in merged {
+        groups.push(BridgeGroupArea { overlap_group_id, angle, bodies, area: merged });
+    }
+
+    // LayerRegion.cpp:620-627
+    let mut overlapping: std::collections::BTreeMap<u32, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for (i, group) in groups.iter().enumerate() {
+        if split_overlap_groups[group.overlap_group_id as usize] {
+            overlapping.entry(group.overlap_group_id).or_default().push(i);
+        }
+    }
+    for (overlap_group_id, members) in &overlapping {
+        debug_assert!(members.len() > 1);
+        let overlap_area = closing_ex(&overlap_areas[overlap_group_id]);
+        partition_bridge_anchors(&mut groups, members, &overlap_area, solid_spacing);
+    }
+
+    // LayerRegion.cpp:629-636
+    let mut result: Vec<crate::surface::Surface> = Vec::new();
+    for group in groups {
+        for ep in group.area {
             let mut s = crate::surface::Surface::new(crate::surface::SurfaceType::BottomBridge, ep);
-            s.bridge_angle = Some(angle);
+            s.bridge_angle = Some(group.angle);
             result.push(s);
         }
     }
@@ -2302,7 +2647,13 @@ pub fn expand_bridges_detect_orientations(
     surfaces: &[crate::surface::Surface],
     expansion_zones: &mut [ExpansionZone],
     closing_radius: CoordF,
+    solid_spacing: f32,
 ) -> Vec<crate::surface::Surface> {
+    // LayerRegion.cpp:693-694
+    assert!(
+        solid_spacing > 0.0,
+        "Detecting bridges needs a positive solid infill spacing"
+    );
     // Step 1: Extract BottomBridge expolygons
     let bridge_expolygons =
         extract_expolygons_by_type(surfaces, crate::surface::SurfaceType::BottomBridge);
@@ -2372,7 +2723,25 @@ pub fn expand_bridges_detect_orientations(
             .cmp(&b.src_id)
             .then(a.boundary_id.cmp(&b.boundary_id))
     });
-    let out = merge_bridges(&mut bridges, &sorted_expansions, closing_radius);
+    // LayerRegion.cpp:715 — bridges of one overlap group running in clearly
+    // different directions become separate surfaces. BRIDGE_DIR_SPLIT=0 keeps
+    // one surface per overlap group, as before the 02.09 engine.
+    let split_overlap_groups = if crate::faithful_gate("BRIDGE_DIR_SPLIT") {
+        separate_bridge_directions(&mut bridges)
+    } else {
+        for bridge_id in 0..bridges.len() as u32 {
+            let head = resolve_group_id(&mut bridges, bridge_id);
+            bridges[bridge_id as usize].overlap_group_id = head;
+        }
+        vec![false; bridges.len()]
+    };
+    let out = merge_bridges(
+        &mut bridges,
+        &sorted_expansions,
+        closing_radius,
+        solid_spacing,
+        &split_overlap_groups,
+    );
     let __t_merge = __t.elapsed().as_secs_f64();
     if __pes && __t_merge > 0.02 {
         eprintln!(
@@ -2679,6 +3048,7 @@ mod tests {
             group_id: 0,
             angle: None,
             expansion_begin: usize::MAX,
+            overlap_group_id: 0,
         }];
         assert_eq!(super::resolve_group_id(&mut bridges, 0), 0);
     }
@@ -2693,18 +3063,21 @@ mod tests {
                 group_id: 0,
                 angle: None,
                 expansion_begin: usize::MAX,
+                overlap_group_id: 0,
             },
             super::BridgeInfo {
                 expolygon: ep.clone(),
                 group_id: 0,
                 angle: None,
                 expansion_begin: usize::MAX,
+                overlap_group_id: 0,
             },
             super::BridgeInfo {
                 expolygon: ep,
                 group_id: 1,
                 angle: None,
                 expansion_begin: usize::MAX,
+                overlap_group_id: 1,
             },
         ];
         // Resolve bridge 2: should follow 2 -> 1 -> 0
@@ -2877,6 +3250,7 @@ mod tests {
             group_id: 0,
             angle: Some(1.5),
             expansion_begin: usize::MAX,
+            overlap_group_id: 0,
         }];
         let expansions = vec![super::RegionExpansionEx {
             expolygon: exp_ep,
@@ -2884,7 +3258,13 @@ mod tests {
             boundary_id: 0,
         }];
 
-        let result = super::merge_bridges(&mut bridges, &expansions, 0.0);
+        let result = super::merge_bridges(
+            &mut bridges,
+            &expansions,
+            0.0,
+            45000.0,
+            &[false; 8],
+        );
         assert!(!result.is_empty(), "Should produce at least one surface");
         assert_eq!(
             result[0].surface_type,
@@ -2911,17 +3291,25 @@ mod tests {
                 group_id: 0,
                 angle: Some(0.0),
                 expansion_begin: usize::MAX,
+                overlap_group_id: 0,
             },
             super::BridgeInfo {
                 expolygon: ep_b,
                 group_id: 1,
                 angle: Some(1.57),
                 expansion_begin: usize::MAX,
+                overlap_group_id: 1,
             },
         ];
         let expansions: Vec<super::RegionExpansionEx> = vec![];
 
-        let result = super::merge_bridges(&mut bridges, &expansions, 0.0);
+        let result = super::merge_bridges(
+            &mut bridges,
+            &expansions,
+            0.0,
+            45000.0,
+            &[false; 8],
+        );
         assert_eq!(result.len(), 2, "Should produce two separate surfaces");
     }
 
@@ -2936,7 +3324,7 @@ mod tests {
             expanded_into: false,
         }];
 
-        let result = super::expand_bridges_detect_orientations(&surfaces, &mut zones, 0.1);
+        let result = super::expand_bridges_detect_orientations(&surfaces, &mut zones, 0.1, 45000.0);
         assert!(result.is_empty(), "No bridges → no output");
     }
 
@@ -2957,7 +3345,7 @@ mod tests {
             expanded_into: false,
         }];
 
-        let result = super::expand_bridges_detect_orientations(&surfaces, &mut zones, 0.1);
+        let result = super::expand_bridges_detect_orientations(&surfaces, &mut zones, 0.1, 45000.0);
         // Should produce at least one bridge surface
         assert!(
             !result.is_empty(),
@@ -2993,7 +3381,7 @@ mod tests {
             expanded_into: false,
         }];
 
-        let result = super::expand_bridges_detect_orientations(&surfaces, &mut zones, 0.1);
+        let result = super::expand_bridges_detect_orientations(&surfaces, &mut zones, 0.1, 45000.0);
         if !result.is_empty() {
             // Zone area should be smaller after clipping
             let remaining_area: f64 = zones[0].expolygons.iter().map(|ep| ep.area().abs()).sum();

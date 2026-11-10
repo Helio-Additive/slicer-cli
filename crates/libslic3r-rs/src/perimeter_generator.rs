@@ -99,6 +99,19 @@ fn fbis_dump(stage: &str, lid: usize, v: &[ExPolygon]) {
         sy,
         area
     );
+    // `FBISL=<layer>`: every point of that layer's stages, `[FBISP] <stage> c|h x y`.
+    if std::env::var("FBISL").ok().and_then(|l| l.parse::<usize>().ok()) == Some(lid) {
+        for ex in v {
+            for p in ex.contour.points.iter() {
+                eprintln!("[FBISP] {} c {} {}", stage, p.x(), p.y());
+            }
+            for h in ex.holes.iter() {
+                for p in h.points.iter() {
+                    eprintln!("[FBISP] {} h {} {}", stage, p.x(), p.y());
+                }
+            }
+        }
+    }
 }
 
 /// Overlap tolerance for perimeter insets
@@ -1329,7 +1342,15 @@ impl PerimeterGenerator {
                 // PerimeterGenerator.cpp:1139
                 // C++: fill_clip = offset_ex(last, -double(ext_perimeter_spacing));
                 // R105: feeds temp_gap → last; un-grid under f1_top.
-                fill_clip = if f1_top {
+                fill_clip = if crate::faithful_gate("TOPFILL_CLIP_FAITHFUL") {
+                    // -double(coord_t ext_perimeter_spacing) through the float
+                    // parameter of offset_ex, on the scaled value itself.
+                    crate::clipper_utils::offset_expolygons_clib_scaled(
+                        &last,
+                        -((eps_s as f64) as f32) as f64,
+                        OffsetJoinType::Miter,
+                    )
+                } else if f1_top {
                     crate::clipper_utils::offset_expolygons_clib(&last, -ext_perimeter_spacing, OffsetJoinType::Miter)
                 } else {
                     offset_expolygons(&last, -ext_perimeter_spacing, OffsetJoinType::Miter)
@@ -1354,6 +1375,9 @@ impl PerimeterGenerator {
                     difference(&last, &upper_polygons_series_clipped)
                 };
 
+                fbis_dump("t_last", self.config.layer_id, &last);
+                fbis_dump("t_upper", self.config.layer_id, &upper_polygons_series_clipped);
+                fbis_dump("t_top1", self.config.layer_id, &top_polygons);
                 // PerimeterGenerator.cpp:1146
                 // C++: ExPolygons temp_gap = diff_ex(top_polygons, fill_clip);
                 // R105: temp_gap is unioned into `last` (has_gap_fill) → un-grid under f1_top.
@@ -1457,8 +1481,19 @@ impl PerimeterGenerator {
 
                 // PerimeterGenerator.cpp:1162-1163
                 // C++: top_polygons = diff_ex(fill_clip, inner_polygons, ApplySafetyOffset::Yes);
-                top_polygons = difference(&fill_clip, &inner_polygons);
+                // TOPFILL_CLIP_FAITHFUL (R814): the safety-offset difference on
+                // the ClipperLib grid, as written above; =0 keeps the 1 um
+                // difference without safety offset.
+                let topfill_clip_faithful = crate::faithful_gate("TOPFILL_CLIP_FAITHFUL");
+                fbis_dump("t_inner", self.config.layer_id, &inner_polygons);
+                fbis_dump("t_clip1", self.config.layer_id, &fill_clip);
+                top_polygons = if topfill_clip_faithful {
+                    crate::clipper_utils::difference_clib_safety(&fill_clip, &inner_polygons)
+                } else {
+                    difference(&fill_clip, &inner_polygons)
+                };
 
+                fbis_dump("t_top2", self.config.layer_id, &top_polygons);
                 // PerimeterGenerator.cpp:1164-1165
                 // C++: top_fills = union_ex(top_fills, top_polygons);
                 let mut merged = std::mem::take(&mut top_fills);
@@ -1479,7 +1514,18 @@ impl PerimeterGenerator {
                 // C++: fill_clip = offset_ex(last, double(ext_perimeter_spacing / 2) - scale_(infill_spacing_unscaled / 2));
                 // Native offset_ex @1e5; geo grids fill_clip (168-vs-177pts, the
                 // R140 residual driver). Gated full-res.
-                fill_clip = if crate::faithful_gate("TOPFILL_FAITHFUL") {
+                fill_clip = if topfill_clip_faithful {
+                    // double(coord_t / 2) - scale_(width / 2), then the float
+                    // parameter of offset_ex (PerimeterGenerator.cpp:1187).
+                    let delta = (eps_s / 2) as f64
+                        - (self.config.sparse_infill_line_width / 2.0)
+                            / crate::libslic3r::SCALING_FACTOR;
+                    crate::clipper_utils::offset_expolygons_clib_scaled(
+                        &last,
+                        (delta as f32) as f64,
+                        OffsetJoinType::Miter,
+                    )
+                } else if crate::faithful_gate("TOPFILL_FAITHFUL") {
                     crate::clipper_utils::offset_expolygons_clib(
                         &last,
                         ext_perimeter_spacing / 2.0 - self.config.sparse_infill_line_width / 2.0,
@@ -1898,9 +1944,19 @@ impl PerimeterGenerator {
             let tf_simplify = crate::faithful_gate("TOPFILL_FAITHFUL");
             for ex in last {
                 if tf_simplify {
-                    pp.extend(ex.simplify_p_dp_rings_faithful(
+                    let rings = ex.simplify_p_dp_rings_faithful(
                         self.config.surface_simplify_resolution / 0.00001,
-                    ));
+                    );
+                    // R814 TAIL_SIMPLIFY_POLYGONS (faithful ON): ExPolygon::simplify_p
+                    // ends in `return simplify_polygons(pp)` (ExPolygon.cpp), the
+                    // ClipperLib SimplifyPolygons pass that resolves the
+                    // self-intersections Douglas-Peucker leaves. generate_classic_one
+                    // has had it since R100; this call site had only the rings.
+                    if crate::faithful_gate("TAIL_SIMPLIFY_POLYGONS") {
+                        pp.extend(crate::clipper_utils::simplify_polygons_clib(&rings, 1));
+                    } else {
+                        pp.extend(rings);
+                    }
                 } else {
                     ex.simplify_p_into(self.config.surface_simplify_resolution, &mut pp);
                 }
@@ -1949,6 +2005,8 @@ impl PerimeterGenerator {
             };
 
             fbis_dump("infillraw", self.config.layer_id, &infill_exp);
+            fbis_dump("topfills", self.config.layer_id, &top_fills);
+            fbis_dump("fillclip", self.config.layer_id, &fill_clip);
 
             // PerimeterGenerator.cpp:1407-1413
             // C++: ExPolygons top_infill_exp = intersection_ex(fill_clip, offset_ex(top_fills, double(ext_perimeter_spacing / 2)));
@@ -2011,6 +2069,8 @@ impl PerimeterGenerator {
                     infill_exp = union_ex(&merged);
                 }
             }
+            fbis_dump("topinfill", self.config.layer_id, &top_infill_exp);
+            fbis_dump("final", self.config.layer_id, &infill_exp);
             crate::stage_dump::dump("tail_infill", self.config.layer_id, &infill_exp);
 
             // R712 — R711 proved the fill PATTERN is faithful (angle, spacing,
@@ -3465,7 +3525,7 @@ impl PerimeterGenerator {
             }
             let last = if crate::faithful_gate("ARACHNE_NO_PRE_UNION") {
                 // PerimeterGenerator.cpp:1511 — offset the raw simplify_p polygons.
-                let simplified_polys = if crate::opt_in_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
+                let simplified_polys = if crate::faithful_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
                     simplify_faithful(surface)
                 } else {
                     surface.simplify_p(surface_simplify_resolution)
@@ -4267,7 +4327,13 @@ impl PerimeterGenerator {
             let tol_scaled = surface_simplify_resolution * crate::SCALING_FACTOR;
             let mut inner_pp: Vec<Polygon> = Vec::new();
             for ex in &infill_contour {
-                inner_pp.extend(ex.simplify_p_dp_rings_faithful(tol_scaled));
+                // R814 TAIL_SIMPLIFY_POLYGONS: simplify_p ends in simplify_polygons.
+                let rings = ex.simplify_p_dp_rings_faithful(tol_scaled);
+                if crate::faithful_gate("TAIL_SIMPLIFY_POLYGONS") {
+                    inner_pp.extend(crate::clipper_utils::simplify_polygons_clib(&rings, 1));
+                } else {
+                    inner_pp.extend(rings);
+                }
             }
             if inner_pp.is_empty() {
                 return (vec![], vec![]);

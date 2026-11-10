@@ -3337,9 +3337,20 @@ impl SeamPlacer {
 
         // Scale back to coord_t (the loop is in scaled coordinates).
         // SeamPlacer.cpp:1497 — Point seam_point = Point::new_scale(...)
+        // R814 SEAM_NEW_SCALE_TRUNC (faithful ON): Point::new_scale is
+        // coord_t(scale_(x)) (Point.hpp:185) — a division by SCALING_FACTOR in
+        // double and a truncating cast, not a rounding. One unit decides which
+        // edge of a square hole the inner seam lands on.
+        let new_scale = |v: f32| -> i64 {
+            if crate::faithful_gate("SEAM_NEW_SCALE_TRUNC") {
+                (v as f64 / crate::libslic3r::SCALING_FACTOR) as i64
+            } else {
+                crate::scale(v as f64)
+            }
+        };
         let mut seam_point = Point::new(
-            crate::scale(seam_position.x as f64) + self.frame_offset_xy.0,
-            crate::scale(seam_position.y as f64) + self.frame_offset_xy.1,
+            new_scale(seam_position.x) + self.frame_offset_xy.0,
+            new_scale(seam_position.y) + self.frame_offset_xy.1,
         );
 
         // SeamPlacer.cpp:1499-1519 — concave-corner realignment.
@@ -3400,12 +3411,19 @@ impl SeamPlacer {
                 let depth = unscale_point(&(seam_point - projected.foot_pt)).length() as f32;
                 // SeamPlacer.cpp:1515-1517 — overshoot so it snaps into the corner.
                 let angle_factor = (-perimeter_point.local_ccw_angle / 2.0).cos();
-                let final_pos =
-                    perimeter_point.position.xy() + dir_to_middle * (1.4142 * depth / angle_factor);
+                // `1.4142 * depth / angle_factor` is evaluated in double (the
+                // literal is a double) and converted to float for the product
+                // with the Vec2f.
+                let factor = if crate::faithful_gate("SEAM_NEW_SCALE_TRUNC") {
+                    ((1.4142f64 * depth as f64) / angle_factor as f64) as f32
+                } else {
+                    1.4142 * depth / angle_factor
+                };
+                let final_pos = perimeter_point.position.xy() + dir_to_middle * factor;
                 // SeamPlacer.cpp:1518
                 seam_point = Point::new(
-                    crate::scale(final_pos.x as f64) + self.frame_offset_xy.0,
-                    crate::scale(final_pos.y as f64) + self.frame_offset_xy.1,
+                    new_scale(final_pos.x) + self.frame_offset_xy.0,
+                    new_scale(final_pos.y) + self.frame_offset_xy.1,
                 );
             }
         }

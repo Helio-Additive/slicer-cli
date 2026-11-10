@@ -724,6 +724,9 @@ pub fn group_fills(
                     region_config.top_fill_pattern.into()
                 } else if surface.is_bottom() {
                     region_config.bottom_fill_pattern.into()
+                } else if surface.surface_type.is_sub_top() {
+                    // Fill.cpp:273-274
+                    region_config.sub_top_surface_pattern.into()
                 } else {
                     region_config.solid_fill_pattern.into()
                 };
@@ -1044,8 +1047,10 @@ pub fn group_fills(
     if layer.object().config().detect_narrow_internal_solid_infill {
         let surface_fills_size = surface_fills.len();
         for i in 0..surface_fills_size {
-            // Fill.cpp:467-468
-            if surface_fills[i].surface.surface_type != SurfaceType::InternalSolid {
+            // Fill.cpp:556-558
+            if surface_fills[i].surface.surface_type != SurfaceType::InternalSolid
+                && surface_fills[i].surface.surface_type != SurfaceType::SubTop
+            {
                 continue;
             }
 
@@ -1175,7 +1180,8 @@ pub fn group_fills(
                     surface_fills.push(SurfaceFill::new(params));
                     let back_idx = surface_fills.len() - 1;
                     surface_fills[back_idx].region_id = region_id_i;
-                    surface_fills[back_idx].surface.surface_type = SurfaceType::InternalSolid;
+                    // Fill.cpp:600
+                    surface_fills[back_idx].surface.surface_type = surface_fills[i].surface.surface_type;
                     surface_fills[back_idx].surface.thickness = thickness_i;
                     surface_fills[back_idx].region_id_group = region_id_group_i;
                     surface_fills[back_idx].no_overlap_expolygons = no_overlap_i;

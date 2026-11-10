@@ -151,6 +151,22 @@ impl<'a> FillConcentricInternal<'a> {
                 (0usize, 0.0f64, 0usize, 0i64, 0i64)
             };
 
+            // `ARIN=1`: the wall generator's input, one line per call, as the C++ twin prints it.
+            if crate::probe_enabled("ARIN") {
+                let mut iv = 0usize;
+                let (mut ix, mut iy) = (0i64, 0i64);
+                for pg in polygons.iter() {
+                    iv += pg.points.len();
+                    for pt in pg.points.iter() {
+                        ix = ix.wrapping_add(pt.x() as i64);
+                        iy = iy.wrapping_add(pt.y() as i64);
+                    }
+                }
+                eprintln!(
+                    "ARIN L{} np={} iv={} ix={} iy={} ms={} loops={} lh={:.6}",
+                    self.layer_id, polygons.len(), iv, ix, iy, min_spacing, loops_count, params.layer_height
+                );
+            }
             // FillConcentricInternal.cpp:37
             let mut wall_tool_paths = WallToolPaths::new(
                 polygons,

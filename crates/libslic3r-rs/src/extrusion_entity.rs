@@ -486,7 +486,16 @@ impl ExtrusionPath {
     // ExtrusionEntity.cpp:55-58 `void ExtrusionPath::polygons_covered_by_width(...)`
     pub fn polygons_covered_by_width(&self, out: &mut Vec<Polygon>, scaled_epsilon: f32) {
         // ExtrusionEntity.cpp:57
-        let delta = scale(self.width / 2.0) as f32 + scaled_epsilon;
+        // R814 COVERED_WIDTH_F32 (faithful ON): `float(scale_(this->width/2)) +
+        // scaled_epsilon` — width is a float, scale_ is a plain division by
+        // SCALING_FACTOR in double (no rounding to an integer), the result is cast
+        // to float and the epsilon added in float.
+        let delta = if crate::faithful_gate("COVERED_WIDTH_F32") {
+            (((self.width as f32 / 2.0f32) as f64 / crate::libslic3r::SCALING_FACTOR) as f32)
+                + scaled_epsilon
+        } else {
+            scale(self.width / 2.0) as f32 + scaled_epsilon
+        };
         // Gated faithful ClipperLib offset (see offset_polyline_clib); geo default.
         if crate::faithful_gate("TOPFILL_FAITHFUL") {
             out.extend(offset_polyline_clib(&self.polyline, delta as f64));
