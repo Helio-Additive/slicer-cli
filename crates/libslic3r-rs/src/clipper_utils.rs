@@ -1372,7 +1372,7 @@ fn offset_expolygons_clib_impl(
     // NonZero union via the vertex-exact vendored ClipperLib (union_ex_clib @ i32/1e5)
     // so the clib offset output stays full-resolution. Default path byte-unchanged.
     if crate::faithful_gate("F1_UNION") {
-        return union_ex_clib(&all_paths, 1);
+        return polytree_ex_clib(&all_paths);
     }
     union_polygons_ex_geo(&all_paths)
 }
@@ -1744,7 +1744,7 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
     // faithful match to C++ diff_ex's clipper_do_polytree re-union. Default byte-unchanged
     // (mirrors offset_expolygons_clib's gated reconstruction).
     if crate::faithful_gate("F1_UNION") {
-        return union_ex_clib(&all_paths, 1);
+        return polytree_ex_clib(&all_paths);
     }
     union_polygons_ex_geo(&all_paths)
 }
@@ -1811,7 +1811,7 @@ pub fn intersection_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygon
     }
 
     if crate::faithful_gate("F1_UNION") {
-        return union_ex_clib(&all_paths, 1);
+        return polytree_ex_clib(&all_paths);
     }
     union_polygons_ex_geo(&all_paths)
 }
@@ -1873,7 +1873,7 @@ pub fn intersection_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> Ex
     if all_paths.is_empty() {
         return vec![];
     }
-    union_ex_clib(&all_paths, 1)
+    polytree_ex_clib(&all_paths)
 }
 
 pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
@@ -1939,7 +1939,7 @@ pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPo
         return vec![];
     }
     if crate::faithful_gate("F1_UNION") {
-        return union_ex_clib(&all_paths, 1);
+        return polytree_ex_clib(&all_paths);
     }
     union_polygons_ex_geo(&all_paths)
 }
@@ -2118,6 +2118,24 @@ pub fn unionprof_report() {
 }
 
 pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
+    union_ex_clib_impl(loops, fill_type, false)
+}
+
+/// The reconstruction step of `diff_ex`, `intersection_ex` and
+/// `offset_ex(ExPolygons)`: `PolyTreeToExPolygons(clipper_union<PolyTree>(paths))`
+/// — ONE NonZero union into a PolyTree over the raw output paths of the
+/// operation before it (clipper_do_polytree, ClipperUtils.cpp:641-654;
+/// expolygons_offset_pt, ClipperUtils.cpp:552-557). [`union_ex_clib`] is
+/// `union_ex`, which unions twice; behind a boolean operation or an offset that
+/// is one union more than C++ runs, and now and then it drops a vertex.
+/// CLIB_POLYTREE_ONE_PASS=0 goes back to the two unions.
+pub fn polytree_ex_clib(paths: &[Polygon]) -> ExPolygons {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let one_pass = *G.get_or_init(|| crate::faithful_gate("CLIB_POLYTREE_ONE_PASS"));
+    union_ex_clib_impl(paths, 1, one_pass)
+}
+
+fn union_ex_clib_impl(loops: &[Polygon], fill_type: i32, one_pass: bool) -> ExPolygons {
     if loops.is_empty() {
         return vec![];
     }
@@ -2147,7 +2165,13 @@ pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
     // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
     let t_ffi = if prof { Some(std::time::Instant::now()) } else { None };
-    let raw = unsafe { clipper_z_sys::cz_union_ex(xy.as_ptr(), lens.as_ptr(), num, fill_type) };
+    let raw = unsafe {
+        if one_pass {
+            clipper_z_sys::cz_union_polytree(xy.as_ptr(), lens.as_ptr(), num)
+        } else {
+            clipper_z_sys::cz_union_ex(xy.as_ptr(), lens.as_ptr(), num, fill_type)
+        }
+    };
     if let Some(t) = t_ffi {
         use std::sync::atomic::Ordering::Relaxed;
         UNIONPROF_FFI_NANOS.fetch_add(t.elapsed().as_nanos() as usize, Relaxed);
@@ -3075,6 +3099,65 @@ pub fn intersection_pl_clib(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<P
         }
     }
     // SAFETY: `raw` was produced by cz_intersection_pl and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    out
+}
+
+/// `diff_pl(const Polylines &subject, const Polygons &clip)` (ClipperUtils.cpp
+/// 911-912) via the vendored ClipperLib (cz_diff_pl): open subjects, closed
+/// clips as raw polygons, pftNonZero, PolyTree preorder flatten.
+pub fn diff_pl_clib(polylines: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
+    let mut subject_xy: Vec<i32> = Vec::new();
+    let mut subject_lens: Vec<i32> = Vec::new();
+    for pl in polylines {
+        if pl.points.is_empty() {
+            continue;
+        }
+        subject_lens.push(pl.points.len() as i32);
+        for p in &pl.points {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            subject_xy.push(p.x as i32);
+            subject_xy.push(p.y as i32);
+        }
+    }
+    if subject_lens.is_empty() {
+        return vec![];
+    }
+    let (clip_xy, clip_lens, clip_num) = clib_flatten_polygons(clip);
+
+    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
+    let raw = unsafe {
+        clipper_z_sys::cz_diff_pl(
+            subject_xy.as_ptr(),
+            subject_lens.as_ptr(),
+            subject_lens.len() as i32,
+            if clip_xy.is_empty() { std::ptr::null() } else { clip_xy.as_ptr() },
+            if clip_lens.is_empty() { std::ptr::null() } else { clip_lens.as_ptr() },
+            clip_num,
+        )
+    };
+
+    let mut out: Vec<Polyline> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
+                cursor += 1;
+            }
+            out.push(Polyline::from_points(pts));
+        }
+    }
+    // SAFETY: `raw` was produced by cz_diff_pl and not freed yet.
     unsafe { clipper_z_sys::cz_free_zpaths(raw) };
     out
 }

@@ -120,11 +120,11 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R814) |
+| Fixture | As brought over (R808) | Now (R815) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 148,085 (79.65%) |
-| Benchy arachne | 32,769 (13.68%) | 143,944 (60.82%) |
-| Majora | 1,512,438 (55.88%) | 1,524,497 (56.18%) |
+| Benchy classic | 30,486 (15.72%) | 148,122 (79.66%) |
+| Benchy arachne | 32,769 (13.68%) | 143,955 (60.81%) |
+| Majora | 1,512,438 (55.88%) | 1,525,490 (56.27%) |
 | Majora, prime tower | 83.5% | 83.5% |
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
@@ -133,15 +133,22 @@ arachne 138,771 lines. Those numbers are not comparable with the table: the
 oracle is a different engine version with a different front end, and the Benchy
 jobs now take the 02.09.01.70 profiles.
 
+The oracle these numbers are taken against is a macOS arm64 build. Two of its
+results depend on that: the order of a `std::unordered_map` (libc++) decides
+the sign of a bridge direction with tied costs, and clang fuses multiply-adds
+in `float` expressions on arm64. The port reproduces both behind the gates
+`BRIDGE_DIR_HASH_ORDER` and `PCA_FP_CONTRACT`; against a Linux or x86-64 build
+of `slicer_cli` those two would have to follow that build instead.
+
 Where each fixture stands, from the `PP` probe (below):
 
 - **Benchy classic.** Slices identical on 299 of 300 layers, perimeters on 298
   of 300, gap fills on 248 of 254. The fill surfaces the perimeter step leaves
   are identical on 197 of 204 layers, the top surfaces on all 48 through
-  `prepare_infill`, the sub-top surfaces on all 3. The internal bridges of
-  `bridge_over_infill` differ on every layer that has one, and the fills are
-  identical on 134 of 289 layers. Walls are 86% in order; top surface 92%,
-  solid infill 76%, sparse infill 48%, bridges 7%.
+  `prepare_infill`, the sub-top surfaces on all 3, the bottom bridges on all 4.
+  The internal bridges of `bridge_over_infill` differ on every layer that has
+  one, and the fills are identical on 135 of 289 layers. Walls are 86% in
+  order; top surface 92%, solid infill 75%, sparse infill 48%, bridges 24%.
 - **Benchy arachne.** Slices as classic. No layer's perimeters are identical:
   the arachne walls have the same structure with junctions 1 to about 130 scaled
   units off. About a quarter of the matching lines are out of order.

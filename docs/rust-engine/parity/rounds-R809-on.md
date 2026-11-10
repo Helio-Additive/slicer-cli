@@ -39,6 +39,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R812 | Farthest-point timelapse, new in 02.09: `compute_farthest_point` (GCode.cpp 4582-4733), the inline photo block of `generate_timelapse_gcode` (4735-4840), `check_and_insert_timelapse` after each extruded segment (7946-7973), no timelapse at the layer change (5604). `process_text`: template processing that keeps the whitespace around `{if}` tags as the C++ parser does | `FARTHEST_TIMELAPSE` (on) | 137,832 → 140,456 (76.41%) | 136,442 → 139,009 (59.31%) | unchanged (the X1C settings do not turn it on) |
 | R813 | `;VT0 H-1`: the hotend id GCode.cpp 3235-3236 writes after the filament start G-code | `VT_HOTEND` (on) | 140,456 → 140,457 | 139,009 → 139,010 | 1,512,563 → 1,512,564 |
 | R814 | Fills, Benchy first. (1) A fill's non-extruding connectors (`ExtrusionPath` with `no_extrusion`, the hops of a monotonic-line top surface) are E-less moves on the linear branch of `_extrude` too (GCode.cpp 7993-7996); they were extruded. (2) `_extrude` does not simplify: with arc fitting off the one simplification is `simplify_path`'s at the print resolution (LayerRegion.cpp 1053-1069), also for sparse infill. (3) Top-one-wall: `fill_clip` is offset on the scaled value through the `float` parameter, and `top_polygons = diff_ex(fill_clip, inner_polygons, ApplySafetyOffset::Yes)` runs on the ClipperLib grid with the safety offset (PerimeterGenerator.cpp 1152, 1176, 1187). (4) `discover_sub_top_surfaces` and `stSubTop` with `sub_top_surface_pattern` (PrintObject.cpp 5839-5920, Fill.cpp 273-274, 556-558, 600). (5) Bridges of one overlap group that run 10 degrees or more apart become separate surfaces and share out their anchors: `separate_bridge_directions`, `partition_bridge_anchors`, the new `merge_bridges` (LayerRegion.cpp 372-637). (6) `polygons_covered_by_width` takes its delta in `float` (ExtrusionEntity.cpp); the fill boundary runs `simplify_polygons` after the Douglas-Peucker pass (`ExPolygon::simplify_p`); `Point::new_scale` truncation at the seam (SeamPlacer.cpp); the `float` radii of `discover_vertical_shells`; `FillGrid` reverses its polylines on odd layers (FillRectilinear.cpp 3127-3129); `intersection_ex(…, ApplySafetyOffset::Yes)` for a fill's no-overlap area (Fill.cpp 837). (7) Four arms that were parked because they lowered the score against the 02.06 oracle now raise it and are on | new, on: `NO_EXTRUSION_LINEAR`, `EXPORT_NO_RESIMPLIFY`, `TOPFILL_CLIP_FAITHFUL`, `SUB_TOP_SURFACES`, `BRIDGE_DIR_SPLIT`, `COVERED_WIDTH_F32`, `TAIL_SIMPLIFY_POLYGONS`, `SEAM_NEW_SCALE_TRUNC`, `GRID_ODD_REVERSE`; turned on: `VSHELL_REG_QUANT`, `FILL_NOOVERLAP_SAFETY`, `ARACHNE_SIMPLIFY_FAITHFUL`, `WIPE_TOWER_FORCE_TAGS`, `LINEWIDTH_BEFORE_SPEED`, `NO_COLLECTION_PRESPEED` | 140,457 → 148,085 (79.65%) | 139,010 → 143,944 (60.82%) | 1,512,564 → 1,524,497 (56.18%) |
+| R815 | Bridges, from the probes of `expand_bridges_detect_orientations` on Benchy layer 2 until every stage agrees. (1) The floating edges of a bridge: closed polylines, the anchors grown as raw polygons with the miter join, one open-path ClipperLib difference (LayerRegion.cpp 353; ClipperUtils.cpp 841-849, 911). (2) `Line::normal()` is `(dy, -dx)` (Line.hpp 180), and the direction candidates are walked in the order of the `std::unordered_map` C++ keeps them in (BridgeDetector.hpp 89-113): two edges with opposite normals cost the same, and the order picks the sign. (3) `compute_principal_components` with the fused multiply-adds clang emits for its scalar `float` expressions on arm64 (PrincipalComponents2D.cpp). (4) `RegionExpansionParameters::build` in its own `float` scaled values, handed to the ClipperLib calls as they are (RegionExpansion.cpp 32-79). (5) `polylines_merge` swaps instead of reversing both and keeps the merge point twice (Polyline.hpp 236-246). (6) `closing_ex(Polygons)` over the raw polygons (ClipperUtils.cpp 598-602). (7) `diff_ex`, `intersection_ex` and `offset_ex(ExPolygons)` rebuild their expolygons with one union into a PolyTree (ClipperUtils.cpp 552-557, 641-654); the port ran `union_ex`, two unions, behind every one of them. (8) The pattern of a solid surface in the order of Fill.cpp 268-281: a bridge is rectilinear unless the top pattern is monotonic; it took the bottom pattern | new, on: `BRIDGE_FLOATING_CLIB`, `BRIDGE_DIR_HASH_ORDER`, `PCA_FP_CONTRACT`, `REGION_EXPANSION_PARAMS_F32`, `POLYLINES_MERGE_FAITHFUL`, `BRIDGE_CLOSING_FAITHFUL`, `CLIB_POLYTREE_ONE_PASS`, `FILL_PATTERN_CHAIN`; turned on: `BRIDGE_NORMAL_CPP` | 148,085 → 148,122 (79.66%) | 143,944 → 143,955 (60.81%) | 1,524,497 → 1,525,490 (56.27%) |
 
 ## Findings
 
@@ -112,4 +113,25 @@ The Rust engine as it came from R808, against the kept oracle files:
   taken in another order. With the same end point of the previous fill the
   oracle starts at the farther end of the first polyline, so the order comes
   from the chaining of the fill collections, not from the grid.
+- R815: on Benchy layer 2 the wave seeds, the expansions, the bridge
+  directions, the direction groups, every step of `partition_bridge_anchors`
+  and the 104 bridge surfaces that come out are now the oracle's, and the
+  bottom bridges agree on 4 of 4 layers after `process_external_surfaces`.
+  Bridge lines in order: Benchy classic 110 → 383 of 1,587, arachne 206 → 500,
+  Majora 2,351 → 3,574. The content match rises by 552 / 576 / 1,173 lines;
+  the in-order score rises less because the fills printed after a bridge now
+  start from another point (`FILL_PATTERN_CHAIN` alone: -56 / -77 in order,
+  +388 / +414 content on the two Benchy jobs).
+- R815: two results of the oracle depend on how it was built, and the port
+  follows the build the scores are taken against (macOS, arm64, libc++). The
+  sign of a bridge direction with tied costs follows the iteration order of
+  libc++'s `std::unordered_map<double, …>`; libstdc++ orders it differently.
+  The principal components of a fully anchored bridge are computed with fused
+  multiply-adds; an x86-64 build without FMA rounds each product. Both are
+  behind gates (`BRIDGE_DIR_HASH_ORDER`, `PCA_FP_CONTRACT`), so a Linux or
+  x86-64 oracle can be matched by turning them off or by adding its arm.
+- R815, open: `bridge_over_infill` (internal bridges on 11 layers against 10,
+  none equal), the fill surfaces of layers 1, 71, 74, 99, 117, 125 (they follow
+  the gap fills, which differ on layers 0, 1, 71, 72, 117, 196), and the fills,
+  identical on 135 of 289 layers.
 

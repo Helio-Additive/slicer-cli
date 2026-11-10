@@ -621,6 +621,34 @@ extern "C" CzZPaths cz_intersection_pl(const int32_t *subject_xy, const int32_t 
     return marshal_paths(out);
 }
 
+// cz_diff_pl — `_clipper_pl_open(ctDifference, subject, clip)` (ClipperUtils.cpp
+// 841-849, the diff_pl family, ClipperUtils.cpp:909-920): the same call as
+// cz_intersection_pl with the other clip type. The parts of the OPEN subject
+// polylines outside the closed clip polygons, in PolyTree preorder.
+extern "C" CzZPaths cz_diff_pl(const int32_t *subject_xy, const int32_t *subject_lens,
+                               int32_t subject_num, const int32_t *clip_xy,
+                               const int32_t *clip_lens, int32_t clip_num) {
+    ClipperLib::Paths subject = read_closed_paths(subject_xy, subject_lens, subject_num);
+    ClipperLib::Paths clip = read_closed_paths(clip_xy, clip_lens, clip_num);
+
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(subject, ClipperLib::ptSubject, false);
+    clipper.AddPaths(clip, ClipperLib::ptClip, true);
+    ClipperLib::PolyTree tree;
+    clipper.Execute(ClipperLib::ctDifference, tree, ClipperLib::pftNonZero,
+                    ClipperLib::pftNonZero);
+
+    ClipperLib::Paths out;
+    struct Rec {
+        static void add(ClipperLib::PolyNode &node, ClipperLib::Paths &o) {
+            if (!node.Contour.empty()) o.push_back(node.Contour);
+            for (ClipperLib::PolyNode *child : node.Childs) add(*child, o);
+        }
+    };
+    Rec::add(tree, out);
+    return marshal_paths(out);
+}
+
 extern "C" CzZPaths cz_difference_closed_safety(const int32_t *subject_xy, const int32_t *subject_lens,
                                                 int32_t subject_num, const int32_t *clip_xy,
                                                 const int32_t *clip_lens, int32_t clip_num) {
@@ -1179,6 +1207,28 @@ extern "C" CzZPaths cz_offset_paths(const int32_t *xy, const int32_t *lens, int3
         }
     }
     return marshal_paths(out);
+}
+
+// cz_union_polytree — `PolyTreeToExPolygons(clipper_union<ClipperLib::PolyTree>(
+// paths, pftNonZero))` (ClipperUtils.cpp:339-350, 203-210): ONE union into a
+// PolyTree. This is the second half of clipper_do_polytree (ClipperUtils.cpp
+// 641-654), i.e. what diff_ex / intersection_ex run over the raw output of their
+// boolean operation, and the whole reconstruction of offset_ex(ExPolygons)
+// (expolygons_offset_pt, ClipperUtils.cpp:552-557). cz_union_ex is the two-pass
+// union_ex and is one union too many for those. Grouped output like cz_union_ex.
+extern "C" CzZPaths cz_union_polytree(const int32_t *xy, const int32_t *lens, int32_t num) {
+    ClipperLib::Paths subject = read_closed_paths(xy, lens, num);
+    ClipperLib::PolyTree polytree;
+    {
+        ClipperLib::Clipper c;
+        c.AddPaths(subject, ClipperLib::ptSubject, true);
+        c.Execute(ClipperLib::ctUnion, polytree, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+    }
+    ClipperLib::Paths out_paths;
+    std::vector<int32_t> out_is_hole;
+    for (int i = 0; i < polytree.ChildCount(); ++i)
+        polytree_to_grouped(*polytree.Childs[i], out_paths, out_is_hole);
+    return marshal_grouped(out_paths, out_is_hole);
 }
 
 extern "C" CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,

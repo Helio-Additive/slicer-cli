@@ -718,7 +718,38 @@ pub fn group_fills(
             let mut pattern = region_config.fill_pattern.into();
             let mut density = (region_config.fill_density * 100.0) as f32;
 
-            if surface.is_solid() {
+            if surface.is_solid() && crate::faithful_gate("FILL_PATTERN_CHAIN") {
+                // Fill.cpp:268-281, in its order: floating vertical shell,
+                // sub-top, internal solid, then top or bottom when the surface
+                // is external and not a bridge (with its surface density), and
+                // for what is left — the bridges — monotonic only when the top
+                // pattern is monotonic, rectilinear otherwise.
+                // FILL_PATTERN_CHAIN=0 gives a bottom bridge the bottom pattern
+                // and an internal bridge the internal solid pattern, as before.
+                density = 100.0;
+                if surface.is_floating_vertical_shell() {
+                    pattern = InfillPattern::FloatingConcentric;
+                } else if surface.surface_type.is_sub_top() {
+                    pattern = region_config.sub_top_surface_pattern.into();
+                } else if surface.surface_type.is_solid_infill() {
+                    pattern = region_config.solid_fill_pattern.into();
+                } else if surface.surface_type.is_external() && !is_bridge {
+                    if surface.is_top() {
+                        pattern = region_config.top_fill_pattern.into();
+                        density = region_config.top_surface_density as f32;
+                    } else {
+                        pattern = region_config.bottom_fill_pattern.into();
+                        density = region_config.bottom_surface_density as f32;
+                    }
+                } else {
+                    let top: InfillPattern = region_config.top_fill_pattern.into();
+                    pattern = if top == InfillPattern::Monotonic {
+                        InfillPattern::Monotonic
+                    } else {
+                        InfillPattern::Rectilinear
+                    };
+                }
+            } else if surface.is_solid() {
                 density = 100.0;
                 pattern = if surface.is_top() {
                     region_config.top_fill_pattern.into()

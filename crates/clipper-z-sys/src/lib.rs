@@ -146,6 +146,18 @@ extern "C" {
         clip_num: i32,
     ) -> CzZPaths;
 
+    /// `_clipper_pl_open(ctDifference)` (ClipperUtils.cpp:841, 909-920): the
+    /// parts of OPEN subject polylines outside closed clip polygons; PolyTree
+    /// preorder output. Free via [`cz_free_zpaths`].
+    pub fn cz_diff_pl(
+        subject_xy: *const i32,
+        subject_lens: *const i32,
+        subject_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+    ) -> CzZPaths;
+
     /// Faithful `detect_floating_line` Z-clipper (FillFloatingConcentric.cpp:431-475):
     /// runs the ClipperLib_Z Clipper twice on the same inputs (ctIntersection +
     /// ctDifference) under the detect_floating_line ZFillFunction (tags intersection
@@ -175,6 +187,11 @@ extern "C" {
     /// (attach to current contour); paths emitted in PolyTreeToExPolygons order.
     /// Free via [`cz_free_zpaths`].
     pub fn cz_union_ex(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
+
+    /// `PolyTreeToExPolygons(clipper_union<PolyTree>(paths, pftNonZero))`: one
+    /// union into a PolyTree (ClipperUtils.cpp:339-350), grouped like
+    /// [`cz_union_ex`]. Free via [`cz_free_zpaths`].
+    pub fn cz_union_polytree(xy: *const i32, lens: *const i32, num: i32) -> CzZPaths;
 
     /// Faithful `offset_ex(const Polygons&, float delta)` (ClipperUtils.cpp:415):
     /// per-path orientation-aware raw_offset, then PolyTree reconstruction

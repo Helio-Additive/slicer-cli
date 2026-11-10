@@ -187,6 +187,23 @@ pub struct RegionExpansionParameters {
     pub arc_tolerance: f64,
     /// RegionExpansion.hpp:32
     pub shortest_edge_length: f64,
+
+    /// The same parameters in scaled units, as the C++ struct holds them
+    /// (`float` members widened to double; RegionExpansion.hpp:19-32). The
+    /// ClipperLib calls of the faithful path take these, so a delta is the
+    /// very number C++ passes and not a millimetre value scaled back.
+    pub scaled: RegionExpansionParametersScaled,
+}
+
+/// See [`RegionExpansionParameters::scaled`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RegionExpansionParametersScaled {
+    pub tiny_expansion: f64,
+    pub initial_step: f64,
+    pub other_step: f64,
+    pub max_inflation: f64,
+    pub arc_tolerance: f64,
+    pub shortest_edge_length: f64,
 }
 
 impl RegionExpansionParameters {
@@ -208,6 +225,59 @@ impl RegionExpansionParameters {
         assert!(full_expansion > 0.0);
         assert!(expansion_step > 0.0);
         assert!(max_nr_expansion_steps > 0);
+
+        // REGION_EXPANSION_PARAMS_F32 (on): RegionExpansion.cpp:32-79 in its
+        // own types — `float` scaled values, the `0.25 *` and `4. *` tests in
+        // double, `nsteps` converted to float where it meets one. The sum
+        // `tiny + nsteps * step` of max_inflation is one float expression and
+        // is fused on arm64 (clang's default fp-contract), as in
+        // principal_components2_d.rs. =0 computes in millimetres and double.
+        if crate::faithful_gate("REGION_EXPANSION_PARAMS_F32") {
+            let sf = crate::SCALING_FACTOR;
+            let full: f32 = (full_expansion * sf) as f32;
+            let step: f32 = (expansion_step * sf) as f32;
+            // scaled<float>(0.05f)
+            let tiny_cap: f32 = ((0.05f32 as f64) / crate::libslic3r::SCALING_FACTOR) as f32;
+            let mut tiny: f32 = (0.25f32 * full).min(tiny_cap);
+            let mut nsteps: usize = ((full - tiny) / step).ceil() as usize;
+            if max_nr_expansion_steps > 0 {
+                nsteps = nsteps.min(max_nr_expansion_steps);
+            }
+            debug_assert!(nsteps > 0);
+            let mut initial: f32 = (full - tiny) / nsteps as f32;
+            if nsteps > 1 && 0.25f64 * (initial as f64) < tiny as f64 {
+                // Decrease the step size by lowering number of steps.
+                nsteps = ((((full - tiny) as f64) / (4.0f64 * tiny as f64)).floor() as usize).max(1);
+                initial = (full - tiny) / nsteps as f32;
+            }
+            if 0.25f64 * (initial as f64) < tiny as f64 || nsteps == 1 {
+                tiny = 0.2f32 * full;
+                initial = 0.8f32 * full;
+            }
+            let other = initial;
+            let num_other_steps = nsteps - 1;
+            let arc_tolerance_scaled: f64 = 0.1f64 / crate::libslic3r::SCALING_FACTOR;
+            let shortest_scaled: f64 = initial as f64 * CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR;
+            let max_inflation: f32 =
+                (((nsteps as f32).mul_add(initial, tiny)) as f64 * 1.1f64) as f32;
+            return Self {
+                tiny_expansion: tiny as f64 / sf,
+                initial_step: initial as f64 / sf,
+                other_step: other as f64 / sf,
+                num_other_steps,
+                max_inflation: max_inflation as f64 / sf,
+                arc_tolerance: 0.1,
+                shortest_edge_length: shortest_scaled / sf,
+                scaled: RegionExpansionParametersScaled {
+                    tiny_expansion: tiny as f64,
+                    initial_step: initial as f64,
+                    other_step: other as f64,
+                    max_inflation: max_inflation as f64,
+                    arc_tolerance: arc_tolerance_scaled,
+                    shortest_edge_length: shortest_scaled,
+                },
+            };
+        }
 
         // RegionExpansion.cpp:45-48
         // Initial expansion of src to make the source regions intersect with boundary regions just a bit.
@@ -276,6 +346,14 @@ impl RegionExpansionParameters {
             max_inflation,
             arc_tolerance,
             shortest_edge_length,
+            scaled: RegionExpansionParametersScaled {
+                tiny_expansion: tiny_expansion * crate::SCALING_FACTOR,
+                initial_step: initial_step * crate::SCALING_FACTOR,
+                other_step: other_step * crate::SCALING_FACTOR,
+                max_inflation: max_inflation * crate::SCALING_FACTOR,
+                arc_tolerance: arc_tolerance * crate::SCALING_FACTOR,
+                shortest_edge_length: shortest_edge_length * crate::SCALING_FACTOR,
+            },
         }
     }
 }
@@ -419,6 +497,23 @@ fn expolygons_to_zpaths64_expanded_opened(
 /// `polylines_merge` (Polyline.hpp:236): join `src` onto `dst`, handling the four
 /// front/back orientation combinations.
 fn polylines_merge_z(dst: &mut ZPath, dst_first: bool, mut src: ZPath, src_first: bool) {
+    // Polyline.hpp:236-246 as written: when the merge point is the front of
+    // dst and the back of src the two are swapped, not both reversed, and the
+    // merge point stays in the result twice. POLYLINES_MERGE_FAITHFUL=0
+    // reverses both and drops the repeated point, as before.
+    if crate::faithful_gate("POLYLINES_MERGE_FAITHFUL") {
+        if dst_first {
+            if src_first {
+                dst.reverse();
+            } else {
+                std::mem::swap(dst, &mut src);
+            }
+        } else if !src_first {
+            src.reverse();
+        }
+        dst.extend(src);
+        return;
+    }
     if dst_first {
         dst.reverse();
     }
@@ -489,9 +584,10 @@ fn merge_splits(paths: &mut ZPaths, splits: &mut Vec<((i64, i64, i64), i32)>) {
 fn wave_seeds_faithful(
     src: &[ExPolygon],
     boundary: &[ExPolygon],
-    tiny_expansion: f64,
+    tiny_expansion_scaled: f64,
     sorted: bool,
 ) -> Vec<WaveSeed> {
+    let tiny_expansion = tiny_expansion_scaled;
     debug_assert!(tiny_expansion > 0.0);
     if src.is_empty() || boundary.is_empty() {
         return Vec::new();
@@ -504,7 +600,6 @@ fn wave_seeds_faithful(
     // UNITS: ExPolygon geometry is SCALED (coord_t); cz2_offset_z offsets scaled
     // i64 coords directly, so the delta must be scaled. RegionExpansionParameters
     // here are in MM (× SCALING_FACTOR = 100_000 bridges mm→scaled).
-    let tiny_expansion_scaled = tiny_expansion * crate::SCALING_FACTOR;
     let mut idx_src_end = idx_boundary_end;
     let zsrc =
         expolygons_to_zpaths64_expanded_opened(src, tiny_expansion_scaled, &mut idx_src_end);
@@ -598,7 +693,7 @@ fn propagate_waves_faithful(
     boundary: &[ExPolygon],
     params: &RegionExpansionParameters,
 ) -> Vec<RegionExpansion> {
-    let seeds = wave_seeds_faithful(src, boundary, params.tiny_expansion, true);
+    let seeds = wave_seeds_faithful(src, boundary, params.scaled.tiny_expansion, true);
     let mut out: Vec<RegionExpansion> = Vec::new();
     let mut i = 0usize;
     while i < seeds.len() {
@@ -645,11 +740,11 @@ fn propagate_waves_faithful(
                     bnd_xy.as_ptr(),
                     bnd_lens.as_ptr(),
                     bnd_lens.len() as i32,
-                    params.initial_step * crate::SCALING_FACTOR,
-                    params.other_step * crate::SCALING_FACTOR,
+                    params.scaled.initial_step,
+                    params.scaled.other_step,
                     params.num_other_steps as i32,
-                    params.arc_tolerance * crate::SCALING_FACTOR,
-                    params.shortest_edge_length * crate::SCALING_FACTOR,
+                    params.scaled.arc_tolerance,
+                    params.scaled.shortest_edge_length,
                 )
             };
             // Marshal the expanded closed polygons back; each becomes one
@@ -1553,7 +1648,7 @@ fn propagate_waves_ex(
         if crate::faithful_gate("REGION_EXPANSION_FAITHFUL") {
             // Faithful: byte-faithful Clipper2-Z seeds (carry the anchor src/boundary)
             // + byte-faithful ClipperLib propagation (R131 cz_propagate_wave).
-            let anchors = wave_seeds_faithful(src, boundary, params.tiny_expansion, true);
+            let anchors = wave_seeds_faithful(src, boundary, params.scaled.tiny_expansion, true);
             let raw = propagate_waves_faithful(src, boundary, params);
             (anchors, raw)
         } else {
@@ -1656,6 +1751,66 @@ fn expand_expolygons_with_anchors(
             exp.boundary_id += processed_count;
         }
 
+        if crate::probe_enabled("BRDG") {
+            let mut np = 0usize;
+            let mut sx: i64 = 0;
+            let mut sy: i64 = 0;
+            for e in &zone.expolygons {
+                for p in e.to_polygons() {
+                    for q in p.points() {
+                        np += 1;
+                        sx += q.x;
+                        sy += q.y;
+                    }
+                }
+            }
+            eprintln!(
+                "BRDG zone n={} np={} sx={} sy={} seeds={}",
+                zone.expolygons.len(),
+                np,
+                sx,
+                sy,
+                seeds.len()
+            );
+            for sd in &seeds {
+                let sx: i64 = sd.path.iter().map(|q| q.x).sum();
+                let sy: i64 = sd.path.iter().map(|q| q.y).sum();
+                eprintln!(
+                    "BRDG seed b={} s={} np={} sx={} sy={}",
+                    sd.boundary,
+                    sd.src,
+                    sd.path.len(),
+                    sx,
+                    sy
+                );
+                if crate::probe_enabled("BRDGP") && sd.path.len() < 400 && sd.path.len() > 5 {
+                    for (k, q) in sd.path.iter().enumerate() {
+                        eprintln!("BRDGP {} {} {} {} {}", sd.boundary, sd.src, k, q.x, q.y);
+                    }
+                }
+            }
+            for e in &expansions {
+                let mut np = 0usize;
+                let mut sx: i64 = 0;
+                let mut sy: i64 = 0;
+                for p in e.expolygon.to_polygons() {
+                    for q in p.points() {
+                        np += 1;
+                        sx += q.x;
+                        sy += q.y;
+                    }
+                }
+                eprintln!(
+                    "BRDG exp b={} s={} np={} sx={} sy={} holes={}",
+                    e.boundary_id,
+                    e.src_id,
+                    np,
+                    sx,
+                    sy,
+                    e.expolygon.holes.len()
+                );
+            }
+        }
         zone.expanded_into = !expansions.is_empty();
 
         all_anchors.extend(seeds);
@@ -1818,6 +1973,50 @@ fn detect_bridging_direction_from_lines(
     // unique min-cost the result is identical to C++ regardless of order.
     let __pes = crate::probe_enabled("PESPROF");
     let __t = std::time::Instant::now();
+    // BridgeDetector.hpp:89-113 as written: `std::unordered_map<double, Vec2d>`
+    // keyed by the quantized angle, walked in the container's own order, and
+    // the first direction of the lowest cost wins. Two edges with opposite
+    // normals (a strip anchored at both ends) cost the same, so the order of
+    // the container decides the sign of the direction, and with it which end
+    // the bridge fill starts from. The order is the one of libc++, the
+    // standard library of the macOS builds the scores are taken against.
+    // BRIDGE_DIR_HASH_ORDER=0 walks the candidates by ascending key instead.
+    if crate::faithful_gate("BRIDGE_DIR_HASH_ORDER") {
+        let mut directions = LibcxxUnorderedMapF64::new();
+        for line in floating_edges {
+            // Line::normal() (Line.hpp:180), cast to double, Eigen normalized():
+            // divided by the norm when the squared norm is positive.
+            let nx = (line.b.y - line.a.y) as f64;
+            let ny = -(line.b.x - line.a.x) as f64;
+            let z = nx * nx + ny * ny;
+            let normal = if z > 0.0 {
+                let len = z.sqrt();
+                PointF::new(nx / len, ny / len)
+            } else {
+                PointF::new(nx, ny)
+            };
+            let quantized_angle = (normal.y.atan2(normal.x) * 1000.0).ceil();
+            directions.emplace(quantized_angle, normal);
+        }
+        let mut direction_costs: Vec<(PointF, f64)> =
+            directions.values_in_order().into_iter().map(|d| (d, 0.0)).collect();
+        for line in floating_edges {
+            let line_vec_x = (line.b.x - line.a.x) as f64;
+            let line_vec_y = (line.b.y - line.a.y) as f64;
+            for (dir, cost) in &mut direction_costs {
+                *cost += (line_vec_x * dir.x + line_vec_y * dir.y).abs();
+            }
+        }
+        let mut result_dir = PointF::new(1.0, 1.0);
+        let mut min_cost = f64::MAX;
+        for (dir, cost) in &direction_costs {
+            if *cost < min_cost {
+                result_dir = PointF::new(dir.y, -dir.x);
+                min_cost = *cost;
+            }
+        }
+        return (result_dir, min_cost);
+    }
     let mut directions: std::collections::BTreeMap<i64, PointF> = std::collections::BTreeMap::new();
     for line in floating_edges {
         let dx = (line.b.x - line.a.x) as f64;
@@ -1838,7 +2037,7 @@ fn detect_bridging_direction_from_lines(
         // convention discrepancy is real and documented here; enabling it is a
         // one-flag change if the upstream floating-edge input is ever corrected,
         // at which point the bucket boundaries may start to matter.
-        let (nx, ny) = if crate::probe_enabled("BRIDGE_NORMAL_CPP") {
+        let (nx, ny) = if crate::faithful_gate("BRIDGE_NORMAL_CPP") {
             (dy, -dx)
         } else {
             (-dy, dx)
@@ -1884,6 +2083,187 @@ fn detect_bridging_direction_from_lines(
     }
 
     (result_dir, min_cost)
+}
+
+/// The iteration order of a libc++ `std::unordered_map<double, V>` that is
+/// only inserted into (`emplace`), which is what `detect_bridging_direction`
+/// walks (BridgeDetector.hpp:89-113).
+///
+/// libc++ keeps all nodes in one singly linked list and an array of buckets
+/// that point at the node before a bucket's first node (`__hash_table`):
+/// a node whose bucket is empty goes to the front of the list, any other one
+/// right behind its bucket's predecessor; the table starts with two buckets
+/// and grows to the next prime at or above `2 * buckets + 1` when the load
+/// factor would pass 1, re-linking the nodes in list order. `std::hash<double>`
+/// is the bit pattern, with both zeros hashing to 0.
+struct LibcxxUnorderedMapF64 {
+    /// (hash, key, value, next)
+    nodes: Vec<(u64, f64, PointF, Option<usize>)>,
+    /// First node of the list (`__p1_.first().__next_`).
+    head: Option<usize>,
+    /// Per bucket: the node before its first node. `Some(None)` is the
+    /// before-begin anchor, `None` an empty bucket.
+    buckets: Vec<Option<Option<usize>>>,
+}
+
+impl LibcxxUnorderedMapF64 {
+    fn new() -> Self {
+        Self { nodes: Vec::new(), head: None, buckets: Vec::new() }
+    }
+
+    fn hash(key: f64) -> u64 {
+        if key == 0.0 {
+            0
+        } else {
+            key.to_bits()
+        }
+    }
+
+    /// `std::__constrain_hash`
+    fn constrain(h: u64, bc: usize) -> usize {
+        let bc64 = bc as u64;
+        if bc64 & (bc64 - 1) == 0 {
+            (h & (bc64 - 1)) as usize
+        } else if h < bc64 {
+            h as usize
+        } else {
+            (h % bc64) as usize
+        }
+    }
+
+    fn next_of(&self, pred: Option<usize>) -> Option<usize> {
+        match pred {
+            None => self.head,
+            Some(i) => self.nodes[i].3,
+        }
+    }
+
+    fn set_next(&mut self, pred: Option<usize>, next: Option<usize>) {
+        match pred {
+            None => self.head = next,
+            Some(i) => self.nodes[i].3 = next,
+        }
+    }
+
+    /// `std::__next_prime`: the smallest prime not below `n`.
+    fn next_prime(mut n: usize) -> usize {
+        fn is_prime(n: usize) -> bool {
+            if n < 2 {
+                return false;
+            }
+            let mut d = 2usize;
+            while d * d <= n {
+                if n % d == 0 {
+                    return false;
+                }
+                d += 1;
+            }
+            true
+        }
+        while !is_prime(n) {
+            n += 1;
+        }
+        n
+    }
+
+    /// `__hash_table::__rehash<true>` on the growing path, with `__do_rehash`.
+    fn rehash(&mut self, mut n: usize) {
+        if n == 1 {
+            n = 2;
+        } else if n & (n - 1) != 0 {
+            n = Self::next_prime(n);
+        }
+        if n <= self.buckets.len() {
+            return;
+        }
+        self.buckets = vec![None; n];
+        let mut pp: Option<usize> = None; // before-begin
+        let Some(first) = self.head else { return };
+        let mut phash = Self::constrain(self.nodes[first].0, n);
+        self.buckets[phash] = Some(pp);
+        pp = Some(first);
+        let mut cp = self.nodes[first].3;
+        while let Some(c) = cp {
+            let chash = Self::constrain(self.nodes[c].0, n);
+            if chash == phash {
+                pp = Some(c);
+            } else if self.buckets[chash].is_none() {
+                self.buckets[chash] = Some(pp);
+                pp = Some(c);
+                phash = chash;
+            } else {
+                // Unlink `c` and put it behind its bucket's predecessor.
+                let after = self.nodes[c].3;
+                self.set_next(pp, after);
+                let bucket_pred = self.buckets[chash].unwrap();
+                let bucket_first = self.next_of(bucket_pred);
+                self.nodes[c].3 = bucket_first;
+                self.set_next(bucket_pred, Some(c));
+            }
+            cp = self.next_of(pp);
+        }
+    }
+
+    /// `emplace`: keeps the value already stored under an equal key.
+    fn emplace(&mut self, key: f64, value: PointF) {
+        let hash = Self::hash(key);
+        let mut bc = self.buckets.len();
+        let mut chash = 0usize;
+        if bc != 0 {
+            chash = Self::constrain(hash, bc);
+            if let Some(pred) = self.buckets[chash] {
+                let mut nd = self.next_of(pred);
+                while let Some(i) = nd {
+                    let (h, k, _, next) = self.nodes[i];
+                    if !(h == hash || Self::constrain(h, bc) == chash) {
+                        break;
+                    }
+                    if h == hash && k == key {
+                        return;
+                    }
+                    nd = next;
+                }
+            }
+        }
+        let size = self.nodes.len();
+        if (size + 1) as f32 > bc as f32 * 1.0f32 || bc == 0 {
+            let is_power2 = bc > 2 && (bc & (bc - 1)) == 0;
+            let want = (2 * bc + usize::from(!is_power2))
+                .max(((size + 1) as f32 / 1.0f32).ceil() as usize);
+            self.rehash(want);
+            bc = self.buckets.len();
+            chash = Self::constrain(hash, bc);
+        }
+        let new_idx = self.nodes.len();
+        self.nodes.push((hash, key, value, None));
+        match self.buckets[chash] {
+            None => {
+                // Empty bucket: to the front of the list.
+                self.nodes[new_idx].3 = self.head;
+                self.head = Some(new_idx);
+                self.buckets[chash] = Some(None);
+                if let Some(next) = self.nodes[new_idx].3 {
+                    let next_bucket = Self::constrain(self.nodes[next].0, bc);
+                    self.buckets[next_bucket] = Some(Some(new_idx));
+                }
+            }
+            Some(pred) => {
+                let after = self.next_of(pred);
+                self.nodes[new_idx].3 = after;
+                self.set_next(pred, Some(new_idx));
+            }
+        }
+    }
+
+    fn values_in_order(&self) -> Vec<PointF> {
+        let mut out = Vec::with_capacity(self.nodes.len());
+        let mut cur = self.head;
+        while let Some(i) = cur {
+            out.push(self.nodes[i].2);
+            cur = self.nodes[i].3;
+        }
+        out
+    }
 }
 
 /// Compute the minor principal component direction of a set of polygons.
@@ -2012,6 +2392,8 @@ fn detect_bridge_directions_impl(
     let grow_cache_on = crate::faithful_gate("BRIDGE_GROW_CACHE");
     let mut grow_cache: std::collections::BTreeMap<Vec<i64>, ExPolygons> =
         std::collections::BTreeMap::new();
+    let mut grow_cache_polygons: std::collections::BTreeMap<Vec<i64>, Vec<Polygon>> =
+        std::collections::BTreeMap::new();
 
     for bridge_id in 0..bridges.len() {
         let mut anchor_areas: Vec<Polygon> = Vec::new();
@@ -2116,7 +2498,40 @@ fn detect_bridge_directions_impl(
         };
 
         let __t2_grow = __t2.elapsed().as_secs_f64();
-        let floating_polylines = diff_pl(&bridge_polylines, &anchor_expolygons);
+        // LayerRegion.cpp:353 — to_lines(diff_pl(to_polylines(bridge.expolygon),
+        // expand(anchor_areas, float(SCALED_EPSILON)))): closed polylines
+        // (ExPolygon.hpp:214-229), the anchors grown as raw polygons with the
+        // default miter join, one open-path ClipperLib difference.
+        // BRIDGE_FLOATING_CLIB=0 keeps the earlier square-join grow and the
+        // per-segment difference.
+        let floating_polylines = if crate::faithful_gate("BRIDGE_FLOATING_CLIB") {
+            let ex = &bridges[bridge_id].expolygon;
+            let mut closed: Vec<Polyline> = Vec::with_capacity(ex.holes.len() + 1);
+            for ring in std::iter::once(&ex.contour).chain(ex.holes.iter()) {
+                let mut pts = ring.points().to_vec();
+                if let Some(first) = pts.first().copied() {
+                    pts.push(first);
+                }
+                closed.push(Polyline::from_points(pts));
+            }
+            let grown = match grow_cache_polygons.get(&anchor_key).filter(|_| grow_cache_on) {
+                Some(hit) => hit.clone(),
+                None => {
+                    let grown = crate::clipper_utils::offset_polygons_clib(
+                        &anchor_areas,
+                        (crate::libslic3r::SCALED_EPSILON as f32) as f64,
+                        OffsetJoinType::Miter,
+                    );
+                    if grow_cache_on {
+                        grow_cache_polygons.insert(anchor_key.clone(), grown.clone());
+                    }
+                    grown
+                }
+            };
+            crate::clipper_utils::diff_pl_clib(&closed, &grown)
+        } else {
+            diff_pl(&bridge_polylines, &anchor_expolygons)
+        };
         let __t2_diff = __t2.elapsed().as_secs_f64();
         let floating_lines = polylines_to_lines(&floating_polylines);
         let __t2_lines = __t2.elapsed().as_secs_f64();
@@ -2148,6 +2563,18 @@ to_pl={:.3}s grow={:.3}s diff_pl={:.3}s to_lines={:.3}s",
             detect_bridging_direction_from_lines(&floating_lines, &overhang_polygons);
 
         bridges[bridge_id].angle = Some(PI + bridging_dir.y.atan2(bridging_dir.x));
+        if crate::probe_enabled("BRDG") {
+            let lx: i64 = floating_lines.iter().map(|l| l.a.x + l.b.x).sum();
+            eprintln!(
+                "BRDG dir i={} lines={} lx={} anchors={} dx={:.12} dy={:.12}",
+                bridge_id,
+                floating_lines.len(),
+                lx,
+                anchor_areas.len(),
+                bridging_dir.x,
+                bridging_dir.y
+            );
+        }
 
         // BRIDGEIN (R596): R595 verified the arithmetic of
         // detect_bridging_direction and eliminated BridgeDetector::detect_angle
@@ -2269,7 +2696,7 @@ fn partition_bridge_anchors(
 ) {
     use crate::clipper_utils::{
         diff_polygons_raw_clib, intersection_polygons_raw_clib, offset_polygons_clib,
-        offset_polygons_clib_ml, union_ex_clib, union_flat_clib,
+        offset_polygons_clib_ml, polytree_ex_clib, union_ex_clib, union_flat_clib,
     };
     fn to_polys(expolygons: &[ExPolygon]) -> Vec<Polygon> {
         expolygons.iter().flat_map(|e| e.to_polygons()).collect()
@@ -2286,12 +2713,44 @@ fn partition_bridge_anchors(
     // diff_ex / intersection_ex: the raw operation, then the PolyTree union
     // (ClipperUtils.cpp:641-653 clipper_do_polytree).
     let diff_ex = |subject: &[Polygon], clip: &[Polygon]| -> ExPolygons {
-        union_ex_clib(&diff_polygons_raw_clib(subject, clip), 1)
+        polytree_ex_clib(&diff_polygons_raw_clib(subject, clip))
     };
     let intersection_ex = |subject: &[Polygon], clip: &[Polygon]| -> ExPolygons {
-        union_ex_clib(&intersection_polygons_raw_clib(subject, clip), 1)
+        polytree_ex_clib(&intersection_polygons_raw_clib(subject, clip))
     };
     let n = members.len();
+    let brpp = |tag: &str, i: usize, pp: &[Polygon]| {
+        if !crate::probe_enabled("BRDG") {
+            return;
+        }
+        let mut np = 0usize;
+        let mut sx: i64 = 0;
+        let mut sy: i64 = 0;
+        for p in pp {
+            for q in p.points() {
+                np += 1;
+                sx += q.x;
+                sy += q.y;
+            }
+        }
+        eprintln!("BRDG part {} i={} n={} np={} sx={} sy={}", tag, i, pp.len(), np, sx, sy);
+        if std::env::var("BRDGD").ok().as_deref() == Some(tag) {
+            for p in pp {
+                let x: i64 = p.points().iter().map(|q| q.x).sum();
+                let y: i64 = p.points().iter().map(|q| q.y).sum();
+                eprintln!(
+                    "BRDGD {} i={} np={} sx={} sy={} area={:.1}",
+                    tag,
+                    i,
+                    p.points().len(),
+                    x,
+                    y,
+                    p.signed_area()
+                );
+            }
+        }
+    };
+    brpp("overlap", 0, &to_polys(overlap_area));
 
     // LayerRegion.cpp:420-427 — a bridge body always belongs to its own group.
     for i in 0..n {
@@ -2304,6 +2763,9 @@ fn partition_bridge_anchors(
         all[members[i]].area = diff_ex(&to_polys(&all[members[i]].area), &other_bodies);
     }
 
+    for i in 0..n {
+        brpp("a_own", i, &to_polys(&all[members[i]].area));
+    }
     // LayerRegion.cpp:429-442 — closing each group alone leaves the narrow gaps
     // between the groups open, closing the whole overlap group fills them.
     // Offer the gaps to every group, the growth below hands them to the
@@ -2323,6 +2785,9 @@ fn partition_bridge_anchors(
         }
     }
 
+    for i in 0..n {
+        brpp("b_gaps", i, &to_polys(&all[members[i]].area));
+    }
     // LayerRegion.cpp:444-456
     let mut contested: Vec<Polygon> = Vec::new();
     {
@@ -2336,6 +2801,7 @@ fn partition_bridge_anchors(
         }
         contested = union_flat_clib(&contested);
     }
+    brpp("c_contested", 0, &contested);
     if contested.is_empty() {
         return;
     }
@@ -2367,6 +2833,10 @@ fn partition_bridge_anchors(
         }
     }
 
+    for i in 0..n {
+        brpp("d_cand", i, &candidates[i]);
+        brpp("d_body", i, &bodies[i]);
+    }
     // LayerRegion.cpp:485-524 — every step works on the fixed inputs above and
     // on the reach of the previous step only. A point is claimed by the group
     // reaching it first, ties within a step go to the lower group.
@@ -2410,6 +2880,7 @@ fn partition_bridge_anchors(
         // The reach of a group only grows from step to step, so this step
         // alone covers all the earlier ones.
         reached_before = union_flat_clib(&reached_now);
+        brpp("e_reached", istep, &reached_before);
         if drop_noise(diff_ex(&contested, &reached_before)).is_empty() {
             all_reached = true;
             break;
@@ -2427,6 +2898,9 @@ fn partition_bridge_anchors(
         claimed[0].extend(rest);
     }
 
+    for i in 0..n {
+        brpp("f_claimed", i, &claimed[i]);
+    }
     // LayerRegion.cpp:536-540
     for i in 0..n {
         let mut area = diff_polygons_raw_clib(&to_polys(&all[members[i]].area), &contested);
@@ -2434,6 +2908,9 @@ fn partition_bridge_anchors(
         all[members[i]].area = union_ex_clib(&area, 1);
     }
 
+    for i in 0..n {
+        brpp("g_area", i, &to_polys(&all[members[i]].area));
+    }
     // LayerRegion.cpp:542-551 — pieces cut off from their own body follow a
     // touching group instead of becoming a separate bridge.
     let touch: f32 = (0.01 / crate::libslic3r::SCALING_FACTOR) as f32;
@@ -2536,6 +3013,22 @@ fn merge_bridges(
     // @1e5. Rust legacy used geo-clipper `closing(...Round)` @1µm (R128 class). Route
     // through offset2_ex_clib Miter under F1_UNION; default keeps geo Round (byte-locked).
     let closing_ex = |acc: &ExPolygons| -> ExPolygons {
+        // closing_ex(const Polygons &, float) (ClipperUtils.cpp:598-602):
+        // shrink_paths<PolyTree>(expand_paths<Paths>(polygons, delta), delta)
+        // over the raw polygons — contours and holes as they come, no union
+        // first — with the miter join. BRIDGE_CLOSING_FAITHFUL=0 unions first
+        // and offsets the expolygons, as before.
+        if closing_radius > 0.0 && !acc.is_empty() && crate::faithful_gate("BRIDGE_CLOSING_FAITHFUL") {
+            let polygons: Vec<Polygon> = acc.iter().flat_map(|e| e.to_polygons()).collect();
+            let delta = ((closing_radius * crate::SCALING_FACTOR) as f32) as f64;
+            let expanded =
+                crate::clipper_utils::offset_polygons_clib(&polygons, delta, OffsetJoinType::Miter);
+            return crate::clipper_utils::offset_ex_polygons_clib(
+                &expanded,
+                -delta,
+                OffsetJoinType::Miter,
+            );
+        }
         if closing_radius > 0.0 && !acc.is_empty() {
             let unioned = union_ex(acc);
             if crate::faithful_gate("F1_UNION") {
@@ -2583,6 +3076,23 @@ fn merge_bridges(
         // Get the angle from the group head
         let angle = bridges[bridge_id].angle.unwrap_or(0.0);
 
+        if crate::probe_enabled("BRDG") {
+            let mut np = 0usize;
+            let mut sx: i64 = 0;
+            let mut sy: i64 = 0;
+            let mut cnt = 0usize;
+            for e in &acc {
+                for p in e.to_polygons() {
+                    cnt += 1;
+                    for q in p.points() {
+                        np += 1;
+                        sx += q.x;
+                        sy += q.y;
+                    }
+                }
+            }
+            eprintln!("BRDG part acc i={} n={} np={} sx={} sy={}", bridge_id, cnt, np, sx, sy);
+        }
         if split {
             overlap_areas
                 .entry(overlap_group_id)
@@ -2614,6 +3124,28 @@ fn merge_bridges(
     }
     for (overlap_group_id, members) in &overlapping {
         debug_assert!(members.len() > 1);
+        if crate::probe_enabled("BRDG") {
+            for &m in members {
+                let g = &groups[m];
+                let mut np = 0usize;
+                let mut sx: i64 = 0;
+                for e in &g.area {
+                    for p in e.contour.points.iter() {
+                        np += 1;
+                        sx += p.x();
+                    }
+                }
+                eprintln!(
+                    "BRDG pre og={} n={} np={} sx={} bodies={} angle={:.9}",
+                    overlap_group_id,
+                    g.area.len(),
+                    np,
+                    sx,
+                    g.bodies.len(),
+                    g.angle
+                );
+            }
+        }
         let overlap_area = closing_ex(&overlap_areas[overlap_group_id]);
         partition_bridge_anchors(&mut groups, members, &overlap_area, solid_spacing);
     }
@@ -2735,6 +3267,26 @@ pub fn expand_bridges_detect_orientations(
         }
         vec![false; bridges.len()]
     };
+    if crate::probe_enabled("BRDG") {
+        for (i, b) in bridges.iter().enumerate() {
+            let sx: i64 = b.expolygon.contour.points.iter().map(|p| p.x()).sum();
+            eprintln!(
+                "BRDG bridge i={} np={} sx={} angle={:.9} gid={} ogid={} split={}",
+                i,
+                b.expolygon.contour.points.len(),
+                sx,
+                b.angle.unwrap_or(-1.0),
+                b.group_id,
+                b.overlap_group_id,
+                split_overlap_groups[b.overlap_group_id as usize] as i32
+            );
+        }
+        eprintln!(
+            "BRDG expansions n={} anchors={}",
+            sorted_expansions.len(),
+            sorted_anchors.len()
+        );
+    }
     let out = merge_bridges(
         &mut bridges,
         &sorted_expansions,
@@ -2742,6 +3294,29 @@ pub fn expand_bridges_detect_orientations(
         solid_spacing,
         &split_overlap_groups,
     );
+    if crate::probe_enabled("BRDG") {
+        for s in &out {
+            let mut sx: i64 = 0;
+            let mut np = 0usize;
+            for p in s.expolygon.contour.points.iter() {
+                sx += p.x();
+                np += 1;
+            }
+            for h in &s.expolygon.holes {
+                for p in h.points.iter() {
+                    sx += p.x();
+                    np += 1;
+                }
+            }
+            eprintln!(
+                "BRDG out np={} sx={} angle={:.9} holes={}",
+                np,
+                sx,
+                s.bridge_angle.unwrap_or(-1.0),
+                s.expolygon.holes.len()
+            );
+        }
+    }
     let __t_merge = __t.elapsed().as_secs_f64();
     if __pes && __t_merge > 0.02 {
         eprintln!(

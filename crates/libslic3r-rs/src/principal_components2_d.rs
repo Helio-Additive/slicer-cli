@@ -26,6 +26,11 @@ const EPSILON: f64 = 1e-4;
 /// 2D float vector mirror of Eigen's `Vec2f`.
 type Vec2f = (f32, f32);
 
+fn fp_contract() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("PCA_FP_CONTRACT"))
+}
+
 // returns triangle area, first_moment_of_area_xy, second_moment_of_area_xy, second_moment_of_area_covariance
 // none of the values is divided/normalized by area.
 // The function computes intgeral over the area of the triangle, with function f(x,y) = x for first moments of area (y is analogous)
@@ -49,7 +54,22 @@ pub fn compute_moments_of_area_of_triangle(a: Vec2f, b: Vec2f, c: Vec2f) -> (f32
     //  Don't forget taking the absolute value of Jg!
 
     // PrincipalComponents2D.cpp:30
-    let jacobian_determinant_abs = ((b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1)).abs();
+    // PCA_FP_CONTRACT (on): the scalar `float` expressions of this file are
+    // compiled with clang's default `-ffp-contract=on`, which on arm64 turns
+    // `x * y + z` inside one expression into a fused multiply-add: the left
+    // operand of an addition or subtraction first, then the right one
+    // (clang CodeGen, tryEmitFMulAdd). The Eigen vector expressions are not
+    // fused, their products and sums live in separate functions. This is the
+    // arithmetic of the arm64 builds the scores are taken against; an x86-64
+    // build without FMA rounds each product on its own (PCA_FP_CONTRACT=0).
+    let contract = fp_contract();
+    let jacobian_determinant_abs = if contract {
+        (b.0 - a.0)
+            .mul_add(c.1 - a.1, -((c.0 - a.0) * (b.1 - a.1)))
+            .abs()
+    } else {
+        ((b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1)).abs()
+    };
 
     // coordinate transform: gx(u,v) = a.x + u * (b.x - a.x) + v * (c.x - a.x)
     // coordinate transform: gy(u,v) = a.y + u * (b.y - a.y) + v * (c.y - a.y)
@@ -77,14 +97,26 @@ pub fn compute_moments_of_area_of_triangle(a: Vec2f, b: Vec2f, c: Vec2f) -> (f32
     //   1/24 (a_2 (b_1 + c_1) + a_1 (2 a_2 + b_2 + c_2) + b_2 c_1 + b_1 c_2 + 2 b_1 b_2 + 2 c_1 c_2)
     //  result is Int_T func = jacobian_determinant_abs * Int_0^1 Int_0^1-u func(gx(u,v), gy(u,v)) dv du
     // PrincipalComponents2D.cpp:55-57
-    let second_moment_of_area_covariance = jacobian_determinant_abs
-        * (1.0_f32 / 24.0_f32)
-        * (a.1 * (b.0 + c.0)
-            + a.0 * (2.0_f32 * a.1 + b.1 + c.1)
-            + b.1 * c.0
-            + b.0 * c.1
-            + 2.0_f32 * b.0 * b.1
-            + 2.0_f32 * c.0 * c.1);
+    let second_moment_of_area_covariance = if contract {
+        // t2 = a.x * (2 a.y + b.y + c.y), its inner `2 a.y + b.y` fused.
+        let t2 = a.0 * (2.0_f32.mul_add(a.1, b.1) + c.1);
+        // a.y (b.x + c.x) + t2: the left product is the fused one.
+        let mut sum = a.1.mul_add(b.0 + c.0, t2);
+        sum = b.1.mul_add(c.0, sum);
+        sum = b.0.mul_add(c.1, sum);
+        sum = (2.0_f32 * b.0).mul_add(b.1, sum);
+        sum = (2.0_f32 * c.0).mul_add(c.1, sum);
+        jacobian_determinant_abs * (1.0_f32 / 24.0_f32) * sum
+    } else {
+        jacobian_determinant_abs
+            * (1.0_f32 / 24.0_f32)
+            * (a.1 * (b.0 + c.0)
+                + a.0 * (2.0_f32 * a.1 + b.1 + c.1)
+                + b.1 * c.0
+                + b.0 * c.1
+                + 2.0_f32 * b.0 * b.1
+                + 2.0_f32 * c.0 * c.1)
+    };
 
     // PrincipalComponents2D.cpp:59
     let area = jacobian_determinant_abs * 0.5_f32;
@@ -103,6 +135,7 @@ pub fn compute_moments_of_area_of_triangle(a: Vec2f, b: Vec2f, c: Vec2f) -> (f32
 // PrincipalComponents2D.cpp:66-67
 pub fn compute_principal_components(polys: &Polygons) -> (PointF, PointF) {
     // PrincipalComponents2D.cpp:69
+    let contract = fp_contract();
     let mut centroid_accumulator: Vec2f = (0.0_f32, 0.0_f32);
     // PrincipalComponents2D.cpp:70
     let mut second_moment_of_area_accumulator: Vec2f = (0.0_f32, 0.0_f32);
@@ -130,7 +163,11 @@ pub fn compute_principal_components(polys: &Polygons) -> (PointF, PointF) {
 
             // PrincipalComponents2D.cpp:80
             // float sign = cross2(p1 - p0, p2 - p1) > 0 ? 1.0f : -1.0f;
-            let cross2 = (p1.0 - p0.0) * (p2.1 - p1.1) - (p1.1 - p0.1) * (p2.0 - p1.0);
+            let cross2 = if contract {
+                (p1.0 - p0.0).mul_add(p2.1 - p1.1, -((p1.1 - p0.1) * (p2.0 - p1.0)))
+            } else {
+                (p1.0 - p0.0) * (p2.1 - p1.1) - (p1.1 - p0.1) * (p2.0 - p1.0)
+            };
             let sign: f32 = if cross2 > 0.0_f32 { 1.0_f32 } else { -1.0_f32 };
 
             // PrincipalComponents2D.cpp:82-83
@@ -170,25 +207,15 @@ pub fn compute_principal_components(polys: &Polygons) -> (PointF, PointF) {
     // so the subtraction is performed in `float` and only the resulting `float` is
     // widened to `double` on assignment. Mirror that: do the subtraction in `f32`
     // first, then widen — NOT a widen-then-subtract in `f64`.
-    let covariance: f64 =
-        (second_moment_of_area_covariance_accumulator / area - centroid.0 * centroid.1) as f64;
+    // `acc / area - cx * cy` in float: the product is fused into the subtraction.
+    let covariance: f64 = if contract {
+        (-centroid.0).mul_add(centroid.1, second_moment_of_area_covariance_accumulator / area) as f64
+    } else {
+        (second_moment_of_area_covariance_accumulator / area - centroid.0 * centroid.1) as f64
+    };
     // PrincipalComponents2D.cpp:98-103 (#if 0 debug prints omitted)
 
     // PrincipalComponents2D.cpp:104
-    if covariance.abs() < EPSILON {
-        // PrincipalComponents2D.cpp:105
-        // std::tuple<Vec2f, Vec2f> result{Vec2f{variance.x(), 0.0}, Vec2f{0.0, variance.y()}};
-        let result: (Vec2f, Vec2f) = ((variance.0, 0.0_f32), (0.0_f32, variance.1));
-        // PrincipalComponents2D.cpp:106
-        if variance.1 > variance.0 {
-            // PrincipalComponents2D.cpp:107
-            return (vec2f_to_pointf(result.1), vec2f_to_pointf(result.0));
-        } else {
-            // PrincipalComponents2D.cpp:109
-            return (vec2f_to_pointf(result.0), vec2f_to_pointf(result.1));
-        }
-    }
-
     if crate::probe_enabled("PCAPROBE") {
         eprintln!(
             "PCA area={:.9e} cx={:.9e} cy={:.9e} vx={:.9e} vy={:.9e} cov={:.17e}",
@@ -208,13 +235,38 @@ pub fn compute_principal_components(polys: &Polygons) -> (PointF, PointF) {
     // to `double` for the `+`; `sqrt(double)` is `double`; the whole `0.5f * (...)`
     // sum is evaluated in `double` and only truncated to `float` on assignment. The
     // inner `variance.x()-variance.y()` difference and its square stay in `f32`.
+    if covariance.abs() < EPSILON {
+        // PrincipalComponents2D.cpp:105
+        // std::tuple<Vec2f, Vec2f> result{Vec2f{variance.x(), 0.0}, Vec2f{0.0, variance.y()}};
+        let result: (Vec2f, Vec2f) = ((variance.0, 0.0_f32), (0.0_f32, variance.1));
+        // PrincipalComponents2D.cpp:106
+        if variance.1 > variance.0 {
+            // PrincipalComponents2D.cpp:107
+            return (vec2f_to_pointf(result.1), vec2f_to_pointf(result.0));
+        } else {
+            // PrincipalComponents2D.cpp:109
+            return (vec2f_to_pointf(result.0), vec2f_to_pointf(result.1));
+        }
+    }
+
     let var_diff_sq: f32 = (variance.0 - variance.1) * (variance.0 - variance.1);
-    let sqrt_arg: f64 = var_diff_sq as f64 + 4.0_f32 as f64 * covariance * covariance;
-    let eigenvalue_a: f32 = (0.5_f32 as f64
-        * (variance.0 as f64 + variance.1 as f64 + sqrt_arg.sqrt())) as f32;
+    // (vx - vy)^2 is a float product widened to double; `4.0f * cov * cov` is
+    // a double product fused into the sum. `vx + vy` is added in float before
+    // it meets the double square root.
+    let (sqrt_arg, variance_sum): (f64, f64) = if contract {
+        (
+            (4.0_f32 as f64 * covariance).mul_add(covariance, var_diff_sq as f64),
+            (variance.0 + variance.1) as f64,
+        )
+    } else {
+        (
+            var_diff_sq as f64 + 4.0_f32 as f64 * covariance * covariance,
+            variance.0 as f64 + variance.1 as f64,
+        )
+    };
+    let eigenvalue_a: f32 = (0.5_f32 as f64 * (variance_sum + sqrt_arg.sqrt())) as f32;
     // PrincipalComponents2D.cpp:121-122
-    let eigenvalue_b: f32 = (0.5_f32 as f64
-        * (variance.0 as f64 + variance.1 as f64 - sqrt_arg.sqrt())) as f32;
+    let eigenvalue_b: f32 = (0.5_f32 as f64 * (variance_sum - sqrt_arg.sqrt())) as f32;
     // PrincipalComponents2D.cpp:123
     // Vec2f eigenvector_a{(eigenvalue_a - variance.y()) / covariance, 1.0f};
     let eigenvector_a: Vec2f = (((eigenvalue_a - variance.1) as f64 / covariance) as f32, 1.0_f32);
@@ -225,6 +277,12 @@ pub fn compute_principal_components(polys: &Polygons) -> (PointF, PointF) {
     // PrincipalComponents2D.cpp:126-131 (#if 0 debug prints omitted)
 
     // PrincipalComponents2D.cpp:133-137
+    if crate::probe_enabled("PCAPROBE") {
+        eprintln!(
+            "PCAE ea={:.9e} eb={:.9e} va={:.9e} vb={:.9e}",
+            eigenvalue_a as f64, eigenvalue_b as f64, eigenvector_a.0 as f64, eigenvector_b.0 as f64
+        );
+    }
     if eigenvalue_a > eigenvalue_b {
         // PrincipalComponents2D.cpp:134
         (vec2f_to_pointf(eigenvector_a), vec2f_to_pointf(eigenvector_b))

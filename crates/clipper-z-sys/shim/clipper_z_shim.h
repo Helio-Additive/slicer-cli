@@ -72,6 +72,10 @@ void cz_free_zpaths(CzZPaths paths);
 // (attaches to the most recent contour). Paths are emitted in
 // PolyTreeToExPolygons order (each contour immediately followed by its holes).
 // Free via cz_free_zpaths.
+// PolyTreeToExPolygons(clipper_union<PolyTree>(paths, pftNonZero)): one union
+// into a PolyTree, grouped like cz_union_ex (ClipperUtils.cpp:339-350).
+CzZPaths cz_union_polytree(const int32_t *xy, const int32_t *lens, int32_t num);
+
 CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,
                      int32_t fill_type);
 
@@ -187,6 +191,12 @@ CzZPaths cz_intersection_closed(const int32_t *subject_xy, const int32_t *subjec
 CzZPaths cz_intersection_pl(const int32_t *subject_xy, const int32_t *subject_lens,
                             int32_t subject_num, const int32_t *clip_xy,
                             const int32_t *clip_lens, int32_t clip_num);
+
+// _clipper_pl_open(ctDifference): the parts of open subject polylines outside
+// closed polygons; PolyTree preorder output (ClipperUtils.cpp:841, 909-920).
+CzZPaths cz_diff_pl(const int32_t *subject_xy, const int32_t *subject_lens,
+                    int32_t subject_num, const int32_t *clip_xy,
+                    const int32_t *clip_lens, int32_t clip_num);
 
 // Faithful replica of libslic3r FillFloatingConcentric.cpp `detect_floating_line`
 // (FillFloatingConcentric.cpp:431-475): the Z-aware open-path clip used to mark
