@@ -162,7 +162,8 @@ with zipfile.ZipFile("named.3mf", "w", zipfile.ZIP_DEFLATED) as out:
 '
 "$B" --engine-info named.3mf > info-named.json
 py '
-import json; d = json.load(open("info-named.json"))
+# Read as UTF-8: Windows python decodes with the locale (cp1252) otherwise.
+import json; d = json.load(open("info-named.json", encoding="utf-8"))
 assert d["objects"][0]["name"] == "A & B <c> \"d\" \u00e9 > e", d["objects"]
 '
 # A Snapmaker U1 file (made by Bambu Studio here) fits the OrcaSlicer engine
