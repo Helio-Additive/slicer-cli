@@ -55,10 +55,10 @@ Benchy, same sources:
 | Apple clang 17, rustc 1.95.0 | 3.4.0 | 1.90 | the R808 bytes |
 | Apple clang 17, rustc 1.95.0 | 5.0.1 | 1.87 or 1.90 | 14,023 lines differ; 114,124 lines in order against the 02.06.00.51 engine, not 121,714 |
 
-Ubuntu 22.04's `libeigen3-dev` is 3.4.0; Homebrew's `eigen` is 5.x, so on
-macOS point `EIGEN3_INCLUDE_DIR` at a 3.4.0 tree to reproduce a recorded score.
 The right Eigen for scoring against a given `slicer_cli` is the one that
-`slicer_cli` was built with.
+`slicer_cli` was built with. The scores from R809 on were taken with both
+programs built against Homebrew's Eigen 5.0.1; Ubuntu 22.04's `libeigen3-dev`
+is 3.4.0, which is what the R808 scores against the 02.06.00.51 engine used.
 
 ## The programs
 
@@ -114,33 +114,61 @@ C++ binary moved the Majora score by about 900 lines and Benchy arachne by 19.
 
 ## Scores
 
-In-order matched lines (`seq_parity.py`), the Rust engine at R808. The Rust
-G-code of this branch is byte-identical to the R808 build's on all three
-fixtures (same settings bundle, Eigen 3.4.0).
+In-order matched lines (`seq_parity.py`) against this repository's `slicer_cli`
+(Bambu Studio 02.09.01.70), both programs built on one machine with the same
+Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
+one oracle G-code per fixture is kept and every round is scored against it. The
+round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | Against the engine the port follows (02.06.00.51, the branch's driver) | Against this repository's `slicer_cli` (02.09.01.70) |
+| Fixture | As brought over (R808) | Now (R813) |
 |-|-|-|
-| Majora | 1,788,608 (66.09%); recorded at R808: 1,787,698 (66.06%) | 1,511,749 (55.86%) |
-| Majora, prime tower | 83.0%; recorded: 83.0% | 83.5% |
-| Benchy classic | 121,714 (77.56%); recorded: 121,714 | 50,966 (32.48%) |
-| Benchy arachne | 138,790 (65.44%); recorded: 138,771 | 47,623 (22.45%) |
+| Benchy classic | 30,486 (15.72%) | 140,457 (76.41%) |
+| Benchy arachne | 32,769 (13.68%) | 139,010 (59.31%) |
+| Majora | 1,512,438 (55.88%) | 1,512,564 (55.89%) |
+| Majora, prime tower | 83.5% | 83.5% |
 
-Why the right-hand column is lower. None of it is a change in the Rust engine.
+Against the engine the port was written for (02.06.00.51, with the branch's own
+driver) R808 scored Majora 66.06%, Benchy classic 121,714 lines and Benchy
+arachne 138,771 lines. Those numbers are not comparable with the table: the
+oracle is a different engine version with a different front end, and the Benchy
+jobs now take the 02.09.01.70 profiles.
 
-- **The C++ engine moved.** The 02.06.00.51 C++ G-code itself matches the
-  02.09.01.70 C++ G-code only 74.1% in order on Majora (outer wall 76.0%, inner
-  wall 70.4%, floating vertical shell 26.5%, sparse infill 80.2%, prime tower
-  97.4%).
-- **`slicer_cli` now places an STL on the plate as the desktop does.** Benchy
-  comes out centred on the H2D plate, 174.176 mm and 160 mm from where the
-  branch's driver and the Rust engine put it, so every coordinate differs. With
-  the Rust G-code translated by that offset, Benchy classic scores about 82,200
-  (52.4%) and Benchy arachne about 86,900 (41.0%); the translation is not on
-  the 1e-3 grid, so these are approximate. A 3MF carries its placement, which is
-  why Majora is not affected.
-- **`slicer_cli` reshapes the settings before the engine sees them**: on the
-  two-nozzle H2D the per-filament arrays are extended to one entry per nozzle,
-  and 74 settings exist that 02.06 did not have.
+Where each fixture stands, from the `PP` probe (below):
+
+- **Benchy classic.** Slices identical on 299 of 300 layers, perimeters on 298
+  of 300, gap fills on 248 of 254. The fill surfaces the perimeter step leaves
+  differ by a few scaled units on 127 of 204 layers, and from
+  `discover_vertical_shells` on almost no layer's internal or solid surfaces
+  are identical. Walls are 85% in order; solid infill 73%, sparse infill 41%,
+  top surface 32%, bridges 8%.
+- **Benchy arachne.** Slices as classic. No layer's perimeters are identical:
+  the arachne walls have the same structure with junctions 1 to about 130 scaled
+  units off. About a quarter of the matching lines are out of order.
+- **Majora.** The merged slices are identical on 582 of 656 layers, the region
+  slices on 574. No layer's perimeters or fill surfaces are identical.
+
+## Finding the first stage that differs
+
+`PP=1` makes the Rust engine print one checksum line per layer and stage
+(`crates/libslic3r-rs/src/stage_dump.rs`): after `slice()`, after
+`make_perimeters()`, after each step of `prepare_infill()` and after `infill()`.
+`PPL=<layer>` adds every perimeter entity and fill-surface point of one layer.
+
+The C++ side is [`probes/pp_probe.hpp`](probes/pp_probe.hpp). To use it, copy
+`references/BambuStudio/src/libslic3r/PrintObject.cpp` to
+`libslic3r/bambustudio/libslic3r/PrintObject.cpp` (the override layer), include
+the header there, and call `Slic3r::pp::slices(m_layers)` after `this->slice()`
+in `make_perimeters`, `pp::perimeters` before `set_done(posPerimeters)`,
+`pp::typed("<stage>", m_layers)` after each step of `prepare_infill` (stage
+names `a_detect`, `b_prepfill`, `c_vshell`, `d_external`, `e_hshell`, `f_clip`,
+`g_bridge`, `h_combine`, `i_subtop`) and `pp::infill` before
+`set_done(posInfill)`. Configure and build that in a build tree of its own, not
+the one the oracle comes from, give it to `slicer-parity slice --engine bambu
+--bambu-binary`, and delete the copied file afterwards: it must never be
+committed, and a configure run of any other build tree would pick it up.
+
+Sort the `PP` lines of both engines and diff them. A stage whose lines all
+agree is done; the first stage with differing layers is where to look.
 
 ## What the port has to catch up with
 
@@ -161,15 +189,20 @@ and `56a57d0`:
   pattern defaults to monotonic; top-surface travel optimisation; the
   multi-nozzle rework in `PrintObject`, `ToolOrdering`, `WipeTower` and
   `TreeSupport`; conformal infill; mixed nozzle diameters.
+- Ported from that range so far: the machine G-code placeholders of 02.09
+  (R810), farthest-point timelapse (R812). Known and not ported:
+  `discover_sub_top_surfaces` and the `stSubTop` surface type, `combine_infill`,
+  the settings block's 74 new keys, the time estimate behind the `M73` lines.
 - The override layer: `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp`
   fixes five out-of-bounds reads in the engine's floating-concentric fill. The
   port should follow the fixed code; R801 found the unfixed code reading freed
   memory.
 
 Front end (`main.cpp`, `cli_*.cpp`), each of which changes what the engine is
-given:
+given. Ported so far: placement of an STL on the plate (R809), the alias of
+`initial_no_support_filament_id` (R810), `is_BBL_Printer` (R810). Open:
 
-- Placement of an STL on the plate, plate type and plate origin (#35).
+- Plate type and plate origin (#35).
 - `Model::setExtruderParams` and `setPrintSpeedTable` filled before
   `process()`; `Brim.cpp` reads them (#35).
 - Per-filament setting arrays extended to the project's filament count (#25).
@@ -177,7 +210,6 @@ given:
   otherwise (#22, #45).
 - `filament_map_mode` derived from the printer's nozzle counts (#11).
 - A height range without `layer_height` takes the object's (#55).
-- `initial_no_support_filament_id` aliased in custom G-code (#6).
 - Nozzle inventory and per-slot keys for a settings-file input (#56).
 
 `--simplify`, `--gcode-timing`, `--layout-plan`, calibration and the rest of

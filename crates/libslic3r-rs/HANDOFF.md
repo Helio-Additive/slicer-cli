@@ -9,13 +9,12 @@ are the exception). How to build, run and score it in this repository:
 
 ## Where things stand
 
-- **Parity (R808), against the C++ engine the port follows (Bambu Studio 02.06.00.51):** Majora
-  1,787,698 lines in order (66.06%), prime tower 83.0%; Benchy classic 121,714 and Benchy
-  arachne 138,771 lines in order. The scores against this repository's `slicer_cli`
-  (02.09.01.70) are lower and are in `docs/rust-engine/README.md`. The round log is
-  `docs/rust-engine/PARITY_STATUS.md` (to R471) and
-  `docs/rust-engine/parity/rounds-R472-R808.md` (R472-R808, with the open threads and the
-  gates that are not default).
+- **Parity (R813), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
+  Benchy classic 140,457 lines in order (76.41%), Benchy arachne 139,010 (59.31%), Majora
+  1,512,564 (55.89%), prime tower 83.5%. `docs/rust-engine/README.md` has what the numbers
+  rest on and where each fixture stands; `docs/rust-engine/parity/rounds-R809-on.md` is the
+  round log from R809, `docs/rust-engine/PARITY_STATUS.md` (to R471) and
+  `docs/rust-engine/parity/rounds-R472-R808.md` the rounds against the 02.06.00.51 engine.
 - **Ledger (last regenerated 2026-06-11, not updated by the parity rounds since):** 164 done /
   110 partial / 4 deferred / 0 pending of 278 units. `partial` means faithfully ported except
   symbols blocked on a native library (OpenVDB, CGAL, OCCT), or on a dependency that is not

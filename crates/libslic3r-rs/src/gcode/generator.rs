@@ -627,7 +627,14 @@ impl GCodeHeader {
                 }
             }
             // Post-filament-start positioning (matches BambuStudio GCode.cpp)
-            s.push_str(";VT0\n");
+            // R813 VT_HOTEND (faithful ON): GCode.cpp 3235-3236 writes
+            // ";VT%d H%d" with NOZZLE_ID_FOR_GCODE, which is -1 unless the
+            // printer maps nozzles dynamically.
+            if crate::faithful_gate("VT_HOTEND") {
+                s.push_str(";VT0 H-1\n");
+            } else {
+                s.push_str(";VT0\n");
+            }
             s.push_str("G90\n");
             s.push_str("G21\n");
             s.push_str("M83 ; use relative distances for extrusion\n");

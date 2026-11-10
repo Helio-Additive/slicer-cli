@@ -37,6 +37,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R810 | (1) Perimeter simplification read `enable_arc_fitting` as always on; the 02.09.01.70 H2D process profiles turn it off, and walls and gap fills are then simplified at the full `resolution` (PerimeterGenerator.cpp 924, 1521). (2) The 02.09.01.70 machine G-code placeholders `initial_no_support_hotend`, `current_hotend`, `initial_nozzle_id`, `nozzle_diameter_at_nozzle_id`, `long_retraction_when_ec`, `retraction_distance_when_ec` (GCode.cpp 2918-2937). (3) `slicer_cli`'s alias of `initial_no_support_filament_id` (main.cpp 486-580). (4) What `_do_export` writes after the last layer: power-loss line, final retract with a spiral lift, fans off, `M981 S0`, the role tag, `filament_end_gcode` through `writeln` (GCode.cpp 3548-3627). (5) `is_BBL_Printer` by `slicer_cli`'s rule. (6) Probe `PP=1`: per-layer checksums at the step boundaries, with a C++ twin kept out of the repository | `PG_ARC_FITTING_CFG`, `START_GCODE_2091`, `GCODE_TOKEN_ALIAS`, `END_SEQUENCE_CPP`, `BBL_PRINTER_RULE` (all on) | 50,316 → 124,330 (66.46%) | 67,675 → 126,359 (53.35%) | 1,512,438 → 1,512,509 |
 | R811 | (1) The seam placer's occlusion mesh is built from the volume's own f32 mesh, through the volume matrix before the decimation and `trafo_centered()` after it (SeamPlacer.cpp 577-604); rounding the plate-frame mesh lost the low bits and flipped the seam between symmetric candidates. (2) In a wipe the pending acceleration comes after the wipe's speed line (GCode.cpp 496-510) | `SEAM_OCCL_LOCAL`, `WIPE_ACCEL_AFTER_SPEED` (on) | 124,330 → 137,832 (73.77%) | 126,359 → 136,442 (57.48%) | 1,512,509 → 1,512,563 |
 | R812 | Farthest-point timelapse, new in 02.09: `compute_farthest_point` (GCode.cpp 4582-4733), the inline photo block of `generate_timelapse_gcode` (4735-4840), `check_and_insert_timelapse` after each extruded segment (7946-7973), no timelapse at the layer change (5604). `process_text`: template processing that keeps the whitespace around `{if}` tags as the C++ parser does | `FARTHEST_TIMELAPSE` (on) | 137,832 → 140,456 (76.41%) | 136,442 → 139,009 (59.31%) | unchanged (the X1C settings do not turn it on) |
+| R813 | `;VT0 H-1`: the hotend id GCode.cpp 3235-3236 writes after the filament start G-code | `VT_HOTEND` (on) | 140,456 → 140,457 | 139,009 → 139,010 | 1,512,563 → 1,512,564 |
 
 ## Findings
 
@@ -68,3 +69,15 @@ The Rust engine as it came from R808, against the kept oracle files:
   `discover_vertical_shells` then leaves 2 of 142 layers' internal surfaces
   equal. `combine_infill` and the new `discover_sub_top_surfaces` are not
   ported (the oracle has `stSubTop` surfaces on layers 38, 51 and 126).
+- R813, looked at and left open:
+  - Gap fill rings come out in the other direction and from another start point
+    than the oracle's, so their lines carry other E values (Benchy layer 244).
+  - `needs_retraction` did not change between 02.06 and 02.09; the oracle's
+    extra wipes inside gap fill follow from the ring order above.
+  - Majora, layer 300: the merged slice itself differs (1,386 points against
+    1,367) and the region slices are 54 pieces against 47, so the wall
+    differences there start before the wall generator. On layers whose slices
+    agree, arachne junctions are 1 to 20 scaled units apart.
+  - Benchy arachne, layer 100: the same paths, widths and flows as the oracle
+    with coordinates 1 to 133 scaled units apart; the arachne input preparation
+    is the first suspect.
