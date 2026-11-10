@@ -2,7 +2,7 @@
 
 Branch: `sparse-fill` (off parity tip `alex/libslic3r-parity-engine` @ e8445e7).
 Job: Benchy, `tests/configs/stl-inline-config.jsonnet`.
-Metric: `/tmp/feat_e2.py` + targeted both-engine instrumentation.
+Metric: `feat_e2.py` (a throwaway script, not kept) + targeted both-engine instrumentation.
 
 ## TL;DR / verdict (diagnosis-only; no code change; clean)
 

@@ -2,7 +2,7 @@
 
 Branch: `floating-fill` (off the parity tip `alex/libslic3r-parity-engine` @ b84c8d8).
 Job: Benchy, `tests/configs/stl-inline-config.jsonnet`.
-Metric: `/tmp/feat_e2.py` (per-`;FEATURE` E over XY-moving extrusion).
+Metric: `feat_e2.py` (a throwaway script, not kept) (per-`;FEATURE` E over XY-moving extrusion).
 
 ## TL;DR
 

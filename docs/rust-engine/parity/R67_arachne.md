@@ -2,7 +2,7 @@
 
 Branch: `arachne-fill` (off `alex/libslic3r-parity-engine` @ e685ca7).
 Job: Benchy, `tests/configs/stl-inline-config.jsonnet`.
-Metric: `/tmp/feat_e2.py` (per-`;FEATURE` E summed only over moves with real XY motion).
+Metric: `feat_e2.py` (a throwaway script, not kept) (per-`;FEATURE` E summed only over moves with real XY motion).
 
 ---
 

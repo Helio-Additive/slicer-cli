@@ -14834,7 +14834,7 @@ geometry reaches the slicer at all.*
 > the Tier-2 ModelVolume work."*
 
 The skip is deliberate and correctly reasoned as far as it goes. What was wrong
-is its **impact assessment**: `project_rust_3mf_tier1` records negative volumes as
+is its **impact assessment**: the earlier Tier-1 notes record negative volumes as
 *"quantified R515, near-inert for parity."* They are not near-inert — they are
 the entire bracket-A hole deficit and the dominant term at bracket C (C++'s
 415/409/326 holes on layers 0/1/2 are 1,150 of its 1,739).
@@ -14864,7 +14864,7 @@ checks empty, C++ rebuilt.
 ## R702 — pricing the negative-volume port: ~10,900 lines (0.46%), 12× the last shipped gain
 
 R701 named the root cause (six skipped `negative_part` volumes). R702 prices it
-on the current bar before any Tier-2 work, because `project_rust_3mf_tier1`'s
+on the current bar before any Tier-2 work, because the earlier Tier-1 notes'
 "near-inert" verdict was scored on silhouette (96.67%→96.73%) and the bar has
 since moved to line-level parity — **a parked verdict binds only the metric it
 was scored on**.

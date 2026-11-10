@@ -178,7 +178,7 @@ which is why Benchy is at parity — but the *general* nozzle mapping is absent,
 a multicolour H2D job that genuinely spreads filaments across both physical
 nozzles is not prepared the way `main.cpp` prepares it. The multicolour 3MF path
 runs through the separate divergent loader `app_slice.rs::load_3mf`, which is the
-Tier-2 Majora work (see memory `project_rust_3mf_tier1.md`), not this trio.
+Tier-2 Majora work, not this trio.
 
 **Follow-up if Majora dual-nozzle parity is pursued:** port the trio faithfully
 into a shared pre-slice config-prep step reachable from both `slice_3mf_to_gcode`

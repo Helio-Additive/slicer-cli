@@ -191,7 +191,7 @@ Round log:
   Caveat: z=37.8 locally worse (147→539mm, redistribution vs unfixed H1b
   over-widening); per-layer MEAN 1.65% still PASS.
   Ops note: BambuStudio/libnoise submodule gitdirs went dangling (modules/
-  missing under .git/worktrees/slicer-cli3) — repaired by re-init + pinned
+  missing under .git/worktrees/<name>) — repaired by re-init + pinned
   fetch in-place; both submodules verified clean at pinned SHAs.
 
 ## G — Mirror main.cpp's drive pipeline in src/*.rs  [STATUS: in progress, 2026-07-26]
@@ -261,8 +261,8 @@ integer `_clib` ClipperLib bindings that already exist in clipper_utils —
 expected the true 10-50x lever. Optional E2: nested parallelism inside
 per-cluster candidate processing.
 
-Working file for the /loop campaign started 2026-07-21. Full diagnosis in
-`~/.claude/plans/golden-seeking-newt.md`; condensed here so any session can resume.
+Working file for the /loop campaign started 2026-07-21. The full diagnosis
+is not in this repository; it is condensed here so any session can resume.
 
 Evidence base: `tests/.tmp/2026-07-21_08-31-23/nu3mf/{rust,bambu}.gcode`
 (Majora's Mask 3MF, `tests/28_MAJORASMASK_FULLCOLOUR_Makerworld_1plate_multicol.3mf`).

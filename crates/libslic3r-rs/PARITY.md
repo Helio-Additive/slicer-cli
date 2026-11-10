@@ -193,8 +193,7 @@ implemented, but the **G-code-determining tail is stubbed or unmapped**. Do this
 
 ## Driving the workflow
 
-Reusable script (3 phases) lives at:
-`~/.claude/projects/.../workflows/scripts/libslic3r-parity-wf_4a9583d3-6f9.js`
+The reusable script (3 phases) is not kept in this repository.
 
 - **MAP** (refresh this file): `Workflow {name/scriptPath, args:{phase:"map"}}` — read-only.
 - **PORT** a bounded batch: `args:{phase:"port", items:["…/GCode.cpp", "…/Fill/FillBase.cpp"]}`
@@ -208,7 +207,7 @@ Reusable script (3 phases) lives at:
 
 ## Cleanup log — duplicate-tree collapse (2026-05-30)
 
-Driven by the `libslic3r-cleanup-decide` workflow (analyze → adversarial verify) + a manual verify-and-execute pass with `devbox` build gates. Backup: `/tmp/libslic3r-rs-backup-wf_4a9583d3{,.tar.gz}`. Crate compiled clean before and after (354 → **342** `.rs` files; 899 warnings, exit 0).
+Driven by the `libslic3r-cleanup-decide` workflow (analyze → adversarial verify) + a manual verify-and-execute pass with `devbox` build gates. Crate compiled clean before and after (354 → **342** `.rs` files; 899 warnings, exit 0).
 
 **Removed 12 redundant/stub modules** (each: 0 importers verified independently, build-gated):
 
@@ -260,10 +259,10 @@ First true apples-to-apples diff. **Both** binaries sliced the same 25.6mm cube 
 ```
 # native reference (flattened config already in repo from the benchy example):
 libslic3r/bambustudio/build/slicer_cli fixtures/smoke/stl/Cube_25.6.stl \
-  --config examples/out/resolved-config.json -o /tmp/ref_cube.gcode
+  --config examples/out/resolved-config.json -o <ref>.gcode
 # rust, same config:
 crates/libslic3r-rs/target/debug/slicer-cli slice -i fixtures/smoke/stl/Cube_25.6.stl \
-  --settings examples/out/resolved-config.json -o /tmp/rust_cube.gcode
+  --settings examples/out/resolved-config.json -o <rust>.gcode
 ```
 (The `validate` subcommand is itself a stub — hardcodes "Quality Score 0.0" — so diff the files directly.)
 
@@ -366,7 +365,7 @@ The discover-iterate workflow crashed mid-round (subagent returned no structured
 
 **Lesson for the iterate loop:** the per-round `cp -a` checkpoint/restore is fragile (nesting + mtime cache). Future autonomous batches must checkpoint to a path OUTSIDE `src`, and `touch` all sources after any restore so cargo actually rebuilds. Prefer driving high-confidence fixes directly (like the grid fix) over delegating checkpoint/restore to round-agents.
 
-**Current verified-good milestone:** moves 6 280 (ref 6 655), lines 17 951 (19 174), G0 0✓, templates 7✓, header/coords/walls matched, filament 1.09×. byte-diff 20 687. Backup: `/tmp/libslic3r-rs-parity-iter-base`.
+**Current verified-good milestone:** moves 6 280 (ref 6 655), lines 17 951 (19 174), G0 0✓, templates 7✓, header/coords/walls matched, filament 1.09×. byte-diff 20 687.
 
 ---
 
@@ -501,7 +500,7 @@ bridges" TODO (surface.rs:963), "~80% of the C++ behavior" wave-expansion
 (1629-1634), bespoke `SurfaceDetectionConfig` knobs whose defaults (shell_growth=0,
 fill_boundary_inset=0, solid_infill_width=0) DISABLE most ported behavior and have NO
 C++ counterpart, fabricated min-area heuristics (0.01mm², 927-931). **This is the
-root cause the Benchy-gap memory keeps circling** (Top surface 5 vs 142). Fixing it
+root cause the Benchy-gap notes keep circling** (Top surface 5 vs 142). Fixing it
 means porting the real PrintObject/LayerRegion classification faithfully and DELETING
 the divergent reimpl + its disable-by-default knobs — coupled with F1 (it leans on
 the approximate union/offset).

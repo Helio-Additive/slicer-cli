@@ -1,7 +1,7 @@
 # R76 — Residual sparse +55 localized to grid two-pass; BANKED at 1.017×. Next lever = the multilines+connect_infill emitter PAIR port.
 
 Branch (diagnosis-only, no commits): `sparse-emitter2`, `grid-multilines` (both off parity @8f836e3).
-Job: Benchy, `tests/configs/stl-inline-config.jsonnet`. Measure with `/tmp/feat_e2.py`.
+Job: Benchy, `tests/configs/stl-inline-config.jsonnet`. Measure with `feat_e2.py` (a throwaway script, not kept).
 
 ## TL;DR
 
