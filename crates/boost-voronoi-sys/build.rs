@@ -28,6 +28,16 @@ fn boost_include_dir() -> PathBuf {
                         return p;
                     }
                 }
+                // Boost's own CMake package records only where its config is:
+                // <prefix>/lib/cmake/Boost-<version>.
+                if let Some(rest) = line.strip_prefix("Boost_DIR:PATH=") {
+                    if let Some(prefix) = PathBuf::from(rest.trim()).ancestors().nth(3) {
+                        let p = prefix.join("include");
+                        if p.join("boost/polygon/voronoi.hpp").exists() {
+                            return p;
+                        }
+                    }
+                }
             }
         }
     }

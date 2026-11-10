@@ -1,0 +1,4 @@
+# The Rust engine (Cargo.toml, crates/) is built and scored with this compiler.
+[toolchain]
+channel = "1.94.1"
+profile = "minimal"

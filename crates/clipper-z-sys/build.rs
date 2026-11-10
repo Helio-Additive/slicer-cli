@@ -124,22 +124,47 @@ fn main() {
     // R269: medial-axis shim — boost::polygon voronoi from the SAME nix boost
     // (1.87.0, devbox profile) the native binary uses, for vertex-exactness.
     shim.file("shim/medial_axis_shim.cpp");
-    // BOOST_INCLUDE_DIR first (the same override boost-voronoi-sys takes), then
-    // whatever `pkg-config boost` names, then the compiler's default search path.
+    // Boost for the medial-axis shim: BOOST_INCLUDE_DIR, what `pkg-config boost`
+    // names, the Boost of the C++ engine's build tree, then the usual prefixes
+    // (the same order boost-voronoi-sys uses).
     println!("cargo:rerun-if-env-changed=BOOST_INCLUDE_DIR");
+    let has_voronoi = |p: &PathBuf| p.join("boost/polygon/voronoi.hpp").exists();
+    let mut boost: Vec<PathBuf> = Vec::new();
     if let Some(dir) = std::env::var_os("BOOST_INCLUDE_DIR") {
-        shim.include(dir);
+        boost.push(PathBuf::from(dir));
     }
-    if let Ok(out) = std::process::Command::new("pkg-config")
+    if let Ok(out) = Command::new("pkg-config")
         .args(["--cflags-only-I", "boost"])
         .output()
     {
         let sout = String::from_utf8_lossy(&out.stdout);
         for tok in sout.split_whitespace() {
             if let Some(path) = tok.strip_prefix("-I") {
-                shim.include(path);
+                boost.push(PathBuf::from(path));
             }
         }
+    }
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    for tree in ["build-bambu", "build"] {
+        let cache = manifest.join("../..").join(tree).join("CMakeCache.txt");
+        if let Ok(s) = std::fs::read_to_string(&cache) {
+            for line in s.lines() {
+                if let Some(rest) = line.strip_prefix("Boost_INCLUDE_DIR:PATH=") {
+                    boost.push(PathBuf::from(rest.trim()));
+                }
+                if let Some(rest) = line.strip_prefix("Boost_DIR:PATH=") {
+                    if let Some(prefix) = PathBuf::from(rest.trim()).ancestors().nth(3) {
+                        boost.push(prefix.join("include"));
+                    }
+                }
+            }
+        }
+    }
+    for cand in ["/usr/local/include", "/usr/include", "/opt/homebrew/include"] {
+        boost.push(PathBuf::from(cand));
+    }
+    if let Some(dir) = boost.iter().find(|p| has_voronoi(p)) {
+        shim.include(dir);
     }
     shim.compile("clipper_z_shim");
 }

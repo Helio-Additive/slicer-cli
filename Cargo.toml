@@ -24,6 +24,13 @@ default-members = ["crates/slicer-cli-rust"]
 debug-assertions = false
 opt-level = 3
 
+# Tests keep the engine's debug assertions on: several of them guard real
+# limits (the i32 ClipperLib path, for one) that a release build would pass
+# over silently. See crates/libslic3r-rs/HANDOFF.md, "Test status".
+[profile.test.package.slicer]
+debug-assertions = true
+opt-level = 3
+
 # `cargo build --profile parity`: the dev profile with debug assertions off
 # everywhere, for running the engine crate's own programs against C++ output.
 [profile.parity]

@@ -6,6 +6,7 @@
 #ifndef slic3r_AABBTreeIndirect_hpp_
 #define slic3r_AABBTreeIndirect_hpp_
 
+#include <cassert> // not pulled in by every Eigen release
 #include <algorithm>
 #include <limits>
 #include <type_traits>
