@@ -145,7 +145,8 @@ py '
 import json; d = json.load(open("info-quoted.json"))
 assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube"}], d["objects"]
 '
-# An object name is reported as written, with the XML entities decoded.
+# An object name is reported as written, with the XML entities decoded; a
+# literal '>' inside the quoted value does not end the tag.
 py '
 import zipfile
 src = zipfile.ZipFile("'"$FIXTURE"'")
@@ -153,13 +154,13 @@ with zipfile.ZipFile("named.3mf", "w", zipfile.ZIP_DEFLATED) as out:
     for item in src.infolist():
         data = src.read(item.filename)
         if item.filename == "Metadata/model_settings.config":
-            data = data.replace(b"value=\"Cube\"", b"value=\"A &amp; B &lt;c&gt; &quot;d&quot; &#233;\"", 1)
+            data = data.replace(b"value=\"Cube\"", b"value=\"A &amp; B &lt;c&gt; &quot;d&quot; &#233; > e\"", 1)
         out.writestr(item, data)
 '
 "$B" --engine-info named.3mf > info-named.json
 py '
 import json; d = json.load(open("info-named.json"))
-assert d["objects"][0]["name"] == "A & B <c> \"d\" \u00e9", d["objects"]
+assert d["objects"][0]["name"] == "A & B <c> \"d\" \u00e9 > e", d["objects"]
 '
 # A Snapmaker U1 file (made by Bambu Studio here) fits the OrcaSlicer engine
 # and, when the package carries it, the Snapmaker one, which is recommended:

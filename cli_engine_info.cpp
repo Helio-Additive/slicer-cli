@@ -98,8 +98,16 @@ json project_objects(const std::string& xml) {
             pos = end + 3;
             continue;
         }
-        const size_t gt = xml.find('>', lt);
-        if (gt == std::string::npos) break;
+        // The tag ends at the first '>' outside a quoted attribute value: a
+        // literal '>' is valid inside one ("Left > Right").
+        size_t gt = lt + 1;
+        for (char quote = 0; gt < xml.size(); ++gt) {
+            const char c = xml[gt];
+            if (quote) { if (c == quote) quote = 0; }
+            else if (c == '"' || c == '\'') quote = c;
+            else if (c == '>') break;
+        }
+        if (gt >= xml.size()) break;
         const std::string tag = xml.substr(lt + 1, gt - lt - 1);
         pos = gt + 1;
         const auto is = [&](const char* name) {
