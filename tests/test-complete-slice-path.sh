@@ -118,6 +118,13 @@ py '
 w = [l for l in open("skip-stl/stdout") if "SkipObjectsUnknownIds" in l]
 assert len(w) == 1 and "gives its objects no ids" in w[0], w
 '
+# A project followed by a model file: the project's ids are still known, so
+# naming one of them is not warned about.
+run skip-mixed "$B" "$FIXTURE" cube.stl --plate 1 --skip-objects 3521 -o skip-mixed/out.gcode
+py '
+w = [l for l in open("skip-mixed/stdout") if "SkipObjectsUnknownIds" in l]
+assert not w, w
+'
 # The same file with its metadata written the other XML ways (single quotes,
 # attributes on their own lines, spaces around '=') reads the same.
 py '

@@ -10525,13 +10525,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // plate, and an id on another plate is a no-op, not a mistake);
             // for a model file or a 3MF without the member, the loaded ids.
             std::set<int> known_object_ids;
-            if (std::string model_settings;
-                o.input_files.size() == 1 && input_is_3mf(o.input_files.front()) &&
-                read_zip_member(o.input_files.front(), "Metadata/model_settings.config", model_settings))
-                known_object_ids = slicer_cli::project_object_ids(model_settings);
-            if (known_object_ids.empty())
-                for (const Slic3r::ModelObject* obj : model.objects)
-                    for (const Slic3r::ModelInstance* inst : obj->instances)
+            for (const std::string& input : o.input_files)
+                if (std::string model_settings;
+                    input_is_3mf(input) && read_zip_member(input, "Metadata/model_settings.config", model_settings))
+                    for (int id : slicer_cli::project_object_ids(model_settings))
+                        known_object_ids.insert(id);
+            // The loaded objects too (a model file beside the project, a 3MF
+            // without the member); the loader's 0 for "no id" only when the
+            // run has no project ids at all, so a plain model file is told so.
+            const bool project_ids = !known_object_ids.empty();
+            for (const Slic3r::ModelObject* obj : model.objects)
+                for (const Slic3r::ModelInstance* inst : obj->instances)
+                    if (inst->loaded_id > 0 || !project_ids)
                         known_object_ids.insert(int(inst->loaded_id));
             // --skip-objects keeps the official meaning (an unknown id is
             // ignored, BambuStudio.cpp 6541-6581), so the caller is told once
