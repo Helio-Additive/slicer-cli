@@ -735,6 +735,35 @@ for -2):
 
 `result.json` gives the sentence for each code.
 
+## slicer_cli-rust
+
+`slicer_cli-rust` runs the Rust port of the Bambu Studio engine. It is built
+from this repository by cargo ([building.md](building.md), "The Rust engine"),
+it is not in the packages, and its G-code does not match `slicer_cli`'s yet
+([rust-engine/README.md](rust-engine/README.md) has the scores). "All binaries"
+elsewhere in this document means the three packaged programs.
+
+```sh
+slicer_cli-rust [--config FILE] [-o FILE] [-v] MODEL
+```
+
+| Flag | What it does |
+|-|-|
+| `MODEL`, `--input FILE` | An STL, or a Bambu Studio 3MF with its settings inside. One file per call |
+| `--config FILE` | Settings bundle (JSON), as `slicer_cli --config` takes. Required for an STL; for a 3MF it overrides the settings in the file |
+| `-o FILE`, `--output FILE` | Output G-code file (default: `output.gcode`) |
+| `-v`, `--verbose` | Verbose engine log |
+| `-h`, `--help` | The call and this list |
+
+Every other flag is refused by name before anything is loaded, with a sentence
+that points at `slicer_cli`. It does not load presets, arrange, place a model
+on the plate, write `result.json` or print event lines.
+
+Return codes are the official ones, as for the other programs: `0`, `-2`
+(a flag it does not take, no model, an STL without `--config`, a file type it
+does not read), `-3` (a file that is not there) and `-100` (the engine could
+not slice).
+
 ## Known upstream behaviour
 
 These OrcaSlicer behaviours come from the OrcaSlicer engine or the printer

@@ -151,6 +151,25 @@ Both trees build a program named `slicer_cli`; the package step renames the
 OrcaSlicer one to `slicer_cli-orcaslicer`. A first build compiles the whole
 engine library (about 1,500 files) and takes a while.
 
+## The Rust engine
+
+`slicer_cli-rust` is built by cargo, apart from the CMake build:
+
+```sh
+git submodule update --init references/BambuStudio   # Eigen for the FFI shims
+cargo build --release -p slicer-cli-rust             # target/release/slicer_cli-rust, slicer-parity
+```
+
+It needs the Rust compiler `rust-toolchain.toml` names, a C++17 compiler, and
+the Eigen 3 and Boost headers (`libeigen3-dev libboost-dev pkg-config` on
+Ubuntu; `eigen boost pkg-config` from Homebrew). The shims find Eigen through
+`EIGEN3_INCLUDE_DIR` or `pkg-config eigen3`, and Boost through
+`BOOST_INCLUDE_DIR`, the CMake cache of `build-bambu/` or `build/`, or the
+system prefixes. Which header versions the recorded parity scores were taken
+with, and why that matters, is in
+[docs/rust-engine/README.md](rust-engine/README.md). The program is not in the
+packages, and there is no Windows build of it yet.
+
 ## Packages
 
 `scripts/bundle-linux.sh` and `scripts/bundle-macos.sh` put a program, its

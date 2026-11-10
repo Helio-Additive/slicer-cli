@@ -18,6 +18,11 @@ gives for the same settings. Flags that share a name with Bambu Studio's,
 OrcaSlicer's or Snapmaker Orca's own command line behave the same way.
 `--engine-info FILE` says which program to use for a file.
 
+A fourth program, `slicer_cli-rust`, is being built in this repository: a Rust
+port of the Bambu Studio engine. It is not in the release packages and its
+G-code does not match `slicer_cli`'s yet; see
+[docs/rust-engine/README.md](docs/rust-engine/README.md).
+
 ## Install
 
 Download the package for your system from the

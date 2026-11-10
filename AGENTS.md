@@ -13,6 +13,11 @@ pin `bac6fd5`), for Linux x86_64,
 Linux arm64, macOS arm64 and Windows x86_64. Flags that share a name with the desktop apps'
 own command lines behave the same way.
 
+A fourth program is in progress and is not packaged: `slicer_cli-rust`, a Rust
+port of the Bambu Studio engine (`crates/`, built by cargo). Its G-code does not
+match `slicer_cli`'s yet. Its own section is "The Rust engine" below;
+[docs/rust-engine/README.md](docs/rust-engine/README.md) is the authority for it.
+
 Read first, and change here rather than copy: [README.md](README.md),
 [CONTRIBUTING.md](CONTRIBUTING.md), [docs/cli-reference.md](docs/cli-reference.md),
 [docs/building.md](docs/building.md), `.github/workflows/slicer-cli-ci.yml`
@@ -34,6 +39,8 @@ Read first, and change here rather than copy: [README.md](README.md),
 | `tests/` | The test scripts, run against built or packaged programs |
 | `docs/` | `cli-reference.md` (every flag, outputs, `result.json`, event lines, return codes), `building.md` |
 | `ci/` | vcpkg overlay port and patches the build applies |
+| `Cargo.toml`, `crates/` | The Rust engine: `libslic3r-rs` (the port, crate `slicer`), four `*-sys` FFI shims, `slicer-cli-rust` (the programs `slicer_cli-rust` and `slicer-parity`) |
+| `scripts/parity/`, `tests/rust-engine/`, `docs/rust-engine/` | The Rust engine's scoring scripts, tests and job configs, and records |
 | `.github/workflows/slicer-cli-ci.yml` | Build, test, package, release |
 
 The build picks its engine with the CMake cache variable `ENGINE`
@@ -131,6 +138,51 @@ compiles about 1,500 engine files.
   commits. This repository is public.
 - C++17, the engine's conventions. New command-line code goes in its own
   `cli_*.cpp`, not in `main.cpp`.
+
+## The Rust engine
+
+`crates/libslic3r-rs` is a line-by-line port of Bambu Studio's `libslic3r`; the
+aim is G-code byte-identical to `slicer_cli` for the same job. Nothing in the
+CMake build depends on it, and no flag, default, sentence or schema of the three
+C++ programs changes for it. Read
+[docs/rust-engine/README.md](docs/rust-engine/README.md) before working on it:
+build, fixtures, the parity workflow, the scores, and what the port still has to
+catch up with.
+
+```sh
+cargo build -p slicer-cli-rust        # target/debug/slicer_cli-rust and slicer-parity
+cargo test -p slicer-cli-rust
+bash tests/rust-engine/test_slicer_cli_rust.sh target/debug/slicer_cli-rust
+cargo test --workspace --no-run       # the engine's tests compile; some fail (HANDOFF.md)
+# one job through slicer_cli and the Rust engine, then the score
+COMPARE_KEEP_DIR=<dir> target/debug/slicer-parity compare --config tests/rust-engine/configs/<job>.jsonnet
+python3 scripts/parity/seq_parity.py <dir>/rust.gcode <dir>/bambu.gcode
+```
+
+Rules for it, on top of the ones above:
+
+- **The port follows the C++ at the pin**: same functions, order, names in
+  snake_case, control flow, constants, rounding and tolerances. Cite the
+  upstream file and line in the code and the commit. No stubs: a unit that
+  cannot be finished is marked `partial` in `crates/libslic3r-rs/PORT_LEDGER.json`
+  with what blocks it. Read `docs/rust-engine/PORTING_PATTERNS.md` before
+  touching geometry.
+- **Behaviour changes land behind an env gate**, so the earlier arm can be
+  reproduced byte for byte (`crates/libslic3r-rs/src/lib.rs`):
+  `faithful_gate("NAME")` is on unless `NAME=0`; `opt_in_gate("NAME")` is off
+  unless `NAME=1`, for work that is faithful but lowers a score until its
+  counterpart lands; `probe_enabled("NAME")` is for diagnostics only and must
+  never change output.
+- **Localize before fixing**: dump the same intermediate from both engines and
+  find the first stage that differs.
+- **A round states its scores**: commits are `R<round>: <what>` with the
+  in-order score of every fixture before and after. A round that finds nothing
+  is still logged in `docs/rust-engine/parity/`, so it is not chased again.
+- **Do not lower a fixture's score.** The scores depend on the Eigen and Boost
+  headers the shims are built with; use the ones docs/rust-engine/README.md
+  names when comparing with recorded numbers.
+- `slicer_cli-rust` refuses, by name, every flag it does not take. A flag it
+  gains must behave as the same flag of `slicer_cli` does.
 
 ## Releases
 

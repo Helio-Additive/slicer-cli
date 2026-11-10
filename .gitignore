@@ -36,3 +36,4 @@ target/
 tests/rust-engine/.tmp/
 tests/rust-engine/fixtures/*.3mf
 tests/rust-engine/fixtures/3DBenchy.stl
+scripts/parity/__pycache__/

@@ -2123,6 +2123,55 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
 
+  # The Rust engine (Cargo.toml, crates/): slicer_cli-rust, an in-progress Rust
+  # port of the Bambu Studio engine. Built and tested here; it is not packaged
+  # or released, and no other job depends on this one.
+  rust-engine:
+    name: Rust engine — ${{ matrix.os }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Linux-x86_64
+            runner: ubuntu-22.04
+          - os: macOS-arm64
+            runner: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The FFI shims compile against the Eigen inside the Bambu Studio source.
+      - name: Checkout the Bambu Studio engine source
+        run: git submodule update --init --depth 1 references/BambuStudio
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libeigen3-dev libboost-dev pkg-config
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install eigen boost pkg-config
+
+      # rust-toolchain.toml names the compiler; rustup installs it on first use.
+      - name: Rust toolchain
+        run: rustup show
+
+      - name: Build slicer_cli-rust
+        run: cargo build --release --locked -p slicer-cli-rust
+
+      - name: Test the command line and the parity harness
+        run: cargo test --release --locked -p slicer-cli-rust
+
+      - name: Compile the engine's tests
+        run: cargo test --locked --workspace --no-run
+
+      - name: Test slicer_cli-rust
+        run: bash tests/rust-engine/test_slicer_cli_rust.sh target/release/slicer_cli-rust
+
   release:
     name: Publish slicer-cli release assets
     if: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && needs.package.result == 'success' && needs['package-linux'].result == 'success' }}

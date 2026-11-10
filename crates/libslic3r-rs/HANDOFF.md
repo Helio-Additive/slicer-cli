@@ -4,14 +4,18 @@
 `crates/libslic3r-rs`, so the Rust engine produces G-code **byte-identical** to the C++
 slicer. No shortcuts: same functions, same order, same names (snake_case), same control
 flow / constants / rounding / locations. wasm-safe where possible (the four `*-sys` shims
-are the exception, see the repository `AGENTS.md`).
+are the exception). How to build, run and score it in this repository:
+`docs/rust-engine/README.md`.
 
 ## Where things stand
 
-- **Parity (R808):** Majora 1,787,698 lines in order (66.06%), prime tower 83.0%; Benchy
-  classic 121,714 and Benchy arachne 138,771 lines in order; bun suite 9/9. The round log is
-  `PARITY_STATUS.md` (to R471) and `docs/parity/rounds-R472-R808.md` (R472-R808, with the open
-  threads and the gates that are not default).
+- **Parity (R808), against the C++ engine the port follows (Bambu Studio 02.06.00.51):** Majora
+  1,787,698 lines in order (66.06%), prime tower 83.0%; Benchy classic 121,714 and Benchy
+  arachne 138,771 lines in order. The scores against this repository's `slicer_cli`
+  (02.09.01.70) are lower and are in `docs/rust-engine/README.md`. The round log is
+  `docs/rust-engine/PARITY_STATUS.md` (to R471) and
+  `docs/rust-engine/parity/rounds-R472-R808.md` (R472-R808, with the open threads and the
+  gates that are not default).
 - **Ledger (last regenerated 2026-06-11, not updated by the parity rounds since):** 164 done /
   110 partial / 4 deferred / 0 pending of 278 units. `partial` means faithfully ported except
   symbols blocked on a native library (OpenVDB, CGAL, OCCT), or on a dependency that is not
@@ -24,36 +28,36 @@ are the exception, see the repository `AGENTS.md`).
 - `PORT_LEDGER.json` — array of units `{cpp,hpp,rust,area,loc,status}`,
   `status ∈ {pending,partial,deferred,done}`. `PORT_LEDGER.md` is the dashboard made from it.
 - `PROGRESS.md`, `PARITY.md` — history of the systematic port (to June 2026).
-- `PARITY_STATUS.md` and `docs/parity/` at the repository root — the parity rounds.
+- `docs/rust-engine/PARITY_STATUS.md` and `docs/rust-engine/parity/` — the parity rounds.
 
 ## Operating loop
 
-1. Build: `devbox run -- cargo build --manifest-path crates/libslic3r-rs/Cargo.toml` — lib and
-   bins must exit 0.
+1. Build: `cargo build --workspace` from the repository root — lib and bins must exit 0.
 2. When a config struct grows (for example `PrintRegionConfig`), update the struct literals in
    `src/bin/slicer-cli.rs` (`create_default_region_config`).
 3. Parity check, which must not regress: run with debug assertions off, which is what the C++
-   release build does with `assert()`. From the repository root the dev profile already does
-   this for the `slicer` package; on this crate's manifest use `--profile parity`. Then follow
-   "Parity workflow" in the repository `AGENTS.md` (`compare`, then `scripts/seq_parity.py`)
+   release build does with `assert()`. The workspace's dev profile already does this for the
+   `slicer` package (tests keep them on). Then follow "Parity workflow" in
+   `docs/rust-engine/README.md` (`slicer-parity compare`, then `scripts/parity/seq_parity.py`)
    on Benchy classic, Benchy arachne and Majora.
 4. Commit as `R<round>: <what>` with the scores before and after.
 
 ## Hard rules / gotchas
 
-- **All builds via `devbox run …`** — never bare cargo or cmake.
+- Build with the compiler `rust-toolchain.toml` names, and with the Eigen and Boost headers
+  `docs/rust-engine/README.md` names when a score is compared with a recorded one: the
+  shims' output depends on them.
 - coord_t→i64, coordf_t→f64. Reuse existing crate primitives (grep before adding). No
   stubs or fakes — mark the unit `partial` and say what blocks it.
-- Read `PORTING_PATTERNS.md` at the repository root before touching geometry.
+- Read `docs/rust-engine/PORTING_PATTERNS.md` before touching geometry.
 
 ## Test status
 
-`devbox run -- cargo test --manifest-path crates/libslic3r-rs/Cargo.toml --no-run --all-targets`
-exits 0. Running the tests does not: the list below is what fails, as of the commit that made
+`cargo test -p slicer --no-run --all-targets` exits 0. Running the tests does not: the list below is what fails, as of the commit that made
 them compile again. None of these was edited to pass.
 
-Totals, default test profile: lib 1843 passed / 45 failed / 1 hangs of 1889; integration tests
-136 passed / 41 failed / 4 ignored over 25 targets. With `--profile parity` or `--release`
+Totals, with debug assertions on (the workspace's test profile): lib 1843 passed / 45 failed / 1 hangs of 1889; integration tests
+136 passed / 41 failed / 4 ignored over 25 targets. With `--release`
 (debug assertions off) `cut_surface::tests::its_mask_size_mismatch_returns_empty` and nine of
 the ten `tree_support_integration` failures pass.
 
