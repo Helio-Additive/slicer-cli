@@ -120,12 +120,12 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R817) |
+| Fixture | As brought over (R808) | Now (R818) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 149,451 (80.36%) |
-| Benchy arachne | 32,769 (13.68%) | 145,850 (61.64%) |
-| Majora | 1,512,438 (55.88%) | 1,527,621 (56.34%) |
-| Majora, prime tower | 83.5% | 83.5% |
+| Benchy arachne | 32,769 (13.68%) | 158,538 (67.00%) |
+| Majora | 1,512,438 (55.88%) | 1,796,767 (66.27%) |
+| Majora, prime tower | 83.5% | 83.6% |
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
 driver) R808 scored Majora 66.06%, Benchy classic 121,714 lines and Benchy
@@ -149,11 +149,12 @@ Where each fixture stands, from the `PP` probe (below):
   The internal bridges of `bridge_over_infill` are identical on all 11 layers,
   and the fills on 185 of 289 layers. Walls are 86% in order; top surface 92%,
   solid infill 79%, bridges 54%, sparse infill 47%.
-- **Benchy arachne.** Slices as classic. No layer's perimeters are identical:
-  the arachne walls have the same structure with junctions 1 to about 130 scaled
-  units off. About a quarter of the matching lines are out of order.
+- **Benchy arachne.** Slices as classic. 2,695 of 2,721 `WallToolPaths` calls
+  get the oracle's outline and return its toolpaths to within two units. 88.5%
+  of the lines match in content, 67.0% in order: walls 65 to 71%, solid infill
+  66%, bridges 72%.
 - **Majora.** The merged slices are identical on 582 of 656 layers, the region
-  slices on 574. No layer's perimeters or fill surfaces are identical.
+  slices on 574. 77.1% of the lines match in content, 66.3% in order.
 
 ## Finding the first stage that differs
 

@@ -3511,7 +3511,15 @@ impl PerimeterGenerator {
                 } else {
                     union_polygons_ex(&surface.simplify_p(surface_simplify_resolution))
                 };
-            let inset = -(ext_perimeter_width as f64 / 2.0 - ext_perimeter_spacing as f64 / 2.0);
+            // PerimeterGenerator.cpp:1506-1508 — `-float(ext_perimeter_width / 2 -
+            // ext_perimeter_spacing / 2)`: both halves are coord_t divisions, so
+            // an odd width or spacing loses its half unit. ARACHNE_INSET_INT=0
+            // halves in double.
+            let inset = if crate::faithful_gate("ARACHNE_INSET_INT") {
+                -(((ext_perimeter_width / 2 - ext_perimeter_spacing / 2) as f32) as f64)
+            } else {
+                -(ext_perimeter_width as f64 / 2.0 - ext_perimeter_spacing as f64 / 2.0)
+            };
             if crate::probe_enabled("AWDELTA") {
                 use std::sync::Mutex;
                 static SEEN: Mutex<Vec<(i64, i64, i64)>> = Mutex::new(Vec::new());
@@ -4258,6 +4266,10 @@ impl PerimeterGenerator {
                 self.config.infill_wall_overlap,
                 self.config.surface_simplify_resolution,
                 self.config.join_type,
+                // coord_t(solid_infill_spacing * (1. - INSET_OVERLAP_TOLERANCE)),
+                // on the coord_t solid_infill_flow.scaled_spacing().
+                ((crate::clipper_utils::scale_faithful(self.config.solid_infill_spacing) as f64)
+                    * (1.0 - INSET_OVERLAP_TOLERANCE)) as Coord,
             );
             infill_contour.extend(infill_pieces);
             no_overlap_contour.extend(no_overlap_pieces);
@@ -4299,7 +4311,65 @@ impl PerimeterGenerator {
         infill_wall_overlap: f64,
         surface_simplify_resolution: f64,
         join_type: OffsetJoinType,
+        min_perimeter_infill_spacing_scaled: Coord,
     ) -> (ExPolygons, ExPolygons) {
+        // ARACHNE_TAIL_SCALED (on): PerimeterGenerator.cpp:1463-1484 in coord_t.
+        // The arguments are scaled integers there: `spacing / 2.` and
+        // `min_perimeter_infill_spacing / 2.` are halves of integers passed
+        // through `float`, `insert` is truncated after the overlap percentage,
+        // each expolygon is simplified on its own (ExPolygon::simplify_p ends in
+        // simplify_polygons) and the rings are united once. =0 computes the
+        // deltas in millimetres and simplifies the collected rings a second time.
+        if crate::faithful_gate("ARACHNE_TAIL_SCALED") && crate::faithful_gate("TOPFILL_FAITHFUL") {
+            let sf = crate::SCALING_FACTOR;
+            let to_coord = |mm: f64| -> Coord { (mm * sf).round() as Coord };
+            let spacing_c = to_coord(spacing);
+            let min_pis_c = min_perimeter_infill_spacing_scaled;
+            if crate::clipper_utils::offset_expolygons_clib_scaled(
+                &infill_contour,
+                -((spacing_c as f64 / 2.0) as f32) as f64,
+                OffsetJoinType::Miter,
+            )
+            .is_empty()
+            {
+                infill_contour.clear();
+            }
+            let mut insert_c: Coord = if loops < 0 { 0 } else { to_coord(ext_perimeter_spacing) };
+            if is_inner_part || loops > 0 {
+                insert_c = to_coord(perimeter_spacing);
+            }
+            // coord_t(scale_(infill_wall_overlap.get_abs_value(unscale<double>(insert))))
+            let insert_c: Coord = ((infill_wall_overlap
+                * (insert_c as f64 * crate::libslic3r::SCALING_FACTOR))
+                / crate::libslic3r::SCALING_FACTOR) as Coord;
+            let tol_scaled = surface_simplify_resolution * sf;
+            let mut inner_pp: Vec<Polygon> = Vec::new();
+            for ex in &infill_contour {
+                let rings = ex.simplify_p_dp_rings_faithful(tol_scaled);
+                inner_pp.extend(crate::clipper_utils::simplify_polygons_clib(&rings, 1));
+            }
+            if inner_pp.is_empty() {
+                return (vec![], vec![]);
+            }
+            let inner_union = crate::clipper_utils::union_ex_clib(&inner_pp, 1);
+            let d1 = ((-(min_pis_c as f64) / 2.0) as f32) as f64;
+            let d2 = ((insert_c as f64 + min_pis_c as f64 / 2.0) as f32) as f64;
+            let d3 = ((min_pis_c as f64 / 2.0) as f32) as f64;
+            let mm = crate::libslic3r::SCALING_FACTOR;
+            let fill = crate::clipper_utils::offset2_ex_clib(
+                &inner_union,
+                d1 * mm,
+                d2 * mm,
+                OffsetJoinType::Miter,
+            );
+            let no_overlap = crate::clipper_utils::offset2_ex_clib(
+                &inner_union,
+                d1 * mm,
+                d3 * mm,
+                OffsetJoinType::Miter,
+            );
+            return (fill, no_overlap);
+        }
         // C++: if (offset_ex(infill_contour, -float(spacing / 2.)).empty()) infill_contour.clear();
         if shrink(&infill_contour, spacing / 2.0, join_type).is_empty() {
             infill_contour.clear();

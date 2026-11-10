@@ -794,6 +794,15 @@ fn shorter_than_extrusion_line(shape: &ExtrusionLine, check_length: Coord) -> bo
 /// internally for SimplifyPolygons, but the crate's `union_polygons_ex` uses the geo backend
 /// (non-zero, fixed scale 1000) rather than ClipperLib at coord_t integer precision.
 fn clipper_simplify_polygons(thiss: &Polygons) -> Polygons {
+    // ARACHNE_FIXSELF_DISCARD (on): WallToolPaths.cpp:225 and 265 call
+    // `ClipperLib::SimplifyPolygons(PolygonsProvider(thiss));` and drop what it
+    // returns — the function hands back new Paths (clipper.hpp:559-566) and
+    // does not touch its argument. So fixSelfIntersections leaves the polygons
+    // as its point moves left them: same rings, same order, same start points.
+    // =0 replaces them by their union, as before.
+    if crate::faithful_gate("ARACHNE_FIXSELF_DISCARD") {
+        return thiss.clone();
+    }
     // R725 — with the prep offset on the coord_t path, `p0`/`p1` become
     // bit-identical (92/94) and the 1 um snap is RE-INTRODUCED here, at `p2`
     // (0/94): `fixSelfIntersections` is pure integer arithmetic apart from this
@@ -823,6 +832,13 @@ fn expolygons_to_polygons(ex: &[ExPolygon]) -> Polygons {
 
 /// `union_(const Polygons&)` — NonZero fill. ClipperUtils.cpp.
 fn union_polygons(subject: &Polygons) -> Polygons {
+    // ARACHNE_UNION_FLAT (on): `union_(const Polygons &)` is one
+    // clipper_do<Paths>(ctUnion, …, pftNonZero) with the paths as Clipper
+    // returns them (ClipperUtils.cpp `_clipper`), not union_ex flattened: no
+    // second union and no PolyTree order. =0 keeps the latter.
+    if crate::faithful_gate("ARACHNE_UNION_FLAT") {
+        return clipper_utils::union_flat_clib(subject);
+    }
     // R725 — same class as `clipper_simplify_polygons`: native `union_()` is
     // ClipperLib NonZero at coord_t precision, not the geo backend.
     if crate::faithful_gate("ARACHNE_PREP_CLIB") {
@@ -1116,6 +1132,75 @@ impl WallToolPaths {
             areas.push(area_polygons(&self.outline));
         }
         polyprobe("0 input outline", &self.outline);
+        let wtp_on = crate::probe_enabled("WTP");
+        let wtp_key = if wtp_on {
+            let (mut np, mut sx, mut sy) = (0usize, 0i64, 0i64);
+            for p in &self.outline {
+                for q in p.points() {
+                    np += 1;
+                    sx += q.x;
+                    sy += q.y;
+                }
+            }
+            let k = format!("k={}:{}:{}:{}", np, sx, sy, self.inset_count);
+            eprintln!(
+                "WTP {} in bw0={} bwx={} w0i={} lh={:.6} mfs={} mbw={} sal={:.3} wtfd={}",
+                k, self.bead_width_0, self.bead_width_x, self.wall_0_inset, self.layer_height,
+                self.min_feature_size, self.min_bead_width, self.small_area_length,
+                self.wall_transition_filter_deviation
+            );
+            k
+        } else {
+            String::new()
+        };
+        let wtp_poly = |tag: &str, pp: &Polygons| {
+            if !wtp_on {
+                return;
+            }
+            let (mut np, mut sx, mut sy) = (0usize, 0i64, 0i64);
+            let mut h: u64 = 1469598103934665603;
+            for p in pp {
+                h ^= 0xffff;
+                h = h.wrapping_mul(1099511628211);
+                for q in p.points() {
+                    np += 1;
+                    sx += q.x;
+                    sy += q.y;
+                    h ^= q.x as u64;
+                    h = h.wrapping_mul(1099511628211);
+                    h ^= q.y as u64;
+                    h = h.wrapping_mul(1099511628211);
+                }
+            }
+            eprintln!("WTP {} {} n={} np={} sx={} sy={} h={:x}", wtp_key, tag, pp.len(), np, sx, sy, h);
+        };
+        let wtp_tp = |tag: &str, tp: &Vec<VariableWidthLines>| {
+            if !wtp_on {
+                return;
+            }
+            let (mut nl, mut nj, mut jx, mut jy, mut jw) = (0i64, 0i64, 0i64, 0i64, 0i64);
+            let mut h: u64 = 1469598103934665603;
+            for ls in tp {
+                for l in ls {
+                    nl += 1;
+                    h ^= 0xffff;
+                    h = h.wrapping_mul(1099511628211);
+                    for j in &l.junctions {
+                        nj += 1;
+                        jx += j.p.x;
+                        jy += j.p.y;
+                        jw += j.w as i64;
+                        h ^= j.p.x as u64;
+                        h = h.wrapping_mul(1099511628211);
+                        h ^= j.p.y as u64;
+                        h = h.wrapping_mul(1099511628211);
+                        h ^= (j.w as i64) as u64;
+                        h = h.wrapping_mul(1099511628211);
+                    }
+                }
+            }
+            eprintln!("WTP {} {} nl={} nj={} jx={} jy={} jw={} h={:x}", wtp_key, tag, nl, nj, jx, jy, jw, h);
+        };
         let mut prepared_outline = offset_polygons(
             &offset_polygons(
                 &offset_polygons(&self.outline, -epsilon_offset),
@@ -1124,6 +1209,7 @@ impl WallToolPaths {
             -epsilon_offset,
         );
         polyprobe("1 after triple offset", &prepared_outline);
+        wtp_poly("p0", &prepared_outline);
         agen_dump_poly("p0", agen_orig, &prepared_outline, agen_ic);
         awst_poly("p0", awst, &prepared_outline);
         if ap {
@@ -1203,7 +1289,9 @@ impl WallToolPaths {
         // The functions above could produce intersecting polygons that could cause a crash inside Arachne.
         // Applying Clipper union should be enough to get rid of this issue.
         // WallToolPaths.cpp:483
+        wtp_poly("p7", &prepared_outline);
         prepared_outline = union_polygons(&prepared_outline);
+        wtp_poly("p8", &prepared_outline);
         polyprobe("3 final prepared_outline", &prepared_outline);
         agen_dump_poly("p8", agen_orig, &prepared_outline, agen_ic);
         awst_poly("p8", awst, &prepared_outline);
@@ -1345,6 +1433,7 @@ impl WallToolPaths {
         // distinct) and 98% flat per loop by the time the perimeter generator sees
         // it, so exactly one of these five stages flattens it.
         stageprobe("0 after generate_toolpaths", &self.toolpaths);
+        wtp_tp("t0gen", &self.toolpaths);
         awst_dump("0", awst, &self.toolpaths);
         agen_dump_tp("gen", agen_orig, &self.toolpaths, agen_ic);
         agenpts_tp("gen", agen_orig, &self.toolpaths, agen_ic);
@@ -1352,6 +1441,7 @@ impl WallToolPaths {
         // WallToolPaths.cpp:534
         Self::stitch_tool_paths(&mut self.toolpaths, self.bead_width_x);
         stageprobe("1 after stitch_tool_paths", &self.toolpaths);
+        wtp_tp("t1stitch", &self.toolpaths);
         awst_dump("1", awst, &self.toolpaths);
         agen_dump_tp("stitch", agen_orig, &self.toolpaths, agen_ic);
 
@@ -1396,6 +1486,7 @@ impl WallToolPaths {
             eprintln!("AWOUT pts={} sx={} sy={} ic={} nl={} nj={} jx={} jy={} jw={}", n, sx, sy, self.inset_count, nl, nj, jx, jy, jw);
         }
         awst_dump("5", awst, &self.toolpaths);
+        wtp_tp("t5final", &self.toolpaths);
         agen_dump_tp("empty", agen_orig, &self.toolpaths, agen_ic);
         // WallToolPaths.cpp:543-547  assert sorted by inset_idx (debug-only)
         debug_assert!(self
