@@ -121,6 +121,7 @@ assert len(w) == 1 and "gives its objects no ids" in w[0], w
 # A project followed by a model file: the project's ids are still known, so
 # naming one of them is not warned about.
 run skip-mixed "$B" "$FIXTURE" cube.stl --plate 1 --skip-objects 3521 -o skip-mixed/out.gcode
+[ "$(rc skip-mixed)" = 0 ] || { show skip-mixed; fail "a project with a model file and --skip-objects exit $(rc skip-mixed)"; }
 py '
 w = [l for l in open("skip-mixed/stdout") if "SkipObjectsUnknownIds" in l]
 assert not w, w
@@ -137,13 +138,15 @@ with zipfile.ZipFile("quoted.3mf", "w", zipfile.ZIP_DEFLATED) as out:
             text = data.decode()
             text = re.sub(r" key=\"([^\"]*)\" value=\"([^\"]*)\"", lambda m: "\n      key = \x27%s\x27\n      value=\x27%s\x27 " % (m.group(1), m.group(2)), text)
             text = text.replace("<object id=\"", "<object\n    id = \x27").replace("\">\n    <metadata", "\x27>\n    <metadata", 1)
+            # a value that looks like another attribute, written before the real one
+            text = text.replace("key = \x27name\x27\n      value=\x27Cube\x27 ", "value=\x27Cube key=\"other\"\x27 key = \x27name\x27 ", 1)
             data = text.encode()
         out.writestr(item, data)
 '
 "$B" --engine-info quoted.3mf > info-quoted.json
 py '
 import json; d = json.load(open("info-quoted.json"))
-assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube"}], d["objects"]
+assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube key=\"other\""}], d["objects"]
 '
 # An object name is reported as written, with the XML entities decoded; a
 # literal '>' inside the quoted value does not end the tag.

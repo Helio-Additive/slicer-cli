@@ -2,7 +2,10 @@
 #include "cli_engine_info.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <map>
+
+#include "libslic3r/Model.hpp"
 
 namespace slicer_cli {
 namespace {
@@ -45,22 +48,27 @@ std::string decode_entities(const std::string& text) {
 bool xml_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
 
 // The value of attribute `name` in the text of one XML tag, decoded, or "".
-// XML allows whitespace (any kind, newlines included) before the name and
-// around '=', and either quote; a name that is the tail of another
-// (`object_id` for `id`) is not a match.
+// The tag's attributes are walked as XML spells them (whitespace of any kind,
+// either quote, whitespace around '='), so text inside a quoted value never
+// passes for an attribute name.
 std::string attr(const std::string& tag, const std::string& name) {
-    size_t at = 0;
-    while ((at = tag.find(name, at)) != std::string::npos) {
-        const size_t after = at + name.size();
-        const bool starts = at > 0 && xml_space(tag[at - 1]);
-        size_t eq = after;
-        while (eq < tag.size() && xml_space(tag[eq])) ++eq;
-        if (!starts || eq >= tag.size() || tag[eq] != '=') { at = after; continue; }
-        size_t q = eq + 1;
-        while (q < tag.size() && xml_space(tag[q])) ++q;
-        if (q >= tag.size() || (tag[q] != '"' && tag[q] != '\'')) return {};
-        const size_t end = tag.find(tag[q], q + 1);
-        return end == std::string::npos ? std::string() : decode_entities(tag.substr(q + 1, end - q - 1));
+    size_t pos = 0;
+    while (pos < tag.size() && !xml_space(tag[pos])) ++pos;   // the tag name
+    while (pos < tag.size()) {
+        while (pos < tag.size() && xml_space(tag[pos])) ++pos;
+        const size_t name_start = pos;
+        while (pos < tag.size() && !xml_space(tag[pos]) && tag[pos] != '=' && tag[pos] != '/' && tag[pos] != '>') ++pos;
+        const std::string attribute = tag.substr(name_start, pos - name_start);
+        while (pos < tag.size() && xml_space(tag[pos])) ++pos;
+        if (pos >= tag.size() || tag[pos] != '=') { if (attribute.empty()) ++pos; continue; }
+        ++pos;
+        while (pos < tag.size() && xml_space(tag[pos])) ++pos;
+        if (pos >= tag.size() || (tag[pos] != '"' && tag[pos] != '\'')) return {};
+        const char   quote = tag[pos];
+        const size_t end   = tag.find(quote, pos + 1);
+        if (end == std::string::npos) return {};
+        if (attribute == name) return decode_entities(tag.substr(pos + 1, end - pos - 1));
+        pos = end + 1;
     }
     return {};
 }
@@ -175,6 +183,27 @@ std::string unknown_object_ids_refusal(const char* flag, const std::vector<int>&
                "; this file gives its objects no ids (a plain model file). The flag takes the ids --engine-info "
                "lists for a project 3MF";
     return std::string(flag) + ": no object has id " + list(missing) + "; the file's object ids are " + list(known);
+}
+
+std::set<int> known_object_ids(const std::vector<std::string>& inputs, const Slic3r::Model& model,
+                               const ZipMemberReader& read_member) {
+    std::set<int> known;
+    for (const std::string& input : inputs) {
+        std::string extension = input.size() >= 4 ? input.substr(input.size() - 4) : std::string();
+        for (char& c : extension) c = char(std::tolower(static_cast<unsigned char>(c)));
+        if (std::string model_settings; extension == ".3mf" && read_member(input, "Metadata/model_settings.config", model_settings))
+            for (int id : project_object_ids(model_settings))
+                known.insert(id);
+    }
+    // The loaded objects too (a model file beside the project, a 3MF without
+    // the member); the loader's 0 for "no id" only when the run has no project
+    // ids at all, so a plain model file is told so.
+    const bool project_ids = !known.empty();
+    for (const Slic3r::ModelObject* obj : model.objects)
+        for (const Slic3r::ModelInstance* inst : obj->instances)
+            if (inst->loaded_id > 0 || !project_ids)
+                known.insert(int(inst->loaded_id));
+    return known;
 }
 
 } // namespace slicer_cli

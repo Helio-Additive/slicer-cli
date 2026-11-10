@@ -8,10 +8,13 @@
 // name an object before it slices.
 #pragma once
 
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+
+namespace Slic3r { class Model; }
 
 namespace slicer_cli {
 
@@ -25,6 +28,16 @@ nlohmann::json project_objects(const std::string& model_settings_xml);
 /// set --skip-objects and --simplify-objects are checked against, so an id on
 /// another plate than the one being sliced is a no-op, not a mistake.
 std::set<int> project_object_ids(const std::string& model_settings_xml);
+
+/// Reads one member of a ZIP archive into `out`; false when absent or unreadable.
+using ZipMemberReader = std::function<bool(const std::string& archive, const std::string& member, std::string& out)>;
+
+/// The ids --skip-objects and --simplify-objects may name in this run: the
+/// project ids of every 3MF input (on every plate: --slice N loads one plate,
+/// and an id on another plate is a no-op, not a mistake) and the loaded
+/// instances' ids; the loader's 0 only when the run has no project ids.
+std::set<int> known_object_ids(const std::vector<std::string>& inputs, const Slic3r::Model& model,
+                               const ZipMemberReader& read_member);
 
 /// The sentence that refuses `flag` when one of `wanted` is an id `known` has
 /// not (CLI_INVALID_PARAMS), or "" when every id is known. `known` is the
