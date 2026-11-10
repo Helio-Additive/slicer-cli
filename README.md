@@ -108,6 +108,9 @@ material settings before you print.
 
 AGPL-3.0-or-later. See `LICENSE`.
 
+See [Source code, licences and acknowledgements](https://github.com/Helio-Additive/slicer-cli/blob/main/docs/open-source.md) for
+the source of a specific release, its engine pins, build inputs and notices.
+
 All three engines derive from PrusaSlicer and Slic3r under the AGPL. The
 attribution chain and the third-party licenses are in `NOTICE` and in the
 package's `THIRD_PARTY_LICENSES` folder.
