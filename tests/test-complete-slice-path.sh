@@ -118,6 +118,26 @@ py '
 w = [l for l in open("skip-stl/stdout") if "SkipObjectsUnknownIds" in l]
 assert len(w) == 1 and "gives its objects no ids" in w[0], w
 '
+# The same file with its metadata written the other XML ways (single quotes,
+# attributes on their own lines, spaces around '=') reads the same.
+py '
+import re, zipfile
+src = zipfile.ZipFile("'"$FIXTURE"'")
+with zipfile.ZipFile("quoted.3mf", "w", zipfile.ZIP_DEFLATED) as out:
+    for item in src.infolist():
+        data = src.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            text = data.decode()
+            text = re.sub(r" key=\"([^\"]*)\" value=\"([^\"]*)\"", lambda m: "\n      key = \x27%s\x27\n      value=\x27%s\x27 " % (m.group(1), m.group(2)), text)
+            text = text.replace("<object id=\"", "<object\n    id = \x27").replace("\">\n    <metadata", "\x27>\n    <metadata", 1)
+            data = text.encode()
+        out.writestr(item, data)
+'
+"$B" --engine-info quoted.3mf > info-quoted.json
+py '
+import json; d = json.load(open("info-quoted.json"))
+assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube"}], d["objects"]
+'
 # An object name is reported as written, with the XML entities decoded.
 py '
 import zipfile

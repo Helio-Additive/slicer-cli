@@ -42,14 +42,27 @@ std::string decode_entities(const std::string& text) {
     return out;
 }
 
+bool xml_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
+
 // The value of attribute `name` in the text of one XML tag, decoded, or "".
+// XML allows whitespace (any kind, newlines included) before the name and
+// around '=', and either quote; a name that is the tail of another
+// (`object_id` for `id`) is not a match.
 std::string attr(const std::string& tag, const std::string& name) {
-    const std::string needle = " " + name + "=\"";
-    const size_t at = tag.find(needle);
-    if (at == std::string::npos) return {};
-    const size_t start = at + needle.size();
-    const size_t end   = tag.find('"', start);
-    return end == std::string::npos ? std::string() : decode_entities(tag.substr(start, end - start));
+    size_t at = 0;
+    while ((at = tag.find(name, at)) != std::string::npos) {
+        const size_t after = at + name.size();
+        const bool starts = at > 0 && xml_space(tag[at - 1]);
+        size_t eq = after;
+        while (eq < tag.size() && xml_space(tag[eq])) ++eq;
+        if (!starts || eq >= tag.size() || tag[eq] != '=') { at = after; continue; }
+        size_t q = eq + 1;
+        while (q < tag.size() && xml_space(tag[q])) ++q;
+        if (q >= tag.size() || (tag[q] != '"' && tag[q] != '\'')) return {};
+        const size_t end = tag.find(tag[q], q + 1);
+        return end == std::string::npos ? std::string() : decode_entities(tag.substr(q + 1, end - q - 1));
+    }
+    return {};
 }
 
 json integer_or_null(const std::string& text) {
