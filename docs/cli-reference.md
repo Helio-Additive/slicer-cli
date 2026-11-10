@@ -316,7 +316,7 @@ These older shortcuts set one setting each and keep working:
 |-|-|-|-|
 | `--slice` | 0 or N | Slice every plate (0) or plate N; writes `plate_N.gcode` and `result.json` | all binaries |
 | `--outputdir` | folder | Where `--slice` writes (default: the current folder) | all binaries |
-| `--skip-objects` | "3,5,10" | Leave out the objects with these ids (the 3MF's object ids) | all binaries |
+| `--skip-objects` | "3,5,10" | Leave out the objects with these ids: the id `--engine-info` lists for each placed object (the plate instance's `identify_id` in the 3MF; the loader gives the object that id). An id the file has on no plate is ignored, as the official command line ignores it, and a `warning` / `SkipObjectsUnknownIds` event names the file's ids; an id on another plate than the one sliced is left alone. A plain model file gives its objects no ids | all binaries |
 | `--mtcpp` | count | Refuse a plate with more triangles (-59) | all binaries |
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | all binaries |
 | `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | all binaries |
@@ -365,7 +365,7 @@ Transforms run in the order given, before the objects are placed.
 | `--simplify` | `extra-high`, `high`, `medium`, `low` or `extra-low` | Reduce every part's triangles like the desktop Simplify tool, at that detail level (`medium` is the tool's default) | all binaries |
 | `--simplify-ratio` | percent | Simplify: remove this share of each part's triangles, the tool's decimate ratio; above 0 and below 100 | all binaries |
 | `--simplify-triangles` | count | Simplify: reduce each part to about this many triangles; a part already at or under it is left as it is | all binaries |
-| `--simplify-objects` | "3,5" | Simplify only these objects, by the 3MF's object ids (what `--skip-objects` takes); default: every object. A plain model file has no ids | all binaries |
+| `--simplify-objects` | "3,5" | Simplify only these objects, by the ids `--engine-info` lists (what `--skip-objects` takes); an id the file has on no plate is refused naming the file's ids (-2); default: every object. A plain model file has no ids | all binaries |
 | `--simplify-keep-paint` | | Simplify: carry painted colours, supports, seams and fuzzy skin onto the reduced mesh, as the desktop's "preserve painting" / "keep painting" setting does. Off, the paint is cleared, as the desktop clears it | `slicer_cli`, `slicer_cli-orcaslicer` |
 
 `--simplify`, `--simplify-ratio` and `--simplify-triangles` are the desktop
@@ -403,10 +403,11 @@ run goes on.
 | `--export-stl` | | Write the objects as one STL and stop | all binaries |
 | `--export-stls` | folder | Write each object as its own STL and stop | all binaries |
 | `--info` | | Print each object's size, volume and facets, and stop | all binaries |
-| `--engine-info` | file | What a file is (printer, plates, the app that made it), which of the package's programs fit it and which to use (`recommended`), as JSON | all binaries |
+| `--engine-info` | file | What a file is (printer, plates, the app that made it), which of the package's programs fit it and which to use (`recommended`), as JSON. For a project 3MF, its placed objects (`objects`: the id `--skip-objects` and `--simplify-objects` take, the file's object id, instance, plate and name) | all binaries |
 | `--gcode-timing` | `ORIGINAL OPTIMIZED` | Import two existing G-code files with this binary's native processor and print their normal-mode estimates as one JSON document. It never slices or rewrites either input, and it cannot be combined with any slicing, output, or probe flag. Orca and Snapmaker also require the printer vendor context described below | all binaries |
 | `--list-presets` | | This engine's system presets as JSON | all binaries |
 | `--list-settings` | | This engine's settings table as JSON: every key with its type and edit mode (`simple`/`advanced`/`develop`, plus `expert` on the OrcaSlicer build), and where the engine has them, its label, tooltip, category, default, bounds (`min`/`max`), unit, the preset that holds it (`scope`: `process`, `filament` or `printer`; left out for a setting in none of them) and, for enums, the values it takes. A field the engine has no value for is left out | all binaries |
+| `--list-flags` | | This program's flags as JSON: every flag with what it does, what value it takes, whether this binary takes it and which binaries of the package do; the official flags with their keys, types and defaults. Print settings are not in it (`--list-settings`) | all binaries |
 | `--printer` | name | With `--list-presets`: only this printer's presets, with its defaults and plate type | all binaries |
 
 For Orca and Snapmaker, pass the original printer preset's BBL-vendor Boolean explicitly:
@@ -450,6 +451,7 @@ own `schemas/` folder, so a caller checks against the build it runs:
 | `result.json` in `--outputdir` | `result.schema.json` |
 | `--list-presets` | `list-presets.schema.json` |
 | `--list-settings` | `list-settings.schema.json` |
+| `--list-flags` | `list-flags.schema.json` |
 | An event line's JSON (`[[SLICER_EVENT]] {...}`) | `event.schema.json` |
 
 A change to one of these documents changes its schema in the same commit. The
@@ -459,6 +461,21 @@ is always a schema change that callers can see. The one exception is the event
 lines: `event.schema.json` states the progress event in full and lists every
 event kind, but the other events may carry fields it does not list, so a caller
 reads only the fields it knows.
+
+`--list-flags` is the same contract for the flags: a caller that drives the
+binary (a worker, an agent) reads which flags this build takes, what each one
+does and takes, and which binaries of the package take it, from the binary it
+runs. A flag a release adds is a new entry, so a caller can check its own
+flag list against the release it pins instead of reading this document.
+
+```sh
+# The flags this build refuses, and why.
+slicer_cli-orcaslicer --list-flags | python3 -c '
+import json, sys
+for f in json.load(sys.stdin)["flags"]:
+    if not f["supported"]:
+        print(f["flag"], "|", f["refusal"])'
+```
 
 `--list-settings` is how an agent driving this binary finds a setting without
 reading the engine's source: the keys, their meaning and their valid values are

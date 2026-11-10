@@ -751,6 +751,13 @@ jobs:
           fi
           bash tests/test_simplify.sh --engine "${{ matrix.engine }}" "$SIMPLIFY_BINARY"
 
+      - name: Test flag list (${{ matrix.engine }})
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          FLAGS_BINARY="$ENGINE_BINARY"
+          bash tests/test_list_flags.sh --engine "${{ matrix.engine }}" "$FLAGS_BINARY"
+
       - name: Show sccache stats
         shell: bash
         run: sccache --show-stats
@@ -1386,6 +1393,13 @@ jobs:
           fi
           bash tests/test_simplify.sh --engine "${{ matrix.engine }}" "$SIMPLIFY_BINARY"
 
+      - name: Test flag list (${{ matrix.engine }})
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          FLAGS_BINARY="$ENGINE_BINARY"
+          bash tests/test_list_flags.sh --engine "${{ matrix.engine }}" "$FLAGS_BINARY"
+
       - name: Show sccache stats
         shell: bash
         run: sccache --show-stats
@@ -1735,6 +1749,8 @@ jobs:
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
           # --list-settings: the settings table of both engines as JSON.
           bash tests/test_list_settings.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          # --list-flags: the flags of every binary as JSON.
+          bash tests/test_list_flags.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer dist/verify/slicer-cli/slicer_cli-snapmaker
           kill "$HANG_WATCHDOG" 2>/dev/null || true
 
       - name: Upload hang samples (macOS)
