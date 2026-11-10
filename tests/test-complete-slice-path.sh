@@ -110,11 +110,13 @@ assert "slicer_cli" in d["fits"], d
 # instance, plate and name.
 assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube"}], d["objects"]
 '
-# A plain model file gives its objects no ids; the sentence says so.
-"$B" cube.stl --slice 1 --outputdir skip-stl --printer-preset "Bambu Lab A1 mini 0.4 nozzle" --skip-objects 1 > skip-stl.out 2>&1 || true
+# A plain model file gives its objects no ids; the warning says so and the
+# slice goes on.
+run skip-stl "$B" cube.stl --slice 1 --outputdir skip-stl/out --printer-preset "Bambu Lab A1 mini 0.4 nozzle" --skip-objects 1
+[ "$(rc skip-stl)" = 0 ] || { show skip-stl; fail "--skip-objects on a plain model file exit $(rc skip-stl)"; }
 py '
-import json; d = json.load(open("skip-stl/result.json"))
-assert d["return_code"] == -2 and "gives its objects no ids" in d["error_string"], d
+w = [l for l in open("skip-stl/stdout") if "SkipObjectsUnknownIds" in l]
+assert len(w) == 1 and "gives its objects no ids" in w[0], w
 '
 # An object name is reported as written, with the XML entities decoded.
 py '
@@ -1886,14 +1888,17 @@ if [ "$(uname -s)" = Linux ] && unshare -rm true 2>/dev/null; then
 fi
 
 # --skip-objects leaves the named object out; skipping all of them is -60. An
-# id the file has on no plate is refused naming the file's ids (-2), as
-# --simplify-objects refuses it: the ids are the ones --engine-info lists.
+# id the file has on no plate is ignored, as the official command line ignores
+# it, and a warning / SkipObjectsUnknownIds event names the file's ids (the
+# ones --engine-info lists), where --simplify-objects, a new flag, refuses.
 run skipall "$B" "$FIXTURE" --slice 1 --skip-objects 999999 --outputdir skipall/out
-[ "$(rc skipall)" != 0 ] || { show skipall; fail "--skip-objects of an id the file lacks was accepted"; }
+[ "$(rc skipall)" = 0 ] || { show skipall; fail "--skip-objects of an id the file lacks exit $(rc skipall)"; }
 py '
-import json; d = json.load(open("skipall/out/result.json"))
-assert d["return_code"] == -2, d["return_code"]
-assert "--skip-objects: no object has id 999999; the file\x27s object ids are 3521" in d["error_string"], d["error_string"]
+import json
+events = [json.loads(l[len("[[SLICER_EVENT]] "):]) for l in open("skipall/stdout") if l.startswith("[[SLICER_EVENT]] ")]
+w = [e for e in events if e.get("event") == "warning" and e.get("tag") == "SkipObjectsUnknownIds"]
+assert len(w) == 1, w
+assert "--skip-objects: no object has id 999999; the file\x27s object ids are 3521" in w[0]["message"], w[0]
 '
 ID=$(py '
 import re, zipfile
@@ -1905,7 +1910,7 @@ py '
 import json; d = json.load(open("skipone/out/result.json"))
 assert d["return_code"] == -60, d
 '
-echo "PASS: --skip-objects skips by the file's object id; nothing left is -60; an id the file lacks is refused naming its ids"
+echo "PASS: --skip-objects skips by the file's object id; nothing left is -60; an id the file lacks is ignored with a warning naming its ids"
 
 # --skip-objects belongs to the slice action (BambuStudio.cpp 6541-6581;
 # OrcaSlicer.cpp 5645-5720): a run of model actions only skips nothing, so
