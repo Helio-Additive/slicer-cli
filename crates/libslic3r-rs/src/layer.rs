@@ -3805,6 +3805,43 @@ impl Layer {
 
                 let boundary_contour = expoly.contour.clone();
 
+                // Fill.cpp:971 — `f->fill_surface(&surface, params)` is the very
+                // filler make_fills uses, so a grid goes through
+                // FillGrid::fill_surface here too: both sweeps as raw lines, one
+                // connect_infill over the shared boundary, reversed on odd
+                // layers (FillRectilinear.cpp:3115-3131). ANCHOR_GRID_FAITHFUL=0
+                // keeps the separate rectilinear generator.
+                if is_grid && crate::faithful_gate("ANCHOR_GRID_FAITHFUL") {
+                    let (raw, pair_boundary) =
+                        crate::fill::fill_rectilinear::generate_grid_raw_lines(
+                            &expoly,
+                            &infill_config,
+                            self.id as usize,
+                        );
+                    let mut fp = crate::fill::FillParams::new();
+                    fp.density = density;
+                    fp.anchor_length = surface_fill.params.anchor_length as f64;
+                    fp.anchor_length_max = surface_fill.params.anchor_length_max as f64;
+                    fp.dont_sort = false;
+                    let bbox = crate::geometry::BoundingBox::from_points(&boundary_contour.points);
+                    let mut connected = Vec::new();
+                    crate::fill::fill_base::connect_infill_polygons(
+                        raw,
+                        &pair_boundary,
+                        &bbox,
+                        &mut connected,
+                        infill_config.line_spacing,
+                        &fp,
+                    );
+                    if (self.id as usize) % 2 == 1 && crate::faithful_gate("GRID_ODD_REVERSE") {
+                        for pl in connected.iter_mut() {
+                            pl.points.reverse();
+                        }
+                    }
+                    sparse_infill_polylines.extend(connected);
+                    continue;
+                }
+
                 let generated = match fill_pattern {
                     InfillPattern::Rectilinear | InfillPattern::Grid => generate_fill_rectilinear(
                         &[expoly],

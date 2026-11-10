@@ -2384,13 +2384,57 @@ impl PrintObject {
         // to_polygons, which is faithful to ClipperLib's implicit union.
 
         // C++ `union_(Polygons a, Polygons b)` -> Polygons
+        let clib = crate::clipper_utils::polygons_ops_clib();
+        let boi_pp = |tag: &str, l: usize, pp: &[Polygon], extra: f64| {
+            if !crate::probe_enabled("BOI") {
+                return;
+            }
+            let mut np = 0usize;
+            let (mut sx, mut sy) = (0i64, 0i64);
+            for p in pp {
+                for q in p.points() {
+                    np += 1;
+                    sx += q.x;
+                    sy += q.y;
+                }
+            }
+            eprintln!("BOI {} L={} n={} np={} sx={} sy={} x={:.9}", tag, l, pp.len(), np, sx, sy, extra);
+        };
+        let boi_pl = |tag: &str, l: usize, pp: &[Polyline]| {
+            if !crate::probe_enabled("BOI") {
+                return;
+            }
+            let mut np = 0usize;
+            let (mut sx, mut sy) = (0i64, 0i64);
+            for p in pp {
+                for q in p.points() {
+                    np += 1;
+                    sx += q.x;
+                    sy += q.y;
+                }
+            }
+            eprintln!("BOI {} L={} n={} np={} sx={} sy={} x=0", tag, l, pp.len(), np, sx, sy);
+            if std::env::var("BOIP").ok().as_deref() == Some(&format!("{}:{}", tag, l)) {
+                for (k, p) in pp.iter().enumerate() {
+                    for q in p.points() {
+                        eprintln!("BOIP {} {} {}", k, q.x, q.y);
+                    }
+                }
+            }
+        };
         let union2 = |a: &[Polygon], b: &[Polygon]| -> Vec<Polygon> {
             let mut all = a.to_vec();
             all.extend_from_slice(b);
+            if clib {
+                return crate::clipper_utils::union_flat_clib(&all);
+            }
             crate::geometry::to_polygons(&union_polygons_ex(&all))
         };
         // C++ `intersection(Polygons, Polygons)` -> Polygons
         let intersect_polys = |a: &[Polygon], b: &[Polygon]| -> Vec<Polygon> {
+            if clib {
+                return crate::clipper_utils::intersection_polygons_raw_clib(a, b);
+            }
             crate::geometry::to_polygons(&intersection_ex_polygons_polygons(
                 a,
                 b,
@@ -2404,6 +2448,9 @@ impl PrintObject {
             if a.is_empty() {
                 return Vec::new();
             }
+            if clib {
+                return crate::clipper_utils::shrink_polygons_clib(a, delta_mm);
+            }
             crate::geometry::to_polygons(&crate::clipper_utils::shrink(
                 &union_polygons_ex(a),
                 delta_mm,
@@ -2414,6 +2461,9 @@ impl PrintObject {
         let closing_p = |a: &[Polygon], delta_mm: f64| -> Vec<Polygon> {
             if a.is_empty() {
                 return Vec::new();
+            }
+            if clib {
+                return crate::clipper_utils::closing_polygons_clib(a, delta_mm, delta_mm);
             }
             let grown = crate::clipper_utils::grow(
                 &union_polygons_ex(a),
@@ -2430,6 +2480,9 @@ impl PrintObject {
         let opening_p = |a: &[Polygon], delta_mm: f64| -> Vec<Polygon> {
             if a.is_empty() {
                 return Vec::new();
+            }
+            if clib {
+                return crate::clipper_utils::opening_polygons_clib(a, delta_mm, delta_mm);
             }
             let shrunk = crate::clipper_utils::shrink(
                 &union_polygons_ex(a),
@@ -2513,9 +2566,17 @@ impl PrintObject {
             let layer_height = layers_ref[lidx].height;
 
             // PrintObject.cpp:2211 — spacing from solid-infill flow of first region.
+            // PrintObject.cpp:2794 — `double spacing = …flow(frSolidInfill)
+            // .scaled_spacing()`: the truncated coord_t, which every delta below
+            // is a multiple of.
             let spacing = {
                 let region0 = &layers_ref[lidx].regions()[0];
-                region0.flow(FlowRole::SolidInfill, layer_height)?.spacing()
+                let f = region0.flow(FlowRole::SolidInfill, layer_height)?;
+                if clib {
+                    f.scaled_spacing() as f64 / crate::SCALING_FACTOR
+                } else {
+                    f.spacing()
+                }
             };
 
             // PrintObject.cpp:2213-2226 — gather lower-layer fill & solids.
@@ -2600,11 +2661,15 @@ impl PrintObject {
                         }
                         // PrintObject.cpp:2252 — closing & clip to solid.
                         let closed = closing_p(&worth_bridging, crate::unscale(SCALED_EPSILON as i64));
-                        worth_bridging =
+                        worth_bridging = if clib {
+                            // intersection(Polygons, ExPolygon) — raw paths out.
+                            crate::clipper_utils::intersection_polygons_raw_clib(&closed, &s_polys)
+                        } else {
                             crate::geometry::to_polygons(&crate::clipper_utils::intersection(
                                 &union_polygons_ex(&closed),
                                 std::slice::from_ref(s_ex),
-                            ));
+                            ))
+                        };
 
                         // PrintObject.cpp:2254 — record candidate.
                         cands.push(CandidateSurface {
@@ -2624,6 +2689,9 @@ impl PrintObject {
         // Serial insert into the ordered map (per-layer order preserved).
         for (lidx, cands) in per_layer_cands?.into_iter().enumerate() {
             if !cands.is_empty() {
+                for c in &cands {
+                    boi_pp("cand", lidx, &c.new_polys, 0.0);
+                }
                 surfaces_by_layer.insert(lidx, cands);
             }
         }
@@ -2684,6 +2752,7 @@ impl PrintObject {
                     .collect()
             };
             for (lower_idx, lines) in anchor_results? {
+                boi_pl("lines", lower_idx, &lines);
                 infill_lines.insert(lower_idx, lines);
             }
         }
@@ -3210,7 +3279,11 @@ impl PrintObject {
                 };
                 let _ = front_region_idx;
                 let spacing_scaled = bridging_flow.scaled_spacing();
-                let spacing_mm = bridging_flow.spacing();
+                let spacing_mm = if clib {
+                    spacing_scaled as f64 / crate::SCALING_FACTOR
+                } else {
+                    bridging_flow.spacing()
+                };
                 let target_flow_height = bridging_flow.height() * target_flow_height_factor;
 
                 // gather_areas_w_depth — PrintObject.cpp:2466-2494 / called 2797.
@@ -3239,6 +3312,27 @@ impl PrintObject {
                         }
                         i -= 1;
                     }
+                    if clib {
+                        // PrintObject.cpp:3073-3077: union_ex, closing_ex over the
+                        // raw polygons, and diff() with raw paths out.
+                        let close = |exs: &[ExPolygon]| -> Vec<Polygon> {
+                            let u = crate::clipper_utils::union_ex_clib(&ex_to_polygons(exs), 1);
+                            let grown = crate::clipper_utils::offset_polygons_clib(
+                                &ex_to_polygons(&u),
+                                SCALED_EPSILON as f32 as f64,
+                                crate::clipper_utils::OffsetJoinType::Miter,
+                            );
+                            ex_to_polygons(&crate::clipper_utils::offset_ex_polygons_clib(
+                                &grown,
+                                -(SCALED_EPSILON as f32 as f64),
+                                crate::clipper_utils::OffsetJoinType::Miter,
+                            ))
+                        };
+                        crate::clipper_utils::diff_polygons_raw_clib(
+                            &close(&layers_sparse_infill),
+                            &close(&not_sparse_infill),
+                        )
+                    } else {
                     let sparse = crate::clipper_utils::union_ex(&layers_sparse_infill);
                     let sparse = crate::clipper_utils::closing(
                         &sparse,
@@ -3252,6 +3346,7 @@ impl PrintObject {
                         crate::clipper_utils::OffsetJoinType::Miter,
                     );
                     crate::geometry::to_polygons(&crate::clipper_utils::difference(&sparse, &not_sparse))
+                    }
                 };
 
                 // PrintObject.cpp:2799-2820 — subtract lower-layer fills (this cluster).
@@ -3305,13 +3400,27 @@ impl PrintObject {
                 let anchors: Vec<Polyline> = infill_lines
                     .get(&(lidx - 1))
                     .map(|lines| {
+                        if clib {
+                            crate::clipper_utils::intersection_pl(
+                                lines,
+                                &crate::clipper_utils::polygons_as_paths(&shrink_p(
+                                    &expansion_area,
+                                    spacing_mm,
+                                )),
+                            )
+                        } else {
                         intersection_pl(
                             lines,
                             &union_polygons_ex(&shrink_p(&expansion_area, spacing_mm)),
                         )
+                        }
                     })
                     .unwrap_or_default();
                 let internal_unsupported_area = shrink_p(&deep_infill_area, spacing_mm * 4.5);
+                boi_pp("deep2", lidx, &deep_infill_area, spacing_scaled as f64);
+                boi_pp("exp", lidx, &expansion_area, 0.0);
+                boi_pp("tot", lidx, &total_fill_area, 0.0);
+                boi_pp("iua", lidx, &internal_unsupported_area, 0.0);
 
                 // PrintObject.cpp:2853-2937 — per-candidate expansion.
                 let cands_snapshot = jobs[job_idx].1.clone();
@@ -3322,16 +3431,22 @@ impl PrintObject {
                         let r = &layers[lidx].regions()[candidate.region_idx];
                         r.bridging_flow(FlowRole::SolidInfill, true, layer_height)?
                     };
-                    let flow_spacing_mm = flow.spacing();
                     let flow_scaled_spacing = flow.scaled_spacing();
+                    let flow_spacing_mm = if clib {
+                        flow_scaled_spacing as f64 / crate::SCALING_FACTOR
+                    } else {
+                        flow.spacing()
+                    };
                     let flow_scaled_width = flow.scaled_width();
 
                     // PrintObject.cpp:2857-2866 — area_to_be_bridge.
                     let mut area_to_be_bridge = expand_p(&candidate.new_polys, flow_spacing_mm);
                     area_to_be_bridge = intersect_polys(&area_to_be_bridge, &deep_infill_area);
-                    let mut area_ex = crate::clipper_utils::union_ex(
-                        &union_polygons_ex(&area_to_be_bridge),
-                    );
+                    let mut area_ex = if clib {
+                        crate::clipper_utils::union_ex_clib(&area_to_be_bridge, 1)
+                    } else {
+                        crate::clipper_utils::union_ex(&union_polygons_ex(&area_to_be_bridge))
+                    };
                     area_ex.retain(|p| {
                         !intersection_ex_expolygons_polygons(
                             std::slice::from_ref(p),
@@ -3350,16 +3465,42 @@ impl PrintObject {
                     }
 
                     // PrintObject.cpp:2873-2877 — boundary polylines.
-                    let mut boundary_plines: Vec<Polyline> =
+                    // to_polylines(const Polygons &): every ring as a closed
+                    // polyline. The second expand is by `0.3 * flow.spacing()`,
+                    // the unscaled spacing taken as a scaled delta (0.1 units).
+                    let closed_plines = |polys: &[Polygon]| -> Vec<Polyline> {
+                        polys
+                            .iter()
+                            .map(|p| {
+                                let mut pts = p.points().to_vec();
+                                if let Some(f) = pts.first().copied() {
+                                    pts.push(f);
+                                }
+                                Polyline::from_points(pts)
+                            })
+                            .collect()
+                    };
+                    let mut boundary_plines: Vec<Polyline> = if clib {
+                        closed_plines(&expand_p(&total_fill_area, 1.3 * flow_spacing_mm))
+                    } else {
                         ex_to_polylines(&union_polygons_ex(&expand_p(
                             &total_fill_area,
                             1.3 * flow_spacing_mm,
-                        )));
+                        )))
+                    };
                     {
-                        let limiting_plines = ex_to_polylines(&union_polygons_ex(&expand_p(
-                            &limiting_area,
-                            0.3 * flow_spacing_mm,
-                        )));
+                        let limiting_plines = if clib {
+                            closed_plines(&crate::clipper_utils::offset_polygons_clib(
+                                &limiting_area,
+                                (0.3 * flow.spacing()) as f32 as f64,
+                                crate::clipper_utils::OffsetJoinType::Miter,
+                            ))
+                        } else {
+                            ex_to_polylines(&union_polygons_ex(&expand_p(
+                                &limiting_area,
+                                0.3 * flow_spacing_mm,
+                            )))
+                        };
                         boundary_plines.extend(limiting_plines);
                     }
 
@@ -3387,6 +3528,9 @@ impl PrintObject {
                         )
                     };
 
+                    boi_pp("a2b", lidx, &area_to_be_bridge, bridging_angle);
+                    boi_pl("anchors", lidx, &anchors);
+                    boi_pl("bplines", lidx, &boundary_plines);
                     // PrintObject.cpp:2897-2900
                     boundary_plines.extend(anchors.iter().cloned());
                     if !lightning_area.is_empty()
@@ -3429,6 +3573,7 @@ impl PrintObject {
                         }
                     }
 
+                    boi_pp("constr", lidx, &bridging_area, bridging_angle);
                     // PrintObject.cpp:2919-2928 — clean & clip.
                     bridging_area = opening_p(&bridging_area, flow_spacing_mm);
                     bridging_area = closing_p(&bridging_area, flow_spacing_mm);
@@ -3437,6 +3582,7 @@ impl PrintObject {
                     bridging_area = diff_polygons(&bridging_area, &top_area);
                     bridging_area = opening_p(&bridging_area, flow_spacing_mm);
                     bridging_area = closing_p(&bridging_area, flow_spacing_mm);
+                    boi_pp("final", lidx, &bridging_area, bridging_angle);
                     expansion_area = diff_polygons(&expansion_area, &bridging_area);
 
                     // PrintObject.cpp:2935
@@ -3479,7 +3625,13 @@ impl PrintObject {
                 let h = self.layers[l].height;
                 let mut row = Vec::with_capacity(self.layers[l].regions().len());
                 for r in 0..self.layers[l].regions().len() {
-                    row.push(self.layers[l].regions()[r].flow(FlowRole::SolidInfill, h)?.spacing());
+                    // flow(frSolidInfill).scaled_spacing(), the truncated coord_t.
+                    let f = self.layers[l].regions()[r].flow(FlowRole::SolidInfill, h)?;
+                    row.push(if clib {
+                        f.scaled_spacing() as f64 / crate::SCALING_FACTOR
+                    } else {
+                        f.spacing()
+                    });
                 }
                 v.push(row);
             }
@@ -3567,10 +3719,22 @@ impl PrintObject {
                 let mut new_surfaces: Surfaces = Vec::new();
 
                 // PrintObject.cpp:2976-2981 — new internal infills.
-                let mut new_internal_infills =
-                    crate::clipper_utils::difference(&internal_exs, &union_polygons_ex(&cut_from_infill));
-                new_internal_infills =
-                    crate::clipper_utils::difference(&new_internal_infills, &additional_ensuring);
+                // PrintObject.cpp:3560-3562 — diff_ex(SurfacesPtr, Polygons), then
+                // diff_ex(ExPolygons, ExPolygons).
+                let mut new_internal_infills = if clib {
+                    crate::clipper_utils::diff_ex_polygons_polygons(
+                        &ex_to_polygons(&internal_exs),
+                        &cut_from_infill,
+                        ApplySafetyOffset::No,
+                    )
+                } else {
+                    crate::clipper_utils::difference(&internal_exs, &union_polygons_ex(&cut_from_infill))
+                };
+                new_internal_infills = if clib {
+                    crate::clipper_utils::difference_clib(&new_internal_infills, &additional_ensuring)
+                } else {
+                    crate::clipper_utils::difference(&new_internal_infills, &additional_ensuring)
+                };
                 for ep in new_internal_infills {
                     new_surfaces.push(Surface::new(SurfaceType::Internal, ep));
                 }
@@ -3585,8 +3749,16 @@ impl PrintObject {
                         if !solid_indices.contains(&cs.original_solid_idx) {
                             continue;
                         }
-                        let cs_union = union_polygons_ex(&cs.new_polys);
-                        let clipped = crate::clipper_utils::intersection(&cs_union, &fill_expolys);
+                        // intersection_ex(union_ex(cs.new_polys), region->fill_expolygons)
+                        let clipped = if clib {
+                            crate::clipper_utils::intersection_clib(
+                                &crate::clipper_utils::union_ex_clib(&cs.new_polys, 1),
+                                &fill_expolys,
+                            )
+                        } else {
+                            let cs_union = union_polygons_ex(&cs.new_polys);
+                            crate::clipper_utils::intersection(&cs_union, &fill_expolys)
+                        };
                         for ep in clipped {
                             let mut s = Surface::new(SurfaceType::InternalBridge, ep);
                             s.bridge_angle = Some(cs.bridge_angle);
@@ -3598,8 +3770,15 @@ impl PrintObject {
                 // PrintObject.cpp:3000-3006 — new internal solids.
                 let mut new_internal_solids = internal_solid_exs.clone();
                 new_internal_solids.extend(additional_ensuring.iter().cloned());
-                let mut new_internal_solids =
-                    crate::clipper_utils::difference(&new_internal_solids, &union_polygons_ex(&cut_from_infill));
+                let mut new_internal_solids = if clib {
+                    crate::clipper_utils::diff_ex_polygons_polygons(
+                        &ex_to_polygons(&new_internal_solids),
+                        &cut_from_infill,
+                        ApplySafetyOffset::No,
+                    )
+                } else {
+                    crate::clipper_utils::difference(&new_internal_solids, &union_polygons_ex(&cut_from_infill))
+                };
                 new_internal_solids = union_safety_offset_ex_expolygons(&new_internal_solids);
                 for ep in new_internal_solids {
                     new_surfaces.push(Surface::new(SurfaceType::InternalSolid, ep));

@@ -616,7 +616,16 @@ impl Flow {
     /// Bridge threads are round, so spacing = diameter + small gap.
     #[inline]
     pub fn bridge_extrusion_spacing(diameter: f64) -> f64 {
-        diameter + BRIDGE_EXTRA_SPACING
+        // Flow.cpp:229-232 — `float bridge_extrusion_spacing(float dmr) { return
+        // dmr + BRIDGE_EXTRA_SPACING; }`: a float plus the double 0.05, rounded
+        // back to float. For a 0.4 nozzle that is 0.45000002, which scales to
+        // 45000; 0.45 in double scales, through the float cast of
+        // scaled_spacing(), to 44999. BRIDGE_SPACING_F32=0 adds in double.
+        if crate::faithful_gate("BRIDGE_SPACING_F32") {
+            (((diameter as f32) as f64 + BRIDGE_EXTRA_SPACING) as f32) as f64
+        } else {
+            diameter + BRIDGE_EXTRA_SPACING
+        }
     }
 
     /// Calculate sensible default extrusion width based on nozzle diameter and role.

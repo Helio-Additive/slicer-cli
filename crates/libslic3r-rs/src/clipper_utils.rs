@@ -3622,6 +3622,47 @@ pub fn union_safety_offset_ex_expolygons(expolygons: &[ExPolygon]) -> ExPolygons
     union_safety_offset_ex(&crate::geometry::to_polygons(expolygons))
 }
 
+/// POLYGONS_OPS_CLIB (on): the `Polygons` overloads below — `diff`, `diff_ex`,
+/// `intersection_ex`, `expand`, `shrink`, `opening`, `closing` — run on the
+/// vendored ClipperLib at coord_t, over the raw paths as C++ hands them over
+/// (ClipperUtils.cpp:413-415, 592-613, 669-680, 741-742, 802). =0 unions the
+/// operands into expolygons first and uses the 1 um geo backend, as before.
+pub fn polygons_ops_clib() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("POLYGONS_OPS_CLIB"))
+}
+
+/// A millimetre delta as the scaled `float` a C++ offset call receives.
+pub fn mm_to_scaled_f32(delta_mm: CoordF) -> CoordF {
+    ((delta_mm * crate::SCALING_FACTOR) as f32) as f64
+}
+
+/// Raw polygons as hole-less expolygons, for the helpers that take their
+/// paths from `&[ExPolygon]`: each ring is flattened as it is.
+pub fn polygons_as_paths(polygons: &[Polygon]) -> ExPolygons {
+    polygons.iter().map(|p| ExPolygon::new(p.clone())).collect()
+}
+
+/// `shrink(const Polygons &, float delta)` = `offset(polygons, -delta)`
+/// (ClipperUtils.hpp), miter join.
+pub fn shrink_polygons_clib(polygons: &[Polygon], delta_mm: CoordF) -> Vec<Polygon> {
+    offset_polygons_clib(polygons, -mm_to_scaled_f32(delta_mm.abs()), OffsetJoinType::Miter)
+}
+
+/// `closing(const Polygons &, delta1, delta2)` (ClipperUtils.cpp:592-597):
+/// shrink_paths<Paths>(expand_paths<Paths>(polygons, delta1), delta2).
+pub fn closing_polygons_clib(polygons: &[Polygon], delta1_mm: CoordF, delta2_mm: CoordF) -> Vec<Polygon> {
+    let grown = offset_polygons_clib(polygons, mm_to_scaled_f32(delta1_mm.abs()), OffsetJoinType::Miter);
+    offset_polygons_clib(&grown, -mm_to_scaled_f32(delta2_mm.abs()), OffsetJoinType::Miter)
+}
+
+/// `opening(const Polygons &, delta1, delta2)` (ClipperUtils.cpp:606-613):
+/// expand_paths<Paths>(shrink_paths<Paths>(polygons, delta1), delta2).
+pub fn opening_polygons_clib(polygons: &[Polygon], delta1_mm: CoordF, delta2_mm: CoordF) -> Vec<Polygon> {
+    let shrunk = offset_polygons_clib(polygons, -mm_to_scaled_f32(delta1_mm.abs()), OffsetJoinType::Miter);
+    offset_polygons_clib(&shrunk, mm_to_scaled_f32(delta2_mm.abs()), OffsetJoinType::Miter)
+}
+
 /// Difference of raw polygon sets with Polygons output.
 /// ClipperUtils C++: `Polygons diff(const Polygons &subject, const Polygons &clip, ApplySafetyOffset)`
 /// (default ApplySafetyOffset::No). Hole semantics follow the NonZero fill
@@ -3630,6 +3671,9 @@ pub fn union_safety_offset_ex_expolygons(expolygons: &[ExPolygon]) -> ExPolygons
 pub fn diff_polygons(subject: &[Polygon], clip: &[Polygon]) -> Vec<Polygon> {
     if subject.is_empty() {
         return Vec::new();
+    }
+    if polygons_ops_clib() {
+        return diff_polygons_raw_clib(subject, clip);
     }
     let subject_ex = union_polygons_ex(subject);
     if clip.is_empty() {
@@ -3652,6 +3696,13 @@ pub fn diff_ex_polygons_polygons(
     if subject.is_empty() {
         return Vec::new();
     }
+    if polygons_ops_clib() {
+        return if matches!(_safety_offset, ApplySafetyOffset::Yes) {
+            difference_clib_safety(&polygons_as_paths(subject), &polygons_as_paths(clip))
+        } else {
+            polytree_ex_clib(&diff_polygons_raw_clib(subject, clip))
+        };
+    }
     let subject_ex = union_polygons_ex(subject);
     if clip.is_empty() {
         return subject_ex;
@@ -3670,6 +3721,13 @@ pub fn intersection_ex_polygons_polygons(
     if subject.is_empty() || clip.is_empty() {
         return Vec::new();
     }
+    if polygons_ops_clib() {
+        return if matches!(_safety_offset, ApplySafetyOffset::Yes) {
+            intersection_clib_safety(&polygons_as_paths(subject), &polygons_as_paths(clip))
+        } else {
+            polytree_ex_clib(&intersection_polygons_raw_clib(subject, clip))
+        };
+    }
     let subject_ex = union_polygons_ex(subject);
     let clip_ex = union_polygons_ex(clip);
     intersection(&subject_ex, &clip_ex)
@@ -3684,6 +3742,12 @@ pub fn intersection_ex_expolygons_polygons(
     if subject.is_empty() || clip.is_empty() {
         return Vec::new();
     }
+    if polygons_ops_clib() {
+        return polytree_ex_clib(&intersection_polygons_raw_clib(
+            &crate::geometry::to_polygons(subject),
+            clip,
+        ));
+    }
     let clip_ex = union_polygons_ex(clip);
     intersection(subject, &clip_ex)
 }
@@ -3695,6 +3759,9 @@ pub fn intersection_ex_expolygons_polygons(
 pub fn expand_polygons(polygons: &[Polygon], delta_mm: CoordF) -> Vec<Polygon> {
     if polygons.is_empty() {
         return Vec::new();
+    }
+    if polygons_ops_clib() {
+        return offset_polygons_clib(polygons, mm_to_scaled_f32(delta_mm.abs()), OffsetJoinType::Miter);
     }
     crate::geometry::to_polygons(&offset_polygons(
         polygons,
@@ -3714,6 +3781,9 @@ pub fn opening_polygons_2(
 ) -> Vec<Polygon> {
     if polygons.is_empty() {
         return Vec::new();
+    }
+    if polygons_ops_clib() {
+        return opening_polygons_clib(polygons, delta1_mm, delta2_mm);
     }
     let shrunk = offset_polygons(polygons, -delta1_mm.abs(), OffsetJoinType::Miter);
     crate::geometry::to_polygons(&offset_expolygons(

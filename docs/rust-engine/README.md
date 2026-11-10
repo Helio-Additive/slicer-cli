@@ -120,11 +120,11 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R815) |
+| Fixture | As brought over (R808) | Now (R816) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 148,122 (79.66%) |
-| Benchy arachne | 32,769 (13.68%) | 143,955 (60.81%) |
-| Majora | 1,512,438 (55.88%) | 1,525,490 (56.27%) |
+| Benchy classic | 30,486 (15.72%) | 149,309 (80.28%) |
+| Benchy arachne | 32,769 (13.68%) | 145,799 (61.61%) |
+| Majora | 1,512,438 (55.88%) | 1,527,592 (56.34%) |
 | Majora, prime tower | 83.5% | 83.5% |
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
@@ -146,9 +146,9 @@ Where each fixture stands, from the `PP` probe (below):
   of 300, gap fills on 248 of 254. The fill surfaces the perimeter step leaves
   are identical on 197 of 204 layers, the top surfaces on all 48 through
   `prepare_infill`, the sub-top surfaces on all 3, the bottom bridges on all 4.
-  The internal bridges of `bridge_over_infill` differ on every layer that has
-  one, and the fills are identical on 135 of 289 layers. Walls are 86% in
-  order; top surface 92%, solid infill 75%, sparse infill 48%, bridges 24%.
+  The internal bridges of `bridge_over_infill` are identical on all 11 layers,
+  and the fills on 173 of 289 layers. Walls are 86% in order; top surface 92%,
+  solid infill 75%, bridges 54%, sparse infill 47%.
 - **Benchy arachne.** Slices as classic. No layer's perimeters are identical:
   the arachne walls have the same structure with junctions 1 to about 130 scaled
   units off. About a quarter of the matching lines are out of order.

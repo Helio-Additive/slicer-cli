@@ -2446,6 +2446,23 @@ pub fn generate_grid_raw_lines(
         0.0
     };
     let angle_rad = config.angle.to_radians() + layer_angle;
+    // GRID_ANGLE_F32 (on): the sweep angles as C++ forms them, in `float`.
+    // Fill::_infill_direction (FillBase.cpp:204-244) starts from the float
+    // `angle`, adds `_layer_angle()` — 0 for FillGrid on every layer
+    // (FillRectilinear.hpp:75) — and float(M_PI/2); fill_surface_by_multilines
+    // (FillRectilinear.cpp:3050-3054) adds each sweep's float base, 0 and
+    // float(M_PI/2). So both sweeps sit at +90 and +180 degrees on every layer,
+    // and the rotation uses the cosine of a float angle. =0 turns the grid by 90
+    // degrees on odd layers only and keeps the angles in double.
+    let sweeps: [f64; 2] = if crate::faithful_gate("GRID_ANGLE_F32") {
+        let half_pi = std::f64::consts::FRAC_PI_2 as f32;
+        let mut out_angle: f32 = (std::f64::consts::PI * config.angle / 180.0) as f32;
+        out_angle += 0.0f32;
+        out_angle += half_pi;
+        [(out_angle + 0.0f32) as f64, (out_angle + half_pi) as f64]
+    } else {
+        [angle_rad, angle_rad + std::f64::consts::FRAC_PI_2]
+    };
     let pass_density = config.density / 2.0; // density /= sweep_count(2)
     let spacing = config.extrusion_width;
     // C++ poly_with_offset_base = ExPolygonWithOffset(expoly, 0, scale_(overlap -
@@ -2462,7 +2479,7 @@ pub fn generate_grid_raw_lines(
     // single connect_infill can snap+chain them (proven byte-exact vs C++).
     let base = ExPolygonWithOffset::new(expoly, 0.0, base_offset, 0);
     let mut out: Vec<Polyline> = Vec::new();
-    for a in [angle_rad, angle_rad + std::f64::consts::FRAC_PI_2] {
+    for a in sweeps {
         let pwo = ExPolygonWithOffset::from_base_outer_rotated(&base.polygons_outer, -a);
         if pwo.n_contours_outer == 0 {
             continue;
