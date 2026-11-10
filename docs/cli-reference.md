@@ -316,7 +316,7 @@ These older shortcuts set one setting each and keep working:
 |-|-|-|-|
 | `--slice` | 0 or N | Slice every plate (0) or plate N; writes `plate_N.gcode` and `result.json` | all binaries |
 | `--outputdir` | folder | Where `--slice` writes (default: the current folder) | all binaries |
-| `--skip-objects` | "3,5,10" | Leave out the objects with these ids: the id `--engine-info` lists for each placed object (the plate instance's `identify_id` in the 3MF; the loader gives the object that id) | all binaries |
+| `--skip-objects` | "3,5,10" | Leave out the objects with these ids: the id `--engine-info` lists for each placed object (the plate instance's `identify_id` in the 3MF; the loader gives the object that id). An id the file has on no plate is refused naming the file's ids (-2); an id on another plate than the one sliced is left alone. A plain model file gives its objects no ids | all binaries |
 | `--mtcpp` | count | Refuse a plate with more triangles (-59) | all binaries |
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | all binaries |
 | `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | all binaries |
@@ -365,7 +365,7 @@ Transforms run in the order given, before the objects are placed.
 | `--simplify` | `extra-high`, `high`, `medium`, `low` or `extra-low` | Reduce every part's triangles like the desktop Simplify tool, at that detail level (`medium` is the tool's default) | all binaries |
 | `--simplify-ratio` | percent | Simplify: remove this share of each part's triangles, the tool's decimate ratio; above 0 and below 100 | all binaries |
 | `--simplify-triangles` | count | Simplify: reduce each part to about this many triangles; a part already at or under it is left as it is | all binaries |
-| `--simplify-objects` | "3,5" | Simplify only these objects, by the ids `--engine-info` lists (what `--skip-objects` takes); default: every object. A plain model file has no ids | all binaries |
+| `--simplify-objects` | "3,5" | Simplify only these objects, by the ids `--engine-info` lists (what `--skip-objects` takes, refused the same way); default: every object. A plain model file has no ids | all binaries |
 | `--simplify-keep-paint` | | Simplify: carry painted colours, supports, seams and fuzzy skin onto the reduced mesh, as the desktop's "preserve painting" / "keep painting" setting does. Off, the paint is cleared, as the desktop clears it | `slicer_cli`, `slicer_cli-orcaslicer` |
 
 `--simplify`, `--simplify-ratio` and `--simplify-triangles` are the desktop

@@ -110,6 +110,28 @@ assert "slicer_cli" in d["fits"], d
 # instance, plate and name.
 assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube"}], d["objects"]
 '
+# A plain model file gives its objects no ids; the sentence says so.
+"$B" cube.stl --slice 1 --outputdir skip-stl --printer-preset "Bambu Lab A1 mini 0.4 nozzle" --skip-objects 1 > skip-stl.out 2>&1 || true
+py '
+import json; d = json.load(open("skip-stl/result.json"))
+assert d["return_code"] == -2 and "gives its objects no ids" in d["error_string"], d
+'
+# An object name is reported as written, with the XML entities decoded.
+py '
+import zipfile
+src = zipfile.ZipFile("'"$FIXTURE"'")
+with zipfile.ZipFile("named.3mf", "w", zipfile.ZIP_DEFLATED) as out:
+    for item in src.infolist():
+        data = src.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            data = data.replace(b"value=\"Cube\"", b"value=\"A &amp; B &lt;c&gt; &quot;d&quot; &#233;\"", 1)
+        out.writestr(item, data)
+'
+"$B" --engine-info named.3mf > info-named.json
+py '
+import json; d = json.load(open("info-named.json"))
+assert d["objects"][0]["name"] == "A & B <c> \"d\" \u00e9", d["objects"]
+'
 # A Snapmaker U1 file (made by Bambu Studio here) fits the OrcaSlicer engine
 # and, when the package carries it, the Snapmaker one, which is recommended:
 # no fitting engine made the file and the U1 is one of Snapmaker's own.
@@ -1863,9 +1885,16 @@ if [ "$(uname -s)" = Linux ] && unshare -rm true 2>/dev/null; then
     echo "PASS: --export-stl onto a full disk fails and leaves no STL (both engines, Linux)"
 fi
 
-# --skip-objects leaves the named object out; skipping all of them is -60.
+# --skip-objects leaves the named object out; skipping all of them is -60. An
+# id the file has on no plate is refused naming the file's ids (-2), as
+# --simplify-objects refuses it: the ids are the ones --engine-info lists.
 run skipall "$B" "$FIXTURE" --slice 1 --skip-objects 999999 --outputdir skipall/out
-[ "$(rc skipall)" = 0 ] || { show skipall; fail "--skip-objects of an id the file lacks exit $(rc skipall)"; }
+[ "$(rc skipall)" != 0 ] || { show skipall; fail "--skip-objects of an id the file lacks was accepted"; }
+py '
+import json; d = json.load(open("skipall/out/result.json"))
+assert d["return_code"] == -2, d["return_code"]
+assert "--skip-objects: no object has id 999999; the file\x27s object ids are 3521" in d["error_string"], d["error_string"]
+'
 ID=$(py '
 import re, zipfile
 m = zipfile.ZipFile("base.3mf").read("Metadata/model_settings.config").decode()
@@ -1876,7 +1905,7 @@ py '
 import json; d = json.load(open("skipone/out/result.json"))
 assert d["return_code"] == -60, d
 '
-echo "PASS: --skip-objects skips by the file's object id; nothing left is -60"
+echo "PASS: --skip-objects skips by the file's object id; nothing left is -60; an id the file lacks is refused naming its ids"
 
 # --skip-objects belongs to the slice action (BambuStudio.cpp 6541-6581;
 # OrcaSlicer.cpp 5645-5720): a run of model actions only skips nothing, so

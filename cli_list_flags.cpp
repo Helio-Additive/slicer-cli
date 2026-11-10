@@ -80,7 +80,8 @@ int run_list_flags(const std::string& engine, const std::string& engine_version)
         if (f.takes_value) entry["value"] = f.value_name;
         entry["help"]      = f.help;
         entry["works_in"]  = f.works_in;
-        entry["supported"] = true;
+        entry["supported"] = f.refusal.empty();
+        if (!f.refusal.empty()) entry["refusal"] = f.refusal;
         flags.push_back(std::move(entry));
     }
     // The modes --help explains in prose rather than in its tables.

@@ -28,6 +28,7 @@
 #include "libslic3r/Utils.hpp"
 
 #include "cli_flag_support.hpp"
+#include "cli_simplify.hpp"
 
 namespace slicer_cli {
 namespace {
@@ -880,9 +881,10 @@ std::vector<OwnFlag> own_flags() {
     for (const LegacyFlag& f : legacy_flags()) {
         // Every own flag works in every binary but the one the Snapmaker
         // build refuses (cli_simplify.cpp: its engine cannot carry paint).
-        const std::string works = f.id == Legacy::SimplifyKeepPaint ? "slicer_cli and slicer_cli-orcaslicer"
-                                                                    : all_binaries_label();
-        out.push_back(OwnFlag{f.name, f.takes_value, f.help_value, f.help, works});
+        const bool keep_paint = f.id == Legacy::SimplifyKeepPaint;
+        const std::string works = keep_paint ? "slicer_cli and slicer_cli-orcaslicer" : all_binaries_label();
+        out.push_back(OwnFlag{f.name, f.takes_value, f.help_value, f.help, works,
+                              keep_paint ? simplify_keep_paint_refusal() : std::string()});
     }
     return out;
 }

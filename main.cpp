@@ -7863,8 +7863,19 @@ private:
 /// runs --ensure-on-bed first, before the actions (BambuStudio.cpp 6188-6194
 /// then the action loop at 6336; OrcaSlicer.cpp 5443-5455 then 5470).
 /// --mtcpp follows the bed check (plate_triangle_limit).
+static std::set<int> g_known_object_ids;   // set once per run, before the plate steps (see simplify_meshes' call)
+
 static bool plate_object_steps(const CliOptions& o, Slic3r::Model& model, int plate, PlateOutcome& outcome) {
     std::vector<int> skipped;
+    // An id the file has nowhere is a mistake, not a no-op, as --simplify-objects
+    // treats it; an id on another plate is left alone.
+    if (const std::string why = slicer_cli::unknown_object_ids_refusal(
+            "--skip-objects", o.cli.option<Slic3r::ConfigOptionInts>("skip_objects")->values, g_known_object_ids);
+        !why.empty()) {
+        std::cerr << "Error: " << why << "\n";
+        set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
+        return false;
+    }
     if (slicer_cli::apply_skip_objects(o, model, skipped) < 0) {
         const std::string why = "Every object on plate " + std::to_string(plate) + " is in --skip-objects.";
         std::cerr << "Error: " << why << "\n";
@@ -10520,7 +10531,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // desktop's "more than 1M triangles" suggestion follows, on the
         // meshes as they now stand (cli_simplify.cpp).
         if (first_call) {
-            const slicer_cli::StepResult sm = slicer_cli::simplify_meshes(o, model);
+            // The ids --simplify-objects and --skip-objects may name: the
+            // project's placed objects on every plate (--slice N loads one
+            // plate, and an id on another plate is a no-op, not a mistake);
+            // for a model file or a 3MF without the member, the loaded ids.
+            g_known_object_ids.clear();
+            if (std::string model_settings;
+                o.input_files.size() == 1 && input_is_3mf(o.input_files.front()) &&
+                read_zip_member(o.input_files.front(), "Metadata/model_settings.config", model_settings))
+                g_known_object_ids = slicer_cli::project_object_ids(model_settings);
+            if (g_known_object_ids.empty())
+                for (const Slic3r::ModelObject* obj : model.objects)
+                    for (const Slic3r::ModelInstance* inst : obj->instances)
+                        g_known_object_ids.insert(int(inst->loaded_id));
+            const slicer_cli::StepResult sm = slicer_cli::simplify_meshes(o, model, g_known_object_ids);
             if (sm.code != 0) {
                 std::cerr << "Error: " << sm.message << "\n";
                 set_outcome_failure(outcome, sm.code, sm.message);

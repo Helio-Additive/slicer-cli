@@ -1,6 +1,7 @@
 // cli_engine_info.cpp — see cli_engine_info.hpp.
 #include "cli_engine_info.hpp"
 
+#include <algorithm>
 #include <map>
 
 namespace slicer_cli {
@@ -8,14 +9,47 @@ namespace {
 
 using json = nlohmann::json;
 
-// The value of attribute `name` in the text of one XML tag, or "".
+// The five XML entities and the numeric references, decoded; anything else
+// is left as written (the file's own spelling is better than a guess).
+std::string decode_entities(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] != '&') { out += text[i]; continue; }
+        const size_t semi = text.find(';', i);
+        if (semi == std::string::npos) { out += text.substr(i); break; }
+        const std::string entity = text.substr(i + 1, semi - i - 1);
+        if      (entity == "amp")  out += '&';
+        else if (entity == "lt")   out += '<';
+        else if (entity == "gt")   out += '>';
+        else if (entity == "quot") out += '"';
+        else if (entity == "apos") out += '\'';
+        else if (entity.size() > 1 && entity[0] == '#') {
+            try {
+                const bool hex = entity[1] == 'x' || entity[1] == 'X';
+                size_t pos = 0;
+                const unsigned long code = std::stoul(entity.substr(hex ? 2 : 1), &pos, hex ? 16 : 10);
+                if (pos != entity.size() - (hex ? 2 : 1) || code > 0x10FFFF) { out += text.substr(i, semi - i + 1); i = semi; continue; }
+                // UTF-8
+                if (code < 0x80) out += char(code);
+                else if (code < 0x800) { out += char(0xC0 | (code >> 6)); out += char(0x80 | (code & 0x3F)); }
+                else if (code < 0x10000) { out += char(0xE0 | (code >> 12)); out += char(0x80 | ((code >> 6) & 0x3F)); out += char(0x80 | (code & 0x3F)); }
+                else { out += char(0xF0 | (code >> 18)); out += char(0x80 | ((code >> 12) & 0x3F)); out += char(0x80 | ((code >> 6) & 0x3F)); out += char(0x80 | (code & 0x3F)); }
+            } catch (...) { out += text.substr(i, semi - i + 1); }
+        } else out += text.substr(i, semi - i + 1);
+        i = semi;
+    }
+    return out;
+}
+
+// The value of attribute `name` in the text of one XML tag, decoded, or "".
 std::string attr(const std::string& tag, const std::string& name) {
     const std::string needle = " " + name + "=\"";
     const size_t at = tag.find(needle);
     if (at == std::string::npos) return {};
     const size_t start = at + needle.size();
     const size_t end   = tag.find('"', start);
-    return end == std::string::npos ? std::string() : tag.substr(start, end - start);
+    return end == std::string::npos ? std::string() : decode_entities(tag.substr(start, end - start));
 }
 
 json integer_or_null(const std::string& text) {
@@ -89,6 +123,37 @@ json project_objects(const std::string& xml) {
         o["name"] = it == names.end() ? json(nullptr) : json(it->second);
     }
     return objects;
+}
+
+std::set<int> project_object_ids(const std::string& xml) {
+    std::set<int> ids;
+    for (const json& o : project_objects(xml))
+        if (o["id"].is_number_integer())
+            ids.insert(o["id"].get<int>());
+    return ids;
+}
+
+std::string unknown_object_ids_refusal(const char* flag, const std::vector<int>& wanted,
+                                       const std::set<int>& known) {
+    std::set<int> missing;
+    for (int id : wanted)
+        if (!known.count(id))
+            missing.insert(id);
+    if (missing.empty())
+        return {};
+    const auto list = [](const std::set<int>& values) {
+        std::string out;
+        for (int v : values) out += (out.empty() ? "" : ", ") + std::to_string(v);
+        return out;
+    };
+    // A plain model file gives its objects no id (loaded_id 0): the flags
+    // cannot name them, and the sentence says so instead of listing "0".
+    const bool no_ids = known.empty() || (known.size() == 1 && *known.begin() == 0);
+    if (no_ids)
+        return std::string(flag) + ": no object has id " + list(missing) +
+               "; this file gives its objects no ids (a plain model file). The flag takes the ids --engine-info "
+               "lists for a project 3MF";
+    return std::string(flag) + ": no object has id " + list(missing) + "; the file's object ids are " + list(known);
 }
 
 } // namespace slicer_cli

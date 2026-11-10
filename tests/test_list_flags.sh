@@ -57,7 +57,8 @@ for flag, value in [("--list-flags", None), ("--list-settings", None), ("--engin
                     ("--printer-preset", "NAME"), ("--simplify", "LEVEL"), ("--simplify-ratio", "PERCENT"),
                     ("--simplify-triangles", "N"), ("--simplify-objects", "IDS"), ("--simplify-keep-paint", None)]:
     f = by[flag]
-    assert f["source"] == "slicer-cli" and f["supported"] is True, f
+    assert f["source"] == "slicer-cli", f
+    assert f["supported"] is True or flag == "--simplify-keep-paint", f
     assert f["takes_value"] == (value is not None) and f.get("value") == value, f
     assert f["help"], f
 assert by["--help"]["aliases"] == ["-h"], by["--help"]
@@ -67,6 +68,10 @@ else:
     assert by["--printer-vendor-bbl"]["works_in"] == "slicer_cli-orcaslicer and slicer_cli-snapmaker", by["--printer-vendor-bbl"]
 keep = by["--simplify-keep-paint"]
 assert keep["works_in"] == "slicer_cli and slicer_cli-orcaslicer", keep
+if engine == "snapmaker":
+    assert keep["supported"] is False and "not available in slicer_cli-snapmaker" in keep["refusal"], keep
+else:
+    assert keep["supported"] is True and "refusal" not in keep, keep
 # The official flags, with their keys, types and the shared value words.
 for flag, key, typ in [("--slice", "slice", "int"), ("--arrange", "arrange", "int"),
                        ("--export-3mf", "export_3mf", "string"), ("--scale", "scale", "float"),

@@ -87,6 +87,7 @@ struct OwnFlag {
     std::string value_name;
     std::string help;
     std::string works_in;
+    std::string refusal;   // the sentence this build refuses the flag with; "" when it takes it
 };
 std::vector<OwnFlag> own_flags();
 
