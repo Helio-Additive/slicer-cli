@@ -1,0 +1,24 @@
+[package]
+name = "slicer-cli-rust"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "slicer_cli-rust: the command line of the Rust slicing engine, and the parity harness that scores it against slicer_cli"
+
+[[bin]]
+name = "slicer_cli-rust"
+path = "src/main.rs"
+
+[[bin]]
+name = "slicer-parity"
+path = "src/bin/slicer-parity.rs"
+
+[dependencies]
+slicer = { path = "../libslic3r-rs" }
+base64 = "0.22.1"
+env_logger = "0.10"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.140"
+sha2 = "0.10"
+tempfile = "3.17.1"
+walkdir = "2.5.0"
