@@ -112,7 +112,7 @@ const std::vector<LegacyFlag>& legacy_flags() {
         {"simplify",                  Legacy::Simplify,          true,  "LEVEL",   "Reduce every part's triangles like the desktop Simplify tool: extra-high, high, medium, low or extra-low detail"},
         {"simplify-ratio",            Legacy::SimplifyRatio,     true,  "PERCENT", "Simplify: remove this share of each part's triangles (0-100, exclusive), the tool's decimate ratio"},
         {"simplify-triangles",        Legacy::SimplifyTriangles, true,  "N",       "Simplify: reduce each part to about N triangles"},
-        {"simplify-objects",          Legacy::SimplifyObjects,   true,  "IDS",     "Simplify only these objects (the 3MF's object ids, as --skip-objects takes them); default: every object"},
+        {"simplify-objects",          Legacy::SimplifyObjects,   true,  "IDS",     "Simplify only these objects, by the ids --engine-info lists (what --skip-objects takes); default: every object"},
         {"simplify-keep-paint",       Legacy::SimplifyKeepPaint, false, "",        "Simplify: carry painted colours, supports and seams onto the reduced mesh (slicer_cli, slicer_cli-orcaslicer)"},
 #ifdef ENGINE_SNAPMAKER
         // Snapmaker Orca's engine has no allow_mix_temp setting (PrintConfig.cpp
