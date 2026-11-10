@@ -105,6 +105,10 @@ py '
 import json; d = json.load(open("info.json"))
 assert d["printer_model"] == "Bambu Lab X1 Carbon", d
 assert "slicer_cli" in d["fits"], d
+# The placed objects with the id --skip-objects and --simplify-objects take
+# (the plate instance identify_id, bbs_3mf.cpp 2443), their file object id,
+# instance, plate and name.
+assert d["objects"] == [{"id": 3521, "object": 2, "instance": 0, "plate": 1, "name": "Cube"}], d["objects"]
 '
 # A Snapmaker U1 file (made by Bambu Studio here) fits the OrcaSlicer engine
 # and, when the package carries it, the Snapmaker one, which is recommended:

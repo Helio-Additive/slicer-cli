@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/list-flags.schema.json",
+  "title": "slicer-cli --list-flags",
+  "description": "The JSON document --list-flags prints on stdout (run_list_flags in cli_list_flags.cpp): every flag this program takes, exit code 0. tests/test_list_flags.sh checks the documents it makes against this schema, so a change to the output must change this file too. Print settings are not here: every setting is a flag spelled with dashes, and --list-settings lists them.",
+  "type": "object",
+  "required": [
+    "engine",
+    "engine_version",
+    "flags"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "engine": {
+      "description": "The build that wrote it.",
+      "enum": [
+        "bambustudio",
+        "orcaslicer",
+        "snapmaker"
+      ]
+    },
+    "engine_version": {
+      "type": "string"
+    },
+    "flags": {
+      "type": "array",
+      "description": "Sorted by flag.",
+      "items": {
+        "$ref": "#/$defs/flag"
+      }
+    }
+  },
+  "$defs": {
+    "flag": {
+      "type": "object",
+      "required": [
+        "flag",
+        "source",
+        "supported",
+        "takes_value",
+        "help",
+        "works_in"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "flag": {
+          "type": "string",
+          "description": "The flag as typed, with its dashes (--slice, -o)."
+        },
+        "aliases": {
+          "type": "array",
+          "description": "Other spellings the official parser takes for the same flag.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "description": "official: a flag of the engine's own command line (its CLI definitions); slicer-cli: slicer-cli's own.",
+          "enum": [
+            "official",
+            "slicer-cli"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "description": "The official definition's key (export_3mf for --export-3mf). Official flags only."
+        },
+        "supported": {
+          "type": "boolean",
+          "description": "False when this binary refuses the flag with `refusal`."
+        },
+        "refusal": {
+          "type": "string",
+          "description": "The sentence the run prints when the flag is given. With supported false."
+        },
+        "takes_value": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "string",
+          "description": "What the value is (FILE, N, LEVEL, ...). With takes_value true, where the definition names it."
+        },
+        "type": {
+          "description": "The official definition's value type. Official flags only.",
+          "enum": [
+            "float",
+            "floats",
+            "int",
+            "ints",
+            "string",
+            "strings",
+            "percent",
+            "point",
+            "points",
+            "bool",
+            "bools",
+            "enum",
+            "other"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "description": "An enum's values.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "default": {
+          "type": "string",
+          "description": "The default as the engine writes it."
+        },
+        "help": {
+          "type": "string"
+        },
+        "works_in": {
+          "type": "string",
+          "description": "The binaries of the package that take the flag, as --help states them."
+        },
+        "note": {
+          "type": "string",
+          "description": "A flag that is accepted and does nothing says so here."
+        }
+      }
+    }
+  }
+}

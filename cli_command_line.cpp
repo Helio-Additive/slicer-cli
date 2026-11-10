@@ -58,7 +58,7 @@ enum class Legacy {
     CalibMode, CalibStart, CalibEnd, CalibStep, CalibExtruderId, CalibNoNumbers,
     Layout, LayoutPlan, Progress,
     PrinterPreset, ProcessPreset, FilamentPreset, ListPresets, ListSettings, Printer,
-    AllowSubstitution, EngineInfo, LayerHeight, SingleInstance,
+    AllowSubstitution, EngineInfo, LayerHeight, SingleInstance, ListFlags,
     Simplify, SimplifyRatio, SimplifyTriangles, SimplifyObjects, SimplifyKeepPaint,
 };
 
@@ -103,6 +103,7 @@ const std::vector<LegacyFlag>& legacy_flags() {
         {"filament-preset",           Legacy::FilamentPreset,    true,  "NAME",    "Filament system preset by name; repeat for more filaments"},
         {"list-presets",              Legacy::ListPresets,       false, "",        "This engine's system presets as JSON"},
         {"list-settings",             Legacy::ListSettings,      false, "",        "This engine's settings as JSON"},
+        {"list-flags",                Legacy::ListFlags,         false, "",        "This program's flags as JSON: what each does, what value it takes, which binaries take it"},
         {"printer",                   Legacy::Printer,           true,  "NAME",    "With --list-presets: only this printer's presets"},
         {"allow-substitution",        Legacy::AllowSubstitution, false, "",        "With --slice: slice a 3MF whose values this engine substitutes"},
         {"engine-info",               Legacy::EngineInfo,        true,  "FILE",    "What the file is and which engine binary fits it, as JSON"},
@@ -593,6 +594,7 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
             case Legacy::FilamentPreset: o.filament_presets.push_back(value); break;
             case Legacy::ListPresets:    m.list_presets = true; break;
             case Legacy::ListSettings:   m.list_settings = true; break;
+            case Legacy::ListFlags:      m.list_flags = true; break;
             case Legacy::Printer:        m.list_printer = value; break;
             case Legacy::AllowSubstitution: o.allow_substitution = true; break;
             case Legacy::EngineInfo:     m.engine_info_file = value; break;
@@ -870,6 +872,23 @@ void print_help(std::ostream& out, const char* prog) {
         << "\t1) setting values from the command line (highest priority)\n"
         << "\t2) setting values loaded with --load-settings and --load-filaments\n"
         << "\t3) setting values loaded from 3mf (lowest priority)\n";
+}
+
+
+std::vector<OwnFlag> own_flags() {
+    std::vector<OwnFlag> out;
+    for (const LegacyFlag& f : legacy_flags()) {
+        // Every own flag works in every binary but the one the Snapmaker
+        // build refuses (cli_simplify.cpp: its engine cannot carry paint).
+        const std::string works = f.id == Legacy::SimplifyKeepPaint ? "slicer_cli and slicer_cli-orcaslicer"
+                                                                    : all_binaries_label();
+        out.push_back(OwnFlag{f.name, f.takes_value, f.help_value, f.help, works});
+    }
+    return out;
+}
+
+bool is_official_flag_name(const std::string& name) {
+    return official_names().count(name) != 0;
 }
 
 } // namespace slicer_cli

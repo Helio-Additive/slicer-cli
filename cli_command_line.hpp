@@ -30,6 +30,7 @@ struct ModeArgs {
     std::string engine_info_file;   // --engine-info FILE
     bool        list_presets = false;
     bool        list_settings = false;   // --list-settings
+    bool        list_flags = false;      // --list-flags
     std::string list_printer;       // --printer (with --list-presets)
     bool        help = false;
     CalibOptions calib;
@@ -76,6 +77,22 @@ bool gcode_timing_requested(int argc, char** argv);
 /// run must stop; `o.slice_mode` and `o.outputdir` are filled even then, so
 /// the caller can write result.json the way --slice always does.
 bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, ParseRefusal& refusal);
+
+/// One of slicer-cli's own flags (the table beside the official ones), for
+/// --list-flags: the name without dashes, whether it takes a value and the
+/// value's name, its help line and the binaries that take it.
+struct OwnFlag {
+    std::string name;
+    bool        takes_value;
+    std::string value_name;
+    std::string help;
+    std::string works_in;
+};
+std::vector<OwnFlag> own_flags();
+
+/// Whether `name` (without dashes) is a flag of this engine's official CLI
+/// definitions; such a name is read by the official parser first.
+bool is_official_flag_name(const std::string& name);
 
 /// --help: usage, slicer-cli's own flags, and every official flag with where
 /// it comes from (BambuStudio, OrcaSlicer, both) and whether this build has it.

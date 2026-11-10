@@ -108,6 +108,8 @@
 #include "cli_failure_reason.hpp"
 #include "cli_run_steps.hpp"
 #include "cli_simplify.hpp"
+#include "cli_list_flags.hpp"
+#include "cli_engine_info.hpp"
 #include "cli_load_settings.hpp"
 #include "cli_repetitions.hpp"
 #include "cli_assemble.hpp"
@@ -11930,6 +11932,10 @@ static int run_info(const std::string& argv0, const std::string& path, const std
         // A geometry-only 3MF is one plate, as the slice takes it.
         out["plates"] = slicer_cli::classify_3mf(path) == slicer_cli::ThreeMfKind::GeometryOnly
                             ? 1 : std::max(1, count_3mf_plates(path));
+        // The placed objects with the id --skip-objects and --simplify-objects
+        // take (cli_engine_info.hpp). A geometry-only 3MF declares none.
+        if (std::string model_settings; read_zip_member(path, "Metadata/model_settings.config", model_settings))
+            out["objects"] = slicer_cli::project_objects(model_settings);
 
         std::map<std::string, std::string> meta;
         if (read_zip_member(path, "3D/3dmodel.model", model_xml))
@@ -13108,6 +13114,9 @@ int main(int argc, char** argv) {
     if (o.slice_mode && mode_args.list_settings)
         return refuse_run(CLI_INVALID_PARAMS, "--list-settings lists this engine's settings and slices nothing; give "
                                               "it without --slice.");
+    if (o.slice_mode && mode_args.list_flags)
+        return refuse_run(CLI_INVALID_PARAMS, "--list-flags lists this program's flags and slices nothing; give it "
+                                              "without --slice.");
     if (!mode_args.engine_info_file.empty()) {
         boost::log::core::get()->set_logging_enabled(false);
         return run_info(o.argv0, mode_args.engine_info_file, o.printer_preset);
@@ -13120,6 +13129,17 @@ int main(int argc, char** argv) {
     if (mode_args.list_settings) {
         boost::log::core::get()->set_logging_enabled(false);
         return run_list_settings();
+    }
+    if (mode_args.list_flags) {
+        boost::log::core::get()->set_logging_enabled(false);
+#ifdef ENGINE_SNAPMAKER
+        const char* engine = "snapmaker";
+#elif defined(ENGINE_ORCA)
+        const char* engine = "orcaslicer";
+#else
+        const char* engine = "bambustudio";
+#endif
+        return slicer_cli::run_list_flags(engine, engine_version_text());
     }
     // --load-assemble-list builds the plates itself: no model files with it
     // (BambuStudio.cpp 1848-1853), and on OrcaSlicer no transforms either
