@@ -274,6 +274,11 @@ pub struct PrintObject {
     /// index i maps to painted print region `1 + i` (install_painted_regions).
     pub painted_submeshes: Vec<(u8, crate::normal_utils::indexed_triangle_set)>,
 
+    /// The first layer took the multi-region Elephant foot branch in `slice()`
+    /// (PrintObjectSlice.cpp:2331-2378), so `make_perimeters` must not
+    /// compensate it again.
+    pub l0_efc_done_in_slice: bool,
+
     /// R768 — strict per-state sub-meshes for the top/bottom painted-surface
     /// propagation: one `(state, mesh)` per `EnforcerBlockerType` state
     /// 0..=num_filaments (state 0 = the unpainted rest), from
@@ -340,6 +345,7 @@ impl PrintObject {
             shared_regions: None,
             typed_slices: false,
             painted_submeshes: Vec::new(),
+            l0_efc_done_in_slice: false,
             painted_submeshes_strict: Vec::new(),
             mm_negative_layer_slices: Vec::new(),
             paint_frame_offset: None,
@@ -374,6 +380,7 @@ impl PrintObject {
             shared_regions: None,
             typed_slices: false,
             painted_submeshes: Vec::new(),
+            l0_efc_done_in_slice: false,
             painted_submeshes_strict: Vec::new(),
             mm_negative_layer_slices: Vec::new(),
             paint_frame_offset: None,
@@ -1017,6 +1024,89 @@ impl PrintObject {
         // need this because Layer/LayerRegion carry parent pointers from their
         // ctors (Layer.hpp:125, Layer.hpp:309).
         self.wire_layer_hierarchy();
+
+        // L0_EFC_MULTI_REGION (on): PrintObjectSlice.cpp:2331-2378 and 2391-2408.
+        // slice_volumes compensates the Elephant foot after apply_mm_segmentation
+        // (:2202), so a first layer with several regions takes the multi-region
+        // branch: the merged layer is compensated once and every region is
+        // trimmed by the result. =0 compensates each region's slices by
+        // themselves in make_perimeters (the single-region branch, :2295-2313).
+        if crate::faithful_gate("L0_EFC_MULTI_REGION")
+            && crate::faithful_gate("L0_EFC")
+            && self.config.raft_layers == 0
+            && self.config.elephant_foot_compensation > 0.0
+            && self.layers.first().is_some_and(|l| l.regions().len() > 1)
+        {
+            use crate::clipper_utils::OffsetJoinType;
+            // :2277-2279 `float(scale_(elefant_foot_compensation))`, :2368 `unscale<double>(elfoot)`.
+            let elfoot = crate::scaled_f(self.config.elephant_foot_compensation) as f32;
+            // :2360 `float(scale_(slice_closing_radius) * 1.5)`
+            let eps = (crate::scaled_f(self.config.slice_closing_radius) * 1.5) as f32 as f64;
+            let layer = &mut self.layers[0];
+            let layer_height = layer.height;
+            if let Ok(ext_flow) = layer.regions()[0].flow(crate::flow::FlowRole::ExternalPerimeter, layer_height) {
+                // Layer::merged(eps) (Layer.cpp:150-170).
+                let mut polygons: crate::geometry::Polygons = Vec::new();
+                for layerm in layer.regions() {
+                    let config = layerm.region().config();
+                    if config.bottom_solid_layers > 0
+                        || config.top_solid_layers > 0
+                        || config.fill_density > 0.0
+                        || config.perimeters > 0
+                    {
+                        // offset(Surfaces, delta): expolygons_offset (ClipperUtils.cpp:537-547).
+                        let surf_ex = crate::surface::to_expolygons(&layerm.slices.surfaces);
+                        let (raw, collected) =
+                            crate::clipper_utils::offset_expolygons_clib_raw_scaled_counted(
+                                &surf_ex, eps, OffsetJoinType::Miter);
+                        if collected > 1 && eps > 0.0 {
+                            polygons.extend(crate::clipper_utils::union_flat_clib(&raw));
+                        } else {
+                            polygons.extend(raw);
+                        }
+                    }
+                }
+                let merged = crate::clipper_utils::polytree_ex_clib(&polygons);
+                // :2362 lslices_1st_layer = offset_ex(layer->merged(eps), -eps);
+                let lslices_1st_layer =
+                    crate::clipper_utils::offset_expolygons_clib_scaled(&merged, -eps, OffsetJoinType::Miter);
+                // :2363-2364
+                let trimming =
+                    crate::elephant_foot_compensation::elephant_foot_compensation_expolygons_with_flow(
+                        &lslices_1st_layer,
+                        &ext_flow,
+                        elfoot as f64 * crate::libslic3r::SCALING_FACTOR,
+                    );
+                let trimming_p = crate::geometry::to_polygons(&trimming);
+                // :2372-2378 trim surfaces
+                for region in layer.regions_mut().iter_mut() {
+                    let contour_exp = crate::surface::to_expolygons(&region.slices.surfaces);
+                    region.slices.surfaces =
+                        crate::clipper_utils::intersection_ex_expolygons_polygons(&contour_exp, &trimming_p)
+                            .into_iter()
+                            .map(|ex| crate::surface::Surface {
+                                expolygon: ex,
+                                surface_type: crate::surface::SurfaceType::Internal,
+                                thickness: -1.0,
+                                thickness_layers: 1,
+                                bridge_angle: None,
+                                extra_perimeters: 0,
+                            })
+                            .collect();
+                }
+                // :2384
+                layer.make_slices();
+                // :2391-2408 the first layer keeps the uncompensated lslices,
+                // sorted along the shortest path.
+                let ordering_points: Vec<crate::geometry::Point> = lslices_1st_layer
+                    .iter()
+                    .map(|ex| ex.contour.points[0])
+                    .collect();
+                let order = crate::shortest_path::chain_points(&ordering_points, None);
+                layer.lslices = order.into_iter().map(|i| lslices_1st_layer[i].clone()).collect();
+                self.l0_efc_done_in_slice = true;
+            }
+        }
 
         // Mark step as complete
         // PrintObjectSlice.cpp:843
@@ -1838,6 +1928,7 @@ impl PrintObject {
         use rayon::prelude::*;
         let canceled = self.canceled.clone();
         let object_config = &self.config;
+        let l0_efc_done_in_slice = self.l0_efc_done_in_slice;
         self.layers
             .par_iter_mut()
             .enumerate()
@@ -1859,7 +1950,9 @@ impl PrintObject {
             // With this ON the layer-0 surface matches native's structure
             // exactly (1452 pts / 8 holes; the 76-pt island byte-exact).
             // L0_EFC=0 restores the legacy arm.
-            if idx == 0
+            if idx == 0 && l0_efc_done_in_slice {
+                // The multi-region branch already ran in slice().
+            } else if idx == 0
                 && crate::faithful_gate("L0_EFC")
                 && object_config.elephant_foot_compensation > 0.0
             {

@@ -7730,10 +7730,10 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - divergent: `Print::clear` :60 and `Print::clear` :1786 (9%, 0.52x)
 - partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :1806 (50%, 0.75x)
 - divergent: `Print::validate` :1413 and `Print::validate` :1855 (5%, 0.15x)
-- divergent: `Print::process` :2178 and `Print::process` :1954 (12%, 1.13x)
+- divergent: `Print::process` :2178 and `Print::process` :1954 (13%, 1.15x)
 - divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :589 (20%, 35.79x)
-- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3126 (23%, 0.41x)
-- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3492 (21%, 0.39x)
+- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3134 (23%, 0.41x)
+- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3500 (21%, 0.39x)
 - stub: `PrintStatistics::config` :4454 and `Print::config` :540 (6%, 0.03x)
 
 Missing in the Rust file:
@@ -7976,18 +7976,18 @@ Rust only:
 - `Print::entity_points` :559
 - `apply_cooling_postprocess` :1646
 - `Print::apply` :1838 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `Print::make_brim` :3260 — C++ has it in `Brim`
-- `Print::all_extruders` :3396
-- `Print::is_canceled` :3432
-- `Print::cancel` :3438 — C++ has it in `PrintBase`
-- `Print::throw_if_canceled` :3444 — C++ has it in `PrintBase`, `SLAPrintSteps`
-- `Print::set_status_callback` :3453 — C++ has it in `PrintBase`
-- `Print::set_status` :3462 — C++ has it in `PrintBase`
-- `Print::invalidate_all_steps` :3470 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `collect_entity_lines` :3615
-- `emit_tower_tcr` :3660
-- `emit_layer_by_island` :4127
-- `Print::default` :4734
+- `Print::make_brim` :3268 — C++ has it in `Brim`
+- `Print::all_extruders` :3404
+- `Print::is_canceled` :3440
+- `Print::cancel` :3446 — C++ has it in `PrintBase`
+- `Print::throw_if_canceled` :3452 — C++ has it in `PrintBase`, `SLAPrintSteps`
+- `Print::set_status_callback` :3461 — C++ has it in `PrintBase`
+- `Print::set_status` :3470 — C++ has it in `PrintBase`
+- `Print::invalidate_all_steps` :3478 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `collect_entity_lines` :3623
+- `emit_tower_tcr` :3668
+- `emit_layer_by_island` :4135
+- `Print::default` :4742
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 
@@ -8363,24 +8363,24 @@ Tier 1. C++ functions 82 (plus 2 constructors, 1 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5143 (25%, 0.69x)
-- partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5159 (52%, 1.18x)
-- divergent: `PrintObject::make_perimeters` :470 and `PrintObject::make_perimeters` :1739 (26%, 1.06x)
-- divergent: `PrintObject::prepare_infill` :902 and `PrintObject::prepare_infill` :2011 (19%, 1.13x)
-- divergent: `PrintObject::infill` :1154 and `PrintObject::infill` :4433 (18%, 4.12x)
-- divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5038 (8%, 3.4x)
-- partial: `PrintObject::clear_overhangs_for_lift` :1270 and `PrintObject::clear_overhangs_for_lift` :4856 (50%, 0.8x)
-- divergent: `PrintObject::detect_overhangs_for_lift` :1282 and `PrintObject::detect_overhangs_for_lift` :4875 (26%, 0.77x)
-- divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :4833 (0%, 0.26x)
-- divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5296 (0%, 0.38x)
-- divergent: `PrintObject::invalidate_all_steps` :1916 and `PrintObject::invalidate_all_steps` :478 (0%, 0.31x)
-- partial: `PrintObject::detect_surfaces_type` :1951 and `PrintObject::detect_surfaces_type` :3825 (42%, 2.15x)
-- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :6615 (18%, 0.92x)
-- stub: `PrintObject::slicing_parameters` :3862 and `PrintObject::slicing_parameters` :431 (0%, 0.02x)
-- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6111 (45%, 2.11x)
-- partial: `PrintObject::discover_sub_top_surfaces` :5839 and `PrintObject::discover_sub_top_surfaces` :2221 (48%, 1.2x)
-- divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :4944 (13%, 2.53x)
-- partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :5395 (50%, 0.92x)
+- divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5236 (25%, 0.69x)
+- partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5252 (52%, 1.18x)
+- divergent: `PrintObject::make_perimeters` :470 and `PrintObject::make_perimeters` :1829 (26%, 1.08x)
+- divergent: `PrintObject::prepare_infill` :902 and `PrintObject::prepare_infill` :2104 (19%, 1.13x)
+- divergent: `PrintObject::infill` :1154 and `PrintObject::infill` :4526 (18%, 4.12x)
+- divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5131 (8%, 3.4x)
+- partial: `PrintObject::clear_overhangs_for_lift` :1270 and `PrintObject::clear_overhangs_for_lift` :4949 (50%, 0.8x)
+- divergent: `PrintObject::detect_overhangs_for_lift` :1282 and `PrintObject::detect_overhangs_for_lift` :4968 (26%, 0.77x)
+- divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :4926 (0%, 0.26x)
+- divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5389 (0%, 0.38x)
+- divergent: `PrintObject::invalidate_all_steps` :1916 and `PrintObject::invalidate_all_steps` :485 (0%, 0.31x)
+- partial: `PrintObject::detect_surfaces_type` :1951 and `PrintObject::detect_surfaces_type` :3918 (42%, 2.15x)
+- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :6708 (18%, 0.92x)
+- stub: `PrintObject::slicing_parameters` :3862 and `PrintObject::slicing_parameters` :438 (0%, 0.02x)
+- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6204 (45%, 2.11x)
+- partial: `PrintObject::discover_sub_top_surfaces` :5839 and `PrintObject::discover_sub_top_surfaces` :2314 (48%, 1.2x)
+- divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :5037 (13%, 2.53x)
+- partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :5488 (50%, 0.92x)
 
 Missing in the Rust file:
 
@@ -8453,32 +8453,32 @@ Rust only:
 - `ObjectRef::new` :174
 - `ObjectRef::config` :186 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
 - `ObjectRef::print` :192 — C++ has it in `Print`, `PrintBase`
-- `PrintObject::new` :322
-- `PrintObject::with_canceled` :326
-- `PrintObject::with_config` :357
-- `PrintObject::set_shared_regions` :391
-- `PrintObject::set_canceled` :397
-- `PrintObject::set_print_config` :405
-- `PrintObject::print` :412 — C++ has it in `Print`, `PrintBase`
-- `PrintObject::config` :422 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `PrintObject::set_mesh` :437 — C++ has it in `Model`
-- `PrintObject::set_negative_mesh` :444
-- `PrintObject::mesh` :448 — C++ has it in `Format/STEP`, `Model`
-- `PrintObject::layers` :453 — C++ has it in `Print`
-- `PrintObject::layers_mut` :458
-- `PrintObject::is_step_done` :464 — C++ has it in `Print`, `PrintBase`, `SLAPrint`
-- `PrintObject::set_step_done` :471
-- `PrintObject::slice` :484 — C++ has it in `PrintObjectSlice`, `SLA/SupportTree`, `TriangleMesh`
-- `PrintObject::apply_mm_segmentation_tier1` :1067
-- `PrintObject::wire_layer_hierarchy` :1706
-- `PrintObject::bridge_over_infill` :2359
-- `PrintObject::has_support` :5118 — C++ has it in `Print`, `Support/SupportMaterial`
-- `PrintObject::num_printing_regions` :5125 — C++ has it in `Print`
-- `PrintObject::printing_region` :5135
-- `PrintObject::discover_vertical_shells` :5438
-- `polygons_diff` :6722
-- `polygons_intersection` :6737
-- `PrintObject::default` :6753
+- `PrintObject::new` :327
+- `PrintObject::with_canceled` :331
+- `PrintObject::with_config` :363
+- `PrintObject::set_shared_regions` :398
+- `PrintObject::set_canceled` :404
+- `PrintObject::set_print_config` :412
+- `PrintObject::print` :419 — C++ has it in `Print`, `PrintBase`
+- `PrintObject::config` :429 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `PrintObject::set_mesh` :444 — C++ has it in `Model`
+- `PrintObject::set_negative_mesh` :451
+- `PrintObject::mesh` :455 — C++ has it in `Format/STEP`, `Model`
+- `PrintObject::layers` :460 — C++ has it in `Print`
+- `PrintObject::layers_mut` :465
+- `PrintObject::is_step_done` :471 — C++ has it in `Print`, `PrintBase`, `SLAPrint`
+- `PrintObject::set_step_done` :478
+- `PrintObject::slice` :491 — C++ has it in `PrintObjectSlice`, `SLA/SupportTree`, `TriangleMesh`
+- `PrintObject::apply_mm_segmentation_tier1` :1157
+- `PrintObject::wire_layer_hierarchy` :1796
+- `PrintObject::bridge_over_infill` :2452
+- `PrintObject::has_support` :5211 — C++ has it in `Print`, `Support/SupportMaterial`
+- `PrintObject::num_printing_regions` :5218 — C++ has it in `Print`
+- `PrintObject::printing_region` :5228
+- `PrintObject::discover_vertical_shells` :5531
+- `polygons_diff` :6815
+- `polygons_intersection` :6830
+- `PrintObject::default` :6846
 
 ### `PrintObjectSlice` (.cpp) and `print_object_slice.rs`
 

@@ -47,6 +47,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R820 | The order of the fills inside an island. (1) `Region::append` takes the entities out of every sortable fill collection (GCode.cpp 9125-9133), so `extrude_infill` chains the single paths of a region, not its collections (6983-7009). The port had this parked as `ISLAND_FLATTEN` because it scored far below zero: a path taken out of its collection was printed without its feature tag, width and speed. (2) Each thin fill sits in `fills` in a collection of its own (end of `make_fills`), so gap fills are chained with the other fills instead of following them. (3) The paths of a grid may not be reversed by the chain (`params.can_reverse = false`, Fill.cpp 832-833; FillBase.cpp 172-175) | on: `ISLAND_FLATTEN` (was parked), `FILL_GRID_NO_REVERSE` (new) | 164,807 → 171,768 (92.33%) | 204,849 → 212,289 (89.65%) | 1,847,143 → 1,847,625 (68.24%) |
 | R821 | No engine change. The source map: `scripts/parity/file_map.py` writes `docs/rust-engine/FILE_MAP.md`, every libslic3r unit against the Rust file of the same name, function by function. It replaces the hand-kept counts of `PORT_LEDGER.md` | none | unchanged (171,768) | unchanged (212,289) | unchanged (1,847,625) |
 | R822 | From the map: `GCode/CoolingBuffer` had no Rust file; its five functions (`calculate_layer_slowdown`, `new_feedrate_to_reach_time_stretch` and the three `extruder_range_slow_down_*`) move out of `gcode/cooling.rs` into `gcode/cooling_buffer.rs` under their C++ names, output unchanged. From the G-code: wipe into infill. `WipingExtrusions::mark_wiping_extrusions` and `ensure_perimeters_infills_order` (ToolOrdering.cpp 3906-4117), driven as `Print::_make_wipe_tower` drives them (Print.cpp 4266-4329): the sparse infill marked for a tool change is taken off the volume purged on the tower, a region asks for its filament only for what cannot be overridden (ToolOrdering.cpp 939-1017), and the overridden fills print first after the change, closed by `; PURGING FINISHED` (GCode.cpp 5826-5828, 9046-9101) | on: `WIPE_INTO_INFILL` (new) | unchanged (171,768) | unchanged (212,289) | 1,847,625 → 1,954,872 (71.90%) |
+| R823 | The Elephant foot compensation of a first layer with several regions. `slice_volumes` compensates after `apply_mm_segmentation` (PrintObjectSlice.cpp 2202), so a painted first layer takes the multi-region branch (2331-2378): the merged layer, closed by 1.5 × `slice_closing_radius`, is compensated once, every region is cut by the result, and the layer keeps the uncompensated outline as its `lslices`, chained by `chain_points` (2391-2408). The port compensated each region's slices by themselves in `make_perimeters`, after the untyped slices were backed up | on: `L0_EFC_MULTI_REGION` (new) | unchanged (171,768) | unchanged (212,289) | 1,954,872 → 1,959,722 (72.07%) |
 
 ## Findings
 
@@ -208,3 +209,13 @@ The Rust engine as it came from R808, against the kept oracle files:
 - R822, the source map against R821: units with a Rust file of the same name 276 → 277, without 34 → 33;
   functions matched 3,662 → 3,671 (faithful 3,084 → 3,089, partial 357 → 361), missing in the pair
   4,724 → 4,720, in a unit with no Rust file 673 → 668, Rust only 4,395 → 4,399.
+- R823: the first-layer tool order of Majora is the oracle's (T0, T4, T2, T3). It is read from the
+  compensated `raw_slices` (ToolOrdering.cpp 642-728); uncompensated, a 0.27 mm piece of the first filament
+  survived the shrink and put that filament last. On layer 0 the top surfaces now agree with the oracle
+  exactly, the region slices are 792 pieces against 788 (815 before), `lslices` 1,927 points against 1,928.
+- R823, found and not fixed: on Majora layers 1 and 2 the `lslices` differ before any compensation (same
+  point count with other sums on layer 1; 6 outlines against 7 on layer 2), so slicing or the segmentation.
+- R823, the source map: headline unchanged against R822; the round's code is part of `PrintObject::slice_volumes`
+  (2,266 tokens, listed as missing), which the port keeps inside `PrintObject::slice`.
+  `GCode/BedExcludeChecker` (no Rust file) was read: it checks a finished `GCodeProcessorResult` against the
+  exclude areas and writes no G-code, so it waits behind the files that do.

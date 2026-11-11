@@ -2302,6 +2302,14 @@ impl Print {
                                 continue;
                             }
                             let a = s.expolygon.contour.area();
+                            if crate::probe_enabled("FLOPROBE") {
+                                let bb = crate::geometry::BoundingBox::from_points(&s.expolygon.contour.points);
+                                eprintln!(
+                                    "[FLO] z={:.3} ext={} area={:.1} pts={} bbox=({},{})-({},{})",
+                                    target.print_z, ext, a, s.expolygon.contour.points.len(),
+                                    bb.min.x, bb.min.y, bb.max.x, bb.max.y
+                                );
+                            }
                             let e = min_areas.entry(ext).or_insert(a);
                             if a < *e {
                                 *e = a;
