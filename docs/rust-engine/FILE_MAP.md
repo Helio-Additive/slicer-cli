@@ -41,27 +41,27 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 6 |
 | C++ units with no Rust file | 33 |
-| Rust files with no C++ file of that name | 49 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
+| Rust files with no C++ file of that name | 48 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3682 (41%) |
-| estimate: faithful | 3088 (84% of matched) |
-| estimate: partial | 364 (10% of matched) |
+| matched to a Rust function in the paired file | 3689 (41%) |
+| estimate: faithful | 3094 (84% of matched) |
+| estimate: partial | 365 (10% of matched) |
 | estimate: divergent | 199 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
-| missing in the paired Rust file | 4702 |
-| of those, a function of that name exists in another Rust file | 1619 |
+| missing in the paired Rust file | 4695 |
+| of those, a function of that name exists in another Rust file | 1612 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 764 |
 | of the rest, 25 tokens or more | 1954 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4482 |
+| Rust functions with no C++ function of that name in the pair | 4488 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2827 | 2360 | 285 | 162 | 20 | 4024 |
+| 1 | 180 | 174 | 6851 | 2834 | 2366 | 286 | 162 | 20 | 4017 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -78,7 +78,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 48 | 9 | 12 | 0 | 149 | 95 |
 | 1 | `PrintConfig` | `print_config.rs` | 137 | 8 | 0 | 2 | 0 | 127 | 101 |
 | 1 | `Print` | `print.rs` | 236 | 5 | 1 | 6 | 1 | 223 | 93 |
-| 1 | `GCode` | `g_code.rs` | 152 | 5 | 4 | 10 | 0 | 133 | 77 |
+| 1 | `GCode` | `g_code.rs` | 152 | 11 | 5 | 10 | 0 | 126 | 77 |
 | 1 | `Config` | `config.rs` | 327 | 12 | 2 | 0 | 0 | 313 | 80 |
 | 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 83 | 16 | 13 | 9 | 92 | 50 |
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 19 | 3 | 0 | 0 | 183 | 70 |
@@ -229,7 +229,6 @@ their function names come from, when there is one.
 | `gcode/ironing.rs` | no C++ file of this name | 34 |  |
 | `gcode/mod.rs` | module | 1 |  |
 | `gcode/multi_material.rs` | no C++ file of this name | 42 |  |
-| `gcode/smooth_speed.rs` | no C++ file of this name | 13 | `GCode` |
 | `gcode/wipe_tower_integration.rs` | no C++ file of this name | 3 | `GCode` |
 | `gcode/writer.rs` | no C++ file of this name | 118 |  |
 | `geometry/aabb_tree.rs` | no C++ file of this name | 77 |  |
@@ -3297,7 +3296,7 @@ Tier 1. C++ functions 8 (plus 1 constructors, 0 destructors, 0 operators), Rust 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `make_wave` :32 and `make_wave` :94 (90%, 1.09x)
-- partial: `FillGyroid::_fill_surface_single` :151 and `FillGyroid::fill_surface_single` :387 (82%, 1.11x)
+- partial: `FillGyroid::_fill_surface_single` :151 and `FillGyroid::fill_surface_single` :387 (82%, 2.34x)
 
 Missing in the Rust file:
 
@@ -3308,9 +3307,9 @@ Rust only:
 - `sqr` :46 — C++ has it in `libslic3r`
 - `cross2` :52 — C++ has it in `Point`
 - `FillGyroid::new` :366
-- `append` :511 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
-- `GyroidConfig::default` :542
-- `generate_gyroid_infill` :557
+- `append` :566 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
+- `GyroidConfig::default` :597
+- `generate_gyroid_infill` :612
 
 ### `Fill/FillHoneycomb` (.cpp+.hpp) and `fill/fill_honeycomb.rs`
 
@@ -3915,24 +3914,25 @@ Rust only:
 
 ### `GCode` (.cpp+.hpp) and `g_code.rs`
 
-Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Rust functions 109. Matched 19: faithful 5, partial 4, divergent 10, stub 0.
+Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Rust functions 121. Matched 26: faithful 11, partial 5, divergent 10, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Wipe::wipe` :440 and `wipe` :3326 (31%, 0.72x)
-- divergent: `GCode::unretract` :1959 and `unretract` :3275 (17%, 1.12x)
-- divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :245 (8%, 1.33x)
-- divergent: `GCode::change_layer` :6473 and `change_layer` :3886 (17%, 0.89x)
-- divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :766 (17%, 1.89x)
-- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :2418 (55%, 4.5x)
-- divergent: `GCode::extrude_path` :6927 and `extrude_path` :1940 (5%, 0.05x)
-- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :2587 (28%, 1.64x)
-- partial: `GCode::extrude_support` :7011 and `extrude_support` :2973 (33%, 1.61x)
-- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :4035 (30%, 1.08x)
-- divergent: `GCode::travel_to` :8198 and `travel_to` :3131 (11%, 0.21x)
-- divergent: `GCode::retract` :8498 and `retract` :3217 (8%, 0.21x)
-- divergent: `GCode::set_extruder` :8617 and `set_extruder` :3503 (2%, 0.03x)
-- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :5511 (0%, 0.06x)
+- partial: `Wipe::wipe` :440 and `wipe` :3327 (31%, 0.72x)
+- divergent: `GCode::unretract` :1959 and `unretract` :3276 (17%, 1.12x)
+- divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :246 (8%, 1.33x)
+- divergent: `GCode::change_layer` :6473 and `change_layer` :3887 (17%, 0.89x)
+- divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :767 (17%, 1.89x)
+- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :2419 (55%, 4.5x)
+- divergent: `GCode::extrude_path` :6927 and `extrude_path` :1941 (5%, 0.05x)
+- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :2588 (28%, 1.64x)
+- partial: `GCode::extrude_support` :7011 and `extrude_support` :2974 (33%, 1.61x)
+- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :7944 (50%, 1.06x)
+- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :4036 (30%, 1.08x)
+- divergent: `GCode::travel_to` :8198 and `travel_to` :3132 (11%, 0.21x)
+- divergent: `GCode::retract` :8498 and `retract` :3218 (8%, 0.21x)
+- divergent: `GCode::set_extruder` :8617 and `set_extruder` :3504 (2%, 0.03x)
+- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :5512 (0%, 0.06x)
 
 Missing in the Rust file:
 
@@ -4042,14 +4042,7 @@ Missing in the Rust file:
 - `GCode::GCodeOutputStream::write` :7106 (65 tokens) — in `zipper.rs`
 - `GCode::GCodeOutputStream::writeln` :7119 (34 tokens)
 - `GCode::GCodeOutputStream::write_format` :7125 (131 tokens)
-- `GCode::mapping_speed` :7158 (21 tokens) — in `gcode/smooth_speed.rs`
-- `GCode::get_speed_coor_x` :7165 (15 tokens) — in `gcode/smooth_speed.rs`
 - `GCode::get_overhang_degree_corr_speed` :7171 (275 tokens)
-- `need_smooth_speed` :7205 (20 tokens) — in `gcode/smooth_speed.rs`
-- `GCode::split_and_mapping_speed` :7213 (841 tokens) — in `gcode/smooth_speed.rs`
-- `GCode::merge_same_speed_paths` :7363 (200 tokens) — in `gcode/smooth_speed.rs`
-- `GCode::set_speed_transition` :7403 (660 tokens) — in `gcode/smooth_speed.rs`
-- `GCode::smooth_speed_discontinuity_area` :7499 (55 tokens) — in `gcode/smooth_speed.rs`
 - `GCode::slowDownByHeight` :7513 (337 tokens)
 - `GCode::calc_max_volumetric_speed` :7565 (189 tokens)
 - `GCode::_extrude` :7587 (3174 tokens) — in `extruder.rs`, `gcode/extruder.rs`, `gcode/wipe_tower.rs`
@@ -4072,96 +4065,101 @@ Missing in the Rust file:
 
 Rust only:
 
-- `not_split_length` :28
-- `max_step_length` :33
-- `min_step_length` :38
-- `is_space` :101
-- `parse_leading_uint` :107
-- `Vec2f::new` :278
-- `Vec2f::index` :286
-- `Vec2f::index_mut` :297
-- `Vec2f::add` :309 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `rotate2d` :317
-- `never_skip_tag` :325 — C++ has it in `GCode/WipeTower`
-- `split_getlines` :362
-- `stream_read_float` :393
-- `SeamContextGuard::install` :539
-- `SeamContextGuard::drop` :550
-- `active_place_seam` :559
-- `apply_seam_split` :597
-- `TravelConfig::default` :626
-- `overhang_fan_marker_needed` :652
-- `overhang_degree_corr_speed` :673
-- `perimeter_base_speed` :733
-- `ExpProfGuard::drop` :1236
-- `expprof_report` :1243
-- `extrude_collection` :1256
-- `travel_target_for_entity` :1765
-- `writer_last_pos` :1796
-- `chained_path_from` :1810 — C++ has it in `ExtrusionEntityCollection`
-- `volumetric_capped_speed` :1833
-- `get_entity_mm3_per_mm` :1848
-- `get_entity_first_point` :1861
-- `get_entity_role` :1877
-- `fmt_g6` :1925
-- `extrude_path_ex` :1956
-- `extrude_path_with_arc_fitting` :1971
-- `extrude_perimeters_entities` :2763
-- `extrude_infill_entities` :2865
-- `apply_layer_cooling` :3655
-- `bridge_fan_speed` :3719
-- `overhang_fan_speed` :3738
-- `set_fan_speed_for_role` :3760
-- `GCodeLayerState::default` :3850
-- `emit_layer_preamble` :3945
-- `emit_layer_postamble` :4002
-- `emit_object_start_label` :4077
-- `emit_object_end_label` :4106
-- `emit_layer_object_labels` :4132
-- `set_loop_wipe_path` :5387
-- `first_extrusion_path` :5403
-- `width_tag_before_speed` :5414
-- `set_speed_before_path` :5425
-- `GCode::new` :5459
-- `GCode::from_content_and_stats` :5467
-- `GCode::from_string` :5472 — C++ has it in `Config`
-- `GCode::from_string_with_stats` :5480
-- `GCode::content` :5485
-- `GCode::as_bytes` :5490
-- `GCode::len` :5495
-- `GCode::is_empty` :5500 — C++ has it in `PresetBundle`
-- `GCode::append_line` :5505
-- `GCode::append_comment` :5516
-- `GCode::write_to_file` :5523
-- `GCode::read_from_file` :5534 — C++ has it in `Model`
-- `GCode::line_count` :5540
-- `GCode::lines` :5545 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
-- `GCode::clear` :5550 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `GCode::fmt` :5557
-- `GCode::fmt` :5568
-- `GCode::from` :5574 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `String::from` :5580 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `GCodeStats::new` :5626
-- `GCodeStats::calculate_filament_stats` :5642
-- `GCodeStats::print_time_formatted` :5655
-- `GCodeStats::filament_used_meters` :5664
-- `GCodeStats::fmt` :5670
-- `GCodeHeader::new` :5705
-- `GCodeHeader::with_raw_settings` :5709
-- `GCodeHeader::with_estimated_time` :5722
-- `GCodeHeader::generate_header_block` :5745
-- `GCodeHeader::generate_config_block` :5797
-- `GCodeHeader::generate_minimal_config_block` :5884
-- `GCodeHeader::generate_executable_block_start` :5943
-- `GCodeHeader::generate_executable_block_content` :5950
-- `GCodeHeader::generate_complete_header` :6099
-- `is_config_key_skipped` :6261
-- `format_config_value` :6321
-- `process_gcode_template` :6532
-- `eval_condition` :7085
-- `eval_expr` :7272
-- `resolve_all_vars_in_expr` :7410
-- `eval_math` :7460
+- `not_split_length` :29
+- `max_step_length` :34
+- `min_step_length` :39
+- `is_space` :102
+- `parse_leading_uint` :108
+- `Vec2f::new` :279
+- `Vec2f::index` :287
+- `Vec2f::index_mut` :298
+- `Vec2f::add` :310 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `rotate2d` :318
+- `never_skip_tag` :326 — C++ has it in `GCode/WipeTower`
+- `split_getlines` :363
+- `stream_read_float` :394
+- `SeamContextGuard::install` :540
+- `SeamContextGuard::drop` :551
+- `active_place_seam` :560
+- `apply_seam_split` :598
+- `TravelConfig::default` :627
+- `overhang_fan_marker_needed` :653
+- `overhang_degree_corr_speed` :674
+- `perimeter_base_speed` :734
+- `ExpProfGuard::drop` :1237
+- `expprof_report` :1244
+- `extrude_collection` :1257
+- `travel_target_for_entity` :1766
+- `writer_last_pos` :1797
+- `chained_path_from` :1811 — C++ has it in `ExtrusionEntityCollection`
+- `volumetric_capped_speed` :1834
+- `get_entity_mm3_per_mm` :1849
+- `get_entity_first_point` :1862
+- `get_entity_role` :1878
+- `fmt_g6` :1926
+- `extrude_path_ex` :1957
+- `extrude_path_with_arc_fitting` :1972
+- `extrude_perimeters_entities` :2764
+- `extrude_infill_entities` :2866
+- `apply_layer_cooling` :3656
+- `bridge_fan_speed` :3720
+- `overhang_fan_speed` :3739
+- `set_fan_speed_for_role` :3761
+- `GCodeLayerState::default` :3851
+- `emit_layer_preamble` :3946
+- `emit_layer_postamble` :4003
+- `emit_object_start_label` :4078
+- `emit_object_end_label` :4107
+- `emit_layer_object_labels` :4133
+- `set_loop_wipe_path` :5388
+- `first_extrusion_path` :5404
+- `width_tag_before_speed` :5415
+- `set_speed_before_path` :5426
+- `GCode::new` :5460
+- `GCode::from_content_and_stats` :5468
+- `GCode::from_string` :5473 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :5481
+- `GCode::content` :5486
+- `GCode::as_bytes` :5491
+- `GCode::len` :5496
+- `GCode::is_empty` :5501 — C++ has it in `PresetBundle`
+- `GCode::append_line` :5506
+- `GCode::append_comment` :5517
+- `GCode::write_to_file` :5524
+- `GCode::read_from_file` :5535 — C++ has it in `Model`
+- `GCode::line_count` :5541
+- `GCode::lines` :5546 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :5551 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :5558
+- `GCode::fmt` :5569
+- `GCode::from` :5575 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :5581 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :5627
+- `GCodeStats::calculate_filament_stats` :5643
+- `GCodeStats::print_time_formatted` :5656
+- `GCodeStats::filament_used_meters` :5665
+- `GCodeStats::fmt` :5671
+- `GCodeHeader::new` :5706
+- `GCodeHeader::with_raw_settings` :5710
+- `GCodeHeader::with_estimated_time` :5723
+- `GCodeHeader::generate_header_block` :5746
+- `GCodeHeader::generate_config_block` :5798
+- `GCodeHeader::generate_minimal_config_block` :5885
+- `GCodeHeader::generate_executable_block_start` :5944
+- `GCodeHeader::generate_executable_block_content` :5951
+- `GCodeHeader::generate_complete_header` :6100
+- `is_config_key_skipped` :6262
+- `format_config_value` :6322
+- `process_gcode_template` :6533
+- `eval_condition` :7086
+- `eval_expr` :7273
+- `resolve_all_vars_in_expr` :7411
+- `eval_math` :7461
+- `scale_` :7635 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale_` :7640 — C++ has it in `Point`, `libslic3r`
+- `point_mul_f64` :7646
+- `path_from` :7653
+- `poly_len` :7686
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
@@ -5785,16 +5783,16 @@ Rust only:
 
 ### `Layer` (.cpp+.hpp) and `layer.rs`
 
-Tier 1. C++ functions 56 (plus 5 constructors, 2 destructors, 0 operators), Rust functions 66. Matched 21: faithful 15, partial 4, divergent 2, stub 0.
+Tier 1. C++ functions 56 (plus 5 constructors, 2 destructors, 0 operators), Rust functions 67. Matched 21: faithful 15, partial 4, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2192 (11%, 0.26x)
-- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2048 (46%, 0.79x)
-- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2087 (31%, 0.44x)
-- partial: `Layer::has_compatible_layer_regions` :173 and `Layer::has_compatible_layer_regions` :1658 (50%, 0.56x)
-- divergent: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :1741 (28%, 0.6x)
-- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :2393 (36%, 1.15x)
+- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2204 (11%, 0.26x)
+- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2060 (46%, 0.79x)
+- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2099 (31%, 0.44x)
+- partial: `Layer::has_compatible_layer_regions` :173 and `Layer::has_compatible_layer_regions` :1670 (50%, 0.56x)
+- divergent: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :1753 (28%, 0.6x)
+- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :2405 (36%, 1.15x)
 
 Missing in the Rust file:
 
@@ -5837,50 +5835,51 @@ Missing in the Rust file:
 Rust only:
 
 - `fillprof_report` :31
-- `LayerRegion::new` :212
-- `LayerRegion::layer_id` :239
-- `LayerRegion::region_id` :245
-- `LayerRegion::region` :255
-- `LayerRegion::get_slices` :263
-- `LayerRegion::flow` :276 — C++ has it in `Flow`, `LayerRegion`, `PrintRegion`
-- `LayerRegion::bridging_flow` :309 — C++ has it in `Flow`, `LayerRegion`
-- `LayerRegion::slices_to_fill_surfaces_clipped` :357 — C++ has it in `LayerRegion`
-- `LayerRegion::prepare_fill_surfaces` :400 — C++ has it in `LayerRegion`
-- `LayerRegion::make_perimeters` :457 — C++ has it in `LayerRegion`, `PrintObject`
-- `LayerRegion::process_external_surfaces` :1138 — C++ has it in `LayerRegion`, `PrintObject`
-- `LayerRegion::infill_area_threshold_with_flow` :1214
-- `LayerRegion::infill_area_threshold` :1225 — C++ has it in `LayerRegion`
-- `LayerRegion::trim_surfaces` :1232 — C++ has it in `LayerRegion`
-- `LayerRegion::elephant_foot_compensation_step` :1259 — C++ has it in `LayerRegion`
-- `convert_polygon_to_extrusion_loop` :1320
-- `convert_polyline_to_extrusion_path` :1342
-- `extract_and_union_surfaces` :1358
-- `LoopNode::new` :1394
-- `LoopNode::default` :1408
-- `Layer::new` :1492
-- `Layer::object_id` :1533 — C++ has it in `Exception`, `ObjectID`
-- `Layer::wire_config_hierarchy` :1569
-- `Layer::get_region_mut` :1604
-- `Layer::regions` :1610
-- `Layer::regions_mut` :1616
-- `Layer::make_perimeters_with_lower` :1710
-- `Layer::make_perimeters_with_neighbors` :1719
-- `Layer::record_cooling_node_for_each_extrusion` :2356
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :3701 — C++ has it in `Fill/Fill`
-- `Layer::make_ironing` :3983 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :4106
-- `Layer::generate_sparse_infill` :4113
-- `Layer::new_f` :4122 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :4134
-- `Layer::height_mm` :4140
-- `Layer::set_lower_layer` :4146
-- `Layer::set_upper_layer` :4152
-- `Layer::all_slices` :4158
-- `LayerRegion::set_slices` :4167
-- `chain_points` :4177 — C++ has it in `ShortestPath`
-- `get_extents_layer_region` :4220
-- `get_extents_layer_regions` :4243
-- `mpprobe` :4265
+- `fill_params_density` :61
+- `LayerRegion::new` :224
+- `LayerRegion::layer_id` :251
+- `LayerRegion::region_id` :257
+- `LayerRegion::region` :267
+- `LayerRegion::get_slices` :275
+- `LayerRegion::flow` :288 — C++ has it in `Flow`, `LayerRegion`, `PrintRegion`
+- `LayerRegion::bridging_flow` :321 — C++ has it in `Flow`, `LayerRegion`
+- `LayerRegion::slices_to_fill_surfaces_clipped` :369 — C++ has it in `LayerRegion`
+- `LayerRegion::prepare_fill_surfaces` :412 — C++ has it in `LayerRegion`
+- `LayerRegion::make_perimeters` :469 — C++ has it in `LayerRegion`, `PrintObject`
+- `LayerRegion::process_external_surfaces` :1150 — C++ has it in `LayerRegion`, `PrintObject`
+- `LayerRegion::infill_area_threshold_with_flow` :1226
+- `LayerRegion::infill_area_threshold` :1237 — C++ has it in `LayerRegion`
+- `LayerRegion::trim_surfaces` :1244 — C++ has it in `LayerRegion`
+- `LayerRegion::elephant_foot_compensation_step` :1271 — C++ has it in `LayerRegion`
+- `convert_polygon_to_extrusion_loop` :1332
+- `convert_polyline_to_extrusion_path` :1354
+- `extract_and_union_surfaces` :1370
+- `LoopNode::new` :1406
+- `LoopNode::default` :1420
+- `Layer::new` :1504
+- `Layer::object_id` :1545 — C++ has it in `Exception`, `ObjectID`
+- `Layer::wire_config_hierarchy` :1581
+- `Layer::get_region_mut` :1616
+- `Layer::regions` :1622
+- `Layer::regions_mut` :1628
+- `Layer::make_perimeters_with_lower` :1722
+- `Layer::make_perimeters_with_neighbors` :1731
+- `Layer::record_cooling_node_for_each_extrusion` :2368
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :3713 — C++ has it in `Fill/Fill`
+- `Layer::make_ironing` :3995 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :4118
+- `Layer::generate_sparse_infill` :4125
+- `Layer::new_f` :4134 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :4146
+- `Layer::height_mm` :4152
+- `Layer::set_lower_layer` :4158
+- `Layer::set_upper_layer` :4164
+- `Layer::all_slices` :4170
+- `LayerRegion::set_slices` :4179
+- `chain_points` :4189 — C++ has it in `ShortestPath`
+- `get_extents_layer_region` :4232
+- `get_extents_layer_regions` :4255
+- `mpprobe` :4277
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 
@@ -7107,12 +7106,12 @@ Missing in the Rust file:
 - `angle` :111 (86 tokens) — in `extrusion_entity.rs`, `gcode/seam_placer.rs`, `geometry/line.rs`
 - `Point::ccw` :125 (16 tokens, overload) — in `geometry/line.rs`
 - `to_3d` :126 (39 tokens)
-- `unscale` :131 (22 tokens) — in `gcode/smooth_speed.rs`, `lib.rs`, `libslic3r.rs`
-- `unscale` :132 (30 tokens) — in `gcode/smooth_speed.rs`, `lib.rs`, `libslic3r.rs`
-- `unscale` :133 (30 tokens) — in `gcode/smooth_speed.rs`, `lib.rs`, `libslic3r.rs`
-- `unscale` :134 (30 tokens) — in `gcode/smooth_speed.rs`, `lib.rs`, `libslic3r.rs`
-- `unscale` :135 (42 tokens) — in `gcode/smooth_speed.rs`, `lib.rs`, `libslic3r.rs`
-- `unscale` :136 (42 tokens) — in `gcode/smooth_speed.rs`, `lib.rs`, `libslic3r.rs`
+- `unscale` :131 (22 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
+- `unscale` :132 (30 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
+- `unscale` :133 (30 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
+- `unscale` :134 (30 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
+- `unscale` :135 (42 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
+- `unscale` :136 (42 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
 - `to_string` :138 (38 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
 - `to_string` :139 (38 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
 - `to_string` :140 (51 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`

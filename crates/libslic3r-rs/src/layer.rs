@@ -54,6 +54,18 @@ pub fn fillprof_report() {
     );
 }
 
+/// Fill.cpp:944 — `params.density = float(0.01 * surface_fill.params.density)`:
+/// the product is taken in double (0.01 is a double literal) and rounded to
+/// float once. FILL_DENSITY_DOUBLE=0 multiplies in float, which gives
+/// 0.099999994 for 10 % where C++ has 0.1f.
+fn fill_params_density(density: f32) -> f64 {
+    if crate::faithful_gate("FILL_DENSITY_DOUBLE") {
+        ((0.01f64 * density as f64) as f32) as f64
+    } else {
+        (0.01 * density) as f64
+    }
+}
+
 /// R474 diagnostic (`FVS_DEBUG=1`): how many Concentric / FloatingConcentric
 /// expolygons reach the filler, and how many of them had NO `no_overlap_expolygons`
 /// to fill (Fill.cpp:740 — C++ emits nothing for those).
@@ -2612,7 +2624,7 @@ impl Layer {
 
                 // Fill.cpp:700-712 — the FillParams the filler reads.
                 let mut fp = crate::fill::FillParams::new();
-                fp.density = (0.01 * surface_fill.params.density) as f64;
+                fp.density = fill_params_density(surface_fill.params.density);
                 fp.flow = surface_fill.params.flow.clone();
                 fp.extrusion_role = surface_fill.params.extrusion_role;
                 fp.use_arachne = true; // Fill.cpp:706
@@ -2790,7 +2802,7 @@ impl Layer {
             };
             let link_max_length = crate::scale(link_max_length_mm);
 
-            let density = (0.01 * surface_fill.params.density) as f64;
+            let density = fill_params_density(surface_fill.params.density);
             let is_grid = fill_pattern == InfillPattern::Grid;
             // C++: FillParams::dont_connect() == (anchor_length_max < 0.05f)
             // (FillBase.hpp). The infill traversal connects lines whenever
@@ -3783,7 +3795,7 @@ impl Layer {
             let link_max_length = crate::scale(link_max_length_mm);
 
             // Fill.cpp:846-854 — FillParams. params.density = 0.01 * density.
-            let density = (0.01 * surface_fill.params.density) as f64;
+            let density = fill_params_density(surface_fill.params.density);
             let is_grid = fill_pattern == InfillPattern::Grid;
             // Mirror make_fills' dont_connect derivation
             // (anchor_length_max < 0.05 disables connection; FillBase.hpp).

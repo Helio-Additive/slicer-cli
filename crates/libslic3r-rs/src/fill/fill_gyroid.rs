@@ -400,6 +400,27 @@ impl FillGyroid {
             expolygon.rotate(-infill_angle as CoordF);
         }
 
+        let gyr_probe = |tag: &str, z: f64, pls: &[Polyline]| {
+            if !crate::probe_enabled("GYRPROBE") {
+                return;
+            }
+            let (mut np, mut sx, mut sy) = (0usize, 0i64, 0i64);
+            for pl in pls {
+                for p in pl.points() {
+                    np += 1;
+                    sx += p.x();
+                    sy += p.y();
+                }
+            }
+            eprintln!("GYR {} z={:.3} n={} np={} sx={} sy={}", tag, z, pls.len(), np, sx, sy);
+        };
+        if crate::probe_enabled("GYRPROBE") {
+            let mut tmp = vec![Polyline::from_points(expolygon.contour.points.clone())];
+            for h in &expolygon.holes {
+                tmp.push(Polyline::from_points(h.points.clone()));
+            }
+            gyr_probe("0rot", self.z, &tmp);
+        }
         // FillGyroid.cpp:162 — BoundingBox bb = expolygon.contour.bounding_box();
         let mut bb: BoundingBox = expolygon.contour.bounding_box();
         // FillGyroid.cpp:163-164 — Density adjusted to have a good %of weight.
@@ -413,10 +434,22 @@ impl FillGyroid {
 
         // FillGyroid.cpp:168-169 — align bounding box to a multiple of our grid module
         //   bb.merge(align_to_grid(bb.min, Point(2*M_PI*distance, 2*M_PI*distance)));
-        let grid = Point::new(
-            (2.0 * PI * distance as f64) as Coord,
-            (2.0 * PI * distance as f64) as Coord,
-        );
+        // GYROID_BBOX_CPP (on): `Point(double, double)` rounds with lrint
+        // (Point.hpp:179), and `bb.size()(0) / distance` below is a division of
+        // two coord_t, so the `ceil` around it does nothing (FillGyroid.cpp:169,
+        // 175-176). =0 truncates the grid module and divides in double.
+        let gyroid_bbox_cpp = crate::faithful_gate("GYROID_BBOX_CPP");
+        let grid = if gyroid_bbox_cpp {
+            Point::new(
+                (2.0 * PI * distance as f64).round_ties_even() as Coord,
+                (2.0 * PI * distance as f64).round_ties_even() as Coord,
+            )
+        } else {
+            Point::new(
+                (2.0 * PI * distance as f64) as Coord,
+                (2.0 * PI * distance as f64) as Coord,
+            )
+        };
         let aligned = align_to_grid_point(bb.min, grid);
         bb.merge_point(aligned);
 
@@ -427,13 +460,30 @@ impl FillGyroid {
         //       this->spacing,
         //       ceil(bb.size()(0) / distance) + 1.,
         //       ceil(bb.size()(1) / distance) + 1.);
+        if crate::probe_enabled("GYRPROBE") {
+            let bs = bb.size();
+            eprintln!(
+                "GYRA z={:.3} gz={:e} da={:e} sp={:e} dist={} w={:.1} h={:.1} bbmin={},{} ang={:e} dens={:e}",
+                self.z, self.z * SCALING_FACTOR, density_adjusted, self.spacing, distance,
+                (bs.x as f64 / distance as f64).ceil() + 1.0, (bs.y as f64 / distance as f64).ceil() + 1.0,
+                bb.min.x, bb.min.y, infill_angle, params.density
+            );
+        }
         let bb_size = bb.size();
         let mut polylines = make_gyroid_waves(
             (self.z * SCALING_FACTOR) as f64,
             density_adjusted,
             self.spacing,
-            (bb_size.x as f64 / distance as f64).ceil() + 1.0,
-            (bb_size.y as f64 / distance as f64).ceil() + 1.0,
+            if gyroid_bbox_cpp {
+                (bb_size.x / distance) as f64 + 1.0
+            } else {
+                (bb_size.x as f64 / distance as f64).ceil() + 1.0
+            },
+            if gyroid_bbox_cpp {
+                (bb_size.y / distance) as f64 + 1.0
+            } else {
+                (bb_size.y as f64 / distance as f64).ceil() + 1.0
+            },
         );
 
         // FillGyroid.cpp:179-181 — shift the polyline to the grid origin
@@ -444,6 +494,7 @@ impl FillGyroid {
         }
         // FillGyroid.cpp:182-183 — Apply multiline offset if needed
         //   multiline_fill(polylines, params, spacing);
+        gyr_probe("1wave", self.z, &polylines);
         multiline_fill(&mut polylines, params, self.spacing as f32);
 
         // FillGyroid.cpp:185 — polylines = intersection_pl(polylines, expolygon);
@@ -453,6 +504,7 @@ impl FillGyroid {
         let mut polylines: Vec<Polyline> =
             intersection_pl(&polylines, std::slice::from_ref(&expolygon));
 
+        gyr_probe("2clip", self.z, &polylines);
         // FillGyroid.cpp:187 — if (! polylines.empty()) {
         if !polylines.is_empty() {
             // FillGyroid.cpp:188-190
@@ -467,6 +519,7 @@ impl FillGyroid {
             polylines.retain(|pl| !(pl.length() < minlength));
         }
 
+        gyr_probe("3min", self.z, &polylines);
         // FillGyroid.cpp:196 — if (! polylines.empty()) {
         if !polylines.is_empty() {
             // FillGyroid.cpp:197-198 — connect lines
@@ -494,11 +547,13 @@ impl FillGyroid {
             //       for (auto it = polylines_out.begin() + polylines_out_first_idx; it != polylines_out.end(); ++ it)
             //           it->rotate(infill_angle);
             //   }
+            gyr_probe("4conn", self.z, &polylines_out[polylines_out_first_idx..]);
             if (infill_angle as f64).abs() >= EPSILON {
                 for pl in polylines_out.iter_mut().skip(polylines_out_first_idx) {
                     pl.rotate(infill_angle as CoordF);
                 }
             }
+            gyr_probe("5back", self.z, &polylines_out[polylines_out_first_idx..]);
         }
     }
 }
