@@ -3448,6 +3448,21 @@ impl Layer {
                     );
                 }
 
+                // Fill.cpp:832-833, FillBase.cpp:172-175 — the paths of a grid
+                // may not be reversed when the fills are chained
+                // (`params.can_reverse = false`, then `set_reverse()` on every
+                // path); FillGrid turns them around itself on odd layers.
+                // FILL_GRID_NO_REVERSE=0 leaves them reversible.
+                if fill_pattern == InfillPattern::Grid
+                    && crate::faithful_gate("FILL_GRID_NO_REVERSE")
+                {
+                    for ent in collection.entities.iter_mut() {
+                        if let crate::extrusion_entity::ExtrusionEntityType::Path(path) = ent {
+                            path.set_reverse();
+                        }
+                    }
+                }
+
                 // FillMonotonicLineWGapFill: record the footprint of the laid
                 // monotonic lines so the post-loop gap-fill can subtract it from
                 // the no_overlap area (FillRectilinear.cpp:3279

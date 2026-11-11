@@ -4152,7 +4152,7 @@ fn emit_layer_by_island(
                         );
                     }
                     let mut flattened = false;
-                    if crate::opt_in_gate("ISLAND_FLATTEN") {
+                    if crate::faithful_gate("ISLAND_FLATTEN") {
                         if let crate::extrusion_entity::ExtrusionEntityType::Collection(c) = ent {
                             if !c.no_sort {
                                 for child in &c.entities {
@@ -4169,7 +4169,15 @@ fn emit_layer_by_island(
             }
             for ent in &region.thin_fills.entities {
                 if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
-                    assign(&mut islands, region_id, fp, ent.clone(), 2, -1);
+                    // Fill.cpp (end of make_fills): every thin fill is put into
+                    // `fills` inside a sortable collection of its own, so
+                    // Region::append hands it to the fill chain as one more
+                    // entity.
+                    if crate::faithful_gate("ISLAND_FLATTEN") {
+                        assign(&mut islands, region_id, fp, ent.clone(), 1, -1);
+                    } else {
+                        assign(&mut islands, region_id, fp, ent.clone(), 2, -1);
+                    }
                 }
             }
         }

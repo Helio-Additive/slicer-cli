@@ -2430,7 +2430,16 @@ pub fn extrude_infill_entities(
                     let _ = extrude_collection(&chained, writer, config, is_first_layer);
                 }
                 _ => {
-                    let _ = extrude_entity(fill, writer, config, is_first_layer);
+                    // A path that Region::append took out of a sortable
+                    // collection (GCode.cpp:9129-9131). It is printed like a
+                    // collection of one, so it gets its feature tag, width and
+                    // speed the way extrude_collection writes them.
+                    let single = ExtrusionEntityCollection {
+                        entities: vec![fill.clone()],
+                        no_sort: true,
+                        ..Default::default()
+                    };
+                    let _ = extrude_collection(&single, writer, config, is_first_layer);
                 }
             }
         }
