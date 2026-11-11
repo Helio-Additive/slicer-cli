@@ -1444,6 +1444,17 @@ impl WallToolPaths {
         // it, so exactly one of these five stages flattens it.
         stageprobe("0 after generate_toolpaths", &self.toolpaths);
         wtp_tp("t0gen", &self.toolpaths);
+        if std::env::var("WTPD").ok().as_deref() == Some(wtp_key.as_str()) {
+            let mut li = 0;
+            for ls in &self.toolpaths {
+                for l in ls {
+                    for j in &l.junctions {
+                        eprintln!("WTPD {} {} {} {}", li, j.p.x, j.p.y, j.w as i64);
+                    }
+                    li += 1;
+                }
+            }
+        }
         awst_dump("0", awst, &self.toolpaths);
         agen_dump_tp("gen", agen_orig, &self.toolpaths, agen_ic);
         agenpts_tp("gen", agen_orig, &self.toolpaths, agen_ic);

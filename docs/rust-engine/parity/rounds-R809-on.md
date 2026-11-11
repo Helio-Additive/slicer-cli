@@ -56,6 +56,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R829 | The tower wall under smooth timelapse. `generate_new` draws the outer wall as a result of its own, `only_generate_out_wall(true)` (WipeTower.cpp 7818, 7854-7856, 8215-8280), puts it in front of the layer's results (8072-8073), and the finish of the layer draws no wall (7821); `WipeTowerIntegration::tool_change` prints it before anything else of the layer (GCode.cpp 1508-1512). The wipe path of that block is taken from the wall (`add_wipe_path`, WipeTower.cpp 1368-1379). After a tower block the nominal Z is the tower layer's, so the lift on leaving targets the right height. From the map: `WipeTower::only_generate_out_wall` now exists in `gcode/wipe_tower.rs` | on: `TOWER_TIMELAPSE_WALL` (new) | unchanged (174,107) | unchanged (218,262) | 2,329,271 → 2,343,292 (83.63%) |
 | R830 | The seam placer's occlusion mesh. `compute_global_occlusion` (SeamPlacer.cpp 577-606) puts every MODEL_PART and NEGATIVE_VOLUME through its own matrix (`its_transform`, admesh/stl.h 372-380), merges parts and negative volumes into two sets, decimates each (`its_short_edge_collpase`), appends the negative set and applies `trafo_centered()`, whose Z is `trafo()`'s own. The port decimated the placed mesh of the parts in bed coordinates and had no negative volumes in it. The 3MF loader now hands the volumes over one by one | on: `SEAM_OCCL_VOLUMES` (new) | unchanged (174,107) | unchanged (218,262) | 2,343,292 → 2,361,380 (84.28%) |
 | R831 | Painted seams. The 3MF loader reads `paint_seam` (bbs_3mf.cpp 296) into the same storage as `ModelVolume::seam_facets`. `gather_enforcers_blockers` (SeamPlacer.cpp 645-668): the ENFORCER and BLOCKER facets of the volume, taken from the triangle selector in the volume's own coordinates, go through `trafo_centered() * get_matrix()` and into two AABB trees. `GlobalModelInfo::is_enforced` and `is_blocked` (287-299) ask `is_any_triangle_in_radius`; they returned false before. `process_perimeter_polygon` (467-485) and `SeamComparator` were already written against them. From the map: the two placeholders of `gcode/seam_placer.rs` are real functions and `gather_enforcers_blockers` exists | on: `SEAM_PAINTING` (new) | unchanged (174,107) | unchanged (218,262) | 2,361,380 → 2,558,898 (91.21%) |
+| R832 | (1) `WipingExtrusions::ensure_perimeters_infills_order` (ToolOrdering.cpp 4093-4094) calls `lt.is_extruder_order(lt.wall_filament(region), last_nonsoluble_extruder \|\| ! lt.has_extruder(..))`: the `\|\|` stands inside the argument list, so the second argument is 0 or 1. An infill of the last tool's own region is thereby overridden to that tool and prints before its walls. The port had the two conditions apart, as the comments beside them read. (2) `generateLocalMaximaSingleBeads` (SkeletalTrapezoidation.cpp 2131-2132): the six points of the circle go through `Point(double, double)`, which rounds (Point.hpp 179); the port truncated | on: `WIPE_ORDER_PAREN_CPP`, `SINGLE_BEAD_CIRCLE_LRINT` (new) | 174,107 → 174,109 (93.41%) | 218,262 → 218,276 (91.92%) | 2,558,898 → 2,564,965 (91.38%) |
 
 ## Findings
 
@@ -316,3 +317,14 @@ The Rust engine as it came from R808, against the kept oracle files:
   float vertices and the float radius squared are handed over as they are. Not seen to matter.
 - R831, the source map against R830: functions matched 3,690 → 3,691 (faithful 3,093 → 3,095, partial
   366 → 367, divergent 200 → 198), missing in the pair 4,694 → 4,693, Rust only 4,491 → 4,492.
+- R832, arachne: with the same input, `WallToolPaths` toolpaths after generation equal the oracle's on
+  40,642 of 40,732 calls (38,094 before the circle was rounded); 49,596 of about 50,150 calls have the same
+  input.
+- R832, the nearest seam: where the nozzle position at `place_seam` is the oracle's, the port picks the same
+  point in 25,626 cases and another in 10. In 2,412 of the oracle's 28,238 calls the nozzle is elsewhere,
+  which is what is left of the wall start points (outer 88.8%, inner 90.4% at the oracle's point).
+- R832, Majora sparse infill in order 94.0% → 95.4%; 52 layers have the oracle's sequence of extrusion runs
+  from first to last (29 before).
+- R832, seen and left: the steps of a speed ramp (`split_and_mapping_speed`) differ in the third decimal of
+  F where a point of the split overhang path is one unit off; neighbours then differ by +d and -d.
+- R832, the source map: headline unchanged against R831.

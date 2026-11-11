@@ -4371,10 +4371,20 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         // SkeletalTrapezoidation.cpp:2132 line.junctions.emplace_back(ExtrusionJunction(node.p + Point(r * cos(a), r * sin(a)), width, inset_index, false));
                         line.junctions.push(ExtrusionJunction::with_hole_compensation(
                             node.base.p
-                                + Point::new(
-                                    (r as f32 * a.cos()) as Coord,
-                                    (r as f32 * a.sin()) as Coord,
-                                ),
+                                // SINGLE_BEAD_CIRCLE_LRINT (on): the two floats go to
+                                // `Point(double, double)`, which rounds with lrint
+                                // (Point.hpp:179). =0 truncates them.
+                                + if crate::faithful_gate("SINGLE_BEAD_CIRCLE_LRINT") {
+                                    Point::new(
+                                        ((r as f32 * a.cos()) as f64).round_ties_even() as Coord,
+                                        ((r as f32 * a.sin()) as f64).round_ties_even() as Coord,
+                                    )
+                                } else {
+                                    Point::new(
+                                        (r as f32 * a.cos()) as Coord,
+                                        (r as f32 * a.sin()) as Coord,
+                                    )
+                                },
                             width,
                             inset_index,
                             false,

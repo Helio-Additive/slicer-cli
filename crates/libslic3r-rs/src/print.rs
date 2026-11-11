@@ -2840,6 +2840,7 @@ impl Print {
                         }
                         let mut volume_to_purge = purge_of(old_tool, tool);
                         if wipe_gate {
+                            let before = volume_to_purge;
                             // Print.cpp:4308
                             volume_to_purge = wiping_extrusions.mark_wiping_extrusions(
                                 &wiping_layer,
@@ -2847,6 +2848,23 @@ impl Print {
                                 tool as u32,
                                 volume_to_purge,
                             );
+                            if crate::probe_enabled("WIPEPROBE") {
+                                let fills: Vec<(u32, usize, f64)> = wiping_objects
+                                    .iter()
+                                    .flat_map(|o| o.regions.iter().flatten())
+                                    .map(|r| {
+                                        (
+                                            r.wall_filament,
+                                            r.fills.iter().filter(|f| f.role == crate::extrusion_entity::ExtrusionRole::InternalInfill).count(),
+                                            r.fills.iter().filter(|f| f.role == crate::extrusion_entity::ExtrusionRole::InternalInfill).map(|f| f.total_volume).sum::<f64>(),
+                                        )
+                                    })
+                                    .collect();
+                                eprintln!(
+                                    "WIPEPROBE z={:.3} tools={:?} {}->{} purge {:.3} -> {:.3} regions(tool, sparse n, volume)={:?}",
+                                    z, tools, old_tool, tool, before, volume_to_purge, fills
+                                );
+                            }
                         }
                         wt.plan_toolchange(
                             *z,

@@ -747,37 +747,37 @@ Rust only:
 - `SkeletalTrapezoidation::interpolate4` :3358
 - `SkeletalTrapezoidation::interpolate2` :3420
 - `SkeletalTrapezoidation::quadstart_dense_new` :4054
-- `source_segment` :4525
-- `source_point` :4539
-- `source_point_index` :4567
-- `SegmentCellRangeBv::is_valid` :4605 — C++ has it in `AABBMesh`, `AABBTreeIndirect`, `Circle`
-- `compute_segment_cell_range` :4614 — C++ has it in `Geometry/VoronoiUtils`
-- `beadprobe` :4697
-- `beadpair` :4798
-- `junctionprobe` :4915
-- `cjprobe` :4979
-- `propprobe` :5012
-- `graphprobe` :5046
-- `SkeletalTrapezoidation::awst_on_inner` :5075
-- `SkeletalTrapezoidation::tbarach_dump` :5079
-- `SkeletalTrapezoidation::central_census` :5110
-- `centralprobe` :5147
-- `iscprobe` :5203
-- `geomprobe` :5247
-- `SkeletalTrapezoidation::transition_census` :5300
-- `transprobe` :5318
-- `gnbprobe` :5350
-- `propclass_tick` :5394
-- `interp_delta_counts` :5431
-- `propclass_interp_delta` :5443
-- `upprobe_tick` :5465
-- `tiedens_tick` :5501
-- `dnprobe_tick` :5520
-- `census_tick` :5554
-- `gbuild_disc` :5596
-- `gbuild_tick` :5605
-- `conv_cell` :5645
-- `conv_stage` :5656
+- `source_segment` :4535
+- `source_point` :4549
+- `source_point_index` :4577
+- `SegmentCellRangeBv::is_valid` :4615 — C++ has it in `AABBMesh`, `AABBTreeIndirect`, `Circle`
+- `compute_segment_cell_range` :4624 — C++ has it in `Geometry/VoronoiUtils`
+- `beadprobe` :4707
+- `beadpair` :4808
+- `junctionprobe` :4925
+- `cjprobe` :4989
+- `propprobe` :5022
+- `graphprobe` :5056
+- `SkeletalTrapezoidation::awst_on_inner` :5085
+- `SkeletalTrapezoidation::tbarach_dump` :5089
+- `SkeletalTrapezoidation::central_census` :5120
+- `centralprobe` :5157
+- `iscprobe` :5213
+- `geomprobe` :5257
+- `SkeletalTrapezoidation::transition_census` :5310
+- `transprobe` :5328
+- `gnbprobe` :5360
+- `propclass_tick` :5404
+- `interp_delta_counts` :5441
+- `propclass_interp_delta` :5453
+- `upprobe_tick` :5475
+- `tiedens_tick` :5511
+- `dnprobe_tick` :5530
+- `census_tick` :5564
+- `gbuild_disc` :5606
+- `gbuild_tick` :5615
+- `conv_cell` :5655
+- `conv_stage` :5666
 
 ### `Arachne/SkeletalTrapezoidationEdge` (.hpp) and `arachne/skeletal_trapezoidation_edge.rs`
 
@@ -834,9 +834,9 @@ Tier 1. C++ functions 16 (plus 1 constructors, 0 destructors, 0 operators), Rust
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `removeSmallAreas` :311 and `remove_small_areas` :581 (55%, 0.76x)
-- divergent: `WallToolPaths::stitchToolPaths` :551 and `WallToolPaths::stitch_tool_paths` :1560 (27%, 0.32x)
-- partial: `WallToolPaths::separateOutInnerContour` :700 and `WallToolPaths::separate_out_inner_contour` :1672 (64%, 0.91x)
-- partial: `WallToolPaths::removeEmptyToolPaths` :798 and `WallToolPaths::remove_empty_tool_paths` :1787 (50%, 0.4x)
+- divergent: `WallToolPaths::stitchToolPaths` :551 and `WallToolPaths::stitch_tool_paths` :1571 (27%, 0.32x)
+- partial: `WallToolPaths::separateOutInnerContour` :700 and `WallToolPaths::separate_out_inner_contour` :1683 (64%, 0.91x)
+- partial: `WallToolPaths::removeEmptyToolPaths` :798 and `WallToolPaths::remove_empty_tool_paths` :1798 (50%, 0.4x)
 
 Missing in the Rust file:
 
@@ -864,20 +864,20 @@ Rust only:
 - `LineLocLocator::locate` :936
 - `WallToolPaths::new` :943
 - `WallToolPaths::generate` :998 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
-- `WallToolPaths::get_tool_paths` :1662
-- `WallToolPaths::get_inner_contour` :1759
-- `WallToolPaths::get_first_wall_contour` :1772
-- `awst_poly` :1984
-- `awst_dump` :1995
-- `stageprobe` :2013
-- `areaprobe` :2109
-- `agen_fp` :2191
-- `agenpts_max_ov` :2211
-- `agenpts_poly` :2215
-- `agenpts_tp` :2232
-- `agen_dump_poly` :2251
-- `agen_dump_tp` :2271
-- `polyprobe` :2313
+- `WallToolPaths::get_tool_paths` :1673
+- `WallToolPaths::get_inner_contour` :1770
+- `WallToolPaths::get_first_wall_contour` :1783
+- `awst_poly` :1995
+- `awst_dump` :2006
+- `stageprobe` :2024
+- `areaprobe` :2120
+- `agen_fp` :2202
+- `agenpts_max_ov` :2222
+- `agenpts_poly` :2226
+- `agenpts_tp` :2243
+- `agen_dump_poly` :2262
+- `agen_dump_tp` :2282
+- `polyprobe` :2324
 
 ### `Arachne/utils/ExtrusionJunction` (.cpp+.hpp) and `arachne/utils/extrusion_junction.rs`
 
@@ -4768,23 +4768,23 @@ Tier 1. C++ functions 85 (plus 3 constructors, 0 destructors, 6 operators), Rust
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - divergent: `WipingExtrusions::is_entity_overridden` :96 and `WipingExtrusions::is_entity_overridden` :425 (14%, 1.13x)
-- divergent: `LayerTools::wall_filament` :138 and `LayerTools::wall_filament` :1028 (12%, 0.45x)
-- divergent: `LayerTools::sparse_infill_filament` :145 and `LayerTools::sparse_infill_filament` :1037 (12%, 0.45x)
-- divergent: `LayerTools::solid_infill_filament` :152 and `LayerTools::solid_infill_filament` :1046 (12%, 0.45x)
-- partial: `LayerTools::has_extruder` :175 and `LayerTools::has_extruder` :1023 (67%, 0.32x)
+- divergent: `LayerTools::wall_filament` :138 and `LayerTools::wall_filament` :1041 (12%, 0.45x)
+- divergent: `LayerTools::sparse_infill_filament` :145 and `LayerTools::sparse_infill_filament` :1050 (12%, 0.45x)
+- divergent: `LayerTools::solid_infill_filament` :152 and `LayerTools::solid_infill_filament` :1059 (12%, 0.45x)
+- partial: `LayerTools::has_extruder` :175 and `LayerTools::has_extruder` :1036 (67%, 0.32x)
 - divergent: `ToolOrdering::clear` :305 and `WipingExtrusions::clear` :478 (0%, 1.19x)
-- divergent: `ToolOrdering::has_wipe_tower` :352 and `ToolOrdering::has_wipe_tower` :2009 (25%, 1.04x)
-- divergent: `ToolOrdering::generate_first_layer_tool_order` :642 and `ToolOrdering::generate_first_layer_tool_order` :1857 (17%, 0.63x)
-- partial: `ToolOrdering::initialize_layers` :814 and `ToolOrdering::initialize_layers` :1276 (43%, 1.73x)
-- partial: `ToolOrdering::fill_wipe_tower_partitions` :1208 and `ToolOrdering::fill_wipe_tower_partitions` :1701 (35%, 0.23x)
-- divergent: `ToolOrdering::collect_extruder_statistics` :1402 and `ToolOrdering::collect_extruder_statistics` :1663 (12%, 1.06x)
-- divergent: `ToolOrdering::assign_custom_gcodes` :3691 and `ToolOrdering::assign_custom_gcodes` :1799 (18%, 0.45x)
+- divergent: `ToolOrdering::has_wipe_tower` :352 and `ToolOrdering::has_wipe_tower` :2022 (25%, 1.04x)
+- divergent: `ToolOrdering::generate_first_layer_tool_order` :642 and `ToolOrdering::generate_first_layer_tool_order` :1870 (17%, 0.63x)
+- partial: `ToolOrdering::initialize_layers` :814 and `ToolOrdering::initialize_layers` :1289 (43%, 1.73x)
+- partial: `ToolOrdering::fill_wipe_tower_partitions` :1208 and `ToolOrdering::fill_wipe_tower_partitions` :1714 (35%, 0.23x)
+- divergent: `ToolOrdering::collect_extruder_statistics` :1402 and `ToolOrdering::collect_extruder_statistics` :1676 (12%, 1.06x)
+- divergent: `ToolOrdering::assign_custom_gcodes` :3691 and `ToolOrdering::assign_custom_gcodes` :1812 (18%, 0.45x)
 - divergent: `WipingExtrusions::set_extruder_override` :3811 and `WipingExtrusions::set_extruder_override` :390 (25%, 1.1x)
 - partial: `WipingExtrusions::first_nonsoluble_extruder_on_layer` :3839 and `WipingExtrusions::first_nonsoluble_extruder_on_layer` :599 (44%, 0.62x)
 - partial: `WipingExtrusions::last_nonsoluble_extruder_on_layer` :3850 and `WipingExtrusions::last_nonsoluble_extruder_on_layer` :609 (36%, 0.68x)
-- partial: `WipingExtrusions::is_overriddable` :3861 and `is_overriddable` :897 (31%, 0.57x)
-- partial: `WipingExtrusions::is_obj_overriddable` :3874 and `is_obj_overriddable` :919 (43%, 0.69x)
-- partial: `WipingExtrusions::is_support_overriddable` :3886 and `is_support_overriddable` :938 (40%, 0.62x)
+- partial: `WipingExtrusions::is_overriddable` :3861 and `is_overriddable` :910 (31%, 0.57x)
+- partial: `WipingExtrusions::is_obj_overriddable` :3874 and `is_obj_overriddable` :932 (43%, 0.69x)
+- partial: `WipingExtrusions::is_support_overriddable` :3886 and `is_support_overriddable` :951 (40%, 0.62x)
 - divergent: `WipingExtrusions::get_extruder_overrides` :4120 and `WipingExtrusions::get_extruder_overrides` :446 (25%, 0.9x)
 
 Missing in the Rust file:
@@ -4872,53 +4872,53 @@ Rust only:
 - `WipingLayer::is_extruder_order` :562
 - `WipingLayer::has_extruder` :578
 - `WipingExtrusions::is_overriddable_entity` :585
-- `WipingExtrusions::entity_override` :875
-- `LayerTools::new` :990
-- `LayerTools::extruder_for_role` :1055
-- `LayerTools::wiping_extrusions_mut` :1085
-- `LayerTools::wiping_extrusions` :1090
-- `LayerTools::eq` :1096
-- `LayerTools::partial_cmp` :1102
-- `ToolOrderingConfig::default` :1155
-- `ToolOrderingConfig::new` :1182
-- `ToolOrderingConfig::is_filament_soluble` :1201
-- `ToolOrderingConfig::is_filament_support` :1209
-- `ToolOrderingConfig::get_flush_volume` :1217
-- `ToolOrdering::new` :1255
-- `ToolOrdering::with_default_config` :1271
-- `ToolOrdering::add_extruder_to_layer` :1299
-- `ToolOrdering::add_support_extruder_to_layer` :1311
-- `ToolOrdering::layer_tools_for_layer` :1326
-- `ToolOrdering::layer_tools_for_layer_mut` :1340
-- `ToolOrdering::handle_dontcare_extruders` :1354
-- `ToolOrdering::handle_dontcare_extruders_with_first_layer_order` :1419
-- `ToolOrdering::reorder_extruders_for_minimum_flush` :1483
-- `ToolOrdering::reorder_extruders_for_minimum_flush_internal` :1488
-- `ToolOrdering::calculate_optimal_sequences` :1514
-- `ToolOrdering::get_custom_sequence_for_layer` :1572
-- `ToolOrdering::optimize_extruder_order` :1591
-- `ToolOrdering::calculate_most_used_extruder` :1907
-- `ToolOrdering::calculate_filament_change_stats` :1925
-- `ToolOrdering::calculate_stats_for_sequence` :1930
-- `ToolOrdering::all_extruders` :1984
-- `ToolOrdering::get_layer_tools` :1989
-- `ToolOrdering::get_layer_tools_mut` :1994
-- `ToolOrdering::layer_tools` :1999
-- `ToolOrdering::layer_tools_mut` :2004
-- `ToolOrdering::is_sorted` :2021
-- `ToolOrdering::len` :2026
-- `ToolOrdering::is_empty` :2031 — C++ has it in `PresetBundle`
-- `ToolOrdering::front` :2036 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
-- `ToolOrdering::back` :2041 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
-- `ToolOrdering::clear` :2046 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ToolOrdering::iter` :2059
-- `ToolOrdering::iter_mut` :2064
-- `ToolOrdering::into_iter` :2073
-- `&'a ToolOrdering::into_iter` :2082
-- `calculate_flush_volume` :2092
-- `optimize_extruder_sequence` :2104
-- `generate_all_orderings` :2161
-- `find_optimal_ordering_exhaustive` :2184
+- `WipingExtrusions::entity_override` :888
+- `LayerTools::new` :1003
+- `LayerTools::extruder_for_role` :1068
+- `LayerTools::wiping_extrusions_mut` :1098
+- `LayerTools::wiping_extrusions` :1103
+- `LayerTools::eq` :1109
+- `LayerTools::partial_cmp` :1115
+- `ToolOrderingConfig::default` :1168
+- `ToolOrderingConfig::new` :1195
+- `ToolOrderingConfig::is_filament_soluble` :1214
+- `ToolOrderingConfig::is_filament_support` :1222
+- `ToolOrderingConfig::get_flush_volume` :1230
+- `ToolOrdering::new` :1268
+- `ToolOrdering::with_default_config` :1284
+- `ToolOrdering::add_extruder_to_layer` :1312
+- `ToolOrdering::add_support_extruder_to_layer` :1324
+- `ToolOrdering::layer_tools_for_layer` :1339
+- `ToolOrdering::layer_tools_for_layer_mut` :1353
+- `ToolOrdering::handle_dontcare_extruders` :1367
+- `ToolOrdering::handle_dontcare_extruders_with_first_layer_order` :1432
+- `ToolOrdering::reorder_extruders_for_minimum_flush` :1496
+- `ToolOrdering::reorder_extruders_for_minimum_flush_internal` :1501
+- `ToolOrdering::calculate_optimal_sequences` :1527
+- `ToolOrdering::get_custom_sequence_for_layer` :1585
+- `ToolOrdering::optimize_extruder_order` :1604
+- `ToolOrdering::calculate_most_used_extruder` :1920
+- `ToolOrdering::calculate_filament_change_stats` :1938
+- `ToolOrdering::calculate_stats_for_sequence` :1943
+- `ToolOrdering::all_extruders` :1997
+- `ToolOrdering::get_layer_tools` :2002
+- `ToolOrdering::get_layer_tools_mut` :2007
+- `ToolOrdering::layer_tools` :2012
+- `ToolOrdering::layer_tools_mut` :2017
+- `ToolOrdering::is_sorted` :2034
+- `ToolOrdering::len` :2039
+- `ToolOrdering::is_empty` :2044 — C++ has it in `PresetBundle`
+- `ToolOrdering::front` :2049 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
+- `ToolOrdering::back` :2054 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
+- `ToolOrdering::clear` :2059 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ToolOrdering::iter` :2072
+- `ToolOrdering::iter_mut` :2077
+- `ToolOrdering::into_iter` :2086
+- `&'a ToolOrdering::into_iter` :2095
+- `calculate_flush_volume` :2105
+- `optimize_extruder_sequence` :2117
+- `generate_all_orderings` :2174
+- `find_optimal_ordering_exhaustive` :2197
 
 ### `GCode/WipeTower` (.cpp+.hpp) and `gcode/wipe_tower.rs`
 
@@ -7810,10 +7810,10 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - divergent: `Print::clear` :60 and `Print::clear` :1786 (9%, 0.52x)
 - partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :1806 (50%, 0.75x)
 - divergent: `Print::validate` :1413 and `Print::validate` :1855 (5%, 0.15x)
-- divergent: `Print::process` :2178 and `Print::process` :1954 (13%, 1.15x)
+- divergent: `Print::process` :2178 and `Print::process` :1954 (13%, 1.19x)
 - divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :589 (20%, 35.79x)
-- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3143 (23%, 0.41x)
-- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3509 (21%, 0.39x)
+- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3161 (23%, 0.41x)
+- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3527 (21%, 0.39x)
 - stub: `PrintStatistics::config` :4454 and `Print::config` :540 (6%, 0.03x)
 
 Missing in the Rust file:
@@ -8056,18 +8056,18 @@ Rust only:
 - `Print::entity_points` :559
 - `apply_cooling_postprocess` :1646
 - `Print::apply` :1838 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `Print::make_brim` :3277 — C++ has it in `Brim`
-- `Print::all_extruders` :3413
-- `Print::is_canceled` :3449
-- `Print::cancel` :3455 — C++ has it in `PrintBase`
-- `Print::throw_if_canceled` :3461 — C++ has it in `PrintBase`, `SLAPrintSteps`
-- `Print::set_status_callback` :3470 — C++ has it in `PrintBase`
-- `Print::set_status` :3479 — C++ has it in `PrintBase`
-- `Print::invalidate_all_steps` :3487 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `collect_entity_lines` :3632
-- `emit_tower_tcr` :3677
-- `emit_layer_by_island` :4181
-- `Print::default` :4813
+- `Print::make_brim` :3295 — C++ has it in `Brim`
+- `Print::all_extruders` :3431
+- `Print::is_canceled` :3467
+- `Print::cancel` :3473 — C++ has it in `PrintBase`
+- `Print::throw_if_canceled` :3479 — C++ has it in `PrintBase`, `SLAPrintSteps`
+- `Print::set_status_callback` :3488 — C++ has it in `PrintBase`
+- `Print::set_status` :3497 — C++ has it in `PrintBase`
+- `Print::invalidate_all_steps` :3505 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `collect_entity_lines` :3650
+- `emit_tower_tcr` :3695
+- `emit_layer_by_island` :4199
+- `Print::default` :4831
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 

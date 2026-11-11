@@ -832,12 +832,25 @@ impl WipingExtrusions {
                         // could be printed before its perimeter, or not be printed at all (in case its
                         // original extruder has not been added to LayerTools). Either way, we will now
                         // force-override it with something suitable:
-                        if is_infill_first
+                        // WIPE_ORDER_PAREN_CPP (on): ToolOrdering.cpp:4093-4094 reads
+                        //   lt.is_extruder_order(lt.wall_filament(region), last_nonsoluble_extruder
+                        //       || ! lt.has_extruder(lt.sparse_infill_filament(region)))
+                        // with the `||` inside the call: the second argument is the
+                        // truth value, 1 or 0, of "the last extruder is not extruder 0,
+                        // or the infill's extruder is not on the layer". =0 takes the
+                        // two as separate conditions, as the comments beside them say.
+                        let forced = if crate::faithful_gate("WIPE_ORDER_PAREN_CPP") {
+                            let b = (last_nonsoluble_extruder as u32 != 0
+                                || !lt.has_extruder(layerm.sparse_infill_filament))
+                                as u32;
+                            lt.is_extruder_order(layerm.wall_filament, b)
+                        } else {
                             // !infill_first, but perimeter is already printed when last extruder prints
-                            || lt.is_extruder_order(layerm.wall_filament, last_nonsoluble_extruder as u32)
-                            // we have to force override - this could violate infill_first (FIXME)
-                            || !lt.has_extruder(layerm.sparse_infill_filament)
-                        {
+                            lt.is_extruder_order(layerm.wall_filament, last_nonsoluble_extruder as u32)
+                                // we have to force override - this could violate infill_first (FIXME)
+                                || !lt.has_extruder(layerm.sparse_infill_filament)
+                        };
+                        if is_infill_first || forced {
                             self.set_extruder_override(
                                 fill.id,
                                 object.id,
