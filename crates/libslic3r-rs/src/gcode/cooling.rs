@@ -2660,6 +2660,14 @@ impl GCodeEditorState {
                             if !without_f.is_empty() && without_f != "G1" && without_f != "G0" {
                                 new_gcode.push_str(&without_f);
                                 new_gcode.push('\n');
+                            } else if (without_f == "G1" || without_f == "G0")
+                                && crate::faithful_gate("EDITOR_BARE_F_LINE")
+                            {
+                                // EDITOR_BARE_F_LINE (on): GCodeEditor.cpp:651-664 — the
+                                // bare "G1" is not kept, but the rest of the source line
+                                // after the F word is, which for `G1 F600` is its newline:
+                                // an empty line. =0 drops the line.
+                                new_gcode.push('\n');
                             }
                             }
                         } else {
@@ -2677,6 +2685,14 @@ impl GCodeEditorState {
                             let without_f = remove_f_param(&clean);
                             if !without_f.is_empty() && without_f != "G1" && without_f != "G0" {
                                 new_gcode.push_str(&without_f);
+                                new_gcode.push('\n');
+                            } else if (without_f == "G1" || without_f == "G0")
+                                && crate::faithful_gate("EDITOR_BARE_F_LINE")
+                            {
+                                // EDITOR_BARE_F_LINE (on): GCodeEditor.cpp:651-664 — the
+                                // bare "G1" is not kept, but the rest of the source line
+                                // after the F word is, which for `G1 F600` is its newline:
+                                // an empty line. =0 drops the line.
                                 new_gcode.push('\n');
                             }
                             }

@@ -248,6 +248,12 @@ pub fn thick_polyline_to_multi_path(
             } else {
                 // VariableWidth.cpp:85-89
                 // we need to initialize a new line
+                // MULTI_PATH_OVERHANG_DEGREE (on): :86 `path.overhang_degree =
+                // overhang;` on every finished path, not only the last (:94).
+                // =0 leaves the finished paths at degree 0.
+                if crate::faithful_gate("MULTI_PATH_OVERHANG_DEGREE") {
+                    path.overhang_degree = overhang;
+                }
                 multi_path.paths.push(std::mem::replace(&mut path, ExtrusionPath::new(role)));
                 i -= 1;
             }

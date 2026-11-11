@@ -1861,6 +1861,22 @@ fn perimeter_base_speed(
     }
 }
 
+/// LOOP_PATH_ACCEL (on): `extrude_loop` hands every path to `_extrude`, which sets
+/// that path's acceleration (GCode.cpp:7638-7666: an overhang wall takes the outer
+/// wall's); the writer writes it before the path's first move. =0 keeps the
+/// acceleration the collection set for the loop's first path.
+fn loop_path_acceleration(
+    writer: &mut GCodeWriter,
+    role: crate::extrusion_entity::ExtrusionRole,
+    is_first_layer: bool,
+) {
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") && crate::faithful_gate("LOOP_PATH_ACCEL") {
+        if let Some(acc) = writer.feature_acceleration(role, is_first_layer) {
+            writer.set_feature_acceleration_shared(acc);
+        }
+    }
+}
+
 /// Extrude a single extrusion loop.
 ///
 /// C++ reference: GCode::extrude_loop()
@@ -2192,6 +2208,7 @@ pub fn extrude_loop(
                 ));
                 last_path_role = Some(path.role);
             }
+            loop_path_acceleration(writer, path.role, is_first_layer);
             width_tag_before_speed(writer, path);
             if apply_overhang_speed
                 && matches!(
@@ -2250,6 +2267,7 @@ pub fn extrude_loop(
             ));
             last_path_role = Some(path.role);
         }
+        loop_path_acceleration(writer, path.role, is_first_layer);
         width_tag_before_speed(writer, path);
         if apply_overhang_speed
             && matches!(
@@ -5038,6 +5056,31 @@ impl Default for GCodeLayerState {
     }
 }
 
+/// `GCode::to_lift_type` (GCode.cpp:8348-8361). `zhtAuto` has no case and falls
+/// to the default, NormalLift; callers resolve Auto themselves.
+pub fn to_lift_type(z_hop_types: crate::print_config::ZHopType) -> crate::g_code_writer::LiftType {
+    use crate::g_code_writer::LiftType;
+    use crate::print_config::ZHopType;
+    match z_hop_types {
+        ZHopType::Normal => LiftType::NormalLift,
+        ZHopType::Slope => LiftType::SlopeLift,
+        ZHopType::Spiral => LiftType::SpiralLift,
+        // if no corresponding lift type, use normal lift
+        _ => LiftType::NormalLift,
+    }
+}
+
+/// The code `gcode/writer.rs` keeps a lift type in: 0 NormalLift, 1 SpiralLift,
+/// 2 SlopeLift.
+pub(crate) fn lift_type_code(lift_type: crate::g_code_writer::LiftType) -> u8 {
+    use crate::g_code_writer::LiftType;
+    match lift_type {
+        LiftType::NormalLift => 0,
+        LiftType::SpiralLift => 1,
+        LiftType::SlopeLift => 2,
+    }
+}
+
 /// `GCode::change_layer` (GCode.cpp:6473-6503), called by `process_layer` right
 /// after the layer head (:5066).
 ///
@@ -5046,7 +5089,7 @@ impl Default for GCodeLayerState {
 /// caller keeps the layer index. With `retract_when_changing_layer` (the
 /// current filament's, `FILAMENT_CONFIG`) and a Z change it retracts, wiping,
 /// with a lazy lift: SpiralLift when `z_hop_types` is Auto, else `to_lift_type`
-/// (:6481-6485, :8370-8383). `add_object_change_labels` (:6487) is the caller's.
+/// (:6481-6485, :8348-8361). `add_object_change_labels` (:6487) is the caller's.
 /// In spiral vase mode it moves to the layer at once (:6489-6494, through
 /// `GCodeWriter::travel_to_z`); otherwise it sets `m_need_change_layer_lift_z`
 /// so the layer's first travel lifts (:6495-6499). Then `m_nominal_z`.
@@ -5061,13 +5104,11 @@ pub fn change_layer(
     // :6480 — BBS: no z_offset.
     let z = print_z;
     if retract_when_changing_layer && writer.will_move_z(z) {
-        // :6482 `to_lift_type(ZHopType(FILAMENT_CONFIG(z_hop_types)))`.
-        let lift_type = match z_hop_type {
-            ZHopType::Normal => 0,
-            ZHopType::Slope => 2,
-            ZHopType::Spiral => 1,
-            // :8380 default: NormalLift; :6484 forces SpiralLift for Auto.
-            ZHopType::Auto => 1,
+        // :6482-6484 — SpiralLift for Auto, else `to_lift_type`.
+        let lift_type = if matches!(z_hop_type, ZHopType::Auto) {
+            lift_type_code(crate::g_code_writer::LiftType::SpiralLift)
+        } else {
+            lift_type_code(to_lift_type(z_hop_type))
         };
         writer.retract_with_lift_type(lift_type, false);
     }

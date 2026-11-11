@@ -1518,16 +1518,11 @@ impl GCodeWriter {
         self.m_is_current_pos_clear = true;
     }
 
-    /// GCode.cpp:6949-6961 `GCode::to_lift_type`. zhtAuto has NO entry in the
+    /// GCode.cpp:8348-8361 `GCode::to_lift_type`. zhtAuto has NO entry in the
     /// switch, so it falls to `default: return LiftType::NormalLift` — the Auto
     /// case is resolved by the CALLER, differently per call site.
     fn to_lift_type(&self) -> u8 {
-        match self.config.z_hop_type {
-            ZHopType::Normal => 0,
-            ZHopType::Slope => 2,
-            ZHopType::Spiral => 1,
-            ZHopType::Auto => 0,
-        }
+        crate::g_code::lift_type_code(crate::g_code::to_lift_type(self.config.z_hop_type))
     }
 
     /// The lift type for a RETRACTION BEFORE A TRAVEL — GCode.cpp:7046 and
