@@ -980,11 +980,26 @@ impl Print {
                     // configs, ...) before the instance. Full ObjectBase
                     // id-counter emulation is future work; 13 is stable for
                     // this pipeline shape.
-                    ltp.object_idx + 13
+                    ltp.object_idx + stl_instance_object_id()
                 } else {
                     ltp.object_idx
                 };
-                writer.write_raw(&format!("; OBJECT_ID: {}", label_id));
+                // OBJECT_ID_PER_PASS (on): GCode.cpp:5843 writes the line for every
+                // instance in every extruder pass, after that extruder's tower
+                // visit. On a layer with several tools it is written from the tool
+                // loop; =0 writes it once here, before the layer's first tower visit.
+                let object_id_per_pass = crate::faithful_gate("OBJECT_ID_PER_PASS") && {
+                    let mut tools = ltp.layer.regions().iter().map(|r| {
+                        r.region.as_ref().map(|pr| pr.config().wall_filament).unwrap_or(1).max(1) - 1
+                    });
+                    match tools.next() {
+                        Some(first) => tools.any(|t| t != first),
+                        None => false,
+                    }
+                };
+                if !object_id_per_pass {
+                    writer.write_raw(&format!("; OBJECT_ID: {}", label_id));
+                }
                 // C++ GCode.cpp:2122-2124: m_enable_label_object is only true when
                 // num_object_instances > 1. For single-object prints, skip this comment.
                 if self.objects.len() > 1 {
@@ -1096,6 +1111,7 @@ impl Print {
                     total_tool_changes,
                     optimized_tools,
                     wiping_overrides,
+                    if object_id_per_pass { Some(label_id) } else { None },
                 );
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
@@ -1217,7 +1233,7 @@ impl Print {
                         // (native ObjectBase id, +13 for the STL pipeline) or
                         // the editor's object_label lookup misses and the
                         // outwall smooth marks are silently dropped.
-                        i as i32 + 13
+                        i as i32 + stl_instance_object_id() as i32
                     } else {
                         i as i32
                     }
@@ -3699,6 +3715,21 @@ fn collect_entity_lines(
 /// `off` = tower position (wipe_tower_x/y); rotation is 0 for now (Majora's
 /// `wipe_tower_rotation_angle` is 0). Does NOT yet wrap the bare `Tn` in the
 /// faithful `change_filament_gcode` + filament start/end templates.
+/// The id `ModelInstance::get_labeled_id()` falls back to for a model that was
+/// not loaded with ids of its own (an STL): `id().id`, the running ObjectBase
+/// counter at the time the instance was made (Model.hpp:1474). It counts every
+/// object the front end allocated before it and is not derived here: it is the
+/// value read off the oracle's `; OBJECT_ID:` lines for one STL on the plate.
+/// STL_OBJECT_ID_28 (on): 28, which this repository's `slicer_cli` writes. =0:
+/// 13, the value of the engine the port was first written against.
+fn stl_instance_object_id() -> usize {
+    if crate::faithful_gate("STL_OBJECT_ID_28") {
+        28
+    } else {
+        13
+    }
+}
+
 fn emit_tower_tcr(
     writer: &mut crate::gcode::GCodeWriter,
     tcr: &crate::gcode::wipe_tower::ToolChangeResult,
@@ -3711,6 +3742,14 @@ fn emit_tower_tcr(
     total_tool_changes: i64,
     first_layer: bool,
 ) {
+    // TOWER_RESET_ACCEL (on): append_tcr begins and ends with
+    // `gcodegen.reset_last_acceleration()` (GCode.cpp:743, 1377): the tower's
+    // own G-code sets accelerations the writer does not see, so the next M204
+    // is written whatever the last one was.
+    let tower_reset_accel = crate::faithful_gate("TOWER_RESET_ACCEL");
+    if tower_reset_accel {
+        writer.reset_last_acceleration();
+    }
     // `transform_gcode`'s `pos` seed is the tower-LOCAL start (same frame as the
     // gcode body); start_pos is stored already-absolute, so recover the local
     // seed by subtracting the offset (else axis-less G1 lines double-count it).
@@ -4240,6 +4279,9 @@ fn emit_tower_tcr(
     if crate::faithful_gate("TOWER_ROLE_RESET") {
         writer.set_last_extrusion_role(Some(crate::extrusion_entity::ExtrusionRole::WipeTower));
     }
+    if tower_reset_accel {
+        writer.reset_last_acceleration();
+    }
 }
 
 fn emit_layer_by_island(
@@ -4268,6 +4310,8 @@ fn emit_layer_by_island(
     // `fills.entities`) -> tool. They print right after the change to that tool
     // (GCode.cpp:5826 `print_wipe_extrusions`).
     wiping_overrides: Option<&std::collections::HashMap<(usize, usize), usize>>,
+    // `Some(id)`: write `; OBJECT_ID: id` in every extruder pass (GCode.cpp:5843).
+    object_id_per_pass: Option<usize>,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
     let zsmooth_gate = crate::faithful_gate("ZSMOOTH_FAITHFUL");
@@ -4314,6 +4358,12 @@ fn emit_layer_by_island(
             internal_islands: islands,
             wall_lines,
             density_ok,
+            wall_proximity_distance: if config.inner_wall_line_width > 0.0 {
+                config.inner_wall_line_width
+            } else {
+                print_config.nozzle_diameter
+            },
+            lines_distancer: std::cell::OnceCell::new(),
         });
     }
     // GCode.cpp:6979-6981 reaches the overhang region through `m_layer`; hand it
@@ -4752,6 +4802,9 @@ fn emit_layer_by_island(
         // GCode.cpp:5826-5828 — the overridden extrusions print first (the
         // `print_wipe_extrusions` pass, GCode.cpp:9080-9086), then the rest.
         if wiping_overrides.is_some() {
+            if let Some(id) = object_id_per_pass {
+                writer.write_raw(&format!("; OBJECT_ID: {}", id));
+            }
             for &isl_idx in &emit_order {
                 for bucket in islands[isl_idx].iter() {
                     let wipes: Vec<ExtrusionEntityType> = bucket
@@ -4768,6 +4821,9 @@ fn emit_layer_by_island(
                 }
             }
             writer.write_raw("; PURGING FINISHED");
+        }
+        if let Some(id) = object_id_per_pass {
+            writer.write_raw(&format!("; OBJECT_ID: {}", id));
         }
         for &isl_idx in &emit_order {
             let island = &islands[isl_idx];

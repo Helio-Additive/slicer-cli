@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 48 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3691 (41%) |
-| estimate: faithful | 3095 (84% of matched) |
+| matched to a Rust function in the paired file | 3692 (41%) |
+| estimate: faithful | 3096 (84% of matched) |
 | estimate: partial | 367 (10% of matched) |
 | estimate: divergent | 198 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
-| missing in the paired Rust file | 4693 |
+| missing in the paired Rust file | 4692 |
 | of those, a function of that name exists in another Rust file | 1612 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 764 |
-| of the rest, 25 tokens or more | 1952 |
+| of the rest, 25 tokens or more | 1951 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4492 |
+| Rust functions with no C++ function of that name in the pair | 4494 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2836 | 2367 | 288 | 161 | 20 | 4015 |
+| 1 | 180 | 174 | 6851 | 2837 | 2368 | 288 | 161 | 20 | 4014 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -230,7 +230,7 @@ their function names come from, when there is one.
 | `gcode/mod.rs` | module | 1 |  |
 | `gcode/multi_material.rs` | no C++ file of this name | 42 |  |
 | `gcode/wipe_tower_integration.rs` | no C++ file of this name | 3 | `GCode` |
-| `gcode/writer.rs` | no C++ file of this name | 119 |  |
+| `gcode/writer.rs` | no C++ file of this name | 121 |  |
 | `geometry/aabb_tree.rs` | no C++ file of this name | 77 |  |
 | `geometry/mod.rs` | module | 19 | `Geometry` |
 | `geometry/simplify.rs` | no C++ file of this name | 19 |  |
@@ -4053,7 +4053,7 @@ Missing in the Rust file:
 - `GCode::_precompute_object_last_layers` :8159 (129 tokens)
 - `GCode::_clear_remaining_object` :8179 (56 tokens)
 - `GCode::_mark_objects_finished` :8186 (42 tokens)
-- `GCode::reset_last_acceleration` :8342 (8 tokens) — in `g_code_writer.rs`
+- `GCode::reset_last_acceleration` :8342 (8 tokens) — in `g_code_writer.rs`, `gcode/writer.rs`
 - `GCode::to_lift_type` :8348 (45 tokens) — in `gcode/writer.rs`
 - `GCode::needs_retraction` :8363 (926 tokens)
 - `GCode::update_layer_related_config` :8531 (110 tokens)
@@ -4569,21 +4569,18 @@ Rust only:
 
 ### `GCode/RetractWhenCrossingPerimeters` (.cpp+.hpp) and `gcode/retract_when_crossing_perimeters.rs`
 
-Tier 1. C++ functions 4, Rust functions 6. Matched 3: faithful 2, partial 1, divergent 0, stub 0.
+Tier 1. C++ functions 4, Rust functions 8. Matched 4: faithful 3, partial 1, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `RetractWhenCrossingPerimeters::travel_inside_internal_regions` :72 and `RetractWhenCrossingPerimeters::travel_inside_internal_regions` :158 (83%, 1.26x)
-
-Missing in the Rust file:
-
-- `RetractWhenCrossingPerimeters::travel_near_perimeters_too_long` :114 (363 tokens)
+- partial: `RetractWhenCrossingPerimeters::travel_inside_internal_regions` :72 and `RetractWhenCrossingPerimeters::travel_inside_internal_regions` :159 (83%, 1.26x)
 
 Rust only:
 
-- `RetractWhenCrossingPerimeters::new` :66
-- `RetractWhenCrossingPerimeters::default` :279
-- `diff_pl_polygons` :292
+- `RetractWhenCrossingPerimeters::new` :67
+- `RetractWhenCrossingPerimeters::travel_near_perimeters_too_long` :265
+- `RetractWhenCrossingPerimeters::default` :406
+- `diff_pl_polygons` :419
 
 ### `GCode/SeamPlacer` (.cpp+.hpp) and `gcode/seam_placer.rs`
 
@@ -7803,17 +7800,17 @@ Rust only:
 
 ### `Print` (.cpp+.hpp) and `print.rs`
 
-Tier 1. C++ functions 236 (plus 12 constructors, 1 destructors, 7 operators), Rust functions 37. Matched 13: faithful 5, partial 1, divergent 6, stub 1.
+Tier 1. C++ functions 236 (plus 12 constructors, 1 destructors, 7 operators), Rust functions 38. Matched 13: faithful 5, partial 1, divergent 6, stub 1.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Print::clear` :60 and `Print::clear` :1793 (9%, 0.52x)
-- partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :1813 (50%, 0.75x)
-- divergent: `Print::validate` :1413 and `Print::validate` :1862 (5%, 0.15x)
-- divergent: `Print::process` :2178 and `Print::process` :1961 (13%, 1.19x)
-- divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :589 (20%, 36.05x)
-- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3168 (23%, 0.41x)
-- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3534 (21%, 0.39x)
+- divergent: `Print::clear` :60 and `Print::clear` :1809 (9%, 0.52x)
+- partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :1829 (50%, 0.75x)
+- divergent: `Print::validate` :1413 and `Print::validate` :1878 (5%, 0.15x)
+- divergent: `Print::process` :2178 and `Print::process` :1977 (13%, 1.19x)
+- divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :589 (20%, 36.86x)
+- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3184 (23%, 0.41x)
+- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3550 (21%, 0.39x)
 - stub: `PrintStatistics::config` :4454 and `Print::config` :540 (6%, 0.03x)
 
 Missing in the Rust file:
@@ -8054,20 +8051,21 @@ Rust only:
 - `Print::skirt` :535
 - `Print::config_mut` :545
 - `Print::entity_points` :559
-- `apply_cooling_postprocess` :1653
-- `Print::apply` :1845 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `Print::make_brim` :3302 — C++ has it in `Brim`
-- `Print::all_extruders` :3438
-- `Print::is_canceled` :3474
-- `Print::cancel` :3480 — C++ has it in `PrintBase`
-- `Print::throw_if_canceled` :3486 — C++ has it in `PrintBase`, `SLAPrintSteps`
-- `Print::set_status_callback` :3495 — C++ has it in `PrintBase`
-- `Print::set_status` :3504 — C++ has it in `PrintBase`
-- `Print::invalidate_all_steps` :3512 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `collect_entity_lines` :3657
-- `emit_tower_tcr` :3702
-- `emit_layer_by_island` :4245
-- `Print::default` :4877
+- `apply_cooling_postprocess` :1669
+- `Print::apply` :1861 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `Print::make_brim` :3318 — C++ has it in `Brim`
+- `Print::all_extruders` :3454
+- `Print::is_canceled` :3490
+- `Print::cancel` :3496 — C++ has it in `PrintBase`
+- `Print::throw_if_canceled` :3502 — C++ has it in `PrintBase`, `SLAPrintSteps`
+- `Print::set_status_callback` :3511 — C++ has it in `PrintBase`
+- `Print::set_status` :3520 — C++ has it in `PrintBase`
+- `Print::invalidate_all_steps` :3528 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `collect_entity_lines` :3673
+- `stl_instance_object_id` :3725
+- `emit_tower_tcr` :3733
+- `emit_layer_by_island` :4287
+- `Print::default` :4933
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 

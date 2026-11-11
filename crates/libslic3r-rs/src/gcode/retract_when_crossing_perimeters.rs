@@ -21,7 +21,8 @@
 use crate::aabb_tree_lines::tree2d;
 use crate::aabb_tree_lines::LinesDistancer;
 use crate::clipper_utils;
-use crate::geometry::{BoundingBox, ExPolygon, Line, Polyline};
+use crate::geometry::{BoundingBox, ExPolygon, Line, Point, Polyline};
+use crate::Coord;
 use crate::layer::Layer;
 use crate::libslic3r::SCALED_EPSILON;
 
@@ -260,19 +261,145 @@ impl RetractWhenCrossingPerimeters {
         result != -1
     }
 
-    // RetractWhenCrossingPerimeters.cpp:113-117
+    // RetractWhenCrossingPerimeters.cpp:113-188
+    pub fn travel_near_perimeters_too_long(
+        &self,
+        travel: &Polyline,
+        wall_proximity_distance: Coord,
+        max_near_wall_travel: Coord,
+    ) -> bool {
+        travel_near_perimeters_too_long(
+            &self.m_aabbtree_lines_distancer,
+            travel,
+            wall_proximity_distance,
+            max_near_wall_travel,
+        )
+    }
+
+    // RetractWhenCrossingPerimeters.cpp:190-198
     pub fn travel_inside_internal_regions_no_wall_crossing(
         &mut self,
         layer: &Layer,
         travel: &Polyline,
+        wall_proximity_distance: Coord,
+        max_near_wall_travel: Coord,
     ) -> bool {
-        // RetractWhenCrossingPerimeters.cpp:115
+        // Only a travel that stays inside, crosses no wall and does not run
+        // along a wall for long may skip the retraction.
         if !self.travel_inside_internal_regions(layer, travel) {
             return false;
         }
-        // RetractWhenCrossingPerimeters.cpp:116
-        !self.travel_cross_perimeters(layer, travel)
+        if self.travel_cross_perimeters(layer, travel) {
+            return false;
+        }
+        !self.travel_near_perimeters_too_long(travel, wall_proximity_distance, max_near_wall_travel)
     }
+}
+
+/// `RetractWhenCrossingPerimeters::travel_near_perimeters_too_long`
+/// (RetractWhenCrossingPerimeters.cpp:113-188) over a given wall-line tree
+/// (`m_aabbtree_lines_distancer`).
+///
+/// Walks the travel in samples: close to a wall in small fixed steps, away from
+/// one in steps of the distance to the wall minus the margin. When the stretch
+/// that stays within `wall_proximity_distance` of a wall reaches
+/// `max_near_wall_travel`, the retraction is kept.
+pub fn travel_near_perimeters_too_long(
+    lines_distancer: &LinesDistancer,
+    travel: &Polyline,
+    wall_proximity_distance: Coord,
+    max_near_wall_travel: Coord,
+) -> bool {
+    // :116-117
+    if wall_proximity_distance <= 0 || max_near_wall_travel <= 0 {
+        return false;
+    }
+    // :119-120
+    if travel.length() <= max_near_wall_travel as f64 {
+        return false;
+    }
+
+    // :124-127
+    let near_wall_sample_distance = 0.5 * max_near_wall_travel as f64;
+    let mut segment_idx: usize = 0;
+    let mut segment_offset: f64 = 0.0;
+    let mut sample_point: (f64, f64) = (travel.points[0].x as f64, travel.points[0].y as f64);
+
+    // :130-156 — move the sample forward along the travel by `distance`.
+    let mut advance_sample = |mut distance: f64,
+                              segment_idx: &mut usize,
+                              segment_offset: &mut f64,
+                              sample_point: &mut (f64, f64)|
+     -> bool {
+        while *segment_idx + 1 < travel.points.len() {
+            let segment_start = (
+                travel.points[*segment_idx].x as f64,
+                travel.points[*segment_idx].y as f64,
+            );
+            let segment = (
+                travel.points[*segment_idx + 1].x as f64 - segment_start.0,
+                travel.points[*segment_idx + 1].y as f64 - segment_start.1,
+            );
+            let segment_length = (segment.0 * segment.0 + segment.1 * segment.1).sqrt();
+            if segment_length <= 0.0 {
+                *segment_idx += 1;
+                *segment_offset = 0.0;
+                continue;
+            }
+
+            let available = segment_length - *segment_offset;
+            if distance <= available {
+                *segment_offset += distance;
+                let t = *segment_offset / segment_length;
+                *sample_point = (segment_start.0 + segment.0 * t, segment_start.1 + segment.1 * t);
+                return true;
+            }
+
+            distance -= available;
+            *segment_idx += 1;
+            *segment_offset = 0.0;
+            *sample_point = (
+                travel.points[*segment_idx].x as f64,
+                travel.points[*segment_idx].y as f64,
+            );
+        }
+        false
+    };
+
+    // :159-186
+    let mut previous_sample_near_wall = false;
+    let mut distance_from_previous_sample = 0.0_f64;
+    let mut consecutive_near_wall_length = 0.0_f64;
+    loop {
+        // `sample_point.cast<coord_t>()` truncates.
+        let wall_distance = lines_distancer
+            .distance_from_lines::<false>(Point::new(sample_point.0 as Coord, sample_point.1 as Coord));
+        let sample_near_wall = wall_distance <= wall_proximity_distance as f64;
+        if sample_near_wall {
+            consecutive_near_wall_length = if previous_sample_near_wall {
+                consecutive_near_wall_length + distance_from_previous_sample
+            } else {
+                0.0
+            };
+            if consecutive_near_wall_length >= max_near_wall_travel as f64 {
+                return true;
+            }
+        } else {
+            consecutive_near_wall_length = 0.0;
+        }
+
+        let next_sample_distance = if sample_near_wall {
+            near_wall_sample_distance
+        } else {
+            near_wall_sample_distance.max(wall_distance - wall_proximity_distance as f64)
+        };
+        previous_sample_near_wall = sample_near_wall;
+        distance_from_previous_sample = next_sample_distance;
+        if !advance_sample(next_sample_distance, &mut segment_idx, &mut segment_offset, &mut sample_point) {
+            break;
+        }
+    }
+    false
 }
 
 impl Default for RetractWhenCrossingPerimeters {

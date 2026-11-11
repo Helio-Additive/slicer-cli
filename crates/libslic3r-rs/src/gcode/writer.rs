@@ -829,7 +829,10 @@ impl GCodeWriter {
         );
         if !dest_is_perimeter {
             if let Some(ctx) = &self.zsmooth_retract_ctx {
-                if ctx.density_ok && travel_inside_internal_no_crossing(ctx, from, to) {
+                if ctx.density_ok
+                    && travel_inside_internal_no_crossing(ctx, from, to)
+                    && !travel_near_wall_too_long(ctx, from, to, self.config.retract_before_travel)
+                {
                     return false;
                 }
             }
@@ -1002,6 +1005,11 @@ impl GCodeWriter {
     /// See `pending_speed`. Overwrites any unflushed value: the collection-level
     /// pre-set is per-entity, so a second one before a flush means the first
     /// entity emitted no path and its F was never C++-visible either.
+    /// GCodeWriter::reset_last_acceleration (GCodeWriter.cpp:241-244).
+    pub fn reset_last_acceleration(&mut self) {
+        self.last_travel_accel = 0.0;
+    }
+
     /// R656 — arm the one-shot force-emit for the analyzer Width/Height tags.
     pub fn set_force_analyzer_tags(&mut self) {
         self.force_analyzer_tags = true;
@@ -3475,6 +3483,12 @@ pub struct RetractCtx {
     pub internal_islands: Vec<crate::geometry::ExPolygon>,
     pub wall_lines: Vec<(crate::Point, crate::Point)>,
     pub density_ok: bool,
+    /// `scale_(inner_wall_line_width > 0 ? inner_wall_line_width : nozzle_diameter)`
+    /// (GCode.cpp:8478-8479), in millimetres here.
+    pub wall_proximity_distance: f64,
+    /// The tree over `wall_lines` (`m_aabbtree_lines_distancer`), built when
+    /// the first travel asks for it.
+    pub lines_distancer: std::cell::OnceCell<crate::aabb_tree_lines::LinesDistancer>,
 }
 
 fn segs_intersect(p1: crate::Point, p2: crate::Point, p3: crate::Point, p4: crate::Point) -> bool {
@@ -3501,6 +3515,39 @@ fn segs_intersect(p1: crate::Point, p2: crate::Point, p3: crate::Point, p4: crat
 /// travel_inside_internal_regions_no_wall_crossing
 /// (RetractWhenCrossingPerimeters.cpp:114-118): travel fully inside an internal
 /// island AND not crossing any wall line.
+/// RETRACT_NEAR_WALL (on): the third condition of
+/// `travel_inside_internal_regions_no_wall_crossing`
+/// (RetractWhenCrossingPerimeters.cpp:190-198): a travel that runs within
+/// `wall_proximity_distance` of a wall for `retraction_minimum_travel` or longer
+/// keeps its retraction. =0 leaves the condition out.
+fn travel_near_wall_too_long(
+    ctx: &RetractCtx,
+    from: crate::Point,
+    to: crate::Point,
+    retraction_minimum_travel: f64,
+) -> bool {
+    if !crate::faithful_gate("RETRACT_NEAR_WALL") {
+        return false;
+    }
+    let distancer = ctx.lines_distancer.get_or_init(|| {
+        crate::aabb_tree_lines::LinesDistancer::new(
+            ctx.wall_lines
+                .iter()
+                .map(|&(a, b)| crate::geometry::Line::new(a, b))
+                .collect(),
+        )
+    });
+    let travel = crate::geometry::Polyline::from_points(vec![from, to]);
+    // `scale_(..)` into a coord_t parameter truncates.
+    let sf = crate::libslic3r::SCALING_FACTOR;
+    crate::gcode::retract_when_crossing_perimeters::travel_near_perimeters_too_long(
+        distancer,
+        &travel,
+        (ctx.wall_proximity_distance / sf) as crate::Coord,
+        (retraction_minimum_travel / sf) as crate::Coord,
+    )
+}
+
 fn travel_inside_internal_no_crossing(ctx: &RetractCtx, from: crate::Point, to: crate::Point) -> bool {
     // inside = both endpoints inside one island and the segment does not leave
     // it (native: diff_pl(travel, island) empty).
