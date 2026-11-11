@@ -3855,7 +3855,18 @@ impl WipeTower {
             // Set layer
             let is_first_layer = layer_idx == 0;
             let is_last_layer = layer_idx == num_layers - 1;
-            self.set_layer(z, height, num_tool_changes, is_first_layer, is_last_layer);
+            // TOWER_LAYER_COUNT_CPP (on): WipeTower.cpp:7787 — generate_new calls
+            // set_layer with `is_first_layer` false on every layer, so the layer
+            // counter of the grid's `; layer #N` is 1 on the first layer. =0
+            // resets it to 0 there.
+            let layer_count_cpp = generate_new && crate::faithful_gate("TOWER_LAYER_COUNT_CPP");
+            self.set_layer(
+                z,
+                height,
+                num_tool_changes,
+                is_first_layer && !layer_count_cpp,
+                is_last_layer,
+            );
 
             // WipeTower.cpp:7840-7841, 7854-7856 — under `only_generate_wall` the
             // wall is drawn first, by the tool the layer starts with.

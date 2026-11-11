@@ -559,6 +559,12 @@ pub struct PrintConfig {
     /// the tower height. BambuStudio: `prime_tower_brim_width`
     /// (PrintConfig.cpp:7169-7178, default 3).
     pub prime_tower_brim_width: CoordF,
+    /// Wipe speed of a tool change's retraction (mm/s); 0 means
+    /// `prime_tower_max_speed`. BambuStudio: `prime_tower_wipe_speed`.
+    pub prime_tower_wipe_speed: CoordF,
+    /// Wipe distance of a tool change's retraction (mm); 0 means the filament's
+    /// `wipe_distance`. BambuStudio: `prime_tower_wipe_distance`.
+    pub prime_tower_wipe_distance: CoordF,
     /// The points of the printable area (mm). BambuStudio: `printable_area`.
     pub printable_area: Vec<(CoordF, CoordF)>,
     /// Leave gaps in the prime-tower wall where the object passes close, and
@@ -1224,6 +1230,8 @@ impl Default for PrintConfig {
             prime_tower_lift_speed: 90.0,
             prime_tower_width: 60.0,
             prime_tower_brim_width: 3.0,
+            prime_tower_wipe_speed: 0.0,
+            prime_tower_wipe_distance: 0.0,
             printable_area: vec![(0.0, 0.0), (256.0, 0.0), (256.0, 256.0), (0.0, 256.0)],
             prime_tower_skip_points: false,
             prime_tower_max_speed: 90.0,
@@ -2769,6 +2777,18 @@ impl PrintConfig {
             "scan_first_layer" => {
                 if let Some(v) = parse_bool(value) {
                     self.scan_first_layer = v;
+                }
+                true
+            }
+            "prime_tower_wipe_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.prime_tower_wipe_speed = v;
+                }
+                true
+            }
+            "prime_tower_wipe_distance" => {
+                if let Some(v) = parse_f64(value) {
+                    self.prime_tower_wipe_distance = v;
                 }
                 true
             }

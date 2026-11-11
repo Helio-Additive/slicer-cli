@@ -4932,27 +4932,27 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - divergent: `WipeTowerWriter::set_travel_acceleration` :1523 and `WipeTowerWriter::set_travel_acceleration` :2455 (17%, 1.02x)
 - divergent: `WipeTowerWriter::set_acceleration_impl` :1532 and `WipeTowerWriter::set_acceleration_impl` :2471 (21%, 0.96x)
 - divergent: `WipeTower::set_extruder` :2017 and `WipeTower::set_extruder` :2696 (6%, 0.06x)
-- divergent: `WipeTower::get_next_pos` :2209 and `WipeTower::get_next_pos` :4332 (26%, 0.27x)
-- partial: `WipeTower::tool_change` :2263 and `WipeTower::tool_change` :4075 (34%, 0.9x)
-- divergent: `WipeTower::toolchange_Unload` :2553 and `WipeTower::toolchange_unload` :4297 (12%, 0.1x)
-- divergent: `WipeTower::toolchange_Wipe` :2760 and `WipeTower::toolchange_wipe` :4316 (5%, 0.05x)
-- divergent: `WipeTower::set_for_wipe_tower_writer` :2900 and `WipeTower::set_for_wipe_tower_writer` :4058 (8%, 1.12x)
-- partial: `WipeTower::finish_layer` :2916 and `WipeTower::finish_layer` :4835 (44%, 1.42x)
+- divergent: `WipeTower::get_next_pos` :2209 and `WipeTower::get_next_pos` :4343 (26%, 0.27x)
+- partial: `WipeTower::tool_change` :2263 and `WipeTower::tool_change` :4086 (34%, 0.9x)
+- divergent: `WipeTower::toolchange_Unload` :2553 and `WipeTower::toolchange_unload` :4308 (12%, 0.1x)
+- divergent: `WipeTower::toolchange_Wipe` :2760 and `WipeTower::toolchange_wipe` :4327 (5%, 0.05x)
+- divergent: `WipeTower::set_for_wipe_tower_writer` :2900 and `WipeTower::set_for_wipe_tower_writer` :4069 (8%, 1.12x)
+- partial: `WipeTower::finish_layer` :2916 and `WipeTower::finish_layer` :4846 (44%, 1.42x)
 - partial: `WipeTower::plan_toolchange` :3119 and `WipeTower::plan_toolchange` :2971 (45%, 0.76x)
-- partial: `WipeTower::merge_tcr` :3353 and `WipeTower::merge_tcr` :5604 (46%, 0.86x)
+- partial: `WipeTower::merge_tcr` :3353 and `WipeTower::merge_tcr` :5615 (46%, 0.86x)
 - divergent: `WipeTower::get_all_wall_skip_points` :3429 and `WipeTower::get_all_wall_skip_points` :3495 (9%, 0.27x)
 - divergent: `WipeTower::get_wall_skip_points` :3450 and `WipeTower::get_wall_skip_points` :3529 (27%, 0.46x)
-- divergent: `WipeTower::finish_layer_new` :4077 and `WipeTower::finish_layer_new` :5406 (28%, 0.33x)
-- partial: `WipeTower::finish_block` :4398 and `WipeTower::finish_block` :5527 (34%, 0.38x)
+- divergent: `WipeTower::finish_layer_new` :4077 and `WipeTower::finish_layer_new` :5417 (28%, 0.33x)
+- partial: `WipeTower::finish_block` :4398 and `WipeTower::finish_block` :5538 (34%, 0.38x)
 - partial: `WipeTower::get_block_by_category` :5440 and `WipeTower::get_block_by_category` :3246 (33%, 0.8x)
 - partial: `WipeTower::add_depth_to_block` :5462 and `WipeTower::add_depth_to_block` :3269 (55%, 0.72x)
 - partial: `WipeTower::update_all_layer_depth` :5517 and `WipeTower::update_all_layer_depth` :3427 (35%, 0.62x)
 - divergent: `WipeTower::generate_wipe_tower_blocks` :5551 and `WipeTower::generate_wipe_tower_blocks` :3309 (22%, 0.4x)
 - divergent: `WipeTower::first_printed_layer_idx` :6074 and `WipeTower::first_printed_layer_idx` :3131 (0%, 0.32x)
-- partial: `WipeTower::get_wall_filament_for_layer` :7451 and `WipeTower::get_wall_filament_for_layer` :5712 (39%, 0.48x)
-- partial: `WipeTower::get_block_fill_filament` :7535 and `WipeTower::get_block_fill_filament` :5747 (32%, 0.54x)
-- partial: `WipeTower::generate` :8112 and `WipeTower::generate` :3804 (32%, 1.1x)
-- partial: `WipeTower::only_generate_out_wall` :8215 and `WipeTower::only_generate_out_wall` :4727 (34%, 1.67x)
+- partial: `WipeTower::get_wall_filament_for_layer` :7451 and `WipeTower::get_wall_filament_for_layer` :5723 (39%, 0.48x)
+- partial: `WipeTower::get_block_fill_filament` :7535 and `WipeTower::get_block_fill_filament` :5758 (32%, 0.54x)
+- partial: `WipeTower::generate` :8112 and `WipeTower::generate` :3804 (32%, 1.13x)
+- partial: `WipeTower::only_generate_out_wall` :8215 and `WipeTower::only_generate_out_wall` :4738 (34%, 1.67x)
 
 Missing in the Rust file:
 
@@ -5183,15 +5183,15 @@ Rust only:
 - `WipeTower::record_outer_wall` :3202
 - `WipeTower::charge_tool_change_to_block` :3452
 - `WipeTower::block_needs_finish` :3482
-- `WipeTower::generate_new_layer` :3931
-- `WipeTower::layer_extra_spacing` :4347
-- `WipeTower::toolchange_wipe_cpp` :4360
-- `WipeTower::toolchange_wipe_legacy` :4492
-- `WipeTower::draw_outer_wall` :4680
-- `WipeTower::draw_brim_chamfer` :5235
-- `WipeTower::add_wipe_path` :5286
-- `WipeTower::draw_fill_grid` :5313
-- `WipeTower::add_finish_wipe` :5383
+- `WipeTower::generate_new_layer` :3942
+- `WipeTower::layer_extra_spacing` :4358
+- `WipeTower::toolchange_wipe_cpp` :4371
+- `WipeTower::toolchange_wipe_legacy` :4503
+- `WipeTower::draw_outer_wall` :4691
+- `WipeTower::draw_brim_chamfer` :5246
+- `WipeTower::add_wipe_path` :5297
+- `WipeTower::draw_fill_grid` :5324
+- `WipeTower::add_finish_wipe` :5394
 
 ### `GCodeReader` (.cpp+.hpp) and `g_code_reader.rs`
 
@@ -8224,8 +8224,8 @@ Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :3837 (0%, 0.44x)
-- divergent: `validate` :10643 and `PrintConfig::validate` :907 (9%, 0.11x)
+- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :3857 (0%, 0.44x)
+- divergent: `validate` :10643 and `PrintConfig::validate` :913 (9%, 0.11x)
 
 Missing in the Rust file:
 
@@ -8360,86 +8360,86 @@ Missing in the Rust file:
 Rust only:
 
 - `GCodeConfig::default` :25
-- `PerExtruderCoolingConfig::default` :776
-- `PrintConfig::new` :800
-- `PrintConfig::num_filaments` :810
-- `PrintConfig::apply_from` :819
-- `PrintConfig::layer_height` :824 — C++ has it in `SLAPrint`
-- `PrintConfig::first_layer_height` :830
-- `PrintConfig::nozzle_diameter` :836 — C++ has it in `Flow`
-- `PrintConfig::print_speed` :842
-- `PrintConfig::support` :848
-- `PrintConfig::support_type` :854
-- `PrintConfig::brim_width` :860
-- `PrintConfig::raft_enabled` :866
-- `PrintConfig::raft_layers` :872 — C++ has it in `Slicing`
-- `PrintConfig::raft_expansion` :881
-- `PrintConfig::raft_contact_distance` :887
-- `PrintConfig::raft_density` :893
-- `PrintConfig::use_relative_e` :950
-- `PrintConfig::arc_fitting` :955
-- `PrintConfig::arc_fitting_tolerance` :960
-- `PrintConfig::arc_fitting_radius` :965
-- `PrintConfig::avoid_crossing_perimeters` :972
-- `PrintConfig::avoid_crossing_max_detour` :978
-- `PrintConfig::default` :985
-- `PrintConfig::fmt` :1317
-- `PrintObjectConfig::effective_line_width` :2054
-- `PrintObjectConfig::effective_initial_layer_line_width` :2063
-- `PrintObjectConfig::effective_outer_wall_line_width` :2073
-- `PrintObjectConfig::effective_inner_wall_line_width` :2083
-- `PrintObjectConfig::effective_sparse_infill_line_width` :2092
-- `PrintObjectConfig::effective_solid_infill_line_width` :2101
-- `PrintObjectConfig::effective_top_surface_line_width` :2110
-- `PrintObjectConfig::new` :2121
-- `PrintObjectConfig::perimeters` :2126
-- `PrintObjectConfig::fill_density` :2132
-- `PrintObjectConfig::fill_pattern` :2138
-- `PrintObjectConfig::seam_position` :2144
-- `PrintObjectConfig::perimeter_mode` :2150
-- `PrintObjectConfig::arachne` :2156
-- `PrintObjectConfig::arachne_min_bead_width` :2162
-- `PrintObjectConfig::arachne_min_feature_size` :2168
-- `parse_f64` :2176
-- `parse_percent_number` :2200
-- `parse_pct` :2204
-- `parse_bool` :2215
-- `parse_u32` :2219
-- `parse_i32` :2223
-- `parse_float_or_percent` :2228
-- `PrintConfig::set_deserialize` :2246 — C++ has it in `Config`
-- `PrintObjectConfig::set_deserialize` :2878 — C++ has it in `Config`
-- `PrintObjectConfig::default` :3532
-- `PrintObjectConfig::fmt` :3859
-- `BrimType::from_str_bambu` :3946
-- `PrintSequence::from_str_bambu` :3977
-- `WallInfillOrder::from_str_bambu` :4003
-- `SupportBasePattern::from_str_bambu` :4043
-- `SupportInterfacePattern::from_str_bambu` :4072
-- `IroningType::from_str_bambu` :4097
-- `FuzzySkinType::from_str_bambu` :4130
-- `FuzzySkinType::is_enabled` :4141 — C++ has it in `MeshBoolean`
-- `ScarfSeamType::from_str_bambu` :4160
-- `SurfacePattern::from_str_bambu` :4191
-- `InternalSolidInfillPattern::from_str_bambu` :4218
-- `EnsureVerticalShellThickness::from_str_bambu` :4256
-- `TreeSupportStyle::from_str_bambu` :4333
-- `InfillPattern::from_str_bambu` :4465
-- `TopOneWallType::is_enabled` :4567 — C++ has it in `MeshBoolean`
-- `TopOneWallType::is_all_top` :4572
-- `TopOneWallType::from_str_bambu` :4578
-- `PerimeterMode::is_variable_width` :4605
-- `PerimeterMode::name` :4610
-- `PrintConfig::to_key_value_map` :4628
-- `PrintConfig::apply_key_value_map` :4786
-- `PrintConfig::apply_key_value` :4794
-- `PrintObjectConfig::apply_key_value` :5427
-- `find_from` :6282
-- `s_keys_map_nozzle_volume_type` :6364
-- `nozzle_volume_type_string` :6553
-- `stoi` :6571
-- `atoi` :6575
-- `parse_leading_int` :6579
+- `PerExtruderCoolingConfig::default` :782
+- `PrintConfig::new` :806
+- `PrintConfig::num_filaments` :816
+- `PrintConfig::apply_from` :825
+- `PrintConfig::layer_height` :830 — C++ has it in `SLAPrint`
+- `PrintConfig::first_layer_height` :836
+- `PrintConfig::nozzle_diameter` :842 — C++ has it in `Flow`
+- `PrintConfig::print_speed` :848
+- `PrintConfig::support` :854
+- `PrintConfig::support_type` :860
+- `PrintConfig::brim_width` :866
+- `PrintConfig::raft_enabled` :872
+- `PrintConfig::raft_layers` :878 — C++ has it in `Slicing`
+- `PrintConfig::raft_expansion` :887
+- `PrintConfig::raft_contact_distance` :893
+- `PrintConfig::raft_density` :899
+- `PrintConfig::use_relative_e` :956
+- `PrintConfig::arc_fitting` :961
+- `PrintConfig::arc_fitting_tolerance` :966
+- `PrintConfig::arc_fitting_radius` :971
+- `PrintConfig::avoid_crossing_perimeters` :978
+- `PrintConfig::avoid_crossing_max_detour` :984
+- `PrintConfig::default` :991
+- `PrintConfig::fmt` :1325
+- `PrintObjectConfig::effective_line_width` :2062
+- `PrintObjectConfig::effective_initial_layer_line_width` :2071
+- `PrintObjectConfig::effective_outer_wall_line_width` :2081
+- `PrintObjectConfig::effective_inner_wall_line_width` :2091
+- `PrintObjectConfig::effective_sparse_infill_line_width` :2100
+- `PrintObjectConfig::effective_solid_infill_line_width` :2109
+- `PrintObjectConfig::effective_top_surface_line_width` :2118
+- `PrintObjectConfig::new` :2129
+- `PrintObjectConfig::perimeters` :2134
+- `PrintObjectConfig::fill_density` :2140
+- `PrintObjectConfig::fill_pattern` :2146
+- `PrintObjectConfig::seam_position` :2152
+- `PrintObjectConfig::perimeter_mode` :2158
+- `PrintObjectConfig::arachne` :2164
+- `PrintObjectConfig::arachne_min_bead_width` :2170
+- `PrintObjectConfig::arachne_min_feature_size` :2176
+- `parse_f64` :2184
+- `parse_percent_number` :2208
+- `parse_pct` :2212
+- `parse_bool` :2223
+- `parse_u32` :2227
+- `parse_i32` :2231
+- `parse_float_or_percent` :2236
+- `PrintConfig::set_deserialize` :2254 — C++ has it in `Config`
+- `PrintObjectConfig::set_deserialize` :2898 — C++ has it in `Config`
+- `PrintObjectConfig::default` :3552
+- `PrintObjectConfig::fmt` :3879
+- `BrimType::from_str_bambu` :3966
+- `PrintSequence::from_str_bambu` :3997
+- `WallInfillOrder::from_str_bambu` :4023
+- `SupportBasePattern::from_str_bambu` :4063
+- `SupportInterfacePattern::from_str_bambu` :4092
+- `IroningType::from_str_bambu` :4117
+- `FuzzySkinType::from_str_bambu` :4150
+- `FuzzySkinType::is_enabled` :4161 — C++ has it in `MeshBoolean`
+- `ScarfSeamType::from_str_bambu` :4180
+- `SurfacePattern::from_str_bambu` :4211
+- `InternalSolidInfillPattern::from_str_bambu` :4238
+- `EnsureVerticalShellThickness::from_str_bambu` :4276
+- `TreeSupportStyle::from_str_bambu` :4353
+- `InfillPattern::from_str_bambu` :4485
+- `TopOneWallType::is_enabled` :4587 — C++ has it in `MeshBoolean`
+- `TopOneWallType::is_all_top` :4592
+- `TopOneWallType::from_str_bambu` :4598
+- `PerimeterMode::is_variable_width` :4625
+- `PerimeterMode::name` :4630
+- `PrintConfig::to_key_value_map` :4648
+- `PrintConfig::apply_key_value_map` :4806
+- `PrintConfig::apply_key_value` :4814
+- `PrintObjectConfig::apply_key_value` :5447
+- `find_from` :6302
+- `s_keys_map_nozzle_volume_type` :6384
+- `nozzle_volume_type_string` :6573
+- `stoi` :6591
+- `atoi` :6595
+- `parse_leading_int` :6599
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 

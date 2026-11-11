@@ -369,6 +369,9 @@ pub struct GCodeWriter {
     /// decision counter was global (35,000 retracts) and could not distinguish the
     /// 2,718 tower calls from the ordinary object ones.
     tc_retract_probe: bool,
+    /// The retraction under way is a tool change's (`GCode::retract(true, ..)`),
+    /// which `Wipe::wipe` reads for its speed and distance.
+    m_toolchange_wipe: bool,
     /// Wipe distance (mm) — how far to move while wiping
     wipe_distance: CoordF,
 
@@ -493,6 +496,7 @@ impl GCodeWriter {
             wipe_path_src: "init",
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             tc_retract_probe: false,
+            m_toolchange_wipe: false,
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
             last_height_tag: 0.0,
@@ -2214,7 +2218,9 @@ impl GCodeWriter {
         let saved = self.retraction_length;
         self.retraction_length = self.config.retract_length_toolchange;
         self.tc_retract_probe = true;
+        self.m_toolchange_wipe = true;
         self.retract();
+        self.m_toolchange_wipe = false;
         self.tc_retract_probe = false;
         self.retraction_length = saved;
     }
@@ -2315,13 +2321,20 @@ impl GCodeWriter {
                 // carries, so every wipe was clipped at its 1.0 mm default
                 // against native's 2.0 (Majora sparse len/wipe 1.000 v 2.000).
                 // `WIPE_DIST_CONFIG=0` restores the old field.
-                let wipe_dist = if crate::faithful_gate("WIPE_DIST_CONFIG") {
+                let mut wipe_dist = if crate::faithful_gate("WIPE_DIST_CONFIG") {
                     self.config
                         .wipe_distance_profile
                         .unwrap_or(self.config.filament_wipe_distance)
                 } else {
                     self.config.filament_wipe_distance
                 };
+                // TOOLCHANGE_WIPE_SPEED (on): GCode.cpp:469-472 — a tool change
+                // wipes `prime_tower_wipe_distance` when it is set.
+                let toolchange_wipe =
+                    self.m_toolchange_wipe && crate::faithful_gate("TOOLCHANGE_WIPE_SPEED");
+                if toolchange_wipe && self.config.prime_tower_wipe_distance > 0.0 {
+                    wipe_dist = self.config.prime_tower_wipe_distance;
+                }
                 // wipe_path = [current] + stored[1..] (forward).
                 let mut pts: Vec<(CoordF, CoordF)> = vec![(self.x, self.y)];
                 pts.extend(self.wipe_path.iter().skip(1).copied());
@@ -2414,12 +2427,25 @@ impl GCodeWriter {
                     // `G1 F<cur>;_WIPE` (role_base_wipe_speed default true →
                     // cur speed). The R222 dedup dropped ~1 native F line per
                     // layer (the n-only G1 F12000 bucket).
-                    let wipe_f = self.feedrate;
+                    // TOOLCHANGE_WIPE_SPEED (on): GCode.cpp:450-453 — a tool
+                    // change wipes at `prime_tower_wipe_speed`, else at
+                    // `prime_tower_max_speed`; `set_speed` makes that the
+                    // current speed (GCodeWriter.cpp:450), which the wipe
+                    // when leaving the tower then takes. =0 the current speed.
+                    let wipe_f = if toolchange_wipe {
+                        let tc = self.config.prime_tower_wipe_speed;
+                        (if tc > 0.0 { tc } else { self.config.prime_tower_max_speed }) * 60.0
+                    } else {
+                        self.feedrate
+                    };
                     if wipe_f > 0.0 {
                         let fs = format!("{:.3}", wipe_f);
                         let fs = fs.trim_end_matches('0').trim_end_matches('.');
                         self.write_raw(&format!("G1 F{};_WIPE", fs));
                         self.last_emitted_f = wipe_f;
+                        if toolchange_wipe {
+                            self.feedrate = wipe_f;
+                        }
                     }
                     if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") && accel_after_speed {
                         self.flush_pending_accel();
