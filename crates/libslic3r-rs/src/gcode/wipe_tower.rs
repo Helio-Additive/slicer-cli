@@ -4220,7 +4220,7 @@ impl WipeTower {
 
         // Actual tool change. Faithful to WipeTower.cpp:2466: emit the
         // `[change_filament_gcode]` PLACEHOLDER, which the export step
-        // (`wipe_tower_integration`/`emit_tower_tcr`) substitutes with the
+        // (`g_code::append_tcr`) substitutes with the
         // evaluated `change_filament_gcode` template — or with a bare `Tn` when
         // that template is empty (GCode.cpp:754). Then update the writer's tool
         // state via the (output-less) set_tool.
@@ -4231,7 +4231,7 @@ impl WipeTower {
         // R466 — WipeTower.cpp:2460 `toolchange_Load`: "BBS: tool load is done in
         // change_filament_gcode", body `#if 0`. C++ emits NO load here either; the
         // unretract that repays the template's toolchange retraction is emitted by
-        // GCode::append_tcr (see `emit_tower_tcr`), and it is
+        // GCode::append_tcr (see `g_code::append_tcr`), and it is
         // `retract_length_toolchange` (2.0), not `retract_length` (0.8).
         if crate::faithful_gate("WT_TOOLCHANGE_LOAD_LEGACY")
             && crate::probe_enabled("WT_TOOLCHANGE_LOAD_LEGACY")

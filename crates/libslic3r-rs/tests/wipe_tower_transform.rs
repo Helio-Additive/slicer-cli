@@ -5,7 +5,7 @@
 //! target does not currently compile (see memory / PARITY_STATUS).
 
 use slicer::gcode::wipe_tower::Vec2f;
-use slicer::gcode::wipe_tower_integration::transform_gcode;
+use slicer::g_code::post_process_wipe_tower_moves as transform_gcode;
 
 fn xy(line: &str) -> (f32, f32) {
     let mut x = f32::NAN;

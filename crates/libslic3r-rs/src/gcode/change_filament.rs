@@ -56,11 +56,29 @@ pub fn build_context(
     if flush_count == 0 && purge_volume > 0.0 {
         flush_count = 1;
     }
-    let flush_unit = if flush_count > 0 {
+    let mut flush_unit = if flush_count > 0 {
         purge_length / flush_count as f64
     } else {
         0.0
     };
+    // FLUSH_LENGTH_FLOAT (on): GCode.cpp:985-987, 1104-1108 compute in float:
+    // `float purge_volume`, `float new_filament_area = float((M_PI/4.f) *
+    // pow(d, 2))`, `float purge_length = purge_volume / new_filament_area`,
+    // `std::round(purge_volume / g_purge_volume_one_time)` with float
+    // constants and `float flush_unit = purge_length / flush_count`; the
+    // template then reads the float as a double, and the sixth digit of
+    // `{flush_length_2 * 0.18}` follows it. =0 computes in double.
+    if crate::faithful_gate("FLUSH_LENGTH_FLOAT") {
+        let pv = purge_volume as f32;
+        let area = ((PI / 4.0) * diameter.powi(2)) as f32;
+        let purge_length_f = if area > 0.0 { pv / area } else { 0.0 };
+        let mut count = ((pv / G_PURGE_VOLUME_ONE_TIME as f32).round() as i32).min(G_MAX_FLUSH_COUNT);
+        if count == 0 && pv > 0.0 {
+            count += 1;
+        }
+        flush_count = count;
+        flush_unit = if count > 0 { (purge_length_f / count as f32) as f64 } else { 0.0 };
+    }
 
     let filament_temp = if first_layer {
         config.first_layer_extruder_temperature

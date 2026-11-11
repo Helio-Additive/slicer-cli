@@ -396,6 +396,967 @@ pub fn generate_path_to_wipe_tower(
     res
 }
 
+
+// ============================================================================
+// WipeTowerIntegration (GCode.cpp): the export of the wipe tower's results.
+// The tower is generated in `gcode/wipe_tower.rs` in tower coordinates and kept
+// on `Print::wipe_tower_results`; this is the part that writes it into the
+// G-code (R841 moved it here from `gcode/wipe_tower_integration.rs` and
+// `print.rs`).
+// ============================================================================
+
+/// The placeholder the wipe-tower generator emits where the tool change belongs
+/// (WipeTower.cpp:2466). The export substitutes the evaluated
+/// `change_filament_gcode` for it.
+pub const CHANGE_FILAMENT_PLACEHOLDER: &str = "[change_filament_gcode]";
+
+/// Substitute the tool-change block into transformed tower gcode.
+///
+/// Port of the `change_filament_gcode` half of `append_tcr` (GCode.cpp:936-1058):
+/// C++ evaluates the `change_filament_gcode` template, appends the `Tn` command
+/// if the custom block didn't already change tools, and injects the result into
+/// the tower gcode via its `[change_filament_gcode]` placeholder. When the
+/// template is empty, a bare `Tn` is used instead (GCode.cpp:754).
+pub fn substitute_change_filament(
+    tower_gcode: &str,
+    change_filament_block: Option<&str>,
+    new_tool: usize,
+    toolchange_prefix: &str,
+    // Emitted immediately AFTER the substituted change-filament block, i.e. right
+    // before the tower's own moves — which is where C++ puts `; FEATURE: Prime
+    // tower` (it appears after the block's closing `G1 E.8`, followed by
+    // `; WIPE_TOWER_START`). Placing it before the whole block instead attributes
+    // the tool change's own retract/ramming to the tower feature.
+    feature_marker: Option<&str>,
+    // The evaluated `filament_end_gcode`, emitted BEFORE the change-filament
+    // block — C++ substitutes it into the tower's own `[filament_end_gcode]`
+    // placeholder, which sits one line above `[change_filament_gcode]`
+    // (WipeTower.cpp:2465-2466).
+    filament_end_block: Option<&str>,
+) -> String {
+    let tool_cmd = format!("{}{}", toolchange_prefix, new_tool);
+    let replacement = match change_filament_block {
+        Some(block) if !block.trim().is_empty() => {
+            let mut s = block.trim_end().to_string();
+            // GCode.cpp:960 — only append the tool command if the custom gcode
+            // does not already perform the tool change itself.
+            if !tower_block_changes_tool(&s, toolchange_prefix, new_tool) {
+                s.push('\n');
+                s.push_str(&tool_cmd);
+            }
+            s
+        }
+        _ => tool_cmd,
+    };
+    let replacement = match feature_marker {
+        Some(m) => format!("{replacement}\n{m}"),
+        None => replacement,
+    };
+    let replacement = match filament_end_block {
+        // The block as it is (it ends with a newline) under
+        // TOOLCHANGE_TEMPLATE_TEXT; trimmed otherwise.
+        Some(b) if crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT") && b.ends_with('\n') => {
+            // The tower writes "[filament_end_gcode]\n" (WipeTower.cpp:2465), so
+            // the line's own newline follows the block.
+            format!("{b}\n{replacement}")
+        }
+        Some(b) if !b.trim().is_empty() => format!("{}\n{replacement}", b.trim_end()),
+        _ => replacement,
+    };
+    tower_gcode.replace(CHANGE_FILAMENT_PLACEHOLDER, &replacement)
+}
+
+/// Does the custom block already contain a line that switches to `new_tool`?
+/// A line-based check written for `substitute_change_filament`; the C++
+/// `custom_gcode_changes_tool` (GCode.cpp:227-251, `custom_gcode_changes_tool`
+/// above) keeps the last match instead.
+fn tower_block_changes_tool(gcode: &str, toolchange_prefix: &str, new_tool: usize) -> bool {
+    let want = format!("{}{}", toolchange_prefix, new_tool);
+    gcode.lines().any(|l| {
+        let l = l.trim();
+        // A tool command is the whole line (possibly with a trailing comment).
+        l == want || l.starts_with(&format!("{} ", want)) || l.starts_with(&format!("{};", want))
+    })
+}
+
+/// Port of `WipeTowerIntegration::post_process_wipe_tower_moves`
+/// (GCode.cpp:1383-1465; `transform_gcode` until R841, which moved it here from
+/// `gcode/wipe_tower_integration.rs`).
+///
+/// A wipe-tower `ToolChangeResult.gcode` assumes the tower corner sits at the
+/// origin (tower-local coordinates, except priming lines). This rewrites every
+/// `G1 ` move's X/Y by `Rotation2D(angle) * pos + translation`, leaving the E/F
+/// words and every non-`G1` line untouched, so the tower can be placed at its
+/// bed position (`translation` = tower position, `angle` = tower rotation in
+/// radians). `pos` seeds the running position, used for a `G1` line that omits
+/// an axis (it carries the previous value forward, exactly like the C++ scratch
+/// `pos`).
+///
+/// Faithful to the C++ dedup: a `G1` move whose transformed position equals the
+/// previous one is left unmodified, and an axis unchanged from the previous move
+/// is omitted. The C++ `never_skip_tag` branch is dropped — the Rust wipe-tower
+/// generator never emits that tag.
+pub fn post_process_wipe_tower_moves(gcode: &str, mut pos: crate::gcode::wipe_tower::Vec2f, translation: crate::gcode::wipe_tower::Vec2f, angle: f32) -> String {
+    let cos_a = angle.cos();
+    let sin_a = angle.sin();
+    // C++ seeds old_pos with a sentinel no real coordinate matches, so the first
+    // move always writes both axes.
+    let mut old_pos = crate::gcode::wipe_tower::Vec2f::new(-1000.1, -1000.1);
+
+    // Process line-by-line. Splitting on '\n' and re-joining on '\n' preserves
+    // the original newline structure exactly (unlike the C++ getline loop, which
+    // appends one trailing blank line, added at the end under TOWER_XFORM_TRAILING_BLANK).
+    let processed: Vec<String> = gcode
+        .split('\n')
+        .map(|line| {
+            if !line.starts_with("G1 ") {
+                // GCode.cpp:1133-1145: after the change-filament placeholder the
+                // tracker forgets its position, so the next move re-emits X and Y.
+                if line == "[change_filament_gcode]" && crate::faithful_gate("TOWER_XFORM_TC_RESET") {
+                    old_pos = crate::gcode::wipe_tower::Vec2f::new(-1000.1, -1000.1);
+                }
+                return line.to_string();
+            }
+            // Char-scan the whole line: X/Y consume their number into `pos`;
+            // every other character is copied to `line_out` (so `line_out`
+            // retains the leading "G1 " and the E/F words, minus the X/Y).
+            let mut line_out = String::new();
+            let mut it = line.chars().peekable();
+            while let Some(&ch) = it.peek() {
+                if ch == 'X' || ch == 'Y' {
+                    it.next();
+                    let mut num = String::new();
+                    while let Some(&c2) = it.peek() {
+                        if c2.is_ascii_digit()
+                            || c2 == '.'
+                            || c2 == '-'
+                            || c2 == '+'
+                            || c2 == 'e'
+                            || c2 == 'E'
+                        {
+                            num.push(c2);
+                            it.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    let val = num.trim().parse::<f32>().unwrap_or(0.0);
+                    if ch == 'X' {
+                        pos.x = val;
+                    } else {
+                        pos.y = val;
+                    }
+                } else {
+                    line_out.push(ch);
+                    it.next();
+                }
+            }
+
+            // transformed_pos = Rotation2Df(angle) * pos + translation
+            let tx = pos.x * cos_a - pos.y * sin_a + translation.x;
+            let ty = pos.x * sin_a + pos.y * cos_a + translation.y;
+
+            if tx != old_pos.x || ty != old_pos.y {
+                let mut oss = String::from("G1 ");
+                if tx != old_pos.x {
+                    oss.push_str(&format!(" X{:.3}", tx));
+                }
+                if ty != old_pos.y {
+                    oss.push_str(&format!(" Y{:.3}", ty));
+                }
+                oss.push(' ');
+                old_pos = crate::gcode::wipe_tower::Vec2f::new(tx, ty);
+                // Replace the leading "G1 " of line_out with the rebuilt prefix.
+                line_out.replacen("G1 ", &oss, 1)
+            } else {
+                // Transformed position unchanged from the previous move. C++ leaves
+                // `line` as-is here (GCode.cpp:1120-1132 only rewrites inside the
+                // `transformed_pos != old_pos` branch), which is safe for it because
+                // its writer never emits a redundant travel to a point it is already
+                // at. Ours does: `finish_layer` draws the outer perimeter from the
+                // tower-local origin, and the writer had already moved there, so the
+                // duplicate `G1 X0.000 Y0.000` was echoed VERBATIM -- in tower-local
+                // coordinates. The printer read it as bed (0,0) and then extruded the
+                // next purge strokes 220mm across the plate from the origin: 61
+                // layers, 27,970mm at ~0.009 E/mm (R477).
+                // Emitting `line_out` (the same line with X/Y stripped) keeps C++'s
+                // "don't repeat unchanged coordinates" intent and cannot leak an
+                // untransformed coordinate: by construction the position is the one
+                // already reached, so dropping the axes is a no-op move.
+                if crate::faithful_gate("TOWER_XFORM_NO_RAW_ECHO") {
+                    line_out
+                } else {
+                    line.to_string()
+                }
+            }
+        })
+        .collect();
+
+    let mut out = processed.join("\n");
+    // TOWER_XFORM_TRAILING_BLANK (on): `while (gcode_str) { std::getline(..);
+    // ..; gcode_out += line + "\n"; }` (GCode.cpp post_process_wipe_tower_moves)
+    // reads one more, empty line after a text that ends with a newline, and
+    // writes it: every tower block ends with one empty line more. =0 keeps the
+    // text's own end.
+    if crate::faithful_gate("TOWER_XFORM_TRAILING_BLANK") && (gcode.is_empty() || gcode.ends_with('\n')) {
+        out.push('\n');
+    }
+    out
+}
+// Unit tests live in `tests/wipe_tower_transform.rs` (integration target): the
+// crate's in-lib `#[cfg(test)]` target does not currently compile, so tests that
+// must actually run are integration tests against the public API.
+
+/// Emit one wipe/prime-tower `ToolChangeResult` into the main gcode stream,
+/// transformed from tower-local to bed coordinates (port of
+/// `WipeTowerIntegration::append_tcr`, GCode.cpp:741-1380; moved here from
+/// `print.rs`, where it was `emit_tower_tcr`, in R841). The tcr gcode is
+/// self-contained (retract → travel → purge → optional Tn → unretract) and all
+/// its moves are absolute once transformed, so the head physically lands in the
+/// right place regardless of the writer's tracked position.
+///
+/// NOTE: the writer's tracked XY position is deliberately NOT updated here. C++
+/// calls `set_last_pos(tcr.end_pos)` but `tcr.end_pos` is captured mid-sequence
+/// (before the tcr's own wipe/z-hop), so syncing to it desynced the subsequent
+/// object wipe projection and threw thousands of wipe moves off-bed. Leaving the
+/// tracked position stale is byte-clean for the object stream (all moves are
+/// absolute); a faithful final-position + wipe-path sync is future work.
+///
+/// `off` = tower position (wipe_tower_x/y); rotation is 0 for now (Majora's
+/// `wipe_tower_rotation_angle` is 0). Does NOT yet wrap the bare `Tn` in the
+/// faithful `change_filament_gcode` + filament start/end templates.
+pub(crate) fn append_tcr(
+    writer: &mut crate::gcode::GCodeWriter,
+    tcr: &crate::gcode::wipe_tower::ToolChangeResult,
+    off: crate::gcode::wipe_tower::Vec2f,
+    print_config: &crate::print_config::PrintConfig,
+    max_layer_z: f64,
+    toolchange_count: i64,
+    // R603: total tool changes in the whole print, for the `M73 E` countdown
+    // (C++ `total_filament_change`). 0 disables the emission.
+    total_tool_changes: i64,
+    first_layer: bool,
+) {
+    // TOWER_RESET_ACCEL (on): append_tcr begins and ends with
+    // `gcodegen.reset_last_acceleration()` (GCode.cpp:743, 1377): the tower's
+    // own G-code sets accelerations the writer does not see, so the next M204
+    // is written whatever the last one was.
+    let tower_reset_accel = crate::faithful_gate("TOWER_RESET_ACCEL");
+    if tower_reset_accel {
+        writer.reset_last_acceleration();
+    }
+    // TOWER_GENERATE_NEW_CPP (on): a tool change whose result begins with the
+    // finish of the layer (`merge_tcr(finish_layer_tcr, ..)`) carries the
+    // finish's `is_finish_first`, and `append_tcr` first retracts, travels to
+    // the result's start and unretracts (GCode.cpp:787-795):
+    // `gcodegen.retract()` is a lazy spiral lift (GCode.hpp:246).
+    // TOWER_FINISH_FIRST_TRAVEL_CPP (on): the same for a result that is not a
+    // tool change (the timelapse wall, the finish of a layer without tool
+    // changes), which the port reached with a raw move to its start without
+    // the extruder offset and without the unretract. =0 keeps that move.
+    let finish_first_travel = tcr.is_finish_first
+        && !tcr.priming
+        && if tcr.is_tool_change {
+            crate::faithful_gate("TOWER_GENERATE_NEW_CPP")
+        } else {
+            crate::faithful_gate("TOWER_FINISH_FIRST_TRAVEL_CPP")
+        };
+    if finish_first_travel {
+        writer.retract_with_lift_type(1, false);
+        let (gox, goy) = writer.gcode_origin();
+        writer.travel_to_tower_point(tcr.start_pos.x as f64 + gox, tcr.start_pos.y as f64 + goy);
+        writer.unretract();
+    }
+    // `transform_gcode`'s `pos` seed is the tower-LOCAL start (same frame as the
+    // gcode body); start_pos is stored already-absolute, so recover the local
+    // seed by subtracting the offset (else axis-less G1 lines double-count it).
+    let local_seed = crate::gcode::wipe_tower::Vec2f::new(
+        tcr.start_pos.x - off.x,
+        tcr.start_pos.y - off.y,
+    );
+    // R808: GCode.cpp:1096-1140 post_process_wipe_tower_moves subtracts the
+    // extruder offset (`extruder_offset = 0x2` on Majora's printer) from every
+    // transformed tower coordinate; the entry travel (tcr.start_pos) does not.
+    // TOWER_EXTRUDER_OFFSET=0 restores the unshifted tower.
+    let off_gcode = if crate::faithful_gate("TOWER_EXTRUDER_OFFSET") {
+        crate::gcode::wipe_tower::Vec2f::new(
+            off.x - print_config.extruder_offset_x as f32,
+            off.y - print_config.extruder_offset_y as f32,
+        )
+    } else {
+        off
+    };
+    let g = post_process_wipe_tower_moves(&tcr.gcode, local_seed, off_gcode, 0.0);
+    // Substitute the tower's `[change_filament_gcode]` placeholder with the
+    // evaluated custom tool-change template (append_tcr, GCode.cpp:936-1058).
+    // Only real tool changes carry one; the finish_layer tcr has no placeholder,
+    // so the replace is a no-op there.
+    let block = if tcr.is_tool_change && !print_config.change_filament_gcode.is_empty() {
+        let ctx = crate::gcode::change_filament::build_context(
+            print_config,
+            tcr.initial_tool.max(0) as usize,
+            tcr.new_tool.max(0) as usize,
+            tcr.print_z as f64,
+            max_layer_z,
+            toolchange_count,
+            tcr.purge_volume as f64,
+            first_layer,
+        );
+        if crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT") {
+            // TOOLCHANGE_TEMPLATE_TEXT (on): the placeholder parser removes the
+            // `{if}` tags and nothing else, so a line that held only a tag stays
+            // as an empty line; `check_add_eol`; then the two markers
+            // (GCode.cpp:1122-1128). =0 drops those lines and writes no markers.
+            let mut t = crate::gcode::gcode_template::process_text(
+                &print_config.change_filament_gcode,
+                &ctx,
+            );
+            if !t.is_empty() && !t.ends_with('\n') {
+                t.push('\n');
+            }
+            Some(format!("; FilamentChangeGCodeStart\n{t}; FilamentChangeGCodeEnd\n"))
+        } else {
+            Some(crate::gcode::gcode_template::process(
+                &print_config.change_filament_gcode,
+                &ctx,
+            ))
+        }
+    } else {
+        None
+    };
+    // append_tcr (GCode.cpp:1035-1053) substitutes THREE placeholders into the
+    // tower gcode, not one: `[filament_end_gcode]`, `[change_filament_gcode]`
+    // and `[filament_start_gcode]` (the tower writes all three —
+    // WipeTower.cpp:2465/2466/2483). We emitted only the middle one, so Majora
+    // was missing 2,723 `; filament end gcode` and 2,723 `; filament start
+    // gcode` blocks that C++ writes (R495). Both templates are evaluated with
+    // the same placeholder machinery as the change-filament block; C++ picks
+    // them per filament (`get_at(new_filament_id)` for start, the old filament
+    // for end), while our config carries a single value for each.
+    // These templates are MATERIAL-INERT for this profile — `filament_end_gcode`
+    // is just its comment, `filament_start_gcode` expands to the comment plus
+    // `M106 P3 S150` — so this closes a gcode-CONTENT gap, not a material one.
+    // FILAMENT_START_END_GCODE=0 restores the old two-placeholder behaviour.
+    let fil_gcode_faithful = crate::faithful_gate("FILAMENT_START_END_GCODE");
+    let eval_fil = |tmpl: &str| -> Option<String> {
+        if !fil_gcode_faithful || tmpl.is_empty() || !tcr.is_tool_change {
+            return None;
+        }
+        let ctx = crate::gcode::change_filament::build_context(
+            print_config,
+            tcr.initial_tool.max(0) as usize,
+            tcr.new_tool.max(0) as usize,
+            tcr.print_z as f64,
+            max_layer_z,
+            toolchange_count,
+            tcr.purge_volume as f64,
+            first_layer,
+        );
+        let out = crate::gcode::gcode_template::process(tmpl, &ctx);
+        if out.trim().is_empty() {
+            None
+        } else {
+            Some(out)
+        }
+    };
+    let filament_end_block = if crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT")
+        && fil_gcode_faithful
+        && tcr.is_tool_change
+        && !print_config.filament_end_gcode.is_empty()
+    {
+        // The text as the parser leaves it, trailing blanks and empty lines
+        // included, with `check_add_eol`.
+        let ctx = crate::gcode::change_filament::build_context(
+            print_config,
+            tcr.initial_tool.max(0) as usize,
+            tcr.new_tool.max(0) as usize,
+            tcr.print_z as f64,
+            max_layer_z,
+            toolchange_count,
+            tcr.purge_volume as f64,
+            first_layer,
+        );
+        let mut t = crate::gcode::gcode_template::process_text(&print_config.filament_end_gcode, &ctx);
+        if !t.is_empty() && !t.ends_with('\n') {
+            t.push('\n');
+        }
+        if t.is_empty() { None } else { Some(t) }
+    } else {
+        eval_fil(&print_config.filament_end_gcode)
+    };
+    let filament_start_block = eval_fil(&print_config.filament_start_gcode);
+    // Label tower extrusions like C++ does (`; FEATURE: Prime tower`). Without
+    // this the tower's E is attributed to whichever feature preceded it, which
+    // silently inflates that feature in per-feature parity comparisons.
+    //
+    // R464: the marker must sit AFTER the change-filament block, immediately
+    // before the tower's own moves — that is where C++ emits it (after the
+    // block's closing `G1 E.8`, then `; WIPE_TOWER_START`, then the strokes).
+    // Emitting it before the whole block put the tool change's retract and
+    // ramming INSIDE the tower feature, leaving an outstanding retraction at the
+    // first purge stroke; that is what made ~one stroke per toolchange read at
+    // ~0.011 E/mm instead of 0.0543 (R463).
+    // R534 — C++ writes THREE analyzer lines here, not one: the `WipeTowerWriter`
+    // constructor (WipeTower.cpp:637-642) emits
+    //     ";" + reserved_tag(Height) + to_string(m_layer_height)
+    //     ";" + reserved_tag(Role)   + role_to_string(erWipeTower)
+    //     ";" + reserved_tag(Width)  + to_string(line_width)      [= m_perimeter_width]
+    // and the tag strings are `" LAYER_HEIGHT: "` / `" FEATURE: "` / `" LINE_WIDTH: "`
+    // (GCodeProcessor.cpp:50-54) — so `ETags::Width` IS the same reserved tag the
+    // object paths already emit. We were writing only the middle line, which left the
+    // tower's 3,377 blocks with no height/width for the analyzer and made the tower
+    // inherit whatever width the preceding object feature had set.
+    //
+    // PLACEMENT DIVERGENCE (deliberate, see R464 above): C++ emits the trio at the
+    // HEAD of `tcr.gcode`, i.e. BEFORE the change-filament block, so its flush moves
+    // fall inside the Prime tower feature. We emit after the block. Keeping the three
+    // lines contiguous matches C++'s output shape; moving the whole trio upstream is a
+    // separate change with per-feature-attribution consequences.
+    //
+    // R601 MEASURED THOSE CONSEQUENCES AND CLOSED THE DIVERGENCE.
+    // With the trio after the block, the entire tool change -- ramming, retracts,
+    // M620/M621, the filament end/start templates -- stays under whatever object
+    // feature happened to precede the tower. On Majora that mis-attributes
+    // ~190k M-codes, ~147k retracts and ~105k travels: C++ has 16,341 of its 16,347
+    // `M620` under `Prime tower` and we had ZERO, spraying them over Internal solid
+    // infill (6,930), Floating vertical shell (4,812) and Sparse infill (3,402).
+    // Since `line_parity.py` groups by (layer, feature), a mis-tagged line can never
+    // match even when it is byte-identical, so this depressed every Majora feature.
+    //
+    // R464's stated reason for the divergence does not survive scrutiny: the trio is
+    // three COMMENTS and cannot change any extrusion. The "outstanding retraction at
+    // the first purge stroke" it blamed was the missing toolchange unretract, fixed
+    // independently in R466 (`G1 E{retract_length_toolchange}` in the trailer below).
+    // C++ emits the trio immediately before `;----` / `; CP TOOLCHANGE START`.
+    let tag_at_head = crate::faithful_gate("TOWER_FEATURE_TAG_HEAD");
+    let tower_feature = format!(
+        "; LAYER_HEIGHT: {:.6}\n; FEATURE: Prime tower\n; LINE_WIDTH: {:.6}",
+        tcr.layer_height, tcr.perimeter_width
+    );
+    let tower_feature: &str = &tower_feature;
+    let had_placeholder = g.contains(CHANGE_FILAMENT_PLACEHOLDER);
+    // Where the entry retract goes: `toolchange_retract_str` heads the text that
+    // replaces `[filament_end_gcode]` (GCode.cpp:948), which follows the
+    // `; WIPE_TOWER_START` of the tool change. In a result that begins with
+    // the finish of the layer that is not the first one (TOWER_GENERATE_NEW_CPP);
+    // the text before the placeholder is not changed by the substitution.
+    let entry_cut: Option<usize> = {
+        const START: &str = "; WIPE_TOWER_START\n";
+        let ph = g.find(CHANGE_FILAMENT_PLACEHOLDER);
+        match ph {
+            Some(p) if crate::faithful_gate("TOWER_GENERATE_NEW_CPP") => {
+                g[..p].rfind(START).map(|i| i + START.len())
+            }
+            _ => g.find(START).map(|i| i + START.len()),
+        }
+    };
+    // R466 — the unretract C++ emits in `GCode::append_tcr` (WipeTower.cpp:2436
+    // "BBS: do travel in GCode::append_tcr() for lazy_lift"): a bare
+    // `G1 E{retract_length_toolchange} F{speed}` AFTER the change-filament block and
+    // before the tower's moves, repaying the `G1 E-[new_retract_length_toolchange]`
+    // that block ends on. The template never unretracts (it ends at
+    // `M621 S[next_extruder]A`), so without this the filament stays retracted and the
+    // first purge stroke of every tower block is starved (R465). C++ orders it
+    // unretract-then-marker, so build the whole trailer here.
+    // R476 — GCode.cpp:687-695 `travel_to(start_pos, erMixed, "Travel to a Wipe
+    // Tower")`. C++ guards that travel with `tcr.is_finish_first` because, as its
+    // comment at :685 says, "toolchange gcode will move to start_pos" — its
+    // change_filament template leaves the head at the tower. THIS profile's template
+    // does not: it ends with `G1 X165 F15000` / `G1 Y256 ; move Y to aside, prevent
+    // collision`. The tower's own first move is Y-only (the WipeTowerWriter believes
+    // X is already at the block's left edge), so `G1 X219.729 E1.8473` was extruding
+    // a 54.7mm line from x=165 straight across the plate instead of a 34mm purge
+    // stroke -- at 0.034 E/mm instead of 0.0543. That is 2,786 segments / 162,518mm,
+    // i.e. the ENTIRE prime-tower length excess, and a real print defect.
+    // So emit the travel unconditionally, which is what C++'s guard assumes has
+    // already happened.
+    let travel_to_start = if crate::faithful_gate("TOWER_TRAVEL_TO_START") {
+        let f = if print_config.travel_speed > 0.0 {
+            print_config.travel_speed * 60.0
+        } else {
+            30000.0
+        };
+        // R644: emitted BARE. C++ does pass "Travel to a Wipe Tower" to
+        // `travel_to` (GCode.cpp:698-701), but `GCodeWriter::emit_comment` is
+        // gated on `full_gcode_comment`, which is OFF on both fixtures — the
+        // string appears ZERO times in C++'s Majora output against our 3,377.
+        // We do not model `full_gcode_comment` at all, so writer-generated
+        // comments must simply not be written; the ones that DO appear in C++'s
+        // output come from gcode TEMPLATES, which are verbatim text.
+        // R650: C++'s `travel_to` is an XY move FOLLOWED BY a Z move
+        // (GCodeWriter::travel_to_z, GCodeWriter.cpp:626) — the lazy lift is
+        // cancelled by dropping back to the layer's print_z. We emitted the XY
+        // half only. The R650 census sized it exactly: inside `; WIPE_TOWER_START`
+        // …`_END`, C++ has 5,446 bare `G1 Z<z>` lines (no F) against our ZERO,
+        // while the F-bearing ones match at 5,442/5,446 — the whole tower Z
+        // deficit is this one class, two per tool change (one for this travel,
+        // one for the avoid-perimeter detour travel we do not emit at all).
+        // Formatted with `format_gcode_value(_, 3)` so 1.5 → "1.5" and 0.3 →
+        // ".3", matching C++'s `emit_z` (verified against `G1 Z.3` at
+        // cpp_majora_new.gcode:8582).
+        let z_line = if crate::faithful_gate("TOWER_TRAVEL_Z") {
+            format!(
+                "G1 Z{}\n",
+                crate::gcode::format_gcode_value(tcr.print_z as f64, 3)
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "G1 X{:.3} Y{:.3} F{:.0}\n{z_line}",
+            tcr.start_pos.x, tcr.start_pos.y, f
+        )
+    } else {
+        String::new()
+    };
+    // GCode.cpp:1051 — `start_filament_gcode_str = start_filament_gcode_str +
+    // wipe_next_start_point_str + toolchange_unretract_str`: the filament start
+    // template comes FIRST, then the travel to the tower, then the unretract.
+    let fil_start = match &filament_start_block {
+        Some(b) if had_placeholder => {
+            let mut t = b.trim_end().to_string();
+            t.push('\n');
+            t
+        }
+        _ => String::new(),
+    };
+    // R601: with the tag at the head the trailer keeps everything that is a real
+    // move (filament start template, travel, unretract) and drops only the three
+    // comment lines, which now precede the whole block.
+    let tail_marker = if tag_at_head { "" } else { tower_feature };
+    // R648 — the marker we classify and never write. C++ appends
+    // `;_FORCE_RESUME_FAN_SPEED` immediately after the tool-change template
+    // (GCode.cpp:944 for `toolchange_gcode_str`, :7479 for the `set_extruder`
+    // path), and `GCodeEditor.cpp:556-561` turns it into a forced re-emission of
+    // BOTH fans:
+    //
+    //     if (m_current_fan_speed != -1) new_gcode += set_fan(..., m_current_fan_speed);
+    //     if (m_additional_fan_speed != -1 && m_set_fan_changing_filament_start
+    //         && auxiliary_fan) new_gcode += set_additional_fan(m_additional_fan_speed);
+    //
+    // We already had the constant (cooling.rs:1404), the classifier
+    // (cooling.rs:2256) and the emitter (cooling.rs:2551) — only the producer was
+    // missing, so the branch could never fire. C++'s output shows the pair landing
+    // between the template's closing `M621 S<n>A` and the tower's first travel,
+    // which is exactly the head of this trailer.
+    let force_resume = if had_placeholder && crate::faithful_gate("FORCE_RESUME_FAN_MARKER") {
+        ";_FORCE_RESUME_FAN_SPEED\n"
+    } else {
+        ""
+    };
+    // R649 — WipeTower.cpp:2485. `toolchange_Change` closes with
+    //
+    //     writer.append("[filament_start_gcode]\n");
+    //     writer.flush_planner_queue();
+    //
+    // so a `G4 S0` follows the whole filament-start expansion (template + travel
+    // + unretract) before the tower's first wipe move. R645 ported the OTHER
+    // `flush_planner_queue` — WipeTower.cpp:2173/3339, the `; WIPE_TOWER_END`
+    // trailer — and this one stayed missing, which is why Majora carried 2,721
+    // `G4 S0` against C++'s 5,446: exactly one per tool change short.
+    let flush_queue = if had_placeholder && crate::faithful_gate("TOOLCHANGE_FLUSH_QUEUE") {
+        "\nG4 S0"
+    } else {
+        ""
+    };
+    // TOWER_TRAVEL_PATH_CPP (on): what `append_tcr` writes after the
+    // change-filament template when the template has to be followed by a
+    // travel (GCode.cpp:1131-1144, 1177-1253, 1294):
+    //   - the template leaves the position unknown and its last Z current;
+    //   - with prime_tower_skip_points the travel follows
+    //     `generate_path_to_wipe_tower` from the template's last position
+    //     around the tower box; every point but the last ends the
+    //     change-filament text, each one a `GCode::travel_to` (lift included);
+    //   - the filament-start text is the template's text as parsed, followed
+    //     by the travel to the last point and `GCode::unretract()`;
+    //   - the change-filament text ends with a newline and so does its line in
+    //     the tower G-code, which leaves an empty line, and the same after the
+    //     filament-start text.
+    // The entry retract (:747, TOWER_ENTRY_WIPE_CPP) has to come first, so its
+    // text is taken here and placed where it was written before. =0 keeps the
+    // single travel to the tower start without the extruder offset and the
+    // unretract by `retract_length_toolchange`.
+    const WT_START: &str = "; WIPE_TOWER_START\n";
+    let travel_path_cpp = crate::faithful_gate("TOWER_TRAVEL_PATH_CPP")
+        && crate::faithful_gate("TOWER_ENTRY_WIPE_CPP")
+        && crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT")
+        && tcr.is_tool_change
+        && had_placeholder
+        && block.is_some()
+        && g.contains(WT_START);
+    let mut entry_retract_text: Option<String> = None;
+    let cpp_trailer = if travel_path_cpp {
+        let alt = writer.auto_lift_type();
+        // GCode.cpp:747 — the entry retract, written after WIPE_TOWER_START.
+        let mark = writer.output_mark();
+        writer.retract_for_toolchange_with_lift(alt, true);
+        entry_retract_text = Some(writer.take_output_since(mark));
+        // :1124-1142 — toolchange_gcode_str as the writer sees it.
+        let toolchange_gcode_str =
+            format!("{};_FORCE_RESUME_FAN_SPEED\n", block.as_deref().unwrap_or(""));
+        writer.after_custom_gcode(crate::gcode::g_code_processor::get_last_z_from_gcode(
+            &toolchange_gcode_str,
+        ));
+        let (gox, goy) = writer.gcode_origin();
+        let sf = crate::libslic3r::SCALING_FACTOR;
+        // wipe_tower_point_to_object_point (GCode.cpp:526-529): a bed point
+        // less the export origin, `Point(scale_(..), scale_(..))`.
+        let to_object = |x: f64, y: f64| {
+            crate::Point::new(((x + gox) / sf).round() as crate::Coord, ((y + goy) / sf).round() as crate::Coord)
+        };
+        let start_wipe_pos =
+            to_object(tcr.tool_change_start_pos.x as f64, tcr.tool_change_start_pos.y as f64);
+        let travel_points: Vec<crate::Point> = if print_config.prime_tower_skip_points {
+            // :1191-1197 — gcode_to_point of the template's last XY.
+            let last = crate::gcode::g_code_processor::get_last_position_from_gcode(
+                &toolchange_gcode_str,
+            )
+            .unwrap_or([0.0, 0.0, 0.0]);
+            let gcode_last_pos2d_object = crate::Point::new(
+                ((last[0] as f64 + gox + print_config.extruder_offset_x) / sf).round() as crate::Coord,
+                ((last[1] as f64 + goy + print_config.extruder_offset_y) / sf).round() as crate::Coord,
+            );
+            // :1200-1205 — the bed box (get_extruder_shared_printable_polygon).
+            let (mut bx0, mut by0, mut bx1, mut by1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for &(x, y) in &print_config.printable_area {
+                bx0 = bx0.min(x);
+                by0 = by0.min(y);
+                bx1 = bx1.max(x);
+                by1 = by1.max(y);
+            }
+            let to_object_f = |x: f64, y: f64| to_object(x as f32 as f64, y as f32 as f64);
+            let printer_bbx = (to_object_f(bx0, by0), to_object_f(bx1, by1));
+            // :1206-1215 — the tower box through transform_wt_pt (rotation 0,
+            // tower position, rib offset 0).
+            let ((tx0, ty0), (tx1, ty1)) = writer.wipe_tower_bbx.unwrap_or(((0.0, 0.0), (0.0, 0.0)));
+            let corners = [(tx0, ty0), (tx1, ty0), (tx1, ty1), (tx0, ty1)];
+            let (mut ax0, mut ay0, mut ax1, mut ay1) =
+                (crate::Coord::MAX, crate::Coord::MAX, crate::Coord::MIN, crate::Coord::MIN);
+            for (cx, cy) in corners {
+                let px = cx as f32 + off.x;
+                let py = cy as f32 + off.y;
+                let p = to_object(px as f64, py as f64);
+                ax0 = ax0.min(p.x);
+                ay0 = ay0.min(p.y);
+                ax1 = ax1.max(p.x);
+                ay1 = ay1.max(p.y);
+            }
+            let avoid_bbx = (crate::Point::new(ax0, ay0), crate::Point::new(ax1, ay1));
+            crate::g_code::generate_path_to_wipe_tower(
+                gcode_last_pos2d_object,
+                start_wipe_pos,
+                avoid_bbx,
+                printer_bbx,
+            )
+        } else {
+            // :1184-1188
+            vec![start_wipe_pos]
+        };
+        let unscale = |c: crate::Coord| c as f64 * sf;
+        // :1217-1229
+        let mark_b = writer.output_mark();
+        for p in &travel_points[..travel_points.len() - 1] {
+            writer.travel_to_tower_point(unscale(p.x), unscale(p.y));
+        }
+        let travel_to_wipe_tower_gcode = writer.take_output_since(mark_b);
+        let mark_c = writer.output_mark();
+        let last = travel_points[travel_points.len() - 1];
+        writer.travel_to_tower_point(unscale(last.x), unscale(last.y));
+        // :1250 — toolchange_unretract_str = gcodegen.unretract().
+        writer.unretract();
+        let wipe_next_and_unretract = writer.take_output_since(mark_c);
+        // :1271-1285 — the filament-start template as parsed, check_add_eol.
+        let start_filament_gcode_str = if fil_gcode_faithful
+            && !print_config.filament_start_gcode.is_empty()
+        {
+            let ctx = crate::gcode::change_filament::build_context(
+                print_config,
+                tcr.initial_tool.max(0) as usize,
+                tcr.new_tool.max(0) as usize,
+                tcr.print_z as f64,
+                max_layer_z,
+                toolchange_count,
+                tcr.purge_volume as f64,
+                first_layer,
+            );
+            let mut t = crate::gcode::gcode_template::process_text(
+                &print_config.filament_start_gcode,
+                &ctx,
+            );
+            if !t.is_empty() && !t.ends_with('\n') {
+                t.push('\n');
+            }
+            t
+        } else {
+            String::new()
+        };
+        Some(format!(
+            "{force_resume}{travel_to_wipe_tower_gcode}\n{start_filament_gcode_str}{wipe_next_and_unretract}{tail_marker}{flush_queue}"
+        ))
+    } else {
+        None
+    };
+    let trailer = if let Some(t) = cpp_trailer {
+        t
+    } else if had_placeholder && print_config.retract_length_toolchange > 0.0 {
+        let speed = if print_config.retract_speed > 0.0 {
+            print_config.retract_speed * 60.0
+        } else {
+            1800.0
+        };
+        // R808: native is GCodeWriter::unretract (`G1 E2 F1800`), not the tower
+        // writer's 4-decimal E. TOWER_DERETRACT_FMT=0 restores `E2.0000`.
+        let e_str = if crate::faithful_gate("TOWER_DERETRACT_FMT") {
+            crate::gcode::format_gcode_value(print_config.retract_length_toolchange, 5)
+        } else {
+            format!("{:.4}", print_config.retract_length_toolchange)
+        };
+        format!(
+            "{force_resume}{fil_start}{travel_to_start}G1 E{} F{:.0}\n{tail_marker}{flush_queue}",
+            e_str, speed
+        )
+    } else {
+        format!("{force_resume}{fil_start}{travel_to_start}{tail_marker}{flush_queue}")
+    };
+    let trailer = trailer.trim_end_matches('\n').to_string();
+    let g = substitute_change_filament(
+        &g,
+        block.as_deref(),
+        tcr.new_tool.max(0) as usize,
+        &print_config.toolchange_prefix,
+        Some(&trailer),
+        filament_end_block.as_deref().filter(|_| had_placeholder),
+    );
+    if !had_placeholder {
+        // No tool change in this block (e.g. a plain tower layer): nothing
+        // substituted the trailer in, so the travel and the marker are written
+        // here. This is exactly C++'s `tcr.is_finish_first` case (GCode.cpp:687),
+        // where it also emits the travel explicitly.
+        if !travel_to_start.is_empty() && !finish_first_travel {
+            writer.write_raw(travel_to_start.trim_end());
+        }
+        if !tag_at_head {
+            writer.write_raw(tower_feature);
+        }
+    }
+    // R601: C++ writes the LAYER_HEIGHT/FEATURE/LINE_WIDTH trio at the head of
+    // `tcr.gcode`, immediately before `;----` / `; CP TOOLCHANGE START`, so the
+    // whole tool change is attributed to `Prime tower`.
+    if tag_at_head {
+        writer.write_raw(tower_feature);
+    }
+    // R603: `M73 E<remaining filament changes>` — GCodeProcessor.cpp:601,
+    //     snprintf(buf, ..., "M73 E%d\n", total_filament_change - filament_change_num)
+    // inserted at each filament-block boundary (GCodeProcessor.cpp:1119). In the
+    // emitted gcode it lands immediately AFTER the bare `T<n>` tool command
+    // (verified at cpp_majora_new.gcode:6930-6931). C++ does this in a whole-file
+    // post-process; we have no such pass, so it is spliced into the substituted
+    // tower block at the same position, which is textually identical.
+    //
+    // The countdown uses OUR total, not C++'s, because that is what C++'s own
+    // formula would produce on our gcode. Measured before implementing: with our
+    // total (2,721) 2,304/2,721 of these lines land on an identical C++ line;
+    // forcing C++'s total (2,723) would score only 1,971. The 417 that still miss
+    // are where the two engines' tool changes sit on different layers -- a
+    // pre-existing 2-tool-change difference, not something this emission creates.
+    let g = if crate::faithful_gate("M73_REMAIN_FILAMENT_CHANGES")
+        && tcr.is_tool_change
+        && total_tool_changes > 0
+        && toolchange_count > 0
+    {
+        let t_line = format!("{}{}", print_config.toolchange_prefix, tcr.new_tool.max(0));
+        let m73 = format!("M73 E{}", total_tool_changes - toolchange_count);
+        let mut out = String::with_capacity(g.len() + m73.len() + 1);
+        let mut spliced = false;
+        for line in g.split_inclusive('\n') {
+            out.push_str(line);
+            if !spliced && line.trim_end() == t_line {
+                if !line.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push_str(&m73);
+                out.push('\n');
+                spliced = true;
+            }
+        }
+        out
+    } else {
+        g
+    };
+    // R608: C++ `append_tcr` retracts-with-wipe at TOWER ENTRY, immediately after
+    // `; WIPE_TOWER_START`, using the TOOLCHANGE retraction length. Measured on the
+    // reference output: 2,718 such blocks, each summing to exactly |E| = 1.9000
+    // (= retract_length_toolchange 2 x the 0.95 dE factor), wiping along the OBJECT
+    // path just printed -- their coordinates are object-space, they are only tagged
+    // in-tower because the marker precedes them. We emitted ZERO of these, and that
+    // is the entire Prime-tower E/block gap: our other tower wipes already match
+    // C++'s at 0.7600 (after-toolchange 2,715 vs 2,512; after-tower 656 vs 931).
+    // The mixture closes: 0.76*(3443/6161) + 1.90*(2718/6161) = 1.2631 vs C++'s
+    // measured 1.2629.
+    //
+    // Spliced rather than appended, because the wipe must land INSIDE the tower
+    // block: write up to and including the marker, emit the retract, then the rest.
+    // Same technique as R603's `M73 E` splice.
+    //
+    // R610 CORRECTION: R608's comment here claimed this was "nearly inert (+2 blocks)"
+    // because the writer was already `retracted`. BOTH halves were wrong. It fires
+    // 2,717 times (marker-verified) and every guard passes. R608 had judged a NEW
+    // total against an OLD per-class breakdown measured on a file built WITHOUT this
+    // gate. The real behaviour is a COMPENSATING TRADE:
+    //     after_tc 2,715 -> 0   and   in_tower 0 -> 2,717 (at |E| 1.9000, C++ 2,718)
+    // netting +2 on the total. The in-tower half is CONFIRMED CORRECT against C++.
+    if crate::faithful_gate("TOWER_ENTRY_WIPE_CPP")
+        && tcr.is_tool_change
+        && g.contains(WT_START)
+    {
+        let cut = entry_cut.unwrap_or_else(|| g.find(WT_START).unwrap() + WT_START.len());
+        // GCode.cpp:747 — `toolchange_retract_str` is PREPENDED to the tower
+        // gcode, so its wipe + immediate spiral land BEFORE `; WIPE_TOWER_START`,
+        // i.e. in the OBJECT region. R640 measured C++'s object spirals by
+        // preceding marker: 4,751 follow `; WIPE_END`, and only ~1,243 of those
+        // are the travel path — the rest are these. R638 wired only the
+        // post-`WT_START` retract (GCode.cpp:1085), which is why our 2,718 all
+        // landed in-tower and the object region kept a 4,213 shortfall.
+        //
+        // MEASURED R640 — OPT-IN, not default. Adding this retract does NOT add
+        // spirals: it fires first, lifts before `WT_START`, and then the
+        // post-tower retract's `to_lift < EPSILON` guard suppresses the one R638
+        // landed. Net effect on Majora: `G17` tower_tc 2,718 -> 0 (R638's fix
+        // UNDONE), object 33,688 -> 36,406, matched lines UNCHANGED at 673,583,
+        // body -2,717. It moves spirals rather than creating them, and moves them
+        // the wrong way. The object-region eager spirals C++ emits after
+        // `; WIPE_END` come from somewhere this call is not.
+        let alt = writer.auto_lift_type();
+        if crate::opt_in_gate("TOWER_PRE_RETRACT") {
+            writer.retract_for_toolchange_with_lift(alt, true);
+        }
+        writer.write_raw_content(&g[..cut]);
+        // GCode.cpp:1085 — `append_tcr`'s retract, AFTER the tower's own moves.
+        match &entry_retract_text {
+            Some(t) => writer.write_raw_content(t),
+            None => writer.retract_for_toolchange_with_lift(alt, true),
+        }
+        writer.write_raw_content(&g[cut..]);
+    } else {
+        writer.write_raw_content(&g);
+        // GCode.cpp:945 and :7480 — the tower block carries the spliced
+        // change_filament / tool-change templates, after which "gcode writer
+        // doesn't know where the extruder is ... so that normal lift will be
+        // used the first time after tool change" (C++'s own comment at :7477).
+        // Same raw-splice state class as R611's mark_unretracted_after_raw,
+        // three lines below. R630.
+        writer.set_current_position_clear(false);
+    }
+    // R656 — GCode.cpp:4718-4720: `process_layer` sets
+    // `m_last_processor_extrusion_role = erWipeTower` once per (layer, extruder)
+    // that has a wipe tower, so the NEXT object path force-emits the analyzer
+    // Width and Height tags regardless of value (:6605 / :6619). We arm the
+    // one-shot here, after the tower block is written, which is the same point
+    // in the stream.
+    writer.set_force_analyzer_tags();
+
+    // R611: the SECOND retract. C++ `append_tcr` (GCode.cpp:1081-1085) does, AFTER the
+    // tower's own moves:
+    //
+    //     gcodegen.m_wipe.reset_path();
+    //     for (const Vec2f& wipe_pt : tcr.wipe_path)
+    //         gcodegen.m_wipe.path.points.emplace_back(
+    //             wipe_tower_point_to_object_point(gcodegen, transform_wt_pt(wipe_pt) + plate_origin_2d));
+    //     gcode += gcodegen.retract(false, false, auto_lift_type, true);
+    //
+    // i.e. it REINSTALLS a wipe path -- the TOWER's own, from `tcr.wipe_path` -- and
+    // retracts again with the ORDINARY length. That is why C++ has BOTH an in-tower
+    // wipe (|E| 1.9000) and an after-toolchange wipe (|E| 0.7600), while we had only
+    // one: our `retract()` ends with `self.wipe_path.clear()`, so once the tower-entry
+    // retract consumed the path there was nothing left for a second wipe to run along.
+    //
+    // `tcr.wipe_path` is the field R608 found is POPULATED AND NEVER CONSUMED
+    // (`wipe_tower.rs:340`, filled at `:1291`, copied at `:2889`) -- the sixth
+    // unused-symbol instance, and consuming it here is what it was carried for.
+    // Tower-local -> object coordinates is a translation by the tower offset
+    // (rotation is 0 on this profile, as `transform_gcode` is called with 0.0 above).
+    // R611 MEASURED: adding an explicit second `retract()` here produced ZERO extra
+    // after-toolchange wipes, because the writer was still `retracted` from the
+    // tower-entry call and `retract()` early-returns. The pre-registered fallback
+    // named exactly this. The cause is state tracking, not a missing call: the tower
+    // block is spliced in as RAW TEXT and unretracts inside it, so the writer's flag
+    // is stale-true. Sync it instead of adding a retract C++ does not have -- the
+    // ordinary object-side retract then fires again on its own, as it did before the
+    // entry gate existed.
+    // R612 TESTED AND REVERTED: extending this sync to the `finish_layer` tcr (which is
+    // not a tool change, so R611's `&& tcr.is_tool_change` skips it) was the predicted
+    // cause of our after_tower shortfall (656 vs C++'s 931). Running it DEFAULT-ON left
+    // the majora output BYTE-IDENTICAL (`69eb9767`), so the finish-layer path is not the
+    // cause and the speculative branch was removed rather than carried as inert code.
+    // The remaining after_tower gap is therefore something C++ does that we do not model
+    // at all -- see the R612 round note.
+    // TOWER_LEAVE_CPP (on): the end of `append_tcr` (GCode.cpp:1355-1373).
+    //   - "A phony move to the end position at the wipe tower": the writer and
+    //     `m_last_pos` are at `tcr.end_pos` (:1356-1357), so the next object path
+    //     is chosen, and its seam placed, from the tower;
+    //   - the wipe path is the tower's own (`tcr.wipe_path`, :1366-1368);
+    //   - `retract(false, false, auto_lift_type, true, true)` (:1372): wipe along
+    //     that path, retract, and lift at once at `prime_tower_lift_speed`.
+    // =0 leaves the position where the last object path ended and lets the next
+    // travel retract.
+    if crate::faithful_gate("TOWER_LEAVE_CPP") {
+        // wipe_tower_point_to_object_point (GCode.cpp:526-529): bed point minus
+        // the export origin.
+        let (gox, goy) = writer.gcode_origin();
+        writer.set_position_xy(tcr.end_pos.x as f64 + gox, tcr.end_pos.y as f64 + goy);
+        writer.set_current_position_clear(true);
+        writer.reset_wipe_path();
+        // `tcr.wipe_path` is kept in bed coordinates (construct_tcr adds the
+        // tower position), like `start_pos` and `end_pos`.
+        let pts: Vec<(f64, f64)> = tcr
+            .wipe_path
+            .iter()
+            .map(|p| (p.x as f64 + gox, p.y as f64 + goy))
+            .collect();
+        if !pts.is_empty() {
+            writer.set_wipe_path_points(pts);
+        }
+        if crate::probe_enabled("TOWERLEAVE") {
+            eprintln!("TOWERLEAVE z={} tc={} end={:?} start={:?} wipe={:?} off={:?}", tcr.print_z, tcr.is_tool_change, tcr.end_pos, tcr.start_pos, tcr.wipe_path, off);
+        }
+        writer.mark_unretracted_after_raw();
+        if crate::faithful_gate("TOWER_TIMELAPSE_WALL") {
+            writer.set_nominal_z_after_raw(tcr.print_z as f64);
+        } else {
+            writer.mark_unlifted_after_raw();
+        }
+        let alt = writer.auto_lift_type();
+        writer.retract_leaving_tower(alt, print_config.prime_tower_lift_speed);
+    } else if crate::faithful_gate("TOWER_EXIT_WIPE_CPP") && tcr.is_tool_change {
+        // C++ `append_tcr` (GCode.cpp:1081-1084) also reinstalls the TOWER's own wipe
+        // path from `tcr.wipe_path` before its next retract -- the field R608 found is
+        // populated and never consumed. Tower-local -> object coords is a translation
+        // by the tower offset (rotation is 0 here, as `transform_gcode` is called with
+        // 0.0 above).
+        let pts: Vec<(f64, f64)> = tcr
+            .wipe_path
+            .iter()
+            .map(|p| ((p.x + off.x) as f64, (p.y + off.y) as f64))
+            .collect();
+        if pts.len() >= 2 {
+            writer.set_wipe_path_points(pts);
+        }
+        writer.mark_unretracted_after_raw();
+    }
+    // R475: we just wrote `; FEATURE: Prime tower` as raw text, so the writer's
+    // persistent last-role (C++ m_last_extrusion_role, GCode.hpp:538) has to move
+    // with it. Without this the next object entity compares its role against the
+    // role from BEFORE the tower, finds it unchanged, skips its own `; FEATURE:`
+    // line, and its moves stay under the tower's marker -- 13.6% of Majora's
+    // "Prime tower" length was actually object extrusion labelled that way.
+    if crate::faithful_gate("TOWER_ROLE_RESET") {
+        writer.set_last_extrusion_role(Some(crate::extrusion_entity::ExtrusionRole::WipeTower));
+    }
+    if tower_reset_accel {
+        writer.reset_last_acceleration();
+    }
+}
+
 // GCode.cpp:2036
 pub fn to_bambu_bed_type(ty: BedType) -> BambuBedType {
     // GCode.cpp:2038

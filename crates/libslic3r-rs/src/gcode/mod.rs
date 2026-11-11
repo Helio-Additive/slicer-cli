@@ -28,7 +28,6 @@ pub mod tool_ordering;
 pub mod change_filament;
 pub mod gcode_template;
 pub mod wipe_tower;
-pub mod wipe_tower_integration;
 pub(crate) mod writer;
 pub use writer::RetractCtx;
 

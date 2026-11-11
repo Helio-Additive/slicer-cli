@@ -866,7 +866,7 @@ impl GCodeWriter {
         self.needs_retraction_decision(from, to, dest_role, travel_len_mm)
     }
 
-    /// `GCode::needs_retraction` (GCode.cpp:8392-8495) as such, whatever the
+    /// `GCode::needs_retraction` (GCode.cpp:8363-8496) as such, whatever the
     /// retraction state: true when the travel needs a retraction, with the lift
     /// type resolved for it.
     fn needs_retraction_decision(
