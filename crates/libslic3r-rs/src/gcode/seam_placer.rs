@@ -882,29 +882,61 @@ impl Default for GlobalModelInfo {
 }
 
 impl GlobalModelInfo {
-    // SeamPlacer.cpp:287-292
-    //
-    // BLOCKED: `is_any_triangle_in_radius` requires an AABB tree built over
-    // `Point3F` (f64) vertices, but `enforcers`/`enforcers_tree` use the f32
-    // `indexed_triangle_set`. The `enforcers.empty()` short-circuit is faithful;
-    // when enforcers are present the radius query cannot be evaluated against an
-    // f32 mesh with the current f64-typed AABB tree.
-    pub fn is_enforced(&self, _position: &Vec3f, _radius: f32) -> bool {
+    // SeamPlacer.cpp:287-292. The AABB tree of this crate works in f64; the
+    // float vertices are handed to it as they are, and the float radius squared
+    // is the bound.
+    pub fn is_enforced(&self, position: &Vec3f, radius: f32) -> bool {
         if self.enforcers.indices.is_empty() {
             return false;
         }
-        // BLOCKED — see note above. C++: is_any_triangle_in_radius(...).
-        false
+        let radius_sqr = radius * radius;
+        Self::any_triangle_in_radius(&self.enforcers, &self.enforcers_tree, position, radius_sqr)
     }
 
     // SeamPlacer.cpp:294-299
-    // BLOCKED for the same reason as `is_enforced`.
-    pub fn is_blocked(&self, _position: &Vec3f, _radius: f32) -> bool {
+    pub fn is_blocked(&self, position: &Vec3f, radius: f32) -> bool {
         if self.blockers.indices.is_empty() {
             return false;
         }
-        // BLOCKED — see `is_enforced`. C++: is_any_triangle_in_radius(...).
-        false
+        let radius_sqr = radius * radius;
+        Self::any_triangle_in_radius(&self.blockers, &self.blockers_tree, position, radius_sqr)
+    }
+
+    /// `AABBTreeIndirect::is_any_triangle_in_radius(vertices, indices, tree, position, radius_sqr)`.
+    fn any_triangle_in_radius(
+        its: &indexed_triangle_set,
+        tree: &Tree3F,
+        position: &Vec3f,
+        radius_sqr: f32,
+    ) -> bool {
+        thread_local! {
+            static CACHE: std::cell::RefCell<(usize, Vec<crate::geometry::Point3F>, Vec<[usize; 3]>)> =
+                std::cell::RefCell::new((0, Vec::new(), Vec::new()));
+        }
+        CACHE.with(|c| {
+            let mut c = c.borrow_mut();
+            let key = its.vertices.as_ptr() as usize;
+            if c.0 != key || c.1.len() != its.vertices.len() {
+                c.0 = key;
+                c.1 = its
+                    .vertices
+                    .iter()
+                    .map(|v| crate::geometry::Point3F::new(v.x as f64, v.y as f64, v.z as f64))
+                    .collect();
+                c.2 = its
+                    .indices
+                    .iter()
+                    .map(|i| [i.x as usize, i.y as usize, i.z as usize])
+                    .collect();
+            }
+            crate::aabb_tree_indirect::is_any_triangle_in_radius(
+                &c.1,
+                &c.2,
+                tree,
+                crate::geometry::aabb_tree::Vec3::new(position.x as f64, position.y as f64, position.z as f64),
+                radius_sqr as f64,
+            )
+        })
     }
 
     /// Build the f32 KD tree over `mesh_samples.positions`, mirroring
@@ -1165,6 +1197,47 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
     let negative_volumes_start_index = triangle_set.indices.len();
 
     finish_global_occlusion(result, triangle_set, negative_volumes_start_index)
+}
+
+/// SEAM_PAINTING (on): `gather_enforcers_blockers` (SeamPlacer.cpp:645-668).
+/// The painted seam facets of the volumes, ENFORCER and BLOCKER, each put
+/// through `trafo_centered() * volume matrix` by the loader, become the two
+/// triangle sets with their AABB trees. =0 leaves both empty, as before.
+pub fn gather_enforcers_blockers(result: &mut GlobalModelInfo, po: &PrintObject) {
+    if !crate::faithful_gate("SEAM_PAINTING") {
+        return;
+    }
+    let Some((enforcers, blockers)) = po.seam_facets.as_ref() else {
+        return;
+    };
+    let to_set = |its: &crate::triangle_mesh::indexed_triangle_set| indexed_triangle_set {
+        vertices: its.vertices.iter().map(|v| Vec3f::new(v.x, v.y, v.z)).collect(),
+        indices: its.indices.iter().map(|t| Vec3i::new(t.x, t.y, t.z)).collect(),
+    };
+    result.enforcers = to_set(enforcers);
+    result.blockers = to_set(blockers);
+    let build = |its: &indexed_triangle_set| -> Tree3F {
+        let v: Vec<crate::geometry::Point3F> = its
+            .vertices
+            .iter()
+            .map(|v| crate::geometry::Point3F::new(v.x as f64, v.y as f64, v.z as f64))
+            .collect();
+        let f: Vec<[usize; 3]> = its
+            .indices
+            .iter()
+            .map(|i| [i.x as usize, i.y as usize, i.z as usize])
+            .collect();
+        crate::aabb_tree_indirect::build_aabb_tree_over_indexed_triangle_set(&v, &f)
+    };
+    result.enforcers_tree = build(&result.enforcers);
+    result.blockers_tree = build(&result.blockers);
+    if std::env::var("OCCDBG").is_ok() {
+        eprintln!(
+            "OCCDBG-R seam enforcers tris={} blockers tris={}",
+            result.enforcers.indices.len(),
+            result.blockers.indices.len()
+        );
+    }
 }
 
 /// The part of `compute_global_occlusion` after the occlusion mesh is put
@@ -3215,7 +3288,14 @@ impl SeamPlacer {
         // the comparator would otherwise resolve arbitrarily).
         self.frame_offset_xy = Self::seam_frame_offset(po).unwrap_or((0, 0));
         let __t = std::time::Instant::now();
-        let global_model_info = compute_global_occlusion(po);
+        let mut global_model_info = compute_global_occlusion(po);
+        // SeamPlacer.cpp:1515-1519
+        if matches!(
+            configured_seam_preference,
+            SeamPosition::spAligned | SeamPosition::spNearest
+        ) {
+            gather_enforcers_blockers(&mut global_model_info, po);
+        }
         SPPROF_OCCL.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
 
         // SeamPlacer.cpp:1456 — gather_seam_candidates.

@@ -21,18 +21,18 @@ engine"); its `status` values are not a measure of fidelity.
 | Rust files with no C++ file of that name | 48 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3690 (41%) |
-| estimate: faithful | 3093 (84% of matched) |
-| estimate: partial | 366 (10% of matched) |
-| estimate: divergent | 200 (5% of matched) |
+| matched to a Rust function in the paired file | 3691 (41%) |
+| estimate: faithful | 3095 (84% of matched) |
+| estimate: partial | 367 (10% of matched) |
+| estimate: divergent | 198 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
-| missing in the paired Rust file | 4694 |
+| missing in the paired Rust file | 4693 |
 | of those, a function of that name exists in another Rust file | 1612 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 764 |
-| of the rest, 25 tokens or more | 1953 |
+| of the rest, 25 tokens or more | 1952 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4491 |
+| Rust functions with no C++ function of that name in the pair | 4492 |
 
 By tier:
 

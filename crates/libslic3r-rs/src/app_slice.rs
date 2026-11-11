@@ -490,6 +490,7 @@ pub fn slice_3mf_to_gcode(
         settings_json: embedded_settings,
         identify_ids,
         mmu_facets,
+        seam_facets,
         negative_mesh,
         paint_segments,
         paint_raw_vertices,
@@ -838,6 +839,32 @@ pub fn slice_3mf_to_gcode(
         // oracle's trafo_centered() has trafo()'s Z alone.
         let mut tc_occlusion = tc;
         tc_occlusion[11] = paint_trafo_z.unwrap_or(tc[11]);
+        // gather_enforcers_blockers (SeamPlacer.cpp:645-668): the painted seam
+        // facets of the volume, in its own coordinates, through
+        // `trafo_centered() * get_matrix()` (the product in double).
+        if !seam_facets.is_empty() {
+            let mut selector = crate::triangle_selector::TriangleSelector::new(local.clone(), 0.0);
+            selector.deserialize(
+                &seam_facets.data,
+                false,
+                crate::triangle_selector::EnforcerBlockerType::EXTRUDER_MAX,
+                crate::triangle_selector::EnforcerBlockerType::NONE,
+                crate::triangle_selector::EnforcerBlockerType::NONE,
+            );
+            let m = compose12_rows(&paint_segments[0].2, &tc_occlusion);
+            let through = |mut its: crate::triangle_mesh::indexed_triangle_set| {
+                for v in its.vertices.iter_mut() {
+                    let (x, y, z) = (v.x as f64, v.y as f64, v.z as f64);
+                    v.x = (m[0] * x + m[1] * y + m[2] * z + m[9]) as f32;
+                    v.y = (m[3] * x + m[4] * y + m[5] * z + m[10]) as f32;
+                    v.z = (m[6] * x + m[7] * y + m[8] * z + m[11]) as f32;
+                }
+                its
+            };
+            let enforcers = through(selector.get_facets(crate::triangle_selector::EnforcerBlockerType::ENFORCER));
+            let blockers = through(selector.get_facets(crate::triangle_selector::EnforcerBlockerType::BLOCKER));
+            print_object.seam_facets = Some((enforcers, blockers));
+        }
         print_object.occlusion_volumes = Some((volumes, tc_occlusion));
     }
     print_object.painted_submeshes_strict = painted_submeshes_strict;
@@ -917,6 +944,8 @@ pub struct Parsed3mfModel {
     /// Painted multi-material state per merged-mesh triangle — the pragmatic
     /// equivalent of C++ `ModelVolume::mmu_segmentation_facets` (Model.hpp:961).
     pub mmu_facets: FacetsAnnotation,
+    /// Painted seam state per merged-mesh triangle (`ModelVolume::seam_facets`).
+    pub seam_facets: FacetsAnnotation,
     /// R786 — per printable instantiation: (merged-vertex offset, vertex count,
     /// composed loader transform row-major 3x4). Together with the RAW vertices
     /// (below) this reconstructs native's paint frame: local = f32(raw) −
@@ -943,6 +972,8 @@ pub struct Loaded3mf {
     pub identify_ids: Vec<usize>,
     /// Painted-MMU annotation, merged-mesh triangle order.
     pub mmu_facets: FacetsAnnotation,
+    /// Painted-seam annotation, merged-mesh triangle order.
+    pub seam_facets: FacetsAnnotation,
     /// R703 — merged NEGATIVE-volume mesh (`subtype="negative_part"` in
     /// `Metadata/model_settings.config`), transforms applied exactly as for the
     /// printable mesh. Empty when the model declares none.
@@ -1034,6 +1065,7 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
         settings_json,
         identify_ids,
         mmu_facets: parsed.mmu_facets,
+        seam_facets: parsed.seam_facets,
         negative_mesh: parsed.negative_mesh,
         paint_segments: parsed.paint_segments,
         paint_raw_vertices: parsed.paint_raw_vertices,
@@ -1239,6 +1271,9 @@ pub fn parse_3mf_model_xml_with_negatives(
         /// `slic3rpe:mmu_segmentation` in PrusaSlicer ones), parallel to
         /// `triangles`. `None` = unpainted (base filament).
         paints: Vec<Option<String>>,
+        /// Per-triangle painted-seam string (`paint_seam`, bbs_3mf.cpp:296),
+        /// parallel to `triangles`.
+        seam_paints: Vec<Option<String>>,
         components: Vec<(u32, [f64; 12])>, // (objectid, transform)
         /// `<object type="...">` — defaults to "model" per the 3MF core spec.
         /// BambuStudio stores negative/modifier volumes as `type="other"`
@@ -1348,6 +1383,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                             vertices: Vec::new(),
                             triangles: Vec::new(),
                             paints: Vec::new(),
+                            seam_paints: Vec::new(),
                             components: Vec::new(),
                             is_model,
                         });
@@ -1391,6 +1427,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                         let mut v2 = 0u32;
                         let mut v3 = 0u32;
                         let mut paint: Option<String> = None;
+                        let mut seam_paint: Option<String> = None;
                         for attr in e.attributes().flatten() {
                             match attr.key.local_name().as_ref() {
                                 b"v1" => {
@@ -1413,6 +1450,13 @@ pub fn parse_3mf_model_xml_with_negatives(
                                 // PrusaSlicer `slic3rpe:mmu_segmentation`
                                 // (local name `mmu_segmentation`). Same hex
                                 // FacetsAnnotation encoding either way.
+                                b"paint_seam" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        if !s.is_empty() {
+                                            seam_paint = Some(s.to_owned());
+                                        }
+                                    }
+                                }
                                 b"paint_color" | b"mmu_segmentation" => {
                                     if let Ok(s) = std::str::from_utf8(&attr.value) {
                                         if !s.is_empty() {
@@ -1427,6 +1471,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                             objects.entry(id).and_modify(|m| {
                                 m.triangles.push([v1, v2, v3]);
                                 m.paints.push(paint);
+                                m.seam_paints.push(seam_paint);
                             });
                         }
                     }
@@ -1503,6 +1548,9 @@ pub fn parse_3mf_model_xml_with_negatives(
     let mut all_triangles: Vec<Triangle> = Vec::new();
     // Painted-MMU strings parallel to `all_triangles` (merged-mesh order).
     let mut all_paints: Vec<Option<String>> = Vec::new();
+    // Painted-seam strings, parallel to `all_triangles`. They ride in the same
+    // order as `all_paints`, so they are collected next to it.
+    let mut all_seam_paints: Vec<Option<String>> = Vec::new();
     // R703 — negative-volume geometry, kept apart from the printable mesh.
     let mut neg_vertices: Vec<Point3F> = Vec::new();
     let mut neg_triangles: Vec<Triangle> = Vec::new();
@@ -1520,6 +1568,7 @@ pub fn parse_3mf_model_xml_with_negatives(
         all_vertices: &mut Vec<Point3F>,
         all_triangles: &mut Vec<Triangle>,
         all_paints: &mut Vec<Option<String>>,
+        all_seam_paints: &mut Vec<Option<String>>,
         identity: &[f64; 12],
         negative_ids: &std::collections::HashSet<u32>,
         neg_vertices: &mut Vec<Point3F>,
@@ -1581,6 +1630,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                         tri[2] + v_offset,
                     ));
                     all_paints.push(mesh_data.paints.get(i).cloned().flatten());
+                    all_seam_paints.push(mesh_data.seam_paints.get(i).cloned().flatten());
                 }
             }
             // If object has components, recurse with composed transforms
@@ -1594,6 +1644,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                     all_vertices,
                     all_triangles,
                     all_paints,
+                    all_seam_paints,
                     identity,
                     negative_ids,
                     neg_vertices,
@@ -1624,6 +1675,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                         tri[2] + v_offset,
                     ));
                     all_paints.push(mesh_data.paints.get(i).cloned().flatten());
+                    all_seam_paints.push(mesh_data.seam_paints.get(i).cloned().flatten());
                 }
             }
         }
@@ -1636,6 +1688,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                 &mut all_vertices,
                 &mut all_triangles,
                 &mut all_paints,
+                &mut all_seam_paints,
                 &identity,
                 negative_ids,
                 &mut neg_vertices,
@@ -1677,6 +1730,14 @@ pub fn parse_3mf_model_xml_with_negatives(
         }
     }
 
+    // `ModelVolume::seam_facets` (Model.hpp), in the same storage.
+    let mut seam_facets = FacetsAnnotation::default();
+    for (idx, paint) in all_seam_paints.iter().enumerate() {
+        if let Some(s) = paint {
+            seam_facets.set_triangle_from_string(idx as i32, s);
+        }
+    }
+
     info!(
         "Parsed 3MF: {} vertices, {} triangles ({} painted; from {} objects, {} build items)",
         all_vertices.len(),
@@ -1702,6 +1763,7 @@ pub fn parse_3mf_model_xml_with_negatives(
         mesh: TriangleMesh::from_parts(all_vertices, all_triangles),
         negative_mesh: TriangleMesh::from_parts(neg_vertices, neg_triangles),
         mmu_facets,
+        seam_facets,
     })
 }
 

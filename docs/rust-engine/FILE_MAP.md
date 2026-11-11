@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 48 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3690 (41%) |
-| estimate: faithful | 3093 (84% of matched) |
-| estimate: partial | 366 (10% of matched) |
-| estimate: divergent | 200 (5% of matched) |
+| matched to a Rust function in the paired file | 3691 (41%) |
+| estimate: faithful | 3095 (84% of matched) |
+| estimate: partial | 367 (10% of matched) |
+| estimate: divergent | 198 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
-| missing in the paired Rust file | 4694 |
+| missing in the paired Rust file | 4693 |
 | of those, a function of that name exists in another Rust file | 1612 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 764 |
-| of the rest, 25 tokens or more | 1953 |
+| of the rest, 25 tokens or more | 1952 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4491 |
+| Rust functions with no C++ function of that name in the pair | 4492 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2835 | 2365 | 287 | 163 | 20 | 4016 |
+| 1 | 180 | 174 | 6851 | 2836 | 2367 | 288 | 161 | 20 | 4015 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -104,7 +104,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `PerimeterGenerator` | `perimeter_generator.rs` | 29 | 4 | 2 | 0 | 0 | 23 | 14 |
 | 1 | `Line` | `geometry/line.rs` | 56 | 14 | 3 | 8 | 0 | 31 | 5 |
 | 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 33 | 6 | 0 | 0 | 29 | 11 |
-| 1 | `GCode/SeamPlacer` | `gcode/seam_placer.rs` | 45 | 30 | 6 | 3 | 0 | 6 | 6 |
 | 1 | `LayerRegion` | `layer_region.rs` | 29 | 0 | 4 | 0 | 0 | 25 | 9 |
 | 1 | `MultiNozzleUtils` | `multi_nozzle_utils.rs` | 59 | 38 | 5 | 0 | 0 | 16 | 9 |
 | 1 | `RegionExpansion` | `region_expansion.rs` | 23 | 5 | 5 | 0 | 0 | 13 | 9 |
@@ -116,6 +115,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/PrintExtents` | `gcode/print_extents.rs` | 10 | 2 | 1 | 1 | 1 | 5 | 5 |
 | 1 | `Time` | `time.rs` | 22 | 7 | 1 | 2 | 0 | 12 | 5 |
 | 1 | `Fill/FillAdaptive` | `fill/fill_adaptive.rs` | 32 | 16 | 1 | 2 | 0 | 13 | 4 |
+| 1 | `GCode/SeamPlacer` | `gcode/seam_placer.rs` | 45 | 32 | 7 | 1 | 0 | 5 | 5 |
 | 1 | `GCodeWriter` | `g_code_writer.rs` | 84 | 64 | 5 | 3 | 0 | 12 | 3 |
 | 1 | `Geometry/Voronoi` | `geometry/voronoi.rs` | 19 | 0 | 0 | 0 | 0 | 19 | 6 |
 | 1 | `ModelArrange` | `model_arrange.rs` | 14 | 2 | 1 | 0 | 0 | 11 | 6 |
@@ -4587,25 +4587,23 @@ Rust only:
 
 ### `GCode/SeamPlacer` (.cpp+.hpp) and `gcode/seam_placer.rs`
 
-Tier 1. C++ functions 45 (plus 8 constructors, 0 destructors, 1 operators), Rust functions 74. Matched 39: faithful 30, partial 6, divergent 3, stub 0.
+Tier 1. C++ functions 45 (plus 8 constructors, 0 destructors, 1 operators), Rust functions 76. Matched 40: faithful 32, partial 7, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `angle` :34 and `angle` :395 (44%, 0.38x)
-- divergent: `GlobalModelInfo::is_enforced` :287 and `GlobalModelInfo::is_enforced` :892 (25%, 0.43x)
-- divergent: `GlobalModelInfo::is_blocked` :294 and `GlobalModelInfo::is_blocked` :902 (25%, 0.43x)
-- divergent: `compute_global_occlusion` :575 and `compute_global_occlusion` :1000 (19%, 2.84x)
-- partial: `SeamPlacer::gather_seam_candidates` :952 and `SeamPlacer::gather_seam_candidates` :2398 (46%, 0.71x)
-- partial: `SeamPlacer::calculate_candidates_visibility` :983 and `SeamPlacer::calculate_candidates_visibility` :2457 (50%, 0.65x)
-- partial: `SeamPlacer::calculate_overhangs_and_layer_embedding` :995 and `SeamPlacer::calculate_overhangs_and_layer_embedding` :2492 (54%, 0.95x)
-- partial: `SeamPlacer::init` :1495 and `SeamPlacer::init` :3200 (49%, 1.79x)
-- partial: `SeamPlacer::place_seam` :1563 and `SeamPlacer::place_seam` :3357 (46%, 1.85x)
+- divergent: `compute_global_occlusion` :575 and `compute_global_occlusion` :1032 (19%, 2.84x)
+- partial: `gather_enforcers_blockers` :645 and `gather_enforcers_blockers` :1206 (40%, 2.0x)
+- partial: `SeamPlacer::gather_seam_candidates` :952 and `SeamPlacer::gather_seam_candidates` :2471 (46%, 0.71x)
+- partial: `SeamPlacer::calculate_candidates_visibility` :983 and `SeamPlacer::calculate_candidates_visibility` :2530 (50%, 0.65x)
+- partial: `SeamPlacer::calculate_overhangs_and_layer_embedding` :995 and `SeamPlacer::calculate_overhangs_and_layer_embedding` :2565 (54%, 0.95x)
+- partial: `SeamPlacer::init` :1495 and `SeamPlacer::init` :3273 (51%, 1.84x)
+- partial: `SeamPlacer::place_seam` :1563 and `SeamPlacer::place_seam` :3437 (46%, 1.85x)
 
 Missing in the Rust file:
 
 - `PrintObjectSeamData::LayerSeams::swallowed_in_region` :132 (37 tokens)
 - `GlobalModelInfo::debug_export` :329 (403 tokens)
-- `gather_enforcers_blockers` :645 (175 tokens)
 - `debug_export_points` :755 (673 tokens)
 - `adaptive_merge_group_bottom` :929 (65 tokens)
 - `adaptive_merge_walls_merged_out` :941 (41 tokens)
@@ -4627,26 +4625,27 @@ Rust only:
 - `CoordinateFunctor::new` :832
 - `CoordinateFunctor::call` :840
 - `GlobalModelInfo::default` :870
-- `GlobalModelInfo::build_mesh_samples_tree` :915
-- `finish_global_occlusion` :1173
-- `occlusion_set_from_volumes` :1279
-- `collect_points` :1366 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`
-- `entity_role` :1390
-- `SeamComparator::new` :1780
-- `SeamCandidate::perimeter_flow_width` :1963
-- `SeamCandidate::set_flow_width_hint` :1974
-- `PerimeterDistancer::new` :2164
-- `unscale_point` :2228
-- `SeamPlacerConfig::default` :2270
-- `Point3f::new` :2291
-- `SeamPlacer::new` :2333
-- `SeamPlacer::stats` :2341
-- `SeamPlacer::init_simple` :2361
-- `SeamPlacer::seam_frame_offset` :2387
-- `gather_layer_perimeter` :3573
-- `find_best_seam_index` :3643
-- `place_seam` :3694
-- `create_seam_placer` :3703
+- `GlobalModelInfo::any_triangle_in_radius` :906
+- `GlobalModelInfo::build_mesh_samples_tree` :947
+- `finish_global_occlusion` :1246
+- `occlusion_set_from_volumes` :1352
+- `collect_points` :1439 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`
+- `entity_role` :1463
+- `SeamComparator::new` :1853
+- `SeamCandidate::perimeter_flow_width` :2036
+- `SeamCandidate::set_flow_width_hint` :2047
+- `PerimeterDistancer::new` :2237
+- `unscale_point` :2301
+- `SeamPlacerConfig::default` :2343
+- `Point3f::new` :2364
+- `SeamPlacer::new` :2406
+- `SeamPlacer::stats` :2414
+- `SeamPlacer::init_simple` :2434
+- `SeamPlacer::seam_frame_offset` :2460
+- `gather_layer_perimeter` :3653
+- `find_best_seam_index` :3723
+- `place_seam` :3774
+- `create_seam_placer` :3783
 
 ### `GCode/Smoothing` (.cpp+.hpp) and `gcode/smoothing.rs`
 
@@ -8444,24 +8443,24 @@ Tier 1. C++ functions 82 (plus 2 constructors, 1 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5282 (25%, 0.69x)
-- partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5298 (52%, 1.18x)
-- divergent: `PrintObject::make_perimeters` :470 and `PrintObject::make_perimeters` :1875 (26%, 1.08x)
-- divergent: `PrintObject::prepare_infill` :902 and `PrintObject::prepare_infill` :2150 (19%, 1.13x)
-- divergent: `PrintObject::infill` :1154 and `PrintObject::infill` :4572 (18%, 4.12x)
-- divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5177 (8%, 3.4x)
-- partial: `PrintObject::clear_overhangs_for_lift` :1270 and `PrintObject::clear_overhangs_for_lift` :4995 (50%, 0.8x)
-- divergent: `PrintObject::detect_overhangs_for_lift` :1282 and `PrintObject::detect_overhangs_for_lift` :5014 (26%, 0.77x)
-- divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :4972 (0%, 0.26x)
-- divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5435 (0%, 0.38x)
-- divergent: `PrintObject::invalidate_all_steps` :1916 and `PrintObject::invalidate_all_steps` :493 (0%, 0.31x)
-- partial: `PrintObject::detect_surfaces_type` :1951 and `PrintObject::detect_surfaces_type` :3964 (42%, 2.15x)
-- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :6790 (18%, 0.92x)
-- stub: `PrintObject::slicing_parameters` :3862 and `PrintObject::slicing_parameters` :446 (0%, 0.02x)
-- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6286 (45%, 2.11x)
-- partial: `PrintObject::discover_sub_top_surfaces` :5839 and `PrintObject::discover_sub_top_surfaces` :2360 (48%, 1.2x)
-- divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :5083 (13%, 2.53x)
-- partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :5534 (50%, 0.92x)
+- divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5291 (25%, 0.69x)
+- partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5307 (52%, 1.18x)
+- divergent: `PrintObject::make_perimeters` :470 and `PrintObject::make_perimeters` :1884 (26%, 1.08x)
+- divergent: `PrintObject::prepare_infill` :902 and `PrintObject::prepare_infill` :2159 (19%, 1.13x)
+- divergent: `PrintObject::infill` :1154 and `PrintObject::infill` :4581 (18%, 4.12x)
+- divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5186 (8%, 3.4x)
+- partial: `PrintObject::clear_overhangs_for_lift` :1270 and `PrintObject::clear_overhangs_for_lift` :5004 (50%, 0.8x)
+- divergent: `PrintObject::detect_overhangs_for_lift` :1282 and `PrintObject::detect_overhangs_for_lift` :5023 (26%, 0.77x)
+- divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :4981 (0%, 0.26x)
+- divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5444 (0%, 0.38x)
+- divergent: `PrintObject::invalidate_all_steps` :1916 and `PrintObject::invalidate_all_steps` :502 (0%, 0.31x)
+- partial: `PrintObject::detect_surfaces_type` :1951 and `PrintObject::detect_surfaces_type` :3973 (42%, 2.15x)
+- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :6799 (18%, 0.92x)
+- stub: `PrintObject::slicing_parameters` :3862 and `PrintObject::slicing_parameters` :455 (0%, 0.02x)
+- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6295 (45%, 2.11x)
+- partial: `PrintObject::discover_sub_top_surfaces` :5839 and `PrintObject::discover_sub_top_surfaces` :2369 (48%, 1.2x)
+- divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :5092 (13%, 2.53x)
+- partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :5543 (50%, 0.92x)
 
 Missing in the Rust file:
 
@@ -8534,32 +8533,32 @@ Rust only:
 - `ObjectRef::new` :174
 - `ObjectRef::config` :186 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
 - `ObjectRef::print` :192 — C++ has it in `Print`, `PrintBase`
-- `PrintObject::new` :333
-- `PrintObject::with_canceled` :337
-- `PrintObject::with_config` :370
-- `PrintObject::set_shared_regions` :406
-- `PrintObject::set_canceled` :412
-- `PrintObject::set_print_config` :420
-- `PrintObject::print` :427 — C++ has it in `Print`, `PrintBase`
-- `PrintObject::config` :437 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `PrintObject::set_mesh` :452 — C++ has it in `Model`
-- `PrintObject::set_negative_mesh` :459
-- `PrintObject::mesh` :463 — C++ has it in `Format/STEP`, `Model`
-- `PrintObject::layers` :468 — C++ has it in `Print`
-- `PrintObject::layers_mut` :473
-- `PrintObject::is_step_done` :479 — C++ has it in `Print`, `PrintBase`, `SLAPrint`
-- `PrintObject::set_step_done` :486
-- `PrintObject::slice` :499 — C++ has it in `PrintObjectSlice`, `SLA/SupportTree`, `TriangleMesh`
-- `PrintObject::apply_mm_segmentation_tier1` :1179
-- `PrintObject::wire_layer_hierarchy` :1842
-- `PrintObject::bridge_over_infill` :2498
-- `PrintObject::has_support` :5257 — C++ has it in `Print`, `Support/SupportMaterial`
-- `PrintObject::num_printing_regions` :5264 — C++ has it in `Print`
-- `PrintObject::printing_region` :5274
-- `PrintObject::discover_vertical_shells` :5577
-- `polygons_diff` :6897
-- `polygons_intersection` :6912
-- `PrintObject::default` :6928
+- `PrintObject::new` :340
+- `PrintObject::with_canceled` :344
+- `PrintObject::with_config` :378
+- `PrintObject::set_shared_regions` :415
+- `PrintObject::set_canceled` :421
+- `PrintObject::set_print_config` :429
+- `PrintObject::print` :436 — C++ has it in `Print`, `PrintBase`
+- `PrintObject::config` :446 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `PrintObject::set_mesh` :461 — C++ has it in `Model`
+- `PrintObject::set_negative_mesh` :468
+- `PrintObject::mesh` :472 — C++ has it in `Format/STEP`, `Model`
+- `PrintObject::layers` :477 — C++ has it in `Print`
+- `PrintObject::layers_mut` :482
+- `PrintObject::is_step_done` :488 — C++ has it in `Print`, `PrintBase`, `SLAPrint`
+- `PrintObject::set_step_done` :495
+- `PrintObject::slice` :508 — C++ has it in `PrintObjectSlice`, `SLA/SupportTree`, `TriangleMesh`
+- `PrintObject::apply_mm_segmentation_tier1` :1188
+- `PrintObject::wire_layer_hierarchy` :1851
+- `PrintObject::bridge_over_infill` :2507
+- `PrintObject::has_support` :5266 — C++ has it in `Print`, `Support/SupportMaterial`
+- `PrintObject::num_printing_regions` :5273 — C++ has it in `Print`
+- `PrintObject::printing_region` :5283
+- `PrintObject::discover_vertical_shells` :5586
+- `polygons_diff` :6906
+- `polygons_intersection` :6921
+- `PrintObject::default` :6937
 
 ### `PrintObjectSlice` (.cpp) and `print_object_slice.rs`
 

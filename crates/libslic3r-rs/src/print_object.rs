@@ -313,6 +313,13 @@ pub struct PrintObject {
     /// translation) and whether it is a negative volume; then `trafo_centered()`
     /// in the same layout.
     pub occlusion_volumes: Option<(Vec<(crate::triangle_mesh::TriangleMesh, [f64; 12], bool)>, [f64; 12])>,
+    /// The painted seam facets (`ModelVolume::seam_facets`), ENFORCER then
+    /// BLOCKER, already through `trafo_centered() * volume matrix`
+    /// (SeamPlacer.cpp:652-663).
+    pub seam_facets: Option<(
+        crate::triangle_mesh::indexed_triangle_set,
+        crate::triangle_mesh::indexed_triangle_set,
+    )>,
     /// R805 — negative volumes as (volume-local mesh, exact 4x4 slicing transform).
     pub negative_volumes_raw: Vec<(crate::triangle_mesh::TriangleMesh, [f64; 16])>,
 
@@ -360,6 +367,7 @@ impl PrintObject {
             slice_center_override: None,
             occlusion_place: None,
             occlusion_volumes: None,
+            seam_facets: None,
             negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
@@ -396,6 +404,7 @@ impl PrintObject {
             slice_center_override: None,
             occlusion_place: None,
             occlusion_volumes: None,
+            seam_facets: None,
             negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
