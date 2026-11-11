@@ -780,6 +780,10 @@ jobs:
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh "$ENGINE_BINARY"
 
+      - name: Run --filament-map tests (bambu)
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_filament_map_flag.sh "$ENGINE_BINARY"
+
       - name: Run structured-diagnostics event tests (${{ matrix.engine }})
         # Engine-aware: the script reads the engine from `layout capabilities`
         # and uses that engine's fixture and profiles.
@@ -1421,6 +1425,10 @@ jobs:
       - name: Run nozzle-map provenance regression tests (bambu)
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh "$ENGINE_BINARY"
+
+      - name: Run --filament-map tests (bambu)
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_filament_map_flag.sh "$ENGINE_BINARY"
 
       - name: Run feature-exclusion regression tests (${{ matrix.engine }})
         # Engine-aware: each engine slices its own fixtures; checks of a

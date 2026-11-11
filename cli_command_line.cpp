@@ -869,6 +869,11 @@ void print_help(std::ostream& out, const char* prog) {
         if (bed)
             out << "  --curr-bed-type values: " << join(bed->enum_values, ", ") << "\n";
     }
+#ifndef ENGINE_ORCA
+    out << "  --filament-map 1[,2...]: two-nozzle printers (H2D, H2C): the nozzle each filament prints\n"
+        << "  with, one per filament (1 = left, 2 = right); sets filament_map_mode to Manual.\n"
+        << "  result.json reports each plate's filament_maps either way.\n";
+#endif
     out << "\nPrint settings priorities:\n"
         << "\t1) setting values from the command line (highest priority)\n"
         << "\t2) setting values loaded with --load-settings and --load-filaments\n"

@@ -67,14 +67,15 @@ reason.
 
 Tests. The build-tree tests take the program the build produced; CI runs them on
 Linux and macOS, never on Windows, in steps `Run structured-diagnostics event
-tests`, `Run feature-exclusion regression tests`, `Test diagnostic transport`
-and `Run nozzle-map provenance regression tests (bambu)`:
+tests`, `Run feature-exclusion regression tests`, `Test diagnostic transport`,
+`Run nozzle-map provenance regression tests (bambu)` and `Run --filament-map tests (bambu)`:
 
 ```sh
 bash tests/test_diagnostic_events.sh build/slicer_cli        # engine read from the binary
 bash tests/test_excluded_features.sh build/slicer_cli
 python3 tests/test_diagnostic_transport.py                   # no arguments; compiles its own probe
 bash tests/test_nozzle_map_provenance.sh build/slicer_cli    # Bambu build only
+bash tests/test_filament_map_flag.sh build/slicer_cli        # Bambu build only
 ```
 
 The package tests take the packaged programs, from the `Package` job (macOS and

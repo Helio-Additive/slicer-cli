@@ -162,6 +162,18 @@
           "type": "integer",
           "minimum": 0
         },
+        "filament_maps": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Printers with more than one nozzle: the nozzle each of the project's filaments printed with, in filament order (1 = left, 2 = right), as the plate's slice_info filament_maps states it. Set by --filament-map, or by the engine's own grouping in an automatic mode."
+        },
+        "filament_map_mode": {
+          "type": "string",
+          "description": "With filament_maps: the mode that chose it (Manual with --filament-map; Auto For Flush by default)."
+        },
         "feature_type_times": {
           "type": "object",
           "additionalProperties": {
@@ -282,6 +294,11 @@
         "main_used_g": {
           "type": "number",
           "description": "Grams in the model and its supports, without the tower and flushes."
+        },
+        "extruder": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Printers with more than one nozzle: the nozzle this filament printed with (1 = left, 2 = right), as the plate's slice_info filament_maps states it."
         }
       }
     },

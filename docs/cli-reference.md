@@ -190,6 +190,7 @@ flag takes its value as the next word or after `=`.
 | `--printer-preset` | name | A printer system preset by name, every parent applied; on a project 3MF, the printer the project moves to | all binaries |
 | `--process-preset` | name | A process system preset by name (default: the printer's) | all binaries |
 | `--filament-preset` | name | A filament system preset by name; repeat for more filaments | all binaries |
+| `--filament-map` | "1[,2...]" | Two-nozzle Bambu printers: the nozzle each filament prints with, one per filament (1 = left, 2 = right); sets `filament_map_mode` to `Manual` (see "Every print setting") | slicer_cli only |
 | `--machine` | file | A printer settings file (JSON) | all binaries |
 | `--process` | file | A process settings file (JSON) | all binaries |
 | `--filament` | file | A filament settings file (JSON) | all binaries |
@@ -271,11 +272,32 @@ The values win over the presets' and the file's, for every plate. A value the
 setting does not take is refused before slicing (return code -2), naming the
 setting. `post_process` is refused: neither official command line runs
 post-processing scripts. The nozzle and filament mapping settings
-(`nozzle_volume_type`, `filament_map_mode`, `filament_map`,
-`filament_volume_map`, `filament_nozzle_map`, `extruder_nozzle_count`,
+(`nozzle_volume_type`, `filament_map_mode`, `filament_volume_map`,
+`filament_nozzle_map`, `extruder_nozzle_count`,
 `extruder_nozzle_volume_type`, `extruder_nozzle_diameter`,
 `extruder_nozzle_slot`, `ams_nozzle_idx`) are refused as flags; the engine
-sets them from the printer and the filaments.
+sets them from the printer and the filaments. `filament_map` is taken by
+`slicer_cli` only (below) and refused by `slicer_cli-orcaslicer` and
+`slicer_cli-snapmaker`.
+
+Which nozzle each filament prints with (`slicer_cli`, two-nozzle Bambu
+printers such as the H2D and H2C): `--filament-map` gives one nozzle per
+filament of the project, in filament order, 1 for the left nozzle and 2 for
+the right, as Bambu Studio numbers them (`--filament-map 1`,
+`--filament-map 2,1`). It sets `filament_map_mode` to `Manual`, as the
+official command line takes `--filament_map` with
+`--filament_map_mode Manual`, so the engine keeps that grouping instead of
+choosing its own; the map wins over the plate's and the project's. Without
+the flag a bare model slices in `Auto For Flush` and the engine picks the
+nozzle. The run says so with a `config_normalized` /
+`FilamentMapFromCommandLine` event. Refused before slicing (return code -2):
+a count other than the project's filament count, a nozzle the printer does
+not have, and any one-nozzle printer. Either way `result.json` reports the
+nozzle each filament printed with (`sliced_plates[].filament_maps`, below),
+which is what the plate's `Metadata/slice_info.config` `filament_maps`
+states. Read the slice's choice there, not from the project's
+`filament_map`: in an automatic mode `project_settings.config` keeps the map
+it was saved with while the slice used another.
 
 Mixed nozzle diameters (`slicer_cli`, Bambu Studio 2.9.1): `filament_diameter_map`
 names the nozzle diameter each filament prints with, one entry per filament
@@ -661,7 +683,9 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `sliced_plates[].filament_change_times` | Filament changes |
 | `sliced_plates[].feature_type_times` | Seconds per feature (walls, infill, ...) |
 | `sliced_plates[].objects[]` | `id`, `name`, `triangle_count`, `bbox` (`x`, `y`, `z`, `width`, `depth`, `height`). The box is in the project's scene, as the official result file states it: an object on plate 2 or later sits at that plate's place in the plate grid, not at the bed's origin |
-| `sliced_plates[].filaments[]` | `id`, `filament_id`, `total_used_g`, `main_used_g` |
+| `sliced_plates[].filaments[]` | `id`, `filament_id`, `total_used_g`, `main_used_g`; on a printer with more than one nozzle also `extruder`, the nozzle the filament printed with (1 = left, 2 = right) |
+| `sliced_plates[].filament_maps` | Printers with more than one nozzle (slicer_cli and slicer_cli-orcaslicer): the nozzle each of the project's filaments printed with, in filament order (1 = left, 2 = right), the plate's `slice_info.config` `filament_maps`. Set by `--filament-map`, else by the engine's own grouping |
+| `sliced_plates[].filament_map_mode` | With `filament_maps`: the mode that chose it (`Manual` with `--filament-map`, `Auto For Flush` by default) |
 | `sliced_plates[].warning_message` | The last slicing warning |
 | `sliced_plates[].warnings` | Every slicing warning |
 | `sliced_plates[].gcode_file` | The plate's G-code file |

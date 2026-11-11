@@ -151,10 +151,24 @@ std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra) {
     //   BambuStudio.cpp at v02.09.01.70: the per-slot layout keys extruder_nozzle_diameter,
     //   extruder_nozzle_slot and ams_nozzle_idx rebuild the nozzle layout with
     //   extruder_nozzle_count / extruder_nozzle_volume_type (7104-7172).
+    // slicer_cli takes filament_map (with Manual mode, main.cpp
+    // filament_map_flag_refusal and the plate block that applies it).
     static const std::map<std::string, const char*> special = {
         {"nozzle_volume_type",          "the official CLI re-derives the nozzle setup from it"},
+#ifdef ENGINE_ORCA
         {"filament_map_mode",           "the official CLI re-derives the filament-to-nozzle grouping from it"},
-        {"filament_map",                "the official CLI re-derives the filament-to-nozzle grouping from it"},
+#else
+        {"filament_map_mode",           "the official CLI re-derives the filament-to-nozzle grouping from it. "
+                                        "To choose each filament's nozzle, give --filament-map, which sets Manual mode"},
+#endif
+#ifdef ENGINE_ORCA
+        // slicer_cli takes --filament-map (the Bambu Studio engine's Manual
+        // grouping, main.cpp filament_map_flag_refusal); this engine's
+        // two-nozzle grouping is not ported.
+        {"filament_map",                "the official CLI re-derives the filament-to-nozzle grouping from it. "
+                                        "slicer_cli (the Bambu Studio engine) takes --filament-map for two-nozzle "
+                                        "Bambu printers"},
+#endif
         {"filament_volume_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
         {"filament_nozzle_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
         {"extruder_nozzle_count",       "the official CLI re-derives the nozzle setup from it"},
