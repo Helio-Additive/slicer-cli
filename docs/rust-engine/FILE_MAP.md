@@ -1483,16 +1483,16 @@ Rust only:
 - `Circle::new` :98
 - `Circle::with_center_radius` :108
 - `Circle::try_create_circle_from_points` :135
-- `Circle::try_create_circle_from_point_list` :210
-- `Circle::default` :473
-- `scale_f` :481
-- `ArcSegment::new` :540
-- `ArcSegment::with_parameters` :557
-- `ArcSegment::try_create_arc_from_circle` :767
-- `ArcSegment::center` :1078 — C++ has it in `BoundingBox`, `Emboss`, `TriangleMesh`
-- `ArcSegment::radius` :1082 — C++ has it in `Arrange`, `BoundingBox`
-- `ArcSegment::get_polar_radians` :1087
-- `ArcSegment::default` :1093
+- `Circle::try_create_circle_from_point_list` :240
+- `Circle::default` :503
+- `scale_f` :511
+- `ArcSegment::new` :570
+- `ArcSegment::with_parameters` :587
+- `ArcSegment::try_create_arc_from_circle` :797
+- `ArcSegment::center` :1108 — C++ has it in `BoundingBox`, `Emboss`, `TriangleMesh`
+- `ArcSegment::radius` :1112 — C++ has it in `Arrange`, `BoundingBox`
+- `ArcSegment::get_polar_radians` :1117
+- `ArcSegment::default` :1123
 
 ### `Clipper2Utils` (.cpp+.hpp) and `clipper2_utils.rs`
 
@@ -3917,23 +3917,23 @@ Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Wipe::wipe` :440 and `wipe` :4457 (31%, 0.72x)
+- partial: `Wipe::wipe` :440 and `wipe` :4469 (31%, 0.72x)
 - divergent: `WipeTowerIntegration::append_tcr` :741 and `append_tcr` :628 (14%, 0.55x)
 - divergent: `WipeTowerIntegration::post_process_wipe_tower_moves` :1383 and `post_process_wipe_tower_moves` :499 (25%, 0.89x)
-- divergent: `GCode::unretract` :1959 and `unretract` :4406 (17%, 1.12x)
+- divergent: `GCode::unretract` :1959 and `unretract` :4418 (17%, 1.12x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :1361 (8%, 1.33x)
-- divergent: `GCode::change_layer` :6473 and `change_layer` :5017 (17%, 0.89x)
+- divergent: `GCode::change_layer` :6473 and `change_layer` :5029 (17%, 0.89x)
 - divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :1882 (17%, 1.89x)
-- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :3549 (55%, 4.62x)
+- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :3561 (55%, 4.62x)
 - divergent: `GCode::extrude_path` :6927 and `extrude_path` :3071 (5%, 0.05x)
-- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3718 (28%, 1.64x)
-- partial: `GCode::extrude_support` :7011 and `extrude_support` :4104 (33%, 1.61x)
-- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9079 (50%, 1.06x)
-- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5166 (30%, 1.08x)
-- divergent: `GCode::travel_to` :8198 and `travel_to` :4262 (11%, 0.21x)
-- divergent: `GCode::retract` :8498 and `retract` :4348 (8%, 0.21x)
-- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4634 (2%, 0.03x)
-- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6647 (0%, 0.06x)
+- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3730 (28%, 1.64x)
+- partial: `GCode::extrude_support` :7011 and `extrude_support` :4116 (33%, 1.61x)
+- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9091 (50%, 1.06x)
+- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5178 (30%, 1.08x)
+- divergent: `GCode::travel_to` :8198 and `travel_to` :4274 (11%, 0.21x)
+- divergent: `GCode::retract` :8498 and `retract` :4360 (8%, 0.21x)
+- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4646 (2%, 0.03x)
+- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6659 (0%, 0.06x)
 
 Missing in the Rust file:
 
@@ -4099,68 +4099,68 @@ Rust only:
 - `fmt_g6` :3056
 - `extrude_path_ex` :3087
 - `extrude_path_with_arc_fitting` :3102
-- `extrude_perimeters_entities` :3894
-- `extrude_infill_entities` :3996
-- `apply_layer_cooling` :4786
-- `bridge_fan_speed` :4850
-- `overhang_fan_speed` :4869
-- `set_fan_speed_for_role` :4891
-- `GCodeLayerState::default` :4981
-- `emit_layer_preamble` :5076
-- `emit_layer_postamble` :5133
-- `emit_object_start_label` :5208
-- `emit_object_end_label` :5237
-- `emit_layer_object_labels` :5263
-- `set_loop_wipe_path` :6518
-- `first_extrusion_path` :6534
-- `width_tag_before_speed` :6545
-- `set_speed_before_path` :6556
-- `GCode::new` :6590
-- `GCode::from_content_and_stats` :6598
-- `GCode::from_string` :6603 — C++ has it in `Config`
-- `GCode::from_string_with_stats` :6611
-- `GCode::content` :6616
-- `GCode::as_bytes` :6621
-- `GCode::len` :6626
-- `GCode::is_empty` :6631 — C++ has it in `PresetBundle`
-- `GCode::split_off` :6637
-- `GCode::append_line` :6641
-- `GCode::append_comment` :6652
-- `GCode::write_to_file` :6659
-- `GCode::read_from_file` :6670 — C++ has it in `Model`
-- `GCode::line_count` :6676
-- `GCode::lines` :6681 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
-- `GCode::clear` :6686 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `GCode::fmt` :6693
-- `GCode::fmt` :6704
-- `GCode::from` :6710 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `String::from` :6716 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `GCodeStats::new` :6762
-- `GCodeStats::calculate_filament_stats` :6778
-- `GCodeStats::print_time_formatted` :6791
-- `GCodeStats::filament_used_meters` :6800
-- `GCodeStats::fmt` :6806
-- `GCodeHeader::new` :6841
-- `GCodeHeader::with_raw_settings` :6845
-- `GCodeHeader::with_estimated_time` :6858
-- `GCodeHeader::generate_header_block` :6881
-- `GCodeHeader::generate_config_block` :6933
-- `GCodeHeader::generate_minimal_config_block` :7020
-- `GCodeHeader::generate_executable_block_start` :7079
-- `GCodeHeader::generate_executable_block_content` :7086
-- `GCodeHeader::generate_complete_header` :7235
-- `is_config_key_skipped` :7397
-- `format_config_value` :7457
-- `process_gcode_template` :7668
-- `eval_condition` :8221
-- `eval_expr` :8408
-- `resolve_all_vars_in_expr` :8546
-- `eval_math` :8596
-- `scale_` :8770 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale_` :8775 — C++ has it in `Point`, `libslic3r`
-- `point_mul_f64` :8781
-- `path_from` :8788
-- `poly_len` :8821
+- `extrude_perimeters_entities` :3906
+- `extrude_infill_entities` :4008
+- `apply_layer_cooling` :4798
+- `bridge_fan_speed` :4862
+- `overhang_fan_speed` :4881
+- `set_fan_speed_for_role` :4903
+- `GCodeLayerState::default` :4993
+- `emit_layer_preamble` :5088
+- `emit_layer_postamble` :5145
+- `emit_object_start_label` :5220
+- `emit_object_end_label` :5249
+- `emit_layer_object_labels` :5275
+- `set_loop_wipe_path` :6530
+- `first_extrusion_path` :6546
+- `width_tag_before_speed` :6557
+- `set_speed_before_path` :6568
+- `GCode::new` :6602
+- `GCode::from_content_and_stats` :6610
+- `GCode::from_string` :6615 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :6623
+- `GCode::content` :6628
+- `GCode::as_bytes` :6633
+- `GCode::len` :6638
+- `GCode::is_empty` :6643 — C++ has it in `PresetBundle`
+- `GCode::split_off` :6649
+- `GCode::append_line` :6653
+- `GCode::append_comment` :6664
+- `GCode::write_to_file` :6671
+- `GCode::read_from_file` :6682 — C++ has it in `Model`
+- `GCode::line_count` :6688
+- `GCode::lines` :6693 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :6698 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :6705
+- `GCode::fmt` :6716
+- `GCode::from` :6722 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :6728 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :6774
+- `GCodeStats::calculate_filament_stats` :6790
+- `GCodeStats::print_time_formatted` :6803
+- `GCodeStats::filament_used_meters` :6812
+- `GCodeStats::fmt` :6818
+- `GCodeHeader::new` :6853
+- `GCodeHeader::with_raw_settings` :6857
+- `GCodeHeader::with_estimated_time` :6870
+- `GCodeHeader::generate_header_block` :6893
+- `GCodeHeader::generate_config_block` :6945
+- `GCodeHeader::generate_minimal_config_block` :7032
+- `GCodeHeader::generate_executable_block_start` :7091
+- `GCodeHeader::generate_executable_block_content` :7098
+- `GCodeHeader::generate_complete_header` :7247
+- `is_config_key_skipped` :7409
+- `format_config_value` :7469
+- `process_gcode_template` :7680
+- `eval_condition` :8233
+- `eval_expr` :8420
+- `resolve_all_vars_in_expr` :8558
+- `eval_math` :8608
+- `scale_` :8782 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale_` :8787 — C++ has it in `Point`, `libslic3r`
+- `point_mul_f64` :8793
+- `path_from` :8800
+- `poly_len` :8833
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 

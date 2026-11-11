@@ -3415,8 +3415,15 @@ pub fn extrude_path_with_arc_fitting(
                     for point_index in (start_index + 1)..(end_index + 1) {
                         let from = work_points[point_index - 1];
                         let to = work_points[point_index];
-                        // line.length() in mm (scaled -> mm via unscale).
-                        let line_length = unscale(from.distance_to_f64(to) as i64);
+                        // line.length() in mm: `line.length() * SCALING_FACTOR`
+                        // (GCode.cpp:8021), the double length. LINE_LENGTH_DOUBLE
+                        // (on); =0 truncates it to whole units first, which made
+                        // E one unit short in the last digit on ~3% of moves.
+                        let line_length = if crate::faithful_gate("LINE_LENGTH_DOUBLE") {
+                            from.distance_to_f64(to) * crate::libslic3r::SCALING_FACTOR
+                        } else {
+                            unscale(from.distance_to_f64(to) as i64)
+                        };
                         if line_length < EPSILON {
                             continue;
                         }
@@ -3506,8 +3513,13 @@ pub fn extrude_path_with_arc_fitting(
             let from = work_points[i - 1];
             let to = work_points[i];
 
-            // line.length() in mm (scaled -> mm via unscale).
-            let line_length = unscale(from.distance_to_f64(to) as i64);
+            // line.length() in mm: `line.length() * SCALING_FACTOR`
+            // (GCode.cpp:7987). LINE_LENGTH_DOUBLE (on); =0 truncates first.
+            let line_length = if crate::faithful_gate("LINE_LENGTH_DOUBLE") {
+                from.distance_to_f64(to) * crate::libslic3r::SCALING_FACTOR
+            } else {
+                unscale(from.distance_to_f64(to) as i64)
+            };
             if line_length < EPSILON {
                 continue;
             }

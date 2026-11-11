@@ -156,23 +156,49 @@ impl Circle {
             return None;
         }
 
+        // CIRCLE_FMA (on): the oracle's libslic3r is built with Apple clang
+        // -O3, whose default `-ffp-contract=on` fuses `p*q + r` inside an
+        // expression. In an addition of two products LLVM fuses the left
+        // product with the right one as addend, and each further product
+        // onto that (`fma(s3, d3, fma(s1, d1, s2 * d2))`); a subtraction
+        // fuses the left product with the negated right one. Measured with a
+        // twin probe built as the oracle builds (R843): with these fusions
+        // a, b, c, the centre and the radius equal the C++ bit for bit on 3,988
+        // of 3,988 triples; without them 62 centres and 10 radii do. =0 plain.
+        let fused = crate::faithful_gate("CIRCLE_FMA");
         // Circle.cpp:29
-        let a = x1 * (y2 - y3) - y1 * (x2 - x3) + x2 * y3 - x3 * y2;
+        let a = if fused {
+            let t = x1.mul_add(y2 - y3, -(y1 * (x2 - x3)));
+            let t = x2.mul_add(y3, t);
+            (-x3).mul_add(y2, t)
+        } else {
+            x1 * (y2 - y3) - y1 * (x2 - x3) + x2 * y3 - x3 * y2
+        };
         // BBS: take out to figure out how we handle very small values
         // Circle.cpp:30-32
         if a.abs() < SCALED_EPSILON {
             return None;
         }
 
-        // Circle.cpp:34-36
-        let b = (x1 * x1 + y1 * y1) * (y3 - y2)
-            + (x2 * x2 + y2 * y2) * (y1 - y3)
-            + (x3 * x3 + y3 * y3) * (y2 - y1);
-
-        // Circle.cpp:38-40
-        let c = (x1 * x1 + y1 * y1) * (x2 - x3)
-            + (x2 * x2 + y2 * y2) * (x3 - x1)
-            + (x3 * x3 + y3 * y3) * (x1 - x2);
+        // Circle.cpp:34-40
+        let (b, c) = if fused {
+            let s1 = x1.mul_add(x1, y1 * y1);
+            let s2 = x2.mul_add(x2, y2 * y2);
+            let s3 = x3.mul_add(x3, y3 * y3);
+            (
+                s3.mul_add(y2 - y1, s1.mul_add(y3 - y2, s2 * (y1 - y3))),
+                s3.mul_add(x1 - x2, s1.mul_add(x2 - x3, s2 * (x3 - x1))),
+            )
+        } else {
+            (
+                (x1 * x1 + y1 * y1) * (y3 - y2)
+                    + (x2 * x2 + y2 * y2) * (y1 - y3)
+                    + (x3 * x3 + y3 * y3) * (y2 - y1),
+                (x1 * x1 + y1 * y1) * (x2 - x3)
+                    + (x2 * x2 + y2 * y2) * (x3 - x1)
+                    + (x3 * x3 + y3 * y3) * (x1 - x2),
+            )
+        };
 
         // Circle.cpp:42-43
         let center_x = -b / (2.0 * a);
@@ -181,7 +207,11 @@ impl Circle {
         // Circle.cpp:45-49
         let delta_x = center_x - x1;
         let delta_y = center_y - y1;
-        let radius = (delta_x * delta_x + delta_y * delta_y).sqrt();
+        let radius = if fused {
+            delta_x.mul_add(delta_x, delta_y * delta_y).sqrt()
+        } else {
+            (delta_x * delta_x + delta_y * delta_y).sqrt()
+        };
         if radius > max_radius {
             return None;
         }
