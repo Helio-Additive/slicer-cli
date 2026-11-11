@@ -2618,6 +2618,15 @@ impl Print {
                 // Separating them is the next step (R509).
                 cfg.enable_timelapse_print = self.config.timelapse_type == 1
                     && crate::probe_enabled("TOWER_TIMELAPSE_DEPTH");
+                // TOWER_TIMELAPSE_WALL (on): with smooth timelapse
+                // (`m_enable_timelapse_print`) `generate_new` draws the outer wall
+                // as the layer's first result (`only_generate_out_wall`,
+                // WipeTower.cpp:7818, 7854-7856, 8072-8073), and
+                // WipeTowerIntegration::tool_change prints it before anything else
+                // of the layer (GCode.cpp:1508-1512). =0 draws the wall with the
+                // finish of the layer, after the last object of the layer.
+                cfg.only_generate_wall = self.config.timelapse_type == 1
+                    && crate::faithful_gate("TOWER_TIMELAPSE_WALL");
                 // WipeTower.cpp:2907 — `min_wipe_tower_depth =
                 // get_limit_depth_by_height(m_wipe_tower_height)`, which feeds the
                 // `extra_spacing = min_wipe_tower_depth / max_depth` decision in
@@ -4135,7 +4144,11 @@ fn emit_tower_tcr(
             eprintln!("TOWERLEAVE z={} tc={} end={:?} start={:?} wipe={:?} off={:?}", tcr.print_z, tcr.is_tool_change, tcr.end_pos, tcr.start_pos, tcr.wipe_path, off);
         }
         writer.mark_unretracted_after_raw();
-        writer.mark_unlifted_after_raw();
+        if crate::faithful_gate("TOWER_TIMELAPSE_WALL") {
+            writer.set_nominal_z_after_raw(tcr.print_z as f64);
+        } else {
+            writer.mark_unlifted_after_raw();
+        }
         let alt = writer.auto_lift_type();
         writer.retract_leaving_tower(alt, print_config.prime_tower_lift_speed);
     } else if crate::faithful_gate("TOWER_EXIT_WIPE_CPP") && tcr.is_tool_change {
@@ -4579,6 +4592,11 @@ fn emit_layer_by_island(
         );
     }
 
+    // GCode.cpp:1508-1512 — the first tower visit of a layer under timelapse is
+    // the wall on its own (`m_is_first_print`), before the first extruder's own
+    // tool change and objects.
+    let mut out_wall_pending: Option<&crate::gcode::wipe_tower::ToolChangeResult> =
+        wipe_tower_layer.and_then(|wt| wt.iter().find(|r| r.is_out_wall_only));
     for &tool in &tool_order {
         if multi_tool {
             // Skip the toolchange when this tool has no work on this layer.
@@ -4590,6 +4608,22 @@ fn emit_layer_by_island(
             });
             if !has_work {
                 continue;
+            }
+            if let Some(wall) = out_wall_pending.take() {
+                let off = crate::gcode::wipe_tower::Vec2f::new(
+                    print_config.wipe_tower_x as f32,
+                    print_config.wipe_tower_y as f32,
+                );
+                emit_tower_tcr(
+                    writer,
+                    wall,
+                    off,
+                    print_config,
+                    layer.print_z,
+                    *toolchange_count,
+                    total_tool_changes,
+                    is_first_layer,
+                );
             }
             // Wipe/prime-tower interleave (WipeTowerIntegration::append_tcr,
             // GCode.cpp:647). When enabled, replace the bare `set_extruder` T with
@@ -4735,7 +4769,11 @@ fn emit_layer_by_island(
         let fins: Vec<&crate::gcode::wipe_tower::ToolChangeResult> =
             if crate::faithful_gate("TOWER_FINISH_ALL") {
                 wipe_tower_layer
-                    .map(|wt| wt.iter().filter(|r| !r.is_tool_change).collect())
+                    .map(|wt| {
+                        wt.iter()
+                            .filter(|r| !r.is_tool_change && !r.is_out_wall_only)
+                            .collect()
+                    })
                     .unwrap_or_default()
             } else {
                 wipe_tower_layer

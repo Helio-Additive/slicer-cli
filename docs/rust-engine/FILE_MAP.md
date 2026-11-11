@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 48 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3689 (41%) |
+| matched to a Rust function in the paired file | 3690 (41%) |
 | estimate: faithful | 3094 (84% of matched) |
-| estimate: partial | 365 (10% of matched) |
+| estimate: partial | 366 (10% of matched) |
 | estimate: divergent | 199 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
-| missing in the paired Rust file | 4695 |
+| missing in the paired Rust file | 4694 |
 | of those, a function of that name exists in another Rust file | 1612 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 764 |
-| of the rest, 25 tokens or more | 1954 |
+| of the rest, 25 tokens or more | 1953 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4488 |
+| Rust functions with no C++ function of that name in the pair | 4489 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2834 | 2366 | 286 | 162 | 20 | 4017 |
+| 1 | 180 | 174 | 6851 | 2835 | 2366 | 287 | 162 | 20 | 4016 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -75,7 +75,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 |-|-|-|-|-|-|-|-|-|-|
 | 1 | `Model` | `model.rs` | 374 | 8 | 3 | 0 | 0 | 363 | 172 |
 | 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 3 | 0 | 0 | 0 | 138 | 118 |
-| 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 48 | 9 | 12 | 0 | 149 | 95 |
+| 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 48 | 10 | 12 | 0 | 148 | 94 |
 | 1 | `PrintConfig` | `print_config.rs` | 137 | 8 | 0 | 2 | 0 | 127 | 101 |
 | 1 | `Print` | `print.rs` | 236 | 5 | 1 | 6 | 1 | 223 | 93 |
 | 1 | `GCode` | `g_code.rs` | 152 | 11 | 5 | 10 | 0 | 126 | 77 |
@@ -230,7 +230,7 @@ their function names come from, when there is one.
 | `gcode/mod.rs` | module | 1 |  |
 | `gcode/multi_material.rs` | no C++ file of this name | 42 |  |
 | `gcode/wipe_tower_integration.rs` | no C++ file of this name | 3 | `GCode` |
-| `gcode/writer.rs` | no C++ file of this name | 118 |  |
+| `gcode/writer.rs` | no C++ file of this name | 119 |  |
 | `geometry/aabb_tree.rs` | no C++ file of this name | 77 |  |
 | `geometry/mod.rs` | module | 19 | `Geometry` |
 | `geometry/simplify.rs` | no C++ file of this name | 19 |  |
@@ -4598,7 +4598,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `SeamPlacer::calculate_candidates_visibility` :983 and `SeamPlacer::calculate_candidates_visibility` :2352 (50%, 0.65x)
 - partial: `SeamPlacer::calculate_overhangs_and_layer_embedding` :995 and `SeamPlacer::calculate_overhangs_and_layer_embedding` :2387 (54%, 0.95x)
 - partial: `SeamPlacer::init` :1495 and `SeamPlacer::init` :3095 (49%, 1.79x)
-- partial: `SeamPlacer::place_seam` :1563 and `SeamPlacer::place_seam` :3252 (46%, 1.51x)
+- partial: `SeamPlacer::place_seam` :1563 and `SeamPlacer::place_seam` :3252 (46%, 1.85x)
 
 Missing in the Rust file:
 
@@ -4640,10 +4640,10 @@ Rust only:
 - `SeamPlacer::stats` :2236
 - `SeamPlacer::init_simple` :2256
 - `SeamPlacer::seam_frame_offset` :2282
-- `gather_layer_perimeter` :3451
-- `find_best_seam_index` :3521
-- `place_seam` :3572
-- `create_seam_placer` :3581
+- `gather_layer_perimeter` :3468
+- `find_best_seam_index` :3538
+- `place_seam` :3589
+- `create_seam_placer` :3598
 
 ### `GCode/Smoothing` (.cpp+.hpp) and `gcode/smoothing.rs`
 
@@ -4920,31 +4920,32 @@ Rust only:
 
 ### `GCode/WipeTower` (.cpp+.hpp) and `gcode/wipe_tower.rs`
 
-Tier 1. C++ functions 218 (plus 8 constructors, 0 destructors, 0 operators), Rust functions 156. Matched 69: faithful 48, partial 9, divergent 12, stub 0.
+Tier 1. C++ functions 218 (plus 8 constructors, 0 destructors, 0 operators), Rust functions 158. Matched 70: faithful 48, partial 10, divergent 12, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `WipeTower::set_layer` :246 and `WipeTower::set_layer` :2548 (31%, 2.16x)
-- partial: `WipeTower::nozzle_change_extrusion_flow` :311 and `WipeTower::nozzle_change_extrusion_flow` :2669 (50%, 1.17x)
-- partial: `add_extra_point` :493 and `add_extra_point` :760 (54%, 1.2x)
-- divergent: `WipeTowerWriter::set_normal_acceleration` :1515 and `WipeTowerWriter::set_normal_acceleration` :2246 (17%, 1.02x)
-- divergent: `WipeTowerWriter::set_travel_acceleration` :1523 and `WipeTowerWriter::set_travel_acceleration` :2262 (17%, 1.02x)
-- divergent: `WipeTowerWriter::set_acceleration_impl` :1532 and `WipeTowerWriter::set_acceleration_impl` :2278 (21%, 0.96x)
-- divergent: `WipeTower::set_extruder` :2017 and `WipeTower::set_extruder` :2503 (6%, 0.06x)
-- divergent: `WipeTower::get_next_pos` :2209 and `WipeTower::get_next_pos` :3782 (26%, 0.27x)
-- partial: `WipeTower::tool_change` :2263 and `WipeTower::tool_change` :3525 (34%, 0.9x)
-- divergent: `WipeTower::toolchange_Unload` :2553 and `WipeTower::toolchange_unload` :3747 (12%, 0.1x)
-- divergent: `WipeTower::toolchange_Wipe` :2760 and `WipeTower::toolchange_wipe` :3766 (5%, 0.05x)
-- divergent: `WipeTower::set_for_wipe_tower_writer` :2900 and `WipeTower::set_for_wipe_tower_writer` :3509 (8%, 1.01x)
-- partial: `WipeTower::finish_layer` :2916 and `WipeTower::finish_layer` :4127 (41%, 1.32x)
-- partial: `WipeTower::plan_toolchange` :3119 and `WipeTower::plan_toolchange` :2757 (45%, 0.76x)
-- divergent: `WipeTower::get_all_wall_skip_points` :3429 and `WipeTower::get_all_wall_skip_points` :3120 (9%, 0.27x)
-- divergent: `WipeTower::get_wall_skip_points` :3450 and `WipeTower::get_wall_skip_points` :3154 (27%, 0.46x)
-- partial: `WipeTower::get_block_by_category` :5440 and `WipeTower::get_block_by_category` :2871 (33%, 0.8x)
-- partial: `WipeTower::add_depth_to_block` :5462 and `WipeTower::add_depth_to_block` :2894 (55%, 0.72x)
-- partial: `WipeTower::update_all_layer_depth` :5517 and `WipeTower::update_all_layer_depth` :3052 (35%, 0.62x)
-- divergent: `WipeTower::generate_wipe_tower_blocks` :5551 and `WipeTower::generate_wipe_tower_blocks` :2934 (22%, 0.4x)
-- divergent: `WipeTower::generate` :8112 and `WipeTower::generate` :3429 (20%, 0.74x)
+- partial: `WipeTower::set_layer` :246 and `WipeTower::set_layer` :2557 (31%, 2.16x)
+- partial: `WipeTower::nozzle_change_extrusion_flow` :311 and `WipeTower::nozzle_change_extrusion_flow` :2678 (50%, 1.17x)
+- partial: `add_extra_point` :493 and `add_extra_point` :764 (54%, 1.2x)
+- divergent: `WipeTowerWriter::set_normal_acceleration` :1515 and `WipeTowerWriter::set_normal_acceleration` :2255 (17%, 1.02x)
+- divergent: `WipeTowerWriter::set_travel_acceleration` :1523 and `WipeTowerWriter::set_travel_acceleration` :2271 (17%, 1.02x)
+- divergent: `WipeTowerWriter::set_acceleration_impl` :1532 and `WipeTowerWriter::set_acceleration_impl` :2287 (21%, 0.96x)
+- divergent: `WipeTower::set_extruder` :2017 and `WipeTower::set_extruder` :2512 (6%, 0.06x)
+- divergent: `WipeTower::get_next_pos` :2209 and `WipeTower::get_next_pos` :3805 (26%, 0.27x)
+- partial: `WipeTower::tool_change` :2263 and `WipeTower::tool_change` :3548 (34%, 0.9x)
+- divergent: `WipeTower::toolchange_Unload` :2553 and `WipeTower::toolchange_unload` :3770 (12%, 0.1x)
+- divergent: `WipeTower::toolchange_Wipe` :2760 and `WipeTower::toolchange_wipe` :3789 (5%, 0.05x)
+- divergent: `WipeTower::set_for_wipe_tower_writer` :2900 and `WipeTower::set_for_wipe_tower_writer` :3532 (8%, 1.01x)
+- partial: `WipeTower::finish_layer` :2916 and `WipeTower::finish_layer` :4289 (41%, 1.21x)
+- partial: `WipeTower::plan_toolchange` :3119 and `WipeTower::plan_toolchange` :2766 (45%, 0.76x)
+- divergent: `WipeTower::get_all_wall_skip_points` :3429 and `WipeTower::get_all_wall_skip_points` :3129 (9%, 0.27x)
+- divergent: `WipeTower::get_wall_skip_points` :3450 and `WipeTower::get_wall_skip_points` :3163 (27%, 0.46x)
+- partial: `WipeTower::get_block_by_category` :5440 and `WipeTower::get_block_by_category` :2880 (33%, 0.8x)
+- partial: `WipeTower::add_depth_to_block` :5462 and `WipeTower::add_depth_to_block` :2903 (55%, 0.72x)
+- partial: `WipeTower::update_all_layer_depth` :5517 and `WipeTower::update_all_layer_depth` :3061 (35%, 0.62x)
+- divergent: `WipeTower::generate_wipe_tower_blocks` :5551 and `WipeTower::generate_wipe_tower_blocks` :2943 (22%, 0.4x)
+- divergent: `WipeTower::generate` :8112 and `WipeTower::generate` :3438 (28%, 0.84x)
+- partial: `WipeTower::only_generate_out_wall` :8215 and `WipeTower::only_generate_out_wall` :4200 (31%, 1.46x)
 
 Missing in the Rust file:
 
@@ -5087,7 +5088,6 @@ Missing in the Rust file:
 - `WipeTower::get_block_fill_filament` :7535 (339 tokens)
 - `apply_wipe_tower_tail_slowdown` :7589 (1563 tokens)
 - `WipeTower::generate_new` :7760 (2403 tokens)
-- `WipeTower::only_generate_out_wall` :8215 (413 tokens)
 - `WipeTower::generate_rib_polygon` :8282 (332 tokens)
 - `WipeTower::generate_support_wall_new` :8314 (427 tokens)
 - `WipeTower::generate_support_wall` :8371 (809 tokens)
@@ -5120,73 +5120,74 @@ Rust only:
 - `BoxCoordinates::width` :267 — C++ has it in `Arrange`, `Flow`, `MinAreaBoundingBox`
 - `BoxCoordinates::height` :271 — C++ has it in `Arrange`, `Flow`, `MinAreaBoundingBox`
 - `Extrusion::new` :288
-- `FilamentParameters::default` :416
-- `ToolChangeInfo::new` :469
-- `WipeTowerLayerInfo::new` :512
-- `cross2` :550 — C++ has it in `Point`
-- `IntersectionInfo::default` :598
-- `dist` :603 — C++ has it in `Geometry`
-- `to_polyline` :739 — C++ has it in `GCode/AvoidCrossingPerimeters`, `Polygon`
-- `WipeTowerConfig::default` :1144
-- `tower_wipe_cpp` :1200
-- `tower_writer_cpp` :1205
-- `WipeTowerWriter::new` :1283
-- `WipeTowerWriter::calculate_extrusion_flow` :1329
-- `WipeTowerWriter::set_initial_position` :1342
-- `WipeTowerWriter::set_initial_tool` :1350
-- `WipeTowerWriter::set_z` :1355
-- `WipeTowerWriter::set_extrusion_flow` :1360
-- `WipeTowerWriter::set_y_shift` :1367
-- `WipeTowerWriter::set_wipe_tower_dimensions` :1373
-- `WipeTowerWriter::set_normal_acceleration_values` :1390
-- `WipeTowerWriter::set_first_layer_normal_acceleration_values` :1395
-- `WipeTowerWriter::set_travel_acceleration_values` :1400
-- `WipeTowerWriter::set_first_layer_travel_acceleration_values` :1405
-- `WipeTowerWriter::disable_linear_advance` :1417
-- `WipeTowerWriter::suppress_preview` :1433
-- `WipeTowerWriter::resume_preview` :1438
-- `WipeTowerWriter::feedrate` :1445 — C++ has it in `GCode/PressureEqualizer`
-- `WipeTowerWriter::gcode` :1455 — C++ has it in `GCode`
-- `WipeTowerWriter::extrusions` :1460
-- `WipeTowerWriter::pos` :1475 — C++ has it in `Fill/FillRectilinear`, `SLA/ReprojectPointsOnMesh`, `TriangulateWall`
-- `WipeTowerWriter::wipe_path` :1504
-- `WipeTowerWriter::travel` :1509 — C++ has it in `GCodeReader`
-- `WipeTowerWriter::travel_to_f` :1519
-- `WipeTowerWriter::travel_to` :1550 — C++ has it in `GCode`, `GCode/AvoidCrossingPerimeters`
-- `WipeTowerWriter::extrude` :1588 — C++ has it in `Extruder`, `GCode`
-- `WipeTowerWriter::extrude_explicit` :1604
-- `WipeTowerWriter::extrude_explicit_f` :1661
-- `WipeTowerWriter::extrude_f` :1745
-- `WipeTowerWriter::travel_f` :1753
-- `WipeTowerWriter::extrude_arc` :1772
-- `WipeTowerWriter::rectangle` :1999
-- `WipeTowerWriter::rectangle_fill_box` :2044
-- `WipeTowerWriter::line` :2091 — C++ has it in `EdgeGrid`, `FileParserError`, `Fill/FillLine`
-- `WipeTowerWriter::load` :2099 — C++ has it in `AppConfig`, `Config`, `EmbossShape`
-- `WipeTowerWriter::retract` :2117 — C++ has it in `Extruder`, `GCode`, `GCodeWriter`
-- `WipeTowerWriter::z_hop` :2124
-- `WipeTowerWriter::z_hop_reset` :2136
-- `WipeTowerWriter::set_tool` :2144
-- `WipeTowerWriter::set_extruder_temp` :2150
-- `WipeTowerWriter::wait` :2160
-- `WipeTowerWriter::speed_override` :2171
-- `WipeTowerWriter::speed_override_backup` :2183
-- `WipeTowerWriter::speed_override_restore` :2190
-- `WipeTowerWriter::set_fan` :2198 — C++ has it in `GCodeWriter`
-- `WipeTowerWriter::reset_extruder` :2212
-- `WipeTowerWriter::flush_planner_queue` :2219
-- `WipeTowerWriter::append` :2225 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
-- `WipeTowerWriter::comment` :2231 — C++ has it in `GCodeReader`
-- `WipeTowerWriter::add_wipe_point` :2237
-- `WipeTower::new` :2439
-- `WipeTower::set_filament_map` :2529
-- `WipeTower::position` :2620 — C++ has it in `AABBMesh`, `SLA/IndexedMesh`
-- `WipeTower::get_bounding_box` :2645 — C++ has it in `Print`
-- `WipeTower::charge_tool_change_to_block` :3077
-- `WipeTower::block_needs_finish` :3107
-- `WipeTower::layer_extra_spacing` :3797
-- `WipeTower::toolchange_wipe_cpp` :3810
-- `WipeTower::toolchange_wipe_legacy` :3942
+- `FilamentParameters::default` :420
+- `ToolChangeInfo::new` :473
+- `WipeTowerLayerInfo::new` :516
+- `cross2` :554 — C++ has it in `Point`
+- `IntersectionInfo::default` :602
+- `dist` :607 — C++ has it in `Geometry`
+- `to_polyline` :743 — C++ has it in `GCode/AvoidCrossingPerimeters`, `Polygon`
+- `WipeTowerConfig::default` :1152
+- `tower_wipe_cpp` :1209
+- `tower_writer_cpp` :1214
+- `WipeTowerWriter::new` :1292
+- `WipeTowerWriter::calculate_extrusion_flow` :1338
+- `WipeTowerWriter::set_initial_position` :1351
+- `WipeTowerWriter::set_initial_tool` :1359
+- `WipeTowerWriter::set_z` :1364
+- `WipeTowerWriter::set_extrusion_flow` :1369
+- `WipeTowerWriter::set_y_shift` :1376
+- `WipeTowerWriter::set_wipe_tower_dimensions` :1382
+- `WipeTowerWriter::set_normal_acceleration_values` :1399
+- `WipeTowerWriter::set_first_layer_normal_acceleration_values` :1404
+- `WipeTowerWriter::set_travel_acceleration_values` :1409
+- `WipeTowerWriter::set_first_layer_travel_acceleration_values` :1414
+- `WipeTowerWriter::disable_linear_advance` :1426
+- `WipeTowerWriter::suppress_preview` :1442
+- `WipeTowerWriter::resume_preview` :1447
+- `WipeTowerWriter::feedrate` :1454 — C++ has it in `GCode/PressureEqualizer`
+- `WipeTowerWriter::gcode` :1464 — C++ has it in `GCode`
+- `WipeTowerWriter::extrusions` :1469
+- `WipeTowerWriter::pos` :1484 — C++ has it in `Fill/FillRectilinear`, `SLA/ReprojectPointsOnMesh`, `TriangulateWall`
+- `WipeTowerWriter::wipe_path` :1513
+- `WipeTowerWriter::travel` :1518 — C++ has it in `GCodeReader`
+- `WipeTowerWriter::travel_to_f` :1528
+- `WipeTowerWriter::travel_to` :1559 — C++ has it in `GCode`, `GCode/AvoidCrossingPerimeters`
+- `WipeTowerWriter::extrude` :1597 — C++ has it in `Extruder`, `GCode`
+- `WipeTowerWriter::extrude_explicit` :1613
+- `WipeTowerWriter::extrude_explicit_f` :1670
+- `WipeTowerWriter::extrude_f` :1754
+- `WipeTowerWriter::travel_f` :1762
+- `WipeTowerWriter::extrude_arc` :1781
+- `WipeTowerWriter::rectangle` :2008
+- `WipeTowerWriter::rectangle_fill_box` :2053
+- `WipeTowerWriter::line` :2100 — C++ has it in `EdgeGrid`, `FileParserError`, `Fill/FillLine`
+- `WipeTowerWriter::load` :2108 — C++ has it in `AppConfig`, `Config`, `EmbossShape`
+- `WipeTowerWriter::retract` :2126 — C++ has it in `Extruder`, `GCode`, `GCodeWriter`
+- `WipeTowerWriter::z_hop` :2133
+- `WipeTowerWriter::z_hop_reset` :2145
+- `WipeTowerWriter::set_tool` :2153
+- `WipeTowerWriter::set_extruder_temp` :2159
+- `WipeTowerWriter::wait` :2169
+- `WipeTowerWriter::speed_override` :2180
+- `WipeTowerWriter::speed_override_backup` :2192
+- `WipeTowerWriter::speed_override_restore` :2199
+- `WipeTowerWriter::set_fan` :2207 — C++ has it in `GCodeWriter`
+- `WipeTowerWriter::reset_extruder` :2221
+- `WipeTowerWriter::flush_planner_queue` :2228
+- `WipeTowerWriter::append` :2234 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
+- `WipeTowerWriter::comment` :2240 — C++ has it in `GCodeReader`
+- `WipeTowerWriter::add_wipe_point` :2246
+- `WipeTower::new` :2448
+- `WipeTower::set_filament_map` :2538
+- `WipeTower::position` :2629 — C++ has it in `AABBMesh`, `SLA/IndexedMesh`
+- `WipeTower::get_bounding_box` :2654 — C++ has it in `Print`
+- `WipeTower::charge_tool_change_to_block` :3086
+- `WipeTower::block_needs_finish` :3116
+- `WipeTower::layer_extra_spacing` :3820
+- `WipeTower::toolchange_wipe_cpp` :3833
+- `WipeTower::toolchange_wipe_legacy` :3965
+- `WipeTower::draw_outer_wall` :4153
 
 ### `GCodeReader` (.cpp+.hpp) and `g_code_reader.rs`
 
@@ -7809,8 +7810,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - divergent: `Print::validate` :1413 and `Print::validate` :1855 (5%, 0.15x)
 - divergent: `Print::process` :2178 and `Print::process` :1954 (13%, 1.15x)
 - divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :589 (20%, 35.79x)
-- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3134 (23%, 0.41x)
-- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3500 (21%, 0.39x)
+- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3143 (23%, 0.41x)
+- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3509 (21%, 0.39x)
 - stub: `PrintStatistics::config` :4454 and `Print::config` :540 (6%, 0.03x)
 
 Missing in the Rust file:
@@ -8053,18 +8054,18 @@ Rust only:
 - `Print::entity_points` :559
 - `apply_cooling_postprocess` :1646
 - `Print::apply` :1838 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `Print::make_brim` :3268 — C++ has it in `Brim`
-- `Print::all_extruders` :3404
-- `Print::is_canceled` :3440
-- `Print::cancel` :3446 — C++ has it in `PrintBase`
-- `Print::throw_if_canceled` :3452 — C++ has it in `PrintBase`, `SLAPrintSteps`
-- `Print::set_status_callback` :3461 — C++ has it in `PrintBase`
-- `Print::set_status` :3470 — C++ has it in `PrintBase`
-- `Print::invalidate_all_steps` :3478 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `collect_entity_lines` :3623
-- `emit_tower_tcr` :3668
-- `emit_layer_by_island` :4168
-- `Print::default` :4775
+- `Print::make_brim` :3277 — C++ has it in `Brim`
+- `Print::all_extruders` :3413
+- `Print::is_canceled` :3449
+- `Print::cancel` :3455 — C++ has it in `PrintBase`
+- `Print::throw_if_canceled` :3461 — C++ has it in `PrintBase`, `SLAPrintSteps`
+- `Print::set_status_callback` :3470 — C++ has it in `PrintBase`
+- `Print::set_status` :3479 — C++ has it in `PrintBase`
+- `Print::invalidate_all_steps` :3487 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `collect_entity_lines` :3632
+- `emit_tower_tcr` :3677
+- `emit_layer_by_island` :4181
+- `Print::default` :4813
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 

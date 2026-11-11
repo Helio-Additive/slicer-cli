@@ -346,6 +346,10 @@ pub struct ToolChangeResult {
     pub new_tool: i32,
     /// Whether finish layer comes before tool change
     pub is_finish_first: bool,
+    /// This result is the outer wall drawn on its own at the start of the layer
+    /// (`only_generate_out_wall`, which `generate_new` puts in front of the
+    /// layer's results under timelapse, WipeTower.cpp:8072-8073).
+    pub is_out_wall_only: bool,
     /// Result of nozzle change if applicable
     pub nozzle_change_result: NozzleChangeResult,
 }
@@ -1080,6 +1084,10 @@ pub struct WipeTowerConfig {
     pub no_sparse_layers: bool,
     /// Enable timelapse printing
     pub enable_timelapse_print: bool,
+    /// `only_generate_wall` of `generate_new` (WipeTower.cpp:7818): under
+    /// timelapse the outer wall is a result of its own at the head of the layer
+    /// and the finish of the layer draws none.
+    pub only_generate_wall: bool,
     /// Enable wrapping detection
     pub enable_wrapping_detection: bool,
     /// Number of wrapping detection layers
@@ -1158,6 +1166,7 @@ impl Default for WipeTowerConfig {
             bridging: 10.0,
             no_sparse_layers: false,
             enable_timelapse_print: false,
+            only_generate_wall: false,
             enable_wrapping_detection: false,
             wrapping_detection_layers: 0,
             is_multi_extruder: false,
@@ -3460,6 +3469,14 @@ impl WipeTower {
             let is_last_layer = layer_idx == num_layers - 1;
             self.set_layer(z, height, num_tool_changes, is_first_layer, is_last_layer);
 
+            // WipeTower.cpp:7840-7841, 7854-7856 — under `only_generate_wall` the
+            // wall is drawn first, by the tool the layer starts with.
+            let timelapse_wall = if self.config.only_generate_wall {
+                Some(self.only_generate_out_wall())
+            } else {
+                None
+            };
+
             // Generate tool changes for this layer
             for new_tool in new_tools {
                 let result = self.tool_change(new_tool);
@@ -3494,6 +3511,12 @@ impl WipeTower {
             // Finish the layer
             let finish_result = self.finish_layer();
             layer_results.push(finish_result);
+            // WipeTower.cpp:8072-8073 — layer_result.insert(begin, timelapse_wall).
+            if let Some(wall) = timelapse_wall {
+                if !wall.gcode.is_empty() {
+                    layer_results.insert(0, wall);
+                }
+            }
 
             results.push(layer_results);
         }
@@ -4123,6 +4146,145 @@ impl WipeTower {
         }
     }
 
+    /// The outer wall as `generate_support_wall_new` draws it
+    /// (WipeTower.cpp:8314-8369): the rectangle, broken at this layer's skip
+    /// points when the gap wall is on. Returns the polygon the wipe path is
+    /// taken from (`insert_skip_polygon`).
+    fn draw_outer_wall(
+        &self,
+        writer: &mut WipeTowerWriter,
+        wt_box: &BoxCoordinates,
+        feedrate: f32,
+    ) -> crate::geometry::Polygon {
+        let wt_box = *wt_box;
+        let wall_polygon = generate_rectange_polygon(wt_box.ld, wt_box.ru);
+        let mut insert_skip_polygon = wall_polygon.clone();
+            // WipeTower.cpp:3664 — finish_layer_new hands the wall to
+            // generate_support_wall_new, which under `skip_points`
+            // (= m_use_gap_wall = "prime_tower_skip_points": "1") breaks the ring
+            // at this layer's skip points and emits the runs through
+            // generate_path, retracting across each gap. R625.
+            //
+            // `rib_wall` only selects the polygon SHAPE and Majora sets
+            // "prime_tower_rib_wall": "0" (R622), so the shape is the plain
+            // rectangle either way; only the gapping differs.
+            let skip = self
+                .wall_skip_points
+                .get(self.layer_idx)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            if crate::faithful_gate("TOWER_WALL_GAPS_CPP")
+                && self.config.use_gap_wall
+                && !skip.is_empty()
+            {
+                // :5067 — the gap length is 2.5 * m_perimeter_width.
+                let (runs, skip_polygon) = contrust_gap_for_skip_points(
+                    &wall_polygon,
+                    skip,
+                    self.config.width,
+                    2.5 * self.perimeter_width as f64,
+                );
+                let rl = self.filament_params[self.current_tool].retract_length;
+                let rs = self.filament_params[self.current_tool].retract_speed * 60.0;
+                writer.generate_path(&runs, feedrate, rl, rs);
+                insert_skip_polygon = skip_polygon;
+            } else {
+                writer.rectangle(&wt_box);
+            }
+        insert_skip_polygon
+    }
+
+    /// `WipeTower::only_generate_out_wall(true)` (WipeTower.cpp:8215-8280): the
+    /// outer wall as a result of its own, drawn by the tool that is loaded when
+    /// the layer starts.
+    pub fn only_generate_out_wall(&mut self) -> ToolChangeResult {
+        let old_tool = self.current_tool;
+        let is_first_layer = self.layer_idx == 0;
+
+        let mut writer = WipeTowerWriter::new(
+            self.layer_height,
+            self.perimeter_width,
+            self.config.gcode_flavor,
+            &self.filament_params,
+        );
+        self.set_for_wipe_tower_writer(&mut writer);
+
+        // :8239-8243 — fill_box, and the corner the writer starts from.
+        let layer_depth = self.plan.get(self.layer_idx).map(|l| l.depth).unwrap_or(self.depth);
+        let fill_box_y = self
+            .plan
+            .get(self.layer_idx)
+            .map(|l| l.toolchanges_depth())
+            .unwrap_or(self.depth_traversed)
+            + self.perimeter_width;
+        let fill_box = BoxCoordinates::new(
+            self.perimeter_width,
+            fill_box_y,
+            self.config.width - 2.0 * self.perimeter_width,
+            layer_depth - fill_box_y,
+        );
+        writer.set_initial_position(
+            if self.left_to_right { fill_box.ru } else { fill_box.lu },
+            self.internal_rotation,
+            self.y_shift,
+        );
+        writer.set_initial_tool(self.current_tool);
+        writer.set_z(self.z_pos);
+        writer.set_extrusion_flow(self.extrusion_flow);
+        writer.set_wipe_tower_dimensions(self.config.width, self.depth);
+        writer.set_first_layer(is_first_layer);
+
+        // :8238 — calc_tower_feedrate, as finish_layer has it.
+        let feedrate = if is_first_layer {
+            self.config.first_layer_speed * 60.0
+        } else {
+            self.config.travel_speed * 60.0
+        };
+        writer.feedrate(feedrate);
+
+        // :8251
+        writer.append("; WIPE_TOWER_START\n");
+
+        // :8255-8259 — in the new mode under timelapse the wall takes the whole
+        // tower depth.
+        let wt_box = BoxCoordinates::new(0.0, 0.0, self.config.width, self.depth);
+        // :8264
+        let outer_wall = self.draw_outer_wall(&mut writer, &wt_box, feedrate);
+
+        // :8271 — writer.add_wipe_path(outer_wall, m_filpar[m_current_tool].wipe_dist)
+        // (WipeTower.cpp:1368-1379).
+        {
+            let mut wipe_dist = self.filament_params[self.current_tool].wipe_dist as f64;
+            let cur = writer.pos();
+            let scaled_cur = crate::geometry::Point::new(
+                crate::scale(cur.x as f64),
+                crate::scale(cur.y as f64),
+            );
+            let closest_idx = outer_wall.closest_point_index(&scaled_cur);
+            let mut wipe_path = outer_wall.split_at_index(closest_idx);
+            wipe_path.points.reverse();
+            let pts = wipe_path.points.clone();
+            for i in 0..pts.len() {
+                if wipe_dist < crate::libslic3r::EPSILON {
+                    break;
+                }
+                let sf = crate::libslic3r::SCALING_FACTOR as f32;
+                writer.add_wipe_point(Vec2f::new(pts[i].x as f32 * sf, pts[i].y as f32 * sf));
+                if i != 0 {
+                    let dx = crate::unscale(pts[i].x) - crate::unscale(pts[i - 1].x);
+                    let dy = crate::unscale(pts[i].y) - crate::unscale(pts[i - 1].y);
+                    wipe_dist -= (dx * dx + dy * dy).sqrt();
+                }
+            }
+        }
+        // :8272
+        writer.append("; WIPE_TOWER_END\n");
+
+        let mut tcr = self.construct_tcr(&writer, false, old_tool, true, false, 0.0);
+        tcr.is_out_wall_only = true;
+        tcr
+    }
+
     /// Finish the current layer
     pub fn finish_layer(&mut self) -> ToolChangeResult {
         let is_first_layer = self.layer_idx == 0;
@@ -4435,41 +4597,11 @@ impl WipeTower {
         // Draw outer perimeter
         let wt_box = BoxCoordinates::new(0.0, 0.0, self.config.width, self.depth);
 
-        // Only draw perimeter if this is first layer or we need it
-        if is_first_layer || !self.config.no_sparse_layers {
-            // WipeTower.cpp:3664 — finish_layer_new hands the wall to
-            // generate_support_wall_new, which under `skip_points`
-            // (= m_use_gap_wall = "prime_tower_skip_points": "1") breaks the ring
-            // at this layer's skip points and emits the runs through
-            // generate_path, retracting across each gap. R625.
-            //
-            // `rib_wall` only selects the polygon SHAPE and Majora sets
-            // "prime_tower_rib_wall": "0" (R622), so the shape is the plain
-            // rectangle either way; only the gapping differs.
-            let skip = self
-                .wall_skip_points
-                .get(self.layer_idx)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
-            if crate::faithful_gate("TOWER_WALL_GAPS_CPP")
-                && self.config.use_gap_wall
-                && !skip.is_empty()
-            {
-                let wall_polygon =
-                    generate_rectange_polygon(wt_box.ld, wt_box.ru);
-                // :5067 — the gap length is 2.5 * m_perimeter_width.
-                let (runs, _insert_skip_polygon) = contrust_gap_for_skip_points(
-                    &wall_polygon,
-                    skip,
-                    self.config.width,
-                    2.5 * self.perimeter_width as f64,
-                );
-                let rl = self.filament_params[self.current_tool].retract_length;
-                let rs = self.filament_params[self.current_tool].retract_speed * 60.0;
-                writer.generate_path(&runs, feedrate, rl, rs);
-            } else {
-                writer.rectangle(&wt_box);
-            }
+        // Only draw perimeter if this is first layer or we need it.
+        // WipeTower.cpp:7821 — `extrude_outer_wall = !only_generate_wall && ..`:
+        // under timelapse the wall is the layer's first result.
+        if (is_first_layer || !self.config.no_sparse_layers) && !self.config.only_generate_wall {
+            self.draw_outer_wall(&mut writer, &wt_box, feedrate);
         }
 
         // Print brim on first layer
@@ -4552,6 +4684,7 @@ impl WipeTower {
             initial_tool: old_tool as i32,
             new_tool: self.current_tool as i32,
             is_finish_first: is_finish,
+            is_out_wall_only: false,
             nozzle_change_result: self.nozzle_change_result.clone(),
         }
     }

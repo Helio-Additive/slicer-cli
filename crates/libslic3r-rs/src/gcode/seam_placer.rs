@@ -3336,6 +3336,23 @@ impl SeamPlacer {
                 perimeter.start_index,
                 &preffered,
             );
+            if crate::probe_enabled("SEAMNEAR") {
+                eprintln!(
+                    "SEAMNEAR layer={} pref=({:.3},{:.3}) frame=({},{}) first=({:.3},{:.3}) pick=({:.3},{:.3}) start={} n={}",
+                    layer_idx, preffered.x, preffered.y, self.frame_offset_xy.0, self.frame_offset_xy.1,
+                    up.x, up.y, layer.points[idx].position.x, layer.points[idx].position.y,
+                    perimeter.start_index, perimeter.end_index - perimeter.start_index
+                );
+            }
+            if crate::probe_enabled("SEAMNEAR") && std::env::var("SEAMNEARL").ok().and_then(|v| v.parse::<usize>().ok()) == Some(layer_idx) {
+                for i in perimeter.start_index..perimeter.end_index {
+                    let c = &layer.points[i];
+                    eprintln!(
+                        "SEAMCAND {} ({:.4},{:.4}) vis={:.6} ang={:.6} oh={:.6} emb={:.6}",
+                        i - perimeter.start_index, c.position.x, c.position.y, c.visibility, c.local_ccw_angle, c.overhang, c.embedded_distance
+                    );
+                }
+            }
             seam_index = idx;
             layer.points[idx].position
         } else if perimeter.finalized {

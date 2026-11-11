@@ -2639,6 +2639,15 @@ impl GCodeWriter {
     /// (GCode.cpp:1253), which unlifts before it deretracts
     /// (GCodeWriter.cpp `unlift`): the nozzle is back at the nominal Z and
     /// nothing is lifted.
+    /// After a tower block written as raw text the nozzle is at the tower
+    /// layer's Z (the travel to the tower took it there, GCode.cpp:790-798, and
+    /// the block's own unretract unlifted), whatever Z was tracked before.
+    pub fn set_nominal_z_after_raw(&mut self, z: CoordF) {
+        self.z = z;
+        self.m_lifted = 0.0;
+        self.m_to_lift = 0.0;
+    }
+
     pub fn mark_unlifted_after_raw(&mut self) {
         if self.m_lifted > 0.0 {
             self.z -= self.m_lifted;
