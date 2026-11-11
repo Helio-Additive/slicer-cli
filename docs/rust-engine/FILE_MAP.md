@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 47 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3717 (41%) |
-| estimate: faithful | 3113 (84% of matched) |
-| estimate: partial | 376 (10% of matched) |
-| estimate: divergent | 198 (5% of matched) |
-| estimate: stub | 30 (1% of matched) |
-| missing in the paired Rust file | 4667 |
+| matched to a Rust function in the paired file | 3723 (41%) |
+| estimate: faithful | 3120 (84% of matched) |
+| estimate: partial | 378 (10% of matched) |
+| estimate: divergent | 196 (5% of matched) |
+| estimate: stub | 29 (1% of matched) |
+| missing in the paired Rust file | 4661 |
 | of those, a function of that name exists in another Rust file | 1611 |
 | of the rest, another overload of the name is ported | 366 |
-| of the rest, under 25 tokens (accessors, one-liners) | 758 |
-| of the rest, 25 tokens or more | 1932 |
+| of the rest, under 25 tokens (accessors, one-liners) | 755 |
+| of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4513 |
+| Rust functions with no C++ function of that name in the pair | 4515 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2862 | 2385 | 297 | 161 | 19 | 3989 |
+| 1 | 180 | 174 | 6851 | 2868 | 2392 | 299 | 159 | 18 | 3983 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -81,8 +81,8 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode` | `g_code.rs` | 152 | 13 | 6 | 11 | 0 | 122 | 74 |
 | 1 | `Config` | `config.rs` | 327 | 12 | 2 | 0 | 0 | 313 | 80 |
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 19 | 3 | 0 | 0 | 183 | 70 |
-| 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 91 | 17 | 11 | 8 | 86 | 46 |
 | 1 | `PrintObject` | `print_object.rs` | 82 | 6 | 6 | 11 | 1 | 58 | 52 |
+| 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 97 | 19 | 9 | 7 | 81 | 44 |
 | 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 14 | 8 | 11 | 0 | 52 | 42 |
 | 1 | `ClipperUtils` | `clipper_utils.rs` | 227 | 9 | 3 | 2 | 0 | 213 | 43 |
 | 1 | `Preset` | `preset.rs` | 108 | 12 | 0 | 0 | 0 | 96 | 42 |
@@ -105,10 +105,10 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Line` | `geometry/line.rs` | 56 | 14 | 3 | 8 | 0 | 31 | 5 |
 | 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 33 | 6 | 0 | 0 | 29 | 11 |
 | 1 | `LayerRegion` | `layer_region.rs` | 29 | 0 | 4 | 0 | 0 | 25 | 9 |
-| 1 | `MultiNozzleUtils` | `multi_nozzle_utils.rs` | 59 | 38 | 5 | 0 | 0 | 16 | 9 |
 | 1 | `RegionExpansion` | `region_expansion.rs` | 23 | 5 | 5 | 0 | 0 | 13 | 9 |
 | 1 | `Color` | `color.rs` | 97 | 72 | 1 | 0 | 0 | 24 | 8 |
 | 1 | `Flow` | `flow.rs` | 31 | 14 | 6 | 3 | 0 | 8 | 5 |
+| 1 | `MultiNozzleUtils` | `multi_nozzle_utils.rs` | 59 | 39 | 5 | 0 | 0 | 15 | 8 |
 | 1 | `Slicing` | `slicing.rs` | 22 | 12 | 0 | 0 | 0 | 10 | 8 |
 | 1 | `libslic3r` | `libslic3r.rs` | 28 | 1 | 0 | 0 | 0 | 27 | 8 |
 | 1 | `ExtrusionEntity` | `extrusion_entity.rs` | 125 | 89 | 1 | 5 | 0 | 30 | 2 |
@@ -4297,46 +4297,45 @@ Rust only:
 
 ### `GCode/GCodeProcessor` (.cpp+.hpp) and `gcode/g_code_processor.rs`
 
-Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 184. Matched 127: faithful 91, partial 17, divergent 11, stub 8.
+Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 191. Matched 132: faithful 97, partial 19, divergent 9, stub 7.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `get_object_label_id` :152 and `get_object_label_id` :588 (36%, 0.74x)
-- partial: `get_z_height` :167 and `get_z_height` :607 (40%, 0.71x)
-- partial: `GCodeProcessor::CachedPosition::reset` :234 and `CachedPosition::reset` :494 (50%, 0.96x)
-- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1470 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1483 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1496 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1511 (43%, 0.71x)
-- partial: `GCodeProcessorResult::reset` :1571 and `GCodeProcessorResult::reset` :2271 (53%, 0.57x)
-- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :2686 (7%, 0.05x)
-- divergent: `GCodeProcessor::apply_config` :2106 and `GCodeProcessor::apply_config` :2785 (22%, 0.13x)
-- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :4909 (33%, 0.62x)
-- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3128 (74%, 1.44x)
-- partial: `GCodeProcessor::process_tags` :3381 and `GCodeProcessor::process_tags` :3233 (52%, 0.52x)
-- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :4361 (73%, 0.91x)
-- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :3437 (65%, 0.85x)
-- partial: `GCodeProcessor::process_M106` :5487 and `GCodeProcessor::process_m106` :4078 (60%, 0.47x)
-- stub: `GCodeProcessor::process_M107` :5510 and `GCodeProcessor::process_m107` :4089 (17%, 0.1x)
-- divergent: `GCodeProcessor::process_M108` :5520 and `GCodeProcessor::process_m108` :4095 (0%, 0.04x)
-- divergent: `GCodeProcessor::process_M135` :5562 and `GCodeProcessor::process_m135` :4132 (0%, 0.04x)
-- stub: `GCodeProcessor::process_M201` :5600 and `GCodeProcessor::process_m201` :4171 (0%, 0.01x)
-- stub: `GCodeProcessor::process_M203` :5620 and `GCodeProcessor::process_m203` :4175 (0%, 0.01x)
-- stub: `GCodeProcessor::process_M205` :5680 and `GCodeProcessor::process_m205` :4214 (0%, 0.01x)
-- divergent: `GCodeProcessor::process_SET_VELOCITY_LIMIT` :5710 and `GCodeProcessor::process_set_velocity_limit` :4220 (26%, 0.18x)
-- partial: `GCodeProcessor::process_M400` :5794 and `GCodeProcessor::process_m400` :4250 (38%, 0.5x)
-- divergent: `GCodeProcessor::process_M401` :5814 and `GCodeProcessor::process_m401` :4262 (0%, 0.04x)
-- stub: `GCodeProcessor::process_M402` :5825 and `GCodeProcessor::process_m402` :4263 (0%, 0.01x)
-- stub: `GCodeProcessor::process_M566` :5857 and `GCodeProcessor::process_m566` :4267 (0%, 0.01x)
-- partial: `GCodeProcessor::process_M702` :5874 and `GCodeProcessor::process_m702` :4270 (33%, 0.8x)
-- divergent: `GCodeProcessor::process_T` :5909 and `GCodeProcessor::process_t` :4290 (0%, 0.04x)
-- stub: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :4289 (0%, 0.01x)
-- divergent: `GCodeProcessor::get_axis_max_feedrate` :6264 and `GCodeProcessor::get_axis_max_feedrate` :2982 (25%, 0.44x)
-- divergent: `GCodeProcessor::get_axis_max_acceleration` :6277 and `GCodeProcessor::get_axis_max_acceleration` :2997 (25%, 0.44x)
-- partial: `GCodeProcessor::get_axis_max_jerk` :6290 and `GCodeProcessor::get_axis_max_jerk` :3012 (30%, 0.5x)
-- divergent: `GCodeProcessor::get_xyz_max_jerk` :6302 and `GCodeProcessor::get_xyz_max_jerk` :3027 (25%, 0.72x)
-- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :4309 (23%, 0.27x)
-- stub: `GCodeProcessor::get_machine_config_idx` :6596 and `GCodeProcessor::get_machine_config_idx` :2948 (0%, 0.03x)
+- partial: `get_object_label_id` :152 and `get_object_label_id` :593 (36%, 0.74x)
+- partial: `get_z_height` :167 and `get_z_height` :612 (40%, 0.71x)
+- partial: `GCodeProcessor::CachedPosition::reset` :234 and `CachedPosition::reset` :499 (50%, 0.96x)
+- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1475 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1488 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1501 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1516 (43%, 0.71x)
+- partial: `GCodeProcessorResult::reset` :1571 and `GCodeProcessorResult::reset` :2276 (53%, 0.57x)
+- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :2703 (7%, 0.05x)
+- partial: `GCodeProcessor::apply_config` :2106 and `GCodeProcessor::apply_config` :2805 (38%, 0.23x)
+- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :5260 (33%, 0.62x)
+- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3196 (74%, 1.44x)
+- partial: `GCodeProcessor::process_tags` :3381 and `GCodeProcessor::process_tags` :3301 (52%, 0.52x)
+- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :4712 (73%, 0.91x)
+- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :3505 (65%, 0.85x)
+- partial: `GCodeProcessor::process_M106` :5487 and `GCodeProcessor::process_m106` :4146 (60%, 0.47x)
+- stub: `GCodeProcessor::process_M107` :5510 and `GCodeProcessor::process_m107` :4157 (17%, 0.1x)
+- divergent: `GCodeProcessor::process_M108` :5520 and `GCodeProcessor::process_m108` :4163 (0%, 0.04x)
+- divergent: `GCodeProcessor::process_M135` :5562 and `GCodeProcessor::process_m135` :4200 (0%, 0.04x)
+- stub: `GCodeProcessor::process_M201` :5600 and `GCodeProcessor::process_m201` :4239 (0%, 0.01x)
+- stub: `GCodeProcessor::process_M203` :5620 and `GCodeProcessor::process_m203` :4243 (0%, 0.01x)
+- stub: `GCodeProcessor::process_M205` :5680 and `GCodeProcessor::process_m205` :4282 (0%, 0.01x)
+- divergent: `GCodeProcessor::process_SET_VELOCITY_LIMIT` :5710 and `GCodeProcessor::process_set_velocity_limit` :4288 (26%, 0.18x)
+- partial: `GCodeProcessor::process_M400` :5794 and `GCodeProcessor::process_m400` :4318 (38%, 0.5x)
+- divergent: `GCodeProcessor::process_M401` :5814 and `GCodeProcessor::process_m401` :4330 (0%, 0.04x)
+- stub: `GCodeProcessor::process_M402` :5825 and `GCodeProcessor::process_m402` :4331 (0%, 0.01x)
+- stub: `GCodeProcessor::process_M566` :5857 and `GCodeProcessor::process_m566` :4335 (0%, 0.01x)
+- partial: `GCodeProcessor::process_M702` :5874 and `GCodeProcessor::process_m702` :4338 (33%, 0.8x)
+- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :4358 (46%, 0.72x)
+- divergent: `GCodeProcessor::get_axis_max_feedrate` :6264 and `GCodeProcessor::get_axis_max_feedrate` :3050 (25%, 0.44x)
+- divergent: `GCodeProcessor::get_axis_max_acceleration` :6277 and `GCodeProcessor::get_axis_max_acceleration` :3065 (25%, 0.44x)
+- partial: `GCodeProcessor::get_axis_max_jerk` :6290 and `GCodeProcessor::get_axis_max_jerk` :3080 (30%, 0.5x)
+- divergent: `GCodeProcessor::get_xyz_max_jerk` :6302 and `GCodeProcessor::get_xyz_max_jerk` :3095 (25%, 0.72x)
+- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :4660 (23%, 0.27x)
+- stub: `GCodeProcessor::get_machine_config_idx` :6596 and `GCodeProcessor::get_machine_config_idx` :3016 (0%, 0.03x)
 
 Missing in the Rust file:
 
@@ -4409,11 +4408,6 @@ Missing in the Rust file:
 - `GCodeProcessor::process_VM109` :5539 (7 tokens)
 - `GCodeProcessor::process_T` :5960 (158 tokens, overload)
 - `GCodeProcessor::init_filament_maps_when_import_only_gcode` :5986 (26 tokens)
-- `GCodeProcessor::ensure_nozzle_group_result` :5993 (422 tokens)
-- `GCodeProcessor::process_filament_change` :6054 (566 tokens)
-- `GCodeProcessor::get_filament_load_time` :6357 (13 tokens)
-- `GCodeProcessor::get_filament_unload_time` :6363 (13 tokens)
-- `GCodeProcessor::get_extruder_change_time` :6369 (7 tokens)
 - `GCodeProcessor::get_hotend_change_time` :6375 (7 tokens)
 - `GCodeProcessor::process_custom_gcode_time` :6380 (140 tokens)
 - `GCodeProcessor::process_filaments` :6401 (64 tokens)
@@ -4435,57 +4429,59 @@ Rust only:
 - `SkipType::default` :139
 - `skip_type_map` :145
 - `ETimeMode::default` :171
-- `PrintEstimatedStatistics::new` :219
-- `ConflictResult::new` :263
-- `ConflictResult::default` :275
-- `FilamentPrintableResult::new` :324
-- `FilamentPrintableResult::with_conflicts` :329
-- `filament_sequence_hash` :386
-- `ThermalIndex::new` :408
-- `ThermalIndex::with_values` :418
-- `ThermalIndex::default` :429
-- `EUnits::default` :464
-- `EPositioningType::default` :477
-- `CachedPosition::default` :504
-- `parse_stoi` :620
-- `parse_stof` :642
-- `parse_number_f32` :680
-- `parse_number_i32` :691
-- `TrieNode::new` :737
-- `CommandProcessor::new` :753
-- `CommandProcessor::default` :804
-- `TimeBlock::default` :887
-- `TimeMachine::default` :1145
-- `reserved_tag` :1653
-- `custom_tags` :1658
-- `trim_spaces` :1781
-- `is_end_of_word` :1985 — C++ has it in `Config`, `GCodeReader`
-- `fast_float_from_chars` :1996
-- `fast_float_from_chars_f64` :2035
-- `trim_leading_spaces_trailing_semis_spaces` :2075
-- `EMovePathType::default` :2096
-- `MoveVertex::default` :2140
-- `GCodeProcessorResult::default` :2232
-- `TimeProcessor::default` :2382
-- `cmd_from_id` :2500
-- `GCodeProcessor::new` :2609
-- `GCodeProcessor::get_axis_max_acceleration_extruding` :2872
-- `GCodeProcessor::get_machine_limit_retract_acceleration` :2882
-- `GCodeProcessor::get_machine_limit_travel_acceleration` :2892
-- `GCodeProcessor::result` :2904
-- `GCodeProcessor::result_mut` :2908
-- `GCodeProcessor::process_gcode` :3122
-- `GCodeProcessor::dispatch` :3176
-- `GCodeProcessor::run_calculate_time` :4321
-- `GCodeProcessor::process_used_filaments_caches` :5001
-- `GCodeProcessor::update_mode` :5053
-- `GCodeProcessor::print_time` :5110
-- `GCodeProcessor::default` :5116
-- `emove_type_from_index` :5125
-- `extrusion_role_from_index` :5142
-- `normalize3` :5173
-- `normalized3` :5183
-- `parse_klipper_kv` :5191
+- `PrintEstimatedStatistics::new` :222
+- `ConflictResult::new` :268
+- `ConflictResult::default` :280
+- `FilamentPrintableResult::new` :329
+- `FilamentPrintableResult::with_conflicts` :334
+- `filament_sequence_hash` :391
+- `ThermalIndex::new` :413
+- `ThermalIndex::with_values` :423
+- `ThermalIndex::default` :434
+- `EUnits::default` :469
+- `EPositioningType::default` :482
+- `CachedPosition::default` :509
+- `parse_stoi` :625
+- `parse_stof` :647
+- `parse_number_f32` :685
+- `parse_number_i32` :696
+- `TrieNode::new` :742
+- `CommandProcessor::new` :758
+- `CommandProcessor::default` :809
+- `TimeBlock::default` :892
+- `TimeMachine::default` :1150
+- `reserved_tag` :1658
+- `custom_tags` :1663
+- `trim_spaces` :1786
+- `is_end_of_word` :1990 — C++ has it in `Config`, `GCodeReader`
+- `fast_float_from_chars` :2001
+- `fast_float_from_chars_f64` :2040
+- `trim_leading_spaces_trailing_semis_spaces` :2080
+- `EMovePathType::default` :2101
+- `MoveVertex::default` :2145
+- `GCodeProcessorResult::default` :2237
+- `TimeProcessor::default` :2387
+- `cmd_from_id` :2505
+- `GCodeProcessor::new` :2622
+- `GCodeProcessor::get_axis_max_acceleration_extruding` :2940
+- `GCodeProcessor::get_machine_limit_retract_acceleration` :2950
+- `GCodeProcessor::get_machine_limit_travel_acceleration` :2960
+- `GCodeProcessor::result` :2972
+- `GCodeProcessor::result_mut` :2976
+- `GCodeProcessor::process_gcode` :3190
+- `GCodeProcessor::dispatch` :3244
+- `GCodeProcessor::process_t_command` :4399
+- `GCodeProcessor::process_filaments_tool_change` :4629
+- `GCodeProcessor::run_calculate_time` :4672
+- `GCodeProcessor::process_used_filaments_caches` :5352
+- `GCodeProcessor::update_mode` :5404
+- `GCodeProcessor::print_time` :5461
+- `GCodeProcessor::default` :5467
+- `emove_type_from_index` :5476
+- `extrusion_role_from_index` :5493
+- `normalize3` :5524
+- `normalized3` :5534
+- `parse_klipper_kv` :5542
 
 ### `GCode/PostProcessor` (.cpp+.hpp) and `gcode/post_processor.rs`
 
@@ -6636,7 +6632,7 @@ Rust only:
 
 ### `MultiNozzleUtils` (.cpp+.hpp) and `multi_nozzle_utils.rs`
 
-Tier 1. C++ functions 59 (plus 4 constructors, 0 destructors, 3 operators), Rust functions 69. Matched 43: faithful 38, partial 5, divergent 0, stub 0.
+Tier 1. C++ functions 59 (plus 4 constructors, 0 destructors, 3 operators), Rust functions 70. Matched 44: faithful 39, partial 5, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -6658,7 +6654,6 @@ Missing in the Rust file:
 - `LayeredNozzleGroupResult::get_used_extruders` :476 (130 tokens, overload)
 - `LayeredNozzleGroupResult::get_used_filaments` :545 (69 tokens, overload)
 - `simulate_filament_change_time` :797 (1065 tokens)
-- `resolve_ams_load_unload` :1152 (102 tokens)
 - `lookup_filament_ams_type` :1211 (37 tokens)
 - `recalc_single_extruder_ams` :1219 (364 tokens)
 - `build_input_from_slice` :1278 (218 tokens)
@@ -8219,8 +8214,8 @@ Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :3868 (0%, 0.44x)
-- divergent: `validate` :10643 and `PrintConfig::validate` :916 (9%, 0.11x)
+- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :3930 (0%, 0.44x)
+- divergent: `validate` :10643 and `PrintConfig::validate` :934 (9%, 0.11x)
 
 Missing in the Rust file:
 
@@ -8355,86 +8350,86 @@ Missing in the Rust file:
 Rust only:
 
 - `GCodeConfig::default` :25
-- `PerExtruderCoolingConfig::default` :785
-- `PrintConfig::new` :809
-- `PrintConfig::num_filaments` :819
-- `PrintConfig::apply_from` :828
-- `PrintConfig::layer_height` :833 — C++ has it in `SLAPrint`
-- `PrintConfig::first_layer_height` :839
-- `PrintConfig::nozzle_diameter` :845 — C++ has it in `Flow`
-- `PrintConfig::print_speed` :851
-- `PrintConfig::support` :857
-- `PrintConfig::support_type` :863
-- `PrintConfig::brim_width` :869
-- `PrintConfig::raft_enabled` :875
-- `PrintConfig::raft_layers` :881 — C++ has it in `Slicing`
-- `PrintConfig::raft_expansion` :890
-- `PrintConfig::raft_contact_distance` :896
-- `PrintConfig::raft_density` :902
-- `PrintConfig::use_relative_e` :959
-- `PrintConfig::arc_fitting` :964
-- `PrintConfig::arc_fitting_tolerance` :969
-- `PrintConfig::arc_fitting_radius` :974
-- `PrintConfig::avoid_crossing_perimeters` :981
-- `PrintConfig::avoid_crossing_max_detour` :987
-- `PrintConfig::default` :994
-- `PrintConfig::fmt` :1329
-- `PrintObjectConfig::effective_line_width` :2066
-- `PrintObjectConfig::effective_initial_layer_line_width` :2075
-- `PrintObjectConfig::effective_outer_wall_line_width` :2085
-- `PrintObjectConfig::effective_inner_wall_line_width` :2095
-- `PrintObjectConfig::effective_sparse_infill_line_width` :2104
-- `PrintObjectConfig::effective_solid_infill_line_width` :2113
-- `PrintObjectConfig::effective_top_surface_line_width` :2122
-- `PrintObjectConfig::new` :2133
-- `PrintObjectConfig::perimeters` :2138
-- `PrintObjectConfig::fill_density` :2144
-- `PrintObjectConfig::fill_pattern` :2150
-- `PrintObjectConfig::seam_position` :2156
-- `PrintObjectConfig::perimeter_mode` :2162
-- `PrintObjectConfig::arachne` :2168
-- `PrintObjectConfig::arachne_min_bead_width` :2174
-- `PrintObjectConfig::arachne_min_feature_size` :2180
-- `parse_f64` :2188
-- `parse_percent_number` :2212
-- `parse_pct` :2216
-- `parse_bool` :2227
-- `parse_u32` :2231
-- `parse_i32` :2235
-- `parse_float_or_percent` :2240
-- `PrintConfig::set_deserialize` :2258 — C++ has it in `Config`
-- `PrintObjectConfig::set_deserialize` :2909 — C++ has it in `Config`
-- `PrintObjectConfig::default` :3563
-- `PrintObjectConfig::fmt` :3890
-- `BrimType::from_str_bambu` :3977
-- `PrintSequence::from_str_bambu` :4008
-- `WallInfillOrder::from_str_bambu` :4034
-- `SupportBasePattern::from_str_bambu` :4074
-- `SupportInterfacePattern::from_str_bambu` :4103
-- `IroningType::from_str_bambu` :4128
-- `FuzzySkinType::from_str_bambu` :4161
-- `FuzzySkinType::is_enabled` :4172 — C++ has it in `MeshBoolean`
-- `ScarfSeamType::from_str_bambu` :4191
-- `SurfacePattern::from_str_bambu` :4222
-- `InternalSolidInfillPattern::from_str_bambu` :4249
-- `EnsureVerticalShellThickness::from_str_bambu` :4287
-- `TreeSupportStyle::from_str_bambu` :4364
-- `InfillPattern::from_str_bambu` :4496
-- `TopOneWallType::is_enabled` :4598 — C++ has it in `MeshBoolean`
-- `TopOneWallType::is_all_top` :4603
-- `TopOneWallType::from_str_bambu` :4609
-- `PerimeterMode::is_variable_width` :4636
-- `PerimeterMode::name` :4641
-- `PrintConfig::to_key_value_map` :4659
-- `PrintConfig::apply_key_value_map` :4817
-- `PrintConfig::apply_key_value` :4825
-- `PrintObjectConfig::apply_key_value` :5463
-- `find_from` :6318
-- `s_keys_map_nozzle_volume_type` :6400
-- `nozzle_volume_type_string` :6589
-- `stoi` :6607
-- `atoi` :6611
-- `parse_leading_int` :6615
+- `PerExtruderCoolingConfig::default` :803
+- `PrintConfig::new` :827
+- `PrintConfig::num_filaments` :837
+- `PrintConfig::apply_from` :846
+- `PrintConfig::layer_height` :851 — C++ has it in `SLAPrint`
+- `PrintConfig::first_layer_height` :857
+- `PrintConfig::nozzle_diameter` :863 — C++ has it in `Flow`
+- `PrintConfig::print_speed` :869
+- `PrintConfig::support` :875
+- `PrintConfig::support_type` :881
+- `PrintConfig::brim_width` :887
+- `PrintConfig::raft_enabled` :893
+- `PrintConfig::raft_layers` :899 — C++ has it in `Slicing`
+- `PrintConfig::raft_expansion` :908
+- `PrintConfig::raft_contact_distance` :914
+- `PrintConfig::raft_density` :920
+- `PrintConfig::use_relative_e` :977
+- `PrintConfig::arc_fitting` :982
+- `PrintConfig::arc_fitting_tolerance` :987
+- `PrintConfig::arc_fitting_radius` :992
+- `PrintConfig::avoid_crossing_perimeters` :999
+- `PrintConfig::avoid_crossing_max_detour` :1005
+- `PrintConfig::default` :1012
+- `PrintConfig::fmt` :1355
+- `PrintObjectConfig::effective_line_width` :2092
+- `PrintObjectConfig::effective_initial_layer_line_width` :2101
+- `PrintObjectConfig::effective_outer_wall_line_width` :2111
+- `PrintObjectConfig::effective_inner_wall_line_width` :2121
+- `PrintObjectConfig::effective_sparse_infill_line_width` :2130
+- `PrintObjectConfig::effective_solid_infill_line_width` :2139
+- `PrintObjectConfig::effective_top_surface_line_width` :2148
+- `PrintObjectConfig::new` :2159
+- `PrintObjectConfig::perimeters` :2164
+- `PrintObjectConfig::fill_density` :2170
+- `PrintObjectConfig::fill_pattern` :2176
+- `PrintObjectConfig::seam_position` :2182
+- `PrintObjectConfig::perimeter_mode` :2188
+- `PrintObjectConfig::arachne` :2194
+- `PrintObjectConfig::arachne_min_bead_width` :2200
+- `PrintObjectConfig::arachne_min_feature_size` :2206
+- `parse_f64` :2214
+- `parse_percent_number` :2238
+- `parse_pct` :2242
+- `parse_bool` :2253
+- `parse_u32` :2257
+- `parse_i32` :2261
+- `parse_float_or_percent` :2266
+- `PrintConfig::set_deserialize` :2284 — C++ has it in `Config`
+- `PrintObjectConfig::set_deserialize` :2971 — C++ has it in `Config`
+- `PrintObjectConfig::default` :3625
+- `PrintObjectConfig::fmt` :3952
+- `BrimType::from_str_bambu` :4039
+- `PrintSequence::from_str_bambu` :4070
+- `WallInfillOrder::from_str_bambu` :4096
+- `SupportBasePattern::from_str_bambu` :4136
+- `SupportInterfacePattern::from_str_bambu` :4165
+- `IroningType::from_str_bambu` :4190
+- `FuzzySkinType::from_str_bambu` :4223
+- `FuzzySkinType::is_enabled` :4234 — C++ has it in `MeshBoolean`
+- `ScarfSeamType::from_str_bambu` :4253
+- `SurfacePattern::from_str_bambu` :4284
+- `InternalSolidInfillPattern::from_str_bambu` :4311
+- `EnsureVerticalShellThickness::from_str_bambu` :4349
+- `TreeSupportStyle::from_str_bambu` :4426
+- `InfillPattern::from_str_bambu` :4558
+- `TopOneWallType::is_enabled` :4660 — C++ has it in `MeshBoolean`
+- `TopOneWallType::is_all_top` :4665
+- `TopOneWallType::from_str_bambu` :4671
+- `PerimeterMode::is_variable_width` :4698
+- `PerimeterMode::name` :4703
+- `PrintConfig::to_key_value_map` :4721
+- `PrintConfig::apply_key_value_map` :4879
+- `PrintConfig::apply_key_value` :4887
+- `PrintObjectConfig::apply_key_value` :5525
+- `find_from` :6380
+- `s_keys_map_nozzle_volume_type` :6462
+- `nozzle_volume_type_string` :6651
+- `stoi` :6669
+- `atoi` :6673
+- `parse_leading_int` :6677
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 

@@ -210,6 +210,9 @@ pub struct PrintEstimatedStatistics {
     pub used_filaments_per_role: BTreeMap<RoleKey, (f64, f64)>,
 
     pub modes: [Mode; ETimeMode::COUNT],
+    /// GCodeProcessor.hpp:105-106
+    pub load_time_per_filament: BTreeMap<usize, f64>,
+    pub unload_time_per_filament: BTreeMap<usize, f64>,
     pub total_flush_filament_changes: u32,
     pub total_filament_changes: u32,
 }
@@ -237,6 +240,8 @@ impl PrintEstimatedStatistics {
         self.total_volumes_per_extruder.clear();
         self.flush_per_filament.clear();
         self.used_filaments_per_role.clear();
+        self.load_time_per_filament.clear();
+        self.unload_time_per_filament.clear();
         self.total_flush_filament_changes = 0;
         self.total_filament_changes = 0;
     }
@@ -2588,6 +2593,14 @@ pub struct GCodeProcessor {
     m_pa_line_calibration: bool,
     /// `process_tags`' function-static `prev_role` (GCodeProcessor.cpp:3383).
     m_prev_role: ExtrusionRole,
+    /// GCodeProcessor.hpp `m_nozzle_volume`.
+    m_nozzle_volume: Vec<f32>,
+    /// GCodeProcessor.hpp `m_handle_hotend_as_extruder`.
+    m_handle_hotend_as_extruder: bool,
+    /// GCodeProcessor.hpp `m_nozzle_group_result`.
+    m_nozzle_group_result: Option<crate::multi_nozzle_utils::LayeredNozzleGroupResult>,
+    /// GCodeProcessor.hpp:1172 `m_nozzle_status_recorder`.
+    m_nozzle_status_recorder: crate::multi_nozzle_utils::NozzleStatusRecorder,
     m_g1_line_id: u32,
     m_layer_id: u32,
     m_cp_color: CpColor,
@@ -2657,6 +2670,10 @@ impl GCodeProcessor {
             m_processing_start_custom_gcode: false,
             m_pa_line_calibration: false,
             m_prev_role: ExtrusionRole::None,
+            m_nozzle_volume: vec![0.0, 0.0],
+            m_handle_hotend_as_extruder: false,
+            m_nozzle_group_result: None,
+            m_nozzle_status_recorder: crate::multi_nozzle_utils::NozzleStatusRecorder::new(),
             m_g1_line_id: 0,
             m_layer_id: 0,
             m_cp_color: CpColor::default(),
@@ -2748,6 +2765,9 @@ impl GCodeProcessor {
         self.m_first_layer_height = 0.0;
         self.m_processing_start_custom_gcode = false;
         self.m_pa_line_calibration = false;
+        // :2560, :2640
+        self.m_nozzle_volume = vec![0.0, 0.0];
+        self.m_nozzle_group_result = None;
         self.m_g1_line_id = 0;
         self.m_layer_id = 0;
         self.m_cp_color.reset();
@@ -2833,6 +2853,54 @@ impl GCodeProcessor {
             if self.m_flavor == GCodeFlavor::MarlinLegacy {
                 ml.max_acceleration_travel = ml.max_acceleration_extruding;
             }
+        }
+
+        // PROCESS_FILAMENT_CHANGE (on): what process_filament_change reads
+        // (GCodeProcessor.cpp:1970-2023, 2045-2053, 2074-2079). =0 leaves the
+        // processor single-filament with no tool-change time, as before R847.
+        if crate::faithful_gate("PROCESS_FILAMENT_CHANGE") {
+            // :1970-1972 — filament_count = filament_diameter.values.size().
+            let filament_count = config.num_filaments();
+            self.m_result.filaments_count = filament_count;
+            // :1975-1977
+            self.m_nozzle_volume = config.nozzle_volumes.iter().map(|v| *v as f32).collect();
+            // :2002
+            self.m_handle_hotend_as_extruder = config.handle_hotend_as_extruder;
+            // :2006-2023 — the per-filament vectors, `get_at(i)` falling back to
+            // the first value.
+            let get_at = |v: &Vec<f64>, i: usize, first: f64| -> f64 {
+                v.get(i).or(v.first()).copied().unwrap_or(first)
+            };
+            self.m_extruder_offsets = vec![
+                [config.extruder_offset_x as f32, config.extruder_offset_y as f32, 0.0];
+                filament_count
+            ];
+            self.m_extruder_colors = (0..filament_count).map(|i| i as u8).collect();
+            self.m_result.filament_diameters = (0..filament_count)
+                .map(|i| get_at(&config.filament_diameters, i, config.filament_diameter) as f32)
+                .collect();
+            self.m_result.filament_densities = (0..filament_count)
+                .map(|i| get_at(&config.filament_densities, i, config.filament_density) as f32)
+                .collect();
+            self.m_extruder_temps.resize(filament_count, 0.0);
+            // :2045-2053 — no AMS time tables in the port's config: with
+            // `default_ams_type` -1 the legacy times are taken, as in C++.
+            let (_, load, unload) = crate::multi_nozzle_utils::resolve_ams_load_unload(
+                &[],
+                &[],
+                config.default_ams_type,
+                config.machine_load_filament_time as f32,
+                config.machine_unload_filament_time as f32,
+            );
+            self.m_time_processor.filament_load_times = load;
+            self.m_time_processor.filament_unload_times = unload;
+            self.m_time_processor.extruder_change_times = config.machine_switch_extruder_time as f32;
+            self.m_time_processor.hotend_change_times = config.machine_hotend_change_time as f32;
+            // :2074-2079
+            if !config.filament_map.is_empty() {
+                self.m_filament_maps = config.filament_map.iter().map(|v| v - 1).collect();
+            }
+            self.ensure_nozzle_group_result(self.m_result.filaments_count as i32);
         }
 
         // GCodeProcessor.cpp:2054 — prepare_compensation_time (PROCESS_G4_G29).
@@ -4286,8 +4354,291 @@ impl GCodeProcessor {
     // MultiNozzleUtils nozzle group / filament-change pipeline. The C++ updates
     // m_extruder_id / m_filament_id from tool selection. Not ported (default
     // single-extruder path keeps m_extruder_id at its initialized value).
-    fn process_m1020(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
-    fn process_t(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5919-5958  process_M1020.
+    fn process_m1020(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("PROCESS_FILAMENT_CHANGE") {
+            return;
+        }
+        let mut eid: i32 = -1;
+        if let Some(val) = line.has_value(b'S') {
+            eid = val as i32;
+        } else if line.raw().len() > 5 {
+            // :5929 — `line.raw().substr(7)`, then `std::stoi`.
+            let filament_id_str = line.raw().get(7..).unwrap_or("");
+            if !filament_id_str.is_empty() {
+                if let Some(v) = parse_stoi(filament_id_str) {
+                    eid = v;
+                }
+            }
+        }
+        if eid == -1 {
+            return;
+        }
+        if eid < 0 || eid > 254 {
+            // :5942-5945 — an error is logged.
+        } else {
+            if eid as usize >= self.m_result.filaments_count {
+                return;
+            }
+            let nozzle_id = line.has_value(b'H').map(|v| v as i32).unwrap_or(-1);
+            self.process_filament_change(eid, nozzle_id);
+        }
+    }
+
+    /// GCodeProcessor.cpp:5909-5917  process_T(line).
+    fn process_t(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("PROCESS_FILAMENT_CHANGE") {
+            return;
+        }
+        let nozzle_id = line.has_value(b'H').map(|v| v as i32).unwrap_or(-1);
+        let cmd = line.cmd().to_string();
+        self.process_t_command(&cmd, nozzle_id);
+    }
+
+    /// GCodeProcessor.cpp:5960-5984  process_T(command, nozzle_id).
+    fn process_t_command(&mut self, command: &str, nozzle_id: i32) {
+        if command.len() > 1 {
+            let parsed = parse_number_i32(&command[1..]);
+            let eid = parsed.unwrap_or(0);
+            if parsed.is_none() || eid < 0 || eid > 254 {
+                // :5966-5969 — T255, T1000 and T1100 are special commands on a
+                // Bambu Lab machine and cost no time.
+                if matches!(self.m_flavor, GCodeFlavor::MarlinLegacy | GCodeFlavor::MarlinFirmware)
+                    && (command == "Tx"
+                        || command == "Tc"
+                        || command == "T?"
+                        || eid == 1000
+                        || eid == 1100
+                        || eid == 255)
+                {
+                    return;
+                }
+                // :5971-5973 — an error is logged.
+            } else {
+                if eid as usize >= self.m_result.filaments_count {
+                    return;
+                }
+                self.process_filament_change(eid, nozzle_id);
+            }
+        }
+    }
+
+    /// GCodeProcessor.cpp:5993-6052  ensure_nozzle_group_result: without a
+    /// nozzle group result from the print, one nozzle per extruder of
+    /// `filament_map`.
+    fn ensure_nozzle_group_result(&mut self, min_filament_count: i32) {
+        use crate::multi_nozzle_utils::{LayeredNozzleGroupResult, NozzleInfo};
+        if self.m_nozzle_group_result.is_some() {
+            return;
+        }
+        let mut filament_count = min_filament_count.max(1);
+        filament_count = filament_count.max(self.m_filament_maps.len() as i32);
+
+        let mut filament_map = self.m_filament_maps.clone();
+        if filament_map.is_empty() {
+            filament_map = vec![0; filament_count as usize];
+        } else if (filament_map.len() as i32) < filament_count {
+            let front = filament_map[0];
+            filament_map.resize(filament_count as usize, front);
+        }
+
+        let min_value = *filament_map.iter().min().unwrap();
+        if min_value >= 1 {
+            for value in filament_map.iter_mut() {
+                *value -= 1;
+            }
+        }
+        for value in filament_map.iter_mut() {
+            *value = (*value).max(0);
+        }
+
+        let mut max_extruder_id = *filament_map.iter().max().unwrap();
+        max_extruder_id = max_extruder_id.max(0);
+
+        let nozzle_diameter =
+            crate::utils::format_diameter_to_str_default(DEFAULT_TOOLPATH_WIDTH as f64);
+        let mut nozzle_list: Vec<NozzleInfo> = Vec::with_capacity(max_extruder_id as usize + 1);
+        for extruder_id in 0..=max_extruder_id {
+            let mut info = NozzleInfo::default();
+            info.diameter = nozzle_diameter.clone();
+            info.volume_type = crate::extruder::NozzleVolumeType::NvtStandard;
+            info.extruder_id = extruder_id;
+            info.group_id = extruder_id;
+            nozzle_list.push(info);
+        }
+
+        let filament_nozzle_map: Vec<i32> =
+            (0..filament_count as usize).map(|i| filament_map[i]).collect();
+        let used_filaments: Vec<u32> = (0..filament_count as u32).collect();
+
+        if let Some(result) =
+            LayeredNozzleGroupResult::create(&filament_nozzle_map, &nozzle_list, &used_filaments)
+        {
+            self.m_nozzle_group_result = Some(result);
+        }
+    }
+
+    /// GCodeProcessor.cpp:6357-6361  get_filament_load_time.
+    fn get_filament_load_time(&self, _extruder_id: usize) -> f32 {
+        if self.m_time_processor.extruder_unloaded {
+            0.0
+        } else {
+            self.m_time_processor.filament_load_times
+        }
+    }
+
+    /// GCodeProcessor.cpp:6363-6367  get_filament_unload_time.
+    fn get_filament_unload_time(&self, _extruder_id: usize) -> f32 {
+        if self.m_time_processor.extruder_unloaded {
+            0.0
+        } else {
+            self.m_time_processor.filament_unload_times
+        }
+    }
+
+    /// GCodeProcessor.cpp:6369-6373  get_extruder_change_time.
+    fn get_extruder_change_time(&self, _extruder_id: usize) -> f32 {
+        self.m_time_processor.extruder_change_times
+    }
+
+    /// GCodeProcessor.cpp:6054-6125  process_filament_change.
+    fn process_filament_change(&mut self, id: i32, nozzle_id: i32) {
+        let prev_extruder_id = self.get_extruder_id(false);
+        let prev_filament_id = self.get_filament_id(false);
+        let mut extra_time: f32 = 0.0;
+
+        if prev_filament_id == id && nozzle_id == -1 {
+            return;
+        }
+
+        if prev_extruder_id != -1 {
+            self.m_last_filament_id[prev_extruder_id as usize] = prev_filament_id as u8;
+        }
+
+        let Some(group) = self.m_nozzle_group_result.as_ref() else {
+            return;
+        };
+        let mut target_nozzle_info = None;
+        if nozzle_id != -1 {
+            target_nozzle_info = group.get_nozzle_from_id(nozzle_id);
+        }
+        if target_nozzle_info.is_none() {
+            let used_nozzles = group.get_nozzles_for_filament(id);
+            if used_nozzles.is_empty() {
+                return;
+            }
+            target_nozzle_info = used_nozzles.into_iter().next();
+        }
+        let Some(target_nozzle_info) = target_nozzle_info else {
+            return;
+        };
+
+        let new_extruder_id = target_nozzle_info.extruder_id;
+        let old_extruder_id = prev_extruder_id;
+
+        let new_nozzle_id_in_extruder = target_nozzle_info.group_id;
+        let old_nozzle_id_in_extruder =
+            self.m_nozzle_status_recorder.get_nozzle_in_extruder(new_extruder_id);
+
+        let new_filament_id = id;
+        let old_filament_in_nozzle =
+            self.m_nozzle_status_recorder.get_filament_in_nozzle(new_nozzle_id_in_extruder);
+        let old_filament_in_extruder =
+            self.m_nozzle_status_recorder.get_filament_in_nozzle(old_nozzle_id_in_extruder);
+
+        let nozzle_switch_on_target_extruder =
+            new_nozzle_id_in_extruder != old_nozzle_id_in_extruder;
+        let nozzle_in_extruder_change =
+            !self.m_handle_hotend_as_extruder && nozzle_switch_on_target_extruder;
+        let filament_in_nozzle_change = new_filament_id != old_filament_in_nozzle;
+        let extruder_change = (new_extruder_id != old_extruder_id)
+            || (self.m_handle_hotend_as_extruder && nozzle_switch_on_target_extruder);
+
+        if extruder_change && old_extruder_id != -1 {
+            extra_time += self.get_extruder_change_time(new_extruder_id as usize);
+        }
+        if nozzle_in_extruder_change || filament_in_nozzle_change {
+            if old_filament_in_extruder >= 0 {
+                let unload_time = self.get_filament_unload_time(old_filament_in_extruder as usize);
+                extra_time += unload_time;
+                *self
+                    .m_result
+                    .print_statistics
+                    .unload_time_per_filament
+                    .entry(old_filament_in_extruder as usize)
+                    .or_insert(0.0) += unload_time as f64;
+            }
+            self.m_time_processor.extruder_unloaded = false;
+            let load_time = self.get_filament_load_time(new_filament_id as usize);
+            extra_time += load_time;
+            if new_filament_id >= 0 {
+                *self
+                    .m_result
+                    .print_statistics
+                    .load_time_per_filament
+                    .entry(new_filament_id as usize)
+                    .or_insert(0.0) += load_time as f64;
+            }
+            if filament_in_nozzle_change && old_filament_in_nozzle != -1 {
+                self.m_result.print_statistics.total_flush_filament_changes += 1;
+            }
+        }
+        if prev_filament_id != -1 {
+            self.m_result.print_statistics.total_filament_changes += 1;
+        }
+
+        self.process_filaments_tool_change();
+
+        if new_extruder_id != -1 {
+            self.m_filament_id[new_extruder_id as usize] = new_filament_id as u8;
+        }
+        self.m_extruder_id = new_extruder_id as u8;
+
+        self.m_nozzle_status_recorder.set_nozzle_status(
+            new_nozzle_id_in_extruder,
+            new_filament_id,
+            new_extruder_id,
+        );
+
+        self.m_cp_color.current = self.m_extruder_colors[new_filament_id as usize];
+        // store tool change move
+        self.store_move_vertex(EMoveType::ToolChange, EMovePathType::NoopMove);
+
+        // construct a new time block to handle filament change
+        for i in 0..ETimeMode::COUNT {
+            if !self.m_time_processor.machines[i].enabled {
+                continue;
+            }
+            let mut block = TimeBlock::default();
+            block.skippable_type = self.m_skippable_type;
+            block.move_id = (self.m_result.moves.len() - 1) as u32;
+            block.role = ExtrusionRole::Flush;
+            block.move_type = EMoveType::ToolChange;
+            block.layer_id = self.m_layer_id.max(1);
+            block.g1_line_id = self.m_g1_line_id;
+            block.flags.prepare_stage = self.m_processing_start_custom_gcode;
+            block.distance = 0.0;
+            block.calculate_trapezoid();
+            self.m_time_processor.machines[i].blocks.push(block);
+        }
+
+        self.simulate_st_synchronize(extra_time, ExtrusionRole::Flush);
+    }
+
+    /// GCodeProcessor.cpp:6131-6145  process_filaments(CustomGCode::ToolChange).
+    fn process_filaments_tool_change(&mut self) {
+        let active_filament_id = self.get_filament_id(true);
+        let active_filament_id_support = self.get_filament_id(false);
+        self.m_used_filaments.process_model_cache(active_filament_id);
+        self.m_used_filaments.process_support_cache(active_filament_id_support);
+        self.m_used_filaments.process_total_volume_cache(active_filament_id);
+        // BBS: reset remaining filament
+        let last_extruder_id = self.get_extruder_id(true) as usize;
+        if last_extruder_id < self.m_remaining_volume.len() {
+            self.m_remaining_volume[last_extruder_id] =
+                self.m_nozzle_volume.get(last_extruder_id).copied().unwrap_or(0.0);
+        }
+    }
 
     /// GCodeProcessor.cpp:5676-5692  process_SYNC — flush/prepare time.
     fn process_sync(&mut self, line: &crate::g_code_reader::GCodeLine) {

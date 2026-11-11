@@ -1917,6 +1917,19 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
     // Per-filament prime volumes — drive the wipe-tower reserved depth.
     config.filament_prime_volumes = get_f64_array("filament_prime_volume");
     config.filament_prime_volumes_nc = get_f64_array("filament_prime_volume_nc");
+    // `filament_map` (coInts, 1-based) and `nozzle_volume` (per extruder), read by
+    // the G-code processor (GCodeProcessor.cpp:1975-1977, 2074-2078).
+    // Either a JSON array or one comma-separated string.
+    let get_f64_list = |key: &str| -> Vec<f64> {
+        match json.get(key) {
+            Some(serde_json::Value::String(s)) => {
+                s.split(',').filter_map(|v| v.trim().parse::<f64>().ok()).collect()
+            }
+            _ => get_f64_array(key),
+        }
+    };
+    config.filament_map = get_f64_list("filament_map").into_iter().map(|v| v as i32).collect();
+    config.nozzle_volumes = get_f64_list("nozzle_volume");
 }
 
 /// Parse extruder_offset from JSON and set on config.

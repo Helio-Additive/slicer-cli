@@ -1908,4 +1908,26 @@ impl Default for NozzleStatusRecorder {
     }
 }
 
+/// MultiNozzleUtils.cpp:1152-1176  resolve_ams_load_unload: the load and unload
+/// times of AMS type `ams_type` from the tables, else the legacy machine times.
+/// Returns `(found, out_load, out_unload)`.
+pub fn resolve_ams_load_unload(
+    loads: &[f64],
+    unloads: &[f64],
+    ams_type: i32,
+    legacy_load: f32,
+    legacy_unload: f32,
+) -> (bool, f32, f32) {
+    let (out_load, out_unload) = (legacy_load, legacy_unload);
+    if ams_type < 0 {
+        return (false, out_load, out_unload);
+    }
+    let idx = ams_type as usize;
+    if idx >= loads.len() || idx >= unloads.len() {
+        // :1167-1170 — warning, legacy times kept.
+        return (false, out_load, out_unload);
+    }
+    (true, loads[idx] as f32, unloads[idx] as f32)
+}
+
 // MultiNozzleUtils.cpp:927  }} // namespace Slic3r::MultiNozzleUtils

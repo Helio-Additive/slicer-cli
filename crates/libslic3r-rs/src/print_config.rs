@@ -471,6 +471,24 @@ pub struct PrintConfig {
     /// BambuStudio: `machine_prepare_compensation_time` (s), the time the
     /// processor gives a timed G29 (GCodeProcessor.cpp:2054, 5315-5324).
     pub machine_prepare_compensation_time: CoordF,
+    /// BambuStudio: `machine_load_filament_time` / `machine_unload_filament_time`
+    /// (s), the processor's legacy filament load and unload times
+    /// (GCodeProcessor.cpp:2045-2051).
+    pub machine_load_filament_time: CoordF,
+    pub machine_unload_filament_time: CoordF,
+    /// BambuStudio: `machine_switch_extruder_time` (s) (GCodeProcessor.cpp:2052).
+    pub machine_switch_extruder_time: CoordF,
+    /// BambuStudio: `machine_hotend_change_time` (s) (GCodeProcessor.cpp:2053).
+    pub machine_hotend_change_time: CoordF,
+    /// BambuStudio: `handle_hotend_as_extruder` (GCodeProcessor.cpp:2002).
+    pub handle_hotend_as_extruder: bool,
+    /// BambuStudio: `default_ams_type`; -1 selects the legacy load and unload
+    /// times (MultiNozzleUtils.cpp:1152-1176).
+    pub default_ams_type: i32,
+    /// BambuStudio: `filament_map`, 1-based extruder per filament (coInts).
+    pub filament_map: Vec<i32>,
+    /// BambuStudio: `nozzle_volume` per extruder (mm³) (GCodeProcessor.cpp:1975-1977).
+    pub nozzle_volumes: Vec<CoordF>,
     /// Max acceleration X (mm/s²).
     pub machine_max_acceleration_x: CoordF,
     /// Max acceleration Y (mm/s²).
@@ -1191,6 +1209,14 @@ impl Default for PrintConfig {
 
             // Machine limits - BambuStudio X1C defaults
             machine_prepare_compensation_time: 0.0,
+            machine_load_filament_time: 0.0,
+            machine_unload_filament_time: 0.0,
+            machine_switch_extruder_time: 0.0,
+            machine_hotend_change_time: 0.0,
+            handle_hotend_as_extruder: false,
+            default_ams_type: -1,
+            filament_map: Vec::new(),
+            nozzle_volumes: Vec::new(),
             machine_max_acceleration_x: 20000.0,
             machine_max_acceleration_y: 20000.0,
             machine_max_acceleration_z: 500.0,
@@ -2875,6 +2901,42 @@ impl PrintConfig {
             "machine_prepare_compensation_time" => {
                 if let Some(v) = parse_f64(value) {
                     self.machine_prepare_compensation_time = v;
+                }
+                true
+            }
+            // GCodeProcessor.cpp:2002, 2045-2053 — read by the G-code processor
+            // (PROCESS_FILAMENT_CHANGE).
+            "machine_load_filament_time" => {
+                if let Some(v) = parse_f64(value) {
+                    self.machine_load_filament_time = v;
+                }
+                true
+            }
+            "machine_unload_filament_time" => {
+                if let Some(v) = parse_f64(value) {
+                    self.machine_unload_filament_time = v;
+                }
+                true
+            }
+            "machine_switch_extruder_time" => {
+                if let Some(v) = parse_f64(value) {
+                    self.machine_switch_extruder_time = v;
+                }
+                true
+            }
+            "machine_hotend_change_time" => {
+                if let Some(v) = parse_f64(value) {
+                    self.machine_hotend_change_time = v;
+                }
+                true
+            }
+            "handle_hotend_as_extruder" => {
+                self.handle_hotend_as_extruder = parse_bool(value).unwrap_or(false);
+                true
+            }
+            "default_ams_type" => {
+                if let Some(v) = parse_f64(value) {
+                    self.default_ams_type = v as i32;
                 }
                 true
             }

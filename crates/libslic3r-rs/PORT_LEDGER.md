@@ -21,24 +21,24 @@ engine"); its `status` values are not a measure of fidelity.
 | Rust files with no C++ file of that name | 47 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3717 (41%) |
-| estimate: faithful | 3113 (84% of matched) |
-| estimate: partial | 376 (10% of matched) |
-| estimate: divergent | 198 (5% of matched) |
-| estimate: stub | 30 (1% of matched) |
-| missing in the paired Rust file | 4667 |
+| matched to a Rust function in the paired file | 3723 (41%) |
+| estimate: faithful | 3120 (84% of matched) |
+| estimate: partial | 378 (10% of matched) |
+| estimate: divergent | 196 (5% of matched) |
+| estimate: stub | 29 (1% of matched) |
+| missing in the paired Rust file | 4661 |
 | of those, a function of that name exists in another Rust file | 1611 |
 | of the rest, another overload of the name is ported | 366 |
-| of the rest, under 25 tokens (accessors, one-liners) | 758 |
-| of the rest, 25 tokens or more | 1932 |
+| of the rest, under 25 tokens (accessors, one-liners) | 755 |
+| of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4513 |
+| Rust functions with no C++ function of that name in the pair | 4515 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2862 | 2385 | 297 | 161 | 19 | 3989 |
+| 1 | 180 | 174 | 6851 | 2868 | 2392 | 299 | 159 | 18 | 3983 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1381 | 465 | 389 | 41 | 30 | 5 | 916 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
