@@ -3765,6 +3765,21 @@ fn emit_tower_tcr(
     if tower_reset_accel {
         writer.reset_last_acceleration();
     }
+    // TOWER_GENERATE_NEW_CPP (on): a tool change whose result begins with the
+    // finish of the layer (`merge_tcr(finish_layer_tcr, ..)`) carries the
+    // finish's `is_finish_first`, and `append_tcr` first retracts, travels to
+    // the result's start and unretracts (GCode.cpp:787-795):
+    // `gcodegen.retract()` is a lazy spiral lift (GCode.hpp:246).
+    if crate::faithful_gate("TOWER_GENERATE_NEW_CPP")
+        && tcr.is_tool_change
+        && tcr.is_finish_first
+        && !tcr.priming
+    {
+        writer.retract_with_lift_type(1, false);
+        let (gox, goy) = writer.gcode_origin();
+        writer.travel_to_tower_point(tcr.start_pos.x as f64 + gox, tcr.start_pos.y as f64 + goy);
+        writer.unretract();
+    }
     // `transform_gcode`'s `pos` seed is the tower-LOCAL start (same frame as the
     // gcode body); start_pos is stored already-absolute, so recover the local
     // seed by subtracting the offset (else axis-less G1 lines double-count it).
@@ -3933,6 +3948,21 @@ fn emit_tower_tcr(
     );
     let tower_feature: &str = &tower_feature;
     let had_placeholder = g.contains(crate::gcode::wipe_tower_integration::CHANGE_FILAMENT_PLACEHOLDER);
+    // Where the entry retract goes: `toolchange_retract_str` heads the text that
+    // replaces `[filament_end_gcode]` (GCode.cpp:948), which follows the
+    // `; WIPE_TOWER_START` of the tool change. In a result that begins with
+    // the finish of the layer that is not the first one (TOWER_GENERATE_NEW_CPP);
+    // the text before the placeholder is not changed by the substitution.
+    let entry_cut: Option<usize> = {
+        const START: &str = "; WIPE_TOWER_START\n";
+        let ph = g.find(crate::gcode::wipe_tower_integration::CHANGE_FILAMENT_PLACEHOLDER);
+        match ph {
+            Some(p) if crate::faithful_gate("TOWER_GENERATE_NEW_CPP") => {
+                g[..p].rfind(START).map(|i| i + START.len())
+            }
+            _ => g.find(START).map(|i| i + START.len()),
+        }
+    };
     // R466 — the unretract C++ emits in `GCode::append_tcr` (WipeTower.cpp:2436
     // "BBS: do travel in GCode::append_tcr() for lazy_lift"): a bare
     // `G1 E{retract_length_toolchange} F{speed}` AFTER the change-filament block and
@@ -4292,7 +4322,7 @@ fn emit_tower_tcr(
         && tcr.is_tool_change
         && g.contains(WT_START)
     {
-        let cut = g.find(WT_START).unwrap() + WT_START.len();
+        let cut = entry_cut.unwrap_or_else(|| g.find(WT_START).unwrap() + WT_START.len());
         // GCode.cpp:747 — `toolchange_retract_str` is PREPENDED to the tower
         // gcode, so its wipe + immediate spiral land BEFORE `; WIPE_TOWER_START`,
         // i.e. in the OBJECT region. R640 measured C++'s object spirals by

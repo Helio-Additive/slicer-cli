@@ -2105,6 +2105,88 @@ impl WipeTowerWriter {
         self
     }
 
+
+    /// WipeTower.cpp:1053-1085 and 1111-1130 `rectangle_fill_box(wipe_tower,
+    /// fill_box, finish_rect_wipe_path, f)`: the rectangle around a fill box,
+    /// walked from the nearest corner with `f` on its moves, or a single line
+    /// when its sides would overlap; the wipe from where it ends to the next
+    /// corner is put into `finish_rect_wipe_path`. `line_width` is the
+    /// writer's own line width (`m_line_width`).
+    ///
+    /// `need_thick_bridge_flow` (:1055, 1088) is false for slabs of 0.2 mm and
+    /// more (WipeTower.cpp:8526-8530); below that it asks the floating area of
+    /// the block, which this port does not keep, so the bridge flow is not
+    /// written.
+    pub fn rectangle_fill_box_wipe(
+        &mut self,
+        fill_box: &BoxCoordinates,
+        finish_rect_wipe_path: &mut Vec<Vec2f>,
+        f: f32,
+        line_width: f32,
+    ) -> &mut Self {
+        let width = fill_box.rd.x - fill_box.ld.x;
+        let height = fill_box.ru.y - fill_box.rd.y;
+        if height > line_width - WT_EPSILON {
+            let ld = fill_box.ld;
+            let corners = [
+                ld,
+                ld + Vec2f::new(width, 0.0),
+                ld + Vec2f::new(width, height),
+                ld + Vec2f::new(0.0, height),
+            ];
+            let mut index_of_closest = 0usize;
+            if self.x() - ld.x > ld.x + width - self.x() {
+                index_of_closest = 1;
+            }
+            if self.y() - ld.y > ld.y + height - self.y() {
+                index_of_closest = if index_of_closest == 0 { 3 } else { 2 };
+            }
+            let cy = self.y();
+            self.travel(corners[index_of_closest].x, cy);
+            let cx = self.x();
+            self.travel(cx, corners[index_of_closest].y);
+            let mut i = index_of_closest;
+            loop {
+                i += 1;
+                if i == 4 {
+                    i = 0;
+                }
+                self.extrude_f(corners[i].x, corners[i].y, f);
+                if i == index_of_closest {
+                    break;
+                }
+            }
+            let pos = self.pos();
+            let target = if pos == fill_box.ld {
+                fill_box.rd
+            } else if pos == fill_box.rd {
+                fill_box.ru
+            } else if pos == fill_box.ru {
+                fill_box.lu
+            } else {
+                fill_box.ld
+            };
+            finish_rect_wipe_path.push(pos);
+            finish_rect_wipe_path.push(target);
+        } else if height > WT_EPSILON {
+            // :1086-1109 line(wipe_tower, ld, rd)
+            let (mut p0, mut p1) = (fill_box.ld, fill_box.rd);
+            if (self.x() - p0.x).abs() > (self.x() - p1.x).abs() {
+                std::mem::swap(&mut p0, &mut p1);
+            }
+            let cy = self.y();
+            self.travel(p0.x, cy);
+            let cx = self.x();
+            self.travel(cx, p0.y);
+            self.extrude(p1.x, p1.y);
+            let pos = self.pos();
+            let target = if pos == fill_box.ld { fill_box.rd } else { fill_box.ld };
+            finish_rect_wipe_path.push(pos);
+            finish_rect_wipe_path.push(target);
+        }
+        self
+    }
+
     /// Fill a box with back-and-forth extrusion
     pub fn rectangle_fill_box(&mut self, box_coords: &BoxCoordinates, spacing: f32) -> &mut Self {
         let _width = box_coords.width();
@@ -3657,6 +3739,28 @@ impl WipeTower {
 
         let num_layers = layer_data.len();
 
+        // TOWER_GENERATE_NEW_CPP (on): the layer structure of `generate_new`
+        // (WipeTower.cpp:7760-8106): the finish of a layer with tool changes
+        // (`finish_layer_new` without fill) goes with the tool change of the
+        // layer's wall filament, before the first one when the layer starts
+        // with it; what is left of each block is filled by `finish_block` and
+        // merged into the tool change of its filament (`merge_tcr`); only a
+        // layer without tool changes keeps a finish of its own, with its fill.
+        // =0 finishes every layer at its end with fill, wall and brim.
+        let generate_new = crate::faithful_gate("TOWER_GENERATE_NEW_CPP");
+        // :7769-7774, 7779 — the tool the plan starts with, then the wall
+        // filament of the whole tower.
+        let wall_filament = if generate_new {
+            let start_tool = self
+                .plan
+                .iter()
+                .find(|l| !l.tool_changes.is_empty())
+                .map_or(self.current_tool, |l| l.tool_changes[0].old_tool);
+            self.get_wall_filament_for_all_layer(start_tool)
+        } else {
+            -1
+        };
+
         for (layer_idx, (z, height, num_tool_changes, new_tools)) in
             layer_data.into_iter().enumerate()
         {
@@ -3679,6 +3783,19 @@ impl WipeTower {
             } else {
                 None
             };
+
+            if generate_new {
+                self.generate_new_layer(&mut layer_results, wall_filament);
+                // WipeTower.cpp:8072-8073
+                if let Some(wall) = timelapse_wall {
+                    if !wall.gcode.is_empty() {
+                        layer_results.insert(0, wall);
+                    }
+                }
+                results.push(layer_results);
+                let _ = new_tools;
+                continue;
+            }
 
             // Generate tool changes for this layer
             for new_tool in new_tools {
@@ -3725,6 +3842,131 @@ impl WipeTower {
         }
 
         results
+    }
+
+    /// The tool changes and finishes of one layer as `generate_new` makes them
+    /// (WipeTower.cpp:7818-8070, without skipped layers, merged slabs, solid
+    /// or contact bands and reserved walls, none of which this port has).
+    fn generate_new_layer(&mut self, layer_result: &mut Vec<ToolChangeResult>, wall_filament: i32) {
+        let layer_id = self.layer_idx;
+        let tool_changes: Vec<(usize, usize)> = self.plan[layer_id]
+            .tool_changes
+            .iter()
+            .map(|tc| (tc.old_tool, tc.new_tool))
+            .collect();
+        let extruder_fill = self.plan[layer_id].extruder_fill;
+        // :7818-7822
+        let only_generate_wall = self.config.only_generate_wall;
+        let wall_idx = self.get_wall_filament_for_layer(layer_id, wall_filament);
+        let extrude_outer_wall = !only_generate_wall;
+        let mut finish_layer_tcr: Option<ToolChangeResult> = None;
+        // :7832-7858 — a layer without tool changes.
+        if wall_idx == -1 {
+            finish_layer_tcr = Some(self.finish_layer_new(extrude_outer_wall, extruder_fill, true));
+        }
+        // :7862-7891
+        let mut insert_finish_layer_idx: Option<usize> = None;
+        for (i, &(old_tool, new_tool)) in tool_changes.iter().enumerate() {
+            let finish_first = i == 0 && old_tool as i32 == wall_idx;
+            if finish_first {
+                finish_layer_tcr = Some(self.finish_layer_new(extrude_outer_wall, false, false));
+            }
+            layer_result.push(self.tool_change(new_tool));
+            if !finish_first && new_tool as i32 == wall_idx {
+                finish_layer_tcr = Some(self.finish_layer_new(extrude_outer_wall, false, false));
+                insert_finish_layer_idx = Some(i);
+            }
+        }
+        // :7894-8052 — what the tool changes left of each block.
+        if wall_idx != -1 {
+            for bi in 0..self.wipe_tower_blocks.len() {
+                let block = self.wipe_tower_blocks[bi].clone();
+                if !self.block_needs_finish(&block) {
+                    continue;
+                }
+                let mut finish_layer_filament = self.get_block_fill_filament(layer_id, &block, wall_idx);
+                if finish_layer_filament < 0 {
+                    finish_layer_filament = layer_result
+                        .first()
+                        .map_or(wall_idx, |r| r.new_tool);
+                }
+                // :7947-7966 can_carry_band
+                let categories = self.filament_categories.clone();
+                let block_category = block.filament_adhesiveness_category;
+                let own_category_of = move |f: i32| {
+                    // get_filament_category: 0 past the end of the list.
+                    f >= 0 && categories.get(f as usize).copied().unwrap_or(0) == block_category
+                };
+                let layer_finished = self.layer_finished();
+                let last_filament_change_id = block.last_filament_change_id;
+                let can_carry_band = |f: i32, results: &[ToolChangeResult], fin: &Option<ToolChangeResult>| {
+                    if f < 0 {
+                        return false;
+                    }
+                    if results.iter().any(|r| r.new_tool == f) {
+                        return true;
+                    }
+                    if (last_filament_change_id == -1 || own_category_of(f))
+                        && results.iter().any(|r| r.initial_tool == f)
+                    {
+                        return true;
+                    }
+                    layer_finished && fin.as_ref().map_or(false, |t| t.new_tool == f)
+                };
+                if !can_carry_band(finish_layer_filament, layer_result, &finish_layer_tcr) {
+                    // :7967-8005 — every filament may fill here.
+                    let mut fallback = layer_result.first().map_or(-1, |r| r.new_tool);
+                    if fallback < 0 && can_carry_band(wall_idx, layer_result, &finish_layer_tcr) {
+                        fallback = wall_idx;
+                    }
+                    if fallback < 0 {
+                        continue;
+                    }
+                    finish_layer_filament = fallback;
+                }
+                let finish_block_tcr = self.finish_block(bi, finish_layer_filament as usize, extruder_fill);
+                // :8018-8020
+                let cur = self.wipe_tower_blocks[bi].cur_depth;
+                if let Some(d) = self.wipe_tower_blocks[bi].finish_depth.get_mut(layer_id) {
+                    *d = cur;
+                }
+                // :8022-8051
+                let mut has_inserted = false;
+                if let Some(k) = layer_result.iter().position(|r| r.new_tool == finish_layer_filament) {
+                    layer_result[k] = self.merge_tcr(&layer_result[k], &finish_block_tcr);
+                    has_inserted = true;
+                }
+                let own_category_fill = own_category_of(finish_layer_filament);
+                if (block.last_filament_change_id == -1 || own_category_fill) && !has_inserted {
+                    if let Some(k) = layer_result.iter().position(|r| r.initial_tool == finish_layer_filament) {
+                        layer_result[k] = self.merge_tcr(&finish_block_tcr, &layer_result[k]);
+                        has_inserted = true;
+                    }
+                }
+                if !has_inserted && is_valid_gcode(&finish_block_tcr.gcode) {
+                    if let Some(fin) = finish_layer_tcr.as_ref() {
+                        if self.layer_finished() && fin.new_tool == finish_layer_filament {
+                            finish_layer_tcr = Some(self.merge_tcr(fin, &finish_block_tcr));
+                        }
+                    }
+                }
+            }
+        }
+        // :8054-8070
+        if layer_result.is_empty() {
+            if let Some(fin) = finish_layer_tcr {
+                if only_generate_wall || (is_valid_gcode(&fin.gcode) && !fin.extrusions.is_empty()) {
+                    layer_result.push(fin);
+                }
+            }
+        } else if let Some(fin) = finish_layer_tcr {
+            if is_valid_gcode(&fin.gcode) {
+                match insert_finish_layer_idx {
+                    None => layer_result[0] = self.merge_tcr(&fin, &layer_result[0]),
+                    Some(i) => layer_result[i] = self.merge_tcr(&layer_result[i], &fin),
+                }
+            }
+        }
     }
 
     /// Install the tower-wide writer settings on a freshly built writer.
@@ -4854,45 +5096,14 @@ impl WipeTower {
                 }
                 None => generate_rectange_polygon(wall_box.ld, wall_box.ru),
             };
-            // :4336-4344
-            let spacing = self.extrusion_spacing_for(wall_height, wall_width);
-            let dist_to_1st = self.layer_idx as i32 - self.first_printed_layer_idx();
-            let mut loops_num =
-                self.brim_chamfer_loops_num(wall_height, wall_first_layer, dist_to_1st, wall_width);
-            if !wall_first_layer
-                && self.layer_info_depth(self.layer_idx) != self.layer_info_depth(0)
-            {
-                loops_num = 0;
-            }
-            if loops_num > 0 {
-                // :4347-4349 — the wall the loops surround has this layer's
-                // wall width.
-                let drawn_wall_width = wall_width;
-                let first_loop_step =
-                    self.extrusion_spacing_for(wall_height, 0.5 * (drawn_wall_width + wall_width));
-                for i in 0..loops_num {
-                    let step = if i == 0 { first_loop_step } else { spacing };
-                    // scaled(float): float / float(SCALING_FACTOR), truncated.
-                    let delta =
-                        (step / crate::libslic3r::SCALING_FACTOR as f32) as i64 as f64;
-                    let expanded = crate::clipper_utils::offset_polygons_clib(
-                        std::slice::from_ref(&outer_wall),
-                        delta,
-                        crate::clipper_utils::OffsetJoinType::Miter,
-                    );
-                    if expanded.is_empty() {
-                        break;
-                    }
-                    outer_wall = expanded[0].clone();
-                    writer.polygon(&outer_wall, chamfer_feedrate);
-                    self.record_outer_wall(to_polyline(&outer_wall));
-                }
-                if wall_first_layer {
-                    // :4364-4367
-                    self.brim_width_real =
-                        first_loop_step + (loops_num - 1) as f32 * spacing + spacing / 2.0;
-                }
-            }
+            let _ = self.draw_brim_chamfer(
+                &mut writer,
+                &mut outer_wall,
+                wall_height,
+                wall_width,
+                wall_first_layer,
+                chamfer_feedrate,
+            );
             if is_first_layer {
                 self.print_brim = false;
             }
@@ -4917,6 +5128,553 @@ impl WipeTower {
         writer.append("; WIPE_TOWER_END\n");
 
         self.construct_tcr(&writer, false, self.current_tool, true, false, 0.0)
+    }
+
+
+    /// WipeTower.cpp:4333-4371: the brim on the tower's first layer and its
+    /// chamfer above, loops offset from `outer_wall` by the extrusion spacing,
+    /// each drawn and recorded with the walls. `outer_wall` ends as the last
+    /// loop; returns the number of loops.
+    fn draw_brim_chamfer(
+        &mut self,
+        writer: &mut WipeTowerWriter,
+        outer_wall: &mut crate::geometry::Polygon,
+        wall_height: f32,
+        wall_width: f32,
+        wall_first_layer: bool,
+        feedrate: f32,
+    ) -> i32 {
+        // :4336-4344
+        let spacing = self.extrusion_spacing_for(wall_height, wall_width);
+        let dist_to_1st = self.layer_idx as i32 - self.first_printed_layer_idx();
+        let mut loops_num =
+            self.brim_chamfer_loops_num(wall_height, wall_first_layer, dist_to_1st, wall_width);
+        if !wall_first_layer && self.layer_info_depth(self.layer_idx) != self.layer_info_depth(0) {
+            loops_num = 0;
+        }
+        if loops_num > 0 {
+            // :4347-4349 — the wall the loops surround has this layer's wall
+            // width.
+            let drawn_wall_width = wall_width;
+            let first_loop_step =
+                self.extrusion_spacing_for(wall_height, 0.5 * (drawn_wall_width + wall_width));
+            for i in 0..loops_num {
+                let step = if i == 0 { first_loop_step } else { spacing };
+                // scaled(float): float / float(SCALING_FACTOR), truncated.
+                let delta = (step / crate::libslic3r::SCALING_FACTOR as f32) as i64 as f64;
+                let expanded = crate::clipper_utils::offset_polygons_clib(
+                    std::slice::from_ref(&*outer_wall),
+                    delta,
+                    crate::clipper_utils::OffsetJoinType::Miter,
+                );
+                if expanded.is_empty() {
+                    break;
+                }
+                *outer_wall = expanded[0].clone();
+                writer.polygon(outer_wall, feedrate);
+                self.record_outer_wall(to_polyline(outer_wall));
+            }
+            if wall_first_layer {
+                // :4364-4367
+                self.brim_width_real =
+                    first_loop_step + (loops_num - 1) as f32 * spacing + spacing / 2.0;
+            }
+        }
+        loops_num
+    }
+
+    /// WipeTower.cpp:1368-1379 `add_wipe_path(polygon, wipe_dist)`: from the
+    /// polygon point nearest the pen, backwards along the polygon for
+    /// `wipe_dist`.
+    fn add_wipe_path(writer: &mut WipeTowerWriter, polygon: &crate::geometry::Polygon, wipe_dist: f64) {
+        let mut wipe_dist = wipe_dist;
+        let cur = writer.pos();
+        let scaled_cur =
+            crate::geometry::Point::new(crate::scale(cur.x as f64), crate::scale(cur.y as f64));
+        let closest_idx = polygon.closest_point_index(&scaled_cur);
+        let mut wipe_path = polygon.split_at_index(closest_idx);
+        wipe_path.points.reverse();
+        let pts = wipe_path.points.clone();
+        for i in 0..pts.len() {
+            if wipe_dist < crate::libslic3r::EPSILON {
+                break;
+            }
+            let sf = crate::libslic3r::SCALING_FACTOR as f32;
+            writer.add_wipe_point(Vec2f::new(pts[i].x as f32 * sf, pts[i].y as f32 * sf));
+            if i != 0 {
+                let dx = crate::unscale(pts[i].x) - crate::unscale(pts[i - 1].x);
+                let dy = crate::unscale(pts[i].y) - crate::unscale(pts[i - 1].y);
+                wipe_dist -= (dx * dx + dy * dy).sqrt();
+            }
+        }
+    }
+
+    /// The sparse grid or solid fill of a fill box, shared by
+    /// `finish_layer_new` (WipeTower.cpp:4171-4219) and `finish_block`
+    /// (:4447-4500): a travel into the box, the grid markers with the layer
+    /// number, and the fill; the sparse grid replaces the wipe path.
+    fn draw_fill_grid(
+        &self,
+        writer: &mut WipeTowerWriter,
+        fill_box: &BoxCoordinates,
+        line_width: f32,
+        first_layer: bool,
+        feedrate: f32,
+        finish_rect_wipe_path: &mut Vec<Vec2f>,
+    ) {
+        let dy = fill_box.lu.y - fill_box.ld.y - line_width;
+        let mut left = fill_box.lu.x + 2.0 * line_width;
+        let mut right = fill_box.ru.x - 2.0 * line_width;
+        if !(dy > line_width) {
+            return;
+        }
+        writer.travel_to(fill_box.ld + Vec2f::new(line_width * 2.0, 0.0));
+        writer.append(";--------------------\n; CP EMPTY GRID START\n");
+        // comment_with_value(" layer #", m_num_layer_changes + 1)
+        writer.append(&format!("; layer #{}\n", self.num_layer_changes + 1));
+        // Is there a soluble filament wiped/rammed at the next layer? If so,
+        // the infill should not be sparse.
+        let soluble_next = self.plan.get(self.layer_idx + 1).map_or(false, |l| {
+            l.tool_changes.iter().any(|tch| {
+                let sol = |t: usize| self.filament_params.get(t).map_or(false, |p| p.is_soluble);
+                sol(tch.new_tool) || sol(tch.old_tool)
+            })
+        });
+        let solid_infill = soluble_next || (first_layer && self.adhesion);
+        if solid_infill {
+            let mut sparse_factor = 1.5_f32;
+            if first_layer {
+                left -= line_width;
+                right += line_width;
+                sparse_factor = 1.0;
+            }
+            let mut y = fill_box.ld.y + line_width;
+            let n = (dy / (line_width * sparse_factor)) as i32;
+            let spacing = if n > 1 { (dy - line_width) / (n - 1) as f32 } else { 0.0 };
+            for i in 0..n {
+                let x = writer.x();
+                writer.extrude_f(x, y, feedrate);
+                writer.extrude(if i % 2 != 0 { left } else { right }, y);
+                y += spacing;
+            }
+            let x = writer.x();
+            writer.extrude(x, fill_box.lu.y);
+        } else {
+            // An inverse U at the left of the region and the sparse infill.
+            writer.extrude_f(fill_box.lu.x + line_width * 2.0, fill_box.lu.y, feedrate);
+            let n = 1 + ((right - left) / self.config.bridging) as i32;
+            let dx = if n > 0 { (right - left) / n as f32 } else { 0.0 };
+            for i in 1..=n {
+                let x = left + dx * i as f32;
+                let cy = writer.y();
+                writer.travel(x, cy);
+                writer.extrude(x, if i % 2 != 0 { fill_box.rd.y } else { fill_box.ru.y });
+            }
+            finish_rect_wipe_path.clear();
+            finish_rect_wipe_path.push(writer.pos());
+            finish_rect_wipe_path.push(Vec2f::new(
+                left + dx * n as f32,
+                if n % 2 != 0 { fill_box.ru.y } else { fill_box.rd.y },
+            ));
+        }
+        writer.append("; CP EMPTY GRID END\n;------------------\n\n\n\n\n\n\n");
+    }
+
+    /// The wipe at the end of a finish without a wall (WipeTower.cpp:4378-4385,
+    /// 4505-4511): from the pen to the next corner of the wall box, or along
+    /// the last rectangle or grid line when the pen ended it.
+    fn add_finish_wipe(writer: &mut WipeTowerWriter, wt_box: &BoxCoordinates, finish_rect_wipe_path: &[Vec2f]) {
+        let pos = writer.pos();
+        let mut target = if pos == wt_box.ld {
+            wt_box.rd
+        } else if pos == wt_box.rd {
+            wt_box.ru
+        } else if pos == wt_box.ru {
+            wt_box.lu
+        } else {
+            wt_box.ld
+        };
+        if finish_rect_wipe_path.len() == 2 && finish_rect_wipe_path[0] == pos {
+            target = finish_rect_wipe_path[1];
+        }
+        writer.add_wipe_point(pos);
+        writer.add_wipe_point(target);
+    }
+
+    /// WipeTower.cpp:4077-4396 `finish_layer_new` for this port's towers: one
+    /// block or several without merged fills, no merged slabs, side scrape or
+    /// capped widths. The fill box of the layer (its rectangle when
+    /// `extrude_fill_wall`, the grid when `extrude_fill`), the outer wall when
+    /// `extrude_perimeter`, the brim or chamfer, and the wipe.
+    pub fn finish_layer_new(
+        &mut self,
+        extrude_perimeter: bool,
+        extrude_fill: bool,
+        extrude_fill_wall: bool,
+    ) -> ToolChangeResult {
+        self.current_layer_finished = true;
+        let wall_height = self.layer_height;
+        let wall_width = self.perimeter_width;
+        // extrusion_flow_for(m_layer_height, wall_width): the layer's flow.
+        let wall_flow = self.extrusion_flow;
+        let mut writer = WipeTowerWriter::new(
+            self.layer_height,
+            wall_width,
+            self.config.gcode_flavor,
+            &self.filament_params,
+        );
+        writer.set_extrusion_flow(wall_flow);
+        writer.set_z(self.z_pos);
+        writer.set_initial_tool(self.current_tool);
+        self.set_for_wipe_tower_writer(&mut writer);
+        let first_layer = self.is_first_layer_for_slab(self.layer_height);
+        writer.set_first_layer(first_layer);
+        writer.append("; WIPE_TOWER_START\n");
+        let feedrate = self.calc_tower_feedrate(self.current_tool, wall_flow, first_layer);
+
+        let toolchanges_on_layer = self
+            .plan
+            .get(self.layer_idx)
+            .map_or(false, |l| l.toolchanges_depth() > WT_EPSILON);
+        let mut finish_rect_wipe_path: Vec<Vec2f> = Vec::new();
+        // :4107-4135 — one fill box over the whole tower, or over the band of
+        // the one block.
+        let mut fill_box_depth = self.depth - 2.0 * wall_width;
+        if self.wipe_tower_blocks.len() == 1 {
+            let band = self.wipe_tower_blocks[0]
+                .layer_depths
+                .get(self.layer_idx)
+                .copied()
+                .unwrap_or(self.wipe_tower_blocks[0].depth);
+            fill_box_depth = band - 2.0 * wall_width;
+        }
+        let fill_box = BoxCoordinates::new(
+            wall_width,
+            wall_width,
+            self.config.width - 2.0 * wall_width,
+            fill_box_depth,
+        );
+        writer.set_initial_position(
+            if self.left_to_right { fill_box.ru } else { fill_box.lu },
+            self.internal_rotation,
+            self.y_shift,
+        );
+        writer.set_wipe_tower_dimensions(self.config.width, self.depth);
+        // :4157-4219
+        if extrude_fill_wall && (fill_box.ru.y - fill_box.rd.y > WT_EPSILON) {
+            writer.rectangle_fill_box_wipe(&fill_box, &mut finish_rect_wipe_path, feedrate, wall_width);
+        }
+        if extrude_fill {
+            self.draw_fill_grid(
+                &mut writer,
+                &fill_box,
+                wall_width,
+                first_layer,
+                feedrate,
+                &mut finish_rect_wipe_path,
+            );
+        }
+
+        // :4226-4233
+        let perimeter_flow = self.extrusion_flow;
+        writer.set_extrusion_flow(perimeter_flow);
+        let wall_first_layer = self.is_first_layer_for_slab(wall_height);
+        writer.set_first_layer(wall_first_layer);
+        let feedrate = self.calc_tower_feedrate(self.current_tool, perimeter_flow, wall_first_layer);
+        // :4237-4242
+        let mut wipe_tower_depth = self.depth;
+        if self.wipe_tower_blocks.len() == 1 {
+            wipe_tower_depth = self.layer_info_depth(self.layer_idx) + self.perimeter_width;
+        }
+        let wt_box =
+            self.align_perimeter(&BoxCoordinates::new(0.0, 0.0, self.config.width, wipe_tower_depth));
+        // :4266-4272
+        let mut outer_wall = if extrude_perimeter {
+            let w = self.draw_outer_wall(&mut writer, &wt_box, feedrate);
+            let mut shifted = to_polyline(&w);
+            let dy = crate::scaled(self.y_shift as f64);
+            for p in &mut shifted.points {
+                p.y += dy;
+            }
+            self.record_outer_wall(shifted);
+            w
+        } else {
+            generate_rectange_polygon(wt_box.ld, wt_box.ru)
+        };
+        let loops_num = self.draw_brim_chamfer(
+            &mut writer,
+            &mut outer_wall,
+            wall_height,
+            wall_width,
+            wall_first_layer,
+            feedrate,
+        );
+        if self.layer_idx == 0 {
+            self.print_brim = false;
+        }
+        // :4374-4385
+        if extrude_perimeter || loops_num > 0 {
+            let wipe_dist = self.filament_params[self.current_tool].wipe_dist as f64;
+            Self::add_wipe_path(&mut writer, &outer_wall, wipe_dist);
+        } else {
+            Self::add_finish_wipe(&mut writer, &wt_box, &finish_rect_wipe_path);
+        }
+        writer.append("; WIPE_TOWER_END\n");
+        let _ = toolchanges_on_layer;
+        self.construct_tcr(&writer, false, self.current_tool, true, false, 0.0)
+    }
+
+    /// WipeTower.cpp:4398-4529 `finish_block`: what is left of the block on
+    /// this layer after its tool changes, filled by `filament_id` — the
+    /// rectangle around it and, with `extrude_fill`, the grid — then the wipe.
+    fn finish_block(&mut self, block_idx: usize, filament_id: usize, extrude_fill: bool) -> ToolChangeResult {
+        let block = self.wipe_tower_blocks[block_idx].clone();
+        let fill_width = self.perimeter_width;
+        // `block.layer_heights` is not kept: every slab is the layer height.
+        let slab_height = self.layer_height;
+        // slab_height * (fill_width - slab_height * (1 - pi/4)) / filament_area:
+        // the layer's flow.
+        let filament_e_flow = self.extrusion_flow;
+        let mut writer = WipeTowerWriter::new(
+            slab_height,
+            fill_width,
+            self.config.gcode_flavor,
+            &self.filament_params,
+        );
+        writer.set_extrusion_flow(filament_e_flow);
+        writer.set_z(self.z_pos);
+        writer.set_initial_tool(filament_id);
+        self.set_for_wipe_tower_writer(&mut writer);
+        let first_layer = self.is_first_layer_for_slab(slab_height);
+        writer.set_first_layer(first_layer);
+        writer.append("; WIPE_TOWER_START\n");
+        let feedrate = self.calc_tower_feedrate(filament_id, filament_e_flow, first_layer);
+        // :4422-4426
+        let band = block.layer_depths.get(self.layer_idx).copied().unwrap_or(block.depth);
+        let fill_box = BoxCoordinates::new(
+            fill_width,
+            block.cur_depth,
+            self.config.width - 2.0 * fill_width,
+            block.start_depth + band - block.cur_depth - fill_width,
+        );
+        writer.set_initial_position(
+            if self.left_to_right { fill_box.ru } else { fill_box.lu },
+            self.internal_rotation,
+            self.y_shift,
+        );
+        writer.set_wipe_tower_dimensions(self.config.width, self.depth);
+        let mut finish_rect_wipe_path: Vec<Vec2f> = Vec::new();
+        // :4437-4445
+        if fill_box.ru.y - fill_box.rd.y > WT_EPSILON {
+            writer.rectangle_fill_box_wipe(&fill_box, &mut finish_rect_wipe_path, feedrate, fill_width);
+        }
+        // :4447-4501
+        if extrude_fill {
+            self.draw_fill_grid(
+                &mut writer,
+                &fill_box,
+                fill_width,
+                first_layer,
+                feedrate,
+                &mut finish_rect_wipe_path,
+            );
+        }
+        // :4503-4513
+        let wt_box = self.align_perimeter(&BoxCoordinates::new(
+            0.0,
+            0.0,
+            self.config.width,
+            self.layer_info_depth(self.layer_idx) + self.perimeter_width,
+        ));
+        Self::add_finish_wipe(&mut writer, &wt_box, &finish_rect_wipe_path);
+        writer.append("; WIPE_TOWER_END\n");
+        // construct_block_tcr (WipeTower.cpp:1686-1706).
+        let mut tcr = self.construct_tcr(&writer, false, filament_id, true, false, 0.0);
+        tcr.initial_tool = filament_id as i32;
+        tcr.new_tool = filament_id as i32;
+        tcr.is_tool_change = false;
+        tcr.tool_change_start_pos = Vec2f::zero();
+        tcr
+    }
+
+    /// WipeTower.cpp:3353-3427 `merge_tcr`: `second` appended to `first`, with
+    /// a travel between them unless `second` is a tool change that starts
+    /// where its tool change starts (that travel is made by the G-code side).
+    /// The tower G-code here is in tower coordinates and the positions on the
+    /// result on the bed, and the analyzer lines the C++ writer puts at the
+    /// head of every result are written by the export for the first part only,
+    /// so the second part's are put in here.
+    fn merge_tcr(&self, first: &ToolChangeResult, second: &ToolChangeResult) -> ToolChangeResult {
+        let mut out = first.clone();
+        let d = Vec2f::new(first.end_pos.x - second.start_pos.x, first.end_pos.y - second.start_pos.y);
+        if (d.x * d.x + d.y * d.y).sqrt() > crate::libslic3r::EPSILON as f32 {
+            let local = Vec2f::new(second.start_pos.x - self.pos.x, second.start_pos.y - self.pos.y);
+            let travel_gcode = format!(
+                "G1 X{:.3} Y{:.3} F{:.0}\n",
+                local.x,
+                local.y,
+                self.config.max_speed * 60.0
+            );
+            let is_approx = |a: f32, b: f32| ((a as f64) - (b as f64)).abs() < crate::libslic3r::EPSILON;
+            let need_insert_travel = !(second.is_tool_change
+                && is_approx(second.start_pos.x, second.tool_change_start_pos.x)
+                && is_approx(second.start_pos.y, second.tool_change_start_pos.y));
+            if need_insert_travel {
+                out.gcode.push_str(&travel_gcode);
+            }
+        }
+        // The analyzer lines of the second writer (WipeTower.cpp:713-719).
+        out.gcode.push_str(&format!(
+            "; LAYER_HEIGHT: {:.6}\n; FEATURE: Prime tower\n; LINE_WIDTH: {:.6}\n",
+            second.layer_height, second.perimeter_width
+        ));
+        out.gcode.push_str(&second.gcode);
+        out.extrusions.extend(second.extrusions.iter().cloned());
+        out.end_pos = second.end_pos;
+        out.wipe_path = second.wipe_path.clone();
+        out.initial_tool = first.initial_tool;
+        out.new_tool = second.new_tool;
+        let has_nozzle_change_action = |r: &NozzleChangeResult| !r.gcode.is_empty();
+        if has_nozzle_change_action(&first.nozzle_change_result) {
+            out.nozzle_change_result = first.nozzle_change_result.clone();
+        } else if has_nozzle_change_action(&second.nozzle_change_result) {
+            out.nozzle_change_result = second.nozzle_change_result.clone();
+        }
+        if first.is_tool_change {
+            out.is_tool_change = true;
+            out.tool_change_start_pos = first.tool_change_start_pos;
+        } else if second.is_tool_change {
+            out.is_tool_change = true;
+            out.tool_change_start_pos = second.tool_change_start_pos;
+        } else {
+            out.is_tool_change = false;
+        }
+        out.purge_volume += second.purge_volume;
+        out
+    }
+
+    /// WipeTower.cpp:7370-7435 `get_wall_filament_for_all_layer`: the filament
+    /// of the most-visited category that visits the most layers. Every
+    /// filament prints the base layers here (no merged slabs).
+    fn get_wall_filament_for_all_layer(&self, start_tool: usize) -> i32 {
+        use std::collections::{BTreeMap, HashSet};
+        let mut category_counts: BTreeMap<i32, i32> = BTreeMap::new();
+        let mut filament_counts: BTreeMap<usize, i32> = BTreeMap::new();
+        let mut current_tool = start_tool;
+        for layer in &self.plan {
+            if layer.tool_changes.is_empty() {
+                *filament_counts.entry(current_tool).or_insert(0) += 1;
+                *category_counts.entry(self.get_filament_category(current_tool)).or_insert(0) += 1;
+                continue;
+            }
+            let mut used_tools: HashSet<usize> = HashSet::new();
+            let mut used_category: HashSet<i32> = HashSet::new();
+            for (i, tc) in layer.tool_changes.iter().enumerate() {
+                if i == 0 {
+                    *filament_counts.entry(tc.old_tool).or_insert(0) += 1;
+                    *category_counts.entry(self.get_filament_category(tc.old_tool)).or_insert(0) += 1;
+                    used_tools.insert(tc.old_tool);
+                    used_category.insert(self.get_filament_category(tc.old_tool));
+                }
+                let new_cat = self.get_filament_category(tc.new_tool);
+                if !used_category.contains(&new_cat) {
+                    *category_counts.entry(new_cat).or_insert(0) += 1;
+                }
+                if !used_tools.contains(&tc.new_tool) {
+                    *filament_counts.entry(tc.new_tool).or_insert(0) += 1;
+                }
+                used_tools.insert(tc.new_tool);
+                used_category.insert(new_cat);
+            }
+            current_tool = layer.tool_changes.last().map_or(current_tool, |tc| tc.new_tool);
+        }
+        let mut selected_category = -1;
+        let mut selected_count = 0;
+        for (&cat, &count) in &category_counts {
+            if count > selected_count {
+                selected_category = cat;
+                selected_count = count;
+            }
+        }
+        let mut filament_id = -1;
+        let mut filament_count = 0;
+        for (&f, &count) in &filament_counts {
+            if self.get_filament_category(f) == selected_category && count > filament_count {
+                filament_id = f as i32;
+                filament_count = count;
+            }
+        }
+        filament_id
+    }
+
+    /// WipeTower.cpp:7451-7499 `get_wall_filament_for_layer`: -1 on a layer
+    /// without tool changes; else the wall filament when the layer loads it,
+    /// else the first filament of its category the layer has. No merged fills
+    /// and no printable-height limits here, so every filament fits and is
+    /// valid on its last layer.
+    fn get_wall_filament_for_layer(&self, layer_id: usize, wall_filament: i32) -> i32 {
+        let layer = &self.plan[layer_id];
+        if layer.tool_changes.is_empty() {
+            return -1;
+        }
+        let cat = |t: usize| self.filament_params.get(t).map_or(0, |p| p.category);
+        let wall_cat = if wall_filament >= 0 { cat(wall_filament as usize) } else { i32::MIN };
+        let mut candidate_id = -1;
+        for (idx, tc) in layer.tool_changes.iter().enumerate() {
+            if idx == 0 {
+                if tc.old_tool as i32 == wall_filament {
+                    return wall_filament;
+                }
+                if cat(tc.old_tool) == wall_cat {
+                    candidate_id = tc.old_tool as i32;
+                }
+            }
+            if tc.new_tool as i32 == wall_filament {
+                return wall_filament;
+            }
+            if candidate_id == -1 && cat(tc.new_tool) == wall_cat {
+                candidate_id = tc.new_tool as i32;
+            }
+        }
+        if candidate_id != -1 {
+            return candidate_id;
+        }
+        layer.tool_changes[0].new_tool as i32
+    }
+
+    /// WipeTower.cpp:7501-7533 `block_fill_filament_base` and 7535-7583
+    /// `get_block_fill_filament` without merged fills or per-slab filaments:
+    /// the last filament the layer purges into the block, else the one that
+    /// rams out of it, else the one the layer starts with when it belongs to
+    /// the block, else the wall filament.
+    fn get_block_fill_filament(&self, layer_id: usize, block: &WipeTowerBlock, wall_filament: i32) -> i32 {
+        let layer = &self.plan[layer_id];
+        let key = block.filament_adhesiveness_category;
+        let mut last_filament_change = -1;
+        let mut last_nozzle_change = -1;
+        for tc in &layer.tool_changes {
+            if self.get_filament_category(tc.new_tool) == key {
+                last_filament_change = tc.new_tool as i32;
+            }
+            if tc.nozzle_change_depth > crate::libslic3r::EPSILON as f32
+                && self.is_need_ramming(tc.old_tool, tc.new_tool)
+                && self.get_filament_category(tc.old_tool) == key
+            {
+                last_nozzle_change = tc.old_tool as i32;
+            }
+        }
+        let mut fill_filament =
+            if last_filament_change != -1 { last_filament_change } else { last_nozzle_change };
+        if fill_filament == -1
+            && !layer.tool_changes.is_empty()
+            && self.get_filament_category(layer.tool_changes[0].old_tool) == key
+        {
+            fill_filament = layer.tool_changes[0].old_tool as i32;
+        }
+        if fill_filament == -1 {
+            fill_filament = wall_filament;
+        }
+        fill_filament
     }
 
     /// Construct a ToolChangeResult from writer state
