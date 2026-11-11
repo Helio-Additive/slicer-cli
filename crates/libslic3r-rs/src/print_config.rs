@@ -2766,6 +2766,12 @@ impl PrintConfig {
                 }
                 true
             }
+            "scan_first_layer" => {
+                if let Some(v) = parse_bool(value) {
+                    self.scan_first_layer = v;
+                }
+                true
+            }
             // R499: this key had NO field and NO arm at all, though it is in
             // preset.rs's key list and generator.rs's defaults, so our
             // `use_gap_wall` was permanently false and the tower emitted none of

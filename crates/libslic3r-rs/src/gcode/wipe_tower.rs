@@ -520,7 +520,11 @@ impl WipeTowerLayerInfo {
             depth: 0.0,
             alloc_depth: 0.0,
             extra_spacing: 1.0,
-            extruder_fill: false,
+            // TOWER_EXTRUDER_FILL_CPP (on): `bool extruder_fill{true}`
+            // (WipeTower.hpp:916); the print clears it on the timelapse layers
+            // without tool changes (Print.cpp:4332-4334). =0 false everywhere,
+            // which left every finish_block without its grid.
+            extruder_fill: crate::faithful_gate("TOWER_EXTRUDER_FILL_CPP"),
             tool_changes: vec![],
         }
     }
@@ -2813,6 +2817,27 @@ impl WipeTower {
     /// Check if finished
     pub fn finished(&self) -> bool {
         self.layer_idx >= self.plan.len()
+    }
+
+    /// WipeTower.hpp:238-242 `set_last_layer_extruder_fill`.
+    pub fn set_last_layer_extruder_fill(&mut self, extruder_fill: bool) {
+        if let Some(last) = self.plan.last_mut() {
+            last.extruder_fill = extruder_fill;
+        }
+    }
+
+    /// `set_last_layer_extruder_fill(false)` as the print calls it right after
+    /// planning each layer whose `wipe_tower_partitions` is 0 (Print.cpp:4333),
+    /// done after the plan: the partitions of a layer are its tool changes or
+    /// those of any layer above it (ToolOrdering.cpp:1213-1228), so the layers
+    /// above the last tool change.
+    pub fn clear_extruder_fill_above_tool_changes(&mut self) {
+        for layer in self.plan.iter_mut().rev() {
+            if !layer.tool_changes.is_empty() {
+                break;
+            }
+            layer.extruder_fill = false;
+        }
     }
 
     /// Check if current layer is finished

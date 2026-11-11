@@ -358,6 +358,20 @@ impl Print {
     /// `printer_model`, the printer preset's name (`printer_settings_id`) does.
     /// Settings that name no printer at all are not a Bambu Lab printer.
     /// Gate BBL_PRINTER_RULE (on); `=0` restores "always".
+    /// The `idx`-th value of a per-filament setting as the job gave it (a list
+    /// of strings or one comma-separated string), for the per-filament values
+    /// the config keeps as one.
+    fn raw_setting_at(&self, key: &str, idx: usize) -> Option<f64> {
+        let v = self.raw_settings.as_ref()?.get(key)?;
+        let text: String = match v {
+            serde_json::Value::Array(a) => a.get(idx)?.as_str()?.to_string(),
+            serde_json::Value::String(s) => s.split(',').nth(idx)?.trim().to_string(),
+            serde_json::Value::Number(n) => return n.as_f64(),
+            _ => return None,
+        };
+        text.trim().parse::<f64>().ok()
+    }
+
     pub fn is_bbl_printer(&self) -> bool {
         if !crate::faithful_gate("BBL_PRINTER_RULE") {
             return true;
@@ -822,13 +836,21 @@ impl Print {
                     .replace("{layer_num+1}", &format!("{}", layer_index))
                     .replace("{layer_num}", &format!("{}", layer_index - 1))
                     .replace("[total_layer_count]", &format!("{}", total_layers));
-                for line in tpl.split('\n') {
-                    if !line.is_empty() {
-                        writer.write_raw(line);
+                if crate::faithful_gate("LAYER_CHANGE_TEMPLATE_TEXT") {
+                    // LAYER_CHANGE_TEMPLATE_TEXT (on): the processed template and
+                    // "\n" (GCode.cpp:5094-5096): an empty line only when the
+                    // template itself ends with a newline. =0 drops the
+                    // template's empty lines and always writes one.
+                    writer.write_raw_content(&format!("{tpl}\n"));
+                } else {
+                    for line in tpl.split('\n') {
+                        if !line.is_empty() {
+                            writer.write_raw(line);
+                        }
                     }
+                    // GCode.cpp:4111 — the template block ends with an extra newline.
+                    writer.write_raw("");
                 }
-                // GCode.cpp:4111 — the template block ends with an extra newline.
-                writer.write_raw("");
                 writer.write_raw(";_SET_FAN_SPEED_CHANGING_LAYER");
             } else {
                 writer.write_raw(&format!(
@@ -850,6 +872,55 @@ impl Print {
             // R227: keep the writer's first-layer flag in sync (native
             // GCodeWriter::set_first_layer) — travel accel selection reads it.
             writer.is_first_layer = first_layer;
+
+            // SECOND_LAYER_THINGS_CPP (on): what `process_layer` writes after the
+            // layer-change G-code and before `change_layer` lifts
+            // (GCode.cpp:5138-5202): on the second layer the power-loss
+            // recovery and, with `scan_first_layer`, the scan between a retract
+            // and an unretract; from then on, on every layer, the nozzle
+            // temperature of the loaded filament when it is not its first-layer
+            // temperature (`set_temperature(.., LayerChange)`: `M104 M S..`).
+            // =0 writes the recovery lines after the timelapse block and no
+            // temperature.
+            let second_layer_things_cpp = crate::faithful_gate("SECOND_LAYER_THINGS_CPP");
+            if second_layer_things_cpp {
+                if !first_layer && !second_layer_things_done {
+                    if is_bbl_printer {
+                        writer.write_raw("; open powerlost recovery");
+                        writer.write_raw("M1003 S1");
+                    }
+                    if self.config.scan_first_layer {
+                        // GCode.cpp:5149-5153 — retract() is a lazy spiral lift.
+                        writer.retract_with_lift_type(1, false);
+                        writer.write_raw("M976 S1 P1 ; scan model before printing 2nd layer");
+                        writer.write_raw("M400 P100");
+                        writer.unretract();
+                    }
+                    // :5156-5160 — `m_writer.set_acceleration(default_acceleration)`
+                    // stores the extrusion acceleration and writes nothing.
+                    second_layer_things_done = true;
+                }
+                if !first_layer && second_layer_things_done {
+                    // single_extruder_multi_material: the loaded filament only.
+                    let fid = writer.extruder();
+                    let temperature = self
+                        .raw_setting_at("nozzle_temperature", fid)
+                        .map(|v| v as i64)
+                        .unwrap_or(self.config.extruder_temperature as i64);
+                    let initial = self
+                        .raw_setting_at("nozzle_temperature_initial_layer", fid)
+                        .map(|v| v as i64)
+                        .unwrap_or(self.config.first_layer_extruder_temperature as i64);
+                    if temperature > 0 && temperature != initial {
+                        writer.write_raw(&format!("M104 M S{temperature} ; set nozzle temperature"));
+                    }
+                }
+                // change_layer retracts before it lifts (GCode.cpp:3039); the
+                // scan's unretract is the only one between.
+                if !writer.is_retracted() {
+                    writer.retract_no_lift();
+                }
+            }
 
             // GCode.cpp: set_travel_acceleration() before Z-hop
             // On first layer, uses initial_layer_travel_acceleration
@@ -982,7 +1053,7 @@ impl Print {
             }
 
             // GCode.cpp:4023-4069 -- second layer transition
-            if !first_layer && !second_layer_things_done {
+            if !first_layer && !second_layer_things_done && !second_layer_things_cpp {
                 writer.write_raw("; open powerlost recovery");
                 writer.write_raw("M1003 S1");
                 writer.set_travel_acceleration(5000.0);
@@ -2978,6 +3049,14 @@ impl Print {
                             wiping_layer_overrides.push((*z as f64, map));
                         }
                     }
+                }
+                // Print.cpp:4331-4335 — with smooth timelapse every layer is
+                // planned, and one whose `wipe_tower_partitions` is 0 gets no
+                // fill. The partitions are propagated down from the layers above
+                // (ToolOrdering.cpp:1226-1228), so that is a layer with no tool
+                // change at or above it.
+                if crate::faithful_gate("TOWER_EXTRUDER_FILL_CPP") && self.config.timelapse_type == 1 {
+                    wt.clear_extruder_fill_above_tool_changes();
                 }
                 self.wiping_layer_overrides = wiping_layer_overrides;
                 // R436 sizing probe: how much purge is demanded vs how much
