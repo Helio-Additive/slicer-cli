@@ -121,12 +121,12 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R825) |
+| Fixture | As brought over (R808) | Now (R826) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 171,788 (92.34%) |
-| Benchy arachne | 32,769 (13.68%) | 213,070 (89.98%) |
-| Majora | 1,512,438 (55.88%) | 2,066,495 (75.89%) |
-| Majora, prime tower | 83.5% | 94.6% |
+| Benchy classic | 30,486 (15.72%) | 174,014 (93.36%) |
+| Benchy arachne | 32,769 (13.68%) | 218,088 (91.87%) |
+| Majora | 1,512,438 (55.88%) | 2,251,712 (81.17%) |
+| Majora, prime tower | 83.5% | 94.7% |
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
 driver) R808 scored Majora 66.06%, Benchy classic 121,714 lines and Benchy
@@ -223,9 +223,11 @@ and `56a57d0`:
   `discover_sub_top_surfaces` and the `stSubTop` surface type, `combine_infill`,
   the settings block's 74 new keys, the time estimate behind the `M73` lines.
 - The override layer: `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp`
-  fixes five out-of-bounds reads in the engine's floating-concentric fill. The
-  port should follow the fixed code; R801 found the unfixed code reading freed
-  memory.
+  fixes five out-of-bounds reads in the engine's floating-concentric fill. It is the
+  file `slicer_cli` compiles, so the port follows it (gate `FFC_OVERRIDE`, R826), and
+  the source map reads the override layer's checked-in files in place of the engine's.
+  R801 had found the unfixed code reading freed memory, which switched the floating
+  detection off in effect; with the fix it runs.
 
 Front end (`main.cpp`, `cli_*.cpp`), each of which changes what the engine is
 given. Ported so far: placement of an STL on the plate (R809), the alias of

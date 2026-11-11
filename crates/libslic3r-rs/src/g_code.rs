@@ -2455,6 +2455,15 @@ pub fn extrude_entity(
             // the volumetric cap, so variable-width gap/fill paths carry
             // fractional Fs (F14761.269 = 25mm3s / mm3_per_mm). writer
             // set_speed dedups, so without VOLCAP this is a no-op.
+            // FVS_SEPARATE_SPEED (on): GCode::extrude_path (GCode.cpp:6930-6931)
+            // passes `use_seperate_speed` for a path flagged
+            // cfFloatingVerticalShell. `_extrude` then takes the bridge speed
+            // for it (:7738-7741) and brackets it with "; Slow Down Start" /
+            // "; Slow Down End" (:7874-7875, :8083-8085). =0 prints it as any
+            // other floating vertical shell path.
+            let use_seperate_speed = crate::faithful_gate("FVS_SEPARATE_SPEED")
+                && path.get_customize_flag()
+                    == crate::extrusion_entity::CustomizeFlag::FloatingVerticalShell;
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 use crate::extrusion_entity::ExtrusionRole;
                 let role = path.role;
@@ -2481,12 +2490,18 @@ pub fn extrude_entity(
                         ExtrusionRole::TopSolidInfill => config.top_solid_infill_speed,
                         ExtrusionRole::BridgeInfill => config.bridge_speed,
                         ExtrusionRole::GapFill => config.gap_fill_speed,
+                        ExtrusionRole::FloatingVerticalShell if use_seperate_speed => {
+                            config.bridge_speed
+                        }
                         ExtrusionRole::FloatingVerticalShell => {
                             config.vertical_shell_speed / 100.0 * config.solid_infill_speed
                         }
                         _ => config.perimeter_speed,
                     }
                 };
+                if use_seperate_speed {
+                    writer.write_raw("; Slow Down Start");
+                }
                 let speed = if crate::faithful_gate("VOLCAP_FAITHFUL") {
                     volumetric_capped_speed(
                         base,
@@ -2510,6 +2525,9 @@ pub fn extrude_entity(
                 }
             }
             extrude_path(path, writer, config, is_first_layer);
+            if use_seperate_speed && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+                writer.write_raw("; Slow Down End");
+            }
             // R233: native extrude_path installs the wipe path = the path's
             // SOURCE polyline REVERSED (GCode.cpp:5703-5717, non-tree branch)
             // — fills wipe backwards along the just-printed line. Rust only

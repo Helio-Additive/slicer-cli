@@ -162,7 +162,9 @@ python3 scripts/parity/seq_parity.py <dir>/rust.gcode <dir>/bambu.gcode
 Rules for it, on top of the ones above:
 
 - **The port follows the C++ at the pin**: same functions, order, names in
-  snake_case, control flow, constants, rounding and tolerances. Cite the
+  snake_case, control flow, constants, rounding and tolerances. Where the
+  override layer carries a `libslic3r` file, that file is the one to follow:
+  it is what `slicer_cli` compiles. Cite the
   upstream file and line in the code and the commit. No stubs: a unit that
   cannot be finished is marked `partial` in `crates/libslic3r-rs/PORT_LEDGER.json`
   with what blocks it. Read `docs/rust-engine/PORTING_PATTERNS.md` before

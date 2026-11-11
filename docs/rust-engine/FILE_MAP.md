@@ -6,6 +6,9 @@ the same data with every matched function, the ones estimated faithful included.
 
 C++ side: `references/BambuStudio/src/libslic3r` at the pin. Rust side: `crates/libslic3r-rs/src`.
 
+Where the override layer (`libslic3r/bambustudio/libslic3r`) carries a file, that file is read in place of the
+engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcentric.cpp`, `LogSink.cpp`, `Thread.cpp`.
+
 ## How to read it
 
 - A **C++ unit** is a `.cpp` together with the header of the same name, or a header on its own.
@@ -40,19 +43,19 @@ C++ side: `references/BambuStudio/src/libslic3r` at the pin. Rust side: `crates/
 | C++ units with no Rust file | 33 |
 | Rust files with no C++ file of that name | 49 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
-| C++ functions (named, with a body) | 9059 |
-| matched to a Rust function in the paired file | 3685 (41%) |
-| estimate: faithful | 3090 (84% of matched) |
-| estimate: partial | 365 (10% of matched) |
+| C++ functions (named, with a body) | 9052 |
+| matched to a Rust function in the paired file | 3682 (41%) |
+| estimate: faithful | 3088 (84% of matched) |
+| estimate: partial | 364 (10% of matched) |
 | estimate: divergent | 199 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
-| missing in the paired Rust file | 4706 |
+| missing in the paired Rust file | 4702 |
 | of those, a function of that name exists in another Rust file | 1619 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 764 |
-| of the rest, 25 tokens or more | 1958 |
+| of the rest, 25 tokens or more | 1954 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4478 |
+| Rust functions with no C++ function of that name in the pair | 4482 |
 
 By tier:
 
@@ -60,7 +63,7 @@ By tier:
 |-|-|-|-|-|-|-|-|-|-|
 | 1 | 180 | 174 | 6851 | 2827 | 2360 | 285 | 162 | 20 | 4024 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
-| 3 | 92 | 65 | 1381 | 465 | 389 | 41 | 30 | 5 | 916 |
+| 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
 
 ## Biggest gaps
@@ -3254,37 +3257,38 @@ Rust only:
 
 ### `Fill/FillFloatingConcentric` (.cpp+.hpp) and `fill/fill_floating_concentric.rs`
 
-Tier 1. C++ functions 20 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 33. Matched 17: faithful 15, partial 2, divergent 0, stub 0.
+Tier 1. C++ functions 20 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 34. Matched 17: faithful 15, partial 2, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `detect_floating_line` :389 and `detect_floating_line` :972 (40%, 0.35x)
-- partial: `FillFloatingConcentric::fill_surface_arachne_floating` :941 and `FillFloatingConcentric::fill_surface_arachne_floating` :1819 (50%, 0.95x)
+- partial: `detect_floating_line` :404 and `detect_floating_line` :1011 (40%, 0.4x)
+- partial: `FillFloatingConcentric::fill_surface_arachne_floating` :960 and `FillFloatingConcentric::fill_surface_arachne_floating` :1871 (50%, 0.95x)
 
 Missing in the Rust file:
 
 - `FillFloatingConcentric::clone` :44 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `marching_squares.rs`
-- `FillFloatingConcentric::resplit_order_loops` :733 (192 tokens, overload)
-- `FillFloatingConcentric::_fill_surface_single` :763 (279 tokens, overload) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_cross_hatch.rs`
+- `FillFloatingConcentric::resplit_order_loops` :752 (192 tokens, overload)
+- `FillFloatingConcentric::_fill_surface_single` :782 (279 tokens, overload) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_cross_hatch.rs`
 
 Rust only:
 
-- `FloatingThickline::new` :69
-- `FloatingThickline::length` :88 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
-- `FloatingPolyline::is_closed` :109 — C++ has it in `ExtrusionEntity`, `Polyline`, `TextureToColor/ColorUtils`
-- `FloatingThickPolyline::empty` :161 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
-- `FloatingThickPolyline::is_closed` :166 — C++ has it in `ExtrusionEntity`, `Polyline`, `TextureToColor/ColorUtils`
-- `FloatingThickPolyline::last_point` :171
-- `FloatingThickPolyline::is_valid` :176 — C++ has it in `AABBMesh`, `AABBTreeIndirect`, `Circle`
-- `FloatingThickPolyline::clip_end` :187 — C++ has it in `Circle`, `ExtrusionEntity`, `Polyline`
-- `FloatingThickPolyline::get_width_at` :218 — C++ has it in `Polyline`
-- `polyline_rebase_at` :295
-- `thick_polyline_rebase_at` :312
-- `thick_polyline_get_width_at` :732
-- `clip_clipper_polygons_with_subject_bbox` :1518 — C++ has it in `ClipperUtils`
-- `polygon_get_extents` :1526
-- `max_element_index` :1533
-- `FillFloatingConcentric::no_sort` :1586 — C++ has it in `Fill/FillAdaptive`, `Fill/FillBase`, `Fill/FillConcentric`
+- `ffc_override` :52
+- `FloatingThickline::new` :80
+- `FloatingThickline::length` :99 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
+- `FloatingPolyline::is_closed` :120 — C++ has it in `ExtrusionEntity`, `Polyline`, `TextureToColor/ColorUtils`
+- `FloatingThickPolyline::empty` :178 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `FloatingThickPolyline::is_closed` :183 — C++ has it in `ExtrusionEntity`, `Polyline`, `TextureToColor/ColorUtils`
+- `FloatingThickPolyline::last_point` :188
+- `FloatingThickPolyline::is_valid` :193 — C++ has it in `AABBMesh`, `AABBTreeIndirect`, `Circle`
+- `FloatingThickPolyline::clip_end` :204 — C++ has it in `Circle`, `ExtrusionEntity`, `Polyline`
+- `FloatingThickPolyline::get_width_at` :235 — C++ has it in `Polyline`
+- `polyline_rebase_at` :318
+- `thick_polyline_rebase_at` :335
+- `thick_polyline_get_width_at` :771
+- `clip_clipper_polygons_with_subject_bbox` :1566 — C++ has it in `ClipperUtils`
+- `polygon_get_extents` :1574
+- `max_element_index` :1581
+- `FillFloatingConcentric::no_sort` :1634 — C++ has it in `Fill/FillAdaptive`, `Fill/FillBase`, `Fill/FillConcentric`
 
 ### `Fill/FillGyroid` (.cpp+.hpp) and `fill/fill_gyroid.rs`
 
@@ -3915,20 +3919,20 @@ Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Wipe::wipe` :440 and `wipe` :3308 (31%, 0.72x)
-- divergent: `GCode::unretract` :1959 and `unretract` :3257 (17%, 1.12x)
+- partial: `Wipe::wipe` :440 and `wipe` :3326 (31%, 0.72x)
+- divergent: `GCode::unretract` :1959 and `unretract` :3275 (17%, 1.12x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :245 (8%, 1.33x)
-- divergent: `GCode::change_layer` :6473 and `change_layer` :3868 (17%, 0.89x)
+- divergent: `GCode::change_layer` :6473 and `change_layer` :3886 (17%, 0.89x)
 - divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :766 (17%, 1.89x)
-- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :2418 (55%, 3.86x)
+- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :2418 (55%, 4.5x)
 - divergent: `GCode::extrude_path` :6927 and `extrude_path` :1940 (5%, 0.05x)
-- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :2569 (28%, 1.64x)
-- partial: `GCode::extrude_support` :7011 and `extrude_support` :2955 (33%, 1.61x)
-- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :4017 (30%, 1.08x)
-- divergent: `GCode::travel_to` :8198 and `travel_to` :3113 (11%, 0.21x)
-- divergent: `GCode::retract` :8498 and `retract` :3199 (8%, 0.21x)
-- divergent: `GCode::set_extruder` :8617 and `set_extruder` :3485 (2%, 0.03x)
-- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :5493 (0%, 0.06x)
+- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :2587 (28%, 1.64x)
+- partial: `GCode::extrude_support` :7011 and `extrude_support` :2973 (33%, 1.61x)
+- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :4035 (30%, 1.08x)
+- divergent: `GCode::travel_to` :8198 and `travel_to` :3131 (11%, 0.21x)
+- divergent: `GCode::retract` :8498 and `retract` :3217 (8%, 0.21x)
+- divergent: `GCode::set_extruder` :8617 and `set_extruder` :3503 (2%, 0.03x)
+- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :5511 (0%, 0.06x)
 
 Missing in the Rust file:
 
@@ -4102,62 +4106,62 @@ Rust only:
 - `fmt_g6` :1925
 - `extrude_path_ex` :1956
 - `extrude_path_with_arc_fitting` :1971
-- `extrude_perimeters_entities` :2745
-- `extrude_infill_entities` :2847
-- `apply_layer_cooling` :3637
-- `bridge_fan_speed` :3701
-- `overhang_fan_speed` :3720
-- `set_fan_speed_for_role` :3742
-- `GCodeLayerState::default` :3832
-- `emit_layer_preamble` :3927
-- `emit_layer_postamble` :3984
-- `emit_object_start_label` :4059
-- `emit_object_end_label` :4088
-- `emit_layer_object_labels` :4114
-- `set_loop_wipe_path` :5369
-- `first_extrusion_path` :5385
-- `width_tag_before_speed` :5396
-- `set_speed_before_path` :5407
-- `GCode::new` :5441
-- `GCode::from_content_and_stats` :5449
-- `GCode::from_string` :5454 — C++ has it in `Config`
-- `GCode::from_string_with_stats` :5462
-- `GCode::content` :5467
-- `GCode::as_bytes` :5472
-- `GCode::len` :5477
-- `GCode::is_empty` :5482 — C++ has it in `PresetBundle`
-- `GCode::append_line` :5487
-- `GCode::append_comment` :5498
-- `GCode::write_to_file` :5505
-- `GCode::read_from_file` :5516 — C++ has it in `Model`
-- `GCode::line_count` :5522
-- `GCode::lines` :5527 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
-- `GCode::clear` :5532 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `GCode::fmt` :5539
-- `GCode::fmt` :5550
-- `GCode::from` :5556 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `String::from` :5562 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `GCodeStats::new` :5608
-- `GCodeStats::calculate_filament_stats` :5624
-- `GCodeStats::print_time_formatted` :5637
-- `GCodeStats::filament_used_meters` :5646
-- `GCodeStats::fmt` :5652
-- `GCodeHeader::new` :5687
-- `GCodeHeader::with_raw_settings` :5691
-- `GCodeHeader::with_estimated_time` :5704
-- `GCodeHeader::generate_header_block` :5727
-- `GCodeHeader::generate_config_block` :5779
-- `GCodeHeader::generate_minimal_config_block` :5866
-- `GCodeHeader::generate_executable_block_start` :5925
-- `GCodeHeader::generate_executable_block_content` :5932
-- `GCodeHeader::generate_complete_header` :6081
-- `is_config_key_skipped` :6243
-- `format_config_value` :6303
-- `process_gcode_template` :6514
-- `eval_condition` :7067
-- `eval_expr` :7254
-- `resolve_all_vars_in_expr` :7392
-- `eval_math` :7442
+- `extrude_perimeters_entities` :2763
+- `extrude_infill_entities` :2865
+- `apply_layer_cooling` :3655
+- `bridge_fan_speed` :3719
+- `overhang_fan_speed` :3738
+- `set_fan_speed_for_role` :3760
+- `GCodeLayerState::default` :3850
+- `emit_layer_preamble` :3945
+- `emit_layer_postamble` :4002
+- `emit_object_start_label` :4077
+- `emit_object_end_label` :4106
+- `emit_layer_object_labels` :4132
+- `set_loop_wipe_path` :5387
+- `first_extrusion_path` :5403
+- `width_tag_before_speed` :5414
+- `set_speed_before_path` :5425
+- `GCode::new` :5459
+- `GCode::from_content_and_stats` :5467
+- `GCode::from_string` :5472 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :5480
+- `GCode::content` :5485
+- `GCode::as_bytes` :5490
+- `GCode::len` :5495
+- `GCode::is_empty` :5500 — C++ has it in `PresetBundle`
+- `GCode::append_line` :5505
+- `GCode::append_comment` :5516
+- `GCode::write_to_file` :5523
+- `GCode::read_from_file` :5534 — C++ has it in `Model`
+- `GCode::line_count` :5540
+- `GCode::lines` :5545 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :5550 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :5557
+- `GCode::fmt` :5568
+- `GCode::from` :5574 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :5580 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :5626
+- `GCodeStats::calculate_filament_stats` :5642
+- `GCodeStats::print_time_formatted` :5655
+- `GCodeStats::filament_used_meters` :5664
+- `GCodeStats::fmt` :5670
+- `GCodeHeader::new` :5705
+- `GCodeHeader::with_raw_settings` :5709
+- `GCodeHeader::with_estimated_time` :5722
+- `GCodeHeader::generate_header_block` :5745
+- `GCodeHeader::generate_config_block` :5797
+- `GCodeHeader::generate_minimal_config_block` :5884
+- `GCodeHeader::generate_executable_block_start` :5943
+- `GCodeHeader::generate_executable_block_content` :5950
+- `GCodeHeader::generate_complete_header` :6099
+- `is_config_key_skipped` :6261
+- `format_config_value` :6321
+- `process_gcode_template` :6532
+- `eval_condition` :7085
+- `eval_expr` :7272
+- `resolve_all_vars_in_expr` :7410
+- `eval_math` :7460
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
@@ -9205,7 +9209,7 @@ Tier 1. C++ functions 24, Rust functions 8. Matched 8: faithful 6, partial 1, di
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `create_thread` :47 and `create_thread` :189 (50%, 1.28x)
-- divergent: `name_tbb_thread_pool_threads_set_locale` :212 and `name_tbb_thread_pool_threads_set_locale` :160 (3%, 0.11x)
+- divergent: `name_tbb_thread_pool_threads_set_locale` :212 and `name_tbb_thread_pool_threads_set_locale` :160 (3%, 0.1x)
 
 Missing in the Rust file:
 
@@ -11591,27 +11595,22 @@ Rust only:
 
 ### `LogSink` (.cpp+.hpp) and `log_sink.rs`
 
-Tier 3. C++ functions 13 (plus 2 constructors, 1 destructors, 0 operators), Rust functions 9. Matched 4: faithful 3, partial 1, divergent 0, stub 0.
-
-Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
-
-- partial: `LogSinkBackend::get_aes_256_cbc` :288 and `LogSinkBackend::get_aes_256_cbc` :192 (42%, 0.27x)
+Tier 3. C++ functions 6 (plus 2 constructors, 1 destructors, 0 operators), Rust functions 9. Matched 1: faithful 1, partial 0, divergent 0, stub 0.
 
 Missing in the Rust file:
 
-- `LogSinkBackend::is_consuming_on_this_thread` :51 (5 tokens)
-- `LogSinkBackend::update_enc_option` :74 (93 tokens)
-- `LogSinkBackend::consume` :109 (620 tokens)
-- `LogSinkBackend::try_record_new_log_file` :207 (206 tokens)
-- `s_generate_uuid` :248 (80 tokens)
-- `LogSinkBackend::update_log_enc_key` :331 (92 tokens)
-- `LogSinkBackend::DecodeAES256LogFile` :353 (528 tokens)
-- `current_pid` :439 (29 tokens)
-- `LogSinkUtil::get_log_filename_format` :451 (221 tokens)
+- `current_pid` :44 (29 tokens)
+- `LogSinkBackend::is_consuming_on_this_thread` :54 (5 tokens)
+- `LogSinkBackend::update_enc_option` :77 (93 tokens)
+- `LogSinkBackend::consume` :100 (29 tokens)
+- `LogSinkUtil::get_log_filename_format` :114 (221 tokens)
 
 Rust only:
 
 - `LogEncOptions::default` :77
+- `LogSinkBackend::get_enc_key_type` :159
+- `LogSinkBackend::get_aes_256_cbc` :192
+- `s_get_enc_block_size` :224
 - `LogSinkUtil::get_log_filaname_format` :246
 - `set_data_dir` :338 — C++ has it in `utils`
 - `data_dir` :344

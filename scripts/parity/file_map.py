@@ -32,6 +32,32 @@ from tree_sitter_language_pack import get_parser
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CPP_ROOT = os.path.join(REPO, "references", "BambuStudio", "src", "libslic3r")
 RS_ROOT = os.path.join(REPO, "crates", "libslic3r-rs", "src")
+# The override layer: a file here replaces the engine's file of the same relative path when
+# `slicer_cli` is built, so it is what the port has to follow.
+OVERRIDE_REL = "libslic3r/bambustudio/libslic3r"
+OVERRIDE_ROOT = os.path.join(REPO, *OVERRIDE_REL.split("/"))
+
+
+def tracked_overrides():
+    """Relative paths of the override layer's files that are checked in (a local, untracked
+    copy made for a diagnosis must not change the map)."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "-C", REPO, "ls-files", OVERRIDE_REL], capture_output=True, text=True,
+                             check=True).stdout
+    except Exception:
+        return set()
+    return {os.path.relpath(os.path.join(REPO, l), OVERRIDE_ROOT) for l in out.splitlines() if l.strip()}
+
+
+OVERRIDES = tracked_overrides()
+
+
+def cpp_source(rel_dir, f):
+    rel = os.path.normpath(os.path.join(rel_dir, f))
+    if rel in OVERRIDES:
+        return os.path.join(OVERRIDE_ROOT, rel)
+    return os.path.join(CPP_ROOT, rel_dir, f)
 OUT_MD = os.path.join(REPO, "docs", "rust-engine", "FILE_MAP.md")
 
 CPP_EXT = (".cpp", ".hpp", ".h", ".c", ".cc")
@@ -321,7 +347,7 @@ def build():
     for (rel_dir, stem), files in sorted(units.items()):
         fns = []
         for f in files:
-            fns += cpp_functions(os.path.join(CPP_ROOT, rel_dir, f))
+            fns += cpp_functions(cpp_source(rel_dir, f))
         cpp_fns_by_unit[(rel_dir, stem)] = fns
         for f in fns:
             cpp_index[letters(f["name"])].add((rel_dir + "/" if rel_dir else "") + stem)
@@ -499,6 +525,11 @@ def render(data):
     w("the same data with every matched function, the ones estimated faithful included.")
     w("")
     w("C++ side: `references/BambuStudio/src/libslic3r` at the pin. Rust side: `crates/libslic3r-rs/src`.")
+    if OVERRIDES:
+        w("")
+        w("Where the override layer (`" + OVERRIDE_REL + "`) carries a file, that file is read in place of the")
+        w("engine's, because it is the one `slicer_cli` compiles: "
+          + ", ".join("`" + o + "`" for o in sorted(OVERRIDES)) + ".")
     w("")
     w("## How to read it")
     w("")

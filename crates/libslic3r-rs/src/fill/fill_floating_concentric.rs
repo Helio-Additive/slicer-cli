@@ -41,6 +41,17 @@ use crate::geometry::{
 };
 use crate::libslic3r::SCALED_EPSILON;
 use crate::utils::prev_idx_modulo;
+
+/// FFC_OVERRIDE (on): `slicer_cli` compiles
+/// `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp`, the
+/// override layer's copy, in place of the engine's file. It differs in what
+/// this gate switches: `rebase_at` writes the closure flag at index n-1 instead
+/// of appending it, and a finished path is flagged cfFloatingVerticalShell by
+/// the flag of the run it closes (`is_floating`), not by its last line. =0
+/// follows the engine's own file at the pin.
+fn ffc_override() -> bool {
+    crate::faithful_gate("FFC_OVERRIDE")
+}
 use crate::{Coord, CoordF};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
@@ -133,7 +144,13 @@ impl FloatingPolyline {
         }
         // FillFloatingConcentric.cpp:30
         let front = ret.is_floating[0];
-        ret.is_floating.push(front);
+        if ffc_override() {
+            // The override layer's file: the last index takes the rotated closure
+            // flag in place; nothing is appended.
+            ret.is_floating[n - 1] = front;
+        } else {
+            ret.is_floating.push(front);
+        }
         // FillFloatingConcentric.cpp:31
         ret
     }
@@ -248,7 +265,13 @@ impl FloatingThickPolyline {
         }
         // FillFloatingConcentric.cpp:45
         let front = ret.is_floating[0];
-        ret.is_floating.push(front);
+        if ffc_override() {
+            // The override layer's file: the last index takes the rotated closure
+            // flag in place; nothing is appended.
+            ret.is_floating[n - 1] = front;
+        } else {
+            ret.is_floating.push(front);
+        }
         // FillFloatingConcentric.cpp:46
         ret
     }
@@ -485,7 +508,11 @@ pub fn floating_thick_polyline_to_extrusion_paths(
                 // FillFloatingConcentric.cpp:119
                 if length > SCALED_EPSILON {
                     // FillFloatingConcentric.cpp:120-121
-                    if lines[i as usize].is_a_floating && lines[i as usize].is_b_floating {
+                    if if ffc_override() {
+                        is_floating
+                    } else {
+                        lines[i as usize].is_a_floating && lines[i as usize].is_b_floating
+                    } {
                         path.set_customize_flag(CustomizeFlag::FloatingVerticalShell);
                     }
                     // FillFloatingConcentric.cpp:122
@@ -634,7 +661,11 @@ pub fn floating_thick_polyline_to_extrusion_paths(
         // FillFloatingConcentric.cpp:194
         if length > SCALED_EPSILON {
             // FillFloatingConcentric.cpp:195-196
-            if lines[final_size - 1].is_a_floating && lines[final_size - 1].is_b_floating {
+            if if ffc_override() {
+                is_floating
+            } else {
+                lines[final_size - 1].is_a_floating && lines[final_size - 1].is_b_floating
+            } {
                 path.set_customize_flag(CustomizeFlag::FloatingVerticalShell);
             }
             // FillFloatingConcentric.cpp:197
@@ -710,12 +741,20 @@ pub fn interpolate_width(
         let next_z_idx = path[next_idx as usize].2 as usize;
         width_next = thick_polyline_get_width_at(line, next_z_idx);
     }
-    // FillFloatingConcentric.cpp:236
-    let prev = Point::new(path[prev_idx as usize].0, path[prev_idx as usize].1);
-    // FillFloatingConcentric.cpp:237
-    let next = Point::new(path[next_idx as usize].0, path[next_idx as usize].1);
     // FillFloatingConcentric.cpp:238
     let curr = Point::new(path[idx].0, path[idx].1);
+    // FillFloatingConcentric.cpp:236-237; the override layer's file takes `curr`
+    // where the neighbour index ran off the path.
+    let prev = if prev_idx >= 0 {
+        Point::new(path[prev_idx as usize].0, path[prev_idx as usize].1)
+    } else {
+        curr
+    };
+    let next = if (next_idx as usize) < path.len() {
+        Point::new(path[next_idx as usize].0, path[next_idx as usize].1)
+    } else {
+        curr
+    };
     // FillFloatingConcentric.cpp:239
     let d_total = (((next.x - prev.x) as f64).powi(2) + ((next.y - prev.y) as f64).powi(2)).sqrt();
     // FillFloatingConcentric.cpp:240
@@ -983,6 +1022,15 @@ pub fn detect_floating_line(
         // FillFloatingConcentric.cpp:395
         // if (force_no_detect || !bbox_area.overlap(bbox_line) || intersection_pl(polyline, floating_areas).empty())
         let polyline = crate::geometry::Polyline::from_points(line.points.clone());
+        if crate::probe_enabled("FFCPROBE") {
+            eprintln!(
+                "FFCDET force={} areas={} bbox_overlap={} ipl={}",
+                force_no_detect,
+                floating_areas.len(),
+                bbox_area.intersects(&bbox_line),
+                crate::clipper_utils::intersection_pl(std::slice::from_ref(&polyline), floating_areas).len()
+            );
+        }
         if force_no_detect
             || !bbox_area.intersects(&bbox_line)
             || crate::clipper_utils::intersection_pl(
@@ -1655,9 +1703,13 @@ impl<'a> FillFloatingConcentric<'a> {
             // FVS_FORCE_NO_DETECT (faithful ON) mirrors native's dominant
             // observable behaviour: skip detection. The exact-machinery arm
             // (FVS_SELFX grid) stays for the day native fixes the UB.
+            // The override layer's file, which is what `slicer_cli` compiles,
+            // keeps the grid's points alive, so there the detection runs as
+            // written (FFC_OVERRIDE). FVS_FORCE_NO_DETECT stays for the engine's
+            // own file.
             let force_no_detect = !detect_floating_vs
                 || is_self_intersect
-                || crate::faithful_gate("FVS_FORCE_NO_DETECT");
+                || (!ffc_override() && crate::faithful_gate("FVS_FORCE_NO_DETECT"));
             if crate::probe_enabled("FVS_DEBUG") {
                 use std::sync::atomic::Ordering::Relaxed;
                 if all_extrusions[idx].is_closed
@@ -1863,6 +1915,18 @@ impl<'a> FillFloatingConcentric<'a> {
                 &new_flow,
                 tolerance,
             );
+            if crate::probe_enabled("FFCPROBE") {
+                let closed = !paths.is_empty()
+                    && paths.first().unwrap().first_point() == paths.last().unwrap().last_point();
+                eprintln!(
+                    "FFCPROBE paths={} flagged={} closed={} line_floating={}/{}",
+                    paths.len(),
+                    paths.iter().filter(|p| p.get_customize_flag() == CustomizeFlag::FloatingVerticalShell).count(),
+                    closed,
+                    line.is_floating.iter().filter(|b| **b).count(),
+                    line.is_floating.len()
+                );
+            }
             // FillFloatingConcentric.cpp:966-979
             if !paths.is_empty() {
                 // FillFloatingConcentric.cpp:968-969
