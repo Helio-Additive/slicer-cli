@@ -307,6 +307,12 @@ pub struct PrintObject {
     /// C++ when the caller placed the object: the volume matrix's, then
     /// `trafo_centered()`'s (SeamPlacer.cpp 577-604). With `raw_local_mesh`.
     pub occlusion_place: Option<([f64; 3], [f64; 3])>,
+    /// The object's volumes as the seam placer's occlusion mesh takes them
+    /// (SeamPlacer.cpp:577-606): for each MODEL_PART and NEGATIVE_VOLUME its
+    /// volume-local mesh, its matrix (rows of the linear part, then the
+    /// translation) and whether it is a negative volume; then `trafo_centered()`
+    /// in the same layout.
+    pub occlusion_volumes: Option<(Vec<(crate::triangle_mesh::TriangleMesh, [f64; 12], bool)>, [f64; 12])>,
     /// R805 — negative volumes as (volume-local mesh, exact 4x4 slicing transform).
     pub negative_volumes_raw: Vec<(crate::triangle_mesh::TriangleMesh, [f64; 16])>,
 
@@ -353,6 +359,7 @@ impl PrintObject {
             raw_local_mesh: None,
             slice_center_override: None,
             occlusion_place: None,
+            occlusion_volumes: None,
             negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
@@ -388,6 +395,7 @@ impl PrintObject {
             raw_local_mesh: None,
             slice_center_override: None,
             occlusion_place: None,
+            occlusion_volumes: None,
             negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }

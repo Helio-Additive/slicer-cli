@@ -585,6 +585,7 @@ pub fn slice_3mf_to_gcode(
     let mut paint_frame_offset: Option<(i64, i64)> = None;
     let mut paint_tb_trafo: Option<[f64; 16]> = None;
     let mut paint_tc: Option<[f64; 12]> = None;
+    let mut paint_trafo_z: Option<f64> = None;
     let paint_pair: Option<([f64; 16], [f64; 16])> = if crate::faithful_gate("MMS_PAINT_FRAME")
         && !mmu_facets.is_empty()
         && paint_segments.len() == 1
@@ -672,7 +673,11 @@ pub fn slice_3mf_to_gcode(
         let mut tc = b0;
         tc[9] -= ox as f64 * crate::libslic3r::SCALING_FACTOR;
         tc[10] -= oy as f64 * crate::libslic3r::SCALING_FACTOR;
+        paint_trafo_z = Some(tc[11]);
         tc[11] += dz;
+        if crate::probe_enabled("OCCDBG") {
+            eprintln!("OCCDBG-R tc b0z={:e} dz={:e} tc={:?} vol={:?}", b0[11], dz, tc, c);
+        }
         let vt = compose12(c, &tc);
         paint_tc = Some(tc);
         paint_tb_trafo = Some([
@@ -814,6 +819,27 @@ pub fn slice_3mf_to_gcode(
     } else {
         Vec::new()
     };
+    // The volumes one by one, for the seam placer's occlusion mesh
+    // (SeamPlacer.cpp:577-606): the part with its matrix, the negative volumes
+    // with theirs, and trafo_centered().
+    if let (Some(tc), Some(local)) = (paint_tc, print_object.raw_local_mesh.as_ref()) {
+        let mut volumes: Vec<(TriangleMesh, [f64; 12], bool)> =
+            vec![(local.clone(), paint_segments[0].2, false)];
+        for (verts, tris, vol_tf) in negative_segments.iter() {
+            let raw32: Vec<Point3F> = verts
+                .iter()
+                .map(|v| Point3F { x: v.x as f32 as f64, y: v.y as f32 as f64, z: v.z as f32 as f64 })
+                .collect();
+            let tri: Vec<crate::triangle_mesh::Triangle> =
+                tris.iter().map(|t| crate::triangle_mesh::Triangle::new(t[0], t[1], t[2])).collect();
+            volumes.push((TriangleMesh::from_parts(raw32, tri), *vol_tf, true));
+        }
+        // `tc` carries the port's bed drop in Z on top of trafo()'s own; the
+        // oracle's trafo_centered() has trafo()'s Z alone.
+        let mut tc_occlusion = tc;
+        tc_occlusion[11] = paint_trafo_z.unwrap_or(tc[11]);
+        print_object.occlusion_volumes = Some((volumes, tc_occlusion));
+    }
     print_object.painted_submeshes_strict = painted_submeshes_strict;
     print_object.num_total_filaments = print_config.num_filaments();
     // R704 — negative volumes travel with the object and are subtracted per

@@ -998,6 +998,9 @@ impl GlobalModelInfo {
 /// this pipeline, so `negative_volumes_start_index == indices.len()` (the
 /// model-contains-negative-parts branch never triggers, matching Benchy).
 pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
+    if let Some((triangle_set, negative_volumes_start_index)) = occlusion_set_from_volumes(po) {
+        return finish_global_occlusion(GlobalModelInfo::default(), triangle_set, negative_volumes_start_index);
+    }
     let mut result = GlobalModelInfo::default();
 
     // SeamPlacer.cpp:577-591 — gather the object parts into `triangle_set`.
@@ -1161,6 +1164,17 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
     // full triangle count (the negative-volume raycast branch never triggers).
     let negative_volumes_start_index = triangle_set.indices.len();
 
+    finish_global_occlusion(result, triangle_set, negative_volumes_start_index)
+}
+
+/// The part of `compute_global_occlusion` after the occlusion mesh is put
+/// together (SeamPlacer.cpp:608-638): sampling, the search radius, the AABB tree
+/// and the raycast.
+fn finish_global_occlusion(
+    mut result: GlobalModelInfo,
+    triangle_set: indexed_triangle_set,
+    negative_volumes_start_index: usize,
+) -> GlobalModelInfo {
     if std::env::var("OCCDBG").is_ok() {
         let mut h: u64 = 1469598103934665603;
         for v in &triangle_set.vertices {
@@ -1251,6 +1265,97 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
     }
 
     result
+}
+
+/// SEAM_OCCL_VOLUMES (on): the occlusion mesh as `compute_global_occlusion`
+/// builds it (SeamPlacer.cpp:577-606) when the object's volumes are known one by
+/// one. Each MODEL_PART and NEGATIVE_VOLUME is put through its own matrix
+/// (`its_transform`, admesh/stl.h:372-380: the product in double, the result in
+/// float), the parts and the negative volumes are merged into two sets, each is
+/// decimated by `its_short_edge_collpase`, the negative set is appended and
+/// the whole goes through `trafo_centered()`. Returns the set and the index of
+/// the first negative-volume triangle. =0 decimates the placed mesh of the parts
+/// alone.
+fn occlusion_set_from_volumes(po: &PrintObject) -> Option<(indexed_triangle_set, usize)> {
+    if !crate::faithful_gate("SEAM_OCCL_VOLUMES") {
+        return None;
+    }
+    let (volumes, trafo_centered) = po.occlusion_volumes.as_ref()?;
+    use crate::normal_utils::{indexed_triangle_set as NuIts, Vec3crd};
+    // `(t * v.cast<double>()).cast<float>()` with the matrix in the 12-number
+    // layout of the loader: rows of the linear part, then the translation.
+    let transform = |t: &[f64; 12], v: &Vec3f| -> Vec3f {
+        let (x, y, z) = (v.x as f64, v.y as f64, v.z as f64);
+        Vec3f::new(
+            (t[0] * x + t[1] * y + t[2] * z + t[9]) as f32,
+            (t[3] * x + t[4] * y + t[5] * z + t[10]) as f32,
+            (t[6] * x + t[7] * y + t[8] * z + t[11]) as f32,
+        )
+    };
+    let mut triangle_set = NuIts { vertices: Vec::new(), indices: Vec::new() };
+    let mut negative_volumes_set = NuIts { vertices: Vec::new(), indices: Vec::new() };
+    for (mesh, matrix, negative) in volumes {
+        let dst = if *negative { &mut negative_volumes_set } else { &mut triangle_set };
+        // its_merge (TriangleMesh.cpp:1827-1837)
+        let n = dst.vertices.len() as i32;
+        dst.vertices.extend(
+            mesh.vertices()
+                .iter()
+                .map(|v| transform(matrix, &Vec3f::new(v.x as f32, v.y as f32, v.z as f32))),
+        );
+        dst.indices.extend(mesh.indices().iter().map(|t| {
+            Vec3crd::new(t.indices[0] as i32 + n, t.indices[1] as i32 + n, t.indices[2] as i32 + n)
+        }));
+    }
+    let occ_dbg = |tag: &str, its: &NuIts| {
+        if std::env::var("OCCDBG").is_err() {
+            return;
+        }
+        let mut h: u64 = 1469598103934665603;
+        let (mut mn, mut mx) = ([1e9f32; 3], [-1e9f32; 3]);
+        for v in &its.vertices {
+            for (k, c) in [v.x, v.y, v.z].iter().enumerate() {
+                mn[k] = mn[k].min(*c);
+                mx[k] = mx[k].max(*c);
+                h ^= c.to_bits() as u64;
+                h = h.wrapping_mul(1099511628211);
+            }
+        }
+        let mut hi: u64 = 1469598103934665603;
+        for t in &its.indices {
+            for c in [t.x, t.y, t.z] {
+                hi ^= c as u32 as u64;
+                hi = hi.wrapping_mul(1099511628211);
+            }
+        }
+        eprintln!(
+            "OCCDBG-R {} tris={} verts={} vh={:x} ih={:x} bb={:.6},{:.6},{:.6}/{:.6},{:.6},{:.6}",
+            tag, its.indices.len(), its.vertices.len(), h, hi, mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]
+        );
+    };
+    occ_dbg("pre", &triangle_set);
+    // SeamPlacer.cpp:600-601
+    crate::short_edge_collapse::its_short_edge_collpase(&mut triangle_set, FAST_DECIMATION_TRIANGLE_COUNT_TARGET);
+    crate::short_edge_collapse::its_short_edge_collpase(&mut negative_volumes_set, FAST_DECIMATION_TRIANGLE_COUNT_TARGET);
+    occ_dbg("postdec", &triangle_set);
+    // :603-605
+    let negative_volumes_start_index = triangle_set.indices.len();
+    let n = triangle_set.vertices.len() as i32;
+    triangle_set.vertices.extend(negative_volumes_set.vertices.iter().cloned());
+    triangle_set
+        .indices
+        .extend(negative_volumes_set.indices.iter().map(|t| Vec3crd::new(t.x + n, t.y + n, t.z + n)));
+    for v in triangle_set.vertices.iter_mut() {
+        *v = transform(trafo_centered, v);
+    }
+    occ_dbg("sampin", &triangle_set);
+    Some((
+        indexed_triangle_set {
+            vertices: triangle_set.vertices,
+            indices: triangle_set.indices.iter().map(|i| Vec3i::new(i.x, i.y, i.z)).collect(),
+        },
+        negative_volumes_start_index,
+    ))
 }
 
 /// Virtual-dispatch helper mirroring the C++ `ExtrusionEntity::collect_points`

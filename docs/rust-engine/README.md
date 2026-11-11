@@ -121,12 +121,12 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R829) |
+| Fixture | As brought over (R808) | Now (R830) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 174,107 (93.40%) |
 | Benchy arachne | 32,769 (13.68%) | 218,262 (91.92%) |
-| Majora | 1,512,438 (55.88%) | 2,343,292 (83.63%) |
-| Majora, prime tower | 83.5% | 95.7% |
+| Majora | 1,512,438 (55.88%) | 2,361,380 (84.28%) |
+| Majora, prime tower | 83.5% | 95.8% |
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
 driver) R808 scored Majora 66.06%, Benchy classic 121,714 lines and Benchy
