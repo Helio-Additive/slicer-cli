@@ -549,6 +549,9 @@ pub struct PrintConfig {
     /// Enable prime/wipe tower for multi-material.
     /// BambuStudio: `enable_prime_tower`.
     pub enable_prime_tower: bool,
+    /// Speed of the lift when leaving the prime tower (mm/s).
+    /// BambuStudio: `prime_tower_lift_speed` (PrintConfig.cpp:7164, default 90).
+    pub prime_tower_lift_speed: CoordF,
     /// Prime tower width (mm).
     /// BambuStudio: `prime_tower_width`.
     pub prime_tower_width: CoordF,
@@ -1212,6 +1215,7 @@ impl Default for PrintConfig {
 
             // Wipe tower / prime tower
             enable_prime_tower: false,
+            prime_tower_lift_speed: 90.0,
             prime_tower_width: 60.0,
             prime_tower_skip_points: false,
             prime_tower_max_speed: 90.0,
@@ -2739,6 +2743,12 @@ impl PrintConfig {
             "prime_tower_width" => {
                 if let Some(v) = parse_f64(value) {
                     self.prime_tower_width = v;
+                }
+                true
+            }
+            "prime_tower_lift_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.prime_tower_lift_speed = v;
                 }
                 true
             }
@@ -5127,6 +5137,11 @@ impl PrintConfig {
             "prime_tower_width" => {
                 if let Some(v) = parse_f64(value) {
                     self.prime_tower_width = v;
+                }
+            }
+            "prime_tower_lift_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.prime_tower_lift_speed = v;
                 }
             }
             "flush_into_infill" => {

@@ -38,27 +38,27 @@ C++ side: `references/BambuStudio/src/libslic3r` at the pin. Rust side: `crates/
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 6 |
 | C++ units with no Rust file | 33 |
-| Rust files with no C++ file of that name | 50 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
+| Rust files with no C++ file of that name | 49 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9059 |
-| matched to a Rust function in the paired file | 3684 (41%) |
+| matched to a Rust function in the paired file | 3685 (41%) |
 | estimate: faithful | 3090 (84% of matched) |
 | estimate: partial | 365 (10% of matched) |
-| estimate: divergent | 198 (5% of matched) |
+| estimate: divergent | 199 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
-| missing in the paired Rust file | 4707 |
-| of those, a function of that name exists in another Rust file | 1620 |
+| missing in the paired Rust file | 4706 |
+| of those, a function of that name exists in another Rust file | 1619 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 764 |
 | of the rest, 25 tokens or more | 1958 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4438 |
+| Rust functions with no C++ function of that name in the pair | 4478 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2826 | 2360 | 285 | 161 | 20 | 4025 |
+| 1 | 180 | 174 | 6851 | 2827 | 2360 | 285 | 162 | 20 | 4024 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1381 | 465 | 389 | 41 | 30 | 5 | 916 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -75,7 +75,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 48 | 9 | 12 | 0 | 149 | 95 |
 | 1 | `PrintConfig` | `print_config.rs` | 137 | 8 | 0 | 2 | 0 | 127 | 101 |
 | 1 | `Print` | `print.rs` | 236 | 5 | 1 | 6 | 1 | 223 | 93 |
-| 1 | `GCode` | `g_code.rs` | 152 | 5 | 4 | 9 | 0 | 134 | 77 |
+| 1 | `GCode` | `g_code.rs` | 152 | 5 | 4 | 10 | 0 | 133 | 77 |
 | 1 | `Config` | `config.rs` | 327 | 12 | 2 | 0 | 0 | 313 | 80 |
 | 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 83 | 16 | 13 | 9 | 92 | 50 |
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 19 | 3 | 0 | 0 | 183 | 70 |
@@ -223,13 +223,12 @@ their function names come from, when there is one.
 | `gcode/change_filament.rs` | no C++ file of this name | 1 |  |
 | `gcode/cooling.rs` | no C++ file of this name | 85 | `GCode/GCodeEditor` |
 | `gcode/gcode_template.rs` | no C++ file of this name | 30 |  |
-| `gcode/generator.rs` | same name as a C++ file in another directory | 41 | `Fill/Lightning/Generator` |
 | `gcode/ironing.rs` | no C++ file of this name | 34 |  |
 | `gcode/mod.rs` | module | 1 |  |
 | `gcode/multi_material.rs` | no C++ file of this name | 42 |  |
 | `gcode/smooth_speed.rs` | no C++ file of this name | 13 | `GCode` |
 | `gcode/wipe_tower_integration.rs` | no C++ file of this name | 3 | `GCode` |
-| `gcode/writer.rs` | no C++ file of this name | 115 |  |
+| `gcode/writer.rs` | no C++ file of this name | 118 |  |
 | `geometry/aabb_tree.rs` | no C++ file of this name | 77 |  |
 | `geometry/mod.rs` | module | 19 | `Geometry` |
 | `geometry/simplify.rs` | no C++ file of this name | 19 |  |
@@ -2271,7 +2270,7 @@ Missing in the Rust file:
 - `ConfigOptionEnum::serialize` :2035 (52 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigOptionEnum::deserialize` :2042 (17 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigOptionEnum::has` :2048 (32 tokens) — in `app_config.rs`, `enum_bitmask.rs`, `g_code_reader.rs`
-- `ConfigOptionEnum::from_string` :2061 (54 tokens) — in `debug/compare.rs`, `extrusion_entity.rs`, `gcode/generator.rs`
+- `ConfigOptionEnum::from_string` :2061 (54 tokens) — in `debug/compare.rs`, `extrusion_entity.rs`, `g_code.rs`
 - `ConfigOptionEnumGeneric::static_type` :2083 (5 tokens)
 - `ConfigOptionEnumGeneric::type` :2084 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`
 - `ConfigOptionEnumGeneric::clone` :2085 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `marching_squares.rs`
@@ -3912,23 +3911,24 @@ Rust only:
 
 ### `GCode` (.cpp+.hpp) and `g_code.rs`
 
-Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Rust functions 68. Matched 18: faithful 5, partial 4, divergent 9, stub 0.
+Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Rust functions 109. Matched 19: faithful 5, partial 4, divergent 10, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Wipe::wipe` :440 and `wipe` :3299 (31%, 0.72x)
-- divergent: `GCode::unretract` :1959 and `unretract` :3248 (17%, 1.12x)
-- divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :243 (8%, 1.33x)
-- divergent: `GCode::change_layer` :6473 and `change_layer` :3859 (17%, 0.89x)
-- divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :764 (17%, 1.88x)
-- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :2409 (55%, 3.86x)
-- divergent: `GCode::extrude_path` :6927 and `extrude_path` :1931 (5%, 0.05x)
-- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :2560 (28%, 1.64x)
-- partial: `GCode::extrude_support` :7011 and `extrude_support` :2946 (33%, 1.61x)
-- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :4008 (30%, 1.08x)
-- divergent: `GCode::travel_to` :8198 and `travel_to` :3104 (11%, 0.21x)
-- divergent: `GCode::retract` :8498 and `retract` :3190 (8%, 0.21x)
-- divergent: `GCode::set_extruder` :8617 and `set_extruder` :3476 (2%, 0.03x)
+- partial: `Wipe::wipe` :440 and `wipe` :3308 (31%, 0.72x)
+- divergent: `GCode::unretract` :1959 and `unretract` :3257 (17%, 1.12x)
+- divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :245 (8%, 1.33x)
+- divergent: `GCode::change_layer` :6473 and `change_layer` :3868 (17%, 0.89x)
+- divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :766 (17%, 1.89x)
+- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :2418 (55%, 3.86x)
+- divergent: `GCode::extrude_path` :6927 and `extrude_path` :1940 (5%, 0.05x)
+- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :2569 (28%, 1.64x)
+- partial: `GCode::extrude_support` :7011 and `extrude_support` :2955 (33%, 1.61x)
+- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :4017 (30%, 1.08x)
+- divergent: `GCode::travel_to` :8198 and `travel_to` :3113 (11%, 0.21x)
+- divergent: `GCode::retract` :8498 and `retract` :3199 (8%, 0.21x)
+- divergent: `GCode::set_extruder` :8617 and `set_extruder` :3485 (2%, 0.03x)
+- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :5493 (0%, 0.06x)
 
 Missing in the Rust file:
 
@@ -4065,60 +4065,99 @@ Missing in the Rust file:
 - `GCode::set_object_info` :9007 (183 tokens)
 - `GCode::point_to_gcode` :9029 (20 tokens)
 - `GCode::gcode_to_point` :9036 (50 tokens)
-- `GCode::ObjectByExtruder::Island::Region::append` :9106 (181 tokens) — in `ex_polygon_collection.rs`, `extrusion_entity.rs`, `fill/fill_cross_hatch.rs`
 
 Rust only:
 
-- `not_split_length` :26
-- `max_step_length` :31
-- `min_step_length` :36
-- `is_space` :99
-- `parse_leading_uint` :105
-- `Vec2f::new` :276
-- `Vec2f::index` :284
-- `Vec2f::index_mut` :295
-- `Vec2f::add` :307 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `rotate2d` :315
-- `never_skip_tag` :323 — C++ has it in `GCode/WipeTower`
-- `split_getlines` :360
-- `stream_read_float` :391
-- `SeamContextGuard::install` :537
-- `SeamContextGuard::drop` :548
-- `active_place_seam` :557
-- `apply_seam_split` :595
-- `TravelConfig::default` :624
-- `overhang_fan_marker_needed` :650
-- `overhang_degree_corr_speed` :671
-- `perimeter_base_speed` :731
-- `ExpProfGuard::drop` :1227
-- `expprof_report` :1234
-- `extrude_collection` :1247
-- `travel_target_for_entity` :1756
-- `writer_last_pos` :1787
-- `chained_path_from` :1801 — C++ has it in `ExtrusionEntityCollection`
-- `volumetric_capped_speed` :1824
-- `get_entity_mm3_per_mm` :1839
-- `get_entity_first_point` :1852
-- `get_entity_role` :1868
-- `fmt_g6` :1916
-- `extrude_path_ex` :1947
-- `extrude_path_with_arc_fitting` :1962
-- `extrude_perimeters_entities` :2736
-- `extrude_infill_entities` :2838
-- `apply_layer_cooling` :3628
-- `bridge_fan_speed` :3692
-- `overhang_fan_speed` :3711
-- `set_fan_speed_for_role` :3733
-- `GCodeLayerState::default` :3823
-- `emit_layer_preamble` :3918
-- `emit_layer_postamble` :3975
-- `emit_object_start_label` :4050
-- `emit_object_end_label` :4079
-- `emit_layer_object_labels` :4105
-- `set_loop_wipe_path` :5360
-- `first_extrusion_path` :5376
-- `width_tag_before_speed` :5387
-- `set_speed_before_path` :5398
+- `not_split_length` :28
+- `max_step_length` :33
+- `min_step_length` :38
+- `is_space` :101
+- `parse_leading_uint` :107
+- `Vec2f::new` :278
+- `Vec2f::index` :286
+- `Vec2f::index_mut` :297
+- `Vec2f::add` :309 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `rotate2d` :317
+- `never_skip_tag` :325 — C++ has it in `GCode/WipeTower`
+- `split_getlines` :362
+- `stream_read_float` :393
+- `SeamContextGuard::install` :539
+- `SeamContextGuard::drop` :550
+- `active_place_seam` :559
+- `apply_seam_split` :597
+- `TravelConfig::default` :626
+- `overhang_fan_marker_needed` :652
+- `overhang_degree_corr_speed` :673
+- `perimeter_base_speed` :733
+- `ExpProfGuard::drop` :1236
+- `expprof_report` :1243
+- `extrude_collection` :1256
+- `travel_target_for_entity` :1765
+- `writer_last_pos` :1796
+- `chained_path_from` :1810 — C++ has it in `ExtrusionEntityCollection`
+- `volumetric_capped_speed` :1833
+- `get_entity_mm3_per_mm` :1848
+- `get_entity_first_point` :1861
+- `get_entity_role` :1877
+- `fmt_g6` :1925
+- `extrude_path_ex` :1956
+- `extrude_path_with_arc_fitting` :1971
+- `extrude_perimeters_entities` :2745
+- `extrude_infill_entities` :2847
+- `apply_layer_cooling` :3637
+- `bridge_fan_speed` :3701
+- `overhang_fan_speed` :3720
+- `set_fan_speed_for_role` :3742
+- `GCodeLayerState::default` :3832
+- `emit_layer_preamble` :3927
+- `emit_layer_postamble` :3984
+- `emit_object_start_label` :4059
+- `emit_object_end_label` :4088
+- `emit_layer_object_labels` :4114
+- `set_loop_wipe_path` :5369
+- `first_extrusion_path` :5385
+- `width_tag_before_speed` :5396
+- `set_speed_before_path` :5407
+- `GCode::new` :5441
+- `GCode::from_content_and_stats` :5449
+- `GCode::from_string` :5454 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :5462
+- `GCode::content` :5467
+- `GCode::as_bytes` :5472
+- `GCode::len` :5477
+- `GCode::is_empty` :5482 — C++ has it in `PresetBundle`
+- `GCode::append_line` :5487
+- `GCode::append_comment` :5498
+- `GCode::write_to_file` :5505
+- `GCode::read_from_file` :5516 — C++ has it in `Model`
+- `GCode::line_count` :5522
+- `GCode::lines` :5527 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :5532 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :5539
+- `GCode::fmt` :5550
+- `GCode::from` :5556 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :5562 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :5608
+- `GCodeStats::calculate_filament_stats` :5624
+- `GCodeStats::print_time_formatted` :5637
+- `GCodeStats::filament_used_meters` :5646
+- `GCodeStats::fmt` :5652
+- `GCodeHeader::new` :5687
+- `GCodeHeader::with_raw_settings` :5691
+- `GCodeHeader::with_estimated_time` :5704
+- `GCodeHeader::generate_header_block` :5727
+- `GCodeHeader::generate_config_block` :5779
+- `GCodeHeader::generate_minimal_config_block` :5866
+- `GCodeHeader::generate_executable_block_start` :5925
+- `GCodeHeader::generate_executable_block_content` :5932
+- `GCodeHeader::generate_complete_header` :6081
+- `is_config_key_skipped` :6243
+- `format_config_value` :6303
+- `process_gcode_template` :6514
+- `eval_condition` :7067
+- `eval_expr` :7254
+- `resolve_all_vars_in_expr` :7392
+- `eval_math` :7442
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
@@ -4557,7 +4596,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `SeamPlacer::calculate_candidates_visibility` :983 and `SeamPlacer::calculate_candidates_visibility` :2352 (50%, 0.65x)
 - partial: `SeamPlacer::calculate_overhangs_and_layer_embedding` :995 and `SeamPlacer::calculate_overhangs_and_layer_embedding` :2387 (54%, 0.95x)
 - partial: `SeamPlacer::init` :1495 and `SeamPlacer::init` :3095 (49%, 1.79x)
-- partial: `SeamPlacer::place_seam` :1563 and `SeamPlacer::place_seam` :3252 (46%, 1.41x)
+- partial: `SeamPlacer::place_seam` :1563 and `SeamPlacer::place_seam` :3252 (46%, 1.51x)
 
 Missing in the Rust file:
 
@@ -4599,10 +4638,10 @@ Rust only:
 - `SeamPlacer::stats` :2236
 - `SeamPlacer::init_simple` :2256
 - `SeamPlacer::seam_frame_offset` :2282
-- `gather_layer_perimeter` :3439
-- `find_best_seam_index` :3509
-- `place_seam` :3560
-- `create_seam_placer` :3569
+- `gather_layer_perimeter` :3451
+- `find_best_seam_index` :3521
+- `place_seam` :3572
+- `create_seam_placer` :3581
 
 ### `GCode/Smoothing` (.cpp+.hpp) and `gcode/smoothing.rs`
 
@@ -6096,7 +6135,7 @@ Missing in the Rust file:
 - `Model::read_from_step` :226 (252 tokens)
 - `add_textured_mesh_to_model` :284 (224 tokens)
 - `CutConnectorAttributes::serialize` :300 (11 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
-- `Model::read_from_file` :306 (1544 tokens) — in `gcode/generator.rs`
+- `Model::read_from_file` :306 (1544 tokens) — in `g_code.rs`
 - `CutConnector::serialize` :325 (19 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ModelObject::const_volumes` :397 (25 tokens)
 - `ModelObject::get_model` :398 (5 tokens)
@@ -7394,7 +7433,7 @@ Missing in the Rust file:
 - `ThickPolyline::thicklines` :610 (100 tokens) — in `geometry/thick_polyline.rs`
 - `ThickPolyline::rebase_at` :634 (280 tokens, overload) — in `fill/fill_floating_concentric.rs`
 - `ThickPolyline::get_width_at` :666 (24 tokens) — in `fill/fill_floating_concentric.rs`
-- `Polyline3::lines` :673 (76 tokens, overload) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `gcode/generator.rs`
+- `Polyline3::lines` :673 (76 tokens, overload) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `g_code.rs`
 
 Rust only:
 
@@ -8021,8 +8060,8 @@ Rust only:
 - `Print::invalidate_all_steps` :3478 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
 - `collect_entity_lines` :3623
 - `emit_tower_tcr` :3668
-- `emit_layer_by_island` :4135
-- `Print::default` :4742
+- `emit_layer_by_island` :4168
+- `Print::default` :4775
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 
@@ -8175,8 +8214,8 @@ Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :3807 (0%, 0.44x)
-- divergent: `validate` :10643 and `PrintConfig::validate` :898 (9%, 0.11x)
+- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :3817 (0%, 0.44x)
+- divergent: `validate` :10643 and `PrintConfig::validate` :901 (9%, 0.11x)
 
 Missing in the Rust file:
 
@@ -8311,86 +8350,86 @@ Missing in the Rust file:
 Rust only:
 
 - `GCodeConfig::default` :25
-- `PerExtruderCoolingConfig::default` :767
-- `PrintConfig::new` :791
-- `PrintConfig::num_filaments` :801
-- `PrintConfig::apply_from` :810
-- `PrintConfig::layer_height` :815 — C++ has it in `SLAPrint`
-- `PrintConfig::first_layer_height` :821
-- `PrintConfig::nozzle_diameter` :827 — C++ has it in `Flow`
-- `PrintConfig::print_speed` :833
-- `PrintConfig::support` :839
-- `PrintConfig::support_type` :845
-- `PrintConfig::brim_width` :851
-- `PrintConfig::raft_enabled` :857
-- `PrintConfig::raft_layers` :863 — C++ has it in `Slicing`
-- `PrintConfig::raft_expansion` :872
-- `PrintConfig::raft_contact_distance` :878
-- `PrintConfig::raft_density` :884
-- `PrintConfig::use_relative_e` :941
-- `PrintConfig::arc_fitting` :946
-- `PrintConfig::arc_fitting_tolerance` :951
-- `PrintConfig::arc_fitting_radius` :956
-- `PrintConfig::avoid_crossing_perimeters` :963
-- `PrintConfig::avoid_crossing_max_detour` :969
-- `PrintConfig::default` :976
-- `PrintConfig::fmt` :1305
-- `PrintObjectConfig::effective_line_width` :2042
-- `PrintObjectConfig::effective_initial_layer_line_width` :2051
-- `PrintObjectConfig::effective_outer_wall_line_width` :2061
-- `PrintObjectConfig::effective_inner_wall_line_width` :2071
-- `PrintObjectConfig::effective_sparse_infill_line_width` :2080
-- `PrintObjectConfig::effective_solid_infill_line_width` :2089
-- `PrintObjectConfig::effective_top_surface_line_width` :2098
-- `PrintObjectConfig::new` :2109
-- `PrintObjectConfig::perimeters` :2114
-- `PrintObjectConfig::fill_density` :2120
-- `PrintObjectConfig::fill_pattern` :2126
-- `PrintObjectConfig::seam_position` :2132
-- `PrintObjectConfig::perimeter_mode` :2138
-- `PrintObjectConfig::arachne` :2144
-- `PrintObjectConfig::arachne_min_bead_width` :2150
-- `PrintObjectConfig::arachne_min_feature_size` :2156
-- `parse_f64` :2164
-- `parse_percent_number` :2188
-- `parse_pct` :2192
-- `parse_bool` :2203
-- `parse_u32` :2207
-- `parse_i32` :2211
-- `parse_float_or_percent` :2216
-- `PrintConfig::set_deserialize` :2234 — C++ has it in `Config`
-- `PrintObjectConfig::set_deserialize` :2848 — C++ has it in `Config`
-- `PrintObjectConfig::default` :3502
-- `PrintObjectConfig::fmt` :3829
-- `BrimType::from_str_bambu` :3916
-- `PrintSequence::from_str_bambu` :3947
-- `WallInfillOrder::from_str_bambu` :3973
-- `SupportBasePattern::from_str_bambu` :4013
-- `SupportInterfacePattern::from_str_bambu` :4042
-- `IroningType::from_str_bambu` :4067
-- `FuzzySkinType::from_str_bambu` :4100
-- `FuzzySkinType::is_enabled` :4111 — C++ has it in `MeshBoolean`
-- `ScarfSeamType::from_str_bambu` :4130
-- `SurfacePattern::from_str_bambu` :4161
-- `InternalSolidInfillPattern::from_str_bambu` :4188
-- `EnsureVerticalShellThickness::from_str_bambu` :4226
-- `TreeSupportStyle::from_str_bambu` :4303
-- `InfillPattern::from_str_bambu` :4435
-- `TopOneWallType::is_enabled` :4537 — C++ has it in `MeshBoolean`
-- `TopOneWallType::is_all_top` :4542
-- `TopOneWallType::from_str_bambu` :4548
-- `PerimeterMode::is_variable_width` :4575
-- `PerimeterMode::name` :4580
-- `PrintConfig::to_key_value_map` :4598
-- `PrintConfig::apply_key_value_map` :4756
-- `PrintConfig::apply_key_value` :4764
-- `PrintObjectConfig::apply_key_value` :5392
-- `find_from` :6247
-- `s_keys_map_nozzle_volume_type` :6329
-- `nozzle_volume_type_string` :6518
-- `stoi` :6536
-- `atoi` :6540
-- `parse_leading_int` :6544
+- `PerExtruderCoolingConfig::default` :770
+- `PrintConfig::new` :794
+- `PrintConfig::num_filaments` :804
+- `PrintConfig::apply_from` :813
+- `PrintConfig::layer_height` :818 — C++ has it in `SLAPrint`
+- `PrintConfig::first_layer_height` :824
+- `PrintConfig::nozzle_diameter` :830 — C++ has it in `Flow`
+- `PrintConfig::print_speed` :836
+- `PrintConfig::support` :842
+- `PrintConfig::support_type` :848
+- `PrintConfig::brim_width` :854
+- `PrintConfig::raft_enabled` :860
+- `PrintConfig::raft_layers` :866 — C++ has it in `Slicing`
+- `PrintConfig::raft_expansion` :875
+- `PrintConfig::raft_contact_distance` :881
+- `PrintConfig::raft_density` :887
+- `PrintConfig::use_relative_e` :944
+- `PrintConfig::arc_fitting` :949
+- `PrintConfig::arc_fitting_tolerance` :954
+- `PrintConfig::arc_fitting_radius` :959
+- `PrintConfig::avoid_crossing_perimeters` :966
+- `PrintConfig::avoid_crossing_max_detour` :972
+- `PrintConfig::default` :979
+- `PrintConfig::fmt` :1309
+- `PrintObjectConfig::effective_line_width` :2046
+- `PrintObjectConfig::effective_initial_layer_line_width` :2055
+- `PrintObjectConfig::effective_outer_wall_line_width` :2065
+- `PrintObjectConfig::effective_inner_wall_line_width` :2075
+- `PrintObjectConfig::effective_sparse_infill_line_width` :2084
+- `PrintObjectConfig::effective_solid_infill_line_width` :2093
+- `PrintObjectConfig::effective_top_surface_line_width` :2102
+- `PrintObjectConfig::new` :2113
+- `PrintObjectConfig::perimeters` :2118
+- `PrintObjectConfig::fill_density` :2124
+- `PrintObjectConfig::fill_pattern` :2130
+- `PrintObjectConfig::seam_position` :2136
+- `PrintObjectConfig::perimeter_mode` :2142
+- `PrintObjectConfig::arachne` :2148
+- `PrintObjectConfig::arachne_min_bead_width` :2154
+- `PrintObjectConfig::arachne_min_feature_size` :2160
+- `parse_f64` :2168
+- `parse_percent_number` :2192
+- `parse_pct` :2196
+- `parse_bool` :2207
+- `parse_u32` :2211
+- `parse_i32` :2215
+- `parse_float_or_percent` :2220
+- `PrintConfig::set_deserialize` :2238 — C++ has it in `Config`
+- `PrintObjectConfig::set_deserialize` :2858 — C++ has it in `Config`
+- `PrintObjectConfig::default` :3512
+- `PrintObjectConfig::fmt` :3839
+- `BrimType::from_str_bambu` :3926
+- `PrintSequence::from_str_bambu` :3957
+- `WallInfillOrder::from_str_bambu` :3983
+- `SupportBasePattern::from_str_bambu` :4023
+- `SupportInterfacePattern::from_str_bambu` :4052
+- `IroningType::from_str_bambu` :4077
+- `FuzzySkinType::from_str_bambu` :4110
+- `FuzzySkinType::is_enabled` :4121 — C++ has it in `MeshBoolean`
+- `ScarfSeamType::from_str_bambu` :4140
+- `SurfacePattern::from_str_bambu` :4171
+- `InternalSolidInfillPattern::from_str_bambu` :4198
+- `EnsureVerticalShellThickness::from_str_bambu` :4236
+- `TreeSupportStyle::from_str_bambu` :4313
+- `InfillPattern::from_str_bambu` :4445
+- `TopOneWallType::is_enabled` :4547 — C++ has it in `MeshBoolean`
+- `TopOneWallType::is_all_top` :4552
+- `TopOneWallType::from_str_bambu` :4558
+- `PerimeterMode::is_variable_width` :4585
+- `PerimeterMode::name` :4590
+- `PrintConfig::to_key_value_map` :4608
+- `PrintConfig::apply_key_value_map` :4766
+- `PrintConfig::apply_key_value` :4774
+- `PrintObjectConfig::apply_key_value` :5407
+- `find_from` :6262
+- `s_keys_map_nozzle_volume_type` :6344
+- `nozzle_volume_type_string` :6533
+- `stoi` :6551
+- `atoi` :6555
+- `parse_leading_int` :6559
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 

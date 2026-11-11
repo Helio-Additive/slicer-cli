@@ -4105,7 +4105,40 @@ fn emit_tower_tcr(
     // cause and the speculative branch was removed rather than carried as inert code.
     // The remaining after_tower gap is therefore something C++ does that we do not model
     // at all -- see the R612 round note.
-    if crate::faithful_gate("TOWER_EXIT_WIPE_CPP") && tcr.is_tool_change {
+    // TOWER_LEAVE_CPP (on): the end of `append_tcr` (GCode.cpp:1355-1373).
+    //   - "A phony move to the end position at the wipe tower": the writer and
+    //     `m_last_pos` are at `tcr.end_pos` (:1356-1357), so the next object path
+    //     is chosen, and its seam placed, from the tower;
+    //   - the wipe path is the tower's own (`tcr.wipe_path`, :1366-1368);
+    //   - `retract(false, false, auto_lift_type, true, true)` (:1372): wipe along
+    //     that path, retract, and lift at once at `prime_tower_lift_speed`.
+    // =0 leaves the position where the last object path ended and lets the next
+    // travel retract.
+    if crate::faithful_gate("TOWER_LEAVE_CPP") {
+        // wipe_tower_point_to_object_point (GCode.cpp:526-529): bed point minus
+        // the export origin.
+        let (gox, goy) = writer.gcode_origin();
+        writer.set_position_xy(tcr.end_pos.x as f64 + gox, tcr.end_pos.y as f64 + goy);
+        writer.set_current_position_clear(true);
+        writer.reset_wipe_path();
+        // `tcr.wipe_path` is kept in bed coordinates (construct_tcr adds the
+        // tower position), like `start_pos` and `end_pos`.
+        let pts: Vec<(f64, f64)> = tcr
+            .wipe_path
+            .iter()
+            .map(|p| (p.x as f64 + gox, p.y as f64 + goy))
+            .collect();
+        if !pts.is_empty() {
+            writer.set_wipe_path_points(pts);
+        }
+        if crate::probe_enabled("TOWERLEAVE") {
+            eprintln!("TOWERLEAVE z={} tc={} end={:?} start={:?} wipe={:?} off={:?}", tcr.print_z, tcr.is_tool_change, tcr.end_pos, tcr.start_pos, tcr.wipe_path, off);
+        }
+        writer.mark_unretracted_after_raw();
+        writer.mark_unlifted_after_raw();
+        let alt = writer.auto_lift_type();
+        writer.retract_leaving_tower(alt, print_config.prime_tower_lift_speed);
+    } else if crate::faithful_gate("TOWER_EXIT_WIPE_CPP") && tcr.is_tool_change {
         // C++ `append_tcr` (GCode.cpp:1081-1084) also reinstalls the TOWER's own wipe
         // path from `tcr.wipe_path` before its next retract -- the field R608 found is
         // populated and never consumed. Tower-local -> object coords is a translation

@@ -3312,8 +3312,20 @@ impl SeamPlacer {
         // SeamPlacer.cpp:1505-1520 — pick the seam position.
         let seam_position: Vec3f = if self.config_mode == SeamPositionMode::Nearest {
             // SeamPlacer.cpp:1505 — nearest is resolved against the live position.
-            let preffered = Vec2f::new(up.x as f32, up.y as f32);
-            let _ = last_pos; // last_pos is encoded via `up` (loop start == last_pos here).
+            // SEAM_NEAREST_LAST_POS (on): SeamPlacer.cpp:1591 —
+            // `pick_nearest_seam_point_index(points, start_index, unscaled<float>(last_pos))`,
+            // the nozzle position, with `unscaled<float>` being
+            // `float(v) * float(SCALING_FACTOR)` (Point.hpp:574-577). =0 takes the
+            // loop's first vertex for it.
+            let preffered = if crate::faithful_gate("SEAM_NEAREST_LAST_POS") {
+                let sf = crate::libslic3r::SCALING_FACTOR as f32;
+                Vec2f::new(
+                    (last_pos.x - self.frame_offset_xy.0) as f32 * sf,
+                    (last_pos.y - self.frame_offset_xy.1) as f32 * sf,
+                )
+            } else {
+                Vec2f::new(up.x as f32, up.y as f32)
+            };
             // `perimeters` is contiguous after `init` (make_contiguous); the
             // back-reference indices live in the single front segment.
             let (perim_slice, tail) = layer.perimeters.as_slices();

@@ -354,6 +354,9 @@ pub struct GCodeWriter {
     /// Wipe state: accumulated extrusion path for wipe-during-retraction.
     /// C++ equivalent: GCode::m_wipe (Wipe class with path field)
     wipe_path: Vec<(CoordF, CoordF)>,
+    /// Feedrate (mm/min) of the eager lift in progress when it is a tool-change
+    /// lift (`_spiral_travel_to_z(.., tool_change)`), else `None`.
+    m_lift_feedrate: Option<CoordF>,
     /// WIPEPROBE: who installed the current wipe path (R807 diagnostics).
     wipe_path_src: &'static str, // (x, y) points in mm
     /// Whether wipe is enabled for this filament
@@ -475,6 +478,7 @@ impl GCodeWriter {
             layer_extrusion_time: 0.0,
             cooling_slowdown: 1.0,
             wipe_path: Vec::new(),
+            m_lift_feedrate: None,
             wipe_path_src: "init",
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             tc_retract_probe: false,
@@ -530,6 +534,11 @@ impl GCodeWriter {
             self.write_raw_content(&block);
             self.farthest_timelapse_inserted = true;
         }
+    }
+
+    /// The export origin as stored here, which is `-m_origin` of the C++ GCode.
+    pub fn gcode_origin(&self) -> (f64, f64) {
+        (self.gcode_origin_x, self.gcode_origin_y)
     }
 
     pub fn set_gcode_origin(&mut self, x: f64, y: f64) {
@@ -1528,6 +1537,22 @@ impl GCodeWriter {
         self.m_apply_lift_instantly = prev_ai;
     }
 
+    /// `GCode::retract(false, false, lift_type, true, true)` as `append_tcr` calls
+    /// it when leaving the wipe tower (GCode.cpp:1372): `slow_lift` reaches
+    /// `eager_lift(type, tool_change)` (GCode.cpp:8522), and
+    /// `_spiral_travel_to_z` then lifts at `prime_tower_lift_speed` when that is
+    /// positive (GCodeWriter.cpp:790-792).
+    pub fn retract_leaving_tower(&mut self, lift_type: u8, prime_tower_lift_speed: CoordF) {
+        let speed = if prime_tower_lift_speed > 0.0 {
+            Some(prime_tower_lift_speed * 60.0)
+        } else {
+            None
+        };
+        let prev = std::mem::replace(&mut self.m_lift_feedrate, speed);
+        self.retract_with_lift_type(lift_type, true);
+        self.m_lift_feedrate = prev;
+    }
+
     /// `retract()` with C++'s explicit `LiftType` and `apply_instantly` arguments
     /// (`GCode::retract(bool, bool, LiftType, bool)`). R636/R638.
     pub fn retract_with_lift_type(&mut self, lift_type: u8, apply_instantly: bool) {
@@ -1570,7 +1595,7 @@ impl GCodeWriter {
         let slope_threshold = 3.0 * std::f64::consts::PI / 180.0;
         let radius = to_lift / (2.0 * std::f64::consts::PI * slope_threshold.atan());
         let target_z = self.z + to_lift;
-        let travel_f = self.config.travel_speed * 60.0;
+        let travel_f = self.m_lift_feedrate.unwrap_or(self.config.travel_speed * 60.0);
         self.write_command(&GCodeCommand::SelectXYPlane);
         self.write_raw(&format!(
             "G3 Z{} I{} J0 P1  F{:.0}",
@@ -2604,6 +2629,18 @@ impl GCodeWriter {
     /// state the writer tracks separately, and that state has to be re-synced by hand.
     pub fn mark_unretracted_after_raw(&mut self) {
         self.retracted = false;
+    }
+
+    /// The tower block written as raw text ends with `GCode::unretract()`
+    /// (GCode.cpp:1253), which unlifts before it deretracts
+    /// (GCodeWriter.cpp `unlift`): the nozzle is back at the nominal Z and
+    /// nothing is lifted.
+    pub fn mark_unlifted_after_raw(&mut self) {
+        if self.m_lifted > 0.0 {
+            self.z -= self.m_lifted;
+            self.m_lifted = 0.0;
+        }
+        self.m_to_lift = 0.0;
     }
 
     pub fn unretract(&mut self) {

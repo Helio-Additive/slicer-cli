@@ -11,7 +11,6 @@ pub use crate::g_code as exporter;
 pub mod extruder;
 pub mod g_code_editor;
 pub mod g_code_processor;
-mod generator;
 pub mod ironing;
 pub mod multi_material;
 pub mod placeholder_parser;
@@ -56,7 +55,7 @@ pub use exporter::{
     extrude_perimeters, extrude_support, retract, set_extruder, travel_to, unretract, wipe,
     GCodeLayerState,
 };
-pub use generator::{process_gcode_template, GCode, GCodeHeader, GCodeStats};
+pub use crate::g_code::{process_gcode_template, GCode, GCodeHeader, GCodeStats};
 pub use ironing::{
     generate_ironing, should_iron_layer, IroningConfig, IroningGenerator, IroningPath,
     IroningResult, IroningType,
