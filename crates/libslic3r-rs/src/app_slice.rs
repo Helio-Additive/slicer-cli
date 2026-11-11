@@ -1969,11 +1969,13 @@ fn apply_bed_dimensions(config: &mut PrintConfig, json: &serde_json::Value) {
     if let Some(serde_json::Value::Array(arr)) = json.get("printable_area") {
         let mut max_x: f64 = 256.0;
         let mut max_y: f64 = 256.0;
+        let mut points: Vec<(f64, f64)> = Vec::new();
         for v in arr {
             if let Some(s) = v.as_str() {
                 let parts: Vec<&str> = s.split('x').collect();
                 if parts.len() == 2 {
                     if let (Ok(x), Ok(y)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
+                        points.push((x, y));
                         if x > max_x {
                             max_x = x;
                         }
@@ -1986,6 +1988,9 @@ fn apply_bed_dimensions(config: &mut PrintConfig, json: &serde_json::Value) {
         }
         config.bed_size_x = max_x;
         config.bed_size_y = max_y;
+        if points.len() >= 3 {
+            config.printable_area = points;
+        }
     }
 }
 

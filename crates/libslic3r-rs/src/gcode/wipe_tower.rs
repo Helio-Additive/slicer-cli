@@ -1084,6 +1084,12 @@ pub struct WipeTowerConfig {
     pub no_sparse_layers: bool,
     /// Enable timelapse printing
     pub enable_timelapse_print: bool,
+    /// Smooth timelapse is on (C++ `m_enable_timelapse_print`), as
+    /// `update_all_layer_depth` reads it to set every layer's depth to the
+    /// tower depth (WipeTower.cpp:5541-5546). `enable_timelapse_print` above
+    /// is the opt-in that changes this port's plan; this one only tells
+    /// `layer_info_depth` what C++ reads.
+    pub timelapse_smooth: bool,
     /// `only_generate_wall` of `generate_new` (WipeTower.cpp:7818): under
     /// timelapse the outer wall is a result of its own at the head of the layer
     /// and the finish of the layer draws none.
@@ -1166,6 +1172,7 @@ impl Default for WipeTowerConfig {
             bridging: 10.0,
             no_sparse_layers: false,
             enable_timelapse_print: false,
+            timelapse_smooth: false,
             only_generate_wall: false,
             enable_wrapping_detection: false,
             wrapping_detection_layers: 0,
@@ -2049,6 +2056,55 @@ impl WipeTowerWriter {
         self
     }
 
+    /// WipeTower.cpp:1138-1190 `polygon(const Polygon &wall_polygon, const float f)`:
+    /// the closed polygon as segments, begun at the segment whose start is
+    /// nearest the pen (a travel to it), each segment extruded with `f`.
+    ///
+    /// The simplification at :1140-1147 (`simplify(WT_SIMPLIFY_TOLERANCE_SCALED)`,
+    /// then arc fitting or another `simplify`) is left out as `generate_path`
+    /// leaves it out (R628); the polygons drawn here are offsets of the
+    /// rectangular wall, on which it changes nothing.
+    pub fn polygon(&mut self, wall_polygon: &crate::geometry::Polygon, f: f32) -> &mut Self {
+        let pl = to_polyline(wall_polygon);
+        // unscaled<float>(p): the coordinate as float times float(SCALING_FACTOR).
+        let sf = crate::libslic3r::SCALING_FACTOR as f32;
+        let to_v = |p: &crate::geometry::Point| Vec2f::new(p.x as f32 * sf, p.y as f32 * sf);
+        let segments: Vec<(Vec2f, Vec2f)> = pl
+            .points
+            .windows(2)
+            .map(|w| (to_v(&w[0]), to_v(&w[1])))
+            .collect();
+        // :1176-1177
+        if segments.is_empty() {
+            return self;
+        }
+        // :1149-1161 get_closet_idx — nearest segment start to the pen.
+        let anchor = self.current_pos;
+        let mut index_of_closest = 0usize;
+        let mut min_distance = f32::MAX;
+        for (i, seg) in segments.iter().enumerate() {
+            let dx = seg.0.x - anchor.x;
+            let dy = seg.0.y - anchor.y;
+            let distance = dx * dx + dy * dy;
+            if distance < min_distance {
+                min_distance = distance;
+                index_of_closest = i;
+            }
+        }
+        // :1179-1188
+        let mut i = index_of_closest;
+        self.travel_to(segments[i].0);
+        self.extrude_f(segments[i].1.x, segments[i].1.y, f);
+        loop {
+            i = (i + 1) % segments.len();
+            if i == index_of_closest {
+                break;
+            }
+            self.extrude_f(segments[i].1.x, segments[i].1.y, f);
+        }
+        self
+    }
+
     /// Fill a box with back-and-forth extrusion
     pub fn rectangle_fill_box(&mut self, box_coords: &BoxCoordinates, spacing: f32) -> &mut Self {
         let _width = box_coords.width();
@@ -2863,6 +2919,153 @@ impl WipeTower {
 
     /// Plan the entire tower
     // WipeTower.cpp:2933-3032
+    /// WipeTower.hpp:325-328 `extrusion_spacing_for`: centre-to-centre spacing
+    /// of adjacent extrusions of the given width and height.
+    fn extrusion_spacing_for(&self, layer_height: f32, line_width: f32) -> f32 {
+        line_width - layer_height * (1.0 - PI / 4.0)
+    }
+
+    /// `m_wipe_tower_brim_width`: the configured width, or the one derived from
+    /// the tower height when it is negative (WipeTower.cpp:7258).
+    fn wipe_tower_brim_width(&self) -> f32 {
+        if self.config.brim_width < 0.0 {
+            Self::get_auto_brim_by_height(self.config.height)
+        } else {
+            self.config.brim_width
+        }
+    }
+
+    /// WipeTower.cpp:4056-4075 `brim_chamfer_loops_num`: the first layer
+    /// carries the full brim, every layer above it one loop less, capped by the
+    /// maximum chamfer width.
+    fn brim_chamfer_loops_num(
+        &self,
+        layer_height: f32,
+        first_layer: bool,
+        dist_to_first: i32,
+        line_width: f32,
+    ) -> i32 {
+        let line_width = if line_width <= 0.0 { self.perimeter_width } else { line_width };
+        let spacing = self.extrusion_spacing_for(layer_height, line_width);
+        if spacing <= crate::libslic3r::EPSILON as f32 {
+            return 0;
+        }
+        let mut loops_num = ((self.wipe_tower_brim_width() + spacing / 2.0) / spacing) as i32;
+        if !first_layer {
+            if dist_to_first < 0 {
+                return 0;
+            }
+            // WipeTower.hpp:670 WT_MAX_CHAMFER_WIDTH = 3.f
+            let chamfer_loops_num = (3.0_f32 / spacing) as i32;
+            loops_num = loops_num.min(chamfer_loops_num) - dist_to_first;
+        }
+        loops_num.max(0)
+    }
+
+    /// WipeTower.cpp:6074-6081 `first_printed_layer_idx`. This port skips no
+    /// tower layers (`layer_is_skipped` is false throughout), so it is the first
+    /// layer index.
+    fn first_printed_layer_idx(&self) -> i32 {
+        self.first_layer_idx.map(|i| i as i32).unwrap_or(0)
+    }
+
+    /// WipeTower.hpp:813-824 `is_first_layer_for_slab`: whether an extrusion of
+    /// `slab_height` topping out at the current Z sits on the bed.
+    fn is_first_layer_for_slab(&self, slab_height: f32) -> bool {
+        if self.plan.is_empty() || self.layer_idx >= self.plan.len() {
+            return false;
+        }
+        if Some(self.layer_idx) == self.first_layer_idx {
+            return true;
+        }
+        let first = self.first_layer_idx.unwrap_or(0);
+        if first >= self.plan.len() {
+            return false;
+        }
+        let bed = self.plan[first].z - self.plan[first].height;
+        self.z_pos - slab_height <= bed + WT_EPSILON
+    }
+
+    /// WipeTower.hpp:829-838 `calc_tower_feedrate(filament_id, extrusion_flow,
+    /// first_layer)`, without the `m_handle_hotend_as_extruder` branch (this
+    /// port has no hotend-as-extruder machines).
+    fn calc_tower_feedrate(&self, filament_id: usize, extrusion_flow: f32, first_layer: bool) -> f32 {
+        let max_speed = self.config.max_speed * 60.0;
+        if first_layer {
+            return (self.config.first_layer_speed * 60.0).min(max_speed);
+        }
+        let max_e_speed = self
+            .filament_params
+            .get(filament_id)
+            .map_or(f32::MAX, |p| p.max_e_speed);
+        (60.0 * max_e_speed / extrusion_flow).min(max_speed)
+    }
+
+    /// `m_layer_info->depth` as C++ reads it: under smooth timelapse
+    /// `update_all_layer_depth` sets every layer to the tower depth
+    /// (WipeTower.cpp:5541-5546). This port keeps the per-layer depth in
+    /// `plan[i].depth` for its fill box (R509), so the C++ value is given here.
+    fn layer_info_depth(&self, layer_idx: usize) -> f32 {
+        if self.config.timelapse_smooth {
+            return self.depth;
+        }
+        self.plan.get(layer_idx).map_or(self.depth, |l| l.depth)
+    }
+
+    /// WipeTower.cpp:2879-2898 `align_perimeter`.
+    fn align_perimeter(&self, perimeter_box: &BoxCoordinates) -> BoxCoordinates {
+        let mut aligned_box = *perimeter_box;
+        let eps = crate::libslic3r::EPSILON;
+        let spacing = self.extra_spacing * self.perimeter_width;
+        // `float up = lu(1) - m_perimeter_width - EPSILON;`: the float
+        // difference, then the double EPSILON, stored as float.
+        let mut up = ((perimeter_box.lu.y - self.perimeter_width) as f64 - eps) as f32;
+        up = align_ceil(up, spacing);
+        up += self.perimeter_width;
+        up = up.min(self.depth);
+        let mut down = ((perimeter_box.ld.y - self.perimeter_width) as f64 + eps) as f32;
+        down = align_floor(down, spacing);
+        down += self.perimeter_width;
+        down = down.max(-self.y_shift);
+        aligned_box.lu.y = up;
+        aligned_box.ru.y = up;
+        aligned_box.ld.y = down;
+        aligned_box.rd.y = down;
+        aligned_box
+    }
+
+    /// `m_outer_wall[m_z_pos].push_back(pl)`: the map is keyed by Z; the key
+    /// here is the bit pattern of the positive float Z, which sorts as Z does.
+    fn record_outer_wall(&mut self, pl: Polyline) {
+        self.outer_wall.entry(self.z_pos.to_bits() as i32).or_default().push(pl);
+    }
+
+    /// WipeTower.hpp:223-228 `get_bbx`: the extents of the walls recorded on
+    /// the lowest layer (the first layer's wall and brim loops), unscaled, in
+    /// the tower's own coordinates; a box at the origin when none was recorded.
+    pub fn get_bbx(&self) -> ((f64, f64), (f64, f64)) {
+        let Some(first) = self.outer_wall.keys().min() else {
+            return ((0.0, 0.0), (0.0, 0.0));
+        };
+        let mut min = (i64::MAX, i64::MAX);
+        let mut max = (i64::MIN, i64::MIN);
+        for pl in &self.outer_wall[first] {
+            for p in &pl.points {
+                min.0 = min.0.min(p.x);
+                min.1 = min.1.min(p.y);
+                max.0 = max.0.max(p.x);
+                max.1 = max.1.max(p.y);
+            }
+        }
+        if min.0 > max.0 {
+            return ((0.0, 0.0), (0.0, 0.0));
+        }
+        (
+            (crate::unscale(min.0), crate::unscale(min.1)),
+            (crate::unscale(max.0), crate::unscale(max.1)),
+        )
+    }
+
     /// Adhesiveness category of a filament, 0 past the end of the list.
     // WipeTower.cpp:4204-4209 — the out-of-range fallback is C++'s, not a guess:
     //   if (filament_id >= m_filament_categories.size()) return 0;
@@ -4250,6 +4453,10 @@ impl WipeTower {
         let wt_box = BoxCoordinates::new(0.0, 0.0, self.config.width, self.depth);
         // :8264
         let outer_wall = self.draw_outer_wall(&mut writer, &wt_box, feedrate);
+        // :8265 — m_outer_wall[m_z_pos].push_back(to_polyline(outer_wall)).
+        if crate::faithful_gate("TOWER_BRIM_CHAMFER_CPP") {
+            self.record_outer_wall(to_polyline(&outer_wall));
+        }
 
         // :8271 — writer.add_wipe_path(outer_wall, m_filpar[m_current_tool].wipe_dist)
         // (WipeTower.cpp:1368-1379).
@@ -4600,12 +4807,96 @@ impl WipeTower {
         // Only draw perimeter if this is first layer or we need it.
         // WipeTower.cpp:7821 — `extrude_outer_wall = !only_generate_wall && ..`:
         // under timelapse the wall is the layer's first result.
-        if (is_first_layer || !self.config.no_sparse_layers) && !self.config.only_generate_wall {
-            self.draw_outer_wall(&mut writer, &wt_box, feedrate);
-        }
+        let extrude_perimeter =
+            (is_first_layer || !self.config.no_sparse_layers) && !self.config.only_generate_wall;
+        let drawn_wall = if extrude_perimeter {
+            Some(self.draw_outer_wall(&mut writer, &wt_box, feedrate))
+        } else {
+            None
+        };
 
-        // Print brim on first layer
-        if is_first_layer && self.print_brim && self.brim_width_real > 0.0 {
+        // TOWER_BRIM_CHAMFER_CPP (on): the brim and its chamfer as
+        // finish_layer_new draws them (WipeTower.cpp:4235-4242, 4268-4272,
+        // 4333-4371): loops offset from the outer wall by the extrusion spacing,
+        // the full brim on the first layer and one loop less on every layer
+        // above it, each loop recorded with the wall for `get_bbx`. =0 draws
+        // rectangles 0.9 line widths apart on the first layer only.
+        if crate::faithful_gate("TOWER_BRIM_CHAMFER_CPP") {
+            let wall_height = self.layer_height;
+            let wall_width = self.perimeter_width;
+            let perimeter_flow = self.extrusion_flow;
+            let wall_first_layer = self.is_first_layer_for_slab(wall_height);
+            let chamfer_feedrate =
+                self.calc_tower_feedrate(self.current_tool, perimeter_flow, wall_first_layer);
+            // :4237-4242 — one block: the layer's own depth plus a line width.
+            let mut wipe_tower_depth = self.depth;
+            if self.wipe_tower_blocks.len() == 1 {
+                wipe_tower_depth = self.layer_info_depth(self.layer_idx) + self.perimeter_width;
+            }
+            let wall_box = self.align_perimeter(&BoxCoordinates::new(
+                0.0,
+                0.0,
+                self.config.width,
+                wipe_tower_depth,
+            ));
+            // :4266 — generate_support_wall_new returns the wall polygon, drawn
+            // or not (:8356).
+            let mut outer_wall = match drawn_wall {
+                Some(w) => {
+                    // :4268-4272
+                    let mut shifted = to_polyline(&w);
+                    let dy = crate::scaled(self.y_shift as f64);
+                    for p in &mut shifted.points {
+                        p.y += dy;
+                    }
+                    self.record_outer_wall(shifted);
+                    w
+                }
+                None => generate_rectange_polygon(wall_box.ld, wall_box.ru),
+            };
+            // :4336-4344
+            let spacing = self.extrusion_spacing_for(wall_height, wall_width);
+            let dist_to_1st = self.layer_idx as i32 - self.first_printed_layer_idx();
+            let mut loops_num =
+                self.brim_chamfer_loops_num(wall_height, wall_first_layer, dist_to_1st, wall_width);
+            if !wall_first_layer
+                && self.layer_info_depth(self.layer_idx) != self.layer_info_depth(0)
+            {
+                loops_num = 0;
+            }
+            if loops_num > 0 {
+                // :4347-4349 — the wall the loops surround has this layer's
+                // wall width.
+                let drawn_wall_width = wall_width;
+                let first_loop_step =
+                    self.extrusion_spacing_for(wall_height, 0.5 * (drawn_wall_width + wall_width));
+                for i in 0..loops_num {
+                    let step = if i == 0 { first_loop_step } else { spacing };
+                    // scaled(float): float / float(SCALING_FACTOR), truncated.
+                    let delta =
+                        (step / crate::libslic3r::SCALING_FACTOR as f32) as i64 as f64;
+                    let expanded = crate::clipper_utils::offset_polygons_clib(
+                        std::slice::from_ref(&outer_wall),
+                        delta,
+                        crate::clipper_utils::OffsetJoinType::Miter,
+                    );
+                    if expanded.is_empty() {
+                        break;
+                    }
+                    outer_wall = expanded[0].clone();
+                    writer.polygon(&outer_wall, chamfer_feedrate);
+                    self.record_outer_wall(to_polyline(&outer_wall));
+                }
+                if wall_first_layer {
+                    // :4364-4367
+                    self.brim_width_real =
+                        first_loop_step + (loops_num - 1) as f32 * spacing + spacing / 2.0;
+                }
+            }
+            if is_first_layer {
+                self.print_brim = false;
+            }
+        } else if is_first_layer && self.print_brim && self.brim_width_real > 0.0 {
             let brim_spacing = self.perimeter_width * 0.9;
             let num_loops = (self.brim_width_real / brim_spacing).ceil() as i32;
 

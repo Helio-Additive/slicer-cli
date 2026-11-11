@@ -555,6 +555,12 @@ pub struct PrintConfig {
     /// Prime tower width (mm).
     /// BambuStudio: `prime_tower_width`.
     pub prime_tower_width: CoordF,
+    /// Brim width of the prime tower (mm); negative means a width derived from
+    /// the tower height. BambuStudio: `prime_tower_brim_width`
+    /// (PrintConfig.cpp:7169-7178, default 3).
+    pub prime_tower_brim_width: CoordF,
+    /// The points of the printable area (mm). BambuStudio: `printable_area`.
+    pub printable_area: Vec<(CoordF, CoordF)>,
     /// Leave gaps in the prime-tower wall where the object passes close, and
     /// iron the start of each purge line.
     /// BambuStudio: `prime_tower_skip_points`. Drives `WipeTower::m_use_gap_wall`
@@ -1217,6 +1223,8 @@ impl Default for PrintConfig {
             enable_prime_tower: false,
             prime_tower_lift_speed: 90.0,
             prime_tower_width: 60.0,
+            prime_tower_brim_width: 3.0,
+            printable_area: vec![(0.0, 0.0), (256.0, 0.0), (256.0, 256.0), (0.0, 256.0)],
             prime_tower_skip_points: false,
             prime_tower_max_speed: 90.0,
 
@@ -2749,6 +2757,12 @@ impl PrintConfig {
             "prime_tower_lift_speed" => {
                 if let Some(v) = parse_f64(value) {
                     self.prime_tower_lift_speed = v;
+                }
+                true
+            }
+            "prime_tower_brim_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.prime_tower_brim_width = v;
                 }
                 true
             }

@@ -242,6 +242,160 @@ pub fn get_wipe_avoid_pos_x(wt_min: &Vec2f, wt_max: &Vec2f, offset: f32) -> f32 
     default_value
 }
 
+/// GCode.cpp:623-739 `WipeTowerIntegration::generate_path_to_wipe_tower`.
+///
+/// `start_pos` is the last position before the wipe tower, `end_pos` the
+/// tower's start; both, the tower box `avoid_polygon` and the bed box
+/// `printer_bbx` (as (min, max)) are in print coordinates. The path goes
+/// straight to the point `p` where a ray from `end_pos` along the tower's
+/// first print direction leaves the tower box grown by 2 mm, around that box
+/// along the shorter way when the line from `start_pos` to `p` crosses it, and
+/// ends at `end_pos`.
+pub fn generate_path_to_wipe_tower(
+    start_pos: crate::Point,
+    end_pos: crate::Point,
+    avoid_polygon: (crate::Point, crate::Point),
+    printer_bbx: (crate::Point, crate::Point),
+) -> Vec<crate::Point> {
+    use crate::Point;
+    let sf = crate::libslic3r::SCALING_FACTOR;
+    let mut res: Vec<Point> = Vec::new();
+    // `coord_t alpha = scaled(2.f)`: float over float(SCALING_FACTOR), truncated.
+    let alpha = (2.0_f32 / sf as f32) as crate::Coord;
+    // BoundingBox::offset
+    let inner_min = Point::new(avoid_polygon.0.x - alpha, avoid_polygon.0.y - alpha);
+    let inner_max = Point::new(avoid_polygon.1.x + alpha, avoid_polygon.1.y + alpha);
+    let width = inner_max.x - inner_min.x;
+    // BoundingBox::polygon(): min, (max.x, min.y), max, (min.x, max.y).
+    let bbox_polygon = |min: Point, max: Point| {
+        vec![min, Point::new(max.x, min.y), max, Point::new(min.x, max.y)]
+    };
+    let bed_polygon = bbox_polygon(printer_bbx.0, printer_bbx.1);
+    // The first print direction of end_pos: Vec2f v(1, 0), reversed when
+    // end_pos is in the left half of the box.
+    let mut v: (f64, f64) = (1.0, 0.0);
+    if (end_pos.x - inner_min.x).abs() < width / 2 {
+        v = (-v.0, -v.1);
+    }
+    // A box that is not inside the bed: go straight to end_pos.
+    let avoid_points = bbox_polygon(inner_min, inner_max);
+    for p in &avoid_points {
+        if crate::geometry::polygon::point_in_polygon(p, &bed_polygon) != 1 {
+            res.push(end_pos);
+            return res;
+        }
+    }
+    let unscale = |p: &Point| (p.x as f64 * sf, p.y as f64 * sf);
+    // `scaled(Vec2d)`: divided by SCALING_FACTOR and truncated.
+    let scaled_pt = |x: f64, y: f64| Point::new((x / sf) as crate::Coord, (y / sf) as crate::Coord);
+    let cross2 = |a: (f64, f64), b: (f64, f64)| a.0 * b.1 - a.1 * b.0;
+    let eps = crate::libslic3r::EPSILON;
+    // Ray-line segment intersection (:648-662).
+    let ray_intersetion_line =
+        |a: (f64, f64), v1: (f64, f64), b: (f64, f64), c: (f64, f64)| -> Option<Point> {
+            let v2 = (c.0 - b.0, c.1 - b.1);
+            let denom = cross2(v1, v2);
+            if denom.abs() < eps {
+                return None;
+            }
+            let v12 = (a.0 - b.0, a.1 - b.1);
+            let nume_a = cross2(v2, v12);
+            let nume_b = cross2(v1, v12);
+            let t1 = nume_a / denom;
+            let t2 = nume_b / denom;
+            if t1 >= 0.0 && t2 >= 0.0 && t2 <= 1.0 {
+                return Some(scaled_pt(a.0 + t1 * v1.0, a.1 + t1 * v1.1));
+            }
+            None
+        };
+    // Inter_info: the edge index and the point.
+    // calc_path_len (:668-689): the path along the box from beg to end, and the
+    // sum of the squared lengths of its legs.
+    let calc_path_len = |points: &[Point],
+                         beg_info: (usize, Point),
+                         end_info: (usize, Point),
+                         is_add: bool|
+     -> (Vec<Point>, f64) {
+        let n = points.len();
+        let beg = if is_add { (beg_info.0 + 1) % n } else { beg_info.0 };
+        let end = if is_add { end_info.0 } else { (end_info.0 + 1) % n };
+        let mut i = beg;
+        let mut len = 0.0;
+        let mut path: Vec<Point> = Vec::new();
+        path.push(beg_info.1);
+        let (bx, by) = unscale(&beg_info.1);
+        let (px, py) = unscale(&points[beg]);
+        len += (bx - px) * (bx - px) + (by - py) * (by - py);
+        while i != end {
+            let ni = if is_add { (i + 1) % n } else { (i + n - 1) % n };
+            let a = unscale(&points[i]);
+            let b = unscale(&points[ni]);
+            len += (a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1);
+            path.push(points[i]);
+            i = ni;
+        }
+        path.push(points[end]);
+        path.push(end_info.1);
+        let (ex, ey) = unscale(&end_info.1);
+        let (qx, qy) = unscale(&points[end]);
+        len += (ex - qx) * (ex - qx) + (ey - qy) * (ey - qy);
+        (path, len)
+    };
+    // :693-704 — where the ray from end_pos along v leaves the box ('p').
+    let mut inter_info: Option<(usize, Point)> = None;
+    for i in 0..avoid_points.len() {
+        let a = &avoid_points[i];
+        let b = &avoid_points[(i + 1) % avoid_points.len()];
+        if let Some(p) = ray_intersetion_line(unscale(&end_pos), v, unscale(a), unscale(b)) {
+            inter_info = Some((i, p));
+            break;
+        }
+    }
+    let Some(inter_info) = inter_info else {
+        res.push(end_pos);
+        return res;
+    };
+    // :709-722 — the other crossing of start_pos -> p with the box ('p_').
+    let mut inter_info2: Option<(usize, Point)> = None;
+    let (sa, sb) = (unscale(&start_pos), unscale(&inter_info.1));
+    for i in 0..avoid_points.len() {
+        if i == inter_info.0 {
+            continue;
+        }
+        let a = unscale(&avoid_points[i]);
+        let b = unscale(&avoid_points[(i + 1) % avoid_points.len()]);
+        // line_alg::intersection(Linef, Linef) (Line.hpp:123-148).
+        let v1 = (sb.0 - sa.0, sb.1 - sa.1);
+        let v2 = (b.0 - a.0, b.1 - a.1);
+        let denom = cross2(v1, v2);
+        if denom.abs() < eps {
+            continue;
+        }
+        let v12 = (sa.0 - a.0, sa.1 - a.1);
+        let nume_a = cross2(v2, v12);
+        let nume_b = cross2(v1, v12);
+        let t1 = nume_a / denom;
+        let t2 = nume_b / denom;
+        if t1 >= 0.0 && t1 <= 1.0 && t2 >= 0.0 && t2 <= 1.0 {
+            let inter = (sa.0 + t1 * v1.0, sa.1 + t1 * v1.1);
+            inter_info2 = Some((i, scaled_pt(inter.0, inter.1)));
+            break;
+        }
+    }
+    // :725-736
+    match inter_info2 {
+        None => res.push(inter_info.1),
+        Some(info2) => {
+            let (path1, len1) = calc_path_len(&avoid_points, info2, inter_info, true);
+            let (path2, len2) = calc_path_len(&avoid_points, info2, inter_info, false);
+            let path = if len1 < len2 { path1 } else { path2 };
+            res.extend(path);
+        }
+    }
+    res.push(end_pos);
+    res
+}
+
 // GCode.cpp:2036
 pub fn to_bambu_bed_type(ty: BedType) -> BambuBedType {
     // GCode.cpp:2038
@@ -5518,6 +5672,11 @@ impl GCode {
     }
 
     /// Append a line to the G-code.
+    /// Remove and return everything written from byte `at` on.
+    pub(crate) fn split_off(&mut self, at: usize) -> String {
+        self.content.split_off(at)
+    }
+
     pub fn append_line(&mut self, line: &str) {
         self.content.push_str(line);
         self.content.push('\n');

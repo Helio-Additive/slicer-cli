@@ -404,6 +404,13 @@ pub struct GCodeWriter {
     /// Per-layer context for the faithful needs_retraction (ZSMOOTH_FAITHFUL):
     /// internal-island polygons + wall boundary lines of the current layer.
     pub zsmooth_retract_ctx: Option<RetractCtx>,
+    /// `WipeTowerIntegration::m_wipe_tower_bbx` (GCode.hpp:162): the tower's
+    /// first-layer extents in its own coordinates (`WipeTower::get_bbx`), set by
+    /// the export before the first layer.
+    pub wipe_tower_bbx: Option<((f64, f64), (f64, f64))>,
+    /// The length the last retraction took back (C++ `Extruder::m_retracted`,
+    /// Extruder.cpp `retract`), which `unretract` gives back.
+    m_retracted_length: CoordF,
     /// GCode.cpp m_last_width — persistent LINE_WIDTH tag dedup state.
     last_width_tag: f32,
 
@@ -494,6 +501,8 @@ impl GCodeWriter {
             pending_speed: None,
             force_analyzer_tags: false,
             zsmooth_retract_ctx: None,
+            wipe_tower_bbx: None,
+            m_retracted_length: 0.0,
             last_width_tag: 0.0,
             gcode_origin_x: 0.0,
             gcode_origin_y: 0.0,
@@ -629,6 +638,51 @@ impl GCodeWriter {
     /// detection, tool change) or the start of export. R630.
     pub fn set_current_position_clear(&mut self, clear: bool) {
         self.m_is_current_pos_clear = clear;
+    }
+
+    /// Where the output stands, for `take_output_since`.
+    pub(crate) fn output_mark(&self) -> usize {
+        self.gcode.len()
+    }
+
+    /// Remove and return what was written since `mark`, so a caller can place
+    /// the text of a writer call elsewhere in a block it assembles.
+    pub(crate) fn take_output_since(&mut self, mark: usize) -> String {
+        self.gcode.split_off(mark)
+    }
+
+    /// After a custom G-code block (`append_tcr`, GCode.cpp:1131-1142): the
+    /// writer no longer knows where the head is, and the block's last Z, when
+    /// it has one, becomes the Z of the position.
+    pub(crate) fn after_custom_gcode(&mut self, last_z: Option<CoordF>) {
+        self.m_is_current_pos_clear = false;
+        // `is_current_position_clear` reads this one unless
+        // WRITER_POS_CLEAR_CPP=1; the next travel sets both again.
+        self.position_known = false;
+        if let Some(z) = last_z {
+            self.z = z;
+        }
+    }
+
+    /// `GCode::travel_to(point, erMixed, ..)` as `append_tcr` uses it for the
+    /// travel to the wipe tower (GCode.cpp:1213-1231). The planner of
+    /// `reduce_crossing_wall` is disabled for this travel (:1182), so: retract
+    /// when `needs_retraction` says so (a writer that is already retracted
+    /// only lifts), else forget the wipe path; then `travel_to_xyz` to the
+    /// nominal Z. `x`, `y` are in this writer's frame.
+    pub(crate) fn travel_to_tower_point(&mut self, x: CoordF, y: CoordF) {
+        use crate::extrusion_entity::ExtrusionRole;
+        let from = crate::Point::new(crate::scale(self.x), crate::scale(self.y));
+        let to = crate::Point::new(crate::scale(x), crate::scale(y));
+        let len = ((x - self.x) * (x - self.x) + (y - self.y) * (y - self.y)).sqrt();
+        if self.needs_retraction_decision(from, to, ExtrusionRole::Mixed, len) {
+            self.retract();
+        } else {
+            self.reset_wipe_path();
+        }
+        self.set_travel_acceleration_for(ExtrusionRole::Mixed, len);
+        let z = if self.nominal_z > 0.0 { self.nominal_z } else { self.z };
+        self.travel_to_xyz(x, y, z);
     }
 
     /// Check if currently retracted.
@@ -802,10 +856,23 @@ impl GCodeWriter {
                 from.x, from.y, to.x, to.y
             );
         }
-        use crate::extrusion_entity::ExtrusionRole;
         if self.retracted {
             return false;
         }
+        self.needs_retraction_decision(from, to, dest_role, travel_len_mm)
+    }
+
+    /// `GCode::needs_retraction` (GCode.cpp:8392-8495) as such, whatever the
+    /// retraction state: true when the travel needs a retraction, with the lift
+    /// type resolved for it.
+    fn needs_retraction_decision(
+        &mut self,
+        from: crate::Point,
+        to: crate::Point,
+        dest_role: crate::extrusion_entity::ExtrusionRole,
+        travel_len_mm: CoordF,
+    ) -> bool {
+        use crate::extrusion_entity::ExtrusionRole;
         // GCode.cpp:6966 — retraction_minimum_travel
         if travel_len_mm < self.config.retract_before_travel {
             return false;
@@ -2516,6 +2583,7 @@ impl GCodeWriter {
         self.emit_lift_after_retract();
 
         self.retracted = true;
+        self.m_retracted_length = self.retraction_length;
         self.stats.retraction_count += 1;
     }
 
@@ -2541,6 +2609,7 @@ impl GCodeWriter {
         });
 
         self.retracted = true;
+        self.m_retracted_length = self.retraction_length;
         self.stats.retraction_count += 1;
     }
 
@@ -2583,6 +2652,7 @@ impl GCodeWriter {
         self.emit_lift_after_retract();
 
         self.retracted = true;
+        self.m_retracted_length = self.retraction_length;
         self.stats.retraction_count += 1;
     }
 
@@ -2709,7 +2779,15 @@ impl GCodeWriter {
         // Call extruder.extrude(+length) to unretract
         // GCodeWriter.cpp:819
         // C++: double dE = filament()->unretract();
-        let de = self.retraction_length;
+        // UNRETRACT_RETRACTED_LENGTH (on): `Extruder::unretract` gives back
+        // what the retraction took (m_retracted), which after
+        // `retract_for_toolchange` is the tool-change length, not the
+        // ordinary one. =0 always gives back `retraction_length`.
+        let de = if crate::faithful_gate("UNRETRACT_RETRACTED_LENGTH") && self.m_retracted_length > 0.0 {
+            self.m_retracted_length
+        } else {
+            self.retraction_length
+        };
         self.extruder.extrude(de);
 
         // Emit E value from extruder.E()
@@ -2838,6 +2916,7 @@ impl GCodeWriter {
                 f: Some(retract_speed),
             });
             self.retracted = true;
+            self.m_retracted_length = self.retraction_length;
             self.stats.retraction_count += 1;
         }
 

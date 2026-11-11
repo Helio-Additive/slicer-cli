@@ -1080,7 +1080,7 @@ fn clipper_area(points: &[Point]) -> CoordF {
 
 /// ClipperLib::PointInPolygon(pt, path) — returns 0 (outside), 1 (inside), -1 (on boundary).
 /// clipper.cpp:4793 — `int PointInPolygon(const IntPoint &pt, const Path &path)`
-fn point_in_polygon(pt: &Point, path: &[Point]) -> i32 {
+pub(crate) fn point_in_polygon(pt: &Point, path: &[Point]) -> i32 {
     // clipper.cpp:4793
     let mut result = 0i32;
     // clipper.cpp:4794
