@@ -46,6 +46,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R819 | The order the islands of a layer are printed in. `process_layer` puts every perimeter and fill collection into `islands[i]`, `i` being the lslice its first point lies in, and prints that vector front to back (GCode.cpp 5437-5527, 5922). The port printed the islands in the order they first appeared among the perimeter entities, which is the order the perimeter generator visited its surfaces in | new, on: `ISLAND_LSLICE_ORDER` | 149,451 → 164,807 (88.62%) | 158,538 → 204,849 (86.58%) | 1,796,767 → 1,847,143 (68.13%) |
 | R820 | The order of the fills inside an island. (1) `Region::append` takes the entities out of every sortable fill collection (GCode.cpp 9125-9133), so `extrude_infill` chains the single paths of a region, not its collections (6983-7009). The port had this parked as `ISLAND_FLATTEN` because it scored far below zero: a path taken out of its collection was printed without its feature tag, width and speed. (2) Each thin fill sits in `fills` in a collection of its own (end of `make_fills`), so gap fills are chained with the other fills instead of following them. (3) The paths of a grid may not be reversed by the chain (`params.can_reverse = false`, Fill.cpp 832-833; FillBase.cpp 172-175) | on: `ISLAND_FLATTEN` (was parked), `FILL_GRID_NO_REVERSE` (new) | 164,807 → 171,768 (92.33%) | 204,849 → 212,289 (89.65%) | 1,847,143 → 1,847,625 (68.24%) |
 | R821 | No engine change. The source map: `scripts/parity/file_map.py` writes `docs/rust-engine/FILE_MAP.md`, every libslic3r unit against the Rust file of the same name, function by function. It replaces the hand-kept counts of `PORT_LEDGER.md` | none | unchanged (171,768) | unchanged (212,289) | unchanged (1,847,625) |
+| R822 | From the map: `GCode/CoolingBuffer` had no Rust file; its five functions (`calculate_layer_slowdown`, `new_feedrate_to_reach_time_stretch` and the three `extruder_range_slow_down_*`) move out of `gcode/cooling.rs` into `gcode/cooling_buffer.rs` under their C++ names, output unchanged. From the G-code: wipe into infill. `WipingExtrusions::mark_wiping_extrusions` and `ensure_perimeters_infills_order` (ToolOrdering.cpp 3906-4117), driven as `Print::_make_wipe_tower` drives them (Print.cpp 4266-4329): the sparse infill marked for a tool change is taken off the volume purged on the tower, a region asks for its filament only for what cannot be overridden (ToolOrdering.cpp 939-1017), and the overridden fills print first after the change, closed by `; PURGING FINISHED` (GCode.cpp 5826-5828, 9046-9101) | on: `WIPE_INTO_INFILL` (new) | unchanged (171,768) | unchanged (212,289) | 1,847,625 → 1,954,872 (71.90%) |
 
 ## Findings
 
@@ -198,4 +199,12 @@ The Rust engine as it came from R808, against the kept oracle files:
   divergent, 31 stubs); of the 4,724 that do not, 1,633 exist under that name in another Rust file. 51 Rust
   files are named after no C++ file, among them the live G-code writer (`gcode/exporter.rs`,
   `gcode/writer.rs`, `gcode/cooling.rs`, `gcode/generator.rs`), and 7 names are held by two Rust files.
-
+- R822, Majora: prime tower 83.6% → 93.5% in order, sparse infill 35% → 51%, content 77.2% → 80.1%. The
+  number of `; PURGING FINISHED` lines agrees on every layer both engines print. The port takes wipe into
+  infill for one object, with `flush_into_infill` and without `flush_into_objects`; wiping into supports
+  and into whole objects, `flush_multiplier` and `grab_length` (1 and 0 on Majora) are not read yet.
+- R822, found and not fixed: the tool order of the first two Majora layers differs (oracle T0, T4, T2, T3
+  on the first layer; the port ends the layer with T0), every later layer has the oracle's order.
+- R822, the source map against R821: units with a Rust file of the same name 276 → 277, without 34 → 33;
+  functions matched 3,662 → 3,671 (faithful 3,084 → 3,089, partial 357 → 361), missing in the pair
+  4,724 → 4,720, in a unit with no Rust file 673 → 668, Rust only 4,395 → 4,399.

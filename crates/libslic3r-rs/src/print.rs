@@ -183,6 +183,10 @@ pub struct Print {
     /// emitted ones stay in lock-step (R424). Empty = use the default
     /// first-appearance order.
     pub optimized_layer_tools: Vec<(f64, Vec<usize>)>,
+    /// Per layer (by print_z): the fills `WipingExtrusions` overrode, keyed
+    /// (region id, index in `fills.entities`) -> the tool that prints them
+    /// (`WipingExtrusions::entity_map` after `Print::_make_wipe_tower`).
+    pub wiping_layer_overrides: Vec<(f64, std::collections::HashMap<(usize, usize), usize>)>,
 }
 
 impl Print {
@@ -391,6 +395,7 @@ impl Print {
             gcode_origin: (0.0, 0.0),
             wipe_tower_results: Vec::new(),
             optimized_layer_tools: Vec::new(),
+            wiping_layer_overrides: Vec::new(),
         }
     }
 
@@ -1064,6 +1069,11 @@ impl Print {
                     .iter()
                     .find(|(z, _)| (z - ltp.layer.print_z).abs() < 1e-4)
                     .map(|(_, t)| t.as_slice());
+                let wiping_overrides = self
+                    .wiping_layer_overrides
+                    .iter()
+                    .find(|(z, _)| (z - ltp.layer.print_z).abs() < 1e-4)
+                    .map(|(_, m)| m);
                 emit_layer_by_island(
                     ltp.layer,
                     &mut writer,
@@ -1078,6 +1088,7 @@ impl Print {
                     &mut toolchange_count,
                     total_tool_changes,
                     optimized_tools,
+                    wiping_overrides,
                 );
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
@@ -2319,6 +2330,43 @@ impl Print {
             };
             let mut prev_last: Option<usize> = None;
             let mut layer_seqs: Vec<(f32, f32, Vec<usize>)> = Vec::new();
+            // WIPE_INTO_INFILL (on): wipe into infill, the port of
+            // WipingExtrusions::mark_wiping_extrusions and
+            // ensure_perimeters_infills_order (ToolOrdering.cpp:3906-4117) as
+            // Print::_make_wipe_tower drives them (Print.cpp:4266-4329). =0 purges
+            // the whole flush volume on the tower and prints every fill with its
+            // region's tool. Taken for one object (the port prints one copy) and
+            // flush_into_infill without flush_into_objects; the other cases keep
+            // the =0 arm (PORT_LEDGER).
+            let wipe_gate = crate::faithful_gate("WIPE_INTO_INFILL")
+                && self.objects.len() == 1
+                && self.config.flush_into_infill
+                && !self.config.flush_into_objects
+                && !self.config.filament_soluble;
+            if crate::probe_enabled("WIPEPROBE") {
+                eprintln!(
+                    "WIPEPROBE gate={} objects={} infill={} objects_flush={} soluble={}",
+                    wipe_gate,
+                    self.objects.len(),
+                    self.config.flush_into_infill,
+                    self.config.flush_into_objects,
+                    self.config.filament_soluble
+                );
+            }
+            // WipingExtrusions::is_obj_overriddable (ToolOrdering.cpp:3874-3883)
+            let fill_role_volume = |ent: &crate::extrusion_entity::ExtrusionEntityType| {
+                use crate::extrusion_entity::ExtrusionEntityType as T;
+                match ent {
+                    T::Path(p) => (p.role, p.total_volume()),
+                    T::Loop(l) => (l.role(), l.total_volume()),
+                    T::Collection(c) => (c.role(), c.total_volume()),
+                }
+            };
+            let is_obj_overriddable = |ent: &crate::extrusion_entity::ExtrusionEntityType| {
+                wipe_gate
+                    && fill_role_volume(ent).0
+                        == crate::extrusion_entity::ExtrusionRole::InternalInfill
+            };
             for layer in object.layers() {
                 let regions = layer.regions();
                 let region_tools: Vec<usize> = regions
@@ -2340,8 +2388,15 @@ impl Print {
                 let region_work: Vec<bool> = regions
                     .iter()
                     .map(|r| {
+                        // ToolOrdering.cpp:939-1017 (collect_extruders): a region
+                        // asks for its filament when it has perimeters, or a fill
+                        // that cannot be overridden.
                         !r.perimeters.entities.is_empty()
-                            || !r.fills.entities.is_empty()
+                            || (if wipe_gate {
+                                r.fills.entities.iter().any(|e| !is_obj_overriddable(e))
+                            } else {
+                                !r.fills.entities.is_empty()
+                            })
                             || !r.thin_fills.entities.is_empty()
                     })
                     .collect();
@@ -2669,11 +2724,112 @@ impl Print {
                 // Print.cpp:3290-3330 — plan a (no-change) entry per layer to
                 // reserve it, then one per real tool change: prime volume (ec/nc)
                 // reserves the tower depth, the flush is stored as purge_volume.
+                let mut wiping_layer_overrides: Vec<(
+                    f64,
+                    std::collections::HashMap<(usize, usize), usize>,
+                )> = Vec::new();
                 for (z, h, tools) in &layer_seqs {
                     wt.plan_toolchange(*z, *h, old_tool, old_tool, 0.0, 0.0, 0.0);
+                    // The view of this layer WipingExtrusions reads (Print.cpp:4308,
+                    // :4329; ToolOrdering.cpp:3906-4117).
+                    let wiping_objects: Vec<crate::gcode::tool_ordering::WipingObject> = if wipe_gate {
+                        use crate::gcode::tool_ordering::{WipingEntity, WipingObject, WipingRegion};
+                        let layer = object
+                            .layers()
+                            .iter()
+                            .find(|l| (l.print_z as f32 - *z).abs() < 1e-4);
+                        let regions = layer.map(|layer| {
+                            layer
+                                .regions()
+                                .iter()
+                                .enumerate()
+                                .map(|(region_id, r)| {
+                                    let tool = (r
+                                        .region
+                                        .as_ref()
+                                        .map(|pr| pr.config().wall_filament)
+                                        .unwrap_or(1)
+                                        .max(1)
+                                        - 1) as u32;
+                                    let entities = |ents: &[crate::extrusion_entity::ExtrusionEntityType]| {
+                                        ents.iter()
+                                            .enumerate()
+                                            .map(|(i, e)| {
+                                                let (role, total_volume) = fill_role_volume(e);
+                                                WipingEntity {
+                                                    id: ((region_id as u64) << 32) | i as u64,
+                                                    role,
+                                                    total_volume,
+                                                    extruder: tool,
+                                                }
+                                            })
+                                            .collect::<Vec<_>>()
+                                    };
+                                    WipingRegion {
+                                        wall_filament: tool,
+                                        sparse_infill_filament: tool,
+                                        fills: entities(&r.fills.entities),
+                                        // Perimeters are read only with flush_into_objects,
+                                        // which this arm does not take.
+                                        perimeters: Vec::new(),
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                        });
+                        vec![WipingObject {
+                            id: 0,
+                            num_of_copies: 1,
+                            flush_into_objects: self.config.flush_into_objects,
+                            flush_into_infill: self.config.flush_into_infill,
+                            // Support layers are not handed to the planner yet.
+                            flush_into_support: false,
+                            support_filament: 0,
+                            support_interface_filament: 0,
+                            support_interface_not_for_body: false,
+                            regions,
+                            support_layer: None,
+                        }]
+                    } else {
+                        Vec::new()
+                    };
+                    let extruders: Vec<u32> = tools.iter().map(|&t| t as u32).collect();
+                    let filament_soluble = |_: u32| self.config.filament_soluble;
+                    let filament_is_support = |_: u32| self.config.filament_is_support;
+                    let wiping_layer = crate::gcode::tool_ordering::WipingLayer {
+                        objects: &wiping_objects,
+                        extruders: &extruders,
+                        filament_soluble: &filament_soluble,
+                        filament_is_support: &filament_is_support,
+                        // The exporter prints walls first (`is_infill_first` is
+                        // false where the layers are written).
+                        is_infill_first: false,
+                    };
+                    let mut wiping_extrusions = crate::gcode::tool_ordering::WipingExtrusions::new();
+                    // is_obj_overriddable_and_mark (ToolOrdering.hpp:60-65)
+                    if wiping_objects.iter().any(|o| {
+                        o.regions.as_ref().is_some_and(|rs| {
+                            rs.iter().any(|r| {
+                                r.fills.iter().any(|f| {
+                                    f.role == crate::extrusion_entity::ExtrusionRole::InternalInfill
+                                })
+                            })
+                        })
+                    }) {
+                        wiping_extrusions.mark_overridable();
+                    }
                     for &tool in tools {
                         if tool == old_tool {
                             continue;
+                        }
+                        let mut volume_to_purge = purge_of(old_tool, tool);
+                        if wipe_gate {
+                            // Print.cpp:4308
+                            volume_to_purge = wiping_extrusions.mark_wiping_extrusions(
+                                &wiping_layer,
+                                old_tool as u32,
+                                tool as u32,
+                                volume_to_purge,
+                            );
                         }
                         wt.plan_toolchange(
                             *z,
@@ -2682,11 +2838,32 @@ impl Print {
                             tool,
                             prime_ec_of(tool),
                             prime_nc_of(tool),
-                            purge_of(old_tool, tool),
+                            volume_to_purge,
                         );
                         old_tool = tool;
                     }
+                    if wipe_gate {
+                        // Print.cpp:4329
+                        wiping_extrusions.ensure_perimeters_infills_order(&wiping_layer);
+                        let mut map = std::collections::HashMap::new();
+                        for o in &wiping_objects {
+                            for r in o.regions.iter().flatten() {
+                                for f in &r.fills {
+                                    if let Some(e) = wiping_extrusions.entity_override(f.id, o.id, 0) {
+                                        map.insert(
+                                            ((f.id >> 32) as usize, (f.id & 0xffff_ffff) as usize),
+                                            e as usize,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        if !map.is_empty() {
+                            wiping_layer_overrides.push((*z as f64, map));
+                        }
+                    }
                 }
+                self.wiping_layer_overrides = wiping_layer_overrides;
                 // R436 sizing probe: how much purge is demanded vs how much
                 // eligible (InternalInfill) object volume could absorb it under
                 // C++'s flush_into_infill routing.
@@ -3969,6 +4146,10 @@ fn emit_layer_by_island(
     // Minimum-flush tool order for THIS layer, when the optimizer ran; emission
     // must follow it so the tower's planned changes line up (R439).
     optimized_tools: Option<&[usize]>,
+    // The fills `WipingExtrusions` overrode on THIS layer: (region id, index in
+    // `fills.entities`) -> tool. They print right after the change to that tool
+    // (GCode.cpp:5826 `print_wipe_extrusions`).
+    wiping_overrides: Option<&std::collections::HashMap<(usize, usize), usize>>,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
     let zsmooth_gate = crate::faithful_gate("ZSMOOTH_FAITHFUL");
@@ -4033,6 +4214,9 @@ fn emit_layer_by_island(
         perim_nodes: Vec<i32>,
         fills: Vec<ExtrusionEntityType>,
         thins: Vec<ExtrusionEntityType>,
+        // Fills WipingExtrusions overrode, with the tool that prints them
+        // (`infills_overrides`, GCode.cpp:9046-9101).
+        wipe_fills: Vec<(usize, ExtrusionEntityType)>,
     }
     // islands[island_idx][region_id]
     let mut islands: Vec<Vec<Bucket>> =
@@ -4070,7 +4254,8 @@ fn emit_layer_by_island(
                   first_pt: crate::geometry::Point,
                   ent: ExtrusionEntityType,
                   kind: u8,
-                  node_id: i32| {
+                  node_id: i32,
+                  wipe_tool: Option<usize>| {
         // Find the island: first containing slice in bbox-area order, else catch-all.
         let mut island_idx = n_slices;
         for &i in &test_order {
@@ -4085,7 +4270,10 @@ fn emit_layer_by_island(
                 b.perims.push(ent);
                 b.perim_nodes.push(node_id);
             }
-            1 => b.fills.push(ent),
+            1 => match wipe_tool {
+                Some(t) => b.wipe_fills.push((t, ent)),
+                None => b.fills.push(ent),
+            },
             _ => b.thins.push(ent),
         }
     };
@@ -4125,11 +4313,12 @@ fn emit_layer_by_island(
                 // rust EECs default no_sort=false, so a blanket can_sort flatten
                 // here wrongly unpacked perimeters (arachne −5,043 in-order).
                 // Keep perimeters whole; the flatten applies to FILLS only.
-                assign(&mut islands, region_id, fp, ent.clone(), 0, node_id);
+                assign(&mut islands, region_id, fp, ent.clone(), 0, node_id, None);
             }
         }
         if !skip_infill {
-            for ent in &region.fills.entities {
+            for (fill_idx, ent) in region.fills.entities.iter().enumerate() {
+                let wipe_tool = wiping_overrides.and_then(|m| m.get(&(region_id, fill_idx)).copied());
                 if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
                     // R778 — which island does each fill EEC land in?
                     if crate::probe_enabled("ISLPROBE") {
@@ -4156,14 +4345,14 @@ fn emit_layer_by_island(
                         if let crate::extrusion_entity::ExtrusionEntityType::Collection(c) = ent {
                             if !c.no_sort {
                                 for child in &c.entities {
-                                    assign(&mut islands, region_id, fp, child.clone(), 1, -1);
+                                    assign(&mut islands, region_id, fp, child.clone(), 1, -1, wipe_tool);
                                 }
                                 flattened = true;
                             }
                         }
                     }
                     if !flattened {
-                        assign(&mut islands, region_id, fp, ent.clone(), 1, -1);
+                        assign(&mut islands, region_id, fp, ent.clone(), 1, -1, wipe_tool);
                     }
                 }
             }
@@ -4174,9 +4363,9 @@ fn emit_layer_by_island(
                     // Region::append hands it to the fill chain as one more
                     // entity.
                     if crate::faithful_gate("ISLAND_FLATTEN") {
-                        assign(&mut islands, region_id, fp, ent.clone(), 1, -1);
+                        assign(&mut islands, region_id, fp, ent.clone(), 1, -1, None);
                     } else {
-                        assign(&mut islands, region_id, fp, ent.clone(), 2, -1);
+                        assign(&mut islands, region_id, fp, ent.clone(), 2, -1, None);
                     }
                 }
             }
@@ -4421,6 +4610,26 @@ fn emit_layer_by_island(
         // This tool prints on this layer (multi-tool reaches here only after the
         // has_work gate); remember it for the next layer's boundary continuity.
         last_emitted_tool = Some(tool);
+        // GCode.cpp:5826-5828 — the overridden extrusions print first (the
+        // `print_wipe_extrusions` pass, GCode.cpp:9080-9086), then the rest.
+        if wiping_overrides.is_some() {
+            for &isl_idx in &emit_order {
+                for bucket in islands[isl_idx].iter() {
+                    let wipes: Vec<ExtrusionEntityType> = bucket
+                        .wipe_fills
+                        .iter()
+                        .filter(|(t, _)| *t == tool)
+                        .map(|(_, e)| e.clone())
+                        .collect();
+                    if !wipes.is_empty() {
+                        crate::gcode::exporter::extrude_infill_entities(
+                            &wipes, writer, config, is_first_layer,
+                        );
+                    }
+                }
+            }
+            writer.write_raw("; PURGING FINISHED");
+        }
         for &isl_idx in &emit_order {
             let island = &islands[isl_idx];
             for (region_id, bucket) in island.iter().enumerate() {

@@ -485,6 +485,402 @@ impl WipingExtrusions {
 }
 
 // ============================================================================
+// WipingExtrusions::mark_wiping_extrusions / ensure_perimeters_infills_order
+// (ToolOrdering.cpp:3906-4117)
+//
+// The C++ walks `print.objects()`, their layer at `lt.print_z`, its regions and
+// their fill and perimeter collections. The structs below are that view of one
+// layer: what the two functions read, and nothing else.
+// ============================================================================
+
+/// One `ExtrusionEntityCollection` of `layerm->fills.entities` or
+/// `layerm->perimeters.entities`.
+#[derive(Debug, Clone)]
+pub struct WipingEntity {
+    /// Stands for the entity pointer in `entity_map`.
+    pub id: u64,
+    /// `eec.role()`
+    pub role: crate::extrusion_entity::ExtrusionRole,
+    /// `eec.total_volume()`
+    pub total_volume: f64,
+    /// `m_layer_tools->extruder(eec, region)`, zero based.
+    pub extruder: u32,
+}
+
+/// One `LayerRegion` of the object's layer.
+#[derive(Debug, Clone, Default)]
+pub struct WipingRegion {
+    /// `lt.wall_filament(region)`, zero based.
+    pub wall_filament: u32,
+    /// `lt.sparse_infill_filament(region)`, zero based.
+    pub sparse_infill_filament: u32,
+    pub fills: Vec<WipingEntity>,
+    pub perimeters: Vec<WipingEntity>,
+}
+
+/// The support layer of the object at this print_z.
+#[derive(Debug, Clone, Default)]
+pub struct WipingSupportLayer {
+    pub planned_filament_id: i32,
+    pub planned_interface_filament_id: i32,
+    /// (role, total_volume) of `support_fills.entities`.
+    pub entities: Vec<(crate::extrusion_entity::ExtrusionRole, f64)>,
+}
+
+/// One `PrintObject` with its layer at `lt.print_z`.
+#[derive(Debug, Clone, Default)]
+pub struct WipingObject {
+    /// `object->id()`, also the object half of the `entity_map` key.
+    pub id: u64,
+    /// `object->instances().size()`
+    pub num_of_copies: usize,
+    pub flush_into_objects: bool,
+    pub flush_into_infill: bool,
+    pub flush_into_support: bool,
+    pub support_filament: i32,
+    pub support_interface_filament: i32,
+    pub support_interface_not_for_body: bool,
+    /// `None` when the object has no layer at this print_z.
+    pub regions: Option<Vec<WipingRegion>>,
+    pub support_layer: Option<WipingSupportLayer>,
+}
+
+/// What the two functions read of `Print` and of `*m_layer_tools`.
+pub struct WipingLayer<'a> {
+    /// `print.objects()`, in that order.
+    pub objects: &'a [WipingObject],
+    /// `lt.extruders`
+    pub extruders: &'a [u32],
+    pub filament_soluble: &'a dyn Fn(u32) -> bool,
+    pub filament_is_support: &'a dyn Fn(u32) -> bool,
+    /// `print.config().is_infill_first`
+    pub is_infill_first: bool,
+}
+
+impl WipingLayer<'_> {
+    /// `LayerTools::is_extruder_order` (ToolOrdering.cpp:88-101)
+    fn is_extruder_order(&self, a: u32, b: u32) -> bool {
+        if a == b {
+            return false;
+        }
+        for &extruder in self.extruders {
+            if extruder == a {
+                return true;
+            }
+            if extruder == b {
+                return false;
+            }
+        }
+        false
+    }
+
+    /// `LayerTools::has_extruder`
+    fn has_extruder(&self, extruder: u32) -> bool {
+        self.extruders.contains(&extruder)
+    }
+}
+
+impl WipingExtrusions {
+    /// `WipingExtrusions::is_overriddable` (ToolOrdering.cpp:3861-3872)
+    fn is_overriddable_entity(lt: &WipingLayer, eec: &WipingEntity, object: &WipingObject) -> bool {
+        if (lt.filament_soluble)(eec.extruder) {
+            return false;
+        }
+        if object.flush_into_objects {
+            return true;
+        }
+        if !object.flush_into_infill || eec.role != crate::extrusion_entity::ExtrusionRole::InternalInfill {
+            return false;
+        }
+        true
+    }
+
+    /// `WipingExtrusions::first_nonsoluble_extruder_on_layer` (ToolOrdering.cpp:3839-3848)
+    fn first_nonsoluble_extruder_on_layer(lt: &WipingLayer) -> i32 {
+        for &e in lt.extruders.iter() {
+            if !(lt.filament_soluble)(e) && !(lt.filament_is_support)(e) {
+                return e as i32;
+            }
+        }
+        -1
+    }
+
+    /// `WipingExtrusions::last_nonsoluble_extruder_on_layer` (ToolOrdering.cpp:3850-3859)
+    fn last_nonsoluble_extruder_on_layer(lt: &WipingLayer) -> i32 {
+        for &e in lt.extruders.iter().rev() {
+            if !(lt.filament_soluble)(e) && !(lt.filament_is_support)(e) {
+                return e as i32;
+            }
+        }
+        -1
+    }
+
+    /// `WipingExtrusions::mark_wiping_extrusions` (ToolOrdering.cpp:3906-4047).
+    ///
+    /// Iterates through all extrusions on the layer, remembers those that could
+    /// be used for wiping after the tool change and returns the volume that is
+    /// left to be wiped on the wipe tower.
+    pub fn mark_wiping_extrusions(
+        &mut self,
+        lt: &WipingLayer,
+        old_extruder: u32,
+        new_extruder: u32,
+        mut volume_to_wipe: f32,
+    ) -> f32 {
+        let min_infill_volume: f32 = 0.0; // ignore infill with smaller volume than this
+
+        if !self.something_overridable
+            || volume_to_wipe <= 0.0
+            || (lt.filament_soluble)(old_extruder)
+            || (lt.filament_soluble)(new_extruder)
+        {
+            // Soluble filament cannot be wiped in a random infill, neither the filament after it
+            return volume_to_wipe.max(0.0);
+        }
+        // BBS
+        if (lt.filament_is_support)(old_extruder) || (lt.filament_is_support)(new_extruder) {
+            return volume_to_wipe.max(0.0);
+        }
+
+        // we will sort objects so that dedicated for wiping are at the beginning:
+        let mut object_list: Vec<&WipingObject> = lt.objects.iter().collect();
+        object_list.sort_by(|a, b| {
+            if a.flush_into_objects != b.flush_into_objects {
+                // the one that flushes into objects comes first
+                b.flush_into_objects.cmp(&a.flush_into_objects)
+            } else {
+                a.id.cmp(&b.id)
+            }
+        });
+
+        // We will now iterate through
+        //  - first the dedicated objects to mark perimeters or infills (depending on infill_first)
+        //  - second through the dedicated ones again to mark infills or perimeters (depending on infill_first)
+        //  - then all the others to mark infills (in case that !infill_first, we must also check that the
+        //    perimeter is finished already
+        // this is controlled by the following variable:
+        let mut perimeters_done = false;
+
+        let mut i: i32 = 0;
+        while i < object_list.len() as i32 + if perimeters_done { 0 } else { 1 } {
+            if !perimeters_done
+                && (i == object_list.len() as i32 || !object_list[i as usize].flush_into_objects)
+            {
+                // we passed the last dedicated object in list
+                perimeters_done = true;
+                i = 0; // let's go from the start again (`i = -1; continue;` and the loop's `++i`)
+                continue;
+            }
+
+            let object = object_list[i as usize];
+            i += 1;
+
+            // Finds this layer:
+            let Some(regions) = object.regions.as_ref() else { continue };
+
+            let num_of_copies = object.num_of_copies;
+
+            // iterate through copies (aka PrintObject instances) first, so that we mark neighbouring
+            // infills to minimize travel moves
+            for copy in 0..num_of_copies {
+                for layerm in regions {
+                    if !object.flush_into_infill && !object.flush_into_objects && !object.flush_into_support {
+                        continue;
+                    }
+                    let wipe_into_infill_only = !object.flush_into_objects && object.flush_into_infill;
+                    let is_infill_first = lt.is_infill_first;
+                    if is_infill_first != perimeters_done || wipe_into_infill_only {
+                        // iterate through all infill Collections
+                        for fill in &layerm.fills {
+                            if !Self::is_overriddable_entity(lt, fill, object) {
+                                continue;
+                            }
+
+                            if wipe_into_infill_only && !is_infill_first {
+                                // In this case we must check that the original extruder is used on this
+                                // layer before the one we are overridding (and the perimeters will be
+                                // finished before the infill is printed):
+                                if !lt.is_extruder_order(layerm.wall_filament, new_extruder) {
+                                    continue;
+                                }
+                            }
+
+                            if !self.is_entity_overridden(fill.id, object.id, copy)
+                                && fill.total_volume > min_infill_volume as f64
+                            {
+                                // this infill will be used to wipe this extruder
+                                self.set_extruder_override(fill.id, object.id, copy, new_extruder as i32, num_of_copies);
+                                volume_to_wipe -= fill.total_volume as f32;
+                                if volume_to_wipe <= 0.0 {
+                                    // More material was purged already than asked for.
+                                    return 0.0;
+                                }
+                            }
+                        }
+                    }
+
+                    // Now the same for perimeters - see comments above for explanation:
+                    if object.flush_into_objects && is_infill_first == perimeters_done {
+                        for fill in &layerm.perimeters {
+                            if Self::is_overriddable_entity(lt, fill, object)
+                                && !self.is_entity_overridden(fill.id, object.id, copy)
+                                && fill.total_volume > min_infill_volume as f64
+                            {
+                                self.set_extruder_override(fill.id, object.id, copy, new_extruder as i32, num_of_copies);
+                                volume_to_wipe -= fill.total_volume as f32;
+                                if volume_to_wipe <= 0.0 {
+                                    return 0.0;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // BBS
+                if object.flush_into_support {
+                    // `do { … } while (0)` with its `break`s
+                    'support: {
+                        let Some(this_support_layer) = object.support_layer.as_ref() else { break 'support };
+
+                        // BBS multi-diameter: a support slab thicker than the object layers is pinned to
+                        // the filament it was planned for, so it must not be flushed into by an arbitrary
+                        // other filament.
+                        let support_overriddable =
+                            object.support_filament == 0 && this_support_layer.planned_filament_id == 0;
+                        let support_intf_overriddable = object.support_interface_filament == 0
+                            && this_support_layer.planned_interface_filament_id == 0;
+                        if !support_overriddable && !support_intf_overriddable {
+                            break 'support;
+                        }
+
+                        let entities = &this_support_layer.entities;
+                        if support_overriddable
+                            && !self.is_support_overridden(object.id)
+                            && !(object.support_interface_not_for_body
+                                && !support_intf_overriddable
+                                && (new_extruder as i32 == object.support_interface_filament - 1
+                                    || old_extruder as i32 == object.support_interface_filament - 1))
+                        {
+                            self.set_support_extruder_override(object.id, new_extruder as i32);
+                            for (role, volume) in entities {
+                                if *role == crate::extrusion_entity::ExtrusionRole::SupportMaterial
+                                    || *role == crate::extrusion_entity::ExtrusionRole::SupportTransition
+                                {
+                                    volume_to_wipe -= *volume as f32;
+                                }
+                                if volume_to_wipe <= 0.0 {
+                                    return 0.0;
+                                }
+                            }
+                        }
+
+                        if support_intf_overriddable && !self.is_support_interface_overridden(object.id) {
+                            self.set_support_interface_extruder_override(object.id, new_extruder as i32);
+                            for (role, volume) in entities {
+                                if *role == crate::extrusion_entity::ExtrusionRole::SupportMaterialInterface {
+                                    volume_to_wipe -= *volume as f32;
+                                }
+                                if volume_to_wipe <= 0.0 {
+                                    return 0.0;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Some purge remains to be done on the Wipe Tower.
+        volume_to_wipe
+    }
+
+    /// `WipingExtrusions::ensure_perimeters_infills_order` (ToolOrdering.cpp:4055-4117).
+    ///
+    /// Called after all toolchanges on a layer were marked. There might still be
+    /// overridable entities that were not actually overridden; printing them with
+    /// the extruder they were assigned to might violate the perimeter-infill order.
+    pub fn ensure_perimeters_infills_order(&mut self, lt: &WipingLayer) {
+        if !self.something_overridable {
+            return;
+        }
+
+        let first_nonsoluble_extruder = Self::first_nonsoluble_extruder_on_layer(lt);
+        let last_nonsoluble_extruder = Self::last_nonsoluble_extruder_on_layer(lt);
+
+        for object in lt.objects {
+            // Finds this layer:
+            let Some(regions) = object.regions.as_ref() else { continue };
+            let num_of_copies = object.num_of_copies;
+
+            // iterate through copies first, so that we mark neighbouring infills to minimize travel moves
+            for copy in 0..num_of_copies {
+                for layerm in regions {
+                    // BBS
+                    if !object.flush_into_infill && !object.flush_into_objects {
+                        continue;
+                    }
+
+                    let is_infill_first = lt.is_infill_first;
+                    // iterate through all infill Collections
+                    for fill in &layerm.fills {
+                        if !Self::is_overriddable_entity(lt, fill, object)
+                            || self.is_entity_overridden(fill.id, object.id, copy)
+                        {
+                            continue;
+                        }
+
+                        // This infill could have been overridden but was not - unless we do something, it
+                        // could be printed before its perimeter, or not be printed at all (in case its
+                        // original extruder has not been added to LayerTools). Either way, we will now
+                        // force-override it with something suitable:
+                        if is_infill_first
+                            // !infill_first, but perimeter is already printed when last extruder prints
+                            || lt.is_extruder_order(layerm.wall_filament, last_nonsoluble_extruder as u32)
+                            // we have to force override - this could violate infill_first (FIXME)
+                            || !lt.has_extruder(layerm.sparse_infill_filament)
+                        {
+                            self.set_extruder_override(
+                                fill.id,
+                                object.id,
+                                copy,
+                                if is_infill_first { first_nonsoluble_extruder } else { last_nonsoluble_extruder },
+                                num_of_copies,
+                            );
+                        } else {
+                            // In this case we can (and should) leave it to be printed normally.
+                            // Force overriding would mean it gets printed before its perimeter.
+                        }
+                    }
+
+                    // Now the same for perimeters - see comments above for explanation:
+                    for fill in &layerm.perimeters {
+                        if Self::is_overriddable_entity(lt, fill, object)
+                            && !self.is_entity_overridden(fill.id, object.id, copy)
+                        {
+                            self.set_extruder_override(
+                                fill.id,
+                                object.id,
+                                copy,
+                                if is_infill_first { last_nonsoluble_extruder } else { first_nonsoluble_extruder },
+                                num_of_copies,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The override of one entity for one copy, when there is one (the value
+    /// `entity_map` holds before `get_extruder_overrides` fills in the rest).
+    pub fn entity_override(&self, entity_id: u64, object_id: u64, copy_id: usize) -> Option<i32> {
+        self.entity_overrides
+            .get(&(entity_id, object_id))
+            .and_then(|v| v.get(copy_id).copied())
+            .filter(|&e| e != -1)
+    }
+}
+
+// ============================================================================
 // Flush-into-object eligibility (WipingExtrusions::is_*_overriddable)
 //
 // C++ ToolOrdering.cpp:2645-2690. These decide whether an object extrusion may

@@ -33,32 +33,32 @@ C++ side: `references/BambuStudio/src/libslic3r` at the pin. Rust side: `crates/
 | | |
 |-|-|
 | C++ units | 310 |
-| with a Rust file of the same name | 276 (89%) |
-| of those, same words | 275 |
+| with a Rust file of the same name | 277 (89%) |
+| of those, same words | 276 |
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 6 |
-| C++ units with no Rust file | 34 |
+| C++ units with no Rust file | 33 |
 | Rust files with no C++ file of that name | 51 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9059 |
-| matched to a Rust function in the paired file | 3662 (40%) |
-| estimate: faithful | 3084 (84% of matched) |
-| estimate: partial | 357 (10% of matched) |
+| matched to a Rust function in the paired file | 3671 (41%) |
+| estimate: faithful | 3089 (84% of matched) |
+| estimate: partial | 361 (10% of matched) |
 | estimate: divergent | 190 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
-| missing in the paired Rust file | 4724 |
+| missing in the paired Rust file | 4720 |
 | of those, a function of that name exists in another Rust file | 1633 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 764 |
-| of the rest, 25 tokens or more | 1962 |
-| in a C++ unit with no Rust file | 673 |
-| Rust functions with no C++ function of that name in the pair | 4395 |
+| of the rest, 25 tokens or more | 1958 |
+| in a C++ unit with no Rust file | 668 |
+| Rust functions with no C++ function of that name in the pair | 4399 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 173 | 6851 | 2804 | 2354 | 277 | 153 | 20 | 4047 |
+| 1 | 180 | 174 | 6851 | 2813 | 2359 | 281 | 153 | 20 | 4038 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1381 | 465 | 389 | 41 | 30 | 5 | 916 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -80,7 +80,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 83 | 16 | 13 | 9 | 92 | 50 |
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 19 | 3 | 0 | 0 | 183 | 70 |
 | 1 | `PrintObject` | `print_object.rs` | 82 | 6 | 6 | 11 | 1 | 58 | 52 |
-| 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 12 | 6 | 11 | 0 | 56 | 46 |
+| 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 14 | 8 | 11 | 0 | 52 | 42 |
 | 1 | `ClipperUtils` | `clipper_utils.rs` | 227 | 9 | 3 | 2 | 0 | 213 | 43 |
 | 1 | `Preset` | `preset.rs` | 108 | 12 | 0 | 0 | 0 | 96 | 42 |
 | 1 | `utils` | `utils.rs` | 66 | 23 | 7 | 11 | 4 | 21 | 12 |
@@ -159,7 +159,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Fill/FillConformalChart` | .cpp+.hpp | 26 | 8515 |
 | 1 | `Fill/FillConformal` | .cpp+.hpp | 29 | 3976 |
 | 1 | `ColorDecomposeRecipe` | .cpp+.hpp | 18 | 3838 |
-| 1 | `GCode/CoolingBuffer` | .cpp+.hpp | 5 | 2110 |
 | 1 | `GCode/BedExcludeChecker` | .cpp+.hpp | 7 | 1067 |
 | 1 | `format` | .hpp | 4 | 105 |
 | 3 | `Format/3mf` | .cpp+.hpp | 111 | 16175 |
@@ -222,7 +221,7 @@ their function names come from, when there is one.
 | `format/three_mf.rs` | no C++ file of this name | 128 | `Format/3mf`, `Format/bbs_3mf` |
 | `format/utilities.rs` | no C++ file of this name | 5 |  |
 | `gcode/change_filament.rs` | no C++ file of this name | 1 |  |
-| `gcode/cooling.rs` | no C++ file of this name | 90 | `GCode/GCodeEditor` |
+| `gcode/cooling.rs` | no C++ file of this name | 85 | `GCode/GCodeEditor` |
 | `gcode/exporter.rs` | no C++ file of this name | 50 | `GCode` |
 | `gcode/gcode_template.rs` | no C++ file of this name | 30 |  |
 | `gcode/generator.rs` | same name as a C++ file in another directory | 41 | `Fill/Lightning/Generator` |
@@ -4171,6 +4170,15 @@ Rust only:
 - `ConflictComputeResult::new` :679
 - `_unscale_marker` :907
 
+### `GCode/CoolingBuffer` (.cpp+.hpp) and `gcode/cooling_buffer.rs`
+
+Tier 1. C++ functions 5 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 5. Matched 5: faithful 3, partial 2, divergent 0, stub 0.
+
+Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
+
+- partial: `extruder_range_slow_down_proportional` :59 and `extruder_range_slow_down_proportional` :186 (53%, 0.76x)
+- partial: `extruder_range_slow_down_consistent_surface` :108 and `extruder_range_slow_down_consistent_surface` :447 (46%, 0.96x)
+
 ### `GCode/GCodeEditor` (.cpp+.hpp) and `gcode/g_code_editor.rs`
 
 Tier 1. C++ functions 30 (plus 2 constructors, 0 destructors, 3 operators), Rust functions 33. Matched 18: faithful 18, partial 0, divergent 0, stub 0.
@@ -4677,26 +4685,28 @@ Rust only:
 
 ### `GCode/ToolOrdering` (.cpp+.hpp) and `gcode/tool_ordering.rs`
 
-Tier 1. C++ functions 85 (plus 3 constructors, 0 destructors, 6 operators), Rust functions 100. Matched 29: faithful 12, partial 6, divergent 11, stub 0.
+Tier 1. C++ functions 85 (plus 3 constructors, 0 destructors, 6 operators), Rust functions 108. Matched 33: faithful 14, partial 8, divergent 11, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - divergent: `WipingExtrusions::is_entity_overridden` :96 and `WipingExtrusions::is_entity_overridden` :425 (14%, 1.13x)
-- divergent: `LayerTools::wall_filament` :138 and `LayerTools::wall_filament` :632 (12%, 0.45x)
-- divergent: `LayerTools::sparse_infill_filament` :145 and `LayerTools::sparse_infill_filament` :641 (12%, 0.45x)
-- divergent: `LayerTools::solid_infill_filament` :152 and `LayerTools::solid_infill_filament` :650 (12%, 0.45x)
-- partial: `LayerTools::has_extruder` :175 and `LayerTools::has_extruder` :627 (67%, 0.32x)
+- divergent: `LayerTools::wall_filament` :138 and `LayerTools::wall_filament` :1028 (12%, 0.45x)
+- divergent: `LayerTools::sparse_infill_filament` :145 and `LayerTools::sparse_infill_filament` :1037 (12%, 0.45x)
+- divergent: `LayerTools::solid_infill_filament` :152 and `LayerTools::solid_infill_filament` :1046 (12%, 0.45x)
+- partial: `LayerTools::has_extruder` :175 and `LayerTools::has_extruder` :1023 (67%, 0.32x)
 - divergent: `ToolOrdering::clear` :305 and `WipingExtrusions::clear` :478 (0%, 1.19x)
-- divergent: `ToolOrdering::has_wipe_tower` :352 and `ToolOrdering::has_wipe_tower` :1613 (25%, 1.04x)
-- divergent: `ToolOrdering::generate_first_layer_tool_order` :642 and `ToolOrdering::generate_first_layer_tool_order` :1461 (17%, 0.63x)
-- partial: `ToolOrdering::initialize_layers` :814 and `ToolOrdering::initialize_layers` :880 (43%, 1.73x)
-- partial: `ToolOrdering::fill_wipe_tower_partitions` :1208 and `ToolOrdering::fill_wipe_tower_partitions` :1305 (35%, 0.23x)
-- divergent: `ToolOrdering::collect_extruder_statistics` :1402 and `ToolOrdering::collect_extruder_statistics` :1267 (12%, 1.06x)
-- divergent: `ToolOrdering::assign_custom_gcodes` :3691 and `ToolOrdering::assign_custom_gcodes` :1403 (18%, 0.45x)
+- divergent: `ToolOrdering::has_wipe_tower` :352 and `ToolOrdering::has_wipe_tower` :2009 (25%, 1.04x)
+- divergent: `ToolOrdering::generate_first_layer_tool_order` :642 and `ToolOrdering::generate_first_layer_tool_order` :1857 (17%, 0.63x)
+- partial: `ToolOrdering::initialize_layers` :814 and `ToolOrdering::initialize_layers` :1276 (43%, 1.73x)
+- partial: `ToolOrdering::fill_wipe_tower_partitions` :1208 and `ToolOrdering::fill_wipe_tower_partitions` :1701 (35%, 0.23x)
+- divergent: `ToolOrdering::collect_extruder_statistics` :1402 and `ToolOrdering::collect_extruder_statistics` :1663 (12%, 1.06x)
+- divergent: `ToolOrdering::assign_custom_gcodes` :3691 and `ToolOrdering::assign_custom_gcodes` :1799 (18%, 0.45x)
 - divergent: `WipingExtrusions::set_extruder_override` :3811 and `WipingExtrusions::set_extruder_override` :390 (25%, 1.1x)
-- partial: `WipingExtrusions::is_overriddable` :3861 and `is_overriddable` :501 (31%, 0.57x)
-- partial: `WipingExtrusions::is_obj_overriddable` :3874 and `is_obj_overriddable` :523 (43%, 0.69x)
-- partial: `WipingExtrusions::is_support_overriddable` :3886 and `is_support_overriddable` :542 (40%, 0.62x)
+- partial: `WipingExtrusions::first_nonsoluble_extruder_on_layer` :3839 and `WipingExtrusions::first_nonsoluble_extruder_on_layer` :599 (44%, 0.62x)
+- partial: `WipingExtrusions::last_nonsoluble_extruder_on_layer` :3850 and `WipingExtrusions::last_nonsoluble_extruder_on_layer` :609 (36%, 0.68x)
+- partial: `WipingExtrusions::is_overriddable` :3861 and `is_overriddable` :897 (31%, 0.57x)
+- partial: `WipingExtrusions::is_obj_overriddable` :3874 and `is_obj_overriddable` :919 (43%, 0.69x)
+- partial: `WipingExtrusions::is_support_overriddable` :3886 and `is_support_overriddable` :938 (40%, 0.62x)
 - divergent: `WipingExtrusions::get_extruder_overrides` :4120 and `WipingExtrusions::get_extruder_overrides` :446 (25%, 0.9x)
 
 Missing in the Rust file:
@@ -4751,10 +4761,6 @@ Missing in the Rust file:
 - `ToolOrdering::enforce_mixed_component_order` :3424 (605 tokens)
 - `ToolOrdering::reorder_extruders_for_minimum_flush_volume` :3510 (552 tokens)
 - `ToolOrdering::first_layer_extruders` :3792 (114 tokens)
-- `WipingExtrusions::first_nonsoluble_extruder_on_layer` :3839 (71 tokens)
-- `WipingExtrusions::last_nonsoluble_extruder_on_layer` :3850 (71 tokens)
-- `WipingExtrusions::mark_wiping_extrusions` :3906 (962 tokens)
-- `WipingExtrusions::ensure_perimeters_infills_order` :4055 (362 tokens)
 - `WipingExtrusions::get_support_extruder_overrides` :4134 (30 tokens)
 - `WipingExtrusions::get_support_interface_extruder_overrides` :4143 (30 tokens)
 
@@ -4785,52 +4791,56 @@ Rust only:
 - `WipingExtrusions::mark_overridable` :385
 - `WipingExtrusions::get_support_extruder_override` :468
 - `WipingExtrusions::get_support_interface_extruder_override` :473
-- `LayerTools::new` :594
-- `LayerTools::extruder_for_role` :659
-- `LayerTools::wiping_extrusions_mut` :689
-- `LayerTools::wiping_extrusions` :694
-- `LayerTools::eq` :700
-- `LayerTools::partial_cmp` :706
-- `ToolOrderingConfig::default` :759
-- `ToolOrderingConfig::new` :786
-- `ToolOrderingConfig::is_filament_soluble` :805
-- `ToolOrderingConfig::is_filament_support` :813
-- `ToolOrderingConfig::get_flush_volume` :821
-- `ToolOrdering::new` :859
-- `ToolOrdering::with_default_config` :875
-- `ToolOrdering::add_extruder_to_layer` :903
-- `ToolOrdering::add_support_extruder_to_layer` :915
-- `ToolOrdering::layer_tools_for_layer` :930
-- `ToolOrdering::layer_tools_for_layer_mut` :944
-- `ToolOrdering::handle_dontcare_extruders` :958
-- `ToolOrdering::handle_dontcare_extruders_with_first_layer_order` :1023
-- `ToolOrdering::reorder_extruders_for_minimum_flush` :1087
-- `ToolOrdering::reorder_extruders_for_minimum_flush_internal` :1092
-- `ToolOrdering::calculate_optimal_sequences` :1118
-- `ToolOrdering::get_custom_sequence_for_layer` :1176
-- `ToolOrdering::optimize_extruder_order` :1195
-- `ToolOrdering::calculate_most_used_extruder` :1511
-- `ToolOrdering::calculate_filament_change_stats` :1529
-- `ToolOrdering::calculate_stats_for_sequence` :1534
-- `ToolOrdering::all_extruders` :1588
-- `ToolOrdering::get_layer_tools` :1593
-- `ToolOrdering::get_layer_tools_mut` :1598
-- `ToolOrdering::layer_tools` :1603
-- `ToolOrdering::layer_tools_mut` :1608
-- `ToolOrdering::is_sorted` :1625
-- `ToolOrdering::len` :1630
-- `ToolOrdering::is_empty` :1635 — C++ has it in `PresetBundle`
-- `ToolOrdering::front` :1640 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
-- `ToolOrdering::back` :1645 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
-- `ToolOrdering::clear` :1650 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ToolOrdering::iter` :1663
-- `ToolOrdering::iter_mut` :1668
-- `ToolOrdering::into_iter` :1677
-- `&'a ToolOrdering::into_iter` :1686
-- `calculate_flush_volume` :1696
-- `optimize_extruder_sequence` :1708
-- `generate_all_orderings` :1765
-- `find_optimal_ordering_exhaustive` :1788
+- `WipingLayer::is_extruder_order` :562
+- `WipingLayer::has_extruder` :578
+- `WipingExtrusions::is_overriddable_entity` :585
+- `WipingExtrusions::entity_override` :875
+- `LayerTools::new` :990
+- `LayerTools::extruder_for_role` :1055
+- `LayerTools::wiping_extrusions_mut` :1085
+- `LayerTools::wiping_extrusions` :1090
+- `LayerTools::eq` :1096
+- `LayerTools::partial_cmp` :1102
+- `ToolOrderingConfig::default` :1155
+- `ToolOrderingConfig::new` :1182
+- `ToolOrderingConfig::is_filament_soluble` :1201
+- `ToolOrderingConfig::is_filament_support` :1209
+- `ToolOrderingConfig::get_flush_volume` :1217
+- `ToolOrdering::new` :1255
+- `ToolOrdering::with_default_config` :1271
+- `ToolOrdering::add_extruder_to_layer` :1299
+- `ToolOrdering::add_support_extruder_to_layer` :1311
+- `ToolOrdering::layer_tools_for_layer` :1326
+- `ToolOrdering::layer_tools_for_layer_mut` :1340
+- `ToolOrdering::handle_dontcare_extruders` :1354
+- `ToolOrdering::handle_dontcare_extruders_with_first_layer_order` :1419
+- `ToolOrdering::reorder_extruders_for_minimum_flush` :1483
+- `ToolOrdering::reorder_extruders_for_minimum_flush_internal` :1488
+- `ToolOrdering::calculate_optimal_sequences` :1514
+- `ToolOrdering::get_custom_sequence_for_layer` :1572
+- `ToolOrdering::optimize_extruder_order` :1591
+- `ToolOrdering::calculate_most_used_extruder` :1907
+- `ToolOrdering::calculate_filament_change_stats` :1925
+- `ToolOrdering::calculate_stats_for_sequence` :1930
+- `ToolOrdering::all_extruders` :1984
+- `ToolOrdering::get_layer_tools` :1989
+- `ToolOrdering::get_layer_tools_mut` :1994
+- `ToolOrdering::layer_tools` :1999
+- `ToolOrdering::layer_tools_mut` :2004
+- `ToolOrdering::is_sorted` :2021
+- `ToolOrdering::len` :2026
+- `ToolOrdering::is_empty` :2031 — C++ has it in `PresetBundle`
+- `ToolOrdering::front` :2036 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
+- `ToolOrdering::back` :2041 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
+- `ToolOrdering::clear` :2046 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ToolOrdering::iter` :2059
+- `ToolOrdering::iter_mut` :2064
+- `ToolOrdering::into_iter` :2073
+- `&'a ToolOrdering::into_iter` :2082
+- `calculate_flush_volume` :2092
+- `optimize_extruder_sequence` :2104
+- `generate_all_orderings` :2161
+- `find_optimal_ordering_exhaustive` :2184
 
 ### `GCode/WipeTower` (.cpp+.hpp) and `gcode/wipe_tower.rs`
 
@@ -7717,14 +7727,14 @@ Tier 1. C++ functions 236 (plus 12 constructors, 1 destructors, 7 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Print::clear` :60 and `Print::clear` :1775 (9%, 0.52x)
-- partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :1795 (50%, 0.75x)
-- divergent: `Print::validate` :1413 and `Print::validate` :1844 (5%, 0.15x)
-- divergent: `Print::process` :2178 and `Print::process` :1943 (11%, 0.92x)
-- divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :584 (20%, 35.46x)
-- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :2949 (23%, 0.41x)
-- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3315 (21%, 0.39x)
-- stub: `PrintStatistics::config` :4454 and `Print::config` :535 (6%, 0.03x)
+- divergent: `Print::clear` :60 and `Print::clear` :1786 (9%, 0.52x)
+- partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :1806 (50%, 0.75x)
+- divergent: `Print::validate` :1413 and `Print::validate` :1855 (5%, 0.15x)
+- divergent: `Print::process` :2178 and `Print::process` :1954 (12%, 1.13x)
+- divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :589 (20%, 35.79x)
+- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3126 (23%, 0.41x)
+- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3492 (21%, 0.39x)
+- stub: `PrintStatistics::config` :4454 and `Print::config` :540 (6%, 0.03x)
 
 Missing in the Rust file:
 
@@ -7954,30 +7964,30 @@ Missing in the Rust file:
 
 Rust only:
 
-- `Print::farthest_point_timelapse` :207
-- `Print::new` :378
-- `Print::add_object` :399 — C++ has it in `Model`
-- `Print::ensure_default_region` :433
-- `Print::set_default_region_config` :448
-- `Print::install_painted_regions` :473
-- `Print::objects_mut` :524
-- `Print::skirt` :530
-- `Print::config_mut` :540
-- `Print::entity_points` :554
-- `apply_cooling_postprocess` :1635
-- `Print::apply` :1827 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `Print::make_brim` :3083 — C++ has it in `Brim`
-- `Print::all_extruders` :3219
-- `Print::is_canceled` :3255
-- `Print::cancel` :3261 — C++ has it in `PrintBase`
-- `Print::throw_if_canceled` :3267 — C++ has it in `PrintBase`, `SLAPrintSteps`
-- `Print::set_status_callback` :3276 — C++ has it in `PrintBase`
-- `Print::set_status` :3285 — C++ has it in `PrintBase`
-- `Print::invalidate_all_steps` :3293 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `collect_entity_lines` :3438
-- `emit_tower_tcr` :3483
-- `emit_layer_by_island` :3950
-- `Print::default` :4525
+- `Print::farthest_point_timelapse` :211
+- `Print::new` :382
+- `Print::add_object` :404 — C++ has it in `Model`
+- `Print::ensure_default_region` :438
+- `Print::set_default_region_config` :453
+- `Print::install_painted_regions` :478
+- `Print::objects_mut` :529
+- `Print::skirt` :535
+- `Print::config_mut` :545
+- `Print::entity_points` :559
+- `apply_cooling_postprocess` :1646
+- `Print::apply` :1838 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `Print::make_brim` :3260 — C++ has it in `Brim`
+- `Print::all_extruders` :3396
+- `Print::is_canceled` :3432
+- `Print::cancel` :3438 — C++ has it in `PrintBase`
+- `Print::throw_if_canceled` :3444 — C++ has it in `PrintBase`, `SLAPrintSteps`
+- `Print::set_status_callback` :3453 — C++ has it in `PrintBase`
+- `Print::set_status` :3462 — C++ has it in `PrintBase`
+- `Print::invalidate_all_steps` :3470 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `collect_entity_lines` :3615
+- `emit_tower_tcr` :3660
+- `emit_layer_by_island` :4127
+- `Print::default` :4734
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 
