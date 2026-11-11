@@ -121,7 +121,7 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R847) |
+| Fixture | As brought over (R808) | Now (R848) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 183,738 (95.96%) |
 | Benchy arachne | 32,769 (13.68%) | 230,208 (94.55%) |

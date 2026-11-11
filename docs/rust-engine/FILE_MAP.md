@@ -45,10 +45,10 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 3723 (41%) |
-| estimate: faithful | 3120 (84% of matched) |
-| estimate: partial | 378 (10% of matched) |
+| estimate: faithful | 3121 (84% of matched) |
+| estimate: partial | 381 (10% of matched) |
 | estimate: divergent | 196 (5% of matched) |
-| estimate: stub | 29 (1% of matched) |
+| estimate: stub | 25 (1% of matched) |
 | missing in the paired Rust file | 4661 |
 | of those, a function of that name exists in another Rust file | 1611 |
 | of the rest, another overload of the name is ported | 366 |
@@ -61,7 +61,7 @@ By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2868 | 2392 | 299 | 159 | 18 | 3983 |
+| 1 | 180 | 174 | 6851 | 2868 | 2393 | 302 | 159 | 14 | 3983 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -82,7 +82,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Config` | `config.rs` | 327 | 12 | 2 | 0 | 0 | 313 | 80 |
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 19 | 3 | 0 | 0 | 183 | 70 |
 | 1 | `PrintObject` | `print_object.rs` | 82 | 6 | 6 | 11 | 1 | 58 | 52 |
-| 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 97 | 19 | 9 | 7 | 81 | 44 |
+| 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 98 | 22 | 9 | 3 | 81 | 44 |
 | 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 14 | 8 | 11 | 0 | 52 | 42 |
 | 1 | `ClipperUtils` | `clipper_utils.rs` | 227 | 9 | 3 | 2 | 0 | 213 | 43 |
 | 1 | `Preset` | `preset.rs` | 108 | 12 | 0 | 0 | 0 | 96 | 42 |
@@ -4297,7 +4297,7 @@ Rust only:
 
 ### `GCode/GCodeProcessor` (.cpp+.hpp) and `gcode/g_code_processor.rs`
 
-Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 191. Matched 132: faithful 97, partial 19, divergent 9, stub 7.
+Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 191. Matched 132: faithful 98, partial 22, divergent 9, stub 3.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -4311,30 +4311,29 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `GCodeProcessorResult::reset` :1571 and `GCodeProcessorResult::reset` :2276 (53%, 0.57x)
 - divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :2703 (7%, 0.05x)
 - partial: `GCodeProcessor::apply_config` :2106 and `GCodeProcessor::apply_config` :2805 (38%, 0.23x)
-- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :5260 (33%, 0.62x)
+- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :5358 (33%, 0.62x)
 - partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3196 (74%, 1.44x)
 - partial: `GCodeProcessor::process_tags` :3381 and `GCodeProcessor::process_tags` :3301 (52%, 0.52x)
-- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :4712 (73%, 0.91x)
+- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :4810 (73%, 0.91x)
 - partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :3505 (65%, 0.85x)
 - partial: `GCodeProcessor::process_M106` :5487 and `GCodeProcessor::process_m106` :4146 (60%, 0.47x)
 - stub: `GCodeProcessor::process_M107` :5510 and `GCodeProcessor::process_m107` :4157 (17%, 0.1x)
 - divergent: `GCodeProcessor::process_M108` :5520 and `GCodeProcessor::process_m108` :4163 (0%, 0.04x)
 - divergent: `GCodeProcessor::process_M135` :5562 and `GCodeProcessor::process_m135` :4200 (0%, 0.04x)
-- stub: `GCodeProcessor::process_M201` :5600 and `GCodeProcessor::process_m201` :4239 (0%, 0.01x)
-- stub: `GCodeProcessor::process_M203` :5620 and `GCodeProcessor::process_m203` :4243 (0%, 0.01x)
-- stub: `GCodeProcessor::process_M205` :5680 and `GCodeProcessor::process_m205` :4282 (0%, 0.01x)
-- divergent: `GCodeProcessor::process_SET_VELOCITY_LIMIT` :5710 and `GCodeProcessor::process_set_velocity_limit` :4288 (26%, 0.18x)
-- partial: `GCodeProcessor::process_M400` :5794 and `GCodeProcessor::process_m400` :4318 (38%, 0.5x)
-- divergent: `GCodeProcessor::process_M401` :5814 and `GCodeProcessor::process_m401` :4330 (0%, 0.04x)
-- stub: `GCodeProcessor::process_M402` :5825 and `GCodeProcessor::process_m402` :4331 (0%, 0.01x)
-- stub: `GCodeProcessor::process_M566` :5857 and `GCodeProcessor::process_m566` :4335 (0%, 0.01x)
-- partial: `GCodeProcessor::process_M702` :5874 and `GCodeProcessor::process_m702` :4338 (33%, 0.8x)
-- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :4358 (46%, 0.72x)
+- partial: `GCodeProcessor::process_M201` :5600 and `GCodeProcessor::process_m201` :4240 (52%, 0.68x)
+- partial: `GCodeProcessor::process_M203` :5620 and `GCodeProcessor::process_m203` :4268 (42%, 0.7x)
+- partial: `GCodeProcessor::process_M205` :5680 and `GCodeProcessor::process_m205` :4334 (52%, 0.76x)
+- divergent: `GCodeProcessor::process_SET_VELOCITY_LIMIT` :5710 and `GCodeProcessor::process_set_velocity_limit` :4369 (26%, 0.18x)
+- partial: `GCodeProcessor::process_M400` :5794 and `GCodeProcessor::process_m400` :4399 (38%, 0.5x)
+- divergent: `GCodeProcessor::process_M401` :5814 and `GCodeProcessor::process_m401` :4411 (0%, 0.04x)
+- stub: `GCodeProcessor::process_M402` :5825 and `GCodeProcessor::process_m402` :4412 (0%, 0.01x)
+- partial: `GCodeProcessor::process_M702` :5874 and `GCodeProcessor::process_m702` :4436 (33%, 0.8x)
+- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :4456 (46%, 0.72x)
 - divergent: `GCodeProcessor::get_axis_max_feedrate` :6264 and `GCodeProcessor::get_axis_max_feedrate` :3050 (25%, 0.44x)
 - divergent: `GCodeProcessor::get_axis_max_acceleration` :6277 and `GCodeProcessor::get_axis_max_acceleration` :3065 (25%, 0.44x)
 - partial: `GCodeProcessor::get_axis_max_jerk` :6290 and `GCodeProcessor::get_axis_max_jerk` :3080 (30%, 0.5x)
 - divergent: `GCodeProcessor::get_xyz_max_jerk` :6302 and `GCodeProcessor::get_xyz_max_jerk` :3095 (25%, 0.72x)
-- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :4660 (23%, 0.27x)
+- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :4758 (23%, 0.27x)
 - stub: `GCodeProcessor::get_machine_config_idx` :6596 and `GCodeProcessor::get_machine_config_idx` :3016 (0%, 0.03x)
 
 Missing in the Rust file:
@@ -4470,18 +4469,18 @@ Rust only:
 - `GCodeProcessor::result_mut` :2976
 - `GCodeProcessor::process_gcode` :3190
 - `GCodeProcessor::dispatch` :3244
-- `GCodeProcessor::process_t_command` :4399
-- `GCodeProcessor::process_filaments_tool_change` :4629
-- `GCodeProcessor::run_calculate_time` :4672
-- `GCodeProcessor::process_used_filaments_caches` :5352
-- `GCodeProcessor::update_mode` :5404
-- `GCodeProcessor::print_time` :5461
-- `GCodeProcessor::default` :5467
-- `emove_type_from_index` :5476
-- `extrusion_role_from_index` :5493
-- `normalize3` :5524
-- `normalized3` :5534
-- `parse_klipper_kv` :5542
+- `GCodeProcessor::process_t_command` :4497
+- `GCodeProcessor::process_filaments_tool_change` :4727
+- `GCodeProcessor::run_calculate_time` :4770
+- `GCodeProcessor::process_used_filaments_caches` :5450
+- `GCodeProcessor::update_mode` :5502
+- `GCodeProcessor::print_time` :5559
+- `GCodeProcessor::default` :5565
+- `emove_type_from_index` :5574
+- `extrusion_role_from_index` :5591
+- `normalize3` :5622
+- `normalized3` :5632
+- `parse_klipper_kv` :5640
 
 ### `GCode/PostProcessor` (.cpp+.hpp) and `gcode/post_processor.rs`
 
@@ -8214,7 +8213,7 @@ Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :3930 (0%, 0.44x)
+- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :4069 (0%, 0.44x)
 - divergent: `validate` :10643 and `PrintConfig::validate` :934 (9%, 0.11x)
 
 Missing in the Rust file:
@@ -8398,38 +8397,38 @@ Rust only:
 - `parse_i32` :2261
 - `parse_float_or_percent` :2266
 - `PrintConfig::set_deserialize` :2284 — C++ has it in `Config`
-- `PrintObjectConfig::set_deserialize` :2971 — C++ has it in `Config`
-- `PrintObjectConfig::default` :3625
-- `PrintObjectConfig::fmt` :3952
-- `BrimType::from_str_bambu` :4039
-- `PrintSequence::from_str_bambu` :4070
-- `WallInfillOrder::from_str_bambu` :4096
-- `SupportBasePattern::from_str_bambu` :4136
-- `SupportInterfacePattern::from_str_bambu` :4165
-- `IroningType::from_str_bambu` :4190
-- `FuzzySkinType::from_str_bambu` :4223
-- `FuzzySkinType::is_enabled` :4234 — C++ has it in `MeshBoolean`
-- `ScarfSeamType::from_str_bambu` :4253
-- `SurfacePattern::from_str_bambu` :4284
-- `InternalSolidInfillPattern::from_str_bambu` :4311
-- `EnsureVerticalShellThickness::from_str_bambu` :4349
-- `TreeSupportStyle::from_str_bambu` :4426
-- `InfillPattern::from_str_bambu` :4558
-- `TopOneWallType::is_enabled` :4660 — C++ has it in `MeshBoolean`
-- `TopOneWallType::is_all_top` :4665
-- `TopOneWallType::from_str_bambu` :4671
-- `PerimeterMode::is_variable_width` :4698
-- `PerimeterMode::name` :4703
-- `PrintConfig::to_key_value_map` :4721
-- `PrintConfig::apply_key_value_map` :4879
-- `PrintConfig::apply_key_value` :4887
-- `PrintObjectConfig::apply_key_value` :5525
-- `find_from` :6380
-- `s_keys_map_nozzle_volume_type` :6462
-- `nozzle_volume_type_string` :6651
-- `stoi` :6669
-- `atoi` :6673
-- `parse_leading_int` :6677
+- `PrintObjectConfig::set_deserialize` :3110 — C++ has it in `Config`
+- `PrintObjectConfig::default` :3764
+- `PrintObjectConfig::fmt` :4091
+- `BrimType::from_str_bambu` :4178
+- `PrintSequence::from_str_bambu` :4209
+- `WallInfillOrder::from_str_bambu` :4235
+- `SupportBasePattern::from_str_bambu` :4275
+- `SupportInterfacePattern::from_str_bambu` :4304
+- `IroningType::from_str_bambu` :4329
+- `FuzzySkinType::from_str_bambu` :4362
+- `FuzzySkinType::is_enabled` :4373 — C++ has it in `MeshBoolean`
+- `ScarfSeamType::from_str_bambu` :4392
+- `SurfacePattern::from_str_bambu` :4423
+- `InternalSolidInfillPattern::from_str_bambu` :4450
+- `EnsureVerticalShellThickness::from_str_bambu` :4488
+- `TreeSupportStyle::from_str_bambu` :4565
+- `InfillPattern::from_str_bambu` :4697
+- `TopOneWallType::is_enabled` :4799 — C++ has it in `MeshBoolean`
+- `TopOneWallType::is_all_top` :4804
+- `TopOneWallType::from_str_bambu` :4810
+- `PerimeterMode::is_variable_width` :4837
+- `PerimeterMode::name` :4842
+- `PrintConfig::to_key_value_map` :4860
+- `PrintConfig::apply_key_value_map` :5018
+- `PrintConfig::apply_key_value` :5026
+- `PrintObjectConfig::apply_key_value` :5664
+- `find_from` :6519
+- `s_keys_map_nozzle_volume_type` :6601
+- `nozzle_volume_type_string` :6790
+- `stoi` :6808
+- `atoi` :6812
+- `parse_leading_int` :6816
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 

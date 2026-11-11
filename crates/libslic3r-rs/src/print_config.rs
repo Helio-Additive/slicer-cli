@@ -2897,6 +2897,145 @@ impl PrintConfig {
                 true
             }
 
+            // GCodeProcessor.cpp:2030-2036 — the machine envelope the processor
+            // takes from the config (MACHINE_LIMITS): the first (Normal) value of
+            // each per-extruder, per-mode array. =0 keeps the defaults.
+            "machine_max_acceleration_x" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_acceleration_x = v;
+                    }
+                }
+                true
+            }
+            "machine_max_acceleration_y" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_acceleration_y = v;
+                    }
+                }
+                true
+            }
+            "machine_max_acceleration_z" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_acceleration_z = v;
+                    }
+                }
+                true
+            }
+            "machine_max_acceleration_e" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_acceleration_e = v;
+                    }
+                }
+                true
+            }
+            "machine_max_acceleration_extruding" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_acceleration_extruding = v;
+                    }
+                }
+                true
+            }
+            "machine_max_acceleration_retracting" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_acceleration_retracting = v;
+                    }
+                }
+                true
+            }
+            "machine_max_acceleration_travel" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_acceleration_travel = v;
+                    }
+                }
+                true
+            }
+            "machine_max_speed_x" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_speed_x = v;
+                    }
+                }
+                true
+            }
+            "machine_max_speed_y" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_speed_y = v;
+                    }
+                }
+                true
+            }
+            "machine_max_speed_z" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_speed_z = v;
+                    }
+                }
+                true
+            }
+            "machine_max_speed_e" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_speed_e = v;
+                    }
+                }
+                true
+            }
+            "machine_max_jerk_x" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_jerk_x = v;
+                    }
+                }
+                true
+            }
+            "machine_max_jerk_y" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_jerk_y = v;
+                    }
+                }
+                true
+            }
+            "machine_max_jerk_z" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_jerk_z = v;
+                    }
+                }
+                true
+            }
+            "machine_max_jerk_e" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_max_jerk_e = v;
+                    }
+                }
+                true
+            }
+            "machine_min_extruding_rate" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_min_extruding_rate = v;
+                    }
+                }
+                true
+            }
+            "machine_min_travel_rate" => {
+                if crate::faithful_gate("MACHINE_LIMITS") {
+                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
+                        self.machine_min_travel_rate = v;
+                    }
+                }
+                true
+            }
             // GCodeProcessor.cpp:2054 — read by the G-code processor (PROCESS_G4_G29).
             "machine_prepare_compensation_time" => {
                 if let Some(v) = parse_f64(value) {

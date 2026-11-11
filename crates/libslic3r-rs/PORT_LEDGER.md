@@ -22,10 +22,10 @@ engine"); its `status` values are not a measure of fidelity.
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 3723 (41%) |
-| estimate: faithful | 3120 (84% of matched) |
-| estimate: partial | 378 (10% of matched) |
+| estimate: faithful | 3121 (84% of matched) |
+| estimate: partial | 381 (10% of matched) |
 | estimate: divergent | 196 (5% of matched) |
-| estimate: stub | 29 (1% of matched) |
+| estimate: stub | 25 (1% of matched) |
 | missing in the paired Rust file | 4661 |
 | of those, a function of that name exists in another Rust file | 1611 |
 | of the rest, another overload of the name is ported | 366 |
@@ -38,7 +38,7 @@ By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2868 | 2392 | 299 | 159 | 18 | 3983 |
+| 1 | 180 | 174 | 6851 | 2868 | 2393 | 302 | 159 | 14 | 3983 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1381 | 465 | 389 | 41 | 30 | 5 | 916 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |

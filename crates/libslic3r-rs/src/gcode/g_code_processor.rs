@@ -4233,14 +4233,67 @@ impl GCodeProcessor {
         }
     }
 
-    /// GCodeProcessor.cpp:5405-5423  process_M201 — set max printing acceleration.
-    /// BLOCKED(config): machine_max_acceleration arrays are empty (unthreaded
-    /// MachineEnvelopeConfig), so the C++ loop body never executes. No-op here.
-    fn process_m201(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5600-5617  process_M201 — max printing acceleration.
+    /// The port keeps one value per axis, the Normal mode's; C++'s loop runs over
+    /// the extruders' Normal entries when the arrays hold two values or more,
+    /// as the Bambu Lab profiles' do. MACHINE_LIMITS (on); =0 ignores the line.
+    fn process_m201(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("MACHINE_LIMITS") || !self.m_time_processor.machine_limits.present {
+            return;
+        }
+        let factor = if !matches!(self.m_flavor, GCodeFlavor::RepRapSprinter | GCodeFlavor::RepRapFirmware)
+            && self.m_units == EUnits::Inches
+        {
+            INCHES_TO_MM
+        } else {
+            1.0
+        };
+        let ml = &mut self.m_time_processor.machine_limits;
+        if line.has_x() {
+            ml.max_acceleration_x = line.x() * factor;
+        }
+        if line.has_y() {
+            ml.max_acceleration_y = line.y() * factor;
+        }
+        if line.has_z() {
+            ml.max_acceleration_z = line.z() * factor;
+        }
+        if line.has_e() {
+            ml.max_acceleration_e = line.e() * factor;
+        }
+    }
 
-    /// GCodeProcessor.cpp:5425-5454  process_M203 — set maximum feedrate.
-    /// BLOCKED(config): machine_max_speed arrays empty → loop never runs.
-    fn process_m203(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5619-5649  process_M203 — maximum feedrate, mm/s on
+    /// Marlin, Smoothie and Klipper, mm/min elsewhere (MACHINE_LIMITS, as M201).
+    fn process_m203(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("MACHINE_LIMITS") || !self.m_time_processor.machine_limits.present {
+            return;
+        }
+        if self.m_flavor == GCodeFlavor::RepetierFirmware {
+            return;
+        }
+        let factor = if matches!(
+            self.m_flavor,
+            GCodeFlavor::MarlinLegacy | GCodeFlavor::MarlinFirmware | GCodeFlavor::Smoothie | GCodeFlavor::Klipper
+        ) {
+            1.0
+        } else {
+            MMMIN_TO_MMSEC
+        };
+        let ml = &mut self.m_time_processor.machine_limits;
+        if line.has_x() {
+            ml.max_speed_x = line.x() * factor;
+        }
+        if line.has_y() {
+            ml.max_speed_y = line.y() * factor;
+        }
+        if line.has_z() {
+            ml.max_speed_z = line.z() * factor;
+        }
+        if line.has_e() {
+            ml.max_speed_e = line.e() * factor;
+        }
+    }
 
     /// GCodeProcessor.cpp:5456-5483  process_M204 — set default acceleration.
     fn process_m204(&mut self, line: &crate::g_code_reader::GCodeLine) {
@@ -4276,10 +4329,38 @@ impl GCodeProcessor {
         }
     }
 
-    /// GCodeProcessor.cpp:5485-5513  process_M205 — advanced settings (jerk/min rate).
-    /// BLOCKED(config): jerk + min-rate limit arrays are empty (unthreaded), so
-    /// the set_option_value calls have no observable effect. No-op here.
-    fn process_m205(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5680-5708  process_M205 — jerk and minimum rates
+    /// (MACHINE_LIMITS, Normal mode).
+    fn process_m205(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("MACHINE_LIMITS") || !self.m_time_processor.machine_limits.present {
+            return;
+        }
+        let ml = &mut self.m_time_processor.machine_limits;
+        if line.has_x() {
+            let max_jerk = line.x();
+            ml.max_jerk_x = max_jerk;
+            ml.max_jerk_y = max_jerk;
+        }
+        if line.has_y() {
+            ml.max_jerk_y = line.y();
+        }
+        if line.has_z() {
+            ml.max_jerk_z = line.z();
+        }
+        if line.has_e() {
+            ml.max_jerk_e = line.e();
+        }
+        if let Some(value) = line.has_value(b'S') {
+            if ml.min_extruding_rate_present {
+                ml.min_extruding_rate = value;
+            }
+        }
+        if let Some(value) = line.has_value(b'T') {
+            if ml.min_travel_rate_present {
+                ml.min_travel_rate = value;
+            }
+        }
+    }
 
     /// GCodeProcessor.cpp:5515-5561  process_SET_VELOCITY_LIMIT (Klipper).
     /// BLOCKED(config): writes jerk/speed limit arrays (empty/unthreaded) and
@@ -4330,9 +4411,26 @@ impl GCodeProcessor {
     fn process_m401(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
     fn process_m402(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
 
-    /// GCodeProcessor.cpp:5646-5661  process_M566 — instantaneous speed change.
-    /// BLOCKED(config): writes machine_max_jerk arrays (empty/unthreaded). No-op.
-    fn process_m566(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5857-5872  process_M566 — instantaneous speed change,
+    /// mm/min (MACHINE_LIMITS).
+    fn process_m566(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("MACHINE_LIMITS") || !self.m_time_processor.machine_limits.present {
+            return;
+        }
+        let ml = &mut self.m_time_processor.machine_limits;
+        if line.has_x() {
+            ml.max_jerk_x = line.x() * MMMIN_TO_MMSEC;
+        }
+        if line.has_y() {
+            ml.max_jerk_y = line.y() * MMMIN_TO_MMSEC;
+        }
+        if line.has_z() {
+            ml.max_jerk_z = line.z() * MMMIN_TO_MMSEC;
+        }
+        if line.has_e() {
+            ml.max_jerk_e = line.e() * MMMIN_TO_MMSEC;
+        }
+    }
 
     /// GCodeProcessor.cpp:5663-5673  process_M702 — MMU unload at end of print.
     fn process_m702(&mut self, line: &crate::g_code_reader::GCodeLine) {
