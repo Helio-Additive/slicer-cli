@@ -3268,6 +3268,33 @@ impl GCodeWriter {
     /// # Arguments
     /// * `x` - New X position (mm)
     /// * `y` - New Y position (mm)
+    /// After raw G-code written past this writer: the feedrate its last move
+    /// set becomes the one a following move is compared with. C++ writes the
+    /// feedrate on every travel and the G-code editor of the cooling buffer
+    /// drops it where the text before already set it (GCodeEditor.cpp); this
+    /// writer drops it when writing, so it has to know what the text set.
+    pub(crate) fn note_raw_feedrate(&mut self, text: &str) {
+        for line in text.lines().rev() {
+            let l = line.trim_start();
+            if !(l.starts_with("G0 ") || l.starts_with("G1 ") || l.starts_with("G2 ") || l.starts_with("G3 ")) {
+                continue;
+            }
+            let code = l.split(';').next().unwrap_or("");
+            if let Some(f) = code
+                .split_whitespace()
+                .find_map(|w| w.strip_prefix('F').and_then(|v| v.parse::<f64>().ok()))
+            {
+                self.last_emitted_f = f;
+                return;
+            }
+        }
+    }
+
+    /// `set_position` with only the Z changed (GCode.cpp:4803-4805).
+    pub fn set_position_z(&mut self, z: CoordF) {
+        self.z = z;
+    }
+
     pub fn set_position_xy(&mut self, x: CoordF, y: CoordF) {
         self.x = x;
         self.y = y;

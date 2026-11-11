@@ -907,7 +907,17 @@ impl Print {
                 if !tl_tmpl.is_empty() {
                     // Inject per-layer variables into a temporary settings copy
                     let mut tl_settings = settings.clone();
-                    tl_settings["layer_z"] = serde_json::Value::String(format!("{}", print_z));
+                    // TIMELAPSE_LAYER_Z_G6 (on): the placeholder parser writes a double
+                    // through an ostringstream, six significant digits
+                    // (PlaceholderParser.cpp:271-283). =0 writes it in full.
+                    let fmt_z = |z: f64| {
+                        if crate::faithful_gate("TIMELAPSE_LAYER_Z_G6") {
+                            crate::g_code::fmt_g6(z)
+                        } else {
+                            format!("{}", z)
+                        }
+                    };
+                    tl_settings["layer_z"] = serde_json::Value::String(fmt_z(print_z));
                     tl_settings["layer_num"] = serde_json::json!(layer_index);
                     if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                         // R224: native injects the TimelapsePosPicker outputs
@@ -935,7 +945,7 @@ impl Print {
                         tl_settings["most_used_physical_extruder_id"] = serde_json::json!(0);
                         tl_settings["curr_physical_extruder_id"] = serde_json::json!(0);
                         tl_settings["spiral_mode"] = serde_json::json!(0);
-                        tl_settings["max_layer_z"] = serde_json::Value::String(format!("{}", print_z));
+                        tl_settings["max_layer_z"] = serde_json::Value::String(fmt_z(print_z));
                     }
                     let processed =
                         crate::gcode::process_gcode_template(tl_tmpl, &tl_settings, &self.config);
@@ -945,6 +955,29 @@ impl Print {
                     // be a normal lift, not a spiral. R630.
                     writer.set_current_position_clear(false);
                     writer.write_raw(""); // blank separator matching C++ output
+                    // TIMELAPSE_F_NOTED (on): the template's own feedrate is the
+                    // current one after it, as the cooling buffer reads the text.
+                    if crate::faithful_gate("TIMELAPSE_F_NOTED") {
+                        writer.note_raw_feedrate(&processed);
+                    }
+                    // TIMELAPSE_Z_RESTORE (on): GCode.cpp:4783-4806 — when the
+                    // template leaves the head at another Z, a raw `G1 Z%.3f` takes
+                    // it back to the Z from before it, and the writer's position is
+                    // left alone (so its lift stays); when it leaves it at the same
+                    // Z, that Z becomes the position's. =0 writes nothing.
+                    if crate::faithful_gate("TIMELAPSE_Z_RESTORE") {
+                        let timelapse_gcode = format!("{processed}\n");
+                        let z_before_timelapse = writer.z();
+                        if let Some(tz) =
+                            crate::gcode::g_code_processor::get_last_z_from_gcode(&timelapse_gcode)
+                        {
+                            if (tz - z_before_timelapse).abs() > crate::libslic3r::EPSILON {
+                                writer.write_raw(&format!("G1 Z{:.3}", z_before_timelapse));
+                            } else {
+                                writer.set_position_z(tz);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -3770,11 +3803,18 @@ fn emit_tower_tcr(
     // finish's `is_finish_first`, and `append_tcr` first retracts, travels to
     // the result's start and unretracts (GCode.cpp:787-795):
     // `gcodegen.retract()` is a lazy spiral lift (GCode.hpp:246).
-    if crate::faithful_gate("TOWER_GENERATE_NEW_CPP")
-        && tcr.is_tool_change
-        && tcr.is_finish_first
+    // TOWER_FINISH_FIRST_TRAVEL_CPP (on): the same for a result that is not a
+    // tool change (the timelapse wall, the finish of a layer without tool
+    // changes), which the port reached with a raw move to its start without
+    // the extruder offset and without the unretract. =0 keeps that move.
+    let finish_first_travel = tcr.is_finish_first
         && !tcr.priming
-    {
+        && if tcr.is_tool_change {
+            crate::faithful_gate("TOWER_GENERATE_NEW_CPP")
+        } else {
+            crate::faithful_gate("TOWER_FINISH_FIRST_TRAVEL_CPP")
+        };
+    if finish_first_travel {
         writer.retract_with_lift_type(1, false);
         let (gox, goy) = writer.gcode_origin();
         writer.travel_to_tower_point(tcr.start_pos.x as f64 + gox, tcr.start_pos.y as f64 + goy);
@@ -4245,7 +4285,7 @@ fn emit_tower_tcr(
         // substituted the trailer in, so the travel and the marker are written
         // here. This is exactly C++'s `tcr.is_finish_first` case (GCode.cpp:687),
         // where it also emits the travel explicitly.
-        if !travel_to_start.is_empty() {
+        if !travel_to_start.is_empty() && !finish_first_travel {
             writer.write_raw(travel_to_start.trim_end());
         }
         if !tag_at_head {

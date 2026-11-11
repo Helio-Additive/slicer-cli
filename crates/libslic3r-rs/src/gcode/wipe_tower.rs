@@ -1969,11 +1969,20 @@ impl WipeTowerWriter {
         }
 
         // :1293-1295 — travel to it and lay the first segment.
+        // TOWER_PATH_F_INLINE (on): `extrude(segments[i].end, feedrate)` writes
+        // the feedrate on the move (:1295, :1307). =0 writes a `G1 F` line
+        // before it.
+        let f_inline = crate::faithful_gate("TOWER_PATH_F_INLINE");
         self.travel_to(segments[index_of_closest].0);
-        self.feedrate(feedrate);
+        if !f_inline {
+            self.feedrate(feedrate);
+        }
         match segments[index_of_closest].2.clone() {
             Some(arc) => {
                 self.extrude_arc(&arc, feedrate);
+            }
+            None if f_inline => {
+                self.extrude_f(segments[index_of_closest].1.x, segments[index_of_closest].1.y, feedrate);
             }
             None => {
                 self.extrude(segments[index_of_closest].1.x, segments[index_of_closest].1.y);
@@ -1998,11 +2007,16 @@ impl WipeTowerWriter {
                 self.travel_to_f(segments[i].0, 600.0);
                 self.retract(-retract_length, retract_speed);
             }
-            self.feedrate(feedrate);
+            if !f_inline {
+                self.feedrate(feedrate);
+            }
             // :1307 — `segments[i].is_arc ? extrude_arc(...) : extrude(...)`.
             match segments[i].2.clone() {
                 Some(arc) => {
                     self.extrude_arc(&arc, feedrate);
+                }
+                None if f_inline => {
+                    self.extrude_f(segments[i].1.x, segments[i].1.y, feedrate);
                 }
                 None => {
                     self.extrude(segments[i].1.x, segments[i].1.y);
@@ -4655,7 +4669,17 @@ impl WipeTower {
         self.set_for_wipe_tower_writer(&mut writer);
 
         // :8239-8243 — fill_box, and the corner the writer starts from.
-        let layer_depth = self.plan.get(self.layer_idx).map(|l| l.depth).unwrap_or(self.depth);
+        // TOWER_OUT_WALL_CPP (on): `m_layer_info->depth` as C++ reads it (the
+        // full tower depth under smooth timelapse), the feedrate of
+        // `calc_tower_feedrate` and no feedrate line of its own (the first
+        // extrusion carries it, :8264). =0: the port's per-layer depth, the
+        // travel speed and a `G1 F` line.
+        let out_wall_cpp = crate::faithful_gate("TOWER_OUT_WALL_CPP");
+        let layer_depth = if out_wall_cpp {
+            self.layer_info_depth(self.layer_idx)
+        } else {
+            self.plan.get(self.layer_idx).map(|l| l.depth).unwrap_or(self.depth)
+        };
         let fill_box_y = self
             .plan
             .get(self.layer_idx)
@@ -4680,12 +4704,17 @@ impl WipeTower {
         writer.set_first_layer(is_first_layer);
 
         // :8238 — calc_tower_feedrate, as finish_layer has it.
-        let feedrate = if is_first_layer {
+        let feedrate = if out_wall_cpp {
+            let first = self.is_first_layer_for_slab(self.layer_height);
+            self.calc_tower_feedrate(self.current_tool, self.extrusion_flow, first)
+        } else if is_first_layer {
             self.config.first_layer_speed * 60.0
         } else {
             self.config.travel_speed * 60.0
         };
-        writer.feedrate(feedrate);
+        if !out_wall_cpp {
+            writer.feedrate(feedrate);
+        }
 
         // :8251
         writer.append("; WIPE_TOWER_START\n");
