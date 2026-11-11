@@ -2594,7 +2594,12 @@ pub fn extrude_collection(
             let dx = pos.x - tx;
             let dy = pos.y - ty;
             let dist_sq = dx * dx + dy * dy;
-            if dist_sq > 0.001 * 0.001 {
+            // GCode.cpp:7611 — `|| m_need_change_layer_lift_z`: the layer's first
+            // path travels even from its own first point (CHANGE_LAYER_RETRACT_CPP).
+            if dist_sq > 0.001 * 0.001
+                || (writer.m_need_change_layer_lift_z
+                    && crate::faithful_gate("CHANGE_LAYER_RETRACT_CPP"))
+            {
                 // Per-entity travel + retraction/spiral-lift decision. This is the
                 // single faithful decision point, mirroring C++ GCode::_extrude ->
                 // GCode::travel_to -> GCode::needs_retraction (GCode.cpp:6366,6816,6964):
@@ -2631,6 +2636,8 @@ pub fn extrude_collection(
                     // the current nominal z).
                     let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
                     writer.travel_to_xyz(tx, ty, zdest);
+                    // GCode.cpp:7618 — the first `_extrude` after change_layer clears it.
+                    writer.m_need_change_layer_lift_z = false;
                 } else {
                     writer.travel_to(tx, ty, None);
                 }
@@ -3752,6 +3759,8 @@ pub fn extrude_perimeters(
         if crate::gcode::writer::lift_faithful_gate() {
             let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
             writer.travel_to_xyz(target_x, target_y, zdest);
+            // GCode.cpp:7618 — the first `_extrude` after change_layer clears it.
+            writer.m_need_change_layer_lift_z = false;
         } else {
             writer.travel_to(target_x, target_y, None);
         }
@@ -3875,6 +3884,8 @@ pub fn extrude_infill(
                     crate::unscale(first_pt.y()),
                     zdest,
                 );
+                // GCode.cpp:7618 — the first `_extrude` after change_layer clears it.
+                writer.m_need_change_layer_lift_z = false;
             } else {
                 writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
             }
@@ -3916,6 +3927,20 @@ pub fn extrude_perimeters_entities(
 ) {
     if entities.is_empty() {
         return;
+    }
+    // COOLING_NODE_BEFORE_TRAVEL (on): `GCode::extrude_perimeters` writes the
+    // marker and then `extrude_entity`, whose `_extrude` travels to the first
+    // point (GCode.cpp:6968-6976, :7611-7618); the bucket-start travel below is
+    // that first entity's travel, so its marker goes before it. =0 writes it
+    // after the travel.
+    let node_first = cooling_node_ids.is_some()
+        && !skip_inner_walls
+        && crate::faithful_gate("COOLING_NODE_BEFORE_TRAVEL");
+    if node_first {
+        let id = cooling_node_ids.and_then(|ids| ids.first().copied()).unwrap_or(-1);
+        if id != -1 {
+            writer.write_raw(&format!("; COOLING_NODE: {}", id));
+        }
     }
     // ZSMOOTH_FAITHFUL: the bucket-start retract must go through the faithful
     // needs_retraction (GCode.cpp:6964) — the unconditional retract here was
@@ -3965,6 +3990,8 @@ pub fn extrude_perimeters_entities(
                 crate::unscale(first_pt.y()),
                 zdest,
             );
+            // GCode.cpp:7618 — the first `_extrude` after change_layer clears it.
+            writer.m_need_change_layer_lift_z = false;
         } else {
             writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
         }
@@ -3983,7 +4010,7 @@ pub fn extrude_perimeters_entities(
         // writer state as the batch path below.
         for (k, entity) in entities.iter().enumerate() {
             let id = ids.get(k).copied().unwrap_or(-1);
-            if id != -1 {
+            if id != -1 && !(node_first && k == 0) {
                 writer.write_raw(&format!("; COOLING_NODE: {}", id));
             }
             let coll = crate::extrusion_entity::ExtrusionEntityCollection {
@@ -4073,6 +4100,8 @@ pub fn extrude_infill_entities(
                     crate::unscale(first_pt.y()),
                     zdest,
                 );
+                // GCode.cpp:7618 — the first `_extrude` after change_layer clears it.
+                writer.m_need_change_layer_lift_z = false;
             } else {
                 writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
             }
@@ -4234,6 +4263,8 @@ pub fn extrude_support(
                     crate::unscale(first_pt.y()),
                     zdest,
                 );
+                // GCode.cpp:7618 — the first `_extrude` after change_layer clears it.
+                writer.m_need_change_layer_lift_z = false;
             } else {
                 writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
             }
@@ -5007,70 +5038,56 @@ impl Default for GCodeLayerState {
     }
 }
 
-/// Emit layer-change G-code: progress update, optional retract, Z move.
+/// `GCode::change_layer` (GCode.cpp:6473-6503), called by `process_layer` right
+/// after the layer head (:5066).
 ///
-/// C++ reference: GCode::change_layer()
-/// GCode.cpp:4904-4940
-///
-/// This function:
-/// 1. Increments progress counter and emits M73
-/// 2. Optionally retracts if retract_when_changing_layer is set
-/// 3. In spiral vase mode, does immediate Z travel; otherwise defers Z move
-/// 4. Updates nominal_z
-///
-/// # Arguments
-/// * `print_z` - Target Z height for this layer
-/// * `writer` - GCodeWriter to emit commands
-/// * `state` - Mutable layer state (layer_index is incremented)
-/// * `config` - Print configuration
-///
-/// # Returns
-/// G-code string for the layer change
+/// `update_progress` (:6475-6477) writes nothing for this G-code flavour
+/// (GCodeWriter.cpp `update_progress`: only MakerWare and Sailfish), and the
+/// caller keeps the layer index. With `retract_when_changing_layer` (the
+/// current filament's, `FILAMENT_CONFIG`) and a Z change it retracts, wiping,
+/// with a lazy lift: SpiralLift when `z_hop_types` is Auto, else `to_lift_type`
+/// (:6481-6485, :8370-8383). `add_object_change_labels` (:6487) is the caller's.
+/// In spiral vase mode it moves to the layer at once (:6489-6494, through
+/// `GCodeWriter::travel_to_z`); otherwise it sets `m_need_change_layer_lift_z`
+/// so the layer's first travel lifts (:6495-6499). Then `m_nominal_z`.
 pub fn change_layer(
     print_z: f64,
     writer: &mut GCodeWriter,
-    state: &mut GCodeLayerState,
-    _config: &crate::print_config::PrintConfig,
-) -> String {
-    let mut gcode = String::new();
-
-    // C++ GCode.cpp:4908-4910
-    // Increment progress and emit M73 progress command
-    if state.layer_count > 0 {
-        state.layer_index += 1;
-        let pct = (state.layer_index as f64 / state.layer_count as f64 * 100.0).min(100.0) as u32;
-        // Estimate remaining time proportionally (simple linear estimate)
-        gcode += &format!("M73 P{} R0\n", pct);
-    }
-
-    // C++ GCode.cpp:4913
-    // BBS: no z_offset applied
+    retract_when_changing_layer: bool,
+    z_hop_type: crate::print_config::ZHopType,
+    spiral_vase: bool,
+) {
+    use crate::print_config::ZHopType;
+    // :6480 — BBS: no z_offset.
     let z = print_z;
-
-    // C++ GCode.cpp:4914-4918
-    // Retract when changing layer if configured
-    // C++ uses FILAMENT_CONFIG(retract_when_changing_layer) — per-filament setting.
-    // For now, always retract on layer change if Z increases (matching default behavior).
-    if writer.z() < z {
-        writer.retract();
+    if retract_when_changing_layer && writer.will_move_z(z) {
+        // :6482 `to_lift_type(ZHopType(FILAMENT_CONFIG(z_hop_types)))`.
+        let lift_type = match z_hop_type {
+            ZHopType::Normal => 0,
+            ZHopType::Slope => 2,
+            ZHopType::Spiral => 1,
+            // :8380 default: NormalLift; :6484 forces SpiralLift for Auto.
+            ZHopType::Auto => 1,
+        };
+        writer.retract_with_lift_type(lift_type, false);
     }
-
-    // C++ GCode.cpp:4922-4931
-    if state.spiral_vase {
-        // In spiral vase mode, travel to Z immediately
-        // C++ GCode.cpp:4924-4926
-        gcode += &format!("; move to next layer ({})\n", state.layer_index);
-        writer.travel_to_z(z, None);
+    if spiral_vase {
+        // GCodeWriter::travel_to_z: inside the lift only the lift shrinks.
+        if !writer.will_move_z(z) {
+            let nominal_z = writer.z() - writer.m_lifted;
+            writer.m_lifted -= z - nominal_z;
+            if writer.m_lifted.abs() < crate::libslic3r::EPSILON {
+                writer.m_lifted = 0.0;
+            }
+        } else {
+            writer.m_lifted = 0.0;
+            writer.set_travel_acceleration(0.0);
+            writer.travel_to_z(z, None);
+        }
     } else {
-        // C++ GCode.cpp:4930
-        // Defer Z move — it will happen on next travel_to()
-        state.need_change_layer_lift_z = true;
+        writer.m_need_change_layer_lift_z = true;
     }
-
-    // C++ GCode.cpp:4933
-    state.nominal_z = print_z;
-
-    gcode
+    writer.nominal_z = print_z;
 }
 
 /// Emit the CHANGE_LAYER tag, Z_HEIGHT, HEIGHT metadata, and custom gcode.

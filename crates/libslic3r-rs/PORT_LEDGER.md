@@ -23,8 +23,8 @@ engine"); its `status` values are not a measure of fidelity.
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 3710 (41%) |
 | estimate: faithful | 3104 (84% of matched) |
-| estimate: partial | 374 (10% of matched) |
-| estimate: divergent | 201 (5% of matched) |
+| estimate: partial | 375 (10% of matched) |
+| estimate: divergent | 200 (5% of matched) |
 | estimate: stub | 31 (1% of matched) |
 | missing in the paired Rust file | 4674 |
 | of those, a function of that name exists in another Rust file | 1612 |
@@ -38,7 +38,7 @@ By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 173 | 6851 | 2804 | 2354 | 277 | 153 | 20 | 4047 |
+| 1 | 180 | 174 | 6851 | 2855 | 2376 | 296 | 163 | 20 | 3996 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1381 | 465 | 389 | 41 | 30 | 5 | 916 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |

@@ -338,6 +338,10 @@ pub struct GCodeWriter {
     /// R208: native GCode::m_nominal_z — the current layer's print z; travel
     /// destinations use this (GCode.cpp:6905 dest3d z).
     pub nominal_z: CoordF,
+    /// GCode::m_need_change_layer_lift_z (GCode.cpp:6497-6498): set by
+    /// change_layer so the layer's first `_extrude` travels even when it is
+    /// already at the path's first point (:7611-7618).
+    pub m_need_change_layer_lift_z: bool,
 
     /// Statistics being collected.
     stats: GCodeStats,
@@ -487,6 +491,7 @@ impl GCodeWriter {
             m_to_lift: 0.0,
             m_to_lift_type: 0,
             nominal_z: 0.0,
+            m_need_change_layer_lift_z: false,
             stats: GCodeStats::default(),
             layer_extrusion_time: 0.0,
             cooling_slowdown: 1.0,
@@ -1601,6 +1606,11 @@ impl GCodeWriter {
             1 => self.eager_spiral_lift(),
             _ => {
                 // GCodeWriter.cpp:475 — "if position is unknown use normal lift".
+                // EAGER_LIFT_TRAVEL_ACCEL (on): `_travel_to_z` returns
+                // `set_travel_acceleration() + w.string()`.
+                if crate::faithful_gate("EAGER_LIFT_TRAVEL_ACCEL") {
+                    self.set_travel_acceleration(0.0);
+                }
                 self.travel_to_z(self.z + to_lift, None);
                 self.m_lifted = self.retract_lift;
                 self.m_to_lift = 0.0;
@@ -1670,6 +1680,9 @@ impl GCodeWriter {
         // — "spiral lift only safe with known position"; :488 falls back to a
         // normal lift when it is not. R630.
         if !self.is_current_position_clear() {
+            if crate::faithful_gate("EAGER_LIFT_TRAVEL_ACCEL") {
+                self.set_travel_acceleration(0.0);
+            }
             self.travel_to_z(self.z + to_lift, None);
             self.m_lifted = self.retract_lift;
             self.m_to_lift = 0.0;
@@ -2666,6 +2679,13 @@ impl GCodeWriter {
                 e: Some(e_out),
                 f: Some(retract_speed),
             });
+            // RETRACT_F_NOTED (on): `GCodeWriter::_retract` emits the F of the
+            // retraction (GCodeWriter.cpp `w.emit_f(speed * 60.)`), and that F is
+            // the current one for what follows, as with the wipe's retraction
+            // above. =0 leaves the previous feedrate as the current one.
+            if crate::faithful_gate("RETRACT_F_NOTED") {
+                self.last_emitted_f = retract_speed;
+            }
         }
 
         self.emit_lift_after_retract();

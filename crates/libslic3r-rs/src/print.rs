@@ -645,6 +645,7 @@ impl Print {
         // no printer_model, the printer preset's name does.
         let is_bbl_printer = self.is_bbl_printer();
         let end_sequence_cpp = crate::faithful_gate("END_SEQUENCE_CPP");
+        let change_layer_retract_cpp = crate::faithful_gate("CHANGE_LAYER_RETRACT_CPP");
         let mut skirt_done = false;
 
         let default_config = crate::print_config::PrintObjectConfig::default();
@@ -764,6 +765,19 @@ impl Print {
             .flat_map(|grp| grp.iter())
             .filter(|r| r.is_tool_change)
             .count() as i64;
+        // FIRST_LAYER_Z_MOVE_CPP (on): GCode.cpp:3482-3490 — with a wipe tower,
+        // `_do_export` moves to max(initial layer height + z_hop, 0.4) before
+        // the first layer; `_travel_to_z` sets the travel acceleration first
+        // (GCodeWriter.cpp `return set_travel_acceleration() + w.string()`).
+        if crate::faithful_gate("FIRST_LAYER_Z_MOVE_CPP")
+            && crate::faithful_gate("WIPE_TOWER_EMIT")
+            && !all_layers.is_empty()
+            && self.wipe_tower_results.iter().any(|grp| !grp.is_empty())
+        {
+            let z = (self.config.first_layer_height + self.config.retract_lift).max(0.4);
+            writer.set_travel_acceleration(0.0);
+            writer.travel_to_z(z, None);
+        }
         while i < all_layers.len() {
             let print_z = all_layers[i].layer.print_z;
             let mut j = i + 1;
@@ -813,8 +827,32 @@ impl Print {
             // GCode.cpp:3969 -- change_layer increments layer_index
             layer_index += 1;
 
-            // Retract without z-hop (change_layer does its own z-hop after)
-            if !writer.is_retracted() {
+            // CHANGE_LAYER_RETRACT_CPP (on): `GCode::change_layer` (GCode.cpp:6473-6503),
+            // called right after the layer head (:5066). With
+            // `retract_when_changing_layer` and a Z change it retracts, wiping,
+            // and asks for a lazy lift (SpiralLift when `z_hop_types` is Auto,
+            // :6481-6485); it then sets `m_need_change_layer_lift_z` so the first
+            // travel of the layer lifts (:6497-6498, :7611-7618). Nothing retracts
+            // at the end of the previous layer. =0 retracts there, retracts here
+            // without a lift and lifts eagerly before the timelapse block.
+            // FILAMENT_CONFIG(retract_when_changing_layer) (GCode.cpp:1570).
+            let retract_when_changing_layer = {
+                let fid = writer.extruder();
+                self.raw_setting_at("retract_when_changing_layer", fid)
+                    .or_else(|| self.raw_setting_at("retract_when_changing_layer", 0))
+                    .map(|v| v != 0.0)
+                    .unwrap_or(self.config.retract_when_changing_layer)
+            };
+            if change_layer_retract_cpp {
+                crate::g_code::change_layer(
+                    print_z,
+                    &mut writer,
+                    retract_when_changing_layer,
+                    self.config.z_hop_type,
+                    is_spiral_vase,
+                );
+            } else if !writer.is_retracted() {
+                // Retract without z-hop (change_layer does its own z-hop after)
                 writer.retract_no_lift();
             }
 
@@ -917,7 +955,7 @@ impl Print {
                 }
                 // change_layer retracts before it lifts (GCode.cpp:3039); the
                 // scan's unretract is the only one between.
-                if !writer.is_retracted() {
+                if !change_layer_retract_cpp && !writer.is_retracted() {
                     writer.retract_no_lift();
                 }
             }
@@ -926,7 +964,9 @@ impl Print {
             // On first layer, uses initial_layer_travel_acceleration
             // On other layers, uses travel_acceleration
             // C++: GCodeWriter.cpp:210 — m_is_first_layer ? m_first_layer_travel_accelerations : m_travel_accelerations
-            {
+            // CHANGE_LAYER_RETRACT_CPP: process_layer sets nothing here; the
+            // layer's first travel sets its own acceleration.
+            if !change_layer_retract_cpp {
                 let accel = if first_layer {
                     self.config.initial_layer_travel_acceleration
                 } else {
@@ -942,7 +982,9 @@ impl Print {
             let hop_z = print_z + height as f64;
             let travel_feedrate = self.config.travel_speed * 60.0;
             writer.nominal_z = print_z;
-            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+            if change_layer_retract_cpp {
+                // The lift is the first travel's (`m_need_change_layer_lift_z`).
+            } else if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 // R208: native change_layer retracts with apply_instantly=true
                 // (GCode.cpp:3039) -> eager_lift = STATIC spiral (G17 + G3
                 // Z I<radius> J0 P1  F), m_lifted set; the next unretract
@@ -971,6 +1013,12 @@ impl Print {
             if farthest_inline {
                 // 5604: skipped; check_and_insert_timelapse writes it inline.
             } else if let Some(ref settings) = self.raw_settings {
+                // GCode.cpp:5604-5607 — before the timelapse block, a retract
+                // with an eager lift of `auto_lift_type` (:5061-5063).
+                if change_layer_retract_cpp && retract_when_changing_layer {
+                    let auto_lift_type = writer.auto_lift_type();
+                    writer.retract_with_lift_type(auto_lift_type, true);
+                }
                 let tl_tmpl = settings
                     .get("time_lapse_gcode")
                     .and_then(|v| v.as_str())
@@ -1239,7 +1287,10 @@ impl Print {
             // one GCode::_do_export issues itself (below), behind the power-loss
             // line, so it is not issued here.
             let last_layer_group = j >= all_layers.len();
-            if !writer.is_retracted() && !(last_layer_group && end_sequence_cpp) {
+            if !change_layer_retract_cpp
+                && !writer.is_retracted()
+                && !(last_layer_group && end_sequence_cpp)
+            {
                 writer.retract();
             }
 
