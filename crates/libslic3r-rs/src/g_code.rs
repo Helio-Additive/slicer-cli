@@ -1525,6 +1525,21 @@ pub fn extrude_collection(
             }
         }
         if pending_markers {
+            // GCode.cpp:7874-7875 — "; Slow Down Start" is written before the
+            // role tag of the path it brackets.
+            // SLOW_DOWN_BEFORE_ROLE_TAG=0 writes it after the role tag.
+            if crate::faithful_gate("FVS_SEPARATE_SPEED")
+                && crate::faithful_gate("SLOW_DOWN_BEFORE_ROLE_TAG")
+            {
+                if let ExtrusionEntityType::Path(p) = entity {
+                    if p.get_customize_flag()
+                        == crate::extrusion_entity::CustomizeFlag::FloatingVerticalShell
+                    {
+                        writer.write_raw("; Slow Down Start");
+                        writer.slow_down_start_written = true;
+                    }
+                }
+            }
             // R218: native marker position — after travel+unretract, before the
             // feature F (GCode.cpp _extrude description/width block).
             writer.write_comment(&format!("FEATURE: {}", entity_role.to_string()));
@@ -2500,7 +2515,7 @@ pub fn extrude_entity(
                         _ => config.perimeter_speed,
                     }
                 };
-                if use_seperate_speed {
+                if use_seperate_speed && !std::mem::take(&mut writer.slow_down_start_written) {
                     writer.write_raw("; Slow Down Start");
                 }
                 let speed = if crate::faithful_gate("VOLCAP_FAITHFUL") {

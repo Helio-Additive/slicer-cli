@@ -2591,6 +2591,25 @@ impl GCodeEditorState {
                 // Find comment start
                 let end_pos = sline.find(';').unwrap_or(sline.len());
 
+                // EDITOR_KEEP_FOREIGN_COMMENT (on): GCodeEditor.cpp:672-684 removes
+                // ";_EXTRUDE_SET_SPEED", ";_EXTERNAL_PERIMETER" and ";_WIPE" only from
+                // a line of type ADJUSTABLE, EXTERNAL_PERIMETER or WIPE; on any other
+                // line with an F word "the rest of the source line" is attached as it
+                // is. That is what leaves ";_EXTRUDE_SET_SPEED" standing inside a
+                // "; Slow Down Start" block, where the line is not adjustable. =0
+                // strips the markers from every line.
+                let keep_comment: Option<&str> = if crate::faithful_gate("EDITOR_KEEP_FOREIGN_COMMENT")
+                    && end_pos < sline.len()
+                    && (line.line_type
+                        & (CoolingLine::TYPE_ADJUSTABLE
+                            | CoolingLine::TYPE_EXTERNAL_PERIMETER
+                            | CoolingLine::TYPE_WIPE))
+                        == 0
+                {
+                    Some(&sline[end_pos..])
+                } else {
+                    None
+                };
                 if let Some(f_offset) = sline[..end_pos].find(" F") {
                     let fpos = f_offset + 2;
                     let new_feedrate = if line.slowdown {
@@ -2626,18 +2645,40 @@ impl GCodeEditorState {
                             // Skip entire line
                         } else if remove {
                             // Remove F param
+                            if let Some(comment) = keep_comment {
+                                // :649-670 — the F word goes, a bare "G1"/"G0" is not
+                                // kept, and the comment follows untouched.
+                                let without_f = remove_f_param(sline[..end_pos].trim_end());
+                                if !without_f.is_empty() && without_f != "G1" && without_f != "G0" {
+                                    new_gcode.push_str(&without_f);
+                                }
+                                new_gcode.push_str(comment);
+                                new_gcode.push('\n');
+                            } else {
                             let clean = strip_cooling_markers(sline);
                             let without_f = remove_f_param(&clean);
                             if !without_f.is_empty() && without_f != "G1" && without_f != "G0" {
                                 new_gcode.push_str(&without_f);
                                 new_gcode.push('\n');
                             }
+                            }
                         } else {
+                            if let Some(comment) = keep_comment {
+                                // :649-670 — the F word goes, a bare "G1"/"G0" is not
+                                // kept, and the comment follows untouched.
+                                let without_f = remove_f_param(sline[..end_pos].trim_end());
+                                if !without_f.is_empty() && without_f != "G1" && without_f != "G0" {
+                                    new_gcode.push_str(&without_f);
+                                }
+                                new_gcode.push_str(comment);
+                                new_gcode.push('\n');
+                            } else {
                             let clean = strip_cooling_markers(sline);
                             let without_f = remove_f_param(&clean);
                             if !without_f.is_empty() && without_f != "G1" && without_f != "G0" {
                                 new_gcode.push_str(&without_f);
                                 new_gcode.push('\n');
+                            }
                             }
                         }
                     } else if modify {
@@ -2667,8 +2708,13 @@ impl GCodeEditorState {
                         // so outright. C++ keeps the comment here too — the only
                         // thing its cooling buffer strips is its own `;_` markers.
                         current_feedrate = new_feedrate;
-                        let clean = strip_cooling_markers(sline);
-                        new_gcode.push_str(clean.trim_end());
+                        if keep_comment.is_some() {
+                            // :636-640 and :682-684 — the line as it is.
+                            new_gcode.push_str(sline);
+                        } else {
+                            let clean = strip_cooling_markers(sline);
+                            new_gcode.push_str(clean.trim_end());
+                        }
                         new_gcode.push('\n');
                     }
                 } else {

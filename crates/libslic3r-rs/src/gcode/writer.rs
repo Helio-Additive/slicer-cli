@@ -354,6 +354,9 @@ pub struct GCodeWriter {
     /// Wipe state: accumulated extrusion path for wipe-during-retraction.
     /// C++ equivalent: GCode::m_wipe (Wipe class with path field)
     wipe_path: Vec<(CoordF, CoordF)>,
+    /// "; Slow Down Start" of the path about to be extruded is already written
+    /// (it precedes the role tag when the path opens a new feature).
+    pub slow_down_start_written: bool,
     /// Feedrate (mm/min) of the eager lift in progress when it is a tool-change
     /// lift (`_spiral_travel_to_z(.., tool_change)`), else `None`.
     m_lift_feedrate: Option<CoordF>,
@@ -478,6 +481,7 @@ impl GCodeWriter {
             layer_extrusion_time: 0.0,
             cooling_slowdown: 1.0,
             wipe_path: Vec::new(),
+            slow_down_start_written: false,
             m_lift_feedrate: None,
             wipe_path_src: "init",
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
@@ -3092,7 +3096,12 @@ impl GCodeWriter {
                 // C++ appends cooling markers (;_EXTRUDE_SET_SPEED etc.) directly
                 // without a " ; " prefix. Only add " ; " for regular comments.
                 if comment.starts_with(';') {
-                    line.push(' ');
+                    // SET_SPEED_MARKER_NOSPACE (on): GCodeWriter::set_speed appends
+                    // the cooling marker right after the F word
+                    // (`w.emit_string(cooling_marker)`). =0 puts a space between.
+                    if !crate::faithful_gate("SET_SPEED_MARKER_NOSPACE") {
+                        line.push(' ');
+                    }
                 } else {
                     line.push_str(" ; ");
                 }
