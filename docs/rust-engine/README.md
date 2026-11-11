@@ -9,7 +9,8 @@ program built from it; it is not packaged.
 
 | Path | What it is |
 |-|-|
-| `crates/libslic3r-rs/` | The port. `src/` mirrors libslic3r's file layout. `HANDOFF.md` has the test status, `PORT_LEDGER.md` which units are ported |
+| `crates/libslic3r-rs/` | The port. `src/` mirrors libslic3r's file layout. `HANDOFF.md` has the test status |
+| `docs/rust-engine/FILE_MAP.md` | Every libslic3r source file and its Rust file, function by function: what is missing, what exists only in Rust, and an estimate of how closely each body follows. Written by `scripts/parity/file_map.py` |
 | `crates/clipper-z-sys/`, `clipper2-z-sys/`, `eigen-transform-sys/`, `boost-voronoi-sys/` | C++ behind C shims, where pure Rust could not match the C++ engine bit for bit: Bambu's ClipperLib_Z, Clipper2 with `USINGZ`, Eigen's f32 transforms, boost::polygon voronoi |
 | `crates/slicer-cli-rust/` | `slicer_cli-rust` (`src/engine_cli.rs`) and `slicer-parity` (`src/parity/`) |
 | `scripts/parity/` | The scoring scripts |
@@ -157,6 +158,16 @@ Where each fixture stands, from the `PP` probe (below):
 - **Majora.** The merged slices are identical on 582 of 656 layers, the region
   slices on 574. 77.2% of the lines match in content, 68.2% in order: walls
   73 to 76%, solid infill 87%, sparse infill 35%, floating vertical shell 25%.
+
+## The source map
+
+[`FILE_MAP.md`](FILE_MAP.md) is the second way to find work, next to the G-code difference. It is written
+by `python3 scripts/parity/file_map.py` from the pinned C++ tree and the Rust tree: every C++ unit with the
+Rust file of the same name, the C++ functions the Rust file lacks, the Rust functions C++ does not have,
+and for each matched function a mechanical estimate (faithful, partial, divergent, stub) of how closely the
+body follows. The estimate compares identifiers, numeric constants and size; it says where to read first.
+The map also lists the C++ units with no Rust file, the Rust files named after no C++ file, and the names
+that are used by two Rust files. Regenerate it in every round and commit it with the round.
 
 ## Finding the first stage that differs
 

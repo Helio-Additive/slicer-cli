@@ -175,6 +175,14 @@ Rules for it, on top of the ones above:
   never change output.
 - **Localize before fixing**: dump the same intermediate from both engines and
   find the first stage that differs.
+- **Two sources of work**: the G-code difference (the parity workflow) and the source map,
+  `docs/rust-engine/FILE_MAP.md`, which pairs every libslic3r file with its Rust file and lists per function
+  what is missing, what exists only in Rust and how closely the body follows. A round takes from both: the
+  biggest gaps of the map on the path the fixtures run through first, then supports and the rest. Regenerate
+  the map in every round that touches the port (`python3 scripts/parity/file_map.py`; `--check` tells whether
+  the committed copy is current) and commit it with the round.
+- **A Rust file is named after the C++ file it ports**, word for word, in snake_case. The map flags the
+  ones that are not.
 - **A round states its scores**: commits are `R<round>: <what>` with the
   in-order score of every fixture before and after. A round that finds nothing
   is still logged in `docs/rust-engine/parity/`, so it is not chased again.

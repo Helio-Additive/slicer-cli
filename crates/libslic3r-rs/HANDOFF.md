@@ -15,11 +15,10 @@ are the exception). How to build, run and score it in this repository:
   rest on and where each fixture stands; `docs/rust-engine/parity/rounds-R809-on.md` is the
   round log from R809, `docs/rust-engine/PARITY_STATUS.md` (to R471) and
   `docs/rust-engine/parity/rounds-R472-R808.md` the rounds against the 02.06.00.51 engine.
-- **Ledger (last regenerated 2026-06-11, not updated by the parity rounds since):** 164 done /
-  110 partial / 4 deferred / 0 pending of 278 units. `partial` means faithfully ported except
-  symbols blocked on a native library (OpenVDB, CGAL, OCCT), or on a dependency that is not
-  ported yet. BLOCKED markers remain in about 75 files; re-check each against the current code
-  before believing it.
+- **What is ported:** `docs/rust-engine/FILE_MAP.md`, regenerated every round by
+  `python3 scripts/parity/file_map.py`. It replaces the hand-kept ledger counts. `PORT_LEDGER.json` remains
+  the place to mark a unit `partial` with what blocks it. BLOCKED markers remain in about 75 files; re-check
+  each against the current code before believing it.
 - lib and bins build; the test targets compile (see "Test status").
 
 ## Source of truth

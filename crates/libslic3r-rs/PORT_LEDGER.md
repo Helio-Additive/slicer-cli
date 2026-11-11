@@ -1,46 +1,44 @@
-**Progress: 164/278 units ported** (59%) · partial 110 · deferred 4
+# Port ledger
 
-| Area | Done | Total |
-|------|------|-------|
-| Algorithm | 0 | 1 |
-| Arachne | 23 | 26 |
-| CSGMesh | 5 | 7 |
-| Execution | 3 | 3 |
-| Fill | 10 | 18 |
-| Format | 3 | 10 |
-| GCode | 7 | 17 |
-| Geometry | 7 | 10 |
-| Interlocking | 2 | 2 |
-| Optimize | 2 | 3 |
-| SLA | 13 | 20 |
-| Shape | 0 | 1 |
-| Support | 1 | 8 |
-| root | 88 | 152 |
+The per-unit counts that used to stand here (164 of 278 units "done", last regenerated 2026-06-11) were
+hand-kept statuses and are out of date. What is ported, file by file and function by function, is now
+measured from the two source trees: [`docs/rust-engine/FILE_MAP.md`](../../docs/rust-engine/FILE_MAP.md),
+written by `python3 scripts/parity/file_map.py`.
 
-## Next pending
+`PORT_LEDGER.json` stays as the place to mark a unit `partial` with what blocks it (AGENTS.md, "The Rust
+engine"); its `status` values are not a measure of fidelity.
 
-- [ ] `TryCatchSignalSEH.cpp` (43 loc) -> `crates/libslic3r-rs/src/try_catch_signal_seh.rs`
-- [ ] `ParameterUtils.cpp` (79 loc) -> `crates/libslic3r-rs/src/parameter_utils.rs`
-- [ ] `Surface.cpp` (96 loc) -> `crates/libslic3r-rs/src/surface.rs`
-- [ ] `OpenVDBUtils.cpp` (136 loc) -> `crates/libslic3r-rs/src/open_vdb_utils.rs`
-- [ ] `ByObjectPrintData.cpp` (152 loc) -> `crates/libslic3r-rs/src/by_object_print_data.rs`
-- [ ] `PrintBase.cpp` (155 loc) -> `crates/libslic3r-rs/src/print_base.rs`
-- [ ] `ExtrusionEntityCollection.cpp` (158 loc) -> `crates/libslic3r-rs/src/extrusion_entity_collection.rs`
-- [ ] `miniz_extension.cpp` (159 loc) -> `crates/libslic3r-rs/src/miniz_extension.rs`
-- [ ] `SurfaceCollection.cpp` (164 loc) -> `crates/libslic3r-rs/src/surface_collection.rs`
-- [ ] `SurfaceMesh.hpp` (167 loc) -> `crates/libslic3r-rs/src/surface_mesh.rs`
-- [ ] `ModelArrange.cpp` (185 loc) -> `crates/libslic3r-rs/src/model_arrange.rs`
-- [ ] `Clipper2Utils.cpp` (211 loc) -> `crates/libslic3r-rs/src/clipper2_utils.rs`
-- [ ] `SlicingAdaptive.cpp` (216 loc) -> `crates/libslic3r-rs/src/slicing_adaptive.rs`
-- [ ] `Extruder.cpp` (223 loc) -> `crates/libslic3r-rs/src/extruder.rs`
-- [ ] `Flow.cpp` (266 loc) -> `crates/libslic3r-rs/src/flow.rs`
-- [ ] `FuzzySkin.cpp` (274 loc) -> `crates/libslic3r-rs/src/fuzzy_skin.rs`
-- [ ] `Thread.cpp` (276 loc) -> `crates/libslic3r-rs/src/thread.rs`
-- [ ] `Point.cpp` (303 loc) -> `crates/libslic3r-rs/src/geometry/point.rs`
-- [ ] `GCodeReader.cpp` (313 loc) -> `crates/libslic3r-rs/src/g_code_reader.rs`
-- [ ] `ObjColorUtils.cpp` (321 loc) -> `crates/libslic3r-rs/src/obj_color_utils.rs`
-- [ ] `Triangulation.cpp` (329 loc) -> `crates/libslic3r-rs/src/triangulation.rs`
-- [ ] `FilamentGroupUtils.cpp` (340 loc) -> `crates/libslic3r-rs/src/filament_group_utils.rs`
-- [ ] `LogSink.cpp` (448 loc) -> `crates/libslic3r-rs/src/log_sink.rs`
-- [ ] `OverhangDetector.cpp` (508 loc) -> `crates/libslic3r-rs/src/overhang_detector.rs`
-- [ ] `NSVGUtils.cpp` (543 loc) -> `crates/libslic3r-rs/src/nsvg_utils.rs`
+## Headline of the file map
+
+| | |
+|-|-|
+| C++ units | 310 |
+| with a Rust file of the same name | 276 (89%) |
+| of those, same words | 275 |
+| of those, same letters but other word breaks | 1 |
+| of those, in another directory than the C++ file | 6 |
+| C++ units with no Rust file | 34 |
+| Rust files with no C++ file of that name | 51 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
+| Rust files that share a C++ unit's name with another Rust file | 7 |
+| C++ functions (named, with a body) | 9059 |
+| matched to a Rust function in the paired file | 3662 (40%) |
+| estimate: faithful | 3084 (84% of matched) |
+| estimate: partial | 357 (10% of matched) |
+| estimate: divergent | 190 (5% of matched) |
+| estimate: stub | 31 (1% of matched) |
+| missing in the paired Rust file | 4724 |
+| of those, a function of that name exists in another Rust file | 1633 |
+| of the rest, another overload of the name is ported | 365 |
+| of the rest, under 25 tokens (accessors, one-liners) | 764 |
+| of the rest, 25 tokens or more | 1962 |
+| in a C++ unit with no Rust file | 673 |
+| Rust functions with no C++ function of that name in the pair | 4395 |
+
+By tier:
+
+| Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
+|-|-|-|-|-|-|-|-|-|-|
+| 1 | 180 | 173 | 6851 | 2804 | 2354 | 277 | 153 | 20 | 4047 |
+| 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
+| 3 | 92 | 65 | 1381 | 465 | 389 | 41 | 30 | 5 | 916 |
+| 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |

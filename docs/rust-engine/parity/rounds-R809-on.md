@@ -45,6 +45,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R818 | Arachne, from a probe on both sides of every `WallToolPaths` call (`WTP`): only 21 of 2,721 calls on Benchy arachne received the outline the oracle's call received. (1) The wall inset is `-float(ext_perimeter_width / 2 - ext_perimeter_spacing / 2)`, two coord_t divisions (PerimeterGenerator.cpp 1506-1508); halving in double moved every outline by half a unit: 1,466 calls agree. (2) `add_infill_contour_for_arachne` in coord_t: integer halves through `float`, `insert` truncated after the overlap percentage, each expolygon simplified once and the rings united once (1463-1484): 2,695 calls agree, the rest are the fills of layers that differ before. (3) `fixSelfIntersections` calls `ClipperLib::SimplifyPolygons` and drops its result (WallToolPaths.cpp 225, 265; clipper.hpp 559-566), and `union_()` is one raw union (ClipperUtils.cpp 721-722); neither moved a line here | new, on: `ARACHNE_INSET_INT`, `ARACHNE_TAIL_SCALED`, `ARACHNE_FIXSELF_DISCARD`, `ARACHNE_UNION_FLAT` | unchanged (149,451) | 145,850 → 158,538 (67.00%) | 1,527,621 → 1,796,767 (66.27%) |
 | R819 | The order the islands of a layer are printed in. `process_layer` puts every perimeter and fill collection into `islands[i]`, `i` being the lslice its first point lies in, and prints that vector front to back (GCode.cpp 5437-5527, 5922). The port printed the islands in the order they first appeared among the perimeter entities, which is the order the perimeter generator visited its surfaces in | new, on: `ISLAND_LSLICE_ORDER` | 149,451 → 164,807 (88.62%) | 158,538 → 204,849 (86.58%) | 1,796,767 → 1,847,143 (68.13%) |
 | R820 | The order of the fills inside an island. (1) `Region::append` takes the entities out of every sortable fill collection (GCode.cpp 9125-9133), so `extrude_infill` chains the single paths of a region, not its collections (6983-7009). The port had this parked as `ISLAND_FLATTEN` because it scored far below zero: a path taken out of its collection was printed without its feature tag, width and speed. (2) Each thin fill sits in `fills` in a collection of its own (end of `make_fills`), so gap fills are chained with the other fills instead of following them. (3) The paths of a grid may not be reversed by the chain (`params.can_reverse = false`, Fill.cpp 832-833; FillBase.cpp 172-175) | on: `ISLAND_FLATTEN` (was parked), `FILL_GRID_NO_REVERSE` (new) | 164,807 → 171,768 (92.33%) | 204,849 → 212,289 (89.65%) | 1,847,143 → 1,847,625 (68.24%) |
+| R821 | No engine change. The source map: `scripts/parity/file_map.py` writes `docs/rust-engine/FILE_MAP.md`, every libslic3r unit against the Rust file of the same name, function by function. It replaces the hand-kept counts of `PORT_LEDGER.md` | none | unchanged (171,768) | unchanged (212,289) | unchanged (1,847,625) |
 
 ## Findings
 
@@ -190,4 +191,11 @@ The Rust engine as it came from R808, against the kept oracle files:
 - R820: Majora gains 482 lines in order and loses 1,704 in content; its
   floating vertical shell (25% in order) and sparse infill (35%) did not move
   with Benchy's, so they differ for another reason.
+- R821, the first source map: 310 C++ units, 276 with a Rust file of the same name, 34 without (6 of them
+  on the FFF path: `Fill/FillRadialZigZag`, `Fill/FillConformalChart`, `Fill/FillConformal`,
+  `ColorDecomposeRecipe`, `GCode/CoolingBuffer`, `GCode/BedExcludeChecker`). Of 9,059 named C++ functions
+  3,662 have a Rust function of the same name in the paired file (3,084 estimated faithful, 357 partial, 190
+  divergent, 31 stubs); of the 4,724 that do not, 1,633 exist under that name in another Rust file. 51 Rust
+  files are named after no C++ file, among them the live G-code writer (`gcode/exporter.rs`,
+  `gcode/writer.rs`, `gcode/cooling.rs`, `gcode/generator.rs`), and 7 names are held by two Rust files.
 
