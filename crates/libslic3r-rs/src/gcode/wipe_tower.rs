@@ -924,7 +924,7 @@ pub fn remove_points_from_polygon(
     for p in &new_pl {
         insert_skip_pg
             .points_mut()
-            .push(Point::new(crate::scaled(p.pos.x as f64), crate::scaled(p.pos.y as f64)));
+            .push(Point::new(scaled_vec2f(p.pos.x), scaled_vec2f(p.pos.y)));
     }
 
     // :559-588 — walk the ring, emitting runs and jumping across tagged pairs.
@@ -940,16 +940,16 @@ pub fn remove_points_from_polygon(
     loop {
         if skip || new_pl[i].pair_idx == -1 {
             pl.points.push(Point::new(
-                crate::scaled(new_pl[i].pos.x as f64),
-                crate::scaled(new_pl[i].pos.y as f64),
+                scaled_vec2f(new_pl[i].pos.x),
+                scaled_vec2f(new_pl[i].pos.y),
             ));
             i = (i + 1) % n;
             skip = false;
         } else {
             if !pl.points.is_empty() {
                 pl.points.push(Point::new(
-                    crate::scaled(new_pl[i].pos.x as f64),
-                    crate::scaled(new_pl[i].pos.y as f64),
+                    scaled_vec2f(new_pl[i].pos.x),
+                    scaled_vec2f(new_pl[i].pos.y),
                 ));
                 result.push(std::mem::replace(&mut pl, Polyline::new()));
             }
@@ -974,8 +974,8 @@ pub fn remove_points_from_polygon(
     if !pl.points.is_empty() {
         if new_pl[i].pair_idx == -1 {
             pl.points.push(Point::new(
-                crate::scaled(new_pl[i].pos.x as f64),
-                crate::scaled(new_pl[i].pos.y as f64),
+                scaled_vec2f(new_pl[i].pos.x),
+                scaled_vec2f(new_pl[i].pos.y),
             ));
         }
         result.push(pl);
@@ -998,12 +998,25 @@ pub fn contrust_gap_for_skip_points(
     remove_points_from_polygon(polygon, skip_points, gap_length, wt_width)
 }
 
+/// `scaled(const Vec2f &)` (Point.hpp): the float coordinate divided by the
+/// scaling factor as a float, then truncated. TOWER_SCALED_VEC2F (on): so; =0
+/// divides in double (`crate::scaled`), which puts 35.0 at 3499999 and a skip
+/// point at x = 35 to the right of the wall, where its ray finds no edge.
+fn scaled_vec2f(v: f32) -> crate::Coord {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *G.get_or_init(|| crate::faithful_gate("TOWER_SCALED_VEC2F")) {
+        (v / crate::libslic3r::SCALING_FACTOR as f32) as crate::Coord
+    } else {
+        crate::scaled(v as f64)
+    }
+}
+
 /// The tower's outer wall as a rectangle, counter-clockwise from `ld`.
 // WipeTower.cpp:610-618 (generate_rectange_polygon — C++'s spelling, kept).
 pub fn generate_rectange_polygon(wt_box_min: Vec2f, wt_box_max: Vec2f) -> crate::geometry::Polygon {
     use crate::geometry::Point;
     let mut res = crate::geometry::Polygon::new();
-    let s = |x: f32, y: f32| Point::new(crate::scaled(x as f64), crate::scaled(y as f64));
+    let s = |x: f32, y: f32| Point::new(scaled_vec2f(x), scaled_vec2f(y));
     res.points_mut().push(s(wt_box_min.x, wt_box_min.y));
     res.points_mut().push(s(wt_box_max.x, wt_box_min.y));
     res.points_mut().push(s(wt_box_max.x, wt_box_max.y));
@@ -1132,6 +1145,8 @@ pub struct WipeTowerConfig {
     pub first_layer_travel_accels: Vec<u32>,
     /// Maximum acceleration
     pub max_accel: u32,
+    /// `m_enable_arc_fitting` (WipeTower.cpp, from `enable_arc_fitting`).
+    pub enable_arc_fitting: bool,
     /// Per-filament adhesiveness category (`filament_adhesiveness_category`).
     /// WipeTower.cpp:1850 — `m_filpar[idx].category = config...get_at(idx)`.
     /// One tower BLOCK is created per DISTINCT value. R617.
@@ -1193,6 +1208,7 @@ impl Default for WipeTowerConfig {
             travel_accels: vec![1000],
             first_layer_travel_accels: vec![1000],
             max_accel: 5000,
+            enable_arc_fitting: false,
             filament_categories: vec![],
             accel_to_decel_enable: false,
             accel_to_decel_factor: 0.5,
@@ -1284,6 +1300,8 @@ pub struct WipeTowerWriter {
     first_layer_travel_accelerations: Vec<u32>,
     /// Maximum acceleration
     max_acceleration: u32,
+    /// `m_enable_arc_fitting` of the C++ writer (its constructor argument).
+    enable_arc_fitting: bool,
     /// Last acceleration value
     last_acceleration: u32,
     /// Filament map
@@ -1334,6 +1352,7 @@ impl WipeTowerWriter {
             travel_accelerations: vec![],
             first_layer_travel_accelerations: vec![],
             max_acceleration: 0,
+            enable_arc_fitting: false,
             last_acceleration: 0,
             filament_map: vec![],
             accel_to_decel_enable: false,
@@ -1901,7 +1920,12 @@ impl WipeTowerWriter {
         // 2,719 tower "arcs" are NOT wall arcs at all — they are the spiral
         // Z-lift `G3 Z.7 I1.217 J0 P1` in the toolchange gcode, one per tool
         // change. Left opt-in until there is a fixture where it pays.
-        let arc_fitting = crate::probe_enabled("TOWER_ARC_FITTING_CPP");
+        // TOWER_ARC_FITTING_CPP (on, R838): what was measured above was with
+        // the gaps of the skip points missing (R838's float scaling); with
+        // them the simplification is what makes the wall the oracle's (it
+        // drops `add_extra_point`'s collinear points). Arc fitting when
+        // `enable_arc_fitting`, else `simplify` (:1265-1272). =0 neither.
+        let arc_fitting = crate::faithful_gate("TOWER_ARC_FITTING_CPP");
         // The WHOLE simplification step is gated, not just the arc branch: C++
         // runs one or the other unconditionally (:1265-1272), but measured on
         // Majora EITHER branch removes lines for zero matched gain — the arc
@@ -1910,9 +1934,13 @@ impl WipeTowerWriter {
         // tolerance is understood (the two codebases scale by 1e6 and 1e5, so
         // `SCALED_WIPE_TOWER_RESOLUTION` is not transferable as a literal —
         // R596/R600), running neither reproduces R627's verified output.
-        if arc_fitting {
+        if arc_fitting && self.enable_arc_fitting {
             for pl in &mut fitted {
                 pl.simplify_by_fitting_arc(crate::scaled(0.1) as f64);
+            }
+        } else if arc_fitting {
+            for pl in &mut fitted {
+                pl.simplify(crate::scaled(0.1) as f64);
             }
         }
 
@@ -2732,8 +2760,8 @@ impl WipeTower {
 
         // WipeTower.hpp:247 — m_extrusion_flow = extrusion_flow(layer_height);
         // extrusion_flow(lh) = lh * (m_perimeter_width - lh*(1 - PI/4)) / filament_area
-        // (WipeTower.hpp:285). filament_area = PI * 0.875^2 (filament dia 1.75).
-        let filament_area = PI * 0.875 * 0.875;
+        // (WipeTower.hpp:285).
+        let filament_area = self.filament_area();
         self.extrusion_flow =
             layer_height * (self.perimeter_width - layer_height * (1.0 - PI / 4.0)) / filament_area;
         // R463 (WT_WIDTH_DEBUG=1): C++ emits a CONSTANT `; LINE_WIDTH: 0.500000` for the
@@ -2831,7 +2859,7 @@ impl WipeTower {
         if layer_height < 0.0 {
             return self.extrusion_flow;
         }
-        let filament_area = PI * 0.875 * 0.875;
+        let filament_area = self.filament_area();
         layer_height * (self.nozzle_change_perimeter_width - layer_height * (1.0 - PI / 4.0))
             / filament_area
     }
@@ -3015,6 +3043,20 @@ impl WipeTower {
 
     /// Plan the entire tower
     // WipeTower.cpp:2933-3032
+    /// `filament_area()` (WipeTower.hpp): the current filament's cross-section.
+    /// TOWER_FILAMENT_AREA_CPP (on): from its parameters, which the print fills
+    /// as `float((M_PI/4.f) * pow(diameter, 2))` (WipeTower.cpp:2047); =0:
+    /// `PI * 0.875 * 0.875` in float, one unit in the last place above it,
+    /// which turns 1.90165 mm of filament on a 35 mm wall line into E1.9016.
+    fn filament_area(&self) -> f32 {
+        if crate::faithful_gate("TOWER_FILAMENT_AREA_CPP") {
+            if let Some(p) = self.filament_params.get(self.current_tool) {
+                return p.filament_area;
+            }
+        }
+        PI * 0.875 * 0.875
+    }
+
     /// WipeTower.hpp:325-328 `extrusion_spacing_for`: centre-to-centre spacing
     /// of adjacent extrusions of the given width and height.
     fn extrusion_spacing_for(&self, layer_height: f32, line_width: f32) -> f32 {
@@ -4001,6 +4043,7 @@ impl WipeTower {
             self.config.first_layer_travel_accels.clone(),
         );
         writer.set_max_acceleration(self.config.max_accel);
+        writer.enable_arc_fitting = self.config.enable_arc_fitting;
     }
 
     /// Perform a tool change

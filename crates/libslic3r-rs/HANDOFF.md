@@ -9,9 +9,9 @@ are the exception). How to build, run and score it in this repository:
 
 ## Where things stand
 
-- **Parity (R837), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
+- **Parity (R838), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
   Benchy classic 180,394 lines in order (94.27%), Benchy arachne 226,152 (92.95%), Majora
-  2,614,706 (91.95%), prime tower 98.5%. `docs/rust-engine/README.md` has what the numbers
+  2,621,490 (92.06%), prime tower 99.0%. `docs/rust-engine/README.md` has what the numbers
   rest on and where each fixture stands; `docs/rust-engine/parity/rounds-R809-on.md` is the
   round log from R809, `docs/rust-engine/PARITY_STATUS.md` (to R471) and
   `docs/rust-engine/parity/rounds-R472-R808.md` the rounds against the 02.06.00.51 engine.
@@ -111,8 +111,8 @@ the ten `tree_support_integration` failures pass.
 - `print_process_test`: `test_print_cancellation`, `test_status_callback`,
   `test_printobject_cancellation`, `test_print_object_state_tracking`, `test_state_persistence`.
 - `support_necessity_test::test_cancellation_during_support_generation`.
-- `wall_gap_geometry`: `add_extra_point_targets_the_bottom_edge`, `gaps_actually_remove_length`,
-  `two_skip_points_open_two_gaps`.
+- `wall_gap_geometry`: `add_extra_point_targets_the_bottom_edge` (`gaps_actually_remove_length` and
+  `two_skip_points_open_two_gaps` pass since R838, which scales the tower's points in float).
 - `tree_support_integration` (10): all stop on the `debug_assert` in `clipper_utils.rs` that
   guards the i32 ClipperLib path. Tree-support collision geometry reaches scaled coordinates
   near 8e9, which the assertion catches and a release build truncates silently. This looks like

@@ -114,7 +114,7 @@ pub fn transform_gcode(gcode: &str, mut pos: Vec2f, translation: Vec2f, angle: f
 
     // Process line-by-line. Splitting on '\n' and re-joining on '\n' preserves
     // the original newline structure exactly (unlike the C++ getline loop, which
-    // appends one spurious trailing blank line — a quirk not worth reproducing).
+    // appends one trailing blank line, added at the end under TOWER_XFORM_TRAILING_BLANK).
     let processed: Vec<String> = gcode
         .split('\n')
         .map(|line| {
@@ -201,7 +201,16 @@ pub fn transform_gcode(gcode: &str, mut pos: Vec2f, translation: Vec2f, angle: f
         })
         .collect();
 
-    processed.join("\n")
+    let mut out = processed.join("\n");
+    // TOWER_XFORM_TRAILING_BLANK (on): `while (gcode_str) { std::getline(..);
+    // ..; gcode_out += line + "\n"; }` (GCode.cpp post_process_wipe_tower_moves)
+    // reads one more, empty line after a text that ends with a newline, and
+    // writes it: every tower block ends with one empty line more. =0 keeps the
+    // text's own end.
+    if crate::faithful_gate("TOWER_XFORM_TRAILING_BLANK") && (gcode.is_empty() || gcode.ends_with('\n')) {
+        out.push('\n');
+    }
+    out
 }
 // Unit tests live in `tests/wipe_tower_transform.rs` (integration target): the
 // crate's in-lib `#[cfg(test)]` target does not currently compile, so tests that

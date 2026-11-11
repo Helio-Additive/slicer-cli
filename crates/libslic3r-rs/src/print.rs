@@ -2657,6 +2657,7 @@ impl Print {
                     cfg.brim_width = self.config.prime_tower_brim_width as f32;
                 }
                 cfg.timelapse_smooth = self.config.timelapse_type == 1;
+                cfg.enable_arc_fitting = self.config.arc_fitting_enabled;
                 if crate::faithful_gate("TOWER_SPEEDS_CPP") {
                     // WipeTower.cpp:1754 m_max_speed = prime_tower_max_speed*60;
                     // :1795 m_first_layer_speed = initial_layer_speed (default/2 if 0).
@@ -2779,12 +2780,22 @@ impl Print {
                     // retracts therefore came out `F2100` where C++ writes
                     // `F1800`, which is 5,283 retracts plus 5,283 unretracts that
                     // could never match on the feedrate alone.
-                    let params = crate::gcode::wipe_tower::FilamentParameters {
+                    let mut params = crate::gcode::wipe_tower::FilamentParameters {
                         nozzle_diameter: self.config.nozzle_diameter as f32,
                         retract_length: self.config.retract_length as f32,
                         retract_speed: self.config.retract_speed as f32,
                         ..Default::default()
                     };
+                    // WipeTower.cpp:2047 — float((M_PI/4.f) * pow(filament_diameter, 2)).
+                    if crate::faithful_gate("TOWER_FILAMENT_AREA_CPP") {
+                        let d = self
+                            .config
+                            .filament_diameters
+                            .get(idx)
+                            .copied()
+                            .unwrap_or(self.config.filament_diameter);
+                        params.filament_area = (std::f64::consts::PI / 4.0 * d.powi(2)) as f32;
+                    }
                     wt.set_extruder(idx, params);
                 }
                 // All filaments share physical extruder 0 (Tier-1 single nozzle).

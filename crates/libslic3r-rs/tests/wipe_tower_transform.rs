@@ -66,8 +66,13 @@ fn omitted_axis_carries_previous_position() {
 
 #[test]
 fn preserves_trailing_newline_structure() {
+    // post_process_wipe_tower_moves reads one more, empty line after a text
+    // that ends with a newline and writes it (TOWER_XFORM_TRAILING_BLANK).
     let g = "G1 X0 Y0 E1\nT1\n";
     let out = transform_gcode(g, Vec2f::new(0.0, 0.0), Vec2f::new(0.0, 0.0), 0.0);
-    assert!(out.ends_with('\n'));
-    assert!(!out.ends_with("\n\n"));
+    assert!(out.ends_with("T1\n\n"));
+    assert!(!out.ends_with("\n\n\n"));
+    // A text without a newline at its end gets none.
+    let out = transform_gcode("T1", Vec2f::new(0.0, 0.0), Vec2f::new(0.0, 0.0), 0.0);
+    assert_eq!(out, "T1");
 }
