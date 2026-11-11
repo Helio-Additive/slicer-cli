@@ -2356,6 +2356,56 @@ impl GCodeWriter {
                 }
                 // Handle short path (GCode.cpp:401-405).
                 let eff_wipe_dist = if acc < wipe_dist { acc.max(1e-4) } else { wipe_dist };
+                // WIPE_CLIP_SCALED (on): Wipe::wipe works on the scaled polyline
+                // (GCode.cpp:474-505): `clip_end(length() - scale_(wipe_distance))`
+                // puts the new end at `(last + v * (d / |v|)).cast<coord_t>()`,
+                // truncated (Polyline.cpp:52-72), and each segment's dE is
+                // `length * (line.length() / wipe_dist) * 0.95` in scaled units, so
+                // a one-unit shorter or longer end shows in the fifth decimal of E
+                // (E1.90001, and `G1 E-.09999` for the rest). =0 clips in mm.
+                let mut seg_ratios: Option<Vec<f64>> = None;
+                if crate::faithful_gate("WIPE_CLIP_SCALED") {
+                    let sf = crate::libslic3r::SCALING_FACTOR;
+                    let mut ip: Vec<(i64, i64)> =
+                        pts.iter().map(|p| (crate::scale(p.0), crate::scale(p.1))).collect();
+                    let seg_len = |a: (i64, i64), b: (i64, i64)| {
+                        let dx = (b.0 - a.0) as f64;
+                        let dy = (b.1 - a.1) as f64;
+                        (dx * dx + dy * dy).sqrt()
+                    };
+                    let total: f64 = ip.windows(2).map(|w| seg_len(w[0], w[1])).sum();
+                    // scale_(wipe_distance): a division, as a double.
+                    let mut wd = wipe_dist / sf;
+                    let mut distance = total - wd;
+                    while distance > 0.0 {
+                        let last = ip.pop().unwrap();
+                        if ip.is_empty() {
+                            break;
+                        }
+                        let nl = *ip.last().unwrap();
+                        let vx = (nl.0 - last.0) as f64;
+                        let vy = (nl.1 - last.1) as f64;
+                        let lsqr = vx * vx + vy * vy;
+                        if lsqr > distance * distance {
+                            let r = distance / lsqr.sqrt();
+                            ip.push((
+                                (last.0 as f64 + vx * r) as i64,
+                                (last.1 as f64 + vy * r) as i64,
+                            ));
+                            break;
+                        }
+                        distance -= lsqr.sqrt();
+                    }
+                    if ip.len() >= 2 {
+                        let len: f64 = ip.windows(2).map(|w| seg_len(w[0], w[1])).sum();
+                        if len < wd {
+                            wd = if len < crate::libslic3r::EPSILON { crate::libslic3r::EPSILON } else { len };
+                        }
+                        seg_ratios = Some(ip.windows(2).map(|w| seg_len(w[0], w[1]) / wd).collect());
+                        kept = ip.iter().map(|p| (p.0 as f64 * sf, p.1 as f64 * sf)).collect();
+                        acc = len * sf;
+                    }
+                }
                 if crate::probe_enabled("WIPEPROBE") {
                     use std::sync::atomic::{AtomicUsize, Ordering};
                     static N: AtomicUsize = AtomicUsize::new(0);
@@ -2450,11 +2500,16 @@ impl GCodeWriter {
                     if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") && accel_after_speed {
                         self.flush_pending_accel();
                     }
+                    let mut wiped_sum: CoordF = 0.0;
                     for i in 1..kept.len() {
                         let dx = kept[i].0 - kept[i - 1].0;
                         let dy = kept[i].1 - kept[i - 1].1;
                         let seg = (dx * dx + dy * dy).sqrt();
-                        let de = length * (seg / eff_wipe_dist) * 0.95;
+                        let de = match &seg_ratios {
+                            Some(r) => length * r[i - 1] * 0.95,
+                            None => length * (seg / eff_wipe_dist) * 0.95,
+                        };
+                        wiped_sum += de;
                         self.extruder.extrude(-de);
                         let e_out = self.extruder.e();
                         self.write_command(&GCodeCommand::LinearMove {
@@ -2470,7 +2525,14 @@ impl GCodeWriter {
                     self.x = end.0;
                     self.y = end.1;
                     // Remaining retraction (whatever the wipe didn't consume).
-                    let wiped: CoordF = length * 0.95 * (acc.min(eff_wipe_dist) / eff_wipe_dist);
+                    // WIPE_CLIP_SCALED: `Extruder::retract(length)` retracts
+                    // `length - m_retracted`, the sum of the wipe's dE
+                    // (Extruder.cpp:71-91, 101-130).
+                    let wiped: CoordF = if seg_ratios.is_some() {
+                        wiped_sum
+                    } else {
+                        length * 0.95 * (acc.min(eff_wipe_dist) / eff_wipe_dist)
+                    };
                     let remaining = self.retraction_length - wiped;
                     if remaining > 1e-6 {
                         self.extruder.extrude(-remaining);
