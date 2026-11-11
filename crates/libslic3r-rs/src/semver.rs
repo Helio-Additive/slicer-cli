@@ -14,9 +14,9 @@
 
 use crate::{Error, Result};
 
-// SLIC3R_VERSION, configured by version.inc:16 -> set(SLIC3R_VERSION "02.06.00.51")
+// SLIC3R_VERSION, configured by version.inc:16 -> set(SLIC3R_VERSION "02.09.01.70")
 // libslic3r_version.h.in:6 : #define SLIC3R_VERSION "@SLIC3R_VERSION@"
-pub const SLIC3R_VERSION: &str = "02.06.00.51";
+pub const SLIC3R_VERSION: &str = "02.09.01.70";
 
 /// Faithful port of the bundled C `semver` library (`src/semver/semver.{h,c}`).
 ///

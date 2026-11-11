@@ -1687,6 +1687,12 @@ impl GCodeWriter {
         let radius = to_lift / (2.0 * std::f64::consts::PI * slope_threshold.atan());
         let target_z = self.z + to_lift;
         let travel_f = self.m_lift_feedrate.unwrap_or(self.config.travel_speed * 60.0);
+        // SPIRAL_LIFT_ACCEL (on): `_spiral_travel_to_z` returns
+        // `set_travel_acceleration() + "G17\n" + ..` (GCodeWriter.cpp:800). =0
+        // writes no acceleration.
+        if crate::faithful_gate("SPIRAL_LIFT_ACCEL") {
+            self.set_travel_acceleration(0.0);
+        }
         self.write_command(&GCodeCommand::SelectXYPlane);
         self.write_raw(&format!(
             "G3 Z{} I{} J0 P1  F{:.0}",

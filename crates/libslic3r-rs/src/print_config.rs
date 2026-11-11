@@ -468,6 +468,9 @@ pub struct PrintConfig {
     pub timelapse_type: u32,
 
     // === Machine Limits ===
+    /// BambuStudio: `machine_prepare_compensation_time` (s), the time the
+    /// processor gives a timed G29 (GCodeProcessor.cpp:2054, 5315-5324).
+    pub machine_prepare_compensation_time: CoordF,
     /// Max acceleration X (mm/s²).
     pub machine_max_acceleration_x: CoordF,
     /// Max acceleration Y (mm/s²).
@@ -1187,6 +1190,7 @@ impl Default for PrintConfig {
             timelapse_type: 0,
 
             // Machine limits - BambuStudio X1C defaults
+            machine_prepare_compensation_time: 0.0,
             machine_max_acceleration_x: 20000.0,
             machine_max_acceleration_y: 20000.0,
             machine_max_acceleration_z: 500.0,
@@ -2867,6 +2871,13 @@ impl PrintConfig {
                 true
             }
 
+            // GCodeProcessor.cpp:2054 — read by the G-code processor (PROCESS_G4_G29).
+            "machine_prepare_compensation_time" => {
+                if let Some(v) = parse_f64(value) {
+                    self.machine_prepare_compensation_time = v;
+                }
+                true
+            }
             _ => {
                 // ZSMOOTH_FAITHFUL: delegate a VETTED set of keys to
                 // apply_key_value (R170 audit: the two config-application fns
@@ -5320,6 +5331,11 @@ impl PrintConfig {
             }
             "auxiliary_fan" => {
                 self.auxiliary_fan = parse_bool(value);
+            }
+            "machine_prepare_compensation_time" => {
+                if let Some(v) = parse_f64(value) {
+                    self.machine_prepare_compensation_time = v;
+                }
             }
             "machine_max_acceleration_x" => {
                 if let Some(v) = parse_f64(value) {

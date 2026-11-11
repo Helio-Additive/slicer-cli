@@ -1755,8 +1755,8 @@ impl Print {
 
         // Run the faithful GCodeProcessor over (provisional header + body) to obtain
         // the acceleration-aware normal-mode print time and filament usage.
-        let estimated_print_time_seconds = {
-            use crate::gcode::g_code_processor::GCodeProcessor;
+        let (estimated_print_time_seconds, prepare_time_seconds) = {
+            use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};
 
             let provisional_header = GCodeHeader::with_raw_settings(
                 stats.clone(),
@@ -1780,15 +1780,16 @@ impl Print {
                     ),
                 );
             }
-            result.print_time
+            (result.print_time, processor.get_prepare_time(ETimeMode::Normal))
         };
 
         // Build the final header with the accel-aware estimated print time.
-        let header = GCodeHeader::with_estimated_time(
+        let header = GCodeHeader::with_estimated_times(
             stats,
             self.config.clone(),
             raw_settings_with_bbox,
             estimated_print_time_seconds,
+            prepare_time_seconds,
         );
         let header_str = header.generate_complete_header();
 

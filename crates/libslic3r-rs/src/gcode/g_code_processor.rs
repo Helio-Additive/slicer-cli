@@ -675,6 +675,15 @@ fn parse_stof(s: &str) -> Option<f32> {
     trimmed[..end].parse::<f32>().ok()
 }
 
+/// GCodeProcessor.cpp:3135-3170  `parse_number<float>`: `std::from_chars`, which
+/// takes no leading '+' and must consume the whole string.
+fn parse_number_f32(sv: &str) -> Option<f32> {
+    if sv.is_empty() || sv.starts_with('+') {
+        return None;
+    }
+    sv.parse::<f32>().ok()
+}
+
 /// GCodeProcessor.cpp:2982-3016 (template) — `parse_number<int>` specialization.
 ///
 /// Returns Some(out) only when the *entire* string parses as an int (matching
@@ -2341,6 +2350,8 @@ pub struct TimeProcessor {
     pub filament_unload_times: f32,
     pub extruder_change_times: f32,
     pub hotend_change_times: f32,
+    /// GCodeProcessor.hpp `prepare_compensation_time`.
+    pub prepare_compensation_time: f32,
     pub machines: [TimeMachine; ETimeMode::COUNT],
 }
 
@@ -2377,6 +2388,7 @@ impl Default for TimeProcessor {
             filament_unload_times: 0.0,
             extruder_change_times: 0.0,
             hotend_change_times: 0.0,
+            prepare_compensation_time: 0.0,
             machines: [TimeMachine::default(), TimeMachine::default()],
         };
         tp.reset();
@@ -2433,6 +2445,8 @@ enum Cmd {
     M1020,
     T,
     Sync,
+    M622,
+    M623,
 }
 
 const CMD_TABLE: &[(&str, Cmd, bool)] = &[
@@ -2478,6 +2492,9 @@ const CMD_TABLE: &[(&str, Cmd, bool)] = &[
     ("M1020", Cmd::M1020, false),
     ("T", Cmd::T, true),
     ("SYNC", Cmd::Sync, false),
+    // GCodeProcessor.cpp:1762-1763 — M622 / M623 (PROCESS_G4_G29, below).
+    ("M622", Cmd::M622, false),
+    ("M623", Cmd::M623, false),
 ];
 
 fn cmd_from_id(id: usize) -> Cmd {
@@ -2567,6 +2584,10 @@ pub struct GCodeProcessor {
     m_first_layer_height: f32, // mm
     m_zero_layer_height: f32,  // mm
     m_processing_start_custom_gcode: bool,
+    /// GCodeProcessor.hpp `m_pa_line_calibration`.
+    m_pa_line_calibration: bool,
+    /// `process_tags`' function-static `prev_role` (GCodeProcessor.cpp:3383).
+    m_prev_role: ExtrusionRole,
     m_g1_line_id: u32,
     m_layer_id: u32,
     m_cp_color: CpColor,
@@ -2634,6 +2655,8 @@ impl GCodeProcessor {
             m_first_layer_height: 0.0,
             m_zero_layer_height: 0.0,
             m_processing_start_custom_gcode: false,
+            m_pa_line_calibration: false,
+            m_prev_role: ExtrusionRole::None,
             m_g1_line_id: 0,
             m_layer_id: 0,
             m_cp_color: CpColor::default(),
@@ -2724,6 +2747,7 @@ impl GCodeProcessor {
         self.m_zero_layer_height = 0.0;
         self.m_first_layer_height = 0.0;
         self.m_processing_start_custom_gcode = false;
+        self.m_pa_line_calibration = false;
         self.m_g1_line_id = 0;
         self.m_layer_id = 0;
         self.m_cp_color.reset();
@@ -2809,6 +2833,12 @@ impl GCodeProcessor {
             if self.m_flavor == GCodeFlavor::MarlinLegacy {
                 ml.max_acceleration_travel = ml.max_acceleration_extruding;
             }
+        }
+
+        // GCodeProcessor.cpp:2054 — prepare_compensation_time (PROCESS_G4_G29).
+        if crate::faithful_gate("PROCESS_G4_G29") {
+            self.m_time_processor.prepare_compensation_time =
+                config.machine_prepare_compensation_time as f32;
         }
 
         // GCodeProcessor.cpp:1985-1995 — per-mode machine acceleration setup.
@@ -3186,13 +3216,205 @@ impl GCodeProcessor {
             Cmd::M1020 => self.process_m1020(line),
             Cmd::T => self.process_t(line),
             Cmd::Sync => self.process_sync(line),
+            Cmd::M622 => self.process_m622(line),
+            Cmd::M623 => self.process_m623(line),
         }
     }
 
-    // BLOCKED(deps): process_tags / process_helioadditive_comment depend on the
-    // tag pipeline + helio parser; the role/layer/width/height side-effects are
-    // not ported. The time/filament math in process_G1 still runs.
-    fn process_tags(&mut self, _comment: &str, _producers_enabled: bool) {}
+    /// GCodeProcessor.cpp:3381-3632  process_tags.
+    ///
+    /// PROCESS_TAGS (on); =0 ignores every tag, as the port did before R846.
+    /// Not ported: the producers' tags (`process_producers_tags`; the port only
+    /// processes G-code it wrote, with `producers_enabled` false), the seams
+    /// detector of an outer wall (`m_seams_detector` has no Rust counterpart),
+    /// and the color change, pause and custom G-code tags (:3525-3608), whose
+    /// `process_custom_gcode_time`, `process_filaments` and
+    /// `custom_gcode_per_print_z` are missing; those tags are ignored.
+    fn process_tags(&mut self, comment: &str, producers_enabled: bool) {
+        if !crate::faithful_gate("PROCESS_TAGS") {
+            return;
+        }
+        // :3385-3387 — producers tags (never: see above).
+        let _ = producers_enabled;
+
+        // :3389-3396 — extrusion role tag
+        if let Some(rest) = comment.strip_prefix(reserved_tag(ETags::Role)) {
+            self.set_extrusion_role(crate::extrusion_entity::string_to_role(rest));
+            // :3391-3392 m_seams_detector.activate(true) — not ported.
+            self.m_processing_start_custom_gcode =
+                self.m_extrusion_role == ExtrusionRole::Custom && self.m_g1_line_id == 0;
+            return;
+        }
+
+        if comment.starts_with(" PA_LINE_CALIBRATION_START") {
+            self.m_pa_line_calibration = true;
+            return;
+        }
+
+        if comment.starts_with(" PA_LINE_CALIBRATION_END") {
+            self.m_pa_line_calibration = false;
+            return;
+        }
+
+        // :3408-3418 — ; OBJECT_ID start / end
+        if comment.starts_with(" start printing object") {
+            self.m_object_label_id = get_object_label_id(comment);
+            return;
+        }
+        if comment.starts_with(" stop printing object") {
+            self.m_object_label_id = -1;
+            return;
+        }
+
+        // :3420-3436 — ; Z_HEIGHT:
+        if comment.starts_with(" Z_HEIGHT:") {
+            let print_z = get_z_height(comment);
+            if self.m_layer_id == 1
+                && print_z > 0.0
+                && (print_z - self.m_first_layer_height).abs() > EPSILON as f32
+            {
+                self.m_first_layer_height = print_z;
+                for mv in self.m_result.moves.iter_mut() {
+                    mv.position[2] = print_z;
+                    mv.arc_center_position[2] = print_z;
+                    for point in mv.interpolation_points.iter_mut() {
+                        point[2] = print_z;
+                    }
+                }
+            }
+            self.m_print_z = print_z;
+            return;
+        }
+
+        // :3438-3448 — wipe start / end
+        if comment.starts_with(reserved_tag(ETags::WipeStart)) {
+            self.m_wiping = true;
+            return;
+        }
+        if comment.starts_with(reserved_tag(ETags::WipeEnd)) {
+            self.m_wiping = false;
+            return;
+        }
+
+        // :3450-3459 — wipe tower start / end
+        if comment.starts_with(reserved_tag(ETags::WipeTowerStart)) {
+            self.m_wipe_tower = true;
+            return;
+        }
+        if comment.starts_with(reserved_tag(ETags::WipeTowerEnd)) {
+            self.m_wipe_tower = false;
+            let active_filament_id = self.get_filament_id(true);
+            self.m_used_filaments.process_wipe_tower_cache(active_filament_id);
+            return;
+        }
+
+        // :3462-3478 — skippable start / end / type
+        if comment.starts_with(custom_tags(CustomETags::SkippableStart)) {
+            self.m_skippable = true;
+            return;
+        }
+        if comment.starts_with(custom_tags(CustomETags::SkippableEnd)) {
+            self.m_skippable = false;
+            self.m_skippable_type = SkipType::StNone;
+            return;
+        }
+        if let Some(r#type) = comment.strip_prefix(custom_tags(CustomETags::SkippableType)) {
+            self.set_skippable_type(r#type);
+            return;
+        }
+
+        // :3480-3506 — flush start / end, virtual flush start / end
+        if comment.starts_with(custom_tags(CustomETags::FlushStart)) {
+            self.m_prev_role = self.m_extrusion_role;
+            self.set_extrusion_role(ExtrusionRole::Flush);
+            self.m_flushing = true;
+            return;
+        }
+        if comment.starts_with(custom_tags(CustomETags::FlushEnd)) {
+            self.set_extrusion_role(self.m_prev_role);
+            self.m_flushing = false;
+            return;
+        }
+        if comment.starts_with(custom_tags(CustomETags::VflushStart)) {
+            self.m_prev_role = self.m_extrusion_role;
+            self.set_extrusion_role(ExtrusionRole::Flush);
+            self.m_virtual_flushing = true;
+            return;
+        }
+        if comment.starts_with(custom_tags(CustomETags::VflushEnd)) {
+            self.set_extrusion_role(self.m_prev_role);
+            self.m_virtual_flushing = false;
+            return;
+        }
+
+        // :3510-3523 — height and width tags (no producers: always read)
+        if let Some(rest) = comment.strip_prefix(reserved_tag(ETags::Height)) {
+            if let Some(v) = parse_number_f32(rest) {
+                self.m_forced_height = v;
+            }
+            return;
+        }
+        if let Some(rest) = comment.strip_prefix(reserved_tag(ETags::Width)) {
+            if let Some(v) = parse_number_f32(rest) {
+                self.m_forced_width = v;
+            }
+            return;
+        }
+
+        // :3610-3624 — layer change tag
+        if comment == reserved_tag(ETags::LayerChange) {
+            self.m_layer_id += 1;
+            if self.m_detect_layer_based_on_tag {
+                if self.m_result.moves.is_empty() || self.m_result.spiral_vase_layers.is_empty() {
+                    self.m_result.spiral_vase_layers.push((f32::MAX, (0, 0)));
+                } else {
+                    let move_id =
+                        self.m_result.moves.len() - 1 - self.m_seams_count.max(0) as usize;
+                    if let Some(last) = self.m_result.spiral_vase_layers.last_mut() {
+                        (last.1).1 = move_id;
+                    }
+                    self.m_result.spiral_vase_layers.push((f32::MAX, (move_id, move_id)));
+                }
+            }
+        }
+    }
+
+    /// GCodeProcessor.cpp:6223-6232  set_extrusion_role.
+    fn set_extrusion_role(&mut self, role: ExtrusionRole) {
+        // m_used_filaments.process_role_cache(this): the current filament's
+        // diameter and density, the role before this one.
+        let active_filament_id = self.get_filament_id(true);
+        let diameter = self
+            .m_result
+            .filament_diameters
+            .get(active_filament_id as usize)
+            .or(self.m_result.filament_diameters.last())
+            .copied()
+            .unwrap_or(DEFAULT_FILAMENT_DIAMETER);
+        let density = self
+            .m_result
+            .filament_densities
+            .get(active_filament_id as usize)
+            .or(self.m_result.filament_densities.last())
+            .copied()
+            .unwrap_or(DEFAULT_FILAMENT_DENSITY);
+        let active_role = self.m_extrusion_role;
+        self.m_used_filaments.process_role_cache(diameter, density, active_role);
+        if role == ExtrusionRole::FloatingVerticalShell {
+            self.m_extrusion_role = ExtrusionRole::SolidInfill;
+        } else {
+            self.m_extrusion_role = role;
+        }
+    }
+
+    /// GCodeProcessor.cpp:6234-6246  set_skippable_type.
+    fn set_skippable_type(&mut self, r#type: &str) {
+        if !self.m_skippable {
+            self.m_skippable_type = SkipType::StNone;
+            return;
+        }
+        self.m_skippable_type = skip_type_map(r#type).unwrap_or(SkipType::StOther);
+    }
 
     /// GCodeProcessor.cpp:5252-5255  process_M1 — simulate st_synchronize.
     fn process_m1(&mut self, _line: &crate::g_code_reader::GCodeLine) {
@@ -3621,9 +3843,70 @@ impl GCodeProcessor {
         self.store_move_vertex(r#type, path_type);
     }
 
-    // BLOCKED(deps): process_G4 (dwell) folds dwell time via st_synchronize +
-    // measure_g29_time logic. Conservative faithful subset: no-op time add.
-    fn process_g4(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:2888-2891  get_time.
+    pub fn get_time(&self, mode: ETimeMode) -> f32 {
+        if (mode as usize) < ETimeMode::COUNT {
+            self.m_time_processor.machines[mode as usize].time
+        } else {
+            0.0
+        }
+    }
+
+    /// GCodeProcessor.cpp:2893-2896  get_prepare_time.
+    pub fn get_prepare_time(&self, mode: ETimeMode) -> f32 {
+        if (mode as usize) < ETimeMode::COUNT {
+            self.m_time_processor.machines[mode as usize].prepare_time
+        } else {
+            0.0
+        }
+    }
+
+    /// GCodeProcessor.cpp:5304-5312  process_G4 — dwell: `S` seconds, else `P`
+    /// milliseconds (`has_value('S') || has_value('P')` reads `P` only without
+    /// `S`). PROCESS_G4_G29 (on); =0 ignores the dwell.
+    fn process_g4(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("PROCESS_G4_G29") {
+            return;
+        }
+        let (mut value_s, mut value_p) = (0.0f32, 0.0f32);
+        let found = if let Some(s) = line.has_value(b'S') {
+            value_s = s;
+            true
+        } else if let Some(p) = line.has_value(b'P') {
+            value_p = p;
+            true
+        } else {
+            false
+        };
+        if found {
+            value_s += value_p * 0.001;
+            self.simulate_st_synchronize(value_s, ExtrusionRole::None);
+        }
+    }
+
+    /// GCodeProcessor.cpp:5776-5785  process_M622 — `M622 J1` opens a block
+    /// whose G29 is timed (PROCESS_G4_G29).
+    fn process_m622(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("PROCESS_G4_G29") {
+            return;
+        }
+        if let Some(value_j) = line.has_value(b'J') {
+            let interger_j = value_j.round() as i32;
+            if interger_j == 1 && !self.m_measure_g29_time {
+                self.m_measure_g29_time = true;
+            }
+        }
+    }
+
+    /// GCodeProcessor.cpp:5787-5791  process_M623.
+    fn process_m623(&mut self, _line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("PROCESS_G4_G29") {
+            return;
+        }
+        if self.m_measure_g29_time {
+            self.m_measure_g29_time = false;
+        }
+    }
 
     /// GCodeProcessor.cpp:5144-5148  process_G10 — store retract move.
     fn process_g10(&mut self, _line: &crate::g_code_reader::GCodeLine) {
@@ -3685,8 +3968,24 @@ impl GCodeProcessor {
         }
     }
 
-    // BLOCKED(deps): process_G29 — leveling-mesh timing; not ported.
-    fn process_g29(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5315-5324  process_G29 — bed levelling takes
+    /// `machine_prepare_compensation_time`; on a Bambu Lab printer only inside an
+    /// `M622 J1` block. PROCESS_G4_G29 (on); =0 ignores it.
+    fn process_g29(&mut self, _line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("PROCESS_G4_G29") {
+            return;
+        }
+        // SAFETY: S_IS_BBL_PRINTER is only written during configuration.
+        if unsafe { S_IS_BBL_PRINTER } {
+            if self.m_measure_g29_time {
+                let t = self.m_time_processor.prepare_compensation_time;
+                self.simulate_st_synchronize(t, ExtrusionRole::None);
+            }
+        } else {
+            let t = self.m_time_processor.prepare_compensation_time;
+            self.simulate_st_synchronize(t, ExtrusionRole::None);
+        }
+    }
 
     /// GCodeProcessor.cpp:5204-5207  process_G90 — absolute positioning.
     fn process_g90(&mut self, _line: &crate::g_code_reader::GCodeLine) {

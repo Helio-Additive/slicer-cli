@@ -6896,6 +6896,11 @@ pub struct GCodeHeader {
     /// `; estimated printing time (normal mode) = ...` header line.
     pub estimated_print_time: String,
 
+    /// The model printing time (total less the prepare time), when the
+    /// processor's prepare time is known; written by the Bambu Lab form of the
+    /// time line (GCodeProcessor.cpp:711-716).
+    pub model_print_time: Option<String>,
+
     /// Statistics from the slicing process.
     pub stats: GCodeStats,
 
@@ -6936,14 +6941,37 @@ impl GCodeHeader {
         let estimated_print_time = crate::utils::get_time_dhms(estimated_print_time_seconds);
 
         Self {
-            // Match the BambuStudio version whose output we replicate byte-for-byte
-            // (golden 3DBenchy_H2D_PLA.gcode header: "; BambuStudio 02.06.00.51").
-            software_version: "BambuStudio 02.06.00.51".to_string(),
+            // HEADER_0209 (on): `header_slic3r_generated()` (Utils.cpp:1169-1172),
+            // the pinned engine's name and version. =0 writes the 02.06 engine's.
+            software_version: if crate::faithful_gate("HEADER_0209") {
+                crate::utils::header_slic3r_generated()
+            } else {
+                "BambuStudio 02.06.00.51".to_string()
+            },
             estimated_print_time,
+            model_print_time: None,
             stats,
             config,
             raw_settings,
         }
+    }
+
+    /// `with_estimated_time` with the processor's prepare time as well, for the
+    /// Bambu Lab time line: the model printing time is `time - prepare_time`
+    /// (GCodeProcessor.cpp:711-716).
+    pub fn with_estimated_times(
+        stats: GCodeStats,
+        config: PrintConfig,
+        raw_settings: Option<serde_json::Value>,
+        estimated_print_time_seconds: f32,
+        prepare_time_seconds: f32,
+    ) -> Self {
+        let mut header =
+            Self::with_estimated_time(stats, config, raw_settings, estimated_print_time_seconds);
+        header.model_print_time = Some(crate::utils::get_time_dhms(
+            estimated_print_time_seconds - prepare_time_seconds,
+        ));
+        header
     }
 
     /// Generate the HEADER_BLOCK section.
@@ -6953,12 +6981,22 @@ impl GCodeHeader {
 
         header.push_str("; HEADER_BLOCK_START\n");
         header.push_str(&format!("; {}\n", self.software_version));
-        // Native: `; estimated printing time (normal mode) = 43m 0s`
-        // (GCode.cpp emits the accel-aware normal-mode time via get_time_dhms).
-        header.push_str(&format!(
-            "; estimated printing time (normal mode) = {}\n",
-            self.estimated_print_time
-        ));
+        // GCodeProcessor.cpp:700-720 — the time placeholder: the Klipper form
+        // `; estimated printing time (normal mode) = ..` on other printers, the
+        // Bambu Lab form `; model printing time: ..; total estimated time: ..`
+        // (HEADER_0209) on a Bambu Lab printer.
+        // SAFETY: S_IS_BBL_PRINTER is only written during configuration.
+        let bbl = unsafe { crate::gcode::g_code_processor::S_IS_BBL_PRINTER };
+        match (&self.model_print_time, bbl && crate::faithful_gate("HEADER_0209")) {
+            (Some(model), true) => header.push_str(&format!(
+                "; model printing time: {}; total estimated time: {}\n",
+                model, self.estimated_print_time
+            )),
+            _ => header.push_str(&format!(
+                "; estimated printing time (normal mode) = {}\n",
+                self.estimated_print_time
+            )),
+        }
         header.push_str(&format!(
             "; total layer number: {}\n",
             self.stats.layer_count
