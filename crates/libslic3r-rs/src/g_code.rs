@@ -1938,7 +1938,7 @@ pub use extrude_collection as extrude_multi_path;
 /// C++ printf "%g" (default precision 6): 6 significant digits, trailing
 /// zeros trimmed. Native formats the LINE_WIDTH tag with %g of the f32
 /// path.width promoted to double (GCode.cpp:6607).
-fn fmt_g6(v: f64) -> String {
+pub(crate) fn fmt_g6(v: f64) -> String {
     if v == 0.0 {
         return "0".to_string();
     }

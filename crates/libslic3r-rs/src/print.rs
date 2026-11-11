@@ -755,7 +755,14 @@ impl Print {
 
             // -- change_layer() -- GCode.cpp:3922-3983 --
             writer.write_raw("; CHANGE_LAYER");
-            writer.write_raw(&format!("; Z_HEIGHT: {}", print_z));
+            // Z_HEIGHT_G6 (on): GCode.cpp:5002 `sprintf(buf, "; Z_HEIGHT: %g\n", print_z)`,
+            // six significant digits. =0 prints the shortest round-trip form of the
+            // double.
+            if crate::faithful_gate("Z_HEIGHT_G6") {
+                writer.write_raw(&format!("; Z_HEIGHT: {}", crate::gcode::exporter::fmt_g6(print_z)));
+            } else {
+                writer.write_raw(&format!("; Z_HEIGHT: {}", print_z));
+            }
             let height = if first_layer {
                 print_z as f32
             } else if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
@@ -3739,10 +3746,25 @@ fn emit_tower_tcr(
             tcr.purge_volume as f64,
             first_layer,
         );
-        Some(crate::gcode::gcode_template::process(
-            &print_config.change_filament_gcode,
-            &ctx,
-        ))
+        if crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT") {
+            // TOOLCHANGE_TEMPLATE_TEXT (on): the placeholder parser removes the
+            // `{if}` tags and nothing else, so a line that held only a tag stays
+            // as an empty line; `check_add_eol`; then the two markers
+            // (GCode.cpp:1122-1128). =0 drops those lines and writes no markers.
+            let mut t = crate::gcode::gcode_template::process_text(
+                &print_config.change_filament_gcode,
+                &ctx,
+            );
+            if !t.is_empty() && !t.ends_with('\n') {
+                t.push('\n');
+            }
+            Some(format!("; FilamentChangeGCodeStart\n{t}; FilamentChangeGCodeEnd\n"))
+        } else {
+            Some(crate::gcode::gcode_template::process(
+                &print_config.change_filament_gcode,
+                &ctx,
+            ))
+        }
     } else {
         None
     };
@@ -3781,7 +3803,31 @@ fn emit_tower_tcr(
             Some(out)
         }
     };
-    let filament_end_block = eval_fil(&print_config.filament_end_gcode);
+    let filament_end_block = if crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT")
+        && fil_gcode_faithful
+        && tcr.is_tool_change
+        && !print_config.filament_end_gcode.is_empty()
+    {
+        // The text as the parser leaves it, trailing blanks and empty lines
+        // included, with `check_add_eol`.
+        let ctx = crate::gcode::change_filament::build_context(
+            print_config,
+            tcr.initial_tool.max(0) as usize,
+            tcr.new_tool.max(0) as usize,
+            tcr.print_z as f64,
+            max_layer_z,
+            toolchange_count,
+            tcr.purge_volume as f64,
+            first_layer,
+        );
+        let mut t = crate::gcode::gcode_template::process_text(&print_config.filament_end_gcode, &ctx);
+        if !t.is_empty() && !t.ends_with('\n') {
+            t.push('\n');
+        }
+        if t.is_empty() { None } else { Some(t) }
+    } else {
+        eval_fil(&print_config.filament_end_gcode)
+    };
     let filament_start_block = eval_fil(&print_config.filament_start_gcode);
     // Label tower extrusions like C++ does (`; FEATURE: Prime tower`). Without
     // this the tower's E is attributed to whichever feature preceded it, which

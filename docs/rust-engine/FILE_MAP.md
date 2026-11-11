@@ -7807,13 +7807,13 @@ Tier 1. C++ functions 236 (plus 12 constructors, 1 destructors, 7 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Print::clear` :60 and `Print::clear` :1786 (9%, 0.52x)
-- partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :1806 (50%, 0.75x)
-- divergent: `Print::validate` :1413 and `Print::validate` :1855 (5%, 0.15x)
-- divergent: `Print::process` :2178 and `Print::process` :1954 (13%, 1.19x)
-- divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :589 (20%, 35.79x)
-- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3161 (23%, 0.41x)
-- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3527 (21%, 0.39x)
+- divergent: `Print::clear` :60 and `Print::clear` :1793 (9%, 0.52x)
+- partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :1813 (50%, 0.75x)
+- divergent: `Print::validate` :1413 and `Print::validate` :1862 (5%, 0.15x)
+- divergent: `Print::process` :2178 and `Print::process` :1961 (13%, 1.19x)
+- divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :589 (20%, 36.05x)
+- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3168 (23%, 0.41x)
+- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3534 (21%, 0.39x)
 - stub: `PrintStatistics::config` :4454 and `Print::config` :540 (6%, 0.03x)
 
 Missing in the Rust file:
@@ -8054,20 +8054,20 @@ Rust only:
 - `Print::skirt` :535
 - `Print::config_mut` :545
 - `Print::entity_points` :559
-- `apply_cooling_postprocess` :1646
-- `Print::apply` :1838 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `Print::make_brim` :3295 — C++ has it in `Brim`
-- `Print::all_extruders` :3431
-- `Print::is_canceled` :3467
-- `Print::cancel` :3473 — C++ has it in `PrintBase`
-- `Print::throw_if_canceled` :3479 — C++ has it in `PrintBase`, `SLAPrintSteps`
-- `Print::set_status_callback` :3488 — C++ has it in `PrintBase`
-- `Print::set_status` :3497 — C++ has it in `PrintBase`
-- `Print::invalidate_all_steps` :3505 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `collect_entity_lines` :3650
-- `emit_tower_tcr` :3695
-- `emit_layer_by_island` :4199
-- `Print::default` :4831
+- `apply_cooling_postprocess` :1653
+- `Print::apply` :1845 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `Print::make_brim` :3302 — C++ has it in `Brim`
+- `Print::all_extruders` :3438
+- `Print::is_canceled` :3474
+- `Print::cancel` :3480 — C++ has it in `PrintBase`
+- `Print::throw_if_canceled` :3486 — C++ has it in `PrintBase`, `SLAPrintSteps`
+- `Print::set_status_callback` :3495 — C++ has it in `PrintBase`
+- `Print::set_status` :3504 — C++ has it in `PrintBase`
+- `Print::invalidate_all_steps` :3512 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `collect_entity_lines` :3657
+- `emit_tower_tcr` :3702
+- `emit_layer_by_island` :4245
+- `Print::default` :4877
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 

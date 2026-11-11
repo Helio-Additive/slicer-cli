@@ -57,6 +57,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R830 | The seam placer's occlusion mesh. `compute_global_occlusion` (SeamPlacer.cpp 577-606) puts every MODEL_PART and NEGATIVE_VOLUME through its own matrix (`its_transform`, admesh/stl.h 372-380), merges parts and negative volumes into two sets, decimates each (`its_short_edge_collpase`), appends the negative set and applies `trafo_centered()`, whose Z is `trafo()`'s own. The port decimated the placed mesh of the parts in bed coordinates and had no negative volumes in it. The 3MF loader now hands the volumes over one by one | on: `SEAM_OCCL_VOLUMES` (new) | unchanged (174,107) | unchanged (218,262) | 2,343,292 → 2,361,380 (84.28%) |
 | R831 | Painted seams. The 3MF loader reads `paint_seam` (bbs_3mf.cpp 296) into the same storage as `ModelVolume::seam_facets`. `gather_enforcers_blockers` (SeamPlacer.cpp 645-668): the ENFORCER and BLOCKER facets of the volume, taken from the triangle selector in the volume's own coordinates, go through `trafo_centered() * get_matrix()` and into two AABB trees. `GlobalModelInfo::is_enforced` and `is_blocked` (287-299) ask `is_any_triangle_in_radius`; they returned false before. `process_perimeter_polygon` (467-485) and `SeamComparator` were already written against them. From the map: the two placeholders of `gcode/seam_placer.rs` are real functions and `gather_enforcers_blockers` exists | on: `SEAM_PAINTING` (new) | unchanged (174,107) | unchanged (218,262) | 2,361,380 → 2,558,898 (91.21%) |
 | R832 | (1) `WipingExtrusions::ensure_perimeters_infills_order` (ToolOrdering.cpp 4093-4094) calls `lt.is_extruder_order(lt.wall_filament(region), last_nonsoluble_extruder \|\| ! lt.has_extruder(..))`: the `\|\|` stands inside the argument list, so the second argument is 0 or 1. An infill of the last tool's own region is thereby overridden to that tool and prints before its walls. The port had the two conditions apart, as the comments beside them read. (2) `generateLocalMaximaSingleBeads` (SkeletalTrapezoidation.cpp 2131-2132): the six points of the circle go through `Point(double, double)`, which rounds (Point.hpp 179); the port truncated | on: `WIPE_ORDER_PAREN_CPP`, `SINGLE_BEAD_CIRCLE_LRINT` (new) | 174,107 → 174,109 (93.41%) | 218,262 → 218,276 (91.92%) | 2,558,898 → 2,564,965 (91.38%) |
+| R833 | Lines the in-order score does not count. (1) `sprintf(buf, "; Z_HEIGHT: %g\n", print_z)` (GCode.cpp 5002): six significant digits; the port printed the double in full (`20.840000000000014`). (2) The tool-change block: the placeholder parser removes an `{if}` tag and nothing else, so a line that held only a tag stays as an empty line; the result gets `check_add_eol` and the `; FilamentChangeGCodeStart` / `; FilamentChangeGCodeEnd` markers (GCode.cpp 1122-1128); the filament-end text keeps its trailing blank and its empty lines. New: `scripts/parity/exact_lines.py`, every body line as written | on: `Z_HEIGHT_G6`, `TOOLCHANGE_TEMPLATE_TEXT` (new) | unchanged (174,109) | unchanged (218,276) | 2,564,965 → 2,570,411 (91.39%) |
 
 ## Findings
 
@@ -328,3 +329,15 @@ The Rust engine as it came from R808, against the kept oracle files:
 - R832, seen and left: the steps of a speed ramp (`split_and_mapping_speed`) differ in the third decimal of
   F where a point of the split overhang path is one unit off; neighbours then differ by +d and -d.
 - R832, the source map: headline unchanged against R831.
+- R833, lines of the oracle's body the port has verbatim (`exact_lines.py`), before → after: Benchy classic
+  181,421 → 181,709 of 196,495; Benchy arachne 224,205 → 224,493 of 248,190; Majora 2,634,431 → 2,706,453
+  of 3,024,752. `; Z_HEIGHT` differed on 288 of 300 Benchy layers and 641 of 656 Majora layers, now on none.
+- R833, what is missing verbatim on Majora, by shape: `; LINE_WIDTH` 20,308 (22,776 the other way), empty
+  lines 12,103, `M<n> S<n>` 6,847, `; OBJECT_ID` 6,063, `M73 P R` 5,802, `; WIPE_START` / `; WIPE_END` 2,285
+  each, `; set nozzle temperature` 655. On Benchy classic: `; OBJECT_ID` has another value on all 300
+  layers (28 against 13), 440 wipe marker pairs and 131 `M73` lines are missing.
+- R833, found: the oracle writes `; OBJECT_ID` for every instance in every extruder pass
+  (GCode.cpp 5843), the port once a layer; and between the end of the tool-change block and the tower's
+  first move it travels along `generate_path_to_wipe_tower` before the filament-start text, which the
+  port writes first.
+- R833, the source map: headline unchanged.

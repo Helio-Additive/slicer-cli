@@ -66,6 +66,13 @@ pub fn substitute_change_filament(
         None => replacement,
     };
     let replacement = match filament_end_block {
+        // The block as it is (it ends with a newline) under
+        // TOOLCHANGE_TEMPLATE_TEXT; trimmed otherwise.
+        Some(b) if crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT") && b.ends_with('\n') => {
+            // The tower writes "[filament_end_gcode]\n" (WipeTower.cpp:2465), so
+            // the line's own newline follows the block.
+            format!("{b}\n{replacement}")
+        }
         Some(b) if !b.trim().is_empty() => format!("{}\n{replacement}", b.trim_end()),
         _ => replacement,
     };
