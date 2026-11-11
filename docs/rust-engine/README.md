@@ -121,19 +121,19 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R849) |
+| Fixture | As brought over (R808) | Now (R850) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 183,738 (95.96%) |
 | Benchy arachne | 32,769 (13.68%) | 236,621 (97.18%) |
-| Majora | 1,512,438 (55.88%) | 2,698,052 (94.51%) |
+| Majora | 1,512,438 (55.88%) | 2,712,617 (95.02%) |
 | Majora, prime tower | 83.5% | 99.6% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R849:
+missing most often. Lines of the oracle's body the port has verbatim, at R850:
 Benchy classic 189,787 of 196,495 (96.6%), Benchy arachne 241,689 of 248,190
-(97.4%), Majora 2,871,150 of 3,024,752 (94.9%).
+(97.4%), Majora 2,884,786 of 3,024,752 (95.4%).
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
 driver) R808 scored Majora 66.06%, Benchy classic 121,714 lines and Benchy

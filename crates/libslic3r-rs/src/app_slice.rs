@@ -584,6 +584,7 @@ pub fn slice_3mf_to_gcode(
     // f32 affine (rotation matmul = the R85 wall); paint_frame_offset carries
     // the integer center_offset to the projection.
     let mut paint_frame_offset: Option<(i64, i64)> = None;
+    let mut instance_shift: Option<(i64, i64)> = None;
     let mut paint_tb_trafo: Option<[f64; 16]> = None;
     let mut paint_tc: Option<[f64; 12]> = None;
     let mut paint_trafo_z: Option<f64> = None;
@@ -645,6 +646,12 @@ pub fn slice_3mf_to_gcode(
         let ox = (cx / crate::libslic3r::SCALING_FACTOR) as i64;
         let oy = (cy / crate::libslic3r::SCALING_FACTOR) as i64;
         paint_frame_offset = Some((ox, oy));
+        // PrintApply.cpp:150 `shift = Point::new_scale(trafo[12], trafo[13])`,
+        // then PrintObject.cpp:114 `shift += m_center_offset`.
+        instance_shift = Some((
+            (b[9] / crate::libslic3r::SCALING_FACTOR) as i64 + ox,
+            (b[10] / crate::libslic3r::SCALING_FACTOR) as i64 + oy,
+        ));
         if crate::probe_enabled("PFDBG") {
             eprintln!("PFDBG center_offset=({},{}) center=({:.6},{:.6}) dz={:.6}", ox, oy, cx, cy, dz);
         }
@@ -794,6 +801,7 @@ pub fn slice_3mf_to_gcode(
     }
     print_object.painted_submeshes = painted_submeshes;
     print_object.paint_frame_offset = paint_frame_offset;
+    print_object.instance_shift = instance_shift;
     print_object.paint_tb_trafo = paint_tb_trafo;
     print_object.raw_local_mesh = raw_local_mesh;
     // R805 — negative volumes through the exact per-volume frame.

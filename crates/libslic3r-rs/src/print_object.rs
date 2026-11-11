@@ -291,6 +291,11 @@ pub struct PrintObject {
     /// (native's `center_offset`); the painted-line construction adds it back
     /// as an integer translate. None when the paint frame is inactive.
     pub paint_frame_offset: Option<(i64, i64)>,
+    /// C++ `PrintInstance::shift` of the object's instance (scaled): the
+    /// instance translation `Point::new_scale`d plus `m_center_offset`
+    /// (PrintApply.cpp:150, PrintObject.cpp:114); `unscale` of it is the G-code
+    /// origin (GCode.cpp:5873). Set by the 3MF loader.
+    pub instance_shift: Option<(i64, i64)>,
 
     /// R788 — native's topbot volume_trafo (trafo_centered * volume matrix);
     /// when set, the strict sub-meshes are volume-LOCAL and the slab chain
@@ -362,6 +367,7 @@ impl PrintObject {
             painted_submeshes_strict: Vec::new(),
             mm_negative_layer_slices: Vec::new(),
             paint_frame_offset: None,
+            instance_shift: None,
             paint_tb_trafo: None,
             raw_local_mesh: None,
             slice_center_override: None,
@@ -399,6 +405,7 @@ impl PrintObject {
             painted_submeshes_strict: Vec::new(),
             mm_negative_layer_slices: Vec::new(),
             paint_frame_offset: None,
+            instance_shift: None,
             paint_tb_trafo: None,
             raw_local_mesh: None,
             slice_center_override: None,

@@ -4583,6 +4583,36 @@ impl PerimeterGenerator {
                     } else {
                         expolygons_to_polygons(&crate::clipper_utils::grow(lower, 0.5 * nozzle, OffsetJoinType::Miter))
                     };
+                    // ARACHNE_CLIP_BBOX (on): PerimeterGenerator.cpp:675-692 clips each
+                    // grown lower polygon to the bounding box of the extrusion's
+                    // junctions (`clip_clipper_polygon_with_subject_bbox(.., true)`,
+                    // empties dropped) and uses the result both as the clip paths
+                    // and as the distancer's polygons. The box is not inflated: the
+                    // `inflated()` at :684 returns a copy that is discarded. =0 clips
+                    // against the whole grown rings.
+                    let grown_rings: Vec<Polygon> = if crate::faithful_gate("ARACHNE_CLIP_BBOX") {
+                        let mut extrusion_path_bbox = crate::geometry::BoundingBox::new();
+                        for j in &line.junctions {
+                            extrusion_path_bbox.merge_point(Point::new(j.p.x(), j.p.y()));
+                        }
+                        grown_rings
+                            .iter()
+                            .filter_map(|ring| {
+                                let new_poly = crate::clipper_utils::clip_clipper_polygon_with_subject_bbox(
+                                    ring,
+                                    &extrusion_path_bbox,
+                                    true,
+                                );
+                                if new_poly.points.is_empty() {
+                                    None
+                                } else {
+                                    Some(new_poly)
+                                }
+                            })
+                            .collect()
+                    } else {
+                        grown_rings
+                    };
                     let mut clip: ZPaths = Vec::new();
                     for ring in &grown_rings {
                         clip.push(ring.points.iter().map(|p| (p.x(), p.y(), 0i64)).collect());

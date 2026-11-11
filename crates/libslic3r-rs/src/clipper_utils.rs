@@ -2920,7 +2920,7 @@ fn clip_clipper_polygon_with_subject_bbox_points(
 }
 
 // ClipperUtils.cpp:137-142 `Polygon clip_clipper_polygon_with_subject_bbox(const Polygon &src, const BoundingBox &bbox, const bool get_entire_polygons)`
-fn clip_clipper_polygon_with_subject_bbox(
+pub(crate) fn clip_clipper_polygon_with_subject_bbox(
     src: &Polygon,
     bbox: &BoundingBox,
     get_entire_polygons: bool,

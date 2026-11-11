@@ -626,6 +626,17 @@ impl Print {
                 if cx != 0.0 || cy != 0.0 {
                     gcode_origin = (-cx, -cy);
                 }
+                // GCODE_ORIGIN_INSTANCE_SHIFT (on): `set_origin(unscale(shift))`
+                // (GCode.cpp:5873) with the instance's integer shift — the
+                // truncated instance translation plus the truncated centre
+                // (PrintApply.cpp:150, PrintObject.cpp:114). The truncated centre
+                // of the placed mesh can sit one unit off. =0 keeps that.
+                if let Some((sx, sy)) = obj.instance_shift {
+                    if crate::faithful_gate("GCODE_ORIGIN_INSTANCE_SHIFT") {
+                        let sf = crate::libslic3r::SCALING_FACTOR;
+                        gcode_origin = (-(sx as f64 * sf), -(sy as f64 * sf));
+                    }
+                }
             }
         }
         // FRAME_PAIR: re-place the centered-slice frame to C++'s gcode frame by

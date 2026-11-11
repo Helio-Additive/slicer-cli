@@ -1276,6 +1276,19 @@ impl GCodeWriter {
         // offset (handled below — i/j passed through unchanged).
         let ox = self.config.extruder_offset_x + self.gcode_origin_x;
         let oy = self.config.extruder_offset_y + self.gcode_origin_y;
+        // POINT_TO_GCODE_ORDER (on): `unscale(point) + m_origin - extruder_offset`
+        // (GCode.cpp:9029-9033), evaluated left to right; with m_origin =
+        // -gcode_origin that is `(v - gcode_origin) - extruder_offset`. =0
+        // subtracts their sum, which rounds differently.
+        let cpp_order = crate::faithful_gate("POINT_TO_GCODE_ORDER");
+        let (gx, gy, ex, ey) = (
+            self.gcode_origin_x,
+            self.gcode_origin_y,
+            self.config.extruder_offset_x,
+            self.config.extruder_offset_y,
+        );
+        let tx = |v: f64| if cpp_order { (v - gx) - ex } else { v - ox };
+        let ty = |v: f64| if cpp_order { (v - gy) - ey } else { v - oy };
         if (ox != 0.0 || oy != 0.0)
             && matches!(
                 cmd,
@@ -1287,29 +1300,29 @@ impl GCodeWriter {
         {
             let adjusted = match cmd {
                 GCodeCommand::LinearMove { x, y, z, e, f } => GCodeCommand::LinearMove {
-                    x: x.map(|v| v - ox),
-                    y: y.map(|v| v - oy),
+                    x: x.map(tx),
+                    y: y.map(ty),
                     z: *z,
                     e: *e,
                     f: *f,
                 },
                 GCodeCommand::RapidMove { x, y, z, f } => GCodeCommand::RapidMove {
-                    x: x.map(|v| v - ox),
-                    y: y.map(|v| v - oy),
+                    x: x.map(tx),
+                    y: y.map(ty),
                     z: *z,
                     f: *f,
                 },
                 GCodeCommand::ArcCW { x, y, i, j, e, f } => GCodeCommand::ArcCW {
-                    x: x - ox,
-                    y: y - oy,
+                    x: tx(*x),
+                    y: ty(*y),
                     i: *i,
                     j: *j,
                     e: *e,
                     f: *f,
                 },
                 GCodeCommand::ArcCCW { x, y, i, j, e, f } => GCodeCommand::ArcCCW {
-                    x: x - ox,
-                    y: y - oy,
+                    x: tx(*x),
+                    y: ty(*y),
                     i: *i,
                     j: *j,
                     e: *e,
