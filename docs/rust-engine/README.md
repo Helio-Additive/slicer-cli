@@ -120,12 +120,12 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R818) |
+| Fixture | As brought over (R808) | Now (R819) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 149,451 (80.36%) |
-| Benchy arachne | 32,769 (13.68%) | 158,538 (67.00%) |
-| Majora | 1,512,438 (55.88%) | 1,796,767 (66.27%) |
-| Majora, prime tower | 83.5% | 83.6% |
+| Benchy classic | 30,486 (15.72%) | 164,807 (88.62%) |
+| Benchy arachne | 32,769 (13.68%) | 204,849 (86.58%) |
+| Majora | 1,512,438 (55.88%) | 1,847,143 (68.13%) |
+| Majora, prime tower | 83.5% | 83.7% |
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
 driver) R808 scored Majora 66.06%, Benchy classic 121,714 lines and Benchy
@@ -147,14 +147,15 @@ Where each fixture stands, from the `PP` probe (below):
   are identical on 197 of 204 layers, the top surfaces on all 48 through
   `prepare_infill`, the sub-top surfaces on all 3, the bottom bridges on all 4.
   The internal bridges of `bridge_over_infill` are identical on all 11 layers,
-  and the fills on 185 of 289 layers. Walls are 86% in order; top surface 92%,
-  solid infill 79%, bridges 54%, sparse infill 47%.
+  and the fills on 185 of 289 layers. Walls are 97% in order; top surface 92%,
+  solid infill 81%, gap infill 80%, bridges 55%, sparse infill 48%.
 - **Benchy arachne.** Slices as classic. 2,695 of 2,721 `WallToolPaths` calls
-  get the oracle's outline and return its toolpaths to within two units. 88.5%
-  of the lines match in content, 67.0% in order: walls 65 to 71%, solid infill
-  66%, bridges 72%.
+  get the oracle's outline and return its toolpaths to within two units. 88.7%
+  of the lines match in content, 86.6% in order: inner walls 96%, outer walls
+  90%, solid infill 82%, bridges 72%, floating vertical shell 61%.
 - **Majora.** The merged slices are identical on 582 of 656 layers, the region
-  slices on 574. 77.1% of the lines match in content, 66.3% in order.
+  slices on 574. 77.1% of the lines match in content, 68.1% in order: walls
+  73 to 76%, solid infill 87%, sparse infill 35%, floating vertical shell 25%.
 
 ## Finding the first stage that differs
 

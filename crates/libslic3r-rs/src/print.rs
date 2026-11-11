@@ -4197,7 +4197,12 @@ fn emit_layer_by_island(
     }
     // Emit per-island, per region. Under the gate, use the first-appearance
     // (chain_expolygons) order; otherwise the natural slice order.
-    let emit_order: Vec<usize> = if zsmooth_gate {
+    // ISLAND_LSLICE_ORDER (on): GCode.cpp:5922 walks
+    // `object_by_extruder.islands`, a vector indexed by the lslice the island
+    // was assigned to (GCode.cpp:5516-5527), so the islands print in lslice
+    // order whatever order the perimeter generator visited them in. =0 prints
+    // them in the order they first appear among the perimeter entities.
+    let emit_order: Vec<usize> = if zsmooth_gate && !crate::faithful_gate("ISLAND_LSLICE_ORDER") {
         let mut v = island_emit_order.clone();
         for i in 0..islands.len() {
             if !v.contains(&i) {
