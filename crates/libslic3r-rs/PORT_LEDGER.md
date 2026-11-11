@@ -32,7 +32,7 @@ engine"); its `status` values are not a measure of fidelity.
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4515 |
+| Rust functions with no C++ function of that name in the pair | 4517 |
 
 By tier:
 

@@ -113,6 +113,26 @@ fn point_mul_f64(l: Point, r: f64) -> Point {
     Point::new((l.x() as f64 * r) as i64, (l.y() as f64 * r) as i64)
 }
 
+/// OVD probe (diagnostics only, `probe_enabled("OVD")` plus `OVD_BOX=x0,y0,x1,y1`):
+/// the twin of a probed OverhangDetector.cpp, per point and per split point.
+fn ovd_in_box(x: i64, y: i64) -> bool {
+    static BOX: std::sync::OnceLock<Option<[i64; 4]>> = std::sync::OnceLock::new();
+    let b = BOX.get_or_init(|| {
+        if !crate::probe_enabled("OVD") {
+            return None;
+        }
+        let v: Vec<i64> = std::env::var("OVD_BOX").ok()?.split(',').filter_map(|t| t.trim().parse().ok()).collect();
+        if v.len() == 4 { Some([v[0], v[1], v[2], v[3]]) } else { None }
+    });
+    matches!(b, Some(b) if x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3])
+}
+
+/// A double for the OVD probe: 17 significant digits and its bits, so a script
+/// can compare it exactly with the C++ twin's `%.17g`.
+fn fmt17(v: f64) -> String {
+    format!("{:.16e}|{:016x}", v, v.to_bits())
+}
+
 // ---------------------------------------------------------------------------
 // OverhangDetector.hpp:23-30 — class OverhangDistancer
 // ---------------------------------------------------------------------------
@@ -457,11 +477,12 @@ pub fn add_sampling_points(path: &ZPath, min_sampling_interval: f64) -> ZPath {
                     let t = j as f64 * min_sampling_interval / dist;
                     // OverhangDetector.cpp:129 — ZPoint new_point;
                     // OverhangDetector.cpp:130 — new_point.x() = curr_p.x() + t*(next_p.x()-curr_p.x());
-                    let nx = (curr_p.x() as f64 + t * (next_p.x() - curr_p.x()) as f64) as i64;
+                    let lerp = |c: i64, n: i64| -> i64 { (c as f64 + t * (n - c) as f64) as i64 };
+                    let nx = lerp(curr_p.x(), next_p.x());
                     // OverhangDetector.cpp:131 — new_point.y() = curr_p.y() + t*(next_p.y()-curr_p.y());
-                    let ny = (curr_p.y() as f64 + t * (next_p.y() - curr_p.y()) as f64) as i64;
+                    let ny = lerp(curr_p.y(), next_p.y());
                     // OverhangDetector.cpp:132 — new_point.z() = curr_zp.z() + t*(next_zp.z()-curr_zp.z());
-                    let nz = (curr_zp.2 as f64 + t * (next_zp.2 - curr_zp.2) as f64) as i64;
+                    let nz = lerp(curr_zp.2, next_zp.2);
                     // OverhangDetector.cpp:133 — sampled_path.push_back(new_point);
                     sampled_path.push((nx, ny, nz));
                 }
@@ -589,9 +610,21 @@ pub fn detect_overhang_degree_arachne(
         // OverhangDetector.cpp:215-230 — walk the crossings in the direction of travel.
         let mut push = |k: f64, ret: &mut Vec<SplitPoint>| {
             let t = (k - da) / delta_d;
-            // C++ `pa + (pb - pa) * t` truncates via coord_t(double).
-            let pt = pa + point_mul_f64(pb - pa, t);
+            // C++ `pa + (pb - pa) * t`: `pb - pa` is an Eigen expression, not a
+            // `Point`, so the member `Point::operator*(const double&)` (round,
+            // Point.hpp:200) does not bind; the free `operator*(const Point&,
+            // const double&)` does, through the converting constructor, and
+            // truncates (Point.hpp:255-258). SPLIT_POINT_TRUNC (on); =0 rounds.
+            let pt = if crate::faithful_gate("SPLIT_POINT_TRUNC") {
+                let d = pb - pa;
+                pa + Point::new((d.x() as f64 * t) as i64, (d.y() as f64 * t) as i64)
+            } else {
+                pa + point_mul_f64(pb - pa, t)
+            };
             let w = wa + (((wb - wa) as f64) * t) as i64;
+            if ovd_in_box(pa.x(), pa.y()) {
+                eprintln!("OVD sp pa={},{} pb={},{} da={} db={} k={} t={} pt={},{}", pa.x(), pa.y(), pb.x(), pb.y(), fmt17(da), fmt17(db), fmt17(k), fmt17(t), pt.x(), pt.y());
+            }
             ret.push(SplitPoint { p: pt, w, degree: k });
         };
         if da < db {
@@ -613,7 +646,16 @@ pub fn detect_overhang_degree_arachne(
     // OverhangDetector.cpp:234 — the SIGNED distancer (negative inside the lower slice).
     let prev_layer_distancer = SignedOverhangDistancer::new(lower_polys);
     // OverhangDetector.cpp:236
-    let offset_width = scale_(nozzle_diameter) / 2.0;
+    // OVERHANG_OFFSET_COORD (on): `coord_t offset_width = scale_(nozzle_diameter) / 2;`
+    // — the nozzle diameter is a float (nozzle_diameter_for_filament,
+    // PrintConfig.hpp:2292), 0.4f scales to 20000.0003, and coord_t truncates
+    // that to 20000. =0 keeps the fraction, which moved every degree and so
+    // every split point of an overhang.
+    let offset_width = if crate::faithful_gate("OVERHANG_OFFSET_COORD") {
+        ((scale_(nozzle_diameter) / 2.0) as i64) as f64
+    } else {
+        scale_(nozzle_diameter) / 2.0
+    };
 
     // OverhangDetector.cpp:238
     for path in paths_in_range.iter() {
@@ -655,6 +697,9 @@ pub fn detect_overhang_degree_arachne(
                     lo as f64 * (1.0 - t) + t * hi as f64
                 }
             };
+            if ovd_in_box(px, py) {
+                eprintln!("OVD pt x={} y={} w={} dist={} real={} deg={} mapped={}", px, py, fmt17(width), fmt17(overhang_dist), fmt17(real_dist), fmt17(degree), fmt17(mapped_degree));
+            }
             if crate::perimeter_generator::OVHD_ON.with(|c| c.get()) {
                 eprintln!("OVHD x={} y={} w={:.0} dist={:.4} real={:.4} deg={:.4} mapped={:.4}", px, py, width, overhang_dist, real_dist, degree, mapped_degree);
             }

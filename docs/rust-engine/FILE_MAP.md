@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4515 |
+| Rust functions with no C++ function of that name in the pair | 4517 |
 
 By tier:
 
@@ -10131,7 +10131,7 @@ Rust only:
 
 ### `OverhangDetector` (.cpp+.hpp) and `overhang_detector.rs`
 
-Tier 2. C++ functions 15 (plus 5 constructors, 0 destructors, 0 operators), Rust functions 26. Matched 12: faithful 12, partial 0, divergent 0, stub 0.
+Tier 2. C++ functions 15 (plus 5 constructors, 0 destructors, 0 operators), Rust functions 28. Matched 12: faithful 12, partial 0, divergent 0, stub 0.
 
 Missing in the Rust file:
 
@@ -10145,16 +10145,18 @@ Rust only:
 - `cut_length` :75
 - `faithful_round` :92
 - `point_mul_f64` :98
-- `OverhangDistancer::new` :136
-- `SignedOverhangDistancer::new` :203
-- `SplitPoly::new` :253
-- `SplitPoly::with_degree` :261
-- `SplitLines::new` :283
-- `add_sampling_points_paths` :478
-- `detect_overhang_degree_arachne` :524
-- `upper_bound_index` :769
-- `extrusion_paths_append` :1008 — C++ has it in `Arachne/utils/ExtrusionLine`, `ExtrusionEntity`
-- `extrusion_paths_append_classic` :1036
+- `ovd_in_box` :118
+- `fmt17` :132
+- `OverhangDistancer::new` :156
+- `SignedOverhangDistancer::new` :223
+- `SplitPoly::new` :273
+- `SplitPoly::with_degree` :281
+- `SplitLines::new` :303
+- `add_sampling_points_paths` :499
+- `detect_overhang_degree_arachne` :545
+- `upper_bound_index` :814
+- `extrusion_paths_append` :1053 — C++ has it in `Arachne/utils/ExtrusionLine`, `ExtrusionEntity`
+- `extrusion_paths_append_classic` :1081
 
 ### `SlicingAdaptive` (.cpp+.hpp) and `slicing_adaptive.rs`
 
