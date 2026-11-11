@@ -48,6 +48,7 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R821 | No engine change. The source map: `scripts/parity/file_map.py` writes `docs/rust-engine/FILE_MAP.md`, every libslic3r unit against the Rust file of the same name, function by function. It replaces the hand-kept counts of `PORT_LEDGER.md` | none | unchanged (171,768) | unchanged (212,289) | unchanged (1,847,625) |
 | R822 | From the map: `GCode/CoolingBuffer` had no Rust file; its five functions (`calculate_layer_slowdown`, `new_feedrate_to_reach_time_stretch` and the three `extruder_range_slow_down_*`) move out of `gcode/cooling.rs` into `gcode/cooling_buffer.rs` under their C++ names, output unchanged. From the G-code: wipe into infill. `WipingExtrusions::mark_wiping_extrusions` and `ensure_perimeters_infills_order` (ToolOrdering.cpp 3906-4117), driven as `Print::_make_wipe_tower` drives them (Print.cpp 4266-4329): the sparse infill marked for a tool change is taken off the volume purged on the tower, a region asks for its filament only for what cannot be overridden (ToolOrdering.cpp 939-1017), and the overridden fills print first after the change, closed by `; PURGING FINISHED` (GCode.cpp 5826-5828, 9046-9101) | on: `WIPE_INTO_INFILL` (new) | unchanged (171,768) | unchanged (212,289) | 1,847,625 → 1,954,872 (71.90%) |
 | R823 | The Elephant foot compensation of a first layer with several regions. `slice_volumes` compensates after `apply_mm_segmentation` (PrintObjectSlice.cpp 2202), so a painted first layer takes the multi-region branch (2331-2378): the merged layer, closed by 1.5 × `slice_closing_radius`, is compensated once, every region is cut by the result, and the layer keeps the uncompensated outline as its `lslices`, chained by `chain_points` (2391-2408). The port compensated each region's slices by themselves in `make_perimeters`, after the untyped slices were backed up | on: `L0_EFC_MULTI_REGION` (new) | unchanged (171,768) | unchanged (212,289) | 1,954,872 → 1,959,722 (72.07%) |
+| R824 | From the map: the exporter the engine writes G-code with moves from `gcode/exporter.rs` into `g_code.rs`, the file named after GCode.cpp (`crate::gcode::exporter` stays as a name for it); output unchanged. From the G-code: (1) `unscale<float>(v)` is `float(v) * float(SCALING_FACTOR)` (libslic3r.h 112), and the float nearest 1e-5 is 2.5e-8 below it, so the width of a variable-width path (VariableWidth.cpp 66, 136, 203; FillFloatingConcentric.cpp 72) is one float step lower than a division by 1e5 gives on about a third of the paths, which moves the volumetric speed cap by 0.001 mm/min. (2) The vertical-shell cache over all regions of a multi-material print (PrintObject.cpp 2351-2386) computes its offsets in `float` over the scaled integer widths, and the perimeter shadow is one `offset2` of the lslices. (3) `apply_mm_segmentation` intersects the region's slices (subject) with the segmentation (clip), PrintObjectSlice.cpp 1921; the other way round Clipper rounds the crossings differently | on: `UNSCALE_FLOAT`, `VSHELL_ALL_REGIONS_F32`, `MMSEG_STOLEN_SUBJECT` (new) | 171,768 → 171,788 (92.34%) | 212,289 → 213,070 (89.98%) | 1,959,722 → 1,994,413 (73.35%) |
 
 ## Findings
 
@@ -219,3 +220,24 @@ The Rust engine as it came from R808, against the kept oracle files:
   (2,266 tokens, listed as missing), which the port keeps inside `PrintObject::slice`.
   `GCode/BedExcludeChecker` (no Rust file) was read: it checks a finished `GCodeProcessorResult` against the
   exclude areas and writes no G-code, so it waits behind the files that do.
+- R824, the oracle is not reproducible in the multi-material segmentation: over six runs of `slicer_cli` the
+  output of `multi_material_segmentation_by_painting` differs on 83 of Majora's 656 layers and the region
+  slices after `apply_mm_segmentation` on 63. What R823 listed as a difference on layers 1 and 2 is this:
+  the port equals some runs and not others. The kept oracle G-code is one sample, so these layers bound
+  the Majora score. Against the six runs the port's region slices equal none on 4 layers (175, 300, 493
+  of the stable ones), down from 49 before the operands of the intersection were put in the C++ order.
+- R824, Majora stage by stage after the round (layers equal to one probed oracle run): region slices 618
+  of 656, fill surfaces from the perimeter generator 611 of 651, internal fill surfaces after
+  `discover_vertical_shells` 585 of 635 (154 before), after `bridge_over_infill` 523 of 631 (151 before).
+  The extrusions themselves still differ on most layers: walls on 576 of 656, fills on 634 of 650.
+- R824, Majora walls by line: 86% of the wall extrusion lines of a layer are in the oracle, evenly over
+  the layers. Of the standalone `G1 F` lines 220,019 of 318,505 matched before `UNSCALE_FLOAT`. What is
+  left in walls is mostly structure: where an open wall starts, and the wipe at its end (the oracle
+  retracts in one move, the port in several along the path).
+- R824, by feature in order on Majora: outer wall 74.2%, inner wall 77.6%, floating vertical shell 32.1%,
+  sparse infill 51.4%, prime tower 93.6%.
+- R824, the source map against R823: Rust files named after no C++ file 51 → 50 (`gcode/exporter.rs` is
+  gone); functions matched 3,671 → 3,684 (faithful 3,089 → 3,090, partial 361 → 365, divergent 190 → 198:
+  the exporter's functions are now measured against `GCode.cpp`, and several are free functions that cover
+  part of a method); missing in the pair 4,720 → 4,707; Rust only 4,399 → 4,438. The five exporter tests
+  that fail are the same five, under `g_code::exporter_tests`.

@@ -2442,7 +2442,12 @@ fn thick_polyline_to_extrusion_paths(
                     // Re-dividing by SCALING_FACTOR (the prior bug) collapsed widths to ~0,
                     // making gap-fill extrude ~100x too little.
                     let w_mm = sum / length;
-                    let new_width = crate::variable_width::spacing_to_width(w_mm, flow.height());
+                    let new_width = if crate::faithful_gate("UNSCALE_FLOAT") {
+                // `unscale<float>(w)` of the scaled width (VariableWidth.cpp:136, :203).
+                crate::variable_width::spacing_to_width_scaled(w_mm * crate::SCALING_FACTOR, flow.height())
+            } else {
+                crate::variable_width::spacing_to_width(w_mm, flow.height())
+            };
                     if let Ok(new_flow) = flow.with_width(new_width) {
                         path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
                         path.width = new_flow.width();
@@ -2536,7 +2541,12 @@ fn thick_polyline_to_extrusion_paths(
             // VariableWidth.cpp:202-203 — w already in MM (crate ThickPolyline widths are
             // mm; the scaled `length` cancels in sum/length). See the matching note above.
             let w_mm = sum / length;
-            let new_width = crate::variable_width::spacing_to_width(w_mm, flow.height());
+            let new_width = if crate::faithful_gate("UNSCALE_FLOAT") {
+                // `unscale<float>(w)` of the scaled width (VariableWidth.cpp:136, :203).
+                crate::variable_width::spacing_to_width_scaled(w_mm * crate::SCALING_FACTOR, flow.height())
+            } else {
+                crate::variable_width::spacing_to_width(w_mm, flow.height())
+            };
             if let Ok(new_flow) = flow.with_width(new_width) {
                 path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
                 path.width = new_flow.width();

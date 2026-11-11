@@ -6,7 +6,8 @@
 pub mod avoid_crossing_perimeters;
 pub mod conflict_checker;
 pub mod cooling;
-pub mod exporter;
+/// The exporter lives in the file named after GCode.cpp.
+pub use crate::g_code as exporter;
 pub mod extruder;
 pub mod g_code_editor;
 pub mod g_code_processor;
@@ -30,7 +31,7 @@ pub mod change_filament;
 pub mod gcode_template;
 pub mod wipe_tower;
 pub mod wipe_tower_integration;
-mod writer;
+pub(crate) mod writer;
 pub use writer::RetractCtx;
 
 pub use avoid_crossing_perimeters::{

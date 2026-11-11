@@ -390,7 +390,11 @@ pub fn floating_thick_polyline_to_extrusion_paths(
         // C++ `unscale<float>(width)` == `float(width) * float(SCALING_FACTOR)` with
         // NO integer truncation of `width` (which here is a fractional averaged
         // width). The whole sum is computed in `float` (f32) in C++, so mirror that.
-        let unscaled_w = (width as f32) / (crate::SCALING_FACTOR as f32);
+        let unscaled_w = if crate::faithful_gate("UNSCALE_FLOAT") {
+            crate::variable_width::unscale_float(width)
+        } else {
+            (width as f32) / (crate::SCALING_FACTOR as f32)
+        };
         // C++ `float(1. - 0.25 * PI)`: the inner expression is evaluated in double,
         // then cast to float.
         let arg = unscaled_w + (flow.height() as f32) * ((1.0 - 0.25 * PI) as f32);

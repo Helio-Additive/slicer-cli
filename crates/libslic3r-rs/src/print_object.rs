@@ -961,6 +961,20 @@ impl PrintObject {
                         for h in &sf.expolygon.holes { for pt in &h.points { rp += 1; rx += pt.x(); ry += pt.y(); } }
                     }
                     eprintln!("REGSL li={} r={} ns={} n={} pts={} sx={} sy={}", li, ri, lr.slices.surfaces.len(), rn, rp, rx, ry);
+                    if let Ok(d) = std::env::var("LSLDUMP") {
+                        if d == format!("{},{}", li, ri) {
+                            for (si, sf) in lr.slices.surfaces.iter().enumerate() {
+                                for (k, pt) in sf.expolygon.contour.points.iter().enumerate() {
+                                    eprintln!("LSLD REGSL {} c {} {} {}", si, k, pt.x(), pt.y());
+                                }
+                                for (hi, h) in sf.expolygon.holes.iter().enumerate() {
+                                    for (k, pt) in h.points.iter().enumerate() {
+                                        eprintln!("LSLD REGSL {} h{} {} {} {}", si, hi, k, pt.x(), pt.y());
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1310,6 +1324,21 @@ impl PrintObject {
             },
         );
 
+        if crate::probe_enabled("LSLPROBE") {
+            for (li, per_ext) in segmented.iter().enumerate() {
+                for (e, exs) in per_ext.iter().enumerate() {
+                    let (mut rn, mut rp, mut rx, mut ry) = (0usize, 0usize, 0i64, 0i64);
+                    for ex in exs.iter() {
+                        rn += 1 + ex.holes.len();
+                        for pt in &ex.contour.points { rp += 1; rx += pt.x(); ry += pt.y(); }
+                        for h in &ex.holes { for pt in &h.points { rp += 1; rx += pt.x(); ry += pt.y(); } }
+                    }
+                    if rn > 0 {
+                        eprintln!("SEG li={} e={} n={} pts={} sx={} sy={}", li, e, rn, rp, rx, ry);
+                    }
+                }
+            }
+        }
         // Move painted areas out of region 0 into the painted regions.
         // PrintObjectSlice.cpp:855-925 (single-parent collapse).
         let painted_order: Vec<u8> = self.painted_submeshes.iter().map(|(e, _)| *e).collect();
@@ -1582,7 +1611,16 @@ impl PrintObject {
                     _ => continue,
                 };
                 // Painted area limited to what region 0 actually owns.
-                let stolen = crate::clipper_utils::intersection(seg, region0_ex);
+                // MMSEG_STOLEN_SUBJECT (on): PrintObjectSlice.cpp:1921
+                // `intersection_ex(layerm.slices.surfaces, segmented.expolygons)` —
+                // the region's slices are the subject and the segmentation the clip.
+                // With the operands the other way round Clipper rounds the crossing
+                // points differently (=0).
+                let stolen = if crate::faithful_gate("MMSEG_STOLEN_SUBJECT") {
+                    crate::clipper_utils::intersection(region0_ex, seg)
+                } else {
+                    crate::clipper_utils::intersection(seg, region0_ex)
+                };
                 if stolen.is_empty() {
                     continue;
                 }
@@ -5665,6 +5703,14 @@ lines={} grown_polys={} grown_verts={}",
             if !has_extra_layers {
                 return Ok(());
             }
+            // VSHELL_ALL_REGIONS_F32 (on): the offsets of the all-regions cache are
+            // `float` expressions over the scaled integer widths and spacings
+            // (PrintObject.cpp:2351-2382), as the per-region cache already has them
+            // (VSHELL_REG_QUANT), and the perimeter shadow is one `offset2` of the
+            // lslices. =0 computes them in double millimetres and offsets in two steps.
+            let all_regions_f32 = faithful() && crate::faithful_gate("VSHELL_ALL_REGIONS_F32");
+            // `Flow::scaled_width()` / `scaled_spacing()`: coord_t(scale_(v)).
+            let scaled_int = |v: f64| -> f32 { (v / 0.00001).trunc() as f32 };
             // PrintObject.cpp:1777-1820 — per layer, over all regions.
             let mut out: Vec<Cache> = Vec::with_capacity(num_layers);
             for layer in self.layers.iter() {
@@ -5679,10 +5725,18 @@ lines={} grown_polys={} grown_verts={}",
                 // PrintObject.cpp:1782-1783
                 let mut perimeter_offset: f64 = 0.0;
                 let mut perimeter_min_spacing: f64 = f64::MAX;
+                // The same two in `float`, scaled (PrintObject.cpp:2351-2352).
+                let mut perimeter_offset_f: f32 = 0.0;
+                let mut perimeter_min_spacing_f: f32 = f32::MAX;
                 for (rid, lr) in layer.regions().iter().enumerate() {
                     // PrintObject.cpp:1786
-                    let exp = lr.flow(FlowRole::SolidInfill, lh)?.spacing()
-                        * TOP_BOTTOM_EXPANSION_COEFF;
+                    let exp = if all_regions_f32 {
+                        // :2355 float(scaled_spacing()) * top_bottom_expansion_coeff
+                        ((scaled_int(lr.flow(FlowRole::SolidInfill, lh)?.spacing()) * 0.05f32) as f64)
+                            / crate::SCALING_FACTOR
+                    } else {
+                        lr.flow(FlowRole::SolidInfill, lh)?.spacing() * TOP_BOTTOM_EXPANSION_COEFF
+                    };
                     // PrintObject.cpp:1788-1790 — top / bottom surfaces, APPENDED (not
                     // overwritten as in the per-region path).
                     let top_eps: ExPolygons = lr
@@ -5725,6 +5779,13 @@ lines={} grown_polys={} grown_verts={}",
                         );
                         perimeter_min_spacing =
                             perimeter_min_spacing.min(extflow.spacing().min(pflow.spacing()));
+                        // :2374-2376
+                        perimeter_offset_f = perimeter_offset_f.max(
+                            0.5f32 * (scaled_int(extflow.width()) + scaled_int(extflow.spacing()))
+                                + (perimeters as f32 - 1.0f32) * scaled_int(pflow.spacing()),
+                        );
+                        perimeter_min_spacing_f = perimeter_min_spacing_f
+                            .min(scaled_int(extflow.spacing()).min(scaled_int(pflow.spacing())));
                     }
                     // PrintObject.cpp:1803
                     holes.extend(lr.fill_expolygons.iter().cloned());
@@ -5734,7 +5795,20 @@ lines={} grown_polys={} grown_verts={}",
                 // the per-region islands to merge, then shrink by the widest perimeter band.
                 // NOTE: C++ `offset2(a, +d1, -d2)` is GROW-then-SHRINK, the opposite order
                 // to `clipper_utils::offset2`, hence the explicit grow()/shrink() pair.
-                if perimeter_offset > 0.0 {
+                if all_regions_f32 {
+                    if perimeter_offset_f > 0.0 {
+                        // :2382 offset2(layer.lslices, 0.3f * perimeter_min_spacing,
+                        //               -perimeter_offset - 0.3f * perimeter_min_spacing)
+                        let d1 = 0.3f32 * perimeter_min_spacing_f;
+                        let d2 = -perimeter_offset_f - 0.3f32 * perimeter_min_spacing_f;
+                        holes.extend(crate::clipper_utils::offset2_ex_clib(
+                            &layer.lslices,
+                            d1 as f64 / crate::SCALING_FACTOR,
+                            d2 as f64 / crate::SCALING_FACTOR,
+                            OffsetJoinType::Miter,
+                        ));
+                    }
+                } else if perimeter_offset > 0.0 {
                     let pad = 0.3 * perimeter_min_spacing;
                     let grown = grow(&layer.lslices, pad, OffsetJoinType::Miter);
                     if !grown.is_empty() {

@@ -1314,12 +1314,22 @@ impl WallToolPaths {
 
         // WallToolPaths.cpp:493
         let external_perimeter_extrusion_width = Flow::rounded_rectangle_extrusion_width_from_spacing(
-            unscale(self.bead_width_0),
+            // `unscale<float>(bead_width_0)`: float(v) * float(SCALING_FACTOR).
+            if crate::faithful_gate("UNSCALE_FLOAT") {
+                crate::variable_width::unscale_float(self.bead_width_0 as f64) as f64
+            } else {
+                unscale(self.bead_width_0)
+            },
             self.layer_height,
         );
         // WallToolPaths.cpp:494
         let _perimeter_extrusion_width = Flow::rounded_rectangle_extrusion_width_from_spacing(
-            unscale(self.bead_width_x),
+            // `unscale<float>(bead_width_x)`: float(v) * float(SCALING_FACTOR).
+            if crate::faithful_gate("UNSCALE_FLOAT") {
+                crate::variable_width::unscale_float(self.bead_width_x as f64) as f64
+            } else {
+                unscale(self.bead_width_x)
+            },
             self.layer_height,
         );
 

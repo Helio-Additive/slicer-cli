@@ -218,7 +218,7 @@ pub fn thick_polyline_to_multi_path(
         let new_flow: Flow = if role == ExtrusionRole::OverhangPerimeter && flow.is_bridge() {
             flow.clone()
         } else {
-            flow.with_width(spacing_to_width(unscale_f(w), flow.height()))
+            flow.with_width(spacing_to_width_scaled(w, flow.height()))
                 .unwrap_or_else(|_| flow.clone())
         };
         // VariableWidth.cpp:67
@@ -389,7 +389,7 @@ fn thick_polyline_to_extrusion_paths_2(
                     // VariableWidth.cpp:135-136
                     let w: f64 = sum / length;
                     let new_flow: Flow = flow
-                        .with_width(spacing_to_width(unscale_f(w), flow.height()))
+                        .with_width(spacing_to_width_scaled(w, flow.height()))
                         .unwrap_or_else(|_| flow.clone());
                     // VariableWidth.cpp:137-139
                     path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
@@ -501,7 +501,7 @@ fn thick_polyline_to_extrusion_paths_2(
             // VariableWidth.cpp:202-203
             let w: f64 = sum / length;
             let new_flow: Flow = flow
-                .with_width(spacing_to_width(unscale_f(w), flow.height()))
+                .with_width(spacing_to_width_scaled(w, flow.height()))
                 .unwrap_or_else(|_| flow.clone());
             // VariableWidth.cpp:204-206
             path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
@@ -584,6 +584,29 @@ pub fn spacing_to_width(w_unscaled: f64, height: f64) -> f64 {
         ((w_unscaled as f32) + (height as f32) * (C as f32)) as f64
     } else {
         w_unscaled + height * C
+    }
+}
+
+/// `unscale<float>(v)` (libslic3r.h:112): `float(v) * float(SCALING_FACTOR)`.
+/// The factor is the `float` nearest to 1e-5, which is 2.5e-8 below it in
+/// relative terms, and the product is rounded to `float`.
+#[inline]
+pub fn unscale_float(v: f64) -> f32 {
+    (v as f32) * (crate::libslic3r::SCALING_FACTOR as f32)
+}
+
+/// `unscale<float>(w) + flow.height() * float(1. - 0.25 * PI)` for a scaled
+/// width (VariableWidth.cpp:66, :136, :203; FillFloatingConcentric.cpp:72).
+///
+/// UNSCALE_FLOAT (on) unscales as the C++ template does; =0 divides the double
+/// by 1e5 and rounds once, which comes out one `float` step higher on about a
+/// third of the widths and moves the volumetric speed cap by 0.001 mm/min.
+pub fn spacing_to_width_scaled(w_scaled: f64, height: f64) -> f64 {
+    const C: f64 = 1.0 - 0.25 * std::f64::consts::PI;
+    if crate::flow::flow_f32() && crate::faithful_gate("UNSCALE_FLOAT") {
+        (unscale_float(w_scaled) + (height as f32) * (C as f32)) as f64
+    } else {
+        spacing_to_width(unscale_f(w_scaled), height)
     }
 }
 
