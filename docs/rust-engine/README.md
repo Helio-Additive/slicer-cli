@@ -121,7 +121,7 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R853) |
+| Fixture | As brought over (R808) | Now (R854) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 183,740 (95.89%) |
 | Benchy arachne | 32,769 (13.68%) | 236,625 (97.13%) |
@@ -253,12 +253,14 @@ and `56a57d0`:
   (R810), farthest-point timelapse (R812). Known and not ported:
   `discover_sub_top_surfaces` and the `stSubTop` surface type, `combine_infill`,
   the settings block's 74 new keys. The `M73` lines are written from the
-  processor's time estimate (R852). Three differences of the estimator are found and
-  fixed behind the opt-in gates `GCODE_FLAVOR_KEY`, `ARC_ABS_POS_DOUBLE` and
-  `G28_HAS_CHAR` (R853): with them the processor's total over the oracle's own Benchy
-  G-code is the oracle's. They stay off by default because the port's G-code, and
-  so its times, still differ, and the moved `M73` lines take 1 to 3 in-order lines
-  off one Benchy fixture in every combination. Turn them on when a fixture's moves
+  processor's time estimate (R852). The estimator's differences are found and
+  fixed behind the opt-in gates `GCODE_FLAVOR_KEY`, `ARC_ABS_POS_DOUBLE`,
+  `G28_HAS_CHAR` (R853), `TIME_FLOAT_MODEL` and `TIME_ARC_STALE_STATE` (R854): with
+  the five on, the processor run over each oracle's own G-code plans every block
+  to the same float as C++ (checked on all 131,695 Benchy blocks) and writes every
+  `M73` line of the three oracles at its place. They stay off by default because
+  the port's G-code, and so its times, still differ, and the moved `M73` lines
+  take 2 in-order lines off Benchy arachne. Turn them on when a fixture's moves
   agree.
 - The override layer: `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp`
   fixes five out-of-bounds reads in the engine's floating-concentric fill. It is the

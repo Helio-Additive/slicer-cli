@@ -1489,10 +1489,10 @@ Rust only:
 - `ArcSegment::new` :570
 - `ArcSegment::with_parameters` :587
 - `ArcSegment::try_create_arc_from_circle` :797
-- `ArcSegment::center` :1108 — C++ has it in `BoundingBox`, `Emboss`, `TriangleMesh`
-- `ArcSegment::radius` :1112 — C++ has it in `Arrange`, `BoundingBox`
-- `ArcSegment::get_polar_radians` :1117
-- `ArcSegment::default` :1123
+- `ArcSegment::center` :1117 — C++ has it in `BoundingBox`, `Emboss`, `TriangleMesh`
+- `ArcSegment::radius` :1121 — C++ has it in `Arrange`, `BoundingBox`
+- `ArcSegment::get_polar_radians` :1126
+- `ArcSegment::default` :1132
 
 ### `Clipper2Utils` (.cpp+.hpp) and `clipper2_utils.rs`
 
@@ -4301,41 +4301,41 @@ Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `get_object_label_id` :152 and `get_object_label_id` :593 (36%, 0.74x)
-- partial: `get_z_height` :167 and `get_z_height` :612 (40%, 0.71x)
+- partial: `get_object_label_id` :152 and `get_object_label_id` :610 (36%, 0.74x)
+- partial: `get_z_height` :167 and `get_z_height` :629 (40%, 0.71x)
 - partial: `GCodeProcessor::CachedPosition::reset` :234 and `CachedPosition::reset` :499 (50%, 0.96x)
-- divergent: `GCodeProcessor::TimeProcessor::post_process` :571 and `TimeProcessor::post_process` :2399 (16%, 0.15x)
-- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1494 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1507 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1520 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1535 (43%, 0.71x)
-- partial: `GCodeProcessorResult::reset` :1571 and `GCodeProcessorResult::reset` :2295 (53%, 0.57x)
-- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :2851 (7%, 0.05x)
-- partial: `GCodeProcessor::apply_config` :2106 and `GCodeProcessor::apply_config` :2953 (38%, 0.23x)
-- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :5528 (33%, 0.62x)
-- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3344 (74%, 1.44x)
-- partial: `GCodeProcessor::process_tags` :3381 and `GCodeProcessor::process_tags` :3449 (52%, 0.52x)
-- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :4980 (73%, 0.91x)
-- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :3653 (65%, 0.86x)
-- partial: `GCodeProcessor::process_M106` :5487 and `GCodeProcessor::process_m106` :4316 (60%, 0.47x)
-- stub: `GCodeProcessor::process_M107` :5510 and `GCodeProcessor::process_m107` :4327 (17%, 0.1x)
-- divergent: `GCodeProcessor::process_M108` :5520 and `GCodeProcessor::process_m108` :4333 (0%, 0.04x)
-- divergent: `GCodeProcessor::process_M135` :5562 and `GCodeProcessor::process_m135` :4370 (0%, 0.04x)
-- partial: `GCodeProcessor::process_M201` :5600 and `GCodeProcessor::process_m201` :4410 (52%, 0.68x)
-- partial: `GCodeProcessor::process_M203` :5620 and `GCodeProcessor::process_m203` :4438 (42%, 0.7x)
-- partial: `GCodeProcessor::process_M205` :5680 and `GCodeProcessor::process_m205` :4504 (52%, 0.76x)
-- divergent: `GCodeProcessor::process_SET_VELOCITY_LIMIT` :5710 and `GCodeProcessor::process_set_velocity_limit` :4539 (26%, 0.18x)
-- partial: `GCodeProcessor::process_M400` :5794 and `GCodeProcessor::process_m400` :4569 (38%, 0.5x)
-- divergent: `GCodeProcessor::process_M401` :5814 and `GCodeProcessor::process_m401` :4581 (0%, 0.04x)
-- stub: `GCodeProcessor::process_M402` :5825 and `GCodeProcessor::process_m402` :4582 (0%, 0.01x)
-- partial: `GCodeProcessor::process_M702` :5874 and `GCodeProcessor::process_m702` :4606 (33%, 0.8x)
-- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :4626 (46%, 0.72x)
-- divergent: `GCodeProcessor::get_axis_max_feedrate` :6264 and `GCodeProcessor::get_axis_max_feedrate` :3198 (25%, 0.44x)
-- divergent: `GCodeProcessor::get_axis_max_acceleration` :6277 and `GCodeProcessor::get_axis_max_acceleration` :3213 (25%, 0.44x)
-- partial: `GCodeProcessor::get_axis_max_jerk` :6290 and `GCodeProcessor::get_axis_max_jerk` :3228 (30%, 0.5x)
-- divergent: `GCodeProcessor::get_xyz_max_jerk` :6302 and `GCodeProcessor::get_xyz_max_jerk` :3243 (25%, 0.72x)
-- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :4928 (23%, 0.27x)
-- stub: `GCodeProcessor::get_machine_config_idx` :6596 and `GCodeProcessor::get_machine_config_idx` :3164 (0%, 0.03x)
+- divergent: `GCodeProcessor::TimeProcessor::post_process` :571 and `TimeProcessor::post_process` :2416 (16%, 0.15x)
+- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1511 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1524 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1537 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1552 (43%, 0.71x)
+- partial: `GCodeProcessorResult::reset` :1571 and `GCodeProcessorResult::reset` :2312 (53%, 0.57x)
+- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :2868 (7%, 0.05x)
+- partial: `GCodeProcessor::apply_config` :2106 and `GCodeProcessor::apply_config` :2970 (38%, 0.23x)
+- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :5641 (33%, 0.62x)
+- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3361 (74%, 1.44x)
+- partial: `GCodeProcessor::process_tags` :3381 and `GCodeProcessor::process_tags` :3466 (52%, 0.52x)
+- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5047 (73%, 0.98x)
+- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :3670 (65%, 0.96x)
+- partial: `GCodeProcessor::process_M106` :5487 and `GCodeProcessor::process_m106` :4383 (60%, 0.47x)
+- stub: `GCodeProcessor::process_M107` :5510 and `GCodeProcessor::process_m107` :4394 (17%, 0.1x)
+- divergent: `GCodeProcessor::process_M108` :5520 and `GCodeProcessor::process_m108` :4400 (0%, 0.04x)
+- divergent: `GCodeProcessor::process_M135` :5562 and `GCodeProcessor::process_m135` :4437 (0%, 0.04x)
+- partial: `GCodeProcessor::process_M201` :5600 and `GCodeProcessor::process_m201` :4477 (52%, 0.68x)
+- partial: `GCodeProcessor::process_M203` :5620 and `GCodeProcessor::process_m203` :4505 (42%, 0.7x)
+- partial: `GCodeProcessor::process_M205` :5680 and `GCodeProcessor::process_m205` :4571 (52%, 0.76x)
+- divergent: `GCodeProcessor::process_SET_VELOCITY_LIMIT` :5710 and `GCodeProcessor::process_set_velocity_limit` :4606 (26%, 0.18x)
+- partial: `GCodeProcessor::process_M400` :5794 and `GCodeProcessor::process_m400` :4636 (38%, 0.5x)
+- divergent: `GCodeProcessor::process_M401` :5814 and `GCodeProcessor::process_m401` :4648 (0%, 0.04x)
+- stub: `GCodeProcessor::process_M402` :5825 and `GCodeProcessor::process_m402` :4649 (0%, 0.01x)
+- partial: `GCodeProcessor::process_M702` :5874 and `GCodeProcessor::process_m702` :4673 (33%, 0.8x)
+- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :4693 (46%, 0.72x)
+- divergent: `GCodeProcessor::get_axis_max_feedrate` :6264 and `GCodeProcessor::get_axis_max_feedrate` :3215 (25%, 0.44x)
+- divergent: `GCodeProcessor::get_axis_max_acceleration` :6277 and `GCodeProcessor::get_axis_max_acceleration` :3230 (25%, 0.44x)
+- partial: `GCodeProcessor::get_axis_max_jerk` :6290 and `GCodeProcessor::get_axis_max_jerk` :3245 (30%, 0.5x)
+- divergent: `GCodeProcessor::get_xyz_max_jerk` :6302 and `GCodeProcessor::get_xyz_max_jerk` :3260 (25%, 0.72x)
+- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :4995 (23%, 0.27x)
+- stub: `GCodeProcessor::get_machine_config_idx` :6596 and `GCodeProcessor::get_machine_config_idx` :3181 (0%, 0.03x)
 
 Missing in the Rust file:
 
@@ -4440,48 +4440,48 @@ Rust only:
 - `EUnits::default` :469
 - `EPositioningType::default` :482
 - `CachedPosition::default` :509
-- `parse_stoi` :625
-- `parse_stof` :647
-- `parse_number_f32` :685
-- `parse_number_i32` :696
-- `TrieNode::new` :742
-- `CommandProcessor::new` :758
-- `CommandProcessor::default` :809
-- `TimeBlock::default` :892
-- `TimeMachine::default` :1155
-- `reserved_tag` :1677
-- `custom_tags` :1682
-- `trim_spaces` :1805
-- `is_end_of_word` :2009 — C++ has it in `Config`, `GCodeReader`
-- `fast_float_from_chars` :2020
-- `fast_float_from_chars_f64` :2059
-- `trim_leading_spaces_trailing_semis_spaces` :2099
-- `EMovePathType::default` :2120
-- `MoveVertex::default` :2164
-- `GCodeProcessorResult::default` :2256
-- `TimeProcessor::default` :2535
-- `cmd_from_id` :2653
-- `GCodeProcessor::new` :2770
-- `GCodeProcessor::get_axis_max_acceleration_extruding` :3088
-- `GCodeProcessor::get_machine_limit_retract_acceleration` :3098
-- `GCodeProcessor::get_machine_limit_travel_acceleration` :3108
-- `GCodeProcessor::result` :3120
-- `GCodeProcessor::result_mut` :3124
-- `GCodeProcessor::process_gcode` :3338
-- `GCodeProcessor::dispatch` :3392
-- `GCodeProcessor::time_processor` :4071
-- `GCodeProcessor::process_t_command` :4667
-- `GCodeProcessor::process_filaments_tool_change` :4897
-- `GCodeProcessor::run_calculate_time` :4940
-- `GCodeProcessor::process_used_filaments_caches` :5620
-- `GCodeProcessor::update_mode` :5672
-- `GCodeProcessor::print_time` :5729
-- `GCodeProcessor::default` :5735
-- `emove_type_from_index` :5744
-- `extrusion_role_from_index` :5761
-- `normalize3` :5792
-- `normalized3` :5802
-- `parse_klipper_kv` :5810
+- `parse_stoi` :642
+- `parse_stof` :664
+- `parse_number_f32` :702
+- `parse_number_i32` :713
+- `TrieNode::new` :759
+- `CommandProcessor::new` :775
+- `CommandProcessor::default` :826
+- `TimeBlock::default` :909
+- `TimeMachine::default` :1172
+- `reserved_tag` :1694
+- `custom_tags` :1699
+- `trim_spaces` :1822
+- `is_end_of_word` :2026 — C++ has it in `Config`, `GCodeReader`
+- `fast_float_from_chars` :2037
+- `fast_float_from_chars_f64` :2076
+- `trim_leading_spaces_trailing_semis_spaces` :2116
+- `EMovePathType::default` :2137
+- `MoveVertex::default` :2181
+- `GCodeProcessorResult::default` :2273
+- `TimeProcessor::default` :2552
+- `cmd_from_id` :2670
+- `GCodeProcessor::new` :2787
+- `GCodeProcessor::get_axis_max_acceleration_extruding` :3105
+- `GCodeProcessor::get_machine_limit_retract_acceleration` :3115
+- `GCodeProcessor::get_machine_limit_travel_acceleration` :3125
+- `GCodeProcessor::result` :3137
+- `GCodeProcessor::result_mut` :3141
+- `GCodeProcessor::process_gcode` :3355
+- `GCodeProcessor::dispatch` :3409
+- `GCodeProcessor::time_processor` :4138
+- `GCodeProcessor::process_t_command` :4734
+- `GCodeProcessor::process_filaments_tool_change` :4964
+- `GCodeProcessor::run_calculate_time` :5007
+- `GCodeProcessor::process_used_filaments_caches` :5733
+- `GCodeProcessor::update_mode` :5785
+- `GCodeProcessor::print_time` :5842
+- `GCodeProcessor::default` :5848
+- `emove_type_from_index` :5857
+- `extrusion_role_from_index` :5874
+- `normalize3` :5905
+- `normalized3` :5915
+- `parse_klipper_kv` :5923
 
 ### `GCode/PostProcessor` (.cpp+.hpp) and `gcode/post_processor.rs`
 

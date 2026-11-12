@@ -554,14 +554,26 @@ fn intersection_distance(
     if acceleration == 0.0 {
         0.0
     } else {
-        (2.0 * acceleration * distance - sqr(initial_rate) + sqr(final_rate)) / (4.0 * acceleration)
+        if crate::opt_in_gate("TIME_FLOAT_MODEL") {
+            // `(2a) * d - sqr(i)` is one fused multiply-subtract on arm64.
+            ((2.0 * acceleration).mul_add(distance, -sqr(initial_rate)) + sqr(final_rate))
+                / (4.0 * acceleration)
+        } else {
+            (2.0 * acceleration * distance - sqr(initial_rate) + sqr(final_rate))
+                / (4.0 * acceleration)
+        }
     }
 }
 
 /// GCodeProcessor.cpp:129-134
 fn speed_from_distance(initial_feedrate: f32, distance: f32, acceleration: f32) -> f32 {
     // to avoid invalid negative numbers due to numerical errors
-    let value = f32::max(0.0, sqr(initial_feedrate) + 2.0 * acceleration * distance);
+    // clang on arm64 contracts `sqr(i) + (2a) * d` into one fused multiply-add.
+    let value = if crate::opt_in_gate("TIME_FLOAT_MODEL") {
+        f32::max(0.0, (2.0 * acceleration).mul_add(distance, sqr(initial_feedrate)))
+    } else {
+        f32::max(0.0, sqr(initial_feedrate) + 2.0 * acceleration * distance)
+    };
     value.sqrt()
 }
 
@@ -571,7 +583,12 @@ fn speed_from_distance(initial_feedrate: f32, distance: f32, acceleration: f32) 
 /// to reach target_velocity using the acceleration within the allotted distance.
 fn max_allowable_speed(acceleration: f32, target_velocity: f32, distance: f32) -> f32 {
     // to avoid invalid negative numbers due to numerical errors
-    let value = f32::max(0.0, sqr(target_velocity) - 2.0 * acceleration * distance);
+    // clang on arm64 contracts `sqr(t) - (2a) * d` into one fused multiply-subtract.
+    let value = if crate::opt_in_gate("TIME_FLOAT_MODEL") {
+        f32::max(0.0, (-(2.0 * acceleration)).mul_add(distance, sqr(target_velocity)))
+    } else {
+        f32::max(0.0, sqr(target_velocity) - 2.0 * acceleration * distance)
+    };
     value.sqrt()
 }
 
@@ -3763,11 +3780,18 @@ impl GCodeProcessor {
         use crate::circle::ArcSegment;
         use crate::circle::Circle;
 
+        let float_model_arc = crate::opt_in_gate("TIME_FLOAT_MODEL");
         // arc length (cpp:4814-4817)
         let arc_length = if !line.has(Axis::P) {
             ArcSegment::calc_arc_length(start_point, end_point, center, is_ccw)
         } else {
-            (line.p() as i32) as f32 * 2.0 * (PI as f32) * (start_point - center).norm()
+            if float_model_arc {
+                // cpp:4999: `((int)line.p()) * 2 * PI * norm` with the double PI
+                // of libslic3r.h: an int times a double times a float.
+                (((line.p() as i32) * 2) as f64 * PI * (start_point - center).norm() as f64) as f32
+            } else {
+                (line.p() as i32) as f32 * 2.0 * (PI as f32) * (start_point - center).norm()
+            }
         };
         // tangential directions (cpp:4821-4822)
         let start_dir = Circle::calc_tangential_vector(start_point, center, is_ccw);
@@ -3798,7 +3822,15 @@ impl GCodeProcessor {
 
         // delta_xyz = sqrt(arc_length^2 + dz^2) (cpp:4841)
         let dz = delta_pos[Axis::Z as usize] as f32;
-        let delta_xyz = (sqr(arc_length) + sqr(dz)).sqrt();
+        let delta_xyz = if float_model_arc {
+            // cpp:5023: sqr(float) + sqr(double), root taken in double.
+            {
+                let dz64 = delta_pos[Axis::Z as usize];
+                (sqr(arc_length) as f64 + dz64 * dz64).sqrt() as f32
+            }
+        } else {
+            (sqr(arc_length) + sqr(dz)).sqrt()
+        };
 
         // extrude width/height + filament caches (cpp:4842-4903)
         if r#type == EMoveType::Extrude {
@@ -3909,19 +3941,41 @@ impl GCodeProcessor {
             feedrate = feedrate.min(max_feedrate_by_centri_acc);
 
             // block cruise feedrate — X-Y resultant projection (cpp:4945-4968)
-            let mut axis_feedrate = [0.0f32; 4];
-            let mut abs_axis_feedrate = [0.0f32; 4];
+            // GCodeProcessor.cpp:5135 and :5173-5179: the arc branch never
+            // assigns `curr.axis_feedrate[E]` (it only multiplies what the last
+            // move left there) and never resets `curr.safe_feedrate` to the cruise
+            // feedrate (it only lowers what the last move left). After a retract
+            // (`G1 E-.02 F1800`) the spiral lift therefore inherits the retract's
+            // E feedrate and its safe feedrate.
+            let arc_stale_state = crate::opt_in_gate("TIME_ARC_STALE_STATE");
+            // The axis feedrates are doubles (GCodeProcessor.hpp:639-640); see
+            // process_g1 for what TIME_FLOAT_MODEL follows.
+            let mut axis_feedrate = [0.0f64; 4];
+            let mut abs_axis_feedrate = [0.0f64; 4];
+            if arc_stale_state {
+                axis_feedrate[Axis::E as usize] =
+                    self.m_time_processor.machines[i].curr.axis_feedrate[Axis::E as usize];
+                if !float_model_arc {
+                    axis_feedrate[Axis::E as usize] = axis_feedrate[Axis::E as usize] as f32 as f64;
+                }
+            }
             let mut min_feedrate_factor = 1.0f32;
             for a in 0..=(Axis::E as usize) {
                 if a == Axis::X as usize || a == Axis::Y as usize {
-                    axis_feedrate[a] = feedrate * arc_length * inv_distance;
+                    axis_feedrate[a] = (feedrate * arc_length * inv_distance) as f64;
                 } else if a == Axis::Z as usize {
-                    axis_feedrate[a] = feedrate * delta_pos[a] as f32 * inv_distance;
+                    axis_feedrate[a] = if float_model_arc {
+                        feedrate as f64 * delta_pos[a] * inv_distance as f64
+                    } else {
+                        (feedrate * delta_pos[a] as f32 * inv_distance) as f64
+                    };
                 } else {
-                    // E axis (cpp:4953): curr.axis_feedrate[E] *= extrude_factor.
-                    // curr.axis_feedrate[E] is left at its previous value (0 on a
-                    // fresh State); mirror C++ by scaling the existing value.
-                    axis_feedrate[a] *= extrude_factor;
+                    // E axis (cpp:5135): curr.axis_feedrate[E] *= extrude_factor.
+                    axis_feedrate[a] = if float_model_arc {
+                        axis_feedrate[a] * extrude_factor as f64
+                    } else {
+                        (axis_feedrate[a] as f32 * extrude_factor) as f64
+                    };
                 }
                 abs_axis_feedrate[a] = axis_feedrate[a].abs();
                 if abs_axis_feedrate[a] != 0.0 {
@@ -3931,8 +3985,13 @@ impl GCodeProcessor {
                         self.get_machine_config_idx(self.get_filament_id(true)),
                     );
                     if axis_max_feedrate != 0.0 {
-                        min_feedrate_factor =
-                            min_feedrate_factor.min(axis_max_feedrate / abs_axis_feedrate[a]);
+                        min_feedrate_factor = if float_model_arc {
+                            min_feedrate_factor
+                                .min((axis_max_feedrate as f64 / abs_axis_feedrate[a]) as f32)
+                        } else {
+                            min_feedrate_factor
+                                .min(axis_max_feedrate / abs_axis_feedrate[a] as f32)
+                        };
                     }
                 }
             }
@@ -3940,8 +3999,14 @@ impl GCodeProcessor {
             block.feedrate_profile.cruise = feedrate;
             if min_feedrate_factor < 1.0 {
                 for a in 0..=(Axis::E as usize) {
-                    axis_feedrate[a] *= min_feedrate_factor;
-                    abs_axis_feedrate[a] *= min_feedrate_factor;
+                    if float_model_arc {
+                        axis_feedrate[a] *= min_feedrate_factor as f64;
+                        abs_axis_feedrate[a] *= min_feedrate_factor as f64;
+                    } else {
+                        axis_feedrate[a] = (axis_feedrate[a] as f32 * min_feedrate_factor) as f64;
+                        abs_axis_feedrate[a] =
+                            (abs_axis_feedrate[a] as f32 * min_feedrate_factor) as f64;
+                    }
                 }
             }
 
@@ -3953,10 +4018,14 @@ impl GCodeProcessor {
             };
             let mut min_acc_factor = 1.0f32;
             for a in 0..=(Axis::Z as usize) {
-                let axis_acc = if a == Axis::X as usize || a == Axis::Y as usize {
-                    acceleration * arc_length * inv_distance
+                // cpp:5157-5170: `axis_acc` is an AxisCoords (double); the Z term
+                // multiplies a float by a double.
+                let axis_acc: f64 = if a == Axis::X as usize || a == Axis::Y as usize {
+                    (acceleration * arc_length * inv_distance) as f64
+                } else if float_model_arc {
+                    acceleration as f64 * delta_pos[a].abs() * inv_distance as f64
                 } else {
-                    acceleration * (delta_pos[a] as f32).abs() * inv_distance
+                    (acceleration * (delta_pos[a] as f32).abs() * inv_distance) as f64
                 };
                 if axis_acc != 0.0 {
                     let axis_max_acceleration = self.get_axis_max_acceleration(
@@ -3964,18 +4033,26 @@ impl GCodeProcessor {
                         a,
                         self.get_machine_config_idx(self.get_filament_id(true)),
                     );
-                    if axis_max_acceleration != 0.0 && axis_acc > axis_max_acceleration {
-                        min_acc_factor = min_acc_factor.min(axis_max_acceleration / axis_acc);
+                    if axis_max_acceleration != 0.0 && axis_acc > axis_max_acceleration as f64 {
+                        min_acc_factor = if float_model_arc {
+                            min_acc_factor.min((axis_max_acceleration as f64 / axis_acc) as f32)
+                        } else {
+                            min_acc_factor.min(axis_max_acceleration / axis_acc as f32)
+                        };
                     }
                 }
             }
             block.acceleration = acceleration * min_acc_factor;
 
-            // block exit feedrate (cpp:4990-4996)
-            let mut safe_feedrate = block.feedrate_profile.cruise;
+            // block exit feedrate (cpp:5173-5179)
+            let mut safe_feedrate = if arc_stale_state {
+                self.m_time_processor.machines[i].curr.safe_feedrate
+            } else {
+                block.feedrate_profile.cruise
+            };
             for a in 0..=(Axis::E as usize) {
                 let axis_max_jerk = self.get_axis_max_jerk(mode, a);
-                if abs_axis_feedrate[a] > axis_max_jerk {
+                if abs_axis_feedrate[a] > axis_max_jerk as f64 {
                     safe_feedrate = safe_feedrate.min(axis_max_jerk);
                 }
             }
@@ -4035,18 +4112,8 @@ impl GCodeProcessor {
                 let machine = &mut self.m_time_processor.machines[i];
                 machine.curr.feedrate = feedrate;
                 machine.curr.safe_feedrate = safe_feedrate;
-                machine.curr.axis_feedrate = [
-                    axis_feedrate[0] as f64,
-                    axis_feedrate[1] as f64,
-                    axis_feedrate[2] as f64,
-                    axis_feedrate[3] as f64,
-                ];
-                machine.curr.abs_axis_feedrate = [
-                    abs_axis_feedrate[0] as f64,
-                    abs_axis_feedrate[1] as f64,
-                    abs_axis_feedrate[2] as f64,
-                    abs_axis_feedrate[3] as f64,
-                ];
+                machine.curr.axis_feedrate = axis_feedrate;
+                machine.curr.abs_axis_feedrate = abs_axis_feedrate;
                 machine.curr.enter_direction = enter_direction;
                 machine.curr.exit_direction = exit_direction;
                 machine.prev = machine.curr.clone();
@@ -5247,6 +5314,7 @@ impl GCodeProcessor {
             block.layer_id = 1u32.max(self.m_layer_id);
             block.flags.prepare_stage = self.m_processing_start_custom_gcode;
 
+            let float_model_g1 = crate::opt_in_gate("TIME_FLOAT_MODEL");
             // block acceleration (cpp:4131-4135)
             let mut acceleration = if r#type == EMoveType::Travel {
                 self.get_travel_acceleration(mode)
@@ -5270,12 +5338,31 @@ impl GCodeProcessor {
                     + (v2[2] - v1[2]).powi(2))
                 .sqrt();
                 if norm_diff < 0.5 && norm_diff > 0.00001 {
-                    let dot = v1[0] * v2[0] + v1[1] * v2[1];
-                    let cross = v1[0] * v2[1] - v1[1] * v2[0];
+                    let float_model = crate::opt_in_gate("TIME_FLOAT_MODEL");
+                    // GCodeProcessor.cpp:4336-4337: float products summed in one
+                    // expression, which clang on arm64 contracts into a fused
+                    // multiply-add (the left product is the fused one).
+                    let (dot, cross) = if float_model {
+                        (
+                            v1[0].mul_add(v2[0], v1[1] * v2[1]),
+                            v1[0].mul_add(v2[1], -(v1[1] * v2[0])),
+                        )
+                    } else {
+                        (v1[0] * v2[0] + v1[1] * v2[1], v1[0] * v2[1] - v1[1] * v2[0])
+                    };
                     let angle = (cross as f64).atan2(dot as f64) as f32;
                     // C++: float sin_theta_2 = sqrt((1.0f - cos(angle)) * 0.5f);
-                    // bare cos(float) promotes to double; result cast to float.
-                    let sin_theta_2 = ((1.0 - (angle as f64).cos()) * 0.5).sqrt() as f32;
+                    // (GCodeProcessor.cpp:4339). `angle` is a float and libc++'s
+                    // <math.h> declares `float cos(float)` / `float sqrt(float)` in
+                    // the global namespace, so the whole expression is single
+                    // precision: `1 - cosf(angle)` cancels for the small angles this
+                    // branch takes (norm_diff < 0.5), which a double cosine does not
+                    // reproduce.
+                    let sin_theta_2 = if float_model {
+                        ((1.0f32 - angle.cos()) * 0.5f32).sqrt()
+                    } else {
+                        ((1.0 - (angle as f64).cos()) * 0.5).sqrt() as f32
+                    };
                     // C++: float r = sqrt(sqr(dpX)+sqr(dpY)) * 0.5 / sin_theta_2;
                     // sqr(double); 0.5 is double; division in double -> float.
                     let r = ((dx * dx + dy * dy).sqrt() * 0.5 / sin_theta_2 as f64) as f32;
@@ -5284,13 +5371,27 @@ impl GCodeProcessor {
             }
 
             // block cruise feedrate (cpp:4163-4186)
-            let mut axis_feedrate = [0.0f32; 4];
-            let mut abs_axis_feedrate = [0.0f32; 4];
+            // `curr.axis_feedrate` / `abs_axis_feedrate` are AxisCoords, arrays of
+            // double (GCodeProcessor.hpp:548, :639-640), and `delta_pos` is one
+            // too: `curr.feedrate * delta_pos[a] * inv_distance` is evaluated in
+            // double, and `std::min<float>(factor, max / abs)` rounds a double
+            // quotient. TIME_FLOAT_MODEL follows that; without it the port keeps
+            // its single-precision arithmetic.
+            let mut axis_feedrate = [0.0f64; 4];
+            let mut abs_axis_feedrate = [0.0f64; 4];
             let mut min_feedrate_factor = 1.0f32;
             for a in 0..=(Axis::E as usize) {
-                axis_feedrate[a] = feedrate * delta_pos[a] as f32 * inv_distance;
+                axis_feedrate[a] = if float_model_g1 {
+                    feedrate as f64 * delta_pos[a] * inv_distance as f64
+                } else {
+                    (feedrate * delta_pos[a] as f32 * inv_distance) as f64
+                };
                 if a == Axis::E as usize {
-                    axis_feedrate[a] *= extrude_factor;
+                    axis_feedrate[a] = if float_model_g1 {
+                        axis_feedrate[a] * extrude_factor as f64
+                    } else {
+                        (axis_feedrate[a] as f32 * extrude_factor) as f64
+                    };
                 }
                 abs_axis_feedrate[a] = axis_feedrate[a].abs();
                 if abs_axis_feedrate[a] != 0.0 {
@@ -5300,8 +5401,13 @@ impl GCodeProcessor {
                         self.get_machine_config_idx(self.get_filament_id(true)),
                     );
                     if axis_max_feedrate != 0.0 {
-                        min_feedrate_factor =
-                            min_feedrate_factor.min(axis_max_feedrate / abs_axis_feedrate[a]);
+                        min_feedrate_factor = if float_model_g1 {
+                            min_feedrate_factor
+                                .min((axis_max_feedrate as f64 / abs_axis_feedrate[a]) as f32)
+                        } else {
+                            min_feedrate_factor
+                                .min(axis_max_feedrate / abs_axis_feedrate[a] as f32)
+                        };
                     }
                 }
             }
@@ -5309,8 +5415,14 @@ impl GCodeProcessor {
             block.feedrate_profile.cruise = feedrate;
             if min_feedrate_factor < 1.0 {
                 for a in 0..=(Axis::E as usize) {
-                    axis_feedrate[a] *= min_feedrate_factor;
-                    abs_axis_feedrate[a] *= min_feedrate_factor;
+                    if float_model_g1 {
+                        axis_feedrate[a] *= min_feedrate_factor as f64;
+                        abs_axis_feedrate[a] *= min_feedrate_factor as f64;
+                    } else {
+                        axis_feedrate[a] = (axis_feedrate[a] as f32 * min_feedrate_factor) as f64;
+                        abs_axis_feedrate[a] =
+                            (abs_axis_feedrate[a] as f32 * min_feedrate_factor) as f64;
+                    }
                 }
             }
 
@@ -5323,7 +5435,18 @@ impl GCodeProcessor {
                     a,
                     self.get_machine_config_idx(self.get_filament_id(true)),
                 );
-                if acceleration * (delta_pos[a] as f32).abs() * inv_distance > axis_max_acceleration
+                if float_model_g1 {
+                    // cpp:4374-4375: float * double * float, compared and divided
+                    // in double.
+                    if acceleration as f64 * delta_pos[a].abs() * inv_distance as f64
+                        > axis_max_acceleration as f64
+                    {
+                        acceleration = (axis_max_acceleration as f64
+                            / (delta_pos[a].abs() * inv_distance as f64))
+                            as f32;
+                    }
+                } else if acceleration * (delta_pos[a] as f32).abs() * inv_distance
+                    > axis_max_acceleration
                 {
                     acceleration = axis_max_acceleration / ((delta_pos[a] as f32).abs() * inv_distance);
                 }
@@ -5336,7 +5459,7 @@ impl GCodeProcessor {
             let mut safe_feedrate = block.feedrate_profile.cruise;
             for a in 0..=(Axis::E as usize) {
                 let axis_max_jerk = self.get_axis_max_jerk(mode, a);
-                if abs_axis_feedrate[a] > axis_max_jerk {
+                if abs_axis_feedrate[a] > axis_max_jerk as f64 {
                     safe_feedrate = safe_feedrate.min(axis_max_jerk);
                 }
             }
@@ -5395,18 +5518,8 @@ impl GCodeProcessor {
                 let machine = &mut self.m_time_processor.machines[i];
                 machine.curr.feedrate = feedrate;
                 machine.curr.safe_feedrate = safe_feedrate;
-                machine.curr.axis_feedrate = [
-                    axis_feedrate[0] as f64,
-                    axis_feedrate[1] as f64,
-                    axis_feedrate[2] as f64,
-                    axis_feedrate[3] as f64,
-                ];
-                machine.curr.abs_axis_feedrate = [
-                    abs_axis_feedrate[0] as f64,
-                    abs_axis_feedrate[1] as f64,
-                    abs_axis_feedrate[2] as f64,
-                    abs_axis_feedrate[3] as f64,
-                ];
+                machine.curr.axis_feedrate = axis_feedrate;
+                machine.curr.abs_axis_feedrate = abs_axis_feedrate;
                 machine.curr.enter_direction = enter_direction;
                 machine.curr.exit_direction = exit_direction;
                 machine.prev = machine.curr.clone();

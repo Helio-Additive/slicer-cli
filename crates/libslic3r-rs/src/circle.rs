@@ -1059,15 +1059,24 @@ impl ArcSegment {
             let dot = delta1.dot(&delta2);
             let cross = delta1[0] as f64 * delta2[1] as f64 - delta1[1] as f64 * delta2[0] as f64;
             let mut r = (cross).atan2(dot as f64) as f32;
+            // Circle.cpp:496-498: `2 * M_PI + radian` adds a float to a double
+            // and rounds the sum once.
+            let double_pi = crate::opt_in_gate("TIME_FLOAT_MODEL");
             if is_ccw {
                 r = if r < 0.0 {
-                    2.0 * std::f32::consts::PI + r
+                    if double_pi {
+                        (2.0 * std::f64::consts::PI + r as f64) as f32
+                    } else {
+                        2.0 * std::f32::consts::PI + r
+                    }
                 } else {
                     r
                 };
             } else {
                 r = if r < 0.0 {
                     r.abs()
+                } else if double_pi {
+                    (2.0 * std::f64::consts::PI - r as f64) as f32
                 } else {
                     2.0 * std::f32::consts::PI - r
                 };
