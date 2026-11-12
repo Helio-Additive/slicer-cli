@@ -1821,6 +1821,62 @@ impl Print {
         }
         drop(file);
 
+        // TIMEPROC_REPLAY (diagnostics only): run the processor and
+        // TimeProcessor::post_process over another G-code file (the oracle's,
+        // TIMEPROC_REPLAY_FILE), less the `M73 P.. R..` lines its own
+        // post-process wrote, and write the result beside it as `<file>.replay`.
+        // What differs between the two files is the estimator's, not the
+        // slicing's.
+        if crate::probe_enabled("TIMEPROC_REPLAY") {
+            use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};
+            if let Ok(path) = std::env::var("TIMEPROC_REPLAY_FILE") {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    let is_m73_pr = |l: &str| {
+                        let mut it = l.split(' ');
+                        it.next() == Some("M73")
+                            && it.next().is_some_and(|w| {
+                                w.len() > 1
+                                    && w.starts_with('P')
+                                    && w[1..].bytes().all(|b| b.is_ascii_digit())
+                            })
+                            && it.next().is_some_and(|w| {
+                                w.len() > 1
+                                    && w.starts_with('R')
+                                    && w[1..].bytes().all(|b| b.is_ascii_digit())
+                            })
+                            && it.next().is_none()
+                    };
+                    let mut stripped = String::with_capacity(text.len());
+                    for l in text.split_inclusive('\n') {
+                        if !is_m73_pr(l.trim_end_matches(['\n', '\r'])) {
+                            stripped.push_str(l);
+                        }
+                    }
+                    let mut replay = GCodeProcessor::new();
+                    replay.apply_config(&self.config);
+                    crate::gcode::g_code_processor::TIMEDBG_BLOCKS_ARMED
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    replay.process_gcode(&stripped);
+                    crate::gcode::g_code_processor::TIMEDBG_BLOCKS_ARMED
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
+                    eprintln!(
+                        "TIMEPROC_REPLAY time={:.3} prepare={:.3}",
+                        replay.result().print_time,
+                        replay.get_prepare_time(ETimeMode::Normal)
+                    );
+                    let out = replay.time_processor().post_process(&stripped);
+                    let _ = std::fs::write(format!("{path}.replay"), out);
+                    // The planner's cache, as the C++ twin probe prints it.
+                    let m = &replay.time_processor().machines[0];
+                    let mut dump = format!("TOTAL {:e} PREPARE {:e}\n", m.time, m.prepare_time);
+                    for it in &m.g1_times_cache {
+                        dump.push_str(&format!("{} {:e}\n", it.id, it.elapsed_time));
+                    }
+                    let _ = std::fs::write(format!("{path}.times"), dump);
+                }
+            }
+        }
+
         if crate::probe_enabled("SLICE_PHASE_TIMING") {
             let total = export_t0.elapsed();
             eprintln!(

@@ -408,6 +408,11 @@ pub struct GCodeWriter {
     /// writer can emit Height_Tag lines without updating `m_last_height`.
     /// One-shot: C++'s register is overwritten by the first path's own role.
     force_analyzer_tags: bool,
+    /// WIDTH_TAG_FORCE_ONCE: the forced Width tag of the armed `_extrude` was
+    /// already written by `width_tag_before_speed` (the same GCode.cpp:7886
+    /// statement, placed ahead of the speed), so `extrude_path` must not write
+    /// it a second time.
+    forced_width_tag_written: bool,
     /// Per-layer context for the faithful needs_retraction (ZSMOOTH_FAITHFUL):
     /// internal-island polygons + wall boundary lines of the current layer.
     pub zsmooth_retract_ctx: Option<RetractCtx>,
@@ -509,6 +514,7 @@ impl GCodeWriter {
             pending_accel: 0,
             pending_speed: None,
             force_analyzer_tags: false,
+            forced_width_tag_written: false,
             zsmooth_retract_ctx: None,
             wipe_tower_bbx: None,
             m_retracted_length: 0.0,
@@ -1089,6 +1095,22 @@ impl GCodeWriter {
     /// R656 — arm the one-shot force-emit for the analyzer Width/Height tags.
     pub fn set_force_analyzer_tags(&mut self) {
         self.force_analyzer_tags = true;
+        self.forced_width_tag_written = false;
+    }
+
+    /// Whether the force-emit is armed, without clearing it.
+    pub fn peek_force_analyzer_tags(&self) -> bool {
+        self.force_analyzer_tags
+    }
+
+    /// WIDTH_TAG_FORCE_ONCE: note that the armed `_extrude`'s Width tag is out.
+    pub fn mark_forced_width_tag_written(&mut self) {
+        self.forced_width_tag_written = true;
+    }
+
+    /// WIDTH_TAG_FORCE_ONCE: read and clear the note.
+    pub fn take_forced_width_tag_written(&mut self) -> bool {
+        std::mem::replace(&mut self.forced_width_tag_written, false)
     }
 
     /// R656 — read and clear it. Both tag guards in one `_extrude` must see the

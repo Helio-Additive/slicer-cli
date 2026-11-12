@@ -1098,6 +1098,11 @@ impl CustomGCodeTime {
     }
 }
 
+/// TIMEDBG_BLOCKS (diagnostics only): set while the replayed processor of
+/// TIMEPROC_REPLAY runs, so only its blocks are dumped.
+pub static TIMEDBG_BLOCKS_ARMED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// GCodeProcessor.hpp:627-631  TimeMachine::G1LinesCacheItem
 #[derive(Debug, Clone, Copy, Default)]
 pub struct G1LinesCacheItem {
@@ -1300,23 +1305,37 @@ impl TimeMachine {
             }
 
             self.time += block_time;
-            // TIMEDBG2: per-block effective-speed accounting for extrude moves.
-            if std::env::var("TIMEDBG2").is_ok() && self.blocks[i].move_type == EMoveType::Extrude {
-                let b = &self.blocks[i];
-                let eff = if block_time > 1e-9 { b.distance / block_time } else { 0.0 };
-                let cruise = b.feedrate_profile.cruise;
-                let name = std::env::var("ESTNAME").unwrap_or_else(|_| "X".into());
-                let line = format!(
-                    "TIMEDBG2 dist={:.3} cruise={:.1} entry={:.1} exit={:.1} accel={:.0} eff={:.1} t={:.5}\n",
-                    b.distance, cruise, b.feedrate_profile.entry, b.feedrate_profile.exit,
-                    b.acceleration, eff, block_time
-                );
+            // TIMEDBG_BLOCKS (diagnostics only): the planner's blocks as the C++
+            // twin probe prints them, while `TIMEDBG_BLOCKS_ARMED` is set (the
+            // replay of TIMEPROC_REPLAY sets it).
+            if TIMEDBG_BLOCKS_ARMED.load(std::sync::atomic::Ordering::Relaxed) {
                 use std::io::Write;
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true).append(true)
-                    .open(format!("/tmp/timedbg2_{}.log", name))
-                {
-                    let _ = f.write_all(line.as_bytes());
+                // A LineWriter: the static is never dropped, so nothing else
+                // would flush the last blocks.
+                static OUT: std::sync::OnceLock<Option<std::sync::Mutex<std::io::LineWriter<std::fs::File>>>> =
+                    std::sync::OnceLock::new();
+                let out = OUT.get_or_init(|| {
+                    std::env::var("TIMEDBG_BLOCKS")
+                        .ok()
+                        .and_then(|p| std::fs::File::create(p).ok())
+                        .map(|f| std::sync::Mutex::new(std::io::LineWriter::new(f)))
+                });
+                if let Some(out) = out {
+                    let b = &self.blocks[i];
+                    let _ = writeln!(
+                        out.lock().unwrap(),
+                        "{} {} {} {:e} {:e} {:e} {:e} {:e} {:e} {:e}",
+                        b.g1_line_id,
+                        b.move_type as i32,
+                        b.role as i32,
+                        b.distance,
+                        b.acceleration,
+                        b.feedrate_profile.entry,
+                        b.feedrate_profile.cruise,
+                        b.feedrate_profile.exit,
+                        b.time(),
+                        block_time
+                    );
                 }
             }
             block_handler(&self.blocks[i], self.time);
@@ -3649,33 +3668,41 @@ impl GCodeProcessor {
         let units_inches = self.m_units == EUnits::Inches;
         let start_position = self.m_start_position;
         let origin = self.m_origin;
-        let absolute_position = |axis: Axis, lineg: &crate::g_code_reader::GCodeLine| -> f32 {
+        // ARC_ABS_POS_DOUBLE (opt-in, =1; see GCODE_FLAVOR_KEY for why): the lambda returns `m_start_position[..] + ret`,
+        // an `AxisCoords` double plus a float (GCodeProcessor.cpp:4912-4935), so
+        // an axis the line does not name keeps its double and its delta is 0. The
+        // port returned f32: the E of a spiral lift (`G3 Z.. I.. J.. P1`) came
+        // back rounded, the delta was not 0 and the arc was typed Extrude with
+        // the current role instead of Travel. Unset, it rounds through f32.
+        let abs_double = crate::opt_in_gate("ARC_ABS_POS_DOUBLE");
+        let absolute_position = |axis: Axis, lineg: &crate::g_code_reader::GCodeLine| -> f64 {
             let mut is_relative = global_relative;
             if axis == Axis::E {
                 is_relative |= e_relative;
             }
-            if lineg.has(axis) {
+            let v = if lineg.has(axis) {
                 let length_scale = if units_inches { INCHES_TO_MM } else { 1.0 };
-                let ret = lineg.value(axis) * length_scale;
+                let ret = (lineg.value(axis) * length_scale) as f64;
                 match axis {
-                    Axis::I => start_position[Axis::X as usize] as f32 + ret,
-                    Axis::J => start_position[Axis::Y as usize] as f32 + ret,
+                    Axis::I => start_position[Axis::X as usize] + ret,
+                    Axis::J => start_position[Axis::Y as usize] + ret,
                     _ => {
                         let base = if is_relative {
                             start_position[axis as usize]
                         } else {
                             origin[axis as usize]
                         };
-                        base as f32 + ret
+                        base + ret
                     }
                 }
             } else {
                 match axis {
-                    Axis::I => start_position[Axis::X as usize] as f32,
-                    Axis::J => start_position[Axis::Y as usize] as f32,
-                    _ => start_position[axis as usize] as f32,
+                    Axis::I => start_position[Axis::X as usize],
+                    Axis::J => start_position[Axis::Y as usize],
+                    _ => start_position[axis as usize],
                 }
-            }
+            };
+            if abs_double { v } else { v as f32 as f64 }
         };
 
         self.m_g1_line_id += 1;
@@ -3690,7 +3717,7 @@ impl GCodeProcessor {
                 2 => Axis::Z,
                 _ => Axis::E,
             };
-            self.m_end_position[a] = absolute_position(ax, line) as f64;
+            self.m_end_position[a] = absolute_position(ax, line);
         }
         // G2/G3 with no I and J — invalid (cpp:4797-4798)
         if !line.has(Axis::I) && !line.has(Axis::J) {
@@ -3707,8 +3734,8 @@ impl GCodeProcessor {
 
         // arc center (cpp:4806)
         self.m_arc_center = [
-            absolute_position(Axis::I, line),
-            absolute_position(Axis::J, line),
+            absolute_position(Axis::I, line) as f32,
+            absolute_position(Axis::J, line) as f32,
             self.m_start_position[Axis::Z as usize] as f32,
         ];
         // G2 = CW, G3 = CCW (cpp:4807-4809)
@@ -4145,15 +4172,24 @@ impl GCodeProcessor {
         let cmd = line.cmd();
         let mut new_line_raw = cmd.to_string();
         let mut found = false;
-        if line.has(crate::g_code_reader::Axis::X) {
+        // G28_HAS_CHAR (opt-in, =1; see GCODE_FLAVOR_KEY for why): `line.has('X')` is the `char` overload, which looks
+        // for the letter in the raw line (GCodeReader.cpp:225-245), value or not
+        // (GCodeProcessor.cpp:5365-5376). `G28 Z P0 T250` has a Z without a
+        // number, which the axis mask does not record: the port took it for a
+        // bare G28 and homes X and Y as well. Unset, it asks the mask.
+        let by_char = crate::opt_in_gate("G28_HAS_CHAR");
+        let has = |c: u8, a: crate::g_code_reader::Axis| {
+            if by_char { line.has_char(c) } else { line.has(a) }
+        };
+        if has(b'X', crate::g_code_reader::Axis::X) {
             new_line_raw += " X0";
             found = true;
         }
-        if line.has(crate::g_code_reader::Axis::Y) {
+        if has(b'Y', crate::g_code_reader::Axis::Y) {
             new_line_raw += " Y0";
             found = true;
         }
-        if line.has(crate::g_code_reader::Axis::Z) {
+        if has(b'Z', crate::g_code_reader::Axis::Z) {
             new_line_raw += " Z0";
             found = true;
         }

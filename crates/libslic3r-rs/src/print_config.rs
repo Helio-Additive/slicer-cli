@@ -2560,7 +2560,42 @@ impl PrintConfig {
                 true
             }
             "gcode_flavor" => {
-                // Keep Marlin for now (all BambuStudio profiles use marlin)
+                // GCODE_FLAVOR_KEY (opt-in, =1): the key is read through
+                // `s_keys_map_GCodeFlavor` (PrintConfig.cpp:545-559), where
+                // "marlin", the value of every Bambu Lab profile, is
+                // gcfMarlinLegacy and "marlin2" is gcfMarlinFirmware. The port
+                // ignores the key and keeps the modern Marlin, so the G-code
+                // processor does not take the extruding acceleration as the
+                // travel limit (GCodeProcessor.cpp:2032-2035): travels are
+                // planned at 9000 mm/s2 where C++ plans them at 10000. With the
+                // key read, the processor's total over the oracle's own Benchy
+                // G-code is the oracle's (2851.220 s). Opt-in, with
+                // ARC_ABS_POS_DOUBLE and G28_HAS_CHAR: the port's G-code still
+                // differs from the oracle's, so its times do, and every
+                // combination of the three moves a few `M73` lines and takes 1
+                // to 3 in-order lines off one of the Benchy fixtures (R853).
+                if crate::opt_in_gate("GCODE_FLAVOR_KEY") {
+                    let v = value.trim().trim_matches('"');
+                    let flavor = match v {
+                        "marlin" => Some(GCodeFlavor::MarlinLegacy),
+                        "klipper" => Some(GCodeFlavor::Klipper),
+                        "reprap" => Some(GCodeFlavor::RepRapSprinter),
+                        "reprapfirmware" => Some(GCodeFlavor::RepRapFirmware),
+                        "repetier" => Some(GCodeFlavor::Repetier),
+                        "teacup" => Some(GCodeFlavor::Teacup),
+                        "makerware" => Some(GCodeFlavor::MakerWare),
+                        "marlin2" => Some(GCodeFlavor::Marlin),
+                        "sailfish" => Some(GCodeFlavor::Sailfish),
+                        "smoothie" => Some(GCodeFlavor::Smoothie),
+                        "mach3" => Some(GCodeFlavor::Mach3),
+                        "machinekit" => Some(GCodeFlavor::Machinekit),
+                        "no-extrusion" => Some(GCodeFlavor::NoExtrusion),
+                        _ => None,
+                    };
+                    if let Some(f) = flavor {
+                        self.gcode_flavor = f;
+                    }
+                }
                 true
             }
             "enable_arc_fitting" => {

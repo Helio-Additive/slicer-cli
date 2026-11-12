@@ -121,19 +121,22 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R852) |
+| Fixture | As brought over (R808) | Now (R853) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 183,740 (95.89%) |
 | Benchy arachne | 32,769 (13.68%) | 236,625 (97.13%) |
-| Majora | 1,512,438 (55.88%) | 2,747,545 (96.06%) |
+| Majora | 1,512,438 (55.88%) | 2,747,545 (96.17%) |
 | Majora, prime tower | 83.5% | 99.5% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R852:
+missing most often. Lines of the oracle's body the port has verbatim, at R853:
 Benchy classic 189,897 of 196,495 (96.6%), Benchy arachne 241,808 of 248,190
-(97.4%), Majora 2,910,852 of 3,024,752 (96.2%).
+(97.4%), Majora 2,910,818 of 3,024,752 (96.2%).
+
+Majora's percentage rose in R853 with the matched count unchanged: the port wrote
+`; LINE_WIDTH` twice after each prime tower visit (3,339 lines), and no longer does.
 
 The percentages of R852 are lower than R851's while the matched counts are
 higher: R852 writes the `M73 P.. R..` progress lines, which `seq_parity.py`
@@ -212,6 +215,18 @@ perimeter generator that lead to the fill boundary (`last`, `notfilled`,
 layer; the C++ twin is the same `fprintf` at the same places of a probed
 `PerimeterGenerator.cpp`.
 
+`TIMEPROC_REPLAY=1 TIMEPROC_REPLAY_FILE=<oracle.gcode>` runs the port's G-code
+processor and `TimeProcessor::post_process` over another engine's G-code, less its
+`M73 P.. R..` lines, and writes `<file>.replay` (the G-code with the port's `M73`
+lines) and `<file>.times` (the total, the prepare time and the planner's
+`g1_times_cache`). With `TIMEDBG_BLOCKS=<file>` it also writes one line per planner
+block: line id, move type, role, distance, acceleration, entry, cruise and exit
+feedrate, the trapezoid's time and the block's time. What differs is the
+estimator's, not the slicing's. The C++ twin is two `fprintf` in a probed
+`GCode/GCodeProcessor.cpp`: the same block line in `TimeMachine::calculate_time`
+before `time += block_time`, and the cache at the top of
+`TimeProcessor::post_process`.
+
 Sort the `PP` lines of both engines and diff them. A stage whose lines all
 agree is done; the first stage with differing layers is where to look.
 
@@ -238,9 +253,13 @@ and `56a57d0`:
   (R810), farthest-point timelapse (R812). Known and not ported:
   `discover_sub_top_surfaces` and the `stSubTop` surface type, `combine_infill`,
   the settings block's 74 new keys. The `M73` lines are written from the
-  processor's time estimate (R852); the estimate is still a few seconds to minutes
-  off the oracle's (R846-R848), so 234 of Majora's 5,802 and 21 of Benchy classic's 136
-  differ by a minute or a percent.
+  processor's time estimate (R852). Three differences of the estimator are found and
+  fixed behind the opt-in gates `GCODE_FLAVOR_KEY`, `ARC_ABS_POS_DOUBLE` and
+  `G28_HAS_CHAR` (R853): with them the processor's total over the oracle's own Benchy
+  G-code is the oracle's. They stay off by default because the port's G-code, and
+  so its times, still differ, and the moved `M73` lines take 1 to 3 in-order lines
+  off one Benchy fixture in every combination. Turn them on when a fixture's moves
+  agree.
 - The override layer: `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp`
   fixes five out-of-bounds reads in the engine's floating-concentric fill. It is the
   file `slicer_cli` compiles, so the port follows it (gate `FFC_OVERRIDE`, R826), and

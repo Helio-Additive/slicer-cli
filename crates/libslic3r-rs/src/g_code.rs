@@ -3189,6 +3189,14 @@ pub fn extrude_path_with_arc_fitting(
     // `LINEWIDTH_BEFORE_SPEED` +215 / +14 / -91.
     let force_tags = crate::faithful_gate("WIPE_TOWER_FORCE_TAGS")
         && writer.take_force_analyzer_tags();
+    // WIDTH_TAG_FORCE_ONCE (on): GCode.cpp:7886 writes the Width tag once per
+    // `_extrude`, `if (last_was_wipe_tower || m_last_width != path.width)`. The
+    // port evaluates that statement in two places, `width_tag_before_speed` and
+    // here; after a tower visit the first wrote the tag because the width
+    // changed and this one wrote it again because it was forced. The first
+    // site now also honours the force and leaves a note. =0 writes both.
+    let forced_width_done = writer.take_forced_width_tag_written();
+    let force_width = force_tags && !forced_width_done;
 
     if *LW_PERPATH.get_or_init(|| crate::faithful_gate("LINEWIDTH_PERPATH"))
         && path.width > 0.0
@@ -3196,7 +3204,7 @@ pub fn extrude_path_with_arc_fitting(
         // update, and C++ assigns `m_last_width = path.width` inside the same
         // branch. Evaluate it FIRST so the force-emit cannot leave the register
         // stale.
-        && (writer.width_tag_changed(path.width) | force_tags)
+        && (writer.width_tag_changed(path.width) | force_width)
     {
         writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
         if crate::probe_enabled("EXPWPROBE") {
@@ -6617,9 +6625,21 @@ fn width_tag_before_speed(writer: &mut GCodeWriter, path: &ExtrusionPath) {
     if *G.get_or_init(|| {
         crate::faithful_gate("LW_BEFORE_SPEED") && crate::faithful_gate("LINEWIDTH_PERPATH")
     }) && path.width > 0.0
-        && writer.width_tag_changed(path.width)
     {
-        writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
+        // WIDTH_TAG_FORCE_ONCE (on): this is GCode.cpp:7886 for the path about
+        // to be extruded, so `last_was_wipe_tower` forces it here as well, and
+        // `extrude_path` is told the tag is out.
+        static ONCE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let force = *ONCE.get_or_init(|| {
+            crate::faithful_gate("WIDTH_TAG_FORCE_ONCE")
+                && crate::faithful_gate("WIPE_TOWER_FORCE_TAGS")
+        }) && writer.peek_force_analyzer_tags();
+        if writer.width_tag_changed(path.width) | force {
+            writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
+            if force {
+                writer.mark_forced_width_tag_written();
+            }
+        }
     }
 }
 
