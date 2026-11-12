@@ -1766,7 +1766,7 @@ impl Print {
 
         // Run the faithful GCodeProcessor over (provisional header + body) to obtain
         // the acceleration-aware normal-mode print time and filament usage.
-        let (estimated_print_time_seconds, prepare_time_seconds) = {
+        let (estimated_print_time_seconds, prepare_time_seconds, processor) = {
             use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};
 
             let provisional_header = GCodeHeader::with_raw_settings(
@@ -1791,7 +1791,7 @@ impl Print {
                     ),
                 );
             }
-            (result.print_time, processor.get_prepare_time(ETimeMode::Normal))
+            (result.print_time, processor.get_prepare_time(ETimeMode::Normal), processor)
         };
 
         // Build the final header with the accel-aware estimated print time.
@@ -1806,8 +1806,19 @@ impl Print {
 
         // Write to file: final header first, then the assembled body.
         let mut file = std::fs::File::create(output_path)?;
-        file.write_all(header_str.as_bytes())?;
-        file.write_all(&body)?;
+        if crate::faithful_gate("M73_LINES") {
+            // M73_LINES (on): TimeProcessor::post_process over the finished
+            // G-code (GCodeProcessor.cpp:571-, 816-885): `M73 P.. R..` before the
+            // moves where the pair changes. The processor read the provisional
+            // header, which has the same moves as the final one. =0 writes none.
+            let mut full = header_str;
+            full.push_str(&String::from_utf8_lossy(&body));
+            let processed = processor.time_processor().post_process(&full);
+            file.write_all(processed.as_bytes())?;
+        } else {
+            file.write_all(header_str.as_bytes())?;
+            file.write_all(&body)?;
+        }
         drop(file);
 
         if crate::probe_enabled("SLICE_PHASE_TIMING") {

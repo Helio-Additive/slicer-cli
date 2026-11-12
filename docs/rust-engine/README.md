@@ -121,19 +121,24 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R851) |
+| Fixture | As brought over (R808) | Now (R852) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 183,738 (95.96%) |
-| Benchy arachne | 32,769 (13.68%) | 236,621 (97.18%) |
-| Majora | 1,512,438 (55.88%) | 2,747,529 (96.25%) |
-| Majora, prime tower | 83.5% | 99.8% |
+| Benchy classic | 30,486 (15.72%) | 183,740 (95.89%) |
+| Benchy arachne | 32,769 (13.68%) | 236,625 (97.13%) |
+| Majora | 1,512,438 (55.88%) | 2,747,545 (96.06%) |
+| Majora, prime tower | 83.5% | 99.5% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R851:
-Benchy classic 189,787 of 196,495 (96.6%), Benchy arachne 241,689 of 248,190
-(97.4%), Majora 2,905,284 of 3,024,752 (96.1%).
+missing most often. Lines of the oracle's body the port has verbatim, at R852:
+Benchy classic 189,897 of 196,495 (96.6%), Benchy arachne 241,808 of 248,190
+(97.4%), Majora 2,910,852 of 3,024,752 (96.2%).
+
+The percentages of R852 are lower than R851's while the matched counts are
+higher: R852 writes the `M73 P.. R..` progress lines, which `seq_parity.py`
+counts in the port's body and does not match (5,809 lines on Majora, 1,093 of
+them in the prime tower's sections).
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
 driver) R808 scored Majora 66.06%, Benchy classic 121,714 lines and Benchy
@@ -232,7 +237,10 @@ and `56a57d0`:
 - Ported from that range so far: the machine G-code placeholders of 02.09
   (R810), farthest-point timelapse (R812). Known and not ported:
   `discover_sub_top_surfaces` and the `stSubTop` surface type, `combine_infill`,
-  the settings block's 74 new keys, the time estimate behind the `M73` lines.
+  the settings block's 74 new keys. The `M73` lines are written from the
+  processor's time estimate (R852); the estimate is still a few seconds to minutes
+  off the oracle's (R846-R848), so 234 of Majora's 5,802 and 21 of Benchy classic's 136
+  differ by a minute or a percent.
 - The override layer: `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp`
   fixes five out-of-bounds reads in the engine's floating-concentric fill. It is the
   file `slicer_cli` compiles, so the port follows it (gate `FFC_OVERRIDE`, R826), and

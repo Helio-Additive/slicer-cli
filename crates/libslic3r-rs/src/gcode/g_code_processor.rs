@@ -2365,6 +2365,135 @@ impl TimeProcessor {
     const PLANNER_QUEUE_SIZE: usize = 64;
     const PLANNER_REFRESH_THRESHOLD: usize = Self::PLANNER_QUEUE_SIZE * 4;
 
+    /// GCodeProcessor.cpp:571-1300  `TimeProcessor::post_process`, the part that
+    /// writes the `M73` lines: before every G1, G2, G3 and `;VG1` line of the
+    /// finished G-code, `process_line_move` (:816-885, called at :1019-1032)
+    /// writes the pair <percent, remaining minutes> when it changed, and the time
+    /// to the next printer stop. The times are the `g1_times_cache` the planner
+    /// filled; its ids come from `m_g1_line_id`, which G0 and G28 advance too,
+    /// while the counter here counts G1/G2/G3/`;VG1` lines of the text only
+    /// (`g1_lines_counter`, :997) — as in C++.
+    ///
+    /// Not ported here: the placeholders (the port writes those lines itself),
+    /// the filament and extruder blocks, the pre-heating injection and the
+    /// line-offset bookkeeping of the same function.
+    pub fn post_process(&self, gcode: &str) -> String {
+        use crate::g_code_reader::GCodeLine;
+        let machines = &self.machines;
+        // :589-592
+        let time_in_minutes = |time_in_seconds: f32| -> i32 { ((time_in_seconds + 0.5f32) / 60.0f32) as i32 };
+        // :594-597
+        let time_in_last_minute = |time_in_seconds: f32| -> f32 { time_in_seconds / 60.0f32 };
+        // :599-605, :607-611
+        let format_line_m73_main = |mask: &str, percent: i32, time: i32| -> String {
+            mask.replacen("%s", &percent.to_string(), 1).replacen("%s", &time.to_string(), 1)
+        };
+        let format_line_m73_stop_int =
+            |mask: &str, time: i32| -> String { mask.replacen("%s", &time.to_string(), 1) };
+        // :621-629
+        let format_time_float =
+            |time: f32| -> String { crate::locales_utils::float_to_string_decimal_point(time as f64, 2) };
+        let format_line_m73_stop_float =
+            |mask: &str, time: f32| -> String { mask.replacen("%s", &format_time_float(time), 1) };
+
+        // :645-655 — last exported pair and stop time per machine.
+        let mut last_exported_main: Vec<(i32, i32)> =
+            machines.iter().map(|m| (0, time_in_minutes(m.time))).collect();
+        let mut last_exported_stop: Vec<i32> = machines.iter().map(|m| time_in_minutes(m.time)).collect();
+        // :812-814
+        let mut g1_times_cache_it: Vec<usize> = vec![0; machines.len()];
+        // :997
+        let mut g1_lines_counter: usize = 0;
+
+        let mut out = String::with_capacity(gcode.len() + gcode.len() / 64);
+        for gcode_line in gcode.split_inclusive('\n') {
+            if GCodeLine::cmd_is_str(gcode_line, "G1")
+                || GCodeLine::cmd_is_str(gcode_line, "G2")
+                || GCodeLine::cmd_is_str(gcode_line, "G3")
+                || GCodeLine::cmd_start_with(gcode_line, ";VG1")
+            {
+                // process_line_move(gcode_buffer, g1_lines_counter++)
+                for i in 0..machines.len() {
+                    let machine = &machines[i];
+                    if !machine.enabled {
+                        continue;
+                    }
+                    // Skip all machine.g1_times_cache below g1_lines_counter.
+                    let cache = &machine.g1_times_cache;
+                    let it = &mut g1_times_cache_it[i];
+                    while *it < cache.len() && (cache[*it].id as usize) < g1_lines_counter {
+                        *it += 1;
+                    }
+                    if *it < cache.len() && cache[*it].id as usize == g1_lines_counter {
+                        let elapsed = cache[*it].elapsed_time;
+                        let to_export_main = (
+                            (100.0f32 * elapsed / machine.time) as i32,
+                            time_in_minutes(machine.time - elapsed),
+                        );
+                        if last_exported_main[i] != to_export_main {
+                            out.push_str(&format_line_m73_main(
+                                &machine.line_m73_main_mask,
+                                to_export_main.0,
+                                to_export_main.1,
+                            ));
+                            last_exported_main[i] = to_export_main;
+                        }
+                        // export remaining time to next printer stop (:845-879)
+                        let upper_bound = |value: f32| -> usize {
+                            machine.stop_times.partition_point(|t| !(value < t.elapsed_time))
+                        };
+                        let it_stop = upper_bound(elapsed);
+                        if it_stop < machine.stop_times.len() {
+                            let stop_elapsed = machine.stop_times[it_stop].elapsed_time;
+                            let to_export_stop = time_in_minutes(stop_elapsed - elapsed);
+                            if last_exported_stop[i] != to_export_stop {
+                                if to_export_stop > 0 {
+                                    out.push_str(&format_line_m73_stop_int(
+                                        &machine.line_m73_stop_mask,
+                                        to_export_stop,
+                                    ));
+                                    last_exported_stop[i] = to_export_stop;
+                                } else {
+                                    let mut is_last = false;
+                                    let next_it = *it + 1;
+                                    is_last |= next_it == cache.len();
+                                    if next_it != cache.len() {
+                                        let next_elapsed = cache[next_it].elapsed_time;
+                                        let next_it_stop = upper_bound(next_elapsed);
+                                        is_last |= next_it_stop != it_stop;
+                                        let time_float_str =
+                                            format_time_float(time_in_last_minute(stop_elapsed - elapsed));
+                                        let next_time_float_str =
+                                            format_time_float(time_in_last_minute(stop_elapsed - next_elapsed));
+                                        is_last |= time_float_str.parse::<f64>().unwrap_or(0.0) > 0.0
+                                            && next_time_float_str.parse::<f64>().unwrap_or(0.0) == 0.0;
+                                    }
+                                    if is_last {
+                                        if it_stop == machine.stop_times.len() - 1 {
+                                            out.push_str(&format_line_m73_stop_int(
+                                                &machine.line_m73_stop_mask,
+                                                to_export_stop,
+                                            ));
+                                        } else {
+                                            out.push_str(&format_line_m73_stop_float(
+                                                &machine.line_m73_stop_mask,
+                                                time_in_last_minute(stop_elapsed - elapsed),
+                                            ));
+                                        }
+                                        last_exported_stop[i] = to_export_stop;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                g1_lines_counter += 1;
+            }
+            out.push_str(gcode_line);
+        }
+        out
+    }
+
     /// GCodeProcessor.cpp:522-537  void TimeProcessor::reset()
     pub fn reset(&mut self) {
         self.extruder_unloaded = true;
@@ -3909,6 +4038,11 @@ impl GCodeProcessor {
         // store move (cpp:5118)
         let path_type = self.m_move_path_type;
         self.store_move_vertex(r#type, path_type);
+    }
+
+    /// The time processor, for `TimeProcessor::post_process`.
+    pub fn time_processor(&self) -> &TimeProcessor {
+        &self.m_time_processor
     }
 
     /// GCodeProcessor.cpp:2888-2891  get_time.

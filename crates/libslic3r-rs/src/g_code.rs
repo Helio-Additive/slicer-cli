@@ -6896,6 +6896,10 @@ pub struct GCodeHeader {
     /// `; estimated printing time (normal mode) = ...` header line.
     pub estimated_print_time: String,
 
+    /// The processor's total time in seconds (`machine.time`), for the first
+    /// `M73` line (GCodeProcessor.cpp:685-688).
+    pub estimated_print_time_seconds: f32,
+
     /// The model printing time (total less the prepare time), when the
     /// processor's prepare time is known; written by the Bambu Lab form of the
     /// time line (GCodeProcessor.cpp:711-716).
@@ -6949,6 +6953,7 @@ impl GCodeHeader {
                 "BambuStudio 02.06.00.51".to_string()
             },
             estimated_print_time,
+            estimated_print_time_seconds,
             model_print_time: None,
             stats,
             config,
@@ -7193,7 +7198,15 @@ impl GCodeHeader {
     /// Bambu Lab H2D + PLA Basic.
     pub fn generate_executable_block_content(&self) -> String {
         let mut s = String::new();
-        let minutes = (self.stats.print_time_seconds / 60.0).round() as u64;
+        // M73_LINES (on): the first-line placeholder becomes `M73 P0 R<minutes>`
+        // with `time_in_minutes(machine.time)` = int((t + 0.5f) / 60.0f)
+        // (GCodeProcessor.cpp:589-592, 683-688). =0 rounds the writer's own
+        // crude time.
+        let minutes = if crate::faithful_gate("M73_LINES") {
+            ((self.estimated_print_time_seconds + 0.5f32) / 60.0f32) as i32 as u64
+        } else {
+            (self.stats.print_time_seconds / 60.0).round() as u64
+        };
         let c = &self.config;
 
         // Progress estimate
