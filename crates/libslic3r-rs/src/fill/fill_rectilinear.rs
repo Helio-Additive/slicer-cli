@@ -4614,6 +4614,23 @@ pub fn fill_surface_by_lines_monotonic(
 
         // Chain regions using ant colony optimization
         let path = chain_monotonic_regions(&mut regions, &poly_with_offset, &segs);
+        // MONO (diagnostics only): the regions and the chosen path, one line per
+        // call, as the C++ twin probe prints them.
+        if crate::probe_enabled("MONO") {
+            let mut s = format!("MONO n={} segs={} path=", regions.len(), segs.len());
+            for l in &path {
+                s.push_str(&format!("{}:{},", l.region_idx, l.flipped as i32));
+            }
+            s.push_str(" regs=");
+            for r in &regions {
+                s.push_str(&format!(
+                    "{},{},{},{},{},{},{:e},{:e},{};",
+                    r.left.vline, r.left.low, r.left.high, r.right.vline, r.right.low,
+                    r.right.high, r.len1, r.len2, r.flips as i32
+                ));
+            }
+            eprintln!("{s}");
+        }
 
         // Generate polylines from the chained path
         polylines_from_paths(

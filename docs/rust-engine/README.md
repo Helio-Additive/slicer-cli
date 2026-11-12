@@ -112,6 +112,8 @@ settings move with the engine pin.
 
 `slicer_cli` is not reproducible run to run to the line: two runs of the same
 C++ binary moved the Majora score by about 900 lines and Benchy arachne by 19.
+One Majora run scored against another reaches 99.87% to 99.92% in order (R855);
+the multi-material segmentation differs between runs on 80 of its 656 layers.
 
 ## Scores
 
@@ -121,19 +123,19 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R854) |
+| Fixture | As brought over (R808) | Now (R855) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 183,740 (95.89%) |
-| Benchy arachne | 32,769 (13.68%) | 236,625 (97.13%) |
-| Majora | 1,512,438 (55.88%) | 2,747,545 (96.17%) |
-| Majora, prime tower | 83.5% | 99.5% |
+| Benchy classic | 30,486 (15.72%) | 184,212 (96.14%) |
+| Benchy arachne | 32,769 (13.68%) | 237,255 (97.39%) |
+| Majora | 1,512,438 (55.88%) | 2,782,052 (97.37%) |
+| Majora, prime tower | 83.5% | 99.6% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R853:
-Benchy classic 189,897 of 196,495 (96.6%), Benchy arachne 241,808 of 248,190
-(97.4%), Majora 2,910,818 of 3,024,752 (96.2%).
+missing most often. Lines of the oracle's body the port has verbatim, at R855:
+Benchy classic 190,340 of 196,495 (96.9%), Benchy arachne 242,771 of 248,190
+(97.8%), Majora 2,962,080 of 3,024,752 (97.9%).
 
 Majora's percentage rose in R853 with the matched count unchanged: the port wrote
 `; LINE_WIDTH` twice after each prime tower visit (3,339 lines), and no longer does.
@@ -214,6 +216,13 @@ perimeter generator that lead to the fill boundary (`last`, `notfilled`,
 `t_*` inside the top-one-wall branch), and `FBISL=<layer>` every point of one
 layer; the C++ twin is the same `fprintf` at the same places of a probed
 `PerimeterGenerator.cpp`.
+
+`MONO=1` prints one line per `chain_monotonic_regions` call: the number of regions
+and scan lines, the chosen path (`region:flipped`) and every region's boundaries,
+`len1`, `len2` and `flips`. The C++ twin is one `fprintf` of the same line after
+each of the two calls in a probed `Fill/FillRectilinear.cpp`. Calls run on several
+threads, so compare the lines as a set. `FFC=1` (R851) does the same for the
+floating concentric fill: its inputs, Arachne's output and the split loops.
 
 `TIMEPROC_REPLAY=1 TIMEPROC_REPLAY_FILE=<oracle.gcode>` runs the port's G-code
 processor and `TimeProcessor::post_process` over another engine's G-code, less its

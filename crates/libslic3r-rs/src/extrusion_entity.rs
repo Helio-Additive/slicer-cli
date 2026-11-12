@@ -292,7 +292,7 @@ pub struct ExtrusionPath {
 /// coverage rects to 1µm, flipping the razor-thin (0.2µm) adjacent-line coverage
 /// overlaps into gaps and fragmenting the gap band (R145). `delta_scaled` in
 /// scaled units.
-fn offset_polyline_clib(polyline: &crate::geometry::Polyline, delta_scaled: f64) -> Vec<Polygon> {
+pub(crate) fn offset_polyline_clib(polyline: &crate::geometry::Polyline, delta_scaled: f64) -> Vec<Polygon> {
     let pts = polyline.points();
     if pts.len() < 2 {
         return Vec::new();

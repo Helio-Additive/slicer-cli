@@ -356,7 +356,7 @@ fn test_make_fills_compiles() {
     let mut layer = fixtures::mock_layer_with_region(0, 0.2, 0.2, 0.1);
 
     // Call make_fills - should not panic
-    let result = layer.make_fills(&[], &[]);
+    let result = layer.make_fills(&[], &[], None);
     // Should not panic
     assert!(result.is_ok(), "make_fills should succeed");
 }
@@ -379,7 +379,7 @@ fn test_make_fills_clears_existing_fills() {
     assert_eq!(region.fills.entities.len(), 1, "Should have 1 fill before");
 
     // Call make_fills
-    let result = layer.make_fills(&[], &[]);
+    let result = layer.make_fills(&[], &[], None);
     assert!(result.is_ok(), "make_fills should succeed");
 
     // Check that fills were cleared
@@ -400,7 +400,7 @@ fn test_make_fills_with_no_surfaces() {
 
     // Region has empty fill_surfaces by default
 
-    let result = layer.make_fills(&[], &[]);
+    let result = layer.make_fills(&[], &[], None);
     assert!(result.is_ok(), "make_fills should handle empty surfaces");
 
 }
@@ -435,7 +435,7 @@ fn test_make_fills_adds_thin_fills() {
     );
 
     // Call make_fills
-    let result = layer.make_fills(&[], &[]);
+    let result = layer.make_fills(&[], &[], None);
     assert!(result.is_ok(), "make_fills should succeed");
 
     // All fills should be cleared
@@ -459,7 +459,7 @@ fn test_make_fills_with_multiple_regions() {
     assert_eq!(layer.region_count(), 3, "Should have 3 regions");
 
     // Call make_fills
-    let result = layer.make_fills(&[], &[]);
+    let result = layer.make_fills(&[], &[], None);
     assert!(result.is_ok(), "make_fills should handle multiple regions");
 
     // All regions should have cleared fills
@@ -543,7 +543,7 @@ fn test_method_integration_full_pipeline() {
 
     // Step 3: Make fills for layer
     {
-        let result = layer.make_fills(&[], &[]);
+        let result = layer.make_fills(&[], &[], None);
         assert!(result.is_ok(), "Step 3: make_fills failed");
     }
 
@@ -650,7 +650,7 @@ fn test_edge_case_zero_height_layer() {
     let mut layer = fixtures::mock_layer_with_region(0, 0.0, 0.0, 0.0);
 
     // Should not panic even with zero height
-    let result = layer.make_fills(&[], &[]);
+    let result = layer.make_fills(&[], &[], None);
     assert!(result.is_ok(), "Should handle zero height layer");
 
 }

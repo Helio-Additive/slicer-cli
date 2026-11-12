@@ -2467,6 +2467,9 @@ impl Layer {
         &mut self,
         lower_internal_areas: &[crate::geometry::ExPolygon],
         lower_sparse_polys: &[crate::geometry::Polygon],
+        // Fill.cpp:734-745, built by the caller as C++ builds it
+        // (FFC_LOWER_UNSUPPORT); None keeps the earlier construction below.
+        lower_unsupport_faithful: Option<&[crate::geometry::ExPolygon]>,
     ) -> Result<()> {
         // Fill.cpp:600
         // C++: const auto resolution = this->object()->print()->config().resolution.value;
@@ -2645,8 +2648,11 @@ impl Layer {
                 // lower_layer_unsupport_areas = shrink_ex(union of lower
                 // stInternal/stInternalVoid, SCALED_EPSILON). lower_internal_areas
                 // is already that un-shrunk union (gathered by the caller).
-                let lower_unsupport: ExPolygons = if is_floating && !lower_internal_areas.is_empty()
+                let lower_unsupport: ExPolygons = if let (true, Some(faithful)) =
+                    (is_floating, lower_unsupport_faithful)
                 {
+                    faithful.to_vec()
+                } else if is_floating && !lower_internal_areas.is_empty() {
                     let unioned = crate::clipper_utils::union_ex(lower_internal_areas);
                     crate::clipper_utils::shrink(
                         &unioned,

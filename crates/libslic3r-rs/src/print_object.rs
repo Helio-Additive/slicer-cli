@@ -4638,6 +4638,7 @@ impl PrintObject {
             let lower_snapshots: Vec<(
                 Vec<crate::geometry::ExPolygon>,
                 Vec<crate::geometry::Polygon>,
+                Option<Vec<crate::geometry::ExPolygon>>,
             )> = (0..self.layers.len())
                 .into_par_iter()
                 .map(|layer_idx| {
@@ -4717,6 +4718,32 @@ impl PrintObject {
                             0.0
                         };
                         // offset(lower_sparse_lines, internal_infill_width/2) then union_.
+                        if crate::faithful_gate("FFC_LOWER_SPARSE_CLIB") {
+                            // Fill.cpp:756-762: `float internal_infill_width`, halved
+                            // in float; `offset(Polylines, delta)` is one ClipperOffset
+                            // per path (jtSquare, etOpenButt) and one
+                            // `clipper_union<Paths>` over all of them
+                            // (ClipperUtils.cpp:420-421, :273-300), then `union_`
+                            // (:721-722), flat paths in Clipper's order.
+                            let mut width = 0.0f32;
+                            for layerm in lower.regions() {
+                                if let Ok(f) =
+                                    layerm.flow(crate::flow::FlowRole::Infill, lower.height)
+                                {
+                                    width += f.scaled_width() as f32;
+                                }
+                            }
+                            width /= nregions as f32;
+                            let delta = (width / 2.0f32) as f64;
+                            let mut grown: Vec<crate::geometry::Polygon> = Vec::new();
+                            for pl in &lines {
+                                grown.extend(crate::extrusion_entity::offset_polyline_clib(
+                                    pl, delta,
+                                ));
+                            }
+                            let grown = crate::clipper_utils::union_flat_clib(&grown);
+                            return crate::clipper_utils::union_flat_clib(&grown);
+                        }
                         let delta = internal_infill_width / 2.0;
                         let mut grown: Vec<crate::geometry::Polygon> = Vec::new();
                         for pl in &lines {
@@ -4743,7 +4770,53 @@ lines={} grown_polys={} grown_verts={}",
                     fl_snap.lock().unwrap()
                         .push((layer_idx, __t_snap.elapsed().as_secs_f64()));
                 }
-                (lower_internal_areas, lower_sparse_polys)
+                // Fill.cpp:734-745 — `lower_unsuporrt_expolys` of the floating
+                // concentric filler: per region of the lower layer
+                // `union_ex(stInternal + stInternalVoid)`, accumulated with
+                // `union_ex(acc, region)` (ClipperUtils.cpp:825-831: the two lists
+                // concatenated, one union), then `shrink_ex(acc, SCALED_EPSILON)`
+                // (ClipperUtils.hpp:392: `offset_ex(ExPolygons, -delta)`, each
+                // expolygon offset on its own and the paths united through a
+                // PolyTree, ClipperUtils.cpp:552-571).
+                let lower_unsupport: Option<Vec<crate::geometry::ExPolygon>> =
+                    if crate::faithful_gate("FFC_LOWER_UNSUPPORT") {
+                        self.layers[layer_idx]
+                            .lower_layer_id
+                            .and_then(|lid| self.layers.get(lid))
+                            .map(|lower| {
+                                let mut acc: Vec<crate::geometry::ExPolygon> = Vec::new();
+                                for layerm in lower.regions() {
+                                    let sexpolys: Vec<crate::geometry::ExPolygon> = layerm
+                                        .fill_surfaces
+                                        .filter_by_types(&[
+                                            crate::surface::SurfaceType::Internal,
+                                            crate::surface::SurfaceType::InternalVoid,
+                                        ])
+                                        .into_iter()
+                                        .map(|surface| surface.expolygon.clone())
+                                        .collect();
+                                    let sexpolys = crate::clipper_utils::union_ex_clib(
+                                        &crate::geometry::to_polygons(&sexpolys),
+                                        1,
+                                    );
+                                    if !sexpolys.is_empty() {
+                                        acc.extend(sexpolys);
+                                        acc = crate::clipper_utils::union_ex_clib(
+                                            &crate::geometry::to_polygons(&acc),
+                                            1,
+                                        );
+                                    }
+                                }
+                                crate::clipper_utils::offset_expolygons_clib_scaled(
+                                    &acc,
+                                    -(crate::libslic3r::SCALED_EPSILON as f32) as f64,
+                                    crate::clipper_utils::OffsetJoinType::Miter,
+                                )
+                            })
+                    } else {
+                        None
+                    };
+                (lower_internal_areas, lower_sparse_polys, lower_unsupport)
                 })
                 .collect();
 
@@ -4757,10 +4830,14 @@ lines={} grown_polys={} grown_verts={}",
                     if canceled.load(Ordering::Relaxed) {
                         return Err(Error::Cancelled);
                     }
-                    let (lower_internal_areas, lower_sparse_polys) =
+                    let (lower_internal_areas, lower_sparse_polys, lower_unsupport) =
                         &lower_snapshots[layer_idx];
                     let __t_mk = std::time::Instant::now();
-                    let r = layer.make_fills(lower_internal_areas, lower_sparse_polys);
+                    let r = layer.make_fills(
+                        lower_internal_areas,
+                        lower_sparse_polys,
+                        lower_unsupport.as_deref(),
+                    );
                     if flprof {
                         fl_make.lock().unwrap()
                             .push((layer_idx, __t_mk.elapsed().as_secs_f64()));

@@ -3525,10 +3525,10 @@ Rust only:
 - `chain_monotonic_regions` :3725
 - `polylines_from_paths` :4105
 - `fill_surface_by_lines_monotonic` :4517
-- `generate_fill_rectilinear_monotonic` :4644
-- `sample_grid_pattern` :4737
-- `sample_grid_pattern_expolygons` :4782
-- `sample_grid_pattern_polygons` :4798
+- `generate_fill_rectilinear_monotonic` :4661
+- `sample_grid_pattern` :4754
+- `sample_grid_pattern_expolygons` :4799
+- `sample_grid_pattern_polygons` :4815
 
 ### `Fill/Lightning/DistanceField` (.cpp+.hpp) and `fill/lightning/distance_field.rs`
 
@@ -5862,21 +5862,21 @@ Rust only:
 - `Layer::make_perimeters_with_lower` :1722
 - `Layer::make_perimeters_with_neighbors` :1731
 - `Layer::record_cooling_node_for_each_extrusion` :2368
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :3713 — C++ has it in `Fill/Fill`
-- `Layer::make_ironing` :4037 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :4160
-- `Layer::generate_sparse_infill` :4167
-- `Layer::new_f` :4176 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :4188
-- `Layer::height_mm` :4194
-- `Layer::set_lower_layer` :4200
-- `Layer::set_upper_layer` :4206
-- `Layer::all_slices` :4212
-- `LayerRegion::set_slices` :4221
-- `chain_points` :4231 — C++ has it in `ShortestPath`
-- `get_extents_layer_region` :4274
-- `get_extents_layer_regions` :4297
-- `mpprobe` :4319
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :3719 — C++ has it in `Fill/Fill`
+- `Layer::make_ironing` :4043 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :4166
+- `Layer::generate_sparse_infill` :4173
+- `Layer::new_f` :4182 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :4194
+- `Layer::height_mm` :4200
+- `Layer::set_lower_layer` :4206
+- `Layer::set_upper_layer` :4212
+- `Layer::all_slices` :4218
+- `LayerRegion::set_slices` :4227
+- `chain_points` :4237 — C++ has it in `ShortestPath`
+- `get_extents_layer_region` :4280
+- `get_extents_layer_regions` :4303
+- `mpprobe` :4325
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 
@@ -8437,24 +8437,24 @@ Tier 1. C++ functions 82 (plus 2 constructors, 1 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5298 (25%, 0.69x)
-- partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5314 (52%, 1.18x)
+- divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5375 (25%, 0.69x)
+- partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5391 (52%, 1.18x)
 - divergent: `PrintObject::make_perimeters` :470 and `PrintObject::make_perimeters` :1891 (26%, 1.08x)
 - divergent: `PrintObject::prepare_infill` :902 and `PrintObject::prepare_infill` :2166 (19%, 1.13x)
-- divergent: `PrintObject::infill` :1154 and `PrintObject::infill` :4588 (18%, 4.12x)
-- divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5193 (8%, 3.4x)
-- partial: `PrintObject::clear_overhangs_for_lift` :1270 and `PrintObject::clear_overhangs_for_lift` :5011 (50%, 0.8x)
-- divergent: `PrintObject::detect_overhangs_for_lift` :1282 and `PrintObject::detect_overhangs_for_lift` :5030 (26%, 0.77x)
-- divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :4988 (0%, 0.26x)
-- divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5451 (0%, 0.38x)
+- divergent: `PrintObject::infill` :1154 and `PrintObject::infill` :4588 (18%, 4.72x)
+- divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5270 (8%, 3.4x)
+- partial: `PrintObject::clear_overhangs_for_lift` :1270 and `PrintObject::clear_overhangs_for_lift` :5088 (50%, 0.8x)
+- divergent: `PrintObject::detect_overhangs_for_lift` :1282 and `PrintObject::detect_overhangs_for_lift` :5107 (26%, 0.77x)
+- divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :5065 (0%, 0.26x)
+- divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5528 (0%, 0.38x)
 - divergent: `PrintObject::invalidate_all_steps` :1916 and `PrintObject::invalidate_all_steps` :509 (0%, 0.31x)
 - partial: `PrintObject::detect_surfaces_type` :1951 and `PrintObject::detect_surfaces_type` :3980 (42%, 2.15x)
-- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :6806 (18%, 0.92x)
+- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :6883 (18%, 0.92x)
 - stub: `PrintObject::slicing_parameters` :3862 and `PrintObject::slicing_parameters` :462 (0%, 0.02x)
-- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6302 (45%, 2.11x)
+- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6379 (45%, 2.11x)
 - partial: `PrintObject::discover_sub_top_surfaces` :5839 and `PrintObject::discover_sub_top_surfaces` :2376 (48%, 1.2x)
-- divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :5099 (13%, 2.53x)
-- partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :5550 (50%, 0.92x)
+- divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :5176 (13%, 2.53x)
+- partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :5627 (50%, 0.92x)
 
 Missing in the Rust file:
 
@@ -8546,13 +8546,13 @@ Rust only:
 - `PrintObject::apply_mm_segmentation_tier1` :1195
 - `PrintObject::wire_layer_hierarchy` :1858
 - `PrintObject::bridge_over_infill` :2514
-- `PrintObject::has_support` :5273 — C++ has it in `Print`, `Support/SupportMaterial`
-- `PrintObject::num_printing_regions` :5280 — C++ has it in `Print`
-- `PrintObject::printing_region` :5290
-- `PrintObject::discover_vertical_shells` :5593
-- `polygons_diff` :6913
-- `polygons_intersection` :6928
-- `PrintObject::default` :6944
+- `PrintObject::has_support` :5350 — C++ has it in `Print`, `Support/SupportMaterial`
+- `PrintObject::num_printing_regions` :5357 — C++ has it in `Print`
+- `PrintObject::printing_region` :5367
+- `PrintObject::discover_vertical_shells` :5670
+- `polygons_diff` :6990
+- `polygons_intersection` :7005
+- `PrintObject::default` :7021
 
 ### `PrintObjectSlice` (.cpp) and `print_object_slice.rs`
 
