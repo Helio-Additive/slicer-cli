@@ -121,19 +121,19 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R850) |
+| Fixture | As brought over (R808) | Now (R851) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 183,738 (95.96%) |
 | Benchy arachne | 32,769 (13.68%) | 236,621 (97.18%) |
-| Majora | 1,512,438 (55.88%) | 2,712,617 (95.02%) |
-| Majora, prime tower | 83.5% | 99.6% |
+| Majora | 1,512,438 (55.88%) | 2,747,529 (96.25%) |
+| Majora, prime tower | 83.5% | 99.8% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R850:
+missing most often. Lines of the oracle's body the port has verbatim, at R851:
 Benchy classic 189,787 of 196,495 (96.6%), Benchy arachne 241,689 of 248,190
-(97.4%), Majora 2,884,786 of 3,024,752 (95.4%).
+(97.4%), Majora 2,905,284 of 3,024,752 (96.1%).
 
 Against the engine the port was written for (02.06.00.51, with the branch's own
 driver) R808 scored Majora 66.06%, Benchy classic 121,714 lines and Benchy
@@ -162,13 +162,13 @@ Where each fixture stands, from the `PP` probe (below):
   get the oracle's outline and return its toolpaths to within two units. 90.9%
   of the lines match in content, 89.7% in order: inner walls 96%, outer walls
   90%, solid infill 82%, bridges 72%, floating vertical shell 61%.
-- **Majora** (R849). The merged slices are identical on 633 of 656 layers, the
+- **Majora** (probe run of R849, scores of R851). The merged slices are identical on 633 of 656 layers, the
   region slices on 618, the perimeters on 121; `WallToolPaths` returns the
   oracle's toolpaths on 99.8% of its 40,760 calls, so most of the perimeter
-  differences come after it (overhang splitting and clipping). 95.7% of the
-  lines match in content, 94.5% in order: outer walls 95.6%, inner walls 95.1%,
-  sparse infill 97%, solid infill 98%, floating vertical shell 83%, top surface
-  69%, bridges 57%.
+  differences come after it (overhang splitting and clipping). At R851 96.9% of
+  the lines match in content, 96.3% in order: outer walls 96.3%, inner walls
+  95.8%, sparse infill 98%, solid infill 99%, floating vertical shell 90%,
+  bridges 93%, top surface 72%, bottom surface 18%.
 
 ## The source map
 

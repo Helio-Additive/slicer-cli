@@ -3260,7 +3260,7 @@ Tier 1. C++ functions 20 (plus 1 constructors, 0 destructors, 0 operators), Rust
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `detect_floating_line` :404 and `detect_floating_line` :1011 (40%, 0.4x)
-- partial: `FillFloatingConcentric::fill_surface_arachne_floating` :960 and `FillFloatingConcentric::fill_surface_arachne_floating` :1871 (50%, 0.95x)
+- partial: `FillFloatingConcentric::fill_surface_arachne_floating` :960 and `FillFloatingConcentric::fill_surface_arachne_floating` :1947 (50%, 0.95x)
 
 Missing in the Rust file:
 
@@ -5862,20 +5862,20 @@ Rust only:
 - `Layer::make_perimeters_with_neighbors` :1731
 - `Layer::record_cooling_node_for_each_extrusion` :2368
 - `Layer::generate_sparse_infill_polylines_for_anchoring` :3713 — C++ has it in `Fill/Fill`
-- `Layer::make_ironing` :3995 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :4118
-- `Layer::generate_sparse_infill` :4125
-- `Layer::new_f` :4134 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :4146
-- `Layer::height_mm` :4152
-- `Layer::set_lower_layer` :4158
-- `Layer::set_upper_layer` :4164
-- `Layer::all_slices` :4170
-- `LayerRegion::set_slices` :4179
-- `chain_points` :4189 — C++ has it in `ShortestPath`
-- `get_extents_layer_region` :4232
-- `get_extents_layer_regions` :4255
-- `mpprobe` :4277
+- `Layer::make_ironing` :4037 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :4160
+- `Layer::generate_sparse_infill` :4167
+- `Layer::new_f` :4176 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :4188
+- `Layer::height_mm` :4194
+- `Layer::set_lower_layer` :4200
+- `Layer::set_upper_layer` :4206
+- `Layer::all_slices` :4212
+- `LayerRegion::set_slices` :4221
+- `chain_points` :4231 — C++ has it in `ShortestPath`
+- `get_extents_layer_region` :4274
+- `get_extents_layer_regions` :4297
+- `mpprobe` :4319
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 

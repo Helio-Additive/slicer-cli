@@ -1811,6 +1811,52 @@ impl<'a> FillFloatingConcentric<'a> {
         input_params.wall_transition_filter_deviation = (0.25 * min_nozzle_diameter) as f32;
         input_params.wall_distribution_count = 1;
 
+        // FFC probe (diagnostics only): twin of a probed override copy.
+        let ffc = crate::probe_enabled("FFC");
+        let mix = |h: u64, v: u64| -> u64 { (h ^ v).wrapping_mul(1099511628211) };
+        let mut ffc_key = String::new();
+        if ffc {
+            let (mut np, mut sx, mut sy) = (0i64, 0i64, 0i64);
+            for pg in polygons.iter() {
+                for q in pg.points.iter() {
+                    np += 1;
+                    sx += q.x();
+                    sy += q.y();
+                }
+            }
+            ffc_key = format!("k={}:{}:{}", np, sx, sy);
+            let (mut hu, mut nu) = (1469598103934665603u64, 0usize);
+            for e in self.lower_layer_unsupport_areas.iter() {
+                for pg in crate::geometry::to_polygons_expoly(e).iter() {
+                    hu = mix(hu, 0xffff);
+                    for q in pg.points.iter() {
+                        nu += 1;
+                        hu = mix(hu, q.x() as u64);
+                        hu = mix(hu, q.y() as u64);
+                    }
+                }
+            }
+            let (mut hs, mut ns) = (1469598103934665603u64, 0usize);
+            for pg in self.lower_sparse_polys.iter() {
+                hs = mix(hs, 0xffff);
+                for q in pg.points.iter() {
+                    ns += 1;
+                    hs = mix(hs, q.x() as u64);
+                    hs = mix(hs, q.y() as u64);
+                }
+            }
+            {
+                let mut au = 0.0f64;
+                let mut pu = 0usize;
+                for e in self.lower_layer_unsupport_areas.iter() {
+                    au += e.area();
+                    pu += 1 + e.holes.len();
+                }
+                let asp: f64 = self.lower_sparse_polys.iter().map(|pg| pg.area()).sum();
+                eprintln!("FFC geo {} unsup_polys={} unsup_area={:.6e} sparse_polys={} sparse_area={:.6e}", ffc_key, pu, au, self.lower_sparse_polys.len(), asp);
+            }
+            eprintln!("FFC in {} spacing={} loops={} unsup={}:{:x} sparse={}:{:x} clip={}", ffc_key, min_spacing, loops_count, nu, hu, ns, hs, self.loop_clipping as f64);
+        }
         // FillFloatingConcentric.cpp:900
         let mut wall_tool_paths = WallToolPaths::new(
             polygons,
@@ -1837,6 +1883,19 @@ impl<'a> FillFloatingConcentric<'a> {
         // FillFloatingConcentric.cpp:912 — ordered_extrusions = toplogic_sort_extruisons(all_extrusions);
         let order = toplogic_sort_extruisons(&all_extrusions);
         let ordered: Vec<&ExtrusionLine> = order.iter().map(|&i| all_extrusions[i]).collect();
+        if ffc {
+            let (mut h, mut nj) = (1469598103934665603u64, 0usize);
+            for l in ordered.iter() {
+                h = mix(h, 0xffff);
+                for j in l.junctions.iter() {
+                    nj += 1;
+                    h = mix(h, j.p.x() as u64);
+                    h = mix(h, j.p.y() as u64);
+                    h = mix(h, j.w as u64);
+                }
+            }
+            eprintln!("FFC topo {} n={} nj={} h={:x}", ffc_key, ordered.len(), nj, h);
+        }
 
         // FillFloatingConcentric.cpp:916-918
         let firts_poly_idx = thick_polylines_out.len();
@@ -1847,6 +1906,23 @@ impl<'a> FillFloatingConcentric<'a> {
             &self.lower_sparse_polys,
             min_spacing,
         );
+        if ffc {
+            for (i, t) in thick_polylines.iter().enumerate() {
+                let (mut hp, mut hw, mut hf) = (1469598103934665603u64, 1469598103934665603u64, 1469598103934665603u64);
+                for q in t.points.iter() {
+                    hp = mix(hp, q.x() as u64);
+                    hp = mix(hp, q.y() as u64);
+                }
+                for w in t.width.iter() {
+                    hw = mix(hw, w.to_bits());
+                }
+                for f in t.is_floating.iter() {
+                    hf = mix(hf, *f as u64);
+                }
+                let (fp, lp) = (t.points.first().copied().unwrap_or_default(), t.points.last().copied().unwrap_or_default());
+                eprintln!("FFC split {} i={} np={} nw={} nf={} hp={:x} hw={:x} hf={:x} first={},{} last={},{}", ffc_key, i, t.points.len(), t.width.len(), t.is_floating.len(), hp, hw, hf, fp.x(), fp.y(), lp.x(), lp.y());
+            }
+        }
         // append(thick_polylines_out, thick_polylines);
         thick_polylines_out.extend(thick_polylines);
 

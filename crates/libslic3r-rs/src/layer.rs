@@ -3869,6 +3869,48 @@ impl Layer {
                     continue;
                 }
 
+                // FVS_ANCHOR_GYROID_FSS (on): Fill.cpp:969-971 runs the real filler,
+                // `f->fill_surface(&surface, params)`: Fill::fill_surface shrinks the
+                // surface by half a spacing (FillBase.cpp, `offset_ex(.., overlap -
+                // 0.5 * spacing)`) and FillGyroid::_fill_surface_single generates,
+                // clips and CONNECTS the waves in the rotated frame — the same path
+                // make_fills' gyroid takes (GYROID_FILL_SHRINK, GYROID_FSS). The arm
+                // below connected unshrunk, unrotated lines with default anchor
+                // parameters, so the floating vertical shell's anchor polygons
+                // covered 61% of the oracle's. =0 keeps that arm.
+                if fill_pattern == InfillPattern::Gyroid
+                    && crate::faithful_gate("FVS_ANCHOR_GYROID_FSS")
+                {
+                    let spacing = surface_fill.params.flow.spacing();
+                    let delta = -0.5 * spacing * crate::SCALING_FACTOR;
+                    let islands = crate::clipper_utils::offset_expolygons_clib_scaled(
+                        std::slice::from_ref(&expoly),
+                        delta,
+                        crate::clipper_utils::OffsetJoinType::Miter,
+                    );
+                    let mut fp = crate::fill::FillParams::new();
+                    fp.density = density;
+                    fp.anchor_length = surface_fill.params.anchor_length as f64;
+                    fp.anchor_length_max = surface_fill.params.anchor_length_max as f64;
+                    for island in islands {
+                        let mut fill = crate::fill::fill_gyroid::FillGyroid::new(
+                            (surface_fill.params.angle as f64).to_radians() as f32,
+                            self.print_z,
+                            spacing,
+                        );
+                        let mut out: Vec<crate::geometry::Polyline> = Vec::new();
+                        fill.fill_surface_single(
+                            &fp,
+                            1,
+                            &(0.0f32, crate::geometry::Point::new(0, 0)),
+                            island,
+                            &mut out,
+                        );
+                        sparse_infill_polylines.extend(out);
+                    }
+                    continue;
+                }
+
                 let generated = match fill_pattern {
                     InfillPattern::Rectilinear | InfillPattern::Grid => generate_fill_rectilinear(
                         &[expoly],
