@@ -79,6 +79,37 @@ fn geo_clipper_scale() -> f64 {
     })
 }
 
+/// GEOCALLS (diagnostics only): counts, per call site outside this file, the calls
+/// that reach a helper computing on the geo-clipper grid. `geo_calls_report`
+/// prints them. Nothing here changes output.
+static GEO_CALLS: std::sync::Mutex<Option<std::collections::HashMap<(&'static str, u32), u64>>> =
+    std::sync::Mutex::new(None);
+
+#[track_caller]
+#[inline]
+fn geo_note() {
+    if crate::probe_enabled("GEOCALLS") {
+        let l = std::panic::Location::caller();
+        let mut g = GEO_CALLS.lock().unwrap();
+        *g.get_or_insert_with(Default::default).entry((l.file(), l.line())).or_insert(0) += 1;
+    }
+}
+
+/// Prints the GEOCALLS table to stderr, most frequent call site first.
+pub fn geo_calls_report() {
+    if !crate::probe_enabled("GEOCALLS") {
+        return;
+    }
+    let g = GEO_CALLS.lock().unwrap();
+    if let Some(m) = g.as_ref() {
+        let mut v: Vec<_> = m.iter().collect();
+        v.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        for ((file, line), n) in v {
+            eprintln!("GEOCALLS {n} {file}:{line}");
+        }
+    }
+}
+
 /// Clipper arc tolerance in scaled units (matches BambuStudio DefaultMiterLimit).
 /// When joinType = jtRound, BambuStudio uses miterLimit as ArcTolerance = 3.0 scaled units.
 const CLIPPER_ARC_TOLERANCE_SCALED: f64 = 3.0;
@@ -265,7 +296,9 @@ fn expolygons_to_geo_multi(expolys: &[ExPolygon]) -> MultiPolygon<f64> {
 // ops (`clipper_do`/`clipper_union`, ClipperUtils.cpp:310-350) run ClipperLib at
 // coord_t integer precision with the NonZero fill rule; this uses the geo crate
 // (geo-clipper) at GEO_CLIPPER_SCALE and is not byte-identical.
+#[track_caller]
 pub fn union(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    geo_note();
     if subject.is_empty() {
         return clip.to_vec();
     }
@@ -295,6 +328,7 @@ pub fn union(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
 /// whole subject set against an empty clip (NonZero fill rule), not an iterative
 /// pairwise fold. Performed here as a self-union of the input MultiPolygon to
 /// merge all overlaps in one operation.
+#[track_caller]
 pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
     if polygons.is_empty() {
         return vec![];
@@ -341,6 +375,7 @@ pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
 /// side of that pair dispatches.) The prerequisite is private geo-only bodies —
 /// `union_polygons_ex_geo` / `union_ex_geo` — for the `_clib` internals to call;
 /// there are 8 such internal call sites.
+#[track_caller]
 pub fn union_polygons_ex(polygons: &[Polygon]) -> ExPolygons {
     // R728 — native `union_ex(Polygons)` is one NonZero ClipperLib union at
     // coord_t; the geo body re-grids every vertex to 1 um.
@@ -371,7 +406,9 @@ pub fn union_polygons_ex(polygons: &[Polygon]) -> ExPolygons {
 /// `offset_expolygons_clib_impl` rebuild their ClipperLib output through this
 /// (4 call sites, found by brace-counting scan), so once the public wrapper
 /// dispatches to `_clib` those calls MUST land here or it recurses forever.
+#[track_caller]
 fn union_polygons_ex_geo(polygons: &[Polygon]) -> ExPolygons {
+    geo_note();
     if polygons.is_empty() {
         return vec![];
     }
@@ -402,6 +439,7 @@ fn union_polygons_ex_geo(polygons: &[Polygon]) -> ExPolygons {
 /// C++ op exactly at full 10nm resolution. The legacy geo path below runs geo-clipper at
 /// GEO_CLIPPER_SCALE=1000, which re-grids every vertex to a 1µm grid. Set `CLIPPER_INT=0` to
 /// restore the geo path.
+#[track_caller]
 pub fn intersection(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     if subject.is_empty() || clip.is_empty() {
         return vec![];
@@ -426,6 +464,7 @@ pub fn intersection(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
 }
 
 /// Compute the difference of two sets of polygons (subject - clip).
+#[track_caller]
 pub fn difference(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     if subject.is_empty() {
         return vec![];
@@ -455,7 +494,9 @@ pub fn difference(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
 }
 
 /// Compute the XOR of two sets of polygons.
+#[track_caller]
 pub fn xor(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    geo_note();
     if subject.is_empty() {
         return clip.to_vec();
     }
@@ -492,7 +533,9 @@ pub fn xor(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
 /// `delta` is expressed in scaled (`coord_t`) units exactly as the C++ caller passes it
 /// (e.g. `float(scale_(width/2)) + scaled_epsilon`); it is unscaled internally because
 /// the geo-clipper backend operates in mm.
+#[track_caller]
 pub fn offset_polyline(polyline: &Polyline, delta_scaled: CoordF) -> Vec<Polygon> {
+    geo_note();
     if polyline.points().len() < 2 {
         return Vec::new();
     }
@@ -532,11 +575,13 @@ pub fn offset_polyline(polyline: &Polyline, delta_scaled: CoordF) -> Vec<Polygon
 /// ClipperLib miter limit.
 //
 // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
+#[track_caller]
 pub fn offset_polyline_miter(
     polyline: &Polyline,
     delta_scaled: CoordF,
     miter_limit: CoordF,
 ) -> Vec<Polygon> {
+    geo_note();
     if polyline.points().len() < 2 {
         return Vec::new();
     }
@@ -584,7 +629,9 @@ fn unscale_delta(delta_scaled: CoordF) -> CoordF {
 // MiterLimit/ArcTolerance and ShortestEdgeLength = |delta * 0.005|, then offset
 // with the sign reversed for CW input. The geo-clipper backend applies the
 // offset directly at GEO_CLIPPER_SCALE precision and is not byte-identical.
+#[track_caller]
 pub fn offset_polygon(polygon: &Polygon, delta: CoordF, join_type: OffsetJoinType) -> ExPolygons {
+    geo_note();
     let geo_poly = polygon_to_geo(polygon);
     let jt = join_type.into();
 
@@ -602,11 +649,13 @@ pub fn offset_polygon(polygon: &Polygon, delta: CoordF, join_type: OffsetJoinTyp
 /// Offset an ExPolygon by a given distance.
 ///
 /// Positive delta inflates (grows) the polygon, negative delta deflates (shrinks) it.
+#[track_caller]
 pub fn offset_expolygon(
     expolygon: &ExPolygon,
     delta: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    geo_note();
     let geo_poly = expolygon_to_geo(expolygon);
     let jt = join_type.into();
 
@@ -624,11 +673,13 @@ pub fn offset_expolygon(
 /// Offset multiple ExPolygons by a given distance.
 ///
 /// Positive delta inflates (grows) the polygons, negative delta deflates (shrinks) them.
+#[track_caller]
 pub fn offset_expolygons(
     expolygons: &[ExPolygon],
     delta: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    geo_note();
     if expolygons.is_empty() {
         return vec![];
     }
@@ -654,11 +705,13 @@ pub fn offset_expolygons(
 /// double miterLimit)` — needed by `SLA/Pad.cpp:257-260`, which passes a miter
 /// limit of `1` instead of the crate-wide default `3.0` baked into
 /// `OffsetJoinType::Miter`.
+#[track_caller]
 pub fn offset_expolygons_miter_limit(
     expolygons: &[ExPolygon],
     delta: CoordF,
     miter_limit: f64,
 ) -> ExPolygons {
+    geo_note();
     if expolygons.is_empty() {
         return vec![];
     }
@@ -682,11 +735,13 @@ pub fn offset_expolygons_miter_limit(
 }
 
 /// Offset multiple Polygons by a given distance.
+#[track_caller]
 pub fn offset_polygons(
     polygons: &[Polygon],
     delta: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    geo_note();
     if polygons.is_empty() {
         return vec![];
     }
@@ -711,11 +766,13 @@ pub fn offset_polygons(
 /// Mirrors ClipperUtils `offset(..., ClipperLib::jtRound, miterLimit)` where
 /// the `miterLimit` argument is interpreted as the ArcTolerance, for callers
 /// that pass a non-default arc tolerance (e.g. SLA/ConcaveHull.cpp:136-137).
+#[track_caller]
 pub fn offset_polygons_round(
     polygons: &[Polygon],
     delta: CoordF,
     arc_tolerance_mm: CoordF,
 ) -> ExPolygons {
+    geo_note();
     if polygons.is_empty() {
         return vec![];
     }
@@ -739,11 +796,13 @@ pub fn offset_polygons_round(
 }
 
 /// ExPolygons variant of [`offset_polygons_round`].
+#[track_caller]
 pub fn offset_expolygons_round(
     expolygons: &[ExPolygon],
     delta: CoordF,
     arc_tolerance_mm: CoordF,
 ) -> ExPolygons {
+    geo_note();
     if expolygons.is_empty() {
         return vec![];
     }
@@ -769,14 +828,18 @@ pub fn offset_expolygons_round(
 /// Shrink (inset) ExPolygons by a given distance.
 ///
 /// This is a convenience function that calls offset with a negative delta.
+#[track_caller]
 pub fn shrink(expolygons: &[ExPolygon], distance: CoordF, join_type: OffsetJoinType) -> ExPolygons {
+    geo_note();
     offset_expolygons(expolygons, -distance.abs(), join_type)
 }
 
 /// Grow (outset) ExPolygons by a given distance.
 ///
 /// This is a convenience function that calls offset with a positive delta.
+#[track_caller]
 pub fn grow(expolygons: &[ExPolygon], distance: CoordF, join_type: OffsetJoinType) -> ExPolygons {
+    geo_note();
     offset_expolygons(expolygons, distance.abs(), join_type)
 }
 
@@ -838,7 +901,9 @@ pub fn polygons_overlap(a: &[ExPolygon], b: &[ExPolygon]) -> bool {
 }
 
 /// Helper intersection that doesn't conflict with trait method
+#[track_caller]
 fn intersection_base(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    geo_note();
     if subject.is_empty() || clip.is_empty() {
         return vec![];
     }
@@ -1070,12 +1135,14 @@ pub fn closing(
 /// * `shrink_amount` - Amount to shrink (positive)
 /// * `grow_amount` - Amount to grow back (positive)
 /// * `join_type` - The join type for offset corners
+#[track_caller]
 pub fn offset2(
     expolygons: &[ExPolygon],
     shrink_amount: CoordF,
     grow_amount: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    geo_note();
     if expolygons.is_empty() {
         return vec![];
     }

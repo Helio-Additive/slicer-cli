@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4518 |
+| Rust functions with no C++ function of that name in the pair | 4520 |
 
 By tier:
 
@@ -1564,15 +1564,15 @@ Rust only:
 
 ### `ClipperUtils` (.cpp+.hpp) and `clipper_utils.rs`
 
-Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 128. Matched 14: faithful 9, partial 3, divergent 2, stub 0.
+Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 130. Matched 14: faithful 9, partial 3, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `diff_ex` :470 and `diff_ex` :901 (40%, 4.85x)
-- divergent: `offset2` :577 and `offset2` :1073 (25%, 1.9x)
-- partial: `union_` :727 and `union` :268 (40%, 3.03x)
-- partial: `intersection_ex` :808 and `intersection_ex` :989 (33%, 3.12x)
-- divergent: `union_ex` :825 and `union_ex` :298 (20%, 5.24x)
+- partial: `diff_ex` :470 and `diff_ex` :966 (40%, 4.85x)
+- divergent: `offset2` :577 and `offset2` :1139 (25%, 2.03x)
+- partial: `union_` :727 and `union` :300 (40%, 3.17x)
+- partial: `intersection_ex` :808 and `intersection_ex` :1054 (33%, 3.12x)
+- divergent: `union_ex` :825 and `union_ex` :332 (20%, 5.24x)
 
 Missing in the Rust file:
 
@@ -1793,119 +1793,121 @@ Missing in the Rust file:
 Rust only:
 
 - `geo_clipper_scale` :64
-- `JoinType::from` :118 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `polygon_to_geo` :128
-- `expolygon_to_geo` :150
-- `geo_to_polygon` :194
-- `geo_to_expolygon` :215
-- `geo_multi_to_expolygons` :244
-- `polygons_to_geo_multi` :249
-- `expolygons_to_geo_multi` :254
-- `union_polygons_ex` :344
-- `union_polygons_ex_geo` :374
-- `difference` :429
-- `xor` :458
-- `offset_polyline` :495
-- `offset_polyline_miter` :535
-- `unscale_delta` :566
-- `offset_polygon` :587
-- `offset_expolygon` :605
-- `offset_expolygons` :627
-- `offset_expolygons_miter_limit` :657
-- `offset_polygons` :685
-- `offset_polygons_round` :714
-- `offset_expolygons_round` :742
-- `grow` :779
-- `scale_faithful` :796
-- `offset_delta_mm_from_scaled_f32` :805
-- `simplify` :814 — C++ has it in `Arachne/WallToolPaths`, `Arachne/utils/ExtrusionLine`, `ExPolygon`
-- `remove_small` :827 — C++ has it in `Polygon`
-- `polygons_overlap` :836
-- `intersection_base` :841
-- `total_area` :856
-- `diff_ex_surfaces_expolygons` :933
-- `diff_ex_polygons_surfaces` :958
-- `intersection_surfaces` :1003
-- `intersection_surfaces_expolygons` :1017
-- `to_polygons` :1031 — C++ has it in `ExPolygon`, `NSVGUtils`, `Polygon`
-- `clib_join_code` :1118
-- `assert_i32_scaled` :1132
-- `clib_offset_expolygon_paths_prescaled` :1146
-- `clib_offset_expolygon_paths` :1179
-- `clib_offset_expolygon_paths_scaled` :1219
-- `offset_expolygons_clib_scaled` :1294
-- `offset_expolygons_clib` :1302
-- `offset_expolygons_clib_raw_scaled` :1314
-- `offset_expolygons_clib_raw_scaled_counted` :1325
-- `offset_expolygons_clib_impl` :1342
-- `shrink_clib` :1381
-- `grow_clib` :1390
-- `offset2_clib` :1402
-- `offset_ex_polygons_clib` :1424
-- `clib_flatten_expolygons` :1492
-- `clib_flatten_polygons` :1517
-- `difference_polygons_clib` :1543
-- `clib_boolean_polygons_raw` :1599
-- `diff_polygons_raw_clib` :1647
-- `intersection_polygons_raw_clib` :1653
-- `difference_clib` :1671
-- `intersection_clib` :1761
-- `intersection_clib_safety` :1831
-- `difference_clib_safety` :1879
-- `union_flat_clib` :1964
-- `read_grouped_zpaths` :2013
-- `variable_offset_inner_ex_clib` :2049
-- `unionprof_report` :2098
-- `union_ex_clib` :2120
-- `polytree_ex_clib` :2132
-- `union_ex_clib_impl` :2138
-- `union_safety_offset_ex_clib` :2233
-- `offset2_ex_clib` :2301
-- `offset2_ex_clib_miter` :2313
-- `simplify_polygons_clib` :2422
-- `offset_polygons_clib` :2477
-- `offset_polygons_clib_ml` :2484
-- `detect_gaps` :2556
-- `extract_centerlines` :2613
-- `intersect_polylines_with_expolygons` :2687
-- `clip_polyline_to_expolygons` :2706
-- `clip_segment_to_expolygons` :2757
-- `point_in_expolygons` :2819
-- `clip_clipper_polygon_with_subject_bbox_points` :2845
-- `clip_clipper_polygons_with_subject_bbox_expolygon` :2940
-- `clip_clipper_polygons_with_subject_bbox_polygons` :2967
-- `intersection_pl_clib` :3048
-- `diff_pl_clib` :3109
-- `intersection_polyline_with_expolygons` :3167
-- `intersection_segment_with_expolygons` :3217
-- `diff_polyline_from_expolygons` :3359
-- `diff_segment_from_expolygons` :3409
-- `polygons_to_polylines` :3470
-- `expolygons_to_polylines` :3478
-- `point_to_clipper2` :3512
-- `clipper2_point_to_point` :3516
-- `polyline_to_clipper2_path` :3523
-- `polygon_to_clipper2_path` :3527
-- `clipper2_path_to_polyline` :3531
-- `expolygons_to_clipper2_paths` :3536
-- `polylines_to_clipper2_paths` :3547
-- `clipper2_paths_to_polylines` :3553
-- `union_safety_offset_ex_expolygons` :3621
-- `polygons_ops_clib` :3630
-- `mm_to_scaled_f32` :3636
-- `polygons_as_paths` :3642
-- `shrink_polygons_clib` :3648
-- `closing_polygons_clib` :3654
-- `opening_polygons_clib` :3661
-- `diff_polygons` :3671
-- `diff_ex_polygons_polygons` :3691
-- `intersection_ex_polygons_polygons` :3716
-- `intersection_ex_expolygons_polygons` :3738
-- `expand_polygons` :3759
-- `opening_polygons_2` :3777
-- `clip_clipper_polygons_with_subject_bbox_expolygons` :3798
-- `intersection_pl_2` :3815 — C++ has it in `Clipper2Utils`
-- `diff_pl_2` :3840 — C++ has it in `Clipper2Utils`
+- `geo_note` :90
+- `geo_calls_report` :99
+- `JoinType::from` :149 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `polygon_to_geo` :159
+- `expolygon_to_geo` :181
+- `geo_to_polygon` :225
+- `geo_to_expolygon` :246
+- `geo_multi_to_expolygons` :275
+- `polygons_to_geo_multi` :280
+- `expolygons_to_geo_multi` :285
+- `union_polygons_ex` :379
+- `union_polygons_ex_geo` :410
+- `difference` :468
+- `xor` :498
+- `offset_polyline` :537
+- `offset_polyline_miter` :579
+- `unscale_delta` :611
+- `offset_polygon` :633
+- `offset_expolygon` :653
+- `offset_expolygons` :677
+- `offset_expolygons_miter_limit` :709
+- `offset_polygons` :739
+- `offset_polygons_round` :770
+- `offset_expolygons_round` :800
+- `grow` :841
+- `scale_faithful` :859
+- `offset_delta_mm_from_scaled_f32` :868
+- `simplify` :877 — C++ has it in `Arachne/WallToolPaths`, `Arachne/utils/ExtrusionLine`, `ExPolygon`
+- `remove_small` :890 — C++ has it in `Polygon`
+- `polygons_overlap` :899
+- `intersection_base` :905
+- `total_area` :921
+- `diff_ex_surfaces_expolygons` :998
+- `diff_ex_polygons_surfaces` :1023
+- `intersection_surfaces` :1068
+- `intersection_surfaces_expolygons` :1082
+- `to_polygons` :1096 — C++ has it in `ExPolygon`, `NSVGUtils`, `Polygon`
+- `clib_join_code` :1185
+- `assert_i32_scaled` :1199
+- `clib_offset_expolygon_paths_prescaled` :1213
+- `clib_offset_expolygon_paths` :1246
+- `clib_offset_expolygon_paths_scaled` :1286
+- `offset_expolygons_clib_scaled` :1361
+- `offset_expolygons_clib` :1369
+- `offset_expolygons_clib_raw_scaled` :1381
+- `offset_expolygons_clib_raw_scaled_counted` :1392
+- `offset_expolygons_clib_impl` :1409
+- `shrink_clib` :1448
+- `grow_clib` :1457
+- `offset2_clib` :1469
+- `offset_ex_polygons_clib` :1491
+- `clib_flatten_expolygons` :1559
+- `clib_flatten_polygons` :1584
+- `difference_polygons_clib` :1610
+- `clib_boolean_polygons_raw` :1666
+- `diff_polygons_raw_clib` :1714
+- `intersection_polygons_raw_clib` :1720
+- `difference_clib` :1738
+- `intersection_clib` :1828
+- `intersection_clib_safety` :1898
+- `difference_clib_safety` :1946
+- `union_flat_clib` :2031
+- `read_grouped_zpaths` :2080
+- `variable_offset_inner_ex_clib` :2116
+- `unionprof_report` :2165
+- `union_ex_clib` :2187
+- `polytree_ex_clib` :2199
+- `union_ex_clib_impl` :2205
+- `union_safety_offset_ex_clib` :2300
+- `offset2_ex_clib` :2368
+- `offset2_ex_clib_miter` :2380
+- `simplify_polygons_clib` :2489
+- `offset_polygons_clib` :2544
+- `offset_polygons_clib_ml` :2551
+- `detect_gaps` :2623
+- `extract_centerlines` :2680
+- `intersect_polylines_with_expolygons` :2754
+- `clip_polyline_to_expolygons` :2773
+- `clip_segment_to_expolygons` :2824
+- `point_in_expolygons` :2886
+- `clip_clipper_polygon_with_subject_bbox_points` :2912
+- `clip_clipper_polygons_with_subject_bbox_expolygon` :3007
+- `clip_clipper_polygons_with_subject_bbox_polygons` :3034
+- `intersection_pl_clib` :3115
+- `diff_pl_clib` :3176
+- `intersection_polyline_with_expolygons` :3234
+- `intersection_segment_with_expolygons` :3284
+- `diff_polyline_from_expolygons` :3426
+- `diff_segment_from_expolygons` :3476
+- `polygons_to_polylines` :3537
+- `expolygons_to_polylines` :3545
+- `point_to_clipper2` :3579
+- `clipper2_point_to_point` :3583
+- `polyline_to_clipper2_path` :3590
+- `polygon_to_clipper2_path` :3594
+- `clipper2_path_to_polyline` :3598
+- `expolygons_to_clipper2_paths` :3603
+- `polylines_to_clipper2_paths` :3614
+- `clipper2_paths_to_polylines` :3620
+- `union_safety_offset_ex_expolygons` :3688
+- `polygons_ops_clib` :3697
+- `mm_to_scaled_f32` :3703
+- `polygons_as_paths` :3709
+- `shrink_polygons_clib` :3715
+- `closing_polygons_clib` :3721
+- `opening_polygons_clib` :3728
+- `diff_polygons` :3738
+- `diff_ex_polygons_polygons` :3758
+- `intersection_ex_polygons_polygons` :3783
+- `intersection_ex_expolygons_polygons` :3805
+- `expand_polygons` :3826
+- `opening_polygons_2` :3844
+- `clip_clipper_polygons_with_subject_bbox_expolygons` :3865
+- `intersection_pl_2` :3882 — C++ has it in `Clipper2Utils`
+- `diff_pl_2` :3907 — C++ has it in `Clipper2Utils`
 
 ### `ClipperZUtils` (.hpp) and `clipper_z_utils.rs`
 
@@ -6917,7 +6919,7 @@ Tier 1. C++ functions 29 (plus 3 constructors, 0 destructors, 0 operators), Rust
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `traverse_loops` :288 and `traverse_loops` :2617 (59%, 2.33x)
-- partial: `PerimeterGenerator::add_infill_contour_for_arachne` :1455 and `PerimeterGenerator::add_infill_contour_for_arachne` :4313 (44%, 4.73x)
+- partial: `PerimeterGenerator::add_infill_contour_for_arachne` :1455 and `PerimeterGenerator::add_infill_contour_for_arachne` :4408 (44%, 4.73x)
 
 Missing in the Rust file:
 
@@ -6965,11 +6967,11 @@ Rust only:
 - `convert_thin_walls_to_extrusion_paths` :2343
 - `thick_polyline_to_extrusion_paths` :2372
 - `entity_reverse_inplace` :2567
-- `PerimeterGenerator::generate_arachne` :3330
-- `PerimeterGenerator::arachne_line_to_extrusion_paths` :4473
-- `expolygons_to_polygons` :5101
-- `apply_fuzzy_skin_to_entity` :5113
-- `lastprobe` :5171
+- `PerimeterGenerator::generate_arachne` :3355
+- `PerimeterGenerator::arachne_line_to_extrusion_paths` :4568
+- `expolygons_to_polygons` :5196
+- `apply_fuzzy_skin_to_entity` :5208
+- `lastprobe` :5266
 
 ### `PlaceholderParser` (.cpp+.hpp) and `placeholder_parser.rs`
 
@@ -7800,13 +7802,13 @@ Tier 1. C++ functions 236 (plus 12 constructors, 1 destructors, 7 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Print::clear` :60 and `Print::clear` :2050 (9%, 0.52x)
-- partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :2070 (50%, 0.75x)
-- divergent: `Print::validate` :1413 and `Print::validate` :2119 (5%, 0.15x)
-- divergent: `Print::process` :2178 and `Print::process` :2218 (13%, 1.22x)
-- divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :608 (25%, 44.94x)
-- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3452 (23%, 0.41x)
-- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3818 (21%, 0.39x)
+- divergent: `Print::clear` :60 and `Print::clear` :2051 (9%, 0.52x)
+- partial: `Print::has_tpu_filament` :74 and `Print::has_tpu_filament` :2071 (50%, 0.75x)
+- divergent: `Print::validate` :1413 and `Print::validate` :2120 (5%, 0.15x)
+- divergent: `Print::process` :2178 and `Print::process` :2219 (13%, 1.22x)
+- divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :608 (25%, 44.99x)
+- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3453 (23%, 0.41x)
+- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3819 (21%, 0.39x)
 - stub: `PrintStatistics::config` :4454 and `Print::config` :559 (6%, 0.03x)
 
 Missing in the Rust file:
@@ -8048,20 +8050,20 @@ Rust only:
 - `Print::skirt` :554
 - `Print::config_mut` :564
 - `Print::entity_points` :578
-- `apply_cooling_postprocess` :1910
-- `Print::apply` :2102 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `Print::make_brim` :3586 — C++ has it in `Brim`
-- `Print::all_extruders` :3722
-- `Print::is_canceled` :3758
-- `Print::cancel` :3764 — C++ has it in `PrintBase`
-- `Print::throw_if_canceled` :3770 — C++ has it in `PrintBase`, `SLAPrintSteps`
-- `Print::set_status_callback` :3779 — C++ has it in `PrintBase`
-- `Print::set_status` :3788 — C++ has it in `PrintBase`
-- `Print::invalidate_all_steps` :3796 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `collect_entity_lines` :3941
-- `stl_instance_object_id` :3976
-- `emit_layer_by_island` :3984
-- `Print::default` :4630
+- `apply_cooling_postprocess` :1911
+- `Print::apply` :2103 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `Print::make_brim` :3587 — C++ has it in `Brim`
+- `Print::all_extruders` :3723
+- `Print::is_canceled` :3759
+- `Print::cancel` :3765 — C++ has it in `PrintBase`
+- `Print::throw_if_canceled` :3771 — C++ has it in `PrintBase`, `SLAPrintSteps`
+- `Print::set_status_callback` :3780 — C++ has it in `PrintBase`
+- `Print::set_status` :3789 — C++ has it in `PrintBase`
+- `Print::invalidate_all_steps` :3797 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `collect_entity_lines` :3942
+- `stl_instance_object_id` :3977
+- `emit_layer_by_island` :3985
+- `Print::default` :4631
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 

@@ -3298,12 +3298,29 @@ impl PerimeterGenerator {
         // C++ :1818 — BBS: filter small area and extend top surface a bit to hide the wall line
         let min_width_top_surface = (self.config.top_area_threshold / 100.0)
             * (ext_perimeter_spacing / 2.0).max(perimeter_width / 2.0);
+        // PerimeterGenerator.cpp:1853-1864 — `perimeter_width` and
+        // `ext_perimeter_spacing` are coord_t (`scaled_width()`,
+        // `scaled_spacing()`), `min_width_top_surface` a double in scaled units,
+        // and both `offset_ex` calls take it as a float and compute at coord_t.
+        let exact = crate::faithful_gate("ARACHNE_TOP_ONE_WALL_CLIB");
+        let perimeter_width_s = self.config.perimeter_flow.scaled_width() as f64;
+        let min_width_top_surface_s = (self.config.top_area_threshold / 100.0)
+            * (self.config.ext_perimeter_flow.scaled_spacing() as f64 / 2.0)
+                .max(perimeter_width_s / 2.0);
         // C++ :1819
-        let shrunk_top = crate::clipper_utils::offset_expolygons(
-            top,
-            -min_width_top_surface,
-            crate::clipper_utils::OffsetJoinType::Miter,
-        );
+        let shrunk_top = if exact {
+            crate::clipper_utils::offset_expolygons_clib_scaled(
+                top,
+                -(min_width_top_surface_s as f32) as f64,
+                crate::clipper_utils::OffsetJoinType::Miter,
+            )
+        } else {
+            crate::clipper_utils::offset_expolygons(
+                top,
+                -min_width_top_surface,
+                crate::clipper_utils::OffsetJoinType::Miter,
+            )
+        };
         // C++ :1820-1821
         let shrunk_area = area_of(&shrunk_top);
         let original_area = area_of(original_expolys);
@@ -3317,11 +3334,19 @@ impl PerimeterGenerator {
             top.clear();
         } else {
             // C++ :1826
-            *top = crate::clipper_utils::offset_expolygons(
-                &shrunk_top,
-                min_width_top_surface + perimeter_width,
-                crate::clipper_utils::OffsetJoinType::Miter,
-            );
+            *top = if exact {
+                crate::clipper_utils::offset_expolygons_clib_scaled(
+                    &shrunk_top,
+                    ((min_width_top_surface_s + perimeter_width_s) as f32) as f64,
+                    crate::clipper_utils::OffsetJoinType::Miter,
+                )
+            } else {
+                crate::clipper_utils::offset_expolygons(
+                    &shrunk_top,
+                    min_width_top_surface + perimeter_width,
+                    crate::clipper_utils::OffsetJoinType::Miter,
+                )
+            };
         }
         // C++ :1827
         !top.is_empty()
@@ -3732,6 +3757,7 @@ impl PerimeterGenerator {
                 // pure speed optimisation on the clip operand and does not change the
                 // difference, so it is omitted rather than approximated.
                 if seperate_wall_generation {
+                    let top_one_wall_clib = crate::faithful_gate("ARACHNE_TOP_ONE_WALL_CLIB");
                     // C++ :1566
                     let mut one_wall_paths = WallToolPaths::new(
                         last_p.clone(),
@@ -3747,6 +3773,43 @@ impl PerimeterGenerator {
                     infill_contour_by_one_wall =
                         union_polygons_ex(one_wall_paths.get_inner_contour());
 
+                    if top_one_wall_clib {
+                        // PerimeterGenerator.cpp:1618-1634 — the upper and lower
+                        // slices are clipped to the bounding box of the one-wall
+                        // infill contour first (`infill_bbox.offset(EPSILON)` adds
+                        // nothing to a coord_t box), and the three `diff_ex` run at
+                        // coord_t.
+                        let infill_bbox =
+                            crate::geometry::get_extents(&infill_contour_by_one_wall);
+                        let clipped = |slices: Option<&ExPolygons>| -> crate::geometry::Polygons {
+                            slices
+                                .map(|s| {
+                                    crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygons(
+                                        s,
+                                        &infill_bbox,
+                                        false,
+                                    )
+                                })
+                                .unwrap_or_default()
+                        };
+                        let upper_polygons_clipped = clipped(self.config.upper_slices.as_ref());
+                        top_expolys_by_one_wall = crate::clipper_utils::diff_ex_polygons_polygons(
+                            &expolygons_to_polygons(&infill_contour_by_one_wall),
+                            &upper_polygons_clipped,
+                            crate::clipper_utils::ApplySafetyOffset::No,
+                        );
+                        let lower_polygons_clipped = clipped(self.config.lower_slices.as_ref());
+                        let bottom_expolys = crate::clipper_utils::diff_ex_polygons_polygons(
+                            &expolygons_to_polygons(&top_expolys_by_one_wall),
+                            &lower_polygons_clipped,
+                            crate::clipper_utils::ApplySafetyOffset::No,
+                        );
+                        top_expolys_by_one_wall = crate::clipper_utils::diff_ex_polygons_polygons(
+                            &expolygons_to_polygons(&top_expolys_by_one_wall),
+                            &expolygons_to_polygons(&bottom_expolys),
+                            crate::clipper_utils::ApplySafetyOffset::No,
+                        );
+                    } else {
                     // C++ :1576-1579  top = infill_contour_by_one_wall - upper_slices
                     top_expolys_by_one_wall = match self.config.upper_slices.as_ref() {
                         Some(upper) => {
@@ -3766,6 +3829,7 @@ impl PerimeterGenerator {
                         &top_expolys_by_one_wall,
                         &bottom_expolys,
                     );
+                    }
                     // C++ :1587
                     let before = seperate_wall_generation;
                     seperate_wall_generation =
@@ -3804,10 +3868,20 @@ impl PerimeterGenerator {
                     total_perimeters = first_perimeters;
                     surface_infill = if loop_number > 0 {
                         // C++ :1598-1599
-                        let last2 = crate::clipper_utils::difference(
-                            &infill_contour_by_one_wall,
-                            &top_expolys_by_one_wall,
-                        );
+                        let top_one_wall_clib = crate::faithful_gate("ARACHNE_TOP_ONE_WALL_CLIB");
+                        // PerimeterGenerator.cpp:1643
+                        let last2 = if top_one_wall_clib {
+                            crate::clipper_utils::diff_ex_polygons_polygons(
+                                &expolygons_to_polygons(&infill_contour_by_one_wall),
+                                &expolygons_to_polygons(&top_expolys_by_one_wall),
+                                crate::clipper_utils::ApplySafetyOffset::No,
+                            )
+                        } else {
+                            crate::clipper_utils::difference(
+                                &infill_contour_by_one_wall,
+                                &top_expolys_by_one_wall,
+                            )
+                        };
                         let last_p2: crate::geometry::Polygons = expolygons_to_polygons(&last2);
                         // C++ :1600  NOTE bead_width_0 is perimeter_spacing here, not
                         // ext_perimeter_spacing — the outer wall is already placed.
@@ -3833,8 +3907,29 @@ impl PerimeterGenerator {
                         // C++ :1610-1611
                         let mut acc = union_polygons_ex(paths_new.get_inner_contour());
                         acc.extend(top_expolys_by_one_wall.iter().cloned());
-                        let acc = crate::clipper_utils::union_ex(&acc);
-                        crate::clipper_utils::intersection(&acc, &infill_contour_by_one_wall)
+                        if top_one_wall_clib {
+                            // PerimeterGenerator.cpp:1655-1656: `union_ex(a, b)` is
+                            // one union of both lists (ClipperUtils.cpp:825-831),
+                            // `intersection_ex` at coord_t.
+                            let acc = crate::clipper_utils::union_ex_clib(
+                                &expolygons_to_polygons(&acc),
+                                1,
+                            );
+                            crate::clipper_utils::intersection_ex_polygons_polygons(
+                                &expolygons_to_polygons(&acc),
+                                &expolygons_to_polygons(&infill_contour_by_one_wall),
+                                crate::clipper_utils::ApplySafetyOffset::No,
+                            )
+                        } else {
+                            let acc = crate::clipper_utils::union_ex(&acc);
+                            crate::clipper_utils::intersection(&acc, &infill_contour_by_one_wall)
+                        }
+                    } else if crate::faithful_gate("ARACHNE_TOP_ONE_WALL_CLIB") {
+                        // PerimeterGenerator.cpp:1640
+                        crate::clipper_utils::union_ex_clib(
+                            &expolygons_to_polygons(&infill_contour_by_one_wall),
+                            1,
+                        )
                     } else {
                         crate::clipper_utils::union_ex(&infill_contour_by_one_wall)
                     };

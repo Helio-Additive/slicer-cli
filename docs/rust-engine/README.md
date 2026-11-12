@@ -123,19 +123,19 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R855) |
+| Fixture | As brought over (R808) | Now (R856) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 184,212 (96.14%) |
-| Benchy arachne | 32,769 (13.68%) | 237,255 (97.39%) |
-| Majora | 1,512,438 (55.88%) | 2,782,052 (97.37%) |
+| Benchy arachne | 32,769 (13.68%) | 238,663 (97.97%) |
+| Majora | 1,512,438 (55.88%) | 2,782,529 (97.39%) |
 | Majora, prime tower | 83.5% | 99.6% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R855:
-Benchy classic 190,340 of 196,495 (96.9%), Benchy arachne 242,771 of 248,190
-(97.8%), Majora 2,962,080 of 3,024,752 (97.9%).
+missing most often. Lines of the oracle's body the port has verbatim, at R856:
+Benchy classic 190,340 of 196,495 (96.9%), Benchy arachne 244,497 of 248,190
+(98.5%), Majora 2,962,539 of 3,024,752 (97.9%).
 
 Majora's percentage rose in R853 with the matched count unchanged: the port wrote
 `; LINE_WIDTH` twice after each prime tower visit (3,339 lines), and no longer does.
@@ -216,6 +216,11 @@ perimeter generator that lead to the fill boundary (`last`, `notfilled`,
 `t_*` inside the top-one-wall branch), and `FBISL=<layer>` every point of one
 layer; the C++ twin is the same `fprintf` at the same places of a probed
 `PerimeterGenerator.cpp`.
+
+`GEOCALLS=1` prints, at the end of the export, `GEOCALLS <count> <file>:<line>` for
+every call site that reached a `clipper_utils` helper computing on the geo-clipper
+grid (1 um) and not at coord_t. The table is empty on the three fixtures (R856);
+on a new job each line is a call to port to the `_clib` helper of the same name.
 
 `MONO=1` prints one line per `chain_monotonic_regions` call: the number of regions
 and scan lines, the chosen path (`region:flipped`) and every region's boundaries,

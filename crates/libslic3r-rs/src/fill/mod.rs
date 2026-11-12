@@ -1140,11 +1140,21 @@ pub fn group_fills(
                     if !clipped_internals.is_empty()
                         && bbox.intersects(&clipped_internal_bbox)
                         && !intersection_ex_expolygons_polygons(
-                            &offset_expolygon(
-                                &surface_fills[i].expolygons[j],
-                                SCALED_EPSILON / crate::SCALING_FACTOR,
-                                OffsetJoinType::Miter,
-                            ),
+                            // Fill.cpp:570 `offset_ex(expoly, SCALED_EPSILON)`: ten
+                            // coord_t units, a tenth of the geo backend's grid step.
+                            &if crate::faithful_gate("FVS_DETECT_OFFSET_CLIB") {
+                                crate::clipper_utils::offset_expolygons_clib_scaled(
+                                    std::slice::from_ref(&surface_fills[i].expolygons[j]),
+                                    (SCALED_EPSILON as f32) as f64,
+                                    OffsetJoinType::Miter,
+                                )
+                            } else {
+                                offset_expolygon(
+                                    &surface_fills[i].expolygons[j],
+                                    SCALED_EPSILON / crate::SCALING_FACTOR,
+                                    OffsetJoinType::Miter,
+                                )
+                            },
                             &clipped_internals,
                         )
                         .is_empty()
