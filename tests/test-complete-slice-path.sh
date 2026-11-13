@@ -5542,12 +5542,13 @@ for k in ("inherits_group", "different_settings_to_system"):
     v = ps.get(k)
     assert v is None or len(v) == n + 2, "%s has %d entries, want %d" % (k, len(v), n + 2)
 ' h3cinh/out/h3cinh.3mf || { fail "H3C: the exported project's inherits_group/different_settings_to_system are not one entry per preset after --load-filaments"; h3c_ok=0; }; }
-# A per-slot layout key as a flag is refused by name (the official CLI rebuilds
-# the layout from it); --allow-mix-temp is taken and reported as having no effect.
+# The rack from the command line, per-slot keys included, as the official CLI
+# rebuilds the layout from them (BambuStudio.cpp 7103-7172);
+# --allow-mix-temp is taken and reported as having no effect.
 run h3cslot "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
-    --extruder-nozzle-diameter 0.4 --slice 1 --outputdir h3cslot/out
-[ "$(rc h3cslot)" != 0 ] && grep -q "extruder-nozzle-diameter is a .* setting that slicer-cli does not take on the command line" h3cslot/stderr \
-    || { show h3cslot; fail "H3C: --extruder-nozzle-diameter was not refused by name (exit $(rc h3cslot))"; h3c_ok=0; }
+    --extruder-nozzle-count 3 --extruder-nozzle-volume-type "Standard,Standard,Standard" --extruder-nozzle-diameter "0.4,0.4,0.4" --slice 1 --outputdir h3cslot/out
+[ "$(rc h3cslot)" = 0 ] && [ "$(hdr h3cslot/out/plate_1.gcode extruder_nozzle_count)" = 3 ] && [ "$(hdr h3cslot/out/plate_1.gcode extruder_nozzle_stats)" = "Standard#3" ] \
+    || { show h3cslot; fail "H3C: the rack given on the command line is not the one the slice states (exit $(rc h3cslot), count $(hdr h3cslot/out/plate_1.gcode extruder_nozzle_count), stats $(hdr h3cslot/out/plate_1.gcode extruder_nozzle_stats))"; h3c_ok=0; }
 run h3cmix "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
     --allow-mix-temp=1 --slice 1 --outputdir h3cmix/out
 [ "$(rc h3cmix)" = 0 ] || { show h3cmix; fail "H3C: --allow-mix-temp refused the run (exit $(rc h3cmix))"; h3c_ok=0; }

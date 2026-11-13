@@ -190,7 +190,7 @@ flag takes its value as the next word or after `=`.
 | `--printer-preset` | name | A printer system preset by name, every parent applied; on a project 3MF, the printer the project moves to | all binaries |
 | `--process-preset` | name | A process system preset by name (default: the printer's) | all binaries |
 | `--filament-preset` | name | A filament system preset by name; repeat for more filaments | all binaries |
-| `--filament-map` | "1[,2...]" | Two-nozzle Bambu printers: the nozzle each filament prints with, one per filament (1 = left, 2 = right); sets `filament_map_mode` to `Manual` (see "Every print setting") | slicer_cli only |
+| `--filament-map` | "1[,2...]" | Printers with a left and a right extruder (H2D, H2D Pro, H2C, X2D): the one each filament prints with, one value per filament (1 = left, 2 = right); sets `filament_map_mode` to `Manual` (see "Every print setting") | slicer_cli and slicer_cli-orcaslicer |
 | `--machine` | file | A printer settings file (JSON) | all binaries |
 | `--process` | file | A process settings file (JSON) | all binaries |
 | `--filament` | file | A filament settings file (JSON) | all binaries |
@@ -271,31 +271,91 @@ slicer_cli part.stl --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
 The values win over the presets' and the file's, for every plate. A value the
 setting does not take is refused before slicing (return code -2), naming the
 setting. `post_process` is refused: neither official command line runs
-post-processing scripts. The nozzle and filament mapping settings
-(`nozzle_volume_type`, `filament_map_mode`, `filament_volume_map`,
-`filament_nozzle_map`, `extruder_nozzle_count`,
-`extruder_nozzle_volume_type`, `extruder_nozzle_diameter`,
-`extruder_nozzle_slot`, `ams_nozzle_idx`) are refused as flags; the engine
-sets them from the printer and the filaments. `filament_map` is taken by
-`slicer_cli` only (below) and refused by `slicer_cli-orcaslicer` and
-`slicer_cli-snapmaker`.
+post-processing scripts. `--list-settings` marks every setting a binary
+refuses as a flag (`refused_as_flag`).
 
-Which nozzle each filament prints with (`slicer_cli`, two-nozzle Bambu
-printers such as the H2D and H2C): `--filament-map` gives one nozzle per
-filament of the project, in filament order, 1 for the left nozzle and 2 for
-the right, as Bambu Studio numbers them (`--filament-map 1`,
-`--filament-map 2,1`). It sets `filament_map_mode` to `Manual`, as the
-official command line takes `--filament_map` with
-`--filament_map_mode Manual`, so the engine keeps that grouping instead of
-choosing its own; the map wins over the plate's and the project's. Without
-the flag a bare model slices in `Auto For Flush` and the engine picks the
-nozzle. The run says so with a `config_normalized` /
-`FilamentMapFromCommandLine` event. Refused before slicing (return code -2):
-a count other than the project's filament count, a nozzle the printer does
-not have, and any one-nozzle printer. Either way `result.json` reports the
-nozzle each filament printed with (`sliced_plates[].filament_maps`, below),
-which is what the plate's `Metadata/slice_info.config` `filament_maps`
-states. Read the slice's choice there, not from the project's
+Nozzles and filament grouping. Each binary takes the settings its official
+command line reads from the flags, and what its desktop app's own screens
+choose:
+
+| Setting | slicer_cli | slicer_cli-orcaslicer | slicer_cli-snapmaker |
+|-|-|-|-|
+| `--filament-map-mode` | `Auto For Flush`, `Auto For Match`, `Auto For Quality`, `Manual`, `Nozzle Manual` | `Auto For Flush`, `Auto For Match`, `Manual` | refused: the engine keeps no map on a plate |
+| `--filament-map` | the extruder of each filament (1 = left, 2 = right); on a printer with one extruder and a nozzle rack, Bambu Studio's grouping (1 = the nozzle the AMS feeds, 2 = the fixed nozzles) | the extruder of each filament, Bambu Lab printers with two extruders | refused |
+| `--nozzle-volume-type` | the flow type of each extruder (`Standard`, `High Flow`, ...) | the same | the flow type of each extruder's nozzle (`standard`, `high_flow`) |
+| `--filament-volume-map`, `--filament-nozzle-map` | the flow type and the rack nozzle of each filament | refused: the official command line does not read them | no such setting |
+| `--extruder-nozzle-count`, `--extruder-nozzle-volume-type`, `--extruder-nozzle-diameter`, `--extruder-nozzle-slot`, `--ams-nozzle-idx` | the nozzle rack: how many nozzles each extruder holds, each one's flow type and diameter, and the nozzle the AMS feeds | refused: the official command line does not read them | no such setting |
+| `--filament-volume-type` | no such setting | no such setting | with standard and high-flow nozzles mixed, the nozzle type of each filament |
+
+The mode and the map from the command line win over the plate's and the
+project's, as in the official command lines. `--filament-map` with no
+`--filament-map-mode` means `Manual`, so the engine keeps that grouping; with
+an automatic mode the engine groups the filaments itself, whatever the map
+says. `-1` in the map takes the first value given. The run says what it
+applied with a `config_normalized` event (`FilamentMapFromCommandLine`, or
+`FilamentMapModeFromCommandLine` for a mode alone). `--export-settings` and
+an exported 3MF state the mode with the map.
+
+`--filament-map` on a printer with a left and a right extruder (the H2D,
+H2D Pro, H2C and X2D in `slicer_cli`; the H2D, H2D Pro and X2D in
+`slicer_cli-orcaslicer`): one value per filament of the project, in filament
+order (`--filament-map 2,1`). Refused before slicing (return code -2): a
+count other than the project's filament count, an extruder the printer does
+not have, a one-nozzle printer, and in `slicer_cli-orcaslicer` any printer
+that is not a Bambu Lab one with two extruders, where every filament has its
+own extruder. On the H2C the right extruder changes between up to six
+nozzles; with `Manual` the engine picks among them. A model with no saved
+prime tower gets the tower inside the area both nozzles reach. In a manual
+mode `slicer_cli` refuses a filament the plate uses that cannot print with
+the extruder its map names (the filament's `filament_printable`; return code
+-68, as the official command line), whether the map comes from the flag or
+from the plate.
+
+`--filament-map` on a printer with one extruder and a nozzle rack (the H3C,
+`slicer_cli`): 1 puts a filament on the nozzle the AMS feeds, 2 on the fixed
+nozzles, where the engine picks the nozzle that fits. The settings must
+state an AMS: a project saved with one does, and `--ams-nozzle-idx N` names
+the rack nozzle it feeds (0 is the first; -1 is no AMS). Without an AMS
+every nozzle is a fixed one, and a value of 1 is refused.
+
+`--filament-map-mode "Nozzle Manual"` (`slicer_cli`, printers with a nozzle
+rack) names the rack nozzle of each filament. As in the official command
+line it needs all of `--filament-map`, `--filament-volume-map`,
+`--filament-nozzle-map`, `--extruder-nozzle-count` and
+`--extruder-nozzle-volume-type`, and is refused on a printer with no rack:
+
+```sh
+slicer_cli two-colours.3mf --printer-preset "Bambu Lab H2C 0.4 nozzle" --slice 1 --outputdir out \
+    --filament-map-mode "Nozzle Manual" --filament-map 2,2 --filament-volume-map 0,0 \
+    --filament-nozzle-map 1,3 --extruder-nozzle-count 1,3 \
+    --extruder-nozzle-volume-type "Standard,Standard,Standard,Standard"
+```
+
+`--extruder-nozzle-count` with `--extruder-nozzle-volume-type` describes the
+rack in any mode: the count per extruder, then one flow type per nozzle, in
+order. `--extruder-nozzle-diameter` gives each nozzle's diameter (the
+printer's own when left out) and `--ams-nozzle-idx` the nozzle the AMS feeds
+(none when left out). `"Auto For Quality"` is Bambu Studio's Quality Mode:
+it is taken on a printer whose extruders differ in type (the X2D) and
+refused on any other. `--estimate-mode` slices with `Auto For Flush` and a
+full rack of Standard nozzles; another mode with it is refused.
+
+`slicer_cli-snapmaker`: `--nozzle-volume-type` sets each nozzle to
+`standard` or `high_flow`, as the desktop's nozzle selector does. When the
+nozzles are all one type every filament follows it. When they mix, the
+desktop asks which nozzle type each filament uses: `--filament-volume-type`
+is that answer, one value per filament; without it the file's values stand
+and a `MixedNozzleFlowTypes` warning says so. As in the desktop's dialog, a
+filament the plate uses that cannot print with a high-flow nozzle is refused
+(return code -2) and one that is not recommended gets a
+`HighFlowNotRecommended` warning; the lists are the engine's own
+(`filament_allow_list.json`).
+
+`result.json` reports what the slice used: `sliced_plates[].filament_maps`
+(the extruder of each filament, the plate's `Metadata/slice_info.config`
+`filament_maps`), `filament_nozzle_map` on a printer with a nozzle rack (the
+rack nozzle of each filament, 0-based, as the G-code states it) and
+`filament_map_mode`. Read the slice's choice there, not from the project's
 `filament_map`: in an automatic mode `project_settings.config` keeps the map
 it was saved with while the slice used another.
 
@@ -685,7 +745,8 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `sliced_plates[].objects[]` | `id`, `name`, `triangle_count`, `bbox` (`x`, `y`, `z`, `width`, `depth`, `height`). The box is in the project's scene, as the official result file states it: an object on plate 2 or later sits at that plate's place in the plate grid, not at the bed's origin |
 | `sliced_plates[].filaments[]` | `id`, `filament_id`, `total_used_g`, `main_used_g`; on a printer with more than one nozzle also `extruder`, the nozzle the filament printed with (1 = left, 2 = right) |
 | `sliced_plates[].filament_maps` | Printers with more than one nozzle (slicer_cli and slicer_cli-orcaslicer): the nozzle each of the project's filaments printed with, in filament order (1 = left, 2 = right), the plate's `slice_info.config` `filament_maps`. Set by `--filament-map`, else by the engine's own grouping |
-| `sliced_plates[].filament_map_mode` | With `filament_maps`: the mode that chose it (`Manual` with `--filament-map`, `Auto For Flush` by default) |
+| `sliced_plates[].filament_nozzle_map` | Printers with a nozzle rack (slicer_cli): the rack nozzle each of the project's filaments printed with, in filament order, 0-based, as the G-code's `filament_nozzle_map` states it |
+| `sliced_plates[].filament_map_mode` | With `filament_maps` or `filament_nozzle_map`: the mode that chose it (`Manual` with `--filament-map`, `Auto For Flush` by default) |
 | `sliced_plates[].warning_message` | The last slicing warning |
 | `sliced_plates[].warnings` | Every slicing warning |
 | `sliced_plates[].gcode_file` | The plate's G-code file |

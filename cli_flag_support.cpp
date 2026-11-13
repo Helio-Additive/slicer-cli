@@ -107,6 +107,13 @@ std::string works_in(const std::string& key) {
 }
 
 std::string foreign_flag_refusal(const std::string& cli_name) {
+#ifdef ENGINE_SNAPMAKER
+    // The engine keeps the filament map off its command line (nocli at
+    // bac6fd5) and its plate carries none.
+    if (cli_name == "filament-map" || cli_name == "filament-map-mode")
+        return "--" + cli_name + " works in slicer_cli and slicer_cli-orcaslicer, for printers with a left and a right "
+               "extruder; slicer_cli-snapmaker runs the Snapmaker Orca engine, which keeps no filament map on a plate.";
+#endif
 #ifdef ENGINE_ORCA
     for (const std::string& key : bambu_only_keys())
         if (dashed(key) == cli_name)
@@ -140,7 +147,7 @@ std::vector<std::string> other_engine_only_flags() {
     return out;
 }
 
-std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra) {
+std::string setting_flag_refusal(const std::string& key) {
     // Settings the official CLI does more with than lay them over the loaded
     // config. slicer-cli refuses them by name until it does the same:
     //   BambuStudio.cpp at 5873b5f: nozzle_volume_type 3408-3420, 3889-3890; filament_map_mode,
@@ -151,24 +158,18 @@ std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra) {
     //   BambuStudio.cpp at v02.09.01.70: the per-slot layout keys extruder_nozzle_diameter,
     //   extruder_nozzle_slot and ams_nozzle_idx rebuild the nozzle layout with
     //   extruder_nozzle_count / extruder_nozzle_volume_type (7104-7172).
-    // slicer_cli takes filament_map (with Manual mode, main.cpp
-    // filament_map_flag_refusal and the plate block that applies it).
+    // slicer_cli and slicer_cli-orcaslicer take filament_map (with Manual
+    // mode, cli_filament_map.cpp and main.cpp's apply_filament_map_flag).
+    // slicer_cli takes every one of them as the official CLI does
+    // (cli_nozzle_options.cpp, cli_filament_map.cpp, cli_load_settings.cpp).
+    // slicer_cli-orcaslicer takes the three its official CLI reads; the rack
+    // keys are refused there: OrcaSlicer.cpp reads none of them at 8500fcd.
+    // slicer_cli-snapmaker takes nozzle_volume_type, the desktop's nozzle flow
+    // types, with filament_volume_type as its grouping dialog's answer
+    // (cli_snapmaker.cpp sync_filament_volume_types). Its engine has no
+    // filament map flag (foreign_flag_refusal names the programs that do).
     static const std::map<std::string, const char*> special = {
-        {"nozzle_volume_type",          "the official CLI re-derives the nozzle setup from it"},
 #ifdef ENGINE_ORCA
-        {"filament_map_mode",           "the official CLI re-derives the filament-to-nozzle grouping from it"},
-#else
-        {"filament_map_mode",           "the official CLI re-derives the filament-to-nozzle grouping from it. "
-                                        "To choose each filament's nozzle, give --filament-map, which sets Manual mode"},
-#endif
-#ifdef ENGINE_ORCA
-        // slicer_cli takes --filament-map (the Bambu Studio engine's Manual
-        // grouping, main.cpp filament_map_flag_refusal); this engine's
-        // two-nozzle grouping is not ported.
-        {"filament_map",                "the official CLI re-derives the filament-to-nozzle grouping from it. "
-                                        "slicer_cli (the Bambu Studio engine) takes --filament-map for two-nozzle "
-                                        "Bambu printers"},
-#endif
         {"filament_volume_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
         {"filament_nozzle_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
         {"extruder_nozzle_count",       "the official CLI re-derives the nozzle setup from it"},
@@ -176,19 +177,25 @@ std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra) {
         {"extruder_nozzle_diameter",    "the official CLI re-derives the nozzle setup from it"},
         {"extruder_nozzle_slot",        "the official CLI re-derives the nozzle setup from it"},
         {"ams_nozzle_idx",              "the official CLI re-derives the nozzle setup from it"},
+#endif
     };
-    for (const std::string& key : extra.keys()) {
-        // Neither official CLI runs post-processing scripts (the call is
-        // commented out: BambuStudio.cpp 7238, OrcaSlicer.cpp 6175), so the
-        // setting would be taken and silently do nothing.
-        if (key == "post_process")
-            return "--post-process: slicer-cli does not run post-processing scripts, as the official command "
-                   "lines do not; run the script on the G-code yourself.";
-        auto it = special.find(key);
-        if (it != special.end())
-            return "--" + dashed(key) + " is a " + kThisApp + " setting that slicer-cli does not take on the "
-                   "command line yet: " + it->second + ". Set it in the 3MF or the presets instead.";
-    }
+    // Neither official CLI runs post-processing scripts (the call is
+    // commented out: BambuStudio.cpp 7238, OrcaSlicer.cpp 6175), so the
+    // setting would be taken and silently do nothing.
+    if (key == "post_process")
+        return "--post-process: slicer-cli does not run post-processing scripts, as the official command "
+               "lines do not; run the script on the G-code yourself.";
+    auto it = special.find(key);
+    if (it != special.end())
+        return "--" + dashed(key) + " is a " + kThisApp + " setting that slicer-cli does not take on the "
+               "command line yet: " + it->second + ". Set it in the 3MF or the presets instead.";
+    return {};
+}
+
+std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra) {
+    for (const std::string& key : extra.keys())
+        if (const std::string why = setting_flag_refusal(key); !why.empty())
+            return why;
     return {};
 }
 

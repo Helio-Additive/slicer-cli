@@ -103,6 +103,7 @@
 #include "layout_plan.hpp"
 #include "cli_options.hpp"
 #include "cli_command_line.hpp"
+#include "cli_flag_support.hpp"
 #include "desktop_presets.hpp"
 #include "cli_model_load.hpp"
 #include "cli_failure_reason.hpp"
@@ -115,6 +116,8 @@
 #include "cli_assemble.hpp"
 #include "cli_layer_ranges.hpp"
 #include "cli_nozzle_diameter.hpp"
+#include "cli_filament_map.hpp"
+#include "cli_nozzle_options.hpp"
 #include "cli_pipe.hpp"
 
 #ifdef __APPLE__
@@ -992,40 +995,6 @@ size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
 // Bambu-only config keys/enums (e.g. fmmNozzleManual, filament_extruder_variant),
 // so they are compiled only for ENGINE_BAMBU and called only from the gated
 // front-end blocks in main(). OrcaSlicer needs none of them.
-/// --filament-map: why the command line's filament-to-nozzle map cannot be
-/// used on this printer and project, or empty when it can. The map is the
-/// official CLI's --filament_map (one 1-based logical extruder per filament,
-/// BambuStudio.cpp 7208-7249 at v02.09.01.70), which Manual mode then holds
-/// to: ToolOrdering throws "Group error in manual mode" when the grouping it
-/// finds differs (ToolOrdering.cpp 2653-2680). Extruder 1 is the left nozzle,
-/// 2 the right, as Bambu Studio numbers them (FilamentMapPanel.cpp 488).
-std::string filament_map_flag_refusal(const std::vector<int>& map,
-                                      const Slic3r::DynamicPrintConfig& config,
-                                      size_t project_filaments)
-{
-    size_t extruders = 1;
-    if (const auto* nozzles = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
-        extruders = std::max<size_t>(1, nozzles->size());
-    std::string printer;
-    if (const auto* name = config.option<Slic3r::ConfigOptionString>("printer_settings_id"); name && !name->value.empty())
-        printer = " (" + name->value + ")";
-    if (extruders < 2)
-        return "--filament-map chooses which nozzle each filament prints with on a two-nozzle printer (such as the "
-               "H2D or H2C); this printer" + printer + " has one nozzle. Drop the flag to slice.";
-    const size_t filaments = std::max<size_t>(1, project_filaments);
-    if (map.size() != filaments)
-        return "--filament-map gives " + std::to_string(map.size()) + " value" + (map.size() == 1 ? "" : "s") +
-               " but the project has " + std::to_string(filaments) + " filament" + (filaments == 1 ? "" : "s") +
-               ": give one nozzle per filament, in filament order (1 = left, 2 = right), e.g. --filament-map " +
-               (filaments == 1 ? std::string("1") : std::string("1,2")) + ".";
-    for (size_t i = 0; i < map.size(); ++i)
-        if (map[i] < 1 || map[i] > (int)extruders)
-            return "--filament-map gives nozzle " + std::to_string(map[i]) + " for filament " + std::to_string(i + 1) +
-                   ", but this printer" + printer + " has nozzles 1 to " + std::to_string(extruders) +
-                   " (1 = left, 2 = right).";
-    return {};
-}
-
 // `explicit_config_supplied_nozzle_map` says whether the fully-overlaid config
 // carries its own `filament_nozzle_map`, rather than the driver's seed. Bambu's own
 // headless CLI never derives a filament map from a default: under an automatic
@@ -3044,6 +3013,9 @@ struct PlateOutcome {
     // Empty on a one-nozzle printer.
     std::vector<int> filament_maps;
     std::string      filament_map_mode;
+    // A nozzle rack: the rack nozzle each filament printed with, as the
+    // G-code's filament_nozzle_map states it (0-based). Empty without a rack.
+    std::vector<int> filament_nozzle_map;
     std::vector<std::string> unknown_settings;  // keys in the file this engine has no definition for
     // sliced_info_t print summary (BambuStudio.cpp 221-231)
     float       layer_height = 0.f;
@@ -3190,6 +3162,7 @@ static std::string cli_error_sentence(int code) {
         {CLI_FILAMENT_CAN_NOT_MAP, "Some filaments cannot be mapped to correct extruders for multi-extruder Printer."},
         {CLI_ONLY_ONE_TPU_SUPPORTED, "Not support printing 2 or more TPU filaments."},
 #ifdef ENGINE_BAMBU
+        {CLI_FILAMENTS_NOT_SUPPORTED_BY_EXTRUDER, "Some filaments cannot be printed on the extruder mapped to."},
         // Bambu Studio 2.9.1 (Utils.hpp 77 at v02.09.01.70): mixed nozzle diameters.
         {CLI_MULTI_NOZZLE_DIAMETER_INVALID, "Multi-nozzle diameter mode is enabled, but one or more plates use only a single nozzle diameter. Please turn off multi-diameter mode, or use more than one nozzle diameter on every plate, in Bambu Studio before uploading."},
 #endif
@@ -3473,10 +3446,9 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
         }
         if (!p.objects.empty())   plate["objects"]   = p.objects;
         if (!p.filaments.empty()) plate["filaments"] = p.filaments;
-        if (!p.filament_maps.empty()) {
-            plate["filament_maps"] = p.filament_maps;
-            if (!p.filament_map_mode.empty()) plate["filament_map_mode"] = p.filament_map_mode;
-        }
+        if (!p.filament_maps.empty())       plate["filament_maps"] = p.filament_maps;
+        if (!p.filament_nozzle_map.empty()) plate["filament_nozzle_map"] = p.filament_nozzle_map;
+        if (!p.filament_map_mode.empty())   plate["filament_map_mode"] = p.filament_map_mode;
         plate["warnings"]   = p.warnings;
         plate["gcode_file"] = p.gcode_path;
         plate["unknown_settings"] = p.unknown_settings;
@@ -4384,6 +4356,31 @@ static int move_to_new_bed(const slicer_cli::ProjectFacts& facts, bool machine_s
     return shrink_to_new_bed;
 }
 
+static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
+                                        int plate_index, bool keep_existing);
+
+/// The plate's bounding box, narrowed by every extruder's own area
+/// (PartPlate::get_extruder_areas), at the plate's own origin: where every
+/// nozzle reaches.
+static Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& config,
+                                            const Slic3r::ConfigOptionPoints& area) {
+    using namespace Slic3r;
+    BoundingBoxf plate_bbox;
+    for (const Vec2d& pt : area.values) plate_bbox.merge(pt);
+#ifndef ENGINE_SNAPMAKER
+    // No ConfigOptionPointsGroups at bac6fd5: the plate box is the printable
+    // area itself, with no per-nozzle narrowing.
+    if (const auto* extruder_areas = config.option<ConfigOptionPointsGroups>("extruder_printable_area"))
+        for (const std::vector<Vec2d>& points : extruder_areas->values) {
+            BoundingBoxf boxf;
+            for (const Vec2d& pt : points) boxf.merge(pt);
+            plate_bbox.min = plate_bbox.min.x() >= boxf.min.x() ? plate_bbox.min : boxf.min;
+            plate_bbox.max = plate_bbox.max.x() <= boxf.max.x() ? plate_bbox.max : boxf.max;
+        }
+#endif
+    return plate_bbox;
+}
+
 /// --arrange 1: place this plate's objects on the bed the way the official CLI
 /// arranges one plate (`--arrange 1` with a plate to slice; BambuStudio.cpp
 /// 5730-5952 at 5873b5f, OrcaSlicer.cpp 4990-5210 at 31f6803):
@@ -4539,6 +4536,25 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
 #endif
             }
             w = wipe_tower_size(0);
+#ifndef ENGINE_SNAPMAKER
+            // Nozzles that each reach only part of the bed (H2D, H2C): the
+            // tower starts inside the area every nozzle reaches, as the
+            // desktop puts a loaded project's tower back inside it
+            // (set_default_wipe_tower_pos_for_plate with keep_existing, Bambu
+            // PartPlate.cpp 5141-5154 and Plater.cpp 12275 at v02.09.01.70).
+            // A model with no saved tower carries the setting's default
+            // corner, which one nozzle cannot reach: the slice then ends -102.
+            // Only a tower that does not lie inside that area moves, by its
+            // estimated size: one inside it stays where the project put it.
+            const BoundingBoxf reach = tower_reach_box(config, *area);
+            if (const auto* areas = config.option<ConfigOptionPointsGroups>("extruder_printable_area");
+                areas && areas->values.size() > 1 &&
+                (x < reach.min.x() || x + w > reach.max.x() || y < reach.min.y() || y + depth > reach.max.y())) {
+                assemble_tower_inside_plate(config, model, plate_index, /*keep_existing=*/true);
+                x = (float)config.option<ConfigOptionFloats>("wipe_tower_x")->get_at(plate_index);
+                y = (float)config.option<ConfigOptionFloats>("wipe_tower_y")->get_at(plate_index);
+            }
+#endif
             if ((y + depth + margin + wp_brim_width) > (float)plate_depth)
                 y = (float)plate_depth - depth - margin - wp_brim_width;
             if ((x + w + margin + wp_brim_width) > (float)plate_width)
@@ -4795,21 +4811,7 @@ static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, cons
     const auto* area = config.option<ConfigOptionPoints>("printable_area");
     if (!area || area->values.size() < 3)
         return;
-    // The plate's bounding box, narrowed by every extruder's own area
-    // (PartPlate::get_extruder_areas), at the plate's own origin.
-    BoundingBoxf plate_bbox;
-    for (const Vec2d& pt : area->values) plate_bbox.merge(pt);
-#ifndef ENGINE_SNAPMAKER
-    // No ConfigOptionPointsGroups at bac6fd5: the plate box is the printable
-    // area itself, with no per-nozzle narrowing.
-    if (const auto* extruder_areas = config.option<ConfigOptionPointsGroups>("extruder_printable_area"))
-        for (const std::vector<Vec2d>& points : extruder_areas->values) {
-            BoundingBoxf boxf;
-            for (const Vec2d& pt : points) boxf.merge(pt);
-            plate_bbox.min = plate_bbox.min.x() >= boxf.min.x() ? plate_bbox.min : boxf.min;
-            plate_bbox.max = plate_bbox.max.x() <= boxf.max.x() ? plate_bbox.max : boxf.max;
-        }
-#endif
+    BoundingBoxf plate_bbox = tower_reach_box(config, *area);
     const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
     const BoundingBoxf3 plate_box(Vec3d(plate_bbox.min.x(), plate_bbox.min.y(), 0.),
                                   Vec3d(plate_bbox.max.x(), plate_bbox.max.y(), height));
@@ -5093,6 +5095,17 @@ static void record_plate_statistics(const Slic3r::Print& print, const Slic3r::Mo
             if (id >= 1 && id <= (int)outcome.filament_maps.size())
                 f["extruder"] = outcome.filament_maps[id - 1];
         }
+    }
+#endif
+#ifdef ENGINE_BAMBU
+    // A nozzle rack (the H2C's right extruder, the H3C): the rack nozzle each
+    // filament printed with, the map the grouping wrote back
+    // (Print::get_filament_nozzle_maps; the G-code's filament_nozzle_map).
+    if (const auto* counts = config.option<Slic3r::ConfigOptionIntsNullable>("extruder_max_nozzle_count");
+        counts && std::any_of(counts->values.begin(), counts->values.end(), [](int v) { return v > 1; })) {
+        outcome.filament_nozzle_map = print.get_filament_nozzle_maps();
+        if (const auto* mode = config.option("filament_map_mode"))
+            outcome.filament_map_mode = mode->serialize();
     }
 #endif
     for (const Slic3r::ModelObject* object : model.objects) {
@@ -6626,6 +6639,10 @@ static int run_list_settings() {
             }
             entry["enum"] = std::move(values);
         }
+        // A setting this binary refuses as a flag says so, with the sentence
+        // the refusal gives (cli_flag_support.cpp).
+        if (const std::string why = slicer_cli::setting_flag_refusal(key); !why.empty())
+            entry["refused_as_flag"] = why;
         settings.push_back(std::move(entry));
     }
     json out;
@@ -7990,6 +8007,117 @@ static void take_noted_warnings(PlateOutcome& outcome, const std::map<int, json>
             warnings.push_back(w);
 }
 
+
+#ifndef ENGINE_SNAPMAKER
+/// --filament-map-mode and --filament-map: the command line's mode and map win
+/// over the plate's and the project's, as in the official CLIs: the mode from
+/// the command line before the plate's (BambuStudio.cpp 7095-7099 at
+/// v02.09.01.70; OrcaSlicer.cpp 5851-5854 at 8500fcd), the map set on the plate
+/// (7208-7249; 5889-5929) and laid over the print config (7434; 5989). In
+/// Manual each engine prints a filament with the extruder its map names (Bambu
+/// ToolOrdering.cpp 2653-2680; Orca ToolOrdering.cpp 1288-1305, which regroups
+/// only in an automatic mode). --filament-map with no mode means Manual: the
+/// official CLI would keep the plate's mode and, in an automatic one, regroup
+/// over the map. On the Bambu build a manual mode also runs the official
+/// rack checks and fills (cli_nozzle_options.cpp), and on a printer with one
+/// extruder and a nozzle rack the map is Bambu Studio's dialog grouping.
+/// Snapmaker Orca's plate carries no map at bac6fd5, so that build refuses
+/// both flags (cli_flag_support.cpp).
+/// ModeOnly: the mode is set and the plate's own map still applies.
+enum class FilamentMapFlag { NotGiven, Applied, ModeOnly, Refused };
+static FilamentMapFlag apply_filament_map_flag(const CliOptions& o, Slic3r::DynamicPrintConfig& extra,
+                                               Slic3r::DynamicPrintConfig& config, RunState& rs,
+                                               std::optional<Slic3r::DynamicPrintConfig>& project_settings,
+                                               size_t project_filaments, int plate_id, PlateOutcome& outcome) {
+    using Slic3r::FilamentMapMode;
+    const auto* cli_mode = extra.option<Slic3r::ConfigOptionEnum<FilamentMapMode>>("filament_map_mode");
+    auto* cli_map = extra.option<Slic3r::ConfigOptionInts>("filament_map");
+    if (cli_mode == nullptr && cli_map == nullptr)
+        return FilamentMapFlag::NotGiven;
+    const FilamentMapMode mode = cli_mode ? cli_mode->value : FilamentMapMode::fmmManual;
+#ifdef ENGINE_BAMBU
+    const bool manual = mode == FilamentMapMode::fmmManual || mode == FilamentMapMode::fmmNozzleManual;
+    bool rack_groups = false;
+#else
+    const bool manual = mode == FilamentMapMode::fmmManual;
+#endif
+    const auto refuse = [&](const std::string& why) {
+        std::cerr << "Error: " << why << "\n";
+        set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
+        return FilamentMapFlag::Refused;
+    };
+#ifdef ENGINE_BAMBU
+    if (mode == FilamentMapMode::fmmAutoForQuality)
+        if (const std::string why = slicer_cli::quality_mode_refusal(config); !why.empty())
+            return refuse(why);
+#endif
+    if (cli_map != nullptr) {
+        cli_map->values = slicer_cli::sanitized_filament_map(cli_map->values);
+        std::string why;
+#ifdef ENGINE_BAMBU
+        if (mode == FilamentMapMode::fmmManual && Slic3r::is_single_ext_multi_nozzle(config) &&
+            !extra.has("filament_nozzle_map")) {
+            std::vector<int> nozzle_map;
+            why = slicer_cli::rack_group_maps(cli_map->values, nozzle_map, config, project_filaments);
+            if (why.empty())
+                extra.option<Slic3r::ConfigOptionInts>("filament_nozzle_map", true)->values = nozzle_map;
+            rack_groups = true;
+        } else
+#endif
+        if (manual)
+            why = slicer_cli::filament_map_flag_refusal(cli_map->values, config, project_filaments);
+        if (!why.empty())
+            return refuse(why);
+    }
+#ifdef ENGINE_BAMBU
+    if (manual) {
+        const std::string why = slicer_cli::manual_mode_nozzle_maps(extra, config, mode, std::max<size_t>(1, project_filaments),
+                                                                    !(o.slice_mode && o.slice_plate == 0));
+        if (!why.empty())
+            return refuse(why);
+        // The maps this step wrote, over the plate's (7332-7339).
+        for (const char* key : {"filament_volume_map", "filament_nozzle_map"})
+            if (const Slic3r::ConfigOption* opt = extra.option(key))
+                config.set_key_value(key, opt->clone());
+    }
+#endif
+    const std::string mode_name = Slic3r::ConfigOptionEnum<FilamentMapMode>(mode).serialize();
+    Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+    config.set_deserialize("filament_map_mode", mode_name, subst);
+    // The project's settings state the mode with the map they already carry:
+    // --export-settings writes them (BambuStudio.cpp 6366-6370; OrcaSlicer.cpp
+    // 5499-5503), and a map saved with an automatic mode is regrouped on the
+    // next slice.
+    rs.base.set_deserialize("filament_map_mode", mode_name, subst);
+    if (project_settings)
+        project_settings->set_deserialize("filament_map_mode", mode_name, subst);
+    if (cli_map == nullptr) {
+        emit_event({{"event","config_normalized"}, {"tag","FilamentMapModeFromCommandLine"},
+                    {"plate_id", plate_id}, {"filament_map_mode", mode_name},
+                    {"message","--filament-map-mode sets the filament grouping mode to " + mode_name}});
+        return FilamentMapFlag::ModeOnly;
+    }
+    const std::vector<int>& pm = cli_map->values;
+    config.option<Slic3r::ConfigOptionInts>("filament_map", true)->values = pm;
+    // The exported project's plate states the map the slice used
+    // (store_bbs_3mf writes a plate's mode and map, bbs_3mf.cpp).
+    if (manual && o.slice_mode && !o.export_3mf.empty()) {
+        outcome.derived_filament_map = pm;
+        outcome.derived_filament_map_mode = mode_name;
+    }
+    emit_event({{"event","config_normalized"}, {"tag","FilamentMapFromCommandLine"},
+                {"plate_id", plate_id}, {"filament_map", pm}, {"filament_map_mode", mode_name},
+                {"message",
+#ifdef ENGINE_BAMBU
+                 rack_groups ? "--filament-map sets each filament's nozzle group (1 = the nozzle the AMS feeds, 2 = the "
+                               "fixed nozzles) in Manual mode; filament_map itself is 1 for every filament" :
+#endif
+                 manual ? "--filament-map sets each filament's nozzle (1 = left, 2 = right) in " + mode_name + " mode"
+                                   : "--filament-map is given with the automatic mode " + mode_name +
+                                     ": the engine groups the filaments itself"}});
+    return FilamentMapFlag::Applied;
+}
+#endif // ENGINE_SNAPMAKER
 
 static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
@@ -9358,6 +9486,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // (BambuStudio.cpp 4091 at 5873b5f; OrcaSlicer.cpp 3542 at 31f6803).
         // The settings before any flag: the settings check's desktop baseline.
         const Slic3r::DynamicPrintConfig settings_before_flags = config;
+#ifdef ENGINE_BAMBU
+        // --estimate-mode slices with the automatic grouping and a full
+        // Standard rack (BambuStudio.cpp 4441-4474 at v02.09.01.70).
+        if (o.given_flag("estimate_mode") && o.cli.opt_bool("estimate_mode")) {
+            const std::string why = slicer_cli::estimate_mode_nozzle_settings(extra, config);
+            if (!why.empty()) {
+                std::cerr << "Error: " << why << "\n";
+                set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
+                return 1;
+            }
+        }
+#endif
         if (!extra.empty())
             config.apply(extra, true);
 
@@ -9820,7 +9960,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // single-extruder nozzle rack keeps its count of the target
                     // flow type, any other extruder keeps its total and takes the
                     // plate's flow type (7173-7189).
-                    const bool derived = !Slic3r::per_slot_nozzle_options_consistent(config);
+                    // The rack the command line describes wins over the input's
+                    // (7103-7172, cli_nozzle_options.cpp).
+                    const bool from_flags = slicer_cli::command_line_nozzle_rack(extra, config, new_extruder_count, nozzle_stats_obj);
+                    slicer_cli::sync_ams_count_with_command_line(extra, config);
+                    const bool derived = !from_flags && !Slic3r::per_slot_nozzle_options_consistent(config);
                     if (derived) {
                         for (size_t eid = 0; eid < new_nozzle_volume_type.size(); ++eid) {
                             if (Slic3r::is_single_ext_multi_nozzle(config))
@@ -9836,7 +9980,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // The official re-serialises the stats every time (7191); a
                     // value the input carries and nothing changed is kept as
                     // written (the parser drops what it does not know, 1232-1237).
-                    if (carried == nullptr || derived)
+                    if (carried == nullptr || derived || from_flags)
                         config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats", true)->values =
                             Slic3r::save_extruder_nozzle_stats_to_string(nozzle_stats_obj.get_raw_stat());
                 }
@@ -10058,40 +10202,31 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // from filament_nozzle_map using the physical_extruder_map inverse.
         int plate_data_idx = (plate_id > 0 && (int)plate_data.size() >= plate_id) ? plate_id - 1 : 0;
         bool explicit_plate_mapping_applied = false;
-        // --filament-map: the command line's map wins over the plate's and the
-        // project's, and its mode is Manual, as the official CLI takes
-        // --filament_map with --filament_map_mode Manual: the mode from the
-        // command line before the plate's (BambuStudio.cpp 7095-7099 at
-        // v02.09.01.70), the map set on the plate (7208-7249) and laid over
-        // the print config (7434). Manual, not Nozzle Manual, on the H2C as
+        // --filament-map-mode and --filament-map (apply_filament_map_flag).
+        // --filament-map alone is Manual, not Nozzle Manual, on the H2C as
         // well: Manual groups by filament_map and checks the result against it
-        // (ToolOrdering.cpp 2653-2680), Nozzle Manual reads filament_nozzle_map
-        // instead (2565-2623).
-        if (const auto* cli_map = extra.option<Slic3r::ConfigOptionInts>("filament_map")) {
-            const std::string why = filament_map_flag_refusal(cli_map->values, config, project_filaments);
-            if (!why.empty()) {
-                std::cerr << "Error: " << why << "\n";
-                set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
-                return 1;
-            }
-            const std::vector<int>& pm = cli_map->values;
-            config.option<Slic3r::ConfigOptionInts>("filament_map", true)->values = pm;
+        // (ToolOrdering.cpp 2653-2680 at v02.09.01.70), Nozzle Manual reads
+        // filament_nozzle_map instead (2565-2623).
+        bool cli_mode_given = false;
+        switch (apply_filament_map_flag(o, extra, config, rs, project_settings, project_filaments, plate_id, outcome)) {
+        case FilamentMapFlag::Refused:
+            return 1;
+        case FilamentMapFlag::Applied: {
+            // filament_map_2, the 0-based mirror, follows the map.
+            const std::vector<int>& pm = config.option<Slic3r::ConfigOptionInts>("filament_map")->values;
             auto* fm2 = config.option<Slic3r::ConfigOptionInts>("filament_map_2", true);
             fm2->values.resize(pm.size());
             for (size_t i = 0; i < pm.size(); ++i)
                 fm2->values[i] = pm[i] - 1;
-            Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-            config.set_deserialize("filament_map_mode", "Manual", subst);
             explicit_plate_mapping_applied = true;
-            // The exported project's plate states the map the slice used
-            // (store_bbs_3mf writes a plate's mode and map, bbs_3mf.cpp).
-            if (o.slice_mode && !o.export_3mf.empty()) {
-                outcome.derived_filament_map = pm;
-                outcome.derived_filament_map_mode = "Manual";
-            }
-            emit_event({{"event","config_normalized"}, {"tag","FilamentMapFromCommandLine"},
-                        {"plate_id", plate_id}, {"filament_map", pm},
-                        {"message","--filament-map sets each filament's nozzle (1 = left, 2 = right) in Manual mode"}});
+            cli_mode_given = true;
+            break;
+        }
+        case FilamentMapFlag::ModeOnly:
+            cli_mode_given = true;
+            break;
+        case FilamentMapFlag::NotGiven:
+            break;
         }
         if (!explicit_plate_mapping_applied && !plate_data.empty() && plate_data[plate_data_idx] != nullptr) {
             const auto& pm = plate_data[plate_data_idx]->filament_maps;
@@ -10106,7 +10241,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", false))
                 real_mode = mode_opt->value;
             if (auto* plate_mode = plate_data[plate_data_idx]->config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode");
-                plate_mode && plate_mode->value != Slic3r::FilamentMapMode::fmmDefault) {
+                !cli_mode_given && plate_mode && plate_mode->value != Slic3r::FilamentMapMode::fmmDefault) {
                 real_mode = plate_mode->value;
                 config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", true)->value = real_mode;
             }
@@ -10143,11 +10278,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         counts->values.begin(), counts->values.end(),
                         [](int count) { return count > 1; });
                 }
+                // The command line's mode stays as given.
                 Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-                config.set_deserialize(
-                    "filament_map_mode",
-                    has_multiple_nozzles_per_extruder ? "Nozzle Manual" : "Manual",
-                    subst);
+                if (!cli_mode_given)
+                    config.set_deserialize(
+                        "filament_map_mode",
+                        has_multiple_nozzles_per_extruder ? "Nozzle Manual" : "Manual",
+                        subst);
                 explicit_plate_mapping_applied = true;
             }
         }
@@ -10277,13 +10414,25 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // has one) and nozzle-volume map. An automatic mode keeps the
         // engine's native Auto-For-Flush resolution with the project's map,
         // as before (the U1 toolchanger case).
-        if (plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr) {
+        bool cli_filament_map_applied = false, cli_mode_given = false;
+#ifndef ENGINE_SNAPMAKER
+        // --filament-map-mode and --filament-map win over the plate's mode and
+        // map (apply_filament_map_flag).
+        switch (apply_filament_map_flag(o, extra, config, rs, project_settings, project_filament_count(config), plate_id,
+                                        outcome)) {
+        case FilamentMapFlag::Refused:  return 1;
+        case FilamentMapFlag::Applied:  cli_filament_map_applied = cli_mode_given = true; break;
+        case FilamentMapFlag::ModeOnly: cli_mode_given = true; break;
+        case FilamentMapFlag::NotGiven: break;
+        }
+#endif
+        if (!cli_filament_map_applied && plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr) {
             const Slic3r::PlateData& plate = *plate_data[plate_id - 1];
             Slic3r::FilamentMapMode real_mode = Slic3r::FilamentMapMode::fmmAutoForFlush;
             if (auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", false))
                 real_mode = mode_opt->value;
             if (auto* plate_mode = plate.config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode");
-                plate_mode && plate_mode->value != Slic3r::FilamentMapMode::fmmDefault) {
+                !cli_mode_given && plate_mode && plate_mode->value != Slic3r::FilamentMapMode::fmmDefault) {
                 real_mode = plate_mode->value;
                 config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", true)->value = real_mode;
             }
@@ -10322,6 +10471,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             config.apply(extra, true);
         // Apply command-line overrides
         apply_command_line_overrides(config, overrides, /*report_rejections=*/true);
+#ifdef ENGINE_BAMBU
+        // A manual map, the command line's or the plate's, that puts a filament
+        // on an extruder it cannot print with (BambuStudio.cpp 7357-7400).
+        {
+            const std::string why =
+                slicer_cli::manual_map_extruder_refusal(config, arrange_plate_extruders(model, config, std::max(0, plate_id - 1)));
+            if (!why.empty()) {
+                std::cerr << "Error: " << why << "\n";
+                set_outcome_failure(outcome, CLI_FILAMENTS_NOT_SUPPORTED_BY_EXTRUDER, why);
+                return 1;
+            }
+        }
+#endif
 #ifdef ENGINE_ORCA
         // A Bambu Studio project's own start G-code can carry the maker's
         // placeholders, and this engine binds no value for two of them: its
@@ -11281,7 +11443,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // The desktop's flow-type sync and the U1's plate types change the
             // settings the slice runs with, so they come before Print::apply,
             // which snapshots the config.
-            slicer_cli::sync_filament_volume_types(config, plate_id);
+            {
+                // The filaments this plate's objects use, as the dialog lists
+                // them (FilamentGroupDialog.cpp 352-372).
+                const std::vector<int> plate_filaments = arrange_plate_extruders(model, config, std::max(0, plate_id - 1));
+                const std::string why = slicer_cli::sync_filament_volume_types(
+                    config, plate_id, std::set<int>(plate_filaments.begin(), plate_filaments.end()),
+                    extra.has("filament_volume_type"));
+                if (!why.empty()) {
+                    std::cerr << "Error: " << why << "\n";
+                    set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
+                    return 1;
+                }
+            }
             slicer_cli::force_u1_bed_type(config, plate_id);
 #endif
             {
@@ -12257,9 +12431,9 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         pd->skipped_objects          = sliced.skipped_objects;
         pd->printer_model_id         = sliced.printer_model_id;
         pd->nozzle_diameters         = sliced.nozzle_diameters;
-#ifdef ENGINE_BAMBU
-        // The routing the slice derived from a supplied nozzle map, on this
-        // plate only: store_bbs_3mf writes a plate's filament_map_mode and
+#ifndef ENGINE_SNAPMAKER
+        // The routing the slice derived from a supplied nozzle map, or the
+        // command line's --filament-map, on this plate only: store_bbs_3mf writes a plate's filament_map_mode and
         // filament_maps from its config (bbs_3mf.cpp 8260-8279 at 5873b5f;
         // PartPlate::set_filament_maps keeps the map there, PartPlate.cpp
         // 3860-3863), and a plate mode other than Default wins over the

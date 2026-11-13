@@ -139,6 +139,15 @@ const std::map<std::string, std::string>& official_names() {
         for (const auto& kv : cfg.def()->options)
             for (const std::string& t : kv.second.cli_args(kv.first))
                 out[t] = kv.first;
+#ifdef ENGINE_SNAPMAKER
+        // The desktop's nozzle flow selector and its filament grouping dialog
+        // write these two settings, and the engine keeps them off its own
+        // command line (nocli, PrintConfig.cpp 4096-4122 at bac6fd5). Headless
+        // they are the only way to say which nozzles are high flow and which
+        // filaments use them (cli_snapmaker.cpp sync_filament_volume_types).
+        out["nozzle-volume-type"]   = "nozzle_volume_type";
+        out["filament-volume-type"] = "filament_volume_type";
+#endif
         return out;
     }();
     return names;
@@ -511,9 +520,16 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
             // "same as the project" marker, PrintConfig.cpp 437-445 at 5873b5f,
             // 467-475 at 31f6803) is not a value for the setting itself; the
             // slice crashes on it. Only the listed values are taken.
+            // filament_map_mode's "Auto For Quality" is a mode of its own
+            // that the engine's list leaves out at v02.09.01.70 (PrintConfig.cpp
+            // 918 against 3035-3039): Bambu Studio's "Quality Mode"
+            // (FilamentMapDialog.cpp 99, 111), checked against the printer when
+            // the plate is set up (cli_nozzle_options.cpp).
             if (def.type == Slic3r::coEnum && !def.enum_values.empty()) {
                 const std::string stored = cfg.option(opt_key)->serialize();
-                if (std::find(def.enum_values.begin(), def.enum_values.end(), stored) == def.enum_values.end()) {
+                const bool quality_mode = opt_key == "filament_map_mode" && stored == "Auto For Quality";
+                if (!quality_mode &&
+                    std::find(def.enum_values.begin(), def.enum_values.end(), stored) == def.enum_values.end()) {
                     refusal = refuse(bad_value_sentence(token, def, value));
                     return false;
                 }
@@ -869,10 +885,25 @@ void print_help(std::ostream& out, const char* prog) {
         if (bed)
             out << "  --curr-bed-type values: " << join(bed->enum_values, ", ") << "\n";
     }
+#ifdef ENGINE_SNAPMAKER
+    out << "  --nozzle-volume-type standard|high_flow[,...]: the flow type of each extruder's nozzle, as the\n"
+        << "  desktop's nozzle selector sets it. --filament-volume-type standard|high_flow[,...]: with standard\n"
+        << "  and high-flow nozzles mixed, the nozzle type each filament prints with (the desktop's filament\n"
+        << "  grouping dialog). A filament that cannot print with a high-flow nozzle is refused.\n";
+#endif
+#ifndef ENGINE_SNAPMAKER
+    out << "  --filament-map 1[,2...]: printers with a left and a right extruder (H2D, H2C, X2D): the one\n"
+        << "  each filament prints with, one value per filament (1 = left, 2 = right); sets\n"
+        << "  filament_map_mode to Manual. result.json reports each plate's filament_maps either way.\n"
+        << "  --filament-map-mode, --nozzle-volume-type"
 #ifndef ENGINE_ORCA
-    out << "  --filament-map 1[,2...]: two-nozzle printers (H2D, H2C): the nozzle each filament prints\n"
-        << "  with, one per filament (1 = left, 2 = right); sets filament_map_mode to Manual.\n"
-        << "  result.json reports each plate's filament_maps either way.\n";
+        << ", --filament-volume-map, --filament-nozzle-map and the\n"
+        << "  nozzle rack (--extruder-nozzle-count, --extruder-nozzle-volume-type, --extruder-nozzle-diameter,\n"
+        << "  --ams-nozzle-idx) are taken as the official command line takes them"
+#else
+        << " are taken as the official command line takes them"
+#endif
+        << "; docs/cli-reference.md,\n  \"Nozzles and filament grouping\".\n";
 #endif
     out << "\nPrint settings priorities:\n"
         << "\t1) setting values from the command line (highest priority)\n"
