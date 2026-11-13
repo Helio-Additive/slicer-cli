@@ -126,7 +126,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R864) |
+| Fixture | As brought over (R808) | Now (R867) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 187,118 (98.02%) |
 | Benchy arachne | 32,769 (13.68%) | 240,269 (98.70%) |
@@ -136,7 +136,7 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R864:
+missing most often. Lines of the oracle's body the port has verbatim, at R867:
 Benchy classic 193,072 of 196,495 (98.3%), Benchy arachne 245,716 of 248,190
 (99.0%), Majora 3,002,669 of 3,024,752 (99.3%).
 

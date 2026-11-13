@@ -155,6 +155,16 @@ pub fn douglas_peucker(points: &[Point], tolerance: CoordF) -> Vec<Point> {
     // different one (Majora layer 12 MMS input: 3/1075 points) and every
     // downstream painted-line projection, Voronoi vertex and segmented piece
     // inherits it. Same algorithm, same Eigen, same codegen via the shim.
+    // DP_RUST (on unless =0): the same C++, `MultiPoint::_douglas_peucker`
+    // (MultiPoint.cpp:179-230) over `line_alg::distance_to_squared`
+    // (Line.hpp:43-68), is ported in `multi_point::douglas_peucker_faithful`, and
+    // `tests/douglas_peucker_native_parity.rs` holds it equal to the shim's
+    // result on inputs where rounding decides. What differed from the shim was
+    // not a fused multiply-add but the other algorithm below. =0 calls the
+    // shim, as R806 to R866 did.
+    if points.len() > 2 && crate::faithful_gate("DP_SHIM") && crate::faithful_gate("DP_RUST") {
+        return crate::multi_point::douglas_peucker_faithful(points, scale(tolerance) as f64);
+    }
     if points.len() > 2 && crate::faithful_gate("DP_SHIM") {
         let mut xy: Vec<i64> = Vec::with_capacity(points.len() * 2);
         for p in points {

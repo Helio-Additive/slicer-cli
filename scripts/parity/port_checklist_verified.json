@@ -28,5 +28,13 @@
   "functions": [
    "ArcFitter::do_arc_fitting"
   ]
+ },
+ {
+  "unit": "MultiPoint",
+  "round": "867",
+  "evidence": "tests/douglas_peucker_native_parity.rs: 400,000 polylines where rounding decides, equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced",
+  "functions": [
+   "MultiPoint::_douglas_peucker"
+  ]
  }
 ]

@@ -8730,7 +8730,7 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `intersection` (line 136) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
 - [~] `first_intersection` (line 145) → `geometry/polygon.rs` — not in the paired file
 - [~] `intersections` (line 168) → `clipper2_z_utils.rs, clipper_z_utils.rs, geometry/polygon.rs` — not in the paired file
-- [~] `_douglas_peucker` (line 179) → `multi_point.rs:22` — partial
+- [~] `_douglas_peucker` (line 179) → `multi_point.rs:22` — partial; probe agreed (R867) but the body reads as partial
 - [x] `visivalingam` (line 269) → `multi_point.rs:400`
 - [x] `concave_hull_2d` (line 368) → `multi_point.rs:504`
 - [x] `symmetric_y` (line 472) → `multi_point.rs:548`
