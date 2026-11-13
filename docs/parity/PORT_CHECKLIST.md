@@ -10,21 +10,21 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**34.7% of the named C++ functions are ported or verified (3144 of 9052); 23.8% by size of body.**
+**34.8% of the named C++ functions are ported or verified (3152 of 9052); 23.8% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3175 | 35.1% | 47.9% |
-| partial `[~]` | 2733 | 30.2% | 28.3% |
-| ported `[x]` | 3124 | 34.5% | 23.2% |
+| not started `[ ]` | 3168 | 35.0% | 47.8% |
+| partial `[~]` | 2732 | 30.2% | 28.3% |
+| ported `[x]` | 3132 | 34.6% | 23.2% |
 | verified `[v]` | 20 | 0.2% | 0.6% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 310 |
-| no Rust file of that name | 33 |
+| no Rust file of that name | 32 |
 | partial | 229 |
-| every named function ported | 47 |
+| every named function ported | 48 |
 | every named function verified | 1 |
 
 C++ still run through the FFI shim crates: 30 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 2, `boost-voronoi-sys` 0). They are listed at
@@ -188,11 +188,11 @@ the end; the goal is none.
 | `FuzzySkin` | 2 | `fuzzy_skin.rs` | partial | 10 | 2 | 2 | 6 | 0 |
 | `GCode` | 1 | `g_code.rs` | partial | 152 | 103 | 35 | 14 | 0 |
 | `GCode/AvoidCrossingPerimeters` | 1 | `gcode/avoid_crossing_perimeters.rs` | partial | 59 | 18 | 10 | 31 | 0 |
-| `GCode/BedExcludeChecker` | 1 | none | not started | 7 | 6 | 1 | 0 | 0 |
+| `GCode/BedExcludeChecker` | 1 | `gcode/bed_exclude_checker.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `GCode/ConflictChecker` | 1 | `gcode/conflict_checker.rs` | partial | 19 | 0 | 3 | 16 | 0 |
 | `GCode/CoolingBuffer` | 1 | `gcode/cooling_buffer.rs` | partial | 5 | 0 | 2 | 3 | 0 |
 | `GCode/GCodeEditor` | 1 | `gcode/g_code_editor.rs` | partial | 30 | 2 | 10 | 18 | 0 |
-| `GCode/GCodeProcessor` | 1 | `gcode/g_code_processor.rs` | partial | 213 | 63 | 50 | 85 | 15 |
+| `GCode/GCodeProcessor` | 1 | `gcode/g_code_processor.rs` | partial | 213 | 62 | 50 | 86 | 15 |
 | `GCode/PostProcessor` | 1 | `gcode/post_processor.rs` | partial | 7 | 2 | 5 | 0 | 0 |
 | `GCode/PressureEqualizer` | 1 | `gcode/pressure_equalizer.rs` | partial | 36 | 0 | 1 | 35 | 0 |
 | `GCode/PrintExtents` | 1 | `gcode/print_extents.rs` | partial | 10 | 5 | 3 | 2 | 0 |
@@ -5555,17 +5555,17 @@ Rust file: `gcode/avoid_crossing_perimeters.rs`. Status: **partial**. Not listed
 
 ### `GCode/BedExcludeChecker` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `gcode/bed_exclude_checker.rs`. Status: **ported**.
 
 **free functions**
 
-- [~] `scaled_point` (line 18) → `svg.rs` — a function of this name is in another Rust file
-- [ ] `is_valid_extrusion_move` (line 23)
-- [ ] `visit_extrusion_segments` (line 29)
-- [ ] `clip_segment_to_bbox` (line 55)
-- [ ] `segment_intersects_exclude_grid` (line 75)
-- [ ] `toolpath_intersects_bed_exclude_area_2d` (line 119)
-- [ ] `toolpath_exceeds_boundary_2d` (line 180)
+- [x] `scaled_point` (line 18) → `gcode/bed_exclude_checker.rs:21`
+- [x] `is_valid_extrusion_move` (line 23) → `gcode/bed_exclude_checker.rs:26`
+- [x] `visit_extrusion_segments` (line 29) → `gcode/bed_exclude_checker.rs:34`
+- [x] `clip_segment_to_bbox` (line 55) → `gcode/bed_exclude_checker.rs:65`
+- [x] `segment_intersects_exclude_grid` (line 75) → `gcode/bed_exclude_checker.rs:100`
+- [x] `toolpath_intersects_bed_exclude_area_2d` (line 119) → `gcode/bed_exclude_checker.rs:145` — read against the C++ in R879 (the estimate says partial)
+- [x] `toolpath_exceeds_boundary_2d` (line 180) → `gcode/bed_exclude_checker.rs:184`
 
 ### `GCode/ConflictChecker` (.cpp+.hpp)
 
@@ -5720,20 +5720,20 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [ ] `parse_helioadditive_comment` (line 1343) → `gcode/g_code_processor.rs`
 - [x] `contains_reserved_tag` (line 1635) → `gcode/g_code_processor.rs:1718`
 - [x] `contains_reserved_tags` (line 1658) → `gcode/g_code_processor.rs:1746`
-- [~] `register_commands` (line 1699) → `gcode/g_code_processor.rs:2868` — divergent
+- [~] `register_commands` (line 1699) → `gcode/g_code_processor.rs:2874` — divergent
 - [ ] `check_multi_extruder_gcode_valid` (line 1785) → `gcode/g_code_processor.rs`
 - [~] `apply_config` (line 1964) → `g_code_reader.rs` — not in the paired file
-- [~] `apply_config` (line 2106) → `gcode/g_code_processor.rs:2970` — partial
-- [x] `enable_stealth_time_estimator` (line 2548) → `gcode/g_code_processor.rs:2952`
-- [x] `reset` (line 2553) → `gcode/g_code_processor.rs:2882`
+- [~] `apply_config` (line 2106) → `gcode/g_code_processor.rs:2976` — partial
+- [x] `enable_stealth_time_estimator` (line 2548) → `gcode/g_code_processor.rs:2958`
+- [x] `reset` (line 2553) → `gcode/g_code_processor.rs:2888`
 - [ ] `export_config_for_render` (line 2659) → `gcode/g_code_processor.rs`
 - [ ] `process_file` (line 2671) → `gcode/g_code_processor.rs`
 - [~] `initialize` (line 2763) → `bridge_detector.rs, fill/lightning/distance_field.rs, internal_bridge_detector.rs` — not in the paired file
 - [ ] `initialize_from_context` (line 2779) → `gcode/g_code_processor.rs`
-- [x] `process_buffer` (line 2785) → `gcode/g_code_processor.rs:3340`
-- [~] `finalize` (line 2793) → `gcode/g_code_processor.rs:5641` — partial
-- [x] `get_time` (line 2888) → `gcode/g_code_processor.rs:4143`
-- [x] `get_prepare_time` (line 2893) → `gcode/g_code_processor.rs:4152`
+- [x] `process_buffer` (line 2785) → `gcode/g_code_processor.rs:3346`
+- [~] `finalize` (line 2793) → `gcode/g_code_processor.rs:5647` — partial
+- [x] `get_time` (line 2888) → `gcode/g_code_processor.rs:4149`
+- [x] `get_prepare_time` (line 2893) → `gcode/g_code_processor.rs:4158`
 - [~] `get_time_dhm` (line 2898) → `utils.rs` — not in the paired file
 - [ ] `get_custom_gcode_times` (line 2903) → `gcode/g_code_processor.rs`
 - [ ] `get_moves_time` (line 2918) → `gcode/g_code_processor.rs`
@@ -5741,12 +5741,12 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [ ] `apply_config_superslicer` (line 2969) → `gcode/g_code_processor.rs`
 - [ ] `get_layers_time` (line 2977) → `gcode/g_code_processor.rs`
 - [ ] `apply_config_simplify3d` (line 2984) → `gcode/g_code_processor.rs`
-- [~] `process_gcode_line` (line 3075) → `gcode/g_code_processor.rs:3361` — partial
+- [~] `process_gcode_line` (line 3075) → `gcode/g_code_processor.rs:3367` — partial
 - [ ] `process_helioadditive_comment` (line 3122) → `gcode/g_code_processor.rs`
 - [x] `get_gcode_last_filament` (line 3174) → `gcode/g_code_processor.rs:1780`
 - [x] `get_last_z_from_gcode` (line 3209) → `gcode/g_code_processor.rs:1833`
 - [x] `get_last_position_from_gcode` (line 3264) → `gcode/g_code_processor.rs:1894`
-- [~] `process_tags` (line 3381) → `gcode/g_code_processor.rs:3466` — partial
+- [~] `process_tags` (line 3381) → `gcode/g_code_processor.rs:3472` — partial
 - [ ] `process_producers_tags` (line 3643) → `gcode/g_code_processor.rs`
 - [ ] `process_bambuslicer_tags` (line 3660) → `gcode/g_code_processor.rs`
 - [ ] `process_cura_tags` (line 3665) → `gcode/g_code_processor.rs`
@@ -5755,86 +5755,86 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [ ] `process_ideamaker_tags` (line 3931) → `gcode/g_code_processor.rs`
 - [ ] `process_kissslicer_tags` (line 3992) → `gcode/g_code_processor.rs`
 - [ ] `detect_producer` (line 4100) → `gcode/g_code_processor.rs`
-- [x] `process_G0` (line 4113) → `gcode/g_code_processor.rs:3658`
-- [v] `process_G1` (line 4118) → `gcode/g_code_processor.rs:5047` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit (the body reads as partial to the estimate)
+- [x] `process_G0` (line 4113) → `gcode/g_code_processor.rs:3664`
+- [v] `process_G1` (line 4118) → `gcode/g_code_processor.rs:5053` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit (the body reads as partial to the estimate)
 - [ ] `process_VG1` (line 4521) → `gcode/g_code_processor.rs`
-- [v] `process_G2_G3` (line 4905) → `gcode/g_code_processor.rs:3670` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit (the body reads as partial to the estimate)
-- [x] `process_G4` (line 5304) → `gcode/g_code_processor.rs:4163`
-- [x] `process_G29` (line 5315) → `gcode/g_code_processor.rs:4279`
-- [x] `process_G10` (line 5326) → `gcode/g_code_processor.rs:4208`
-- [x] `process_G11` (line 5332) → `gcode/g_code_processor.rs:4213`
-- [x] `process_G20` (line 5338) → `gcode/g_code_processor.rs:4218`
-- [x] `process_G21` (line 5343) → `gcode/g_code_processor.rs:4223`
-- [x] `process_G22` (line 5348) → `gcode/g_code_processor.rs:4228`
-- [x] `process_G23` (line 5354) → `gcode/g_code_processor.rs:4233`
-- [x] `process_G28` (line 5360) → `gcode/g_code_processor.rs:4238`
-- [x] `process_G90` (line 5386) → `gcode/g_code_processor.rs:4296`
-- [x] `process_G91` (line 5391) → `gcode/g_code_processor.rs:4301`
-- [x] `process_G92` (line 5396) → `gcode/g_code_processor.rs:4306`
-- [x] `process_M1` (line 5434) → `gcode/g_code_processor.rs:3653`
-- [x] `process_M82` (line 5439) → `gcode/g_code_processor.rs:4345`
-- [x] `process_M83` (line 5444) → `gcode/g_code_processor.rs:4350`
-- [x] `process_M104` (line 5449) → `gcode/g_code_processor.rs:4355`
+- [v] `process_G2_G3` (line 4905) → `gcode/g_code_processor.rs:3676` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit (the body reads as partial to the estimate)
+- [x] `process_G4` (line 5304) → `gcode/g_code_processor.rs:4169`
+- [x] `process_G29` (line 5315) → `gcode/g_code_processor.rs:4285`
+- [x] `process_G10` (line 5326) → `gcode/g_code_processor.rs:4214`
+- [x] `process_G11` (line 5332) → `gcode/g_code_processor.rs:4219`
+- [x] `process_G20` (line 5338) → `gcode/g_code_processor.rs:4224`
+- [x] `process_G21` (line 5343) → `gcode/g_code_processor.rs:4229`
+- [x] `process_G22` (line 5348) → `gcode/g_code_processor.rs:4234`
+- [x] `process_G23` (line 5354) → `gcode/g_code_processor.rs:4239`
+- [x] `process_G28` (line 5360) → `gcode/g_code_processor.rs:4244`
+- [x] `process_G90` (line 5386) → `gcode/g_code_processor.rs:4302`
+- [x] `process_G91` (line 5391) → `gcode/g_code_processor.rs:4307`
+- [x] `process_G92` (line 5396) → `gcode/g_code_processor.rs:4312`
+- [x] `process_M1` (line 5434) → `gcode/g_code_processor.rs:3659`
+- [x] `process_M82` (line 5439) → `gcode/g_code_processor.rs:4351`
+- [x] `process_M83` (line 5444) → `gcode/g_code_processor.rs:4356`
+- [x] `process_M104` (line 5449) → `gcode/g_code_processor.rs:4361`
 - [ ] `process_VM104` (line 5482) → `gcode/g_code_processor.rs`
-- [~] `process_M106` (line 5487) → `gcode/g_code_processor.rs:4383` — partial
-- [~] `process_M107` (line 5510) → `gcode/g_code_processor.rs:4394` — stub
-- [~] `process_M108` (line 5520) → `gcode/g_code_processor.rs:4400` — divergent
-- [x] `process_M109` (line 5534) → `gcode/g_code_processor.rs:4403`
+- [~] `process_M106` (line 5487) → `gcode/g_code_processor.rs:4389` — partial
+- [~] `process_M107` (line 5510) → `gcode/g_code_processor.rs:4400` — stub
+- [~] `process_M108` (line 5520) → `gcode/g_code_processor.rs:4406` — divergent
+- [x] `process_M109` (line 5534) → `gcode/g_code_processor.rs:4409`
 - [ ] `process_VM109` (line 5539) → `gcode/g_code_processor.rs`
-- [x] `process_M132` (line 5544) → `gcode/g_code_processor.rs:4420`
-- [~] `process_M135` (line 5562) → `gcode/g_code_processor.rs:4437` — divergent
-- [x] `process_M140` (line 5576) → `gcode/g_code_processor.rs:4440`
-- [x] `process_M190` (line 5583) → `gcode/g_code_processor.rs:4452`
-- [x] `process_M191` (line 5590) → `gcode/g_code_processor.rs:4464`
-- [~] `process_M201` (line 5600) → `gcode/g_code_processor.rs:4477` — partial
-- [~] `process_M203` (line 5620) → `gcode/g_code_processor.rs:4505` — partial
-- [x] `process_M204` (line 5651) → `gcode/g_code_processor.rs:4536`
-- [~] `process_M205` (line 5680) → `gcode/g_code_processor.rs:4571` — partial
-- [~] `process_SET_VELOCITY_LIMIT` (line 5710) → `gcode/g_code_processor.rs:4606` — divergent
-- [x] `process_M221` (line 5764) → `gcode/g_code_processor.rs:4622`
-- [x] `process_M622` (line 5776) → `gcode/g_code_processor.rs:4185`
-- [x] `process_M623` (line 5787) → `gcode/g_code_processor.rs:4198`
-- [~] `process_M400` (line 5794) → `gcode/g_code_processor.rs:4636` — partial
-- [~] `process_M401` (line 5814) → `gcode/g_code_processor.rs:4648` — divergent
-- [~] `process_M402` (line 5825) → `gcode/g_code_processor.rs:4649` — stub
-- [x] `process_M566` (line 5857) → `gcode/g_code_processor.rs:4653`
-- [~] `process_M702` (line 5874) → `gcode/g_code_processor.rs:4673` — partial
-- [x] `process_SYNC` (line 5890) → `gcode/g_code_processor.rs:4979`
-- [x] `process_T` (line 5909) → `gcode/g_code_processor.rs:4724`
-- [~] `process_M1020` (line 5919) → `gcode/g_code_processor.rs:4693` — partial
+- [x] `process_M132` (line 5544) → `gcode/g_code_processor.rs:4426`
+- [~] `process_M135` (line 5562) → `gcode/g_code_processor.rs:4443` — divergent
+- [x] `process_M140` (line 5576) → `gcode/g_code_processor.rs:4446`
+- [x] `process_M190` (line 5583) → `gcode/g_code_processor.rs:4458`
+- [x] `process_M191` (line 5590) → `gcode/g_code_processor.rs:4470`
+- [~] `process_M201` (line 5600) → `gcode/g_code_processor.rs:4483` — partial
+- [~] `process_M203` (line 5620) → `gcode/g_code_processor.rs:4511` — partial
+- [x] `process_M204` (line 5651) → `gcode/g_code_processor.rs:4542`
+- [~] `process_M205` (line 5680) → `gcode/g_code_processor.rs:4577` — partial
+- [~] `process_SET_VELOCITY_LIMIT` (line 5710) → `gcode/g_code_processor.rs:4612` — divergent
+- [x] `process_M221` (line 5764) → `gcode/g_code_processor.rs:4628`
+- [x] `process_M622` (line 5776) → `gcode/g_code_processor.rs:4191`
+- [x] `process_M623` (line 5787) → `gcode/g_code_processor.rs:4204`
+- [~] `process_M400` (line 5794) → `gcode/g_code_processor.rs:4642` — partial
+- [~] `process_M401` (line 5814) → `gcode/g_code_processor.rs:4654` — divergent
+- [~] `process_M402` (line 5825) → `gcode/g_code_processor.rs:4655` — stub
+- [x] `process_M566` (line 5857) → `gcode/g_code_processor.rs:4659`
+- [~] `process_M702` (line 5874) → `gcode/g_code_processor.rs:4679` — partial
+- [x] `process_SYNC` (line 5890) → `gcode/g_code_processor.rs:4985`
+- [x] `process_T` (line 5909) → `gcode/g_code_processor.rs:4730`
+- [~] `process_M1020` (line 5919) → `gcode/g_code_processor.rs:4699` — partial
 - [~] `process_T` (line 5960) → `gcode/g_code_processor.rs` — another overload of the name is ported
 - [ ] `init_filament_maps_when_import_only_gcode` (line 5986) → `gcode/g_code_processor.rs`
-- [x] `ensure_nozzle_group_result` (line 5993) → `gcode/g_code_processor.rs:4764`
-- [x] `process_filament_change` (line 6054) → `gcode/g_code_processor.rs:4840`
-- [x] `store_move_vertex` (line 6159) → `gcode/g_code_processor.rs:5549`
-- [x] `set_extrusion_role` (line 6223) → `gcode/g_code_processor.rs:3616`
-- [x] `set_skippable_type` (line 6234) → `gcode/g_code_processor.rs:3644`
-- [x] `minimum_feedrate` (line 6248) → `gcode/g_code_processor.rs:3193`
-- [x] `minimum_travel_feedrate` (line 6256) → `gcode/g_code_processor.rs:3204`
-- [~] `get_axis_max_feedrate` (line 6264) → `gcode/g_code_processor.rs:3215` — divergent
-- [~] `get_axis_max_acceleration` (line 6277) → `gcode/g_code_processor.rs:3230` — divergent
-- [~] `get_axis_max_jerk` (line 6290) → `gcode/g_code_processor.rs:3245` — partial
-- [~] `get_xyz_max_jerk` (line 6302) → `gcode/g_code_processor.rs:3260` — divergent
-- [x] `get_retract_acceleration` (line 6309) → `gcode/g_code_processor.rs:3269`
-- [x] `set_retract_acceleration` (line 6315) → `gcode/g_code_processor.rs:3279`
-- [x] `get_acceleration` (line 6325) → `gcode/g_code_processor.rs:3292`
-- [x] `set_acceleration` (line 6331) → `gcode/g_code_processor.rs:3302`
-- [x] `get_travel_acceleration` (line 6341) → `gcode/g_code_processor.rs:3315`
-- [x] `set_travel_acceleration` (line 6347) → `gcode/g_code_processor.rs:3325`
-- [x] `get_filament_load_time` (line 6357) → `gcode/g_code_processor.rs:4817`
-- [x] `get_filament_unload_time` (line 6363) → `gcode/g_code_processor.rs:4826`
-- [x] `get_extruder_change_time` (line 6369) → `gcode/g_code_processor.rs:4835`
+- [x] `ensure_nozzle_group_result` (line 5993) → `gcode/g_code_processor.rs:4770`
+- [x] `process_filament_change` (line 6054) → `gcode/g_code_processor.rs:4846`
+- [x] `store_move_vertex` (line 6159) → `gcode/g_code_processor.rs:5555`
+- [x] `set_extrusion_role` (line 6223) → `gcode/g_code_processor.rs:3622`
+- [x] `set_skippable_type` (line 6234) → `gcode/g_code_processor.rs:3650`
+- [x] `minimum_feedrate` (line 6248) → `gcode/g_code_processor.rs:3199`
+- [x] `minimum_travel_feedrate` (line 6256) → `gcode/g_code_processor.rs:3210`
+- [~] `get_axis_max_feedrate` (line 6264) → `gcode/g_code_processor.rs:3221` — divergent
+- [~] `get_axis_max_acceleration` (line 6277) → `gcode/g_code_processor.rs:3236` — divergent
+- [~] `get_axis_max_jerk` (line 6290) → `gcode/g_code_processor.rs:3251` — partial
+- [~] `get_xyz_max_jerk` (line 6302) → `gcode/g_code_processor.rs:3266` — divergent
+- [x] `get_retract_acceleration` (line 6309) → `gcode/g_code_processor.rs:3275`
+- [x] `set_retract_acceleration` (line 6315) → `gcode/g_code_processor.rs:3285`
+- [x] `get_acceleration` (line 6325) → `gcode/g_code_processor.rs:3298`
+- [x] `set_acceleration` (line 6331) → `gcode/g_code_processor.rs:3308`
+- [x] `get_travel_acceleration` (line 6341) → `gcode/g_code_processor.rs:3321`
+- [x] `set_travel_acceleration` (line 6347) → `gcode/g_code_processor.rs:3331`
+- [x] `get_filament_load_time` (line 6357) → `gcode/g_code_processor.rs:4823`
+- [x] `get_filament_unload_time` (line 6363) → `gcode/g_code_processor.rs:4832`
+- [x] `get_extruder_change_time` (line 6369) → `gcode/g_code_processor.rs:4841`
 - [ ] `get_hotend_change_time` (line 6375) → `gcode/g_code_processor.rs`
 - [ ] `process_custom_gcode_time` (line 6380) → `gcode/g_code_processor.rs`
 - [ ] `process_filaments` (line 6401) → `gcode/g_code_processor.rs`
-- [~] `simulate_st_synchronize` (line 6416) → `gcode/g_code_processor.rs:4995` — divergent
-- [x] `update_estimated_times_stats` (line 6429) → `gcode/g_code_processor.rs:5765`
+- [~] `simulate_st_synchronize` (line 6416) → `gcode/g_code_processor.rs:5001` — divergent
+- [x] `update_estimated_times_stats` (line 6429) → `gcode/g_code_processor.rs:5771`
 - [ ] `update_preview_layers_times_stats` (line 6456) → `gcode/g_code_processor.rs`
 - [ ] `update_slice_warnings` (line 6509) → `gcode/g_code_processor.rs`
-- [x] `get_filament_id` (line 6565) → `gcode/g_code_processor.rs:3156`
-- [x] `get_last_filament_id` (line 6577) → `gcode/g_code_processor.rs:3168`
-- [x] `get_extruder_id` (line 6589) → `gcode/g_code_processor.rs:3148`
-- [~] `get_machine_config_idx` (line 6596) → `gcode/g_code_processor.rs:3181` — stub
+- [x] `get_filament_id` (line 6565) → `gcode/g_code_processor.rs:3162`
+- [x] `get_last_filament_id` (line 6577) → `gcode/g_code_processor.rs:3174`
+- [x] `get_extruder_id` (line 6589) → `gcode/g_code_processor.rs:3154`
+- [~] `get_machine_config_idx` (line 6596) → `gcode/g_code_processor.rs:3187` — stub
 
 **class `GCodeProcessor::CachedPosition`**
 
@@ -5903,8 +5903,8 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `GCodeProcessor::TimeProcessor`**
 
-- [x] `reset` (line 554) → `gcode/g_code_processor.rs:2534`
-- [~] `post_process` (line 571) → `gcode/g_code_processor.rs:2416` — divergent
+- [x] `reset` (line 554) → `gcode/g_code_processor.rs:2540`
+- [~] `post_process` (line 571) → `gcode/g_code_processor.rs:2422` — divergent
 - [ ] `handle_offsets_of_first_process` (line 1307) → `gcode/g_code_processor.rs`
 - [ ] `handle_offsets_of_second_process` (line 1367) → `gcode/g_code_processor.rs`
 
@@ -5935,13 +5935,13 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [~] `lock` (line 383) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
 - [~] `unlock` (line 384) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
 - [~] `reset` (line 1537) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
-- [~] `reset` (line 1571) → `gcode/g_code_processor.rs:2312` — partial
+- [~] `reset` (line 1571) → `gcode/g_code_processor.rs:2318` — partial
 
 **class `GCodeProcessorResult::MoveVertex`**
 
 - [x] `volumetric_rate` (line 237) → `gcode/g_code_processor.rs:2212`
-- [ ] `is_arc_move_with_interpolation_points` (line 239) → `gcode/g_code_processor.rs`
-- [x] `is_arc_move` (line 242) → `gcode/g_code_processor.rs:2217`
+- [x] `is_arc_move_with_interpolation_points` (line 239) → `gcode/g_code_processor.rs:2217`
+- [x] `is_arc_move` (line 242) → `gcode/g_code_processor.rs:2223`
 
 **class `GCodeProcessorResult::SettingsIds`**
 

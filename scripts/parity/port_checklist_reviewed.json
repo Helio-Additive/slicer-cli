@@ -28,5 +28,12 @@
    "intersection",
    "Line::clip_with_bbox"
   ]
+ },
+ {
+  "unit": "GCode/BedExcludeChecker",
+  "round": "879",
+  "functions": [
+   "toolpath_intersects_bed_exclude_area_2d"
+  ]
  }
 ]

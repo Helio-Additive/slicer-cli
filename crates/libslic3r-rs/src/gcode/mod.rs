@@ -4,6 +4,7 @@
 //! sliced layers, mirroring BambuStudio's GCode and GCodeWriter classes.
 
 pub mod avoid_crossing_perimeters;
+pub mod bed_exclude_checker;
 pub mod conflict_checker;
 pub mod cooling;
 /// The exporter lives in the file named after GCode.cpp.

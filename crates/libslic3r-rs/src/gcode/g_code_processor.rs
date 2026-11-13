@@ -2213,6 +2213,12 @@ impl MoveVertex {
         self.feedrate * self.mm3_per_mm
     }
 
+    /// GCodeProcessor.hpp:239-241  bool is_arc_move_with_interpolation_points() const
+    pub fn is_arc_move_with_interpolation_points(&self) -> bool {
+        (self.move_path_type == EMovePathType::ArcMoveCcw || self.move_path_type == EMovePathType::ArcMoveCw)
+            && !self.interpolation_points.is_empty()
+    }
+
     /// GCodeProcessor.hpp:230-232  bool is_arc_move() const
     pub fn is_arc_move(&self) -> bool {
         self.move_path_type == EMovePathType::ArcMoveCcw
