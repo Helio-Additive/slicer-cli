@@ -121,7 +121,8 @@ In-order matched lines (`seq_parity.py`) against this repository's `slicer_cli`
 (Bambu Studio 02.09.01.70), both programs built on one machine with the same
 Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
-round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md). What still runs as C++
+round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md). The checklist of every C++ file and function with its
+status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is chosen from it. What still runs as C++
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 

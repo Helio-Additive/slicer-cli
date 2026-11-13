@@ -1,0 +1,32 @@
+[
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": "854",
+  "evidence": "replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit",
+  "functions": [
+   "estimated_acceleration_distance",
+   "intersection_distance",
+   "speed_from_distance",
+   "max_allowable_speed",
+   "acceleration_time_from_distance",
+   "planner_forward_pass_kernel",
+   "planner_reverse_pass_kernel",
+   "recalculate_trapezoids",
+   "GCodeProcessor::TimeBlock::calculate_trapezoid",
+   "GCodeProcessor::TimeMachine::calculate_time",
+   "GCodeProcessor::Trapezoid::acceleration_time",
+   "GCodeProcessor::Trapezoid::cruise_time",
+   "GCodeProcessor::Trapezoid::cruise_distance",
+   "GCodeProcessor::process_G1",
+   "GCodeProcessor::process_G2_G3"
+  ]
+ },
+ {
+  "unit": "ArcFitter",
+  "round": "864",
+  "evidence": "twin probe ARCP on Majora: 421,971 of 426,993 arcs written have the same start, end, centre and radius; the others are fitted over other points",
+  "functions": [
+   "ArcFitter::do_arc_fitting"
+  ]
+ }
+]

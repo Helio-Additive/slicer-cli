@@ -183,6 +183,14 @@ Rules for it, on top of the ones above:
   biggest gaps of the map on the path the fixtures run through first, then supports and the rest. Regenerate
   the map in every round that touches the port (`python3 scripts/parity/file_map.py`; `--check` tells whether
   the committed copy is current) and commit it with the round.
+- **The checklist is where work is chosen from**: `docs/parity/PORT_CHECKLIST.md` lists every C++ file of
+  `libslic3r` with its classes and functions, the Rust file each maps to and a status (not started, partial,
+  ported, verified), with the overall percentage at the top. The aim is a Rust file for every C++ file, with
+  the same function, type and method names and the same logic, and no FFI shim left. Regenerate it in every
+  round (`python3 scripts/parity/port_checklist.py`; `--check`) and commit it with the round. A function is
+  *verified* only with evidence, recorded in `scripts/parity/port_checklist_verified.json`: a twin probe that
+  agreed with the C++ over a fixture, or a test that compares with C++ output. The fixtures' byte parity and
+  the engine tests are how a round's work is checked.
 - **A Rust file is named after the C++ file it ports**, word for word, in snake_case. The map flags the
   ones that are not.
 - **A round states its scores**: commits are `R<round>: <what>` with the
