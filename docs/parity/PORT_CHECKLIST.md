@@ -10,14 +10,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**34.5% of the named C++ functions are ported or verified (3123 of 9052); 23.3% by size of body.**
+**34.5% of the named C++ functions are ported or verified (3126 of 9052); 23.7% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
 | not started `[ ]` | 3176 | 35.1% | 47.9% |
-| partial `[~]` | 2753 | 30.4% | 28.8% |
+| partial `[~]` | 2750 | 30.4% | 28.4% |
 | ported `[x]` | 3109 | 34.3% | 23.1% |
-| verified `[v]` | 14 | 0.2% | 0.1% |
+| verified `[v]` | 17 | 0.2% | 0.5% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -189,7 +189,7 @@ the end; the goal is none.
 | `GCode/ConflictChecker` | 1 | `gcode/conflict_checker.rs` | partial | 19 | 0 | 3 | 16 | 0 |
 | `GCode/CoolingBuffer` | 1 | `gcode/cooling_buffer.rs` | partial | 5 | 0 | 2 | 3 | 0 |
 | `GCode/GCodeEditor` | 1 | `gcode/g_code_editor.rs` | partial | 30 | 2 | 10 | 18 | 0 |
-| `GCode/GCodeProcessor` | 1 | `gcode/g_code_processor.rs` | partial | 213 | 63 | 52 | 85 | 13 |
+| `GCode/GCodeProcessor` | 1 | `gcode/g_code_processor.rs` | partial | 213 | 63 | 50 | 85 | 15 |
 | `GCode/PostProcessor` | 1 | `gcode/post_processor.rs` | partial | 7 | 2 | 5 | 0 | 0 |
 | `GCode/PressureEqualizer` | 1 | `gcode/pressure_equalizer.rs` | partial | 36 | 0 | 1 | 35 | 0 |
 | `GCode/PrintExtents` | 1 | `gcode/print_extents.rs` | partial | 10 | 5 | 3 | 2 | 0 |
@@ -249,7 +249,7 @@ the end; the goal is none.
 | `MTUtils` | 1 | `mt_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 13 | 40 | 0 |
 | `MultiNozzleUtils` | 1 | `multi_nozzle_utils.rs` | partial | 59 | 9 | 11 | 39 | 0 |
-| `MultiPoint` | 1 | `multi_point.rs` | partial | 52 | 0 | 39 | 13 | 0 |
+| `MultiPoint` | 1 | `multi_point.rs` | partial | 52 | 0 | 38 | 13 | 1 |
 | `MutablePolygon` | 1 | `mutable_polygon.rs` | partial | 47 | 0 | 20 | 27 | 0 |
 | `MutablePriorityQueue` | 1 | `mutable_priority_queue.rs` | partial | 37 | 0 | 17 | 20 | 0 |
 | `NormalUtils` | 3 | `normal_utils.rs` | ported | 7 | 0 | 0 | 7 | 0 |
@@ -5753,9 +5753,9 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [ ] `process_kissslicer_tags` (line 3992) → `gcode/g_code_processor.rs`
 - [ ] `detect_producer` (line 4100) → `gcode/g_code_processor.rs`
 - [x] `process_G0` (line 4113) → `gcode/g_code_processor.rs:3658`
-- [~] `process_G1` (line 4118) → `gcode/g_code_processor.rs:5047` — partial; probe agreed (R854) but the body reads as partial
+- [v] `process_G1` (line 4118) → `gcode/g_code_processor.rs:5047` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit (the body reads as partial to the estimate)
 - [ ] `process_VG1` (line 4521) → `gcode/g_code_processor.rs`
-- [~] `process_G2_G3` (line 4905) → `gcode/g_code_processor.rs:3670` — partial; probe agreed (R854) but the body reads as partial
+- [v] `process_G2_G3` (line 4905) → `gcode/g_code_processor.rs:3670` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit (the body reads as partial to the estimate)
 - [x] `process_G4` (line 5304) → `gcode/g_code_processor.rs:4163`
 - [x] `process_G29` (line 5315) → `gcode/g_code_processor.rs:4279`
 - [x] `process_G10` (line 5326) → `gcode/g_code_processor.rs:4208`
@@ -7577,36 +7577,36 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `transform` (line 10) → `brim_ears_point.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `get_a` (line 38) → `geometry/line.rs`
 - [~] `get_b` (line 39) → `gcode_sender.rs` — not in the paired file
-- [~] `distance_to_squared` (line 43) → `aabb_tree_lines.rs` — not in the paired file
-- [~] `distance_to_squared` (line 73) → `geometry/line.rs:252` — divergent
+- [~] `distance_to_squared` (line 43) → `geometry/line.rs:252` — divergent
+- [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 80) → `arrange.rs, geometry/point.rs` — not in the paired file
-- [~] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:260` — divergent
+- [~] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:292` — divergent
 - [~] `distance_to_infinite_squared` (line 109) → `geometry/line.rs` — another overload of the name is ported
 - [~] `distance_to_infinite` (line 118) → `geometry/line.rs` — another overload of the name is ported
 - [~] `intersection` (line 123) → `geometry/line.rs:219` — divergent
-- [x] `get_extents` (line 135) → `geometry/line.rs:637`
+- [x] `get_extents` (line 135) → `geometry/line.rs:690`
 
 **class `Line`**
 
-- [~] `intersection_infinite` (line 22) → `geometry/line.rs:279` — partial
-- [~] `perp_distance_to` (line 43) → `geometry/line.rs:390` — divergent
-- [x] `orientation` (line 53) → `geometry/line.rs:403`
-- [~] `direction` (line 60) → `geometry/line.rs:555` — divergent
+- [~] `intersection_infinite` (line 22) → `geometry/line.rs:332` — partial
+- [~] `perp_distance_to` (line 43) → `geometry/line.rs:443` — divergent
+- [x] `orientation` (line 53) → `geometry/line.rs:456`
+- [~] `direction` (line 60) → `geometry/line.rs:608` — divergent
 - [~] `parallel_to` (line 68) → `geometry/line.rs` — another overload of the name is ported
-- [~] `parallel_to` (line 73) → `geometry/line.rs:414` — divergent
-- [x] `overlap` (line 79) → `geometry/line.rs:439`
+- [~] `parallel_to` (line 73) → `geometry/line.rs:467` — divergent
+- [x] `overlap` (line 79) → `geometry/line.rs:492`
 - [~] `perpendicular_to` (line 93) → `geometry/line.rs` — another overload of the name is ported
-- [~] `perpendicular_to` (line 98) → `geometry/line.rs:426` — partial
+- [~] `perpendicular_to` (line 98) → `geometry/line.rs:479` — partial
 - [~] `intersection` (line 105) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
-- [~] `clip_with_bbox` (line 110) → `geometry/line.rs:489` — partial
-- [~] `extend` (line 121) → `geometry/line.rs:463` — divergent
+- [~] `clip_with_bbox` (line 110) → `geometry/line.rs:542` — partial
+- [~] `extend` (line 121) → `geometry/line.rs:516` — divergent
 - [~] `scale` (line 158) → `bounding_box.rs, ex_polygon_collection.rs, extrusion_simulator.rs` — not in the paired file
-- [x] `translate` (line 159) → `geometry/line.rs:339`
+- [x] `translate` (line 159) → `geometry/line.rs:392`
 - [~] `translate` (line 160) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `rotate` (line 161) → `geometry/line.rs:357`
+- [x] `rotate` (line 161) → `geometry/line.rs:410`
 - [x] `reverse` (line 162) → `geometry/line.rs:121`
 - [~] `length` (line 163) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
-- [x] `midpoint` (line 164) → `geometry/line.rs:561`
+- [x] `midpoint` (line 164) → `geometry/line.rs:614`
 - [~] `distance_to_squared` (line 167) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to_squared` (line 168) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 169) → `arrange.rs, geometry/point.rs` — not in the paired file
@@ -7617,7 +7617,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 188) → `arrange.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 192) → `geometry/line.rs` — another overload of the name is ported
-- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:274`
+- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:327`
 
 **class `Line3`**
 
@@ -7626,18 +7626,18 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 
 **class `Line3float`**
 
-- [x] `vector` (line 282) → `geometry/line.rs:384`
+- [x] `vector` (line 282) → `geometry/line.rs:437`
 - [ ] `unit_vector` (line 283) → `geometry/line.rs`
-- [x] `length` (line 284) → `geometry/line.rs:573`
+- [x] `length` (line 284) → `geometry/line.rs:626`
 
 **class `Linef3`**
 
 - [ ] `intersect_plane` (line 128) → `geometry/line.rs`
-- [x] `scale` (line 249) → `geometry/line.rs:348`
+- [x] `scale` (line 249) → `geometry/line.rs:401`
 - [~] `vector` (line 250) → `geometry/line.rs` — another overload of the name is ported
 - [ ] `unit_vector` (line 251) → `geometry/line.rs`
 - [x] `length` (line 252) → `geometry/line.rs:109`
-- [x] `reverse` (line 253) → `geometry/line.rs:579`
+- [x] `reverse` (line 253) → `geometry/line.rs:632`
 - [ ] `get_point_projection_to_line` (line 260) → `geometry/line.rs`
 - [ ] `get_distance_of_point_to_line` (line 267) → `geometry/line.rs`
 
@@ -8730,7 +8730,7 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `intersection` (line 136) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
 - [~] `first_intersection` (line 145) → `geometry/polygon.rs` — not in the paired file
 - [~] `intersections` (line 168) → `clipper2_z_utils.rs, clipper_z_utils.rs, geometry/polygon.rs` — not in the paired file
-- [~] `_douglas_peucker` (line 179) → `multi_point.rs:22` — partial; probe agreed (R867) but the body reads as partial
+- [v] `_douglas_peucker` (line 179) → `multi_point.rs:22` — R867: tests/douglas_peucker_native_parity.rs: 400,000 polylines where rounding decides, equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced (the body reads as partial to the estimate)
 - [x] `visivalingam` (line 269) → `multi_point.rs:410`
 - [x] `concave_hull_2d` (line 368) → `multi_point.rs:514`
 - [x] `symmetric_y` (line 472) → `multi_point.rs:558`

@@ -250,6 +250,38 @@ impl Line {
     /// Static method: Calculate the squared distance from a point to a line segment.
     /// This matches libslic3r's `Line::distance_to_squared()` static method.
     pub fn distance_to_squared(p: Point, a: Point, b: Point) -> f64 {
+        // LINE_ALG_DOUBLE (on unless =0): `line_alg::distance_to_squared`
+        // (Line.hpp:43-68), in double throughout; the nearest point it also
+        // returns is not part of the value. No step is fused in the C++ build
+        // (tests/douglas_peucker_native_parity.rs holds this formula equal to
+        // the C++). =0 measures to the projection rounded to integer coordinates.
+        if crate::faithful_gate("LINE_ALG_DOUBLE") {
+            // Line.hpp:45-47
+            let vx = (b.x - a.x) as f64;
+            let vy = (b.y - a.y) as f64;
+            let vax = (p.x - a.x) as f64;
+            let vay = (p.y - a.y) as f64;
+            let l2 = vx * vx + vy * vy;
+            // Line.hpp:48-52 — a == b case
+            if l2 == 0.0 {
+                return vax * vax + vay * vay;
+            }
+            // Line.hpp:56
+            let t = (vax * vx + vay * vy) / l2;
+            if t <= 0.0 {
+                // Line.hpp:57-60 — beyond the 'a' end of the segment
+                return vax * vax + vay * vay;
+            } else if t >= 1.0 {
+                // Line.hpp:61-64 — beyond the 'b' end of the segment
+                let dx = (p.x - b.x) as f64;
+                let dy = (p.y - b.y) as f64;
+                return dx * dx + dy * dy;
+            }
+            // Line.hpp:66-67
+            let ex = t * vx - vax;
+            let ey = t * vy - vay;
+            return ex * ex + ey * ey;
+        }
         let _line = Line::new(a, b);
         let proj = p.project_onto_segment(a, b);
         p.distance_squared(&proj) as f64
@@ -258,6 +290,27 @@ impl Line {
     /// Static method: Calculate the squared distance from a point to an infinite line.
     /// This matches libslic3r's `Line::distance_to_infinite_squared()` static method.
     pub fn distance_to_infinite_squared(p: Point, a: Point, b: Point) -> f64 {
+        // LINE_ALG_DOUBLE: `line_alg::distance_to_infinite_squared`
+        // (Line.hpp:87-104), `(t * v - va).squaredNorm()` in double. =0 takes
+        // the squared cross product over the squared length, in exact integers
+        // before the division, which is the same quantity rounded another way.
+        if crate::faithful_gate("LINE_ALG_DOUBLE") {
+            // Line.hpp:90-92
+            let vx = (b.x - a.x) as f64;
+            let vy = (b.y - a.y) as f64;
+            let vax = (p.x - a.x) as f64;
+            let vay = (p.y - a.y) as f64;
+            let l2 = vx * vx + vy * vy;
+            // Line.hpp:93-97
+            if l2 == 0.0 {
+                return vax * vax + vay * vay;
+            }
+            // Line.hpp:101-103
+            let t = (vax * vx + vay * vy) / l2;
+            let ex = t * vx - vax;
+            let ey = t * vy - vay;
+            return ex * ex + ey * ey;
+        }
         let dir = b - a;
         let len_sq = dir.length_squared();
         if len_sq == 0 {

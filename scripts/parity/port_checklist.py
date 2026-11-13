@@ -64,12 +64,11 @@ def rows_of_pair(p, verified):
         note = "" if est == "faithful" else est
         key = (p["cpp"], m["cpp"])
         if key in verified:
-            if st == "ported":
-                st = "verified"
-                note = "R%s: %s" % verified[key]
-            else:
-                note = (note + "; " if note else "") + "probe agreed (R%s) but the body reads as %s" % (
-                    verified[key][0], est)
+            # Evidence against the C++ outranks the mechanical estimate of the body.
+            st = "verified"
+            note = "R%s: %s" % verified[key]
+            if est != "faithful":
+                note += " (the body reads as %s to the estimate)" % est
         rows.append((m["cpp"], m["cpp_line"], m["cpp_tokens"], p["rust"], m.get("rust_line"), st, note))
     for m in p["missing"]:
         if m.get("elsewhere"):

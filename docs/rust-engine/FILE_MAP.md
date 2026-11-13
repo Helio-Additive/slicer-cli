@@ -5932,15 +5932,15 @@ Tier 1. C++ functions 56 (plus 14 constructors, 0 destructors, 1 operators), Rus
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Line::intersection_infinite` :22 and `Line::intersection_infinite` :279 (43%, 1.18x)
-- divergent: `Line::perp_distance_to` :43 and `Line::perp_distance_to` :390 (28%, 1.47x)
-- divergent: `Line::direction` :60 and `LineF::direction` :555 (0%, 0.23x)
-- divergent: `distance_to_squared` :73 and `Line::distance_to_squared` :252 (25%, 1.17x)
-- divergent: `Line::parallel_to` :73 and `Line::parallel_to` :414 (28%, 1.74x)
-- divergent: `distance_to_infinite_squared` :88 and `Line::distance_to_infinite_squared` :260 (0%, 0.52x)
-- partial: `Line::perpendicular_to` :98 and `Line::perpendicular_to` :426 (43%, 1.74x)
-- partial: `Line::clip_with_bbox` :110 and `Line::clip_with_bbox` :489 (50%, 1.35x)
-- divergent: `Line::extend` :121 and `Line::extend` :463 (25%, 2.56x)
+- partial: `Line::intersection_infinite` :22 and `Line::intersection_infinite` :332 (43%, 1.18x)
+- divergent: `distance_to_squared` :43 and `Line::distance_to_squared` :252 (27%, 1.08x)
+- divergent: `Line::perp_distance_to` :43 and `Line::perp_distance_to` :443 (28%, 1.47x)
+- divergent: `Line::direction` :60 and `LineF::direction` :608 (0%, 0.23x)
+- divergent: `Line::parallel_to` :73 and `Line::parallel_to` :467 (28%, 1.74x)
+- divergent: `distance_to_infinite_squared` :88 and `Line::distance_to_infinite_squared` :292 (18%, 1.41x)
+- partial: `Line::perpendicular_to` :98 and `Line::perpendicular_to` :479 (43%, 1.74x)
+- partial: `Line::clip_with_bbox` :110 and `Line::clip_with_bbox` :542 (50%, 1.35x)
+- divergent: `Line::extend` :121 and `Line::extend` :516 (25%, 2.56x)
 - divergent: `intersection` :123 and `Line::intersection` :219 (0%, 0.65x)
 - divergent: `Line::normal` :180 and `Line::normal` :136 (0%, 0.41x)
 
@@ -5949,8 +5949,8 @@ Missing in the Rust file:
 - `transform` :10 (163 tokens) — in `brim_ears_point.rs`, `geometry/point.rs`, `geometry/polygon.rs`
 - `get_a` :38 (16 tokens)
 - `get_b` :39 (16 tokens) — in `gcode_sender.rs`
-- `distance_to_squared` :43 (217 tokens, overload) — in `aabb_tree_lines.rs`
 - `Line::parallel_to` :68 (18 tokens, overload)
+- `distance_to_squared` :73 (30 tokens, overload) — in `aabb_tree_lines.rs`
 - `distance_to` :80 (15 tokens) — in `arrange.rs`, `geometry/point.rs`
 - `Line::perpendicular_to` :93 (18 tokens, overload)
 - `Line::intersection` :105 (15 tokens, overload) — in `aabb_tree_lines.rs`, `clipper_utils.rs`, `enum_bitmask.rs`
@@ -6000,26 +6000,26 @@ Rust only:
 - `Line::project_point_infinite` :181
 - `Line::contains_point` :199
 - `Line::intersects` :212 — C++ has it in `BoundingBox`, `Frustum`, `SLA/Pad`
-- `Line::angle` :311 — C++ has it in `GCode/SeamPlacer`, `Point`
-- `Line::is_parallel_to` :317
-- `Line::is_perpendicular_to` :323
-- `Line::ccw` :331 — C++ has it in `Point`
-- `Line::rotate_around` :366
-- `Line::to_f64` :375
-- `Line::parallel_to_angle` :477
-- `Line::perpendicular_to_angle` :483
-- `Line::fmt` :507
-- `Line::fmt` :513
-- `Line::from` :527 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `(Point, Point)::from` :534 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `LineF::new` :549
-- `LineF::length_squared` :567
-- `LineF::unit_normal` :588
-- `LineF::angle` :594 — C++ has it in `GCode/SeamPlacer`, `Point`
-- `LineF::to_scaled` :601
-- `LineF::fmt` :610
-- `LineF::fmt` :616
-- `LineF::from` :627 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Line::angle` :364 — C++ has it in `GCode/SeamPlacer`, `Point`
+- `Line::is_parallel_to` :370
+- `Line::is_perpendicular_to` :376
+- `Line::ccw` :384 — C++ has it in `Point`
+- `Line::rotate_around` :419
+- `Line::to_f64` :428
+- `Line::parallel_to_angle` :530
+- `Line::perpendicular_to_angle` :536
+- `Line::fmt` :560
+- `Line::fmt` :566
+- `Line::from` :580 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `(Point, Point)::from` :587 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `LineF::new` :602
+- `LineF::length_squared` :620
+- `LineF::unit_normal` :641
+- `LineF::angle` :647 — C++ has it in `GCode/SeamPlacer`, `Point`
+- `LineF::to_scaled` :654
+- `LineF::fmt` :663
+- `LineF::fmt` :669
+- `LineF::from` :680 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
 
 ### `LocalesUtils` (.cpp+.hpp) and `locales_utils.rs`
 
