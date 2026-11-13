@@ -1429,6 +1429,7 @@ where
 pub(crate) fn entity_first_point(ee: &ExtrusionEntityType) -> Point {
     match ee {
         ExtrusionEntityType::Path(p) => p.first_point(),
+        ExtrusionEntityType::MultiPath(m) => m.first_point(),
         ExtrusionEntityType::Loop(l) => l.first_point(),
         // ExtrusionEntityCollection.hpp:105 `front()->first_point()`
         ExtrusionEntityType::Collection(c) => c.first_point().expect("first_point on empty collection"),
@@ -1438,6 +1439,7 @@ pub(crate) fn entity_first_point(ee: &ExtrusionEntityType) -> Point {
 fn entity_last_point(ee: &ExtrusionEntityType) -> Point {
     match ee {
         ExtrusionEntityType::Path(p) => p.last_point(),
+        ExtrusionEntityType::MultiPath(m) => m.last_point(),
         ExtrusionEntityType::Loop(l) => l.last_point(),
         // ExtrusionEntityCollection.hpp:106 `back()->last_point()`
         ExtrusionEntityType::Collection(c) => c.last_point().expect("last_point on empty collection"),
@@ -1454,6 +1456,8 @@ fn entity_can_reverse(ee: &ExtrusionEntityType) -> bool {
     match ee {
         // ExtrusionEntity.hpp:166 default + ExtrusionPath::can_reverse() (m_can_reverse).
         ExtrusionEntityType::Path(p) => p.can_reverse(),
+        // ExtrusionEntity.hpp:489 (ExtrusionMultiPath) `m_can_reverse`
+        ExtrusionEntityType::MultiPath(m) => m.can_reverse(),
         // ExtrusionEntity.hpp:507 (ExtrusionLoop) `bool can_reverse() const override { return false; }`
         ExtrusionEntityType::Loop(_) => false,
         // ExtrusionEntityCollection.hpp:63-69
@@ -1464,6 +1468,7 @@ fn entity_can_reverse(ee: &ExtrusionEntityType) -> bool {
 fn entity_reverse(ee: &mut ExtrusionEntityType) {
     match ee {
         ExtrusionEntityType::Path(p) => p.reverse(),
+        ExtrusionEntityType::MultiPath(m) => m.reverse(),
         ExtrusionEntityType::Loop(l) => l.reverse(),
         ExtrusionEntityType::Collection(c) => c.reverse(),
     }

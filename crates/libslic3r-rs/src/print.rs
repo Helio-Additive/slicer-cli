@@ -2632,6 +2632,7 @@ impl Print {
                 use crate::extrusion_entity::ExtrusionEntityType as T;
                 match ent {
                     T::Path(p) => (p.role, p.total_volume()),
+                    T::MultiPath(m) => (m.role(), m.total_volume()),
                     T::Loop(l) => (l.role(), l.total_volume()),
                     T::Collection(c) => (c.role(), c.total_volume()),
                 }
@@ -3213,6 +3214,7 @@ impl Print {
                                 use crate::extrusion_entity::ExtrusionEntityType as T;
                                 let (role, v) = match ent {
                                     T::Path(p) => (p.role, p.total_volume()),
+                                    T::MultiPath(m) => (m.role(), m.total_volume()),
                                     T::Loop(l) => (l.role(), l.total_volume()),
                                     T::Collection(c) => (c.role(), c.total_volume()),
                                 };
@@ -3949,6 +3951,14 @@ fn collect_entity_lines(
             let pts = p.polyline.points();
             for i in 1..pts.len() {
                 out.push((pts[i - 1], pts[i]));
+            }
+        }
+        ExtrusionEntityType::MultiPath(m) => {
+            for p in &m.paths {
+                let pts = p.polyline.points();
+                for i in 1..pts.len() {
+                    out.push((pts[i - 1], pts[i]));
+                }
             }
         }
         ExtrusionEntityType::Loop(l) => {

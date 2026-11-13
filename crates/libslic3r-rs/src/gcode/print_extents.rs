@@ -142,6 +142,10 @@ fn extrusionentity_extents_entity(extrusion_entity: &ExtrusionEntityType) -> Bou
         ExtrusionEntityType::Path(extrusion_path) => extrusionentity_extents_path(extrusion_path),
         // PrintExtents.cpp:88-90
         ExtrusionEntityType::Loop(extrusion_loop) => extrusionentity_extents_loop(extrusion_loop),
+        // PrintExtents.cpp:91-93
+        ExtrusionEntityType::MultiPath(extrusion_multi_path) => {
+            extrusionentity_extents_multi_path(extrusion_multi_path)
+        }
         // PrintExtents.cpp:94-96
         ExtrusionEntityType::Collection(extrusion_entity_collection) => {
             extrusionentity_extents_collection(extrusion_entity_collection)

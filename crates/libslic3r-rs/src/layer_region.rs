@@ -135,12 +135,12 @@ impl LayerRegion {
                 ExtrusionEntityType::Path(path) => {
                     self.simplify_path(path);
                 }
-                // LayerRegion.cpp:777-780
+                // LayerRegion.cpp:1044-1045
                 // else if (ExtrusionMultiPath* multipath = ...) this->simplify_multi_path(multipath);
+                ExtrusionEntityType::MultiPath(multipath) => {
+                    self.simplify_multi_path(multipath);
+                }
                 // else if (ExtrusionLoop* loop = ...) this->simplify_loop(loop);
-                //
-                // NOTE: this crate has no `ExtrusionMultiPath` variant (only Path/Loop/Collection),
-                // so the multipath branch is folded away; the loop branch is handled below.
                 ExtrusionEntityType::Loop(loop_) => {
                     self.simplify_loop(loop_);
                 }

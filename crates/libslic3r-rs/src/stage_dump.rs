@@ -228,6 +228,12 @@ fn pp_detail(tag: &str, coll: &crate::extrusion_entity::ExtrusionEntityCollectio
     for e in &coll.entities {
         match e {
             E::Path(p) => path_line(p, depth + 1),
+            E::MultiPath(m) => {
+                eprintln!("PPD {} {}  multipath paths={}", tag, pad, m.paths.len());
+                for p in &m.paths {
+                    path_line(p, depth + 2);
+                }
+            }
             E::Loop(l) => {
                 eprintln!("PPD {} {}  loop paths={}", tag, pad, l.paths.len());
                 for p in &l.paths {

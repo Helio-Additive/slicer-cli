@@ -41,6 +41,8 @@ type ExtrusionEntitiesPtr = Vec<ExtrusionEntityType>;
 fn entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
     match entity {
         ExtrusionEntityType::Path(p) => p.role,
+        // ExtrusionEntity.hpp:464
+        ExtrusionEntityType::MultiPath(m) => m.role(),
         ExtrusionEntityType::Loop(l) => {
             // ExtrusionEntity.hpp:535
             // ExtrusionRole role() const override { return this->paths.empty() ? erNone : this->paths.front().role(); }
@@ -296,6 +298,7 @@ impl ExtrusionEntityCollection {
         for entity in &self.entities {
             match entity {
                 ExtrusionEntityType::Path(p) => p.polygons_covered_by_width(out, scaled_epsilon),
+                ExtrusionEntityType::MultiPath(m) => m.polygons_covered_by_width(out, scaled_epsilon),
                 ExtrusionEntityType::Loop(l) => l.polygons_covered_by_width(out, scaled_epsilon),
                 ExtrusionEntityType::Collection(c) => {
                     c.polygons_covered_by_width(out, scaled_epsilon)
@@ -316,6 +319,7 @@ impl ExtrusionEntityCollection {
         for entity in &self.entities {
             match entity {
                 ExtrusionEntityType::Path(p) => p.polygons_covered_by_spacing(out, scaled_epsilon),
+                ExtrusionEntityType::MultiPath(m) => m.polygons_covered_by_spacing(out, scaled_epsilon),
                 ExtrusionEntityType::Loop(l) => l.polygons_covered_by_spacing(out, scaled_epsilon),
                 ExtrusionEntityType::Collection(c) => {
                     c.polygons_covered_by_spacing(out, scaled_epsilon)
@@ -420,6 +424,7 @@ impl ExtrusionEntityCollection {
             let entity_min = match entity {
                 // ExtrusionPath::min_mm3_per_mm() == this->mm3_per_mm
                 ExtrusionEntityType::Path(p) => p.mm3_per_mm,
+                ExtrusionEntityType::MultiPath(m) => m.min_mm3_per_mm(),
                 // ExtrusionLoop::min_mm3_per_mm() == min over paths' mm3_per_mm
                 ExtrusionEntityType::Loop(l) => l
                     .paths

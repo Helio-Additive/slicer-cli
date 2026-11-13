@@ -1440,6 +1440,12 @@ fn collect_points(entity: &ExtrusionEntityType, dst: &mut Vec<Point>) {
     match entity {
         // ExtrusionEntity.hpp:347
         ExtrusionEntityType::Path(path) => dst.extend_from_slice(&path.polyline.points),
+        // ExtrusionEntity.hpp:481-484
+        ExtrusionEntityType::MultiPath(m) => {
+            for path in &m.paths {
+                dst.extend_from_slice(&path.polyline.points);
+            }
+        }
         // ExtrusionEntity.hpp:553-556
         ExtrusionEntityType::Loop(l) => {
             for path in &l.paths {
@@ -1463,6 +1469,7 @@ fn collect_points(entity: &ExtrusionEntityType, dst: &mut Vec<Point>) {
 fn entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
     match entity {
         ExtrusionEntityType::Path(path) => path.role,
+        ExtrusionEntityType::MultiPath(m) => m.role(),
         ExtrusionEntityType::Loop(l) => l.role(),
         ExtrusionEntityType::Collection(coll) => coll.role(),
     }

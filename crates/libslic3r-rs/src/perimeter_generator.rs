@@ -2254,6 +2254,7 @@ fn entity_role(
     use crate::extrusion_entity::ExtrusionEntityType;
     match ee {
         ExtrusionEntityType::Path(p) => Some(p.role),
+        ExtrusionEntityType::MultiPath(m) => Some(m.role()),
         ExtrusionEntityType::Loop(l) => Some(l.role()),
         // Collection role is "mixed" in C++ — never equal to erPerimeter.
         ExtrusionEntityType::Collection(_) => None,
@@ -2275,6 +2276,13 @@ fn entity_first_point(ee: &crate::extrusion_entity::ExtrusionEntityType) -> Opti
                 None
             } else {
                 Some(l.first_point())
+            }
+        }
+        ExtrusionEntityType::MultiPath(m) => {
+            if m.paths.is_empty() || m.paths[0].polyline.points().is_empty() {
+                None
+            } else {
+                Some(m.first_point())
             }
         }
         ExtrusionEntityType::Collection(c) => c.first_point(),
@@ -2567,6 +2575,7 @@ fn thick_polyline_to_extrusion_paths(
 fn entity_reverse_inplace(entity: &mut ExtrusionEntityType) {
     match entity {
         ExtrusionEntityType::Path(p) => p.reverse(),
+        ExtrusionEntityType::MultiPath(m) => m.reverse(),
         ExtrusionEntityType::Loop(_) => {}
         ExtrusionEntityType::Collection(c) => c.reverse(),
     }
@@ -4337,6 +4346,26 @@ impl PerimeterGenerator {
                             eloop.make_clockwise();
                         }
                         entities.append(ExtrusionEntityType::Loop(eloop));
+                    } else if crate::faithful_gate("ARACHNE_MULTIPATH") {
+                        // PerimeterGenerator.cpp:807-823 — the paths of an open
+                        // extrusion form one ExtrusionMultiPath; a new one starts
+                        // where two consecutive paths do not meet. =0 appends every
+                        // path on its own, as the port did.
+                        let mut it = ext_paths.into_iter();
+                        if let Some(first) = it.next() {
+                            let mut multi_path = crate::extrusion_entity::ExtrusionMultiPath::new();
+                            multi_path.paths.push(first);
+                            for path in it {
+                                if multi_path.paths.last().unwrap().last_point() != path.first_point() {
+                                    entities.append(ExtrusionEntityType::MultiPath(std::mem::replace(
+                                        &mut multi_path,
+                                        crate::extrusion_entity::ExtrusionMultiPath::new(),
+                                    )));
+                                }
+                                multi_path.paths.push(path);
+                            }
+                            entities.append(ExtrusionEntityType::MultiPath(multi_path));
+                        }
                     } else {
                         for path in ext_paths {
                             entities.append(ExtrusionEntityType::Path(path));
@@ -5454,6 +5483,9 @@ fn apply_fuzzy_skin_to_entity(
                 }
             }
         }
+        // An Arachne extrusion gets its fuzzy skin before it becomes paths
+        // (PerimeterGenerator.cpp:661-662); nothing to do on the multi-path.
+        ExtrusionEntityType::MultiPath(_) => {}
         ExtrusionEntityType::Collection(coll) => {
             for sub_entity in &mut coll.entities {
                 apply_fuzzy_skin_to_entity(sub_entity, config, mode);

@@ -3048,6 +3048,7 @@ fn get_entity_mm3_per_mm(entity: &ExtrusionEntityType) -> f64 {
     use crate::extrusion_entity::ExtrusionEntityType;
     match entity {
         ExtrusionEntityType::Path(p) => p.mm3_per_mm,
+        ExtrusionEntityType::MultiPath(m) => m.paths.first().map(|p| p.mm3_per_mm).unwrap_or(0.0),
         ExtrusionEntityType::Loop(l) => l.paths.first().map(|p| p.mm3_per_mm).unwrap_or(0.0),
         ExtrusionEntityType::Collection(c) => c
             .entities
@@ -3060,6 +3061,10 @@ fn get_entity_mm3_per_mm(entity: &ExtrusionEntityType) -> f64 {
 pub fn get_entity_first_point(entity: &ExtrusionEntityType) -> Option<Point> {
     match entity {
         ExtrusionEntityType::Path(path) => path.polyline.points().first().copied(),
+        ExtrusionEntityType::MultiPath(multipath) => multipath
+            .paths
+            .first()
+            .and_then(|p| p.polyline.points().first().copied()),
         ExtrusionEntityType::Loop(loop_entity) => loop_entity
             .paths
             .first()
@@ -3076,6 +3081,8 @@ pub fn get_entity_first_point(entity: &ExtrusionEntityType) -> Option<Point> {
 pub(crate) fn get_entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
     match entity {
         ExtrusionEntityType::Path(path) => path.role,
+        // ExtrusionEntity.hpp:464
+        ExtrusionEntityType::MultiPath(multipath) => multipath.role(),
         ExtrusionEntityType::Loop(loop_entity) => {
             /// Loops may have multiple paths with different roles
             /// Use first path's role, or Mixed if empty
@@ -3798,6 +3805,35 @@ pub fn extrude_entity(
             // R227: native extrude_path wrapper resets accel after the path
             // (GCode.cpp:5719-5725).
             writer.reset_acceleration_default(is_first_layer);
+        }
+
+        // GCode::extrude_multi_path (GCode.cpp:6884-6903): every path through
+        // `_extrude`, then one wipe path for the whole multi-path: the paths'
+        // points in order, a joint written once, reversed.
+        ExtrusionEntityType::MultiPath(multipath) => {
+            let mut inner = ExtrusionEntityCollection::new();
+            inner.no_sort = true;
+            for path in &multipath.paths {
+                inner.entities.push(ExtrusionEntityType::Path(path.clone()));
+            }
+            extrude_collection(&inner, writer, config, is_first_layer)?;
+            if crate::gcode::writer::lift_faithful_gate() {
+                let mut pts: Vec<(f64, f64)> = Vec::new();
+                for p in &multipath.paths {
+                    for (k, pt) in p.polyline.points().iter().enumerate() {
+                        let q = (crate::unscale(pt.x()), crate::unscale(pt.y()));
+                        // "Don't need to save duplicated point into wipe path"
+                        if k == 0 && pts.last() == Some(&q) {
+                            continue;
+                        }
+                        pts.push(q);
+                    }
+                }
+                pts.reverse();
+                if pts.len() >= 2 {
+                    writer.set_wipe_path_points(pts);
+                }
+            }
         }
 
         /// Dispatch to collection handler (recursive)
@@ -6689,6 +6725,7 @@ fn first_extrusion_path(
     use crate::extrusion_entity::ExtrusionEntityType as T;
     match entity {
         T::Path(p) => Some(p),
+        T::MultiPath(m) => m.paths.first(),
         T::Loop(l) => l.paths.first(),
         T::Collection(c) => c.entities.iter().find_map(first_extrusion_path),
     }

@@ -2179,6 +2179,8 @@ pub struct ExtrusionEntityCollection {
 #[derive(Debug, Clone)]
 pub enum ExtrusionEntityType {
     Path(ExtrusionPath),
+    /// ExtrusionEntity.hpp:428 `ExtrusionMultiPath`: connected paths extruded as one.
+    MultiPath(ExtrusionMultiPath),
     Loop(ExtrusionLoop),
     Collection(Box<ExtrusionEntityCollection>),
 }
@@ -2262,6 +2264,7 @@ impl ExtrusionEntityCollection {
         for entity in &mut self.entities {
             match entity {
                 ExtrusionEntityType::Path(path) => path.reverse(),
+                ExtrusionEntityType::MultiPath(multipath) => multipath.reverse(),
                 ExtrusionEntityType::Loop(_) => {}
                 ExtrusionEntityType::Collection(coll) => coll.reverse(),
             }
@@ -2276,6 +2279,7 @@ impl ExtrusionEntityCollection {
         }
         Some(match &self.entities[0] {
             ExtrusionEntityType::Path(path) => path.first_point(),
+            ExtrusionEntityType::MultiPath(multipath) => multipath.first_point(),
             ExtrusionEntityType::Loop(loop_) => loop_.first_point(),
             ExtrusionEntityType::Collection(coll) => coll.first_point()?,
         })
@@ -2287,6 +2291,7 @@ impl ExtrusionEntityCollection {
         }
         Some(match self.entities.last().unwrap() {
             ExtrusionEntityType::Path(path) => path.last_point(),
+            ExtrusionEntityType::MultiPath(multipath) => multipath.last_point(),
             ExtrusionEntityType::Loop(loop_) => loop_.last_point(),
             ExtrusionEntityType::Collection(coll) => coll.last_point()?,
         })
@@ -2302,6 +2307,11 @@ impl ExtrusionEntityCollection {
         for entity in &self.entities {
             match entity {
                 ExtrusionEntityType::Path(path) => result.push(path),
+                ExtrusionEntityType::MultiPath(multipath) => {
+                    for path in &multipath.paths {
+                        result.push(path);
+                    }
+                }
                 ExtrusionEntityType::Loop(loop_) => {
                     for path in &loop_.paths {
                         result.push(path);
@@ -2320,6 +2330,11 @@ impl ExtrusionEntityCollection {
         for entity in &self.entities {
             match entity {
                 ExtrusionEntityType::Path(path) => result.push(path.polyline.clone()),
+                ExtrusionEntityType::MultiPath(multipath) => {
+                    for path in &multipath.paths {
+                        result.push(path.polyline.clone());
+                    }
+                }
                 ExtrusionEntityType::Loop(loop_) => {
                     for path in &loop_.paths {
                         result.push(path.polyline.clone());
@@ -2338,6 +2353,7 @@ impl ExtrusionEntityCollection {
             .iter()
             .map(|e| match e {
                 ExtrusionEntityType::Path(path) => path.length(),
+                ExtrusionEntityType::MultiPath(multipath) => multipath.length(),
                 ExtrusionEntityType::Loop(loop_) => loop_.length(),
                 ExtrusionEntityType::Collection(coll) => coll.length(),
             })
@@ -2349,6 +2365,7 @@ impl ExtrusionEntityCollection {
             .iter()
             .map(|e| match e {
                 ExtrusionEntityType::Path(path) => path.total_volume(),
+                ExtrusionEntityType::MultiPath(multipath) => multipath.total_volume(),
                 ExtrusionEntityType::Loop(loop_) => loop_.total_volume(),
                 ExtrusionEntityType::Collection(coll) => coll.total_volume(),
             })

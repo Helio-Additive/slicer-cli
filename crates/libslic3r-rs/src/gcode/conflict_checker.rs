@@ -563,6 +563,12 @@ pub fn get_extrusion_paths_from_entity(
                     paths.push(path.clone());
                 }
                 // ConflictChecker.cpp:155 `} else if (const ExtrusionLoop *loop = dynamic_cast<...>(entityPtr)) {`
+                // ConflictChecker.cpp:154-155
+                ExtrusionEntityType::MultiPath(multipath) => {
+                    for path in &multipath.paths {
+                        paths.push(path.clone());
+                    }
+                }
                 ExtrusionEntityType::Loop(loop_) => {
                     // ConflictChecker.cpp:156 `for (const ExtrusionPath &path : loop->paths) { paths.push_back(path); }`
                     for path in &loop_.paths {
@@ -570,10 +576,6 @@ pub fn get_extrusion_paths_from_entity(
                     }
                 }
             }
-            // NOTE: ConflictChecker.cpp:153-154 handle `ExtrusionMultiPath`, which
-            // has no representation in this crate's `ExtrusionEntityType` enum
-            // (multipaths are not stored in collections here). If/when the enum
-            // grows a MultiPath variant, mirror the loop over `multipath->paths`.
         }
     }
     // ConflictChecker.cpp:160 `getExtrusionPathImpl(entity, paths);`
