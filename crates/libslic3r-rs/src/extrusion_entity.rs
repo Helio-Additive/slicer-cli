@@ -302,6 +302,20 @@ pub(crate) fn offset_polyline_clib(polyline: &crate::geometry::Polyline, delta_s
         xy.push(p.x as i32);
         xy.push(p.y as i32);
     }
+    if crate::clipper_utils::clipper_rust() {
+        // ClipperUtils.cpp:418-419 `offset(const Polyline&, delta)`, as the shim's
+        // cz_offset_polyline runs it.
+        let path = crate::clipper_utils::clib_read_closed_paths(&xy, &[pts.len() as i32]).swap_remove(0);
+        return crate::clipper_utils::offset_polyline_paths(&path, delta_scaled, 0.0)
+            .iter()
+            .filter(|ring| ring.len() >= 3)
+            .map(|ring| {
+                Polygon::from_points(
+                    ring.iter().map(|q| crate::geometry::Point::new(q.x as i64, q.y as i64)).collect(),
+                )
+            })
+            .collect();
+    }
     // SAFETY: live correctly-sized buffer; shim only reads; output freed below.
     let raw = unsafe {
         clipper_z_sys::cz_offset_polyline(xy.as_ptr(), pts.len() as i32, delta_scaled, 0.0)

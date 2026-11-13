@@ -11,13 +11,13 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**35.6% of the named C++ functions are ported or verified (3277 of 9204); 24.8% by size of body.**
+**35.9% of the named C++ functions are ported or verified (3301 of 9204); 24.9% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3177 | 34.5% | 47.2% |
-| partial `[~]` | 2750 | 29.9% | 28.0% |
-| ported `[x]` | 3139 | 34.1% | 22.8% |
+| not started `[ ]` | 3154 | 34.3% | 47.1% |
+| partial `[~]` | 2749 | 29.9% | 28.0% |
+| ported `[x]` | 3163 | 34.4% | 22.9% |
 | verified `[v]` | 138 | 1.5% | 2.0% |
 
 | Files (C++ units) | Count |
@@ -104,7 +104,7 @@ the end; the goal is none.
 | `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 11 | 16 | 9 | 116 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 6 | 6 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
-| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 56 | 162 | 9 | 0 |
+| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 37 | 161 | 29 | 0 |
 | `ClipperZUtils` | 1 | `clipper_z_utils.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `clonable_ptr` | 1 | `clonable_ptr.rs` | partial | 7 | 3 | 1 | 3 | 0 |
 | `Color` | 1 | `color.rs` | partial | 97 | 10 | 15 | 72 | 0 |
@@ -292,7 +292,7 @@ the end; the goal is none.
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
 | `ProjectTask` | 1 | `project_task.rs` | partial | 11 | 0 | 5 | 6 | 0 |
 | `QuadricEdgeCollapse` | 3 | `quadric_edge_collapse.rs` | partial | 28 | 3 | 3 | 22 | 0 |
-| `RegionExpansion` | 1 | `region_expansion.rs` | partial | 23 | 9 | 9 | 5 | 0 |
+| `RegionExpansion` | 1 | `region_expansion.rs` | partial | 23 | 5 | 9 | 9 | 0 |
 | `Semver` | 1 | `semver.rs` | partial | 21 | 0 | 2 | 19 | 0 |
 | `Shape/TextShape` | 3 | `shape/text_shape.rs` | partial | 6 | 0 | 5 | 1 | 0 |
 | `ShortEdgeCollapse` | 3 | `short_edge_collapse.rs` | verified | 1 | 0 | 0 | 0 | 1 |
@@ -1724,37 +1724,37 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 130) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 131) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 133) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:2990`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:4136`
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 144) → `fill/fill_floating_concentric.rs` — not in the paired file
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 152) → `fill/fill_floating_concentric.rs` — not in the paired file
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 161) → `fill/fill_floating_concentric.rs` — not in the paired file
-- [~] `PolyTreeToExPolygons` (line 175) → `clipper2_utils.rs` — not in the paired file
-- [ ] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs`
+- [x] `PolyTreeToExPolygons` (line 175) → `clipper_utils.rs:1367`
+- [x] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs:1407`
 - [~] `has_duplicate_points` (line 233) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
 - [~] `has_duplicate_points` (line 250) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
-- [ ] `raw_offset` (line 273) → `clipper_utils.rs`
-- [ ] `safety_offset` (line 304) → `clipper_utils.rs`
-- [ ] `clipper_do` (line 310) → `clipper_utils.rs`
-- [ ] `clipper_do` (line 325) → `clipper_utils.rs`
-- [ ] `clipper_union` (line 340) → `clipper_utils.rs`
+- [x] `raw_offset` (line 273) → `clipper_utils.rs:1431`
+- [x] `safety_offset` (line 304) → `clipper_utils.rs:1476`
+- [x] `clipper_do` (line 310) → `clipper_utils.rs:1493`
+- [~] `clipper_do` (line 325) → `clipper_utils.rs` — another overload of the name is ported
+- [x] `clipper_union` (line 340) → `clipper_utils.rs:1537`
 - [ ] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs`
 - [~] `offset_ex` (line 358) → `bridge_detector.rs, emboss.rs, support/tree_model_volumes.rs` — not in the paired file
-- [ ] `raw_offset_polyline` (line 360) → `clipper_utils.rs`
-- [ ] `expand_paths` (line 367) → `clipper_utils.rs`
+- [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1552`
+- [x] `expand_paths` (line 367) → `clipper_utils.rs:1566`
 - [~] `union_safety_offset` (line 370) → `bridge_detector.rs` — not in the paired file
 - [~] `union_safety_offset` (line 371) → `bridge_detector.rs` — not in the paired file
 - [~] `union_safety_offset_ex` (line 372) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:3651`
-- [~] `remove_outermost_polygon` (line 376) → `clipper.rs` — not in the paired file
-- [~] `remove_outermost_polygon` (line 378) → `clipper.rs` — not in the paired file
+- [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:4818`
+- [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:1335`
+- [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:1355`
 - [~] `expand` (line 381) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
-- [ ] `shrink_paths` (line 382) → `clipper_utils.rs`
+- [x] `shrink_paths` (line 382) → `clipper_utils.rs:1583`
 - [~] `expand` (line 383) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `expand_ex` (line 385) → `clipper_utils.rs`
 - [x] `shrink` (line 388) → `clipper_utils.rs:832`
 - [ ] `shrink_ex` (line 390) → `clipper_utils.rs`
 - [ ] `shrink_ex` (line 392) → `clipper_utils.rs`
-- [ ] `offset_paths` (line 400) → `clipper_utils.rs`
+- [x] `offset_paths` (line 400) → `clipper_utils.rs:1629`
 - [x] `closing` (line 407) → `clipper_utils.rs:1115`
 - [ ] `closing_ex` (line 410) → `clipper_utils.rs`
 - [~] `offset` (line 410) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
@@ -1771,17 +1771,17 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `opening_ex` (line 428) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `contour_to_polygons` (line 429) → `clipper_utils.rs`
 - [x] `opening_ex` (line 430) → `clipper_utils.rs:949`
-- [ ] `offset_expolygon_inner` (line 437) → `clipper_utils.rs`
+- [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1675`
 - [~] `diff_ex` (line 470) → `clipper_utils.rs:966` — partial
 - [~] `diff_ex` (line 480) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `diff_ex` (line 488) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `diff_ln` (line 496) → `clipper_utils.rs`
-- [ ] `offset_expolygon_inner` (line 508) → `clipper_utils.rs`
-- [ ] `offset_expolygon_inner` (line 510) → `clipper_utils.rs`
-- [ ] `expolygon_offset` (line 513) → `clipper_utils.rs`
-- [ ] `expolygons_offset_raw` (line 524) → `clipper_utils.rs`
+- [~] `offset_expolygon_inner` (line 508) → `clipper_utils.rs` — another overload of the name is ported
+- [~] `offset_expolygon_inner` (line 510) → `clipper_utils.rs` — another overload of the name is ported
+- [x] `expolygon_offset` (line 513) → `clipper_utils.rs:1767`
+- [x] `expolygons_offset_raw` (line 524) → `clipper_utils.rs:1784`
 - [~] `intersection_ln` (line 536) → `bridge_detector.rs, internal_bridge_detector.rs` — not in the paired file
-- [ ] `expolygons_offset` (line 539) → `clipper_utils.rs`
+- [x] `expolygons_offset` (line 539) → `clipper_utils.rs:1807`
 - [~] `intersection_ln` (line 541) → `bridge_detector.rs, internal_bridge_detector.rs` — not in the paired file
 - [ ] `expolygons_offset_pt` (line 552) → `clipper_utils.rs`
 - [~] `offset` (line 559) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
@@ -1804,9 +1804,9 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `opening` (line 619) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `opening` (line 625) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `traverse_pt` (line 625) → `clipper_utils.rs`
-- [ ] `clipper_do_polytree` (line 641) → `clipper_utils.rs`
+- [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:1866`
 - [ ] `traverse_pt` (line 653) → `clipper_utils.rs`
-- [ ] `clipper_do_polytree` (line 656) → `clipper_utils.rs`
+- [~] `clipper_do_polytree` (line 656) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `_clipper` (line 670) → `clipper_utils.rs`
 - [~] `diff` (line 675) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
 - [~] `diff` (line 677) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
@@ -1868,7 +1868,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `union_ex` (line 825) → `clipper_utils.rs:332` — divergent
 - [ ] `xor_ex` (line 833) → `clipper_utils.rs`
 - [ ] `xor_ex` (line 836) → `clipper_utils.rs`
-- [ ] `_clipper_pl_open` (line 841) → `clipper_utils.rs`
+- [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:1908`
 - [ ] `_clipper_pl_recombine` (line 854) → `clipper_utils.rs`
 - [ ] `_clipper_pl_closed` (line 890) → `clipper_utils.rs`
 - [~] `diff_pl` (line 909) → `clipper_utils.rs` — another overload of the name is ported
@@ -1877,7 +1877,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `diff_pl` (line 915) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `diff_pl` (line 917) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `diff_pl` (line 919) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `diff_pl` (line 921) → `clipper_utils.rs:3058`
+- [x] `diff_pl` (line 921) → `clipper_utils.rs:4204`
 - [~] `intersection_pl` (line 923) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `intersection_pl` (line 925) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `intersection_pl` (line 927) → `clipper_utils.rs` — another overload of the name is ported
@@ -1885,7 +1885,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `intersection_pl` (line 931) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `intersection_pl` (line 933) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `intersection_pl` (line 935) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `intersection_pl` (line 937) → `clipper_utils.rs:3088`
+- [x] `intersection_pl` (line 937) → `clipper_utils.rs:4234`
 - [ ] `_clipper_ln` (line 940) → `clipper_utils.rs`
 - [ ] `union_pt` (line 962) → `clipper_utils.rs`
 - [ ] `union_pt` (line 966) → `clipper_utils.rs`
@@ -1896,9 +1896,9 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `simplify_polygons` (line 1026) → `arachne/wall_tool_paths.rs, clipper.rs, emboss.rs` — not in the paired file
 - [ ] `simplify_polygons_ex` (line 1043) → `clipper_utils.rs`
 - [ ] `top_level_islands` (line 1059) → `clipper_utils.rs`
-- [~] `fix_after_outer_offset` (line 1077) → `clipper2_utils.rs` — not in the paired file
-- [~] `fix_after_inner_offset` (line 1095) → `clipper2_utils.rs` — not in the paired file
-- [~] `mittered_offset_path_scaled` (line 1120) → `clipper2_utils.rs` — not in the paired file
+- [x] `fix_after_outer_offset` (line 1077) → `clipper_utils.rs:1931`
+- [x] `fix_after_inner_offset` (line 1095) → `clipper_utils.rs:1951`
+- [~] `mittered_offset_path_scaled` (line 1120) → `clipper_utils.rs:2010` — partial
 - [~] `variable_offset_inner` (line 1260) → `clipper2_utils.rs` — not in the paired file
 - [~] `variable_offset_outer` (line 1302) → `clipper2_utils.rs` — not in the paired file
 - [~] `variable_offset_outer_ex` (line 1344) → `clipper2_utils.rs` — not in the paired file
@@ -3392,141 +3392,141 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [~] `extrusion_paths_append` (line 615) → `overhang_detector.rs` — not in the paired file
 - [~] `extrusion_paths_append` (line 626) → `overhang_detector.rs` — not in the paired file
 - [~] `extrusion_paths_append` (line 637) → `overhang_detector.rs` — not in the paired file
-- [x] `extrusion_entities_append_paths` (line 647) → `extrusion_entity.rs:2493`
+- [x] `extrusion_entities_append_paths` (line 647) → `extrusion_entity.rs:2507`
 - [~] `extrusion_entities_append_paths` (line 658) → `extrusion_entity.rs` — another overload of the name is ported
-- [~] `extrusion_entities_append_paths_with_wipe` (line 671) → `extrusion_entity.rs:2414` — partial
+- [~] `extrusion_entities_append_paths_with_wipe` (line 671) → `extrusion_entity.rs:2428` — partial
 - [ ] `extrusion_entities_append_loops` (line 732) → `extrusion_entity.rs`
 - [ ] `extrusion_entities_append_loops_and_paths` (line 746) → `extrusion_entity.rs`
 
 **class `ExtrusionEntity`**
 
-- [x] `is_collection` (line 164) → `extrusion_entity.rs:2012`
+- [x] `is_collection` (line 164) → `extrusion_entity.rs:2026`
 - [~] `is_loop` (line 165) → `extrusion_entity.rs` — another overload of the name is ported
-- [x] `can_reverse` (line 166) → `extrusion_entity.rs:2086`
-- [x] `can_sort` (line 167) → `extrusion_entity.rs:2235`
-- [x] `set_reverse` (line 168) → `extrusion_entity.rs:2253`
+- [x] `can_reverse` (line 166) → `extrusion_entity.rs:2100`
+- [x] `can_sort` (line 167) → `extrusion_entity.rs:2249`
+- [x] `set_reverse` (line 168) → `extrusion_entity.rs:2267`
 - [~] `polygons_covered_by_width` (line 183) → `extrusion_entity_collection.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 185) → `extrusion_entity_collection.rs` — not in the paired file
 - [ ] `as_polylines` (line 192) → `extrusion_entity.rs`
-- [x] `get_customize_flag` (line 199) → `extrusion_entity.rs:664`
-- [x] `set_customize_flag` (line 200) → `extrusion_entity.rs:661`
-- [x] `get_cooling_node` (line 202) → `extrusion_entity.rs:669`
-- [x] `set_cooling_node` (line 203) → `extrusion_entity.rs:672`
-- [~] `role_to_string` (line 613) → `extrusion_entity.rs:1887` — divergent
-- [~] `string_to_role` (line 643) → `extrusion_entity.rs:1916` — divergent
+- [x] `get_customize_flag` (line 199) → `extrusion_entity.rs:678`
+- [x] `set_customize_flag` (line 200) → `extrusion_entity.rs:675`
+- [x] `get_cooling_node` (line 202) → `extrusion_entity.rs:683`
+- [x] `set_cooling_node` (line 203) → `extrusion_entity.rs:686`
+- [~] `role_to_string` (line 613) → `extrusion_entity.rs:1901` — divergent
+- [~] `string_to_role` (line 643) → `extrusion_entity.rs:1930` — divergent
 
 **class `ExtrusionLoop`**
 
-- [x] `make_clockwise` (line 138) → `extrusion_entity.rs:972`
-- [x] `make_counter_clockwise` (line 145) → `extrusion_entity.rs:984`
-- [x] `reverse` (line 152) → `extrusion_entity.rs:1006`
-- [x] `polygon` (line 159) → `extrusion_entity.rs:1016`
-- [x] `length` (line 169) → `extrusion_entity.rs:1037`
-- [x] `split_at_vertex` (line 177) → `extrusion_entity.rs:1049`
-- [x] `get_closest_path_and_point` (line 225) → `extrusion_entity.rs:1125`
-- [x] `split_at` (line 255) → `extrusion_entity.rs:1181`
-- [x] `clip_end` (line 308) → `extrusion_entity.rs:1289`
-- [x] `has_overhang_point` (line 408) → `extrusion_entity.rs:1309`
-- [x] `has_overhang_paths` (line 421) → `extrusion_entity.rs:1329`
-- [x] `polygons_covered_by_width` (line 432) → `extrusion_entity.rs:1346`
-- [x] `polygons_covered_by_spacing` (line 438) → `extrusion_entity.rs:1354`
-- [x] `min_mm3_per_mm` (line 444) → `extrusion_entity.rs:1362`
-- [x] `check_seam_point_angle` (line 454) → `extrusion_entity.rs:1376`
-- [x] `is_loop` (line 506) → `extrusion_entity.rs:2082`
-- [x] `can_reverse` (line 507) → `extrusion_entity.rs:896`
+- [x] `make_clockwise` (line 138) → `extrusion_entity.rs:986`
+- [x] `make_counter_clockwise` (line 145) → `extrusion_entity.rs:998`
+- [x] `reverse` (line 152) → `extrusion_entity.rs:1020`
+- [x] `polygon` (line 159) → `extrusion_entity.rs:1030`
+- [x] `length` (line 169) → `extrusion_entity.rs:1051`
+- [x] `split_at_vertex` (line 177) → `extrusion_entity.rs:1063`
+- [x] `get_closest_path_and_point` (line 225) → `extrusion_entity.rs:1139`
+- [x] `split_at` (line 255) → `extrusion_entity.rs:1195`
+- [x] `clip_end` (line 308) → `extrusion_entity.rs:1303`
+- [x] `has_overhang_point` (line 408) → `extrusion_entity.rs:1323`
+- [x] `has_overhang_paths` (line 421) → `extrusion_entity.rs:1343`
+- [x] `polygons_covered_by_width` (line 432) → `extrusion_entity.rs:1360`
+- [x] `polygons_covered_by_spacing` (line 438) → `extrusion_entity.rs:1368`
+- [x] `min_mm3_per_mm` (line 444) → `extrusion_entity.rs:1376`
+- [x] `check_seam_point_angle` (line 454) → `extrusion_entity.rs:1390`
+- [x] `is_loop` (line 506) → `extrusion_entity.rs:2096`
+- [x] `can_reverse` (line 507) → `extrusion_entity.rs:910`
 - [~] `clone` (line 508) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
 - [ ] `clone_move` (line 510) → `extrusion_entity.rs`
-- [x] `is_clockwise` (line 513) → `extrusion_entity.rs:996`
-- [x] `is_counter_clockwise` (line 514) → `extrusion_entity.rs:1001`
-- [~] `is_set_speed_discontinuity_area` (line 516) → `extrusion_entity.rs:1465` — divergent
-- [x] `role` (line 535) → `extrusion_entity.rs:1485`
-- [x] `loop_role` (line 536) → `extrusion_entity.rs:1494`
-- [x] `set_loop_role` (line 537) → `extrusion_entity.rs:1499`
+- [x] `is_clockwise` (line 513) → `extrusion_entity.rs:1010`
+- [x] `is_counter_clockwise` (line 514) → `extrusion_entity.rs:1015`
+- [~] `is_set_speed_discontinuity_area` (line 516) → `extrusion_entity.rs:1479` — divergent
+- [x] `role` (line 535) → `extrusion_entity.rs:1499`
+- [x] `loop_role` (line 536) → `extrusion_entity.rs:1508`
+- [x] `set_loop_role` (line 537) → `extrusion_entity.rs:1513`
 - [~] `polygons_covered_by_width` (line 545) → `extrusion_entity_collection.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 547) → `extrusion_entity_collection.rs` — not in the paired file
-- [x] `as_polyline` (line 551) → `extrusion_entity.rs:1504`
-- [x] `collect_polylines` (line 552) → `extrusion_entity.rs:2139`
+- [x] `as_polyline` (line 551) → `extrusion_entity.rs:1518`
+- [x] `collect_polylines` (line 552) → `extrusion_entity.rs:2153`
 - [~] `collect_points` (line 553) → `gcode/seam_placer.rs` — not in the paired file
-- [x] `total_volume` (line 559) → `extrusion_entity.rs:1509`
+- [x] `total_volume` (line 559) → `extrusion_entity.rs:1523`
 - [~] `validate` (line 565) → `print.rs, print_config.rs, sla/pad.rs` — not in the paired file
 
 **class `ExtrusionLoopSloped`**
 
-- [x] `clip_slope` (line 326) → `extrusion_entity.rs:1771`
-- [x] `clip_end` (line 334) → `extrusion_entity.rs:1780`
-- [x] `clip_front` (line 352) → `extrusion_entity.rs:1801`
-- [x] `slope_path_length` (line 376) → `extrusion_entity.rs:1833`
-- [x] `slowdown_slope_speed` (line 385) → `extrusion_entity.rs:1846`
-- [x] `get_all_paths` (line 599) → `extrusion_entity.rs:1748`
+- [x] `clip_slope` (line 326) → `extrusion_entity.rs:1785`
+- [x] `clip_end` (line 334) → `extrusion_entity.rs:1794`
+- [x] `clip_front` (line 352) → `extrusion_entity.rs:1815`
+- [x] `slope_path_length` (line 376) → `extrusion_entity.rs:1847`
+- [x] `slowdown_slope_speed` (line 385) → `extrusion_entity.rs:1860`
+- [x] `get_all_paths` (line 599) → `extrusion_entity.rs:1762`
 
 **class `ExtrusionMultiPath`**
 
-- [x] `reverse` (line 82) → `extrusion_entity.rs:779`
-- [x] `length` (line 89) → `extrusion_entity.rs:789`
-- [x] `polygons_covered_by_width` (line 97) → `extrusion_entity.rs:801`
-- [x] `polygons_covered_by_spacing` (line 103) → `extrusion_entity.rs:809`
-- [x] `min_mm3_per_mm` (line 109) → `extrusion_entity.rs:817`
-- [x] `as_polyline` (line 117) → `extrusion_entity.rs:829`
-- [x] `is_loop` (line 452) → `extrusion_entity.rs:2016`
-- [x] `can_reverse` (line 453) → `extrusion_entity.rs:2020`
-- [x] `set_reverse` (line 454) → `extrusion_entity.rs:901`
+- [x] `reverse` (line 82) → `extrusion_entity.rs:793`
+- [x] `length` (line 89) → `extrusion_entity.rs:803`
+- [x] `polygons_covered_by_width` (line 97) → `extrusion_entity.rs:815`
+- [x] `polygons_covered_by_spacing` (line 103) → `extrusion_entity.rs:823`
+- [x] `min_mm3_per_mm` (line 109) → `extrusion_entity.rs:831`
+- [x] `as_polyline` (line 117) → `extrusion_entity.rs:843`
+- [x] `is_loop` (line 452) → `extrusion_entity.rs:2030`
+- [x] `can_reverse` (line 453) → `extrusion_entity.rs:2034`
+- [x] `set_reverse` (line 454) → `extrusion_entity.rs:915`
 - [~] `clone` (line 455) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
 - [ ] `clone_move` (line 457) → `extrusion_entity.rs`
-- [x] `size` (line 461) → `extrusion_entity.rs:877`
-- [x] `empty` (line 462) → `extrusion_entity.rs:882`
-- [x] `role` (line 464) → `extrusion_entity.rs:887`
+- [x] `size` (line 461) → `extrusion_entity.rs:891`
+- [x] `empty` (line 462) → `extrusion_entity.rs:896`
+- [x] `role` (line 464) → `extrusion_entity.rs:901`
 - [~] `polygons_covered_by_width` (line 472) → `extrusion_entity_collection.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 474) → `extrusion_entity_collection.rs` — not in the paired file
-- [x] `collect_polylines` (line 479) → `extrusion_entity.rs:2102`
+- [x] `collect_polylines` (line 479) → `extrusion_entity.rs:2116`
 - [~] `collect_points` (line 480) → `gcode/seam_placer.rs` — not in the paired file
-- [x] `total_volume` (line 486) → `extrusion_entity.rs:906`
+- [x] `total_volume` (line 486) → `extrusion_entity.rs:920`
 
 **class `ExtrusionPath`**
 
-- [x] `intersect_expolygons` (line 19) → `extrusion_entity.rs:422`
-- [x] `subtract_expolygons` (line 24) → `extrusion_entity.rs:436`
-- [x] `clip_end` (line 29) → `extrusion_entity.rs:450`
-- [x] `simplify` (line 34) → `extrusion_entity.rs:456`
-- [x] `simplify_by_fitting_arc` (line 39) → `extrusion_entity.rs:462`
-- [x] `length` (line 44) → `extrusion_entity.rs:468`
-- [x] `_inflate_collection` (line 49) → `extrusion_entity.rs:474`
-- [x] `polygons_covered_by_width` (line 55) → `extrusion_entity.rs:487`
-- [x] `polygons_covered_by_spacing` (line 60) → `extrusion_entity.rs:508`
-- [x] `can_merge` (line 70) → `extrusion_entity.rs:532`
+- [x] `intersect_expolygons` (line 19) → `extrusion_entity.rs:436`
+- [x] `subtract_expolygons` (line 24) → `extrusion_entity.rs:450`
+- [x] `clip_end` (line 29) → `extrusion_entity.rs:464`
+- [x] `simplify` (line 34) → `extrusion_entity.rs:470`
+- [x] `simplify_by_fitting_arc` (line 39) → `extrusion_entity.rs:476`
+- [x] `length` (line 44) → `extrusion_entity.rs:482`
+- [x] `_inflate_collection` (line 49) → `extrusion_entity.rs:488`
+- [x] `polygons_covered_by_width` (line 55) → `extrusion_entity.rs:501`
+- [x] `polygons_covered_by_spacing` (line 60) → `extrusion_entity.rs:522`
+- [x] `can_merge` (line 70) → `extrusion_entity.rs:546`
 - [~] `clone` (line 313) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
 - [ ] `clone_move` (line 315) → `extrusion_entity.rs`
-- [x] `reverse` (line 316) → `extrusion_entity.rs:545`
-- [x] `size` (line 319) → `extrusion_entity.rs:560`
-- [x] `empty` (line 320) → `extrusion_entity.rs:565`
-- [x] `is_closed` (line 321) → `extrusion_entity.rs:570`
-- [x] `role` (line 331) → `extrusion_entity.rs:2042`
+- [x] `reverse` (line 316) → `extrusion_entity.rs:559`
+- [x] `size` (line 319) → `extrusion_entity.rs:574`
+- [x] `empty` (line 320) → `extrusion_entity.rs:579`
+- [x] `is_closed` (line 321) → `extrusion_entity.rs:584`
+- [x] `role` (line 331) → `extrusion_entity.rs:2056`
 - [~] `polygons_covered_by_width` (line 339) → `extrusion_entity_collection.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 341) → `extrusion_entity_collection.rs` — not in the paired file
-- [x] `min_mm3_per_mm` (line 344) → `extrusion_entity.rs:580`
-- [x] `as_polyline` (line 345) → `extrusion_entity.rs:585`
-- [x] `collect_polylines` (line 346) → `extrusion_entity.rs:2061`
+- [x] `min_mm3_per_mm` (line 344) → `extrusion_entity.rs:594`
+- [x] `as_polyline` (line 345) → `extrusion_entity.rs:599`
+- [x] `collect_polylines` (line 346) → `extrusion_entity.rs:2075`
 - [~] `collect_points` (line 347) → `gcode/seam_placer.rs` — not in the paired file
-- [x] `total_volume` (line 348) → `extrusion_entity.rs:590`
-- [x] `set_overhang_degree` (line 350) → `extrusion_entity.rs:597`
-- [x] `get_overhang_degree` (line 354) → `extrusion_entity.rs:611`
-- [x] `set_curve_degree` (line 360) → `extrusion_entity.rs:620`
-- [x] `get_curve_degree` (line 363) → `extrusion_entity.rs:631`
-- [x] `is_force_no_extrusion` (line 369) → `extrusion_entity.rs:636`
-- [x] `set_force_no_extrusion` (line 370) → `extrusion_entity.rs:641`
-- [x] `set_extrusion_role` (line 371) → `extrusion_entity.rs:646`
-- [x] `set_reverse` (line 372) → `extrusion_entity.rs:651`
-- [x] `can_reverse` (line 373) → `extrusion_entity.rs:2123`
+- [x] `total_volume` (line 348) → `extrusion_entity.rs:604`
+- [x] `set_overhang_degree` (line 350) → `extrusion_entity.rs:611`
+- [x] `get_overhang_degree` (line 354) → `extrusion_entity.rs:625`
+- [x] `set_curve_degree` (line 360) → `extrusion_entity.rs:634`
+- [x] `get_curve_degree` (line 363) → `extrusion_entity.rs:645`
+- [x] `is_force_no_extrusion` (line 369) → `extrusion_entity.rs:650`
+- [x] `set_force_no_extrusion` (line 370) → `extrusion_entity.rs:655`
+- [x] `set_extrusion_role` (line 371) → `extrusion_entity.rs:660`
+- [x] `set_reverse` (line 372) → `extrusion_entity.rs:665`
+- [x] `can_reverse` (line 373) → `extrusion_entity.rs:2137`
 
 **class `ExtrusionPathOriented`**
 
 - [~] `clone` (line 419) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
 - [ ] `clone_move` (line 421) → `extrusion_entity.rs`
-- [x] `can_reverse` (line 422) → `extrusion_entity.rs:656`
+- [x] `can_reverse` (line 422) → `extrusion_entity.rs:670`
 
 **class `ExtrusionPathSloped`**
 
-- [x] `interpolate` (line 404) → `extrusion_entity.rs:723`
-- [x] `is_flat` (line 412) → `extrusion_entity.rs:736`
+- [x] `interpolate` (line 404) → `extrusion_entity.rs:737`
+- [x] `is_flat` (line 412) → `extrusion_entity.rs:750`
 
 ### `ExtrusionEntityCollection` (.cpp+.hpp)
 
@@ -11159,18 +11159,18 @@ Rust file: `region_expansion.rs`. Status: **partial**.
 - [x] `build_aabb_tree_over_expolygons` (line 240) → `region_expansion.rs:85`
 - [x] `sample_in_expolygons` (line 253) → `region_expansion.rs:103`
 - [ ] `wave_seeds` (line 278) → `region_expansion.rs`
-- [ ] `wavefront_initial` (line 391) → `region_expansion.rs`
-- [ ] `wavefront_step` (line 409) → `region_expansion.rs`
-- [ ] `wavefront_clip` (line 432) → `region_expansion.rs`
-- [ ] `propagate_wave_from_boundary` (line 442) → `region_expansion.rs`
+- [x] `wavefront_initial` (line 391) → `region_expansion.rs:793`
+- [x] `wavefront_step` (line 409) → `region_expansion.rs:823`
+- [x] `wavefront_clip` (line 432) → `region_expansion.rs:855`
+- [x] `propagate_wave_from_boundary` (line 442) → `region_expansion.rs:878`
 - [~] `propagate_waves` (line 468) → `region_expansion.rs` — another overload of the name is ported
-- [x] `propagate_waves` (line 491) → `region_expansion.rs:885`
+- [x] `propagate_waves` (line 491) → `region_expansion.rs:1015`
 - [~] `propagate_waves` (line 496) → `region_expansion.rs` — another overload of the name is ported
-- [~] `propagate_waves_ex` (line 508) → `region_expansion.rs:1640` — partial
+- [~] `propagate_waves_ex` (line 508) → `region_expansion.rs:1770` — partial
 - [~] `propagate_waves_ex` (line 534) → `region_expansion.rs` — another overload of the name is ported
 - [ ] `expand_expolygons` (line 550) → `region_expansion.rs`
-- [~] `merge_expansions_into_expolygons` (line 564) → `region_expansion.rs:929` — partial
-- [x] `expand_merge_expolygons` (line 617) → `region_expansion.rs:1005`
+- [~] `merge_expansions_into_expolygons` (line 564) → `region_expansion.rs:1059` — partial
+- [x] `expand_merge_expolygons` (line 617) → `region_expansion.rs:1135`
 
 **class `RegionExpansionParameters`**
 
@@ -12020,7 +12020,7 @@ Rust file: `sla_print_steps.rs`. Status: **partial**. Not listed: 2 constructors
 - [x] `label` (line 1104) → `sla_print_steps.rs:44`
 - [ ] `progressrange` (line 1109) → `sla_print_steps.rs`
 - [ ] `progressrange` (line 1114) → `sla_print_steps.rs`
-- [~] `execute` (line 1119) → `clipper.rs, marching_squares.rs, sla/support_point_generator.rs` — not in the paired file
+- [~] `execute` (line 1119) → `clipper.rs, clipper_utils.rs, marching_squares.rs` — not in the paired file
 - [~] `execute` (line 1133) → `sla_print_steps.rs:50` — divergent
 
 ### `SlicesToTriangleMesh` (.cpp+.hpp)

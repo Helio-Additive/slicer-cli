@@ -1205,6 +1205,1006 @@ fn assert_i32_scaled(v: Coord) {
     );
 }
 
+// ============================================================================
+// ClipperUtils.cpp over the Rust port of ClipperLib (`crate::clipper`).
+//
+// The `*_clib` wrappers of this file call the C++ library through the shim of
+// `clipper-z-sys` (`cz_*`). Each shim routine is a few statements of
+// ClipperUtils.cpp around the library. The functions below are those statements
+// in Rust, on `crate::clipper`, and the wrappers call them instead of the shim
+// while the gate `CLIPPER_RUST` is on (the default). `CLIPPER_RUST=0` takes every
+// wrapper back to the shim.
+//
+// They work on `ClipperLib::Paths` (i32 coordinates), like the C++; the wrappers
+// keep their conversion from and to the engine's polygons.
+//
+// The offsets of the C++ are `float` parameters. The shim takes them as `double`
+// and its callers round them to f32 before the call where the C++ would; the
+// functions here take the same `f64` the shim takes.
+// ============================================================================
+
+/// The gate of the routing to `crate::clipper`: on unless `CLIPPER_RUST=0`.
+#[doc(hidden)]
+#[inline]
+pub fn clipper_rust() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("CLIPPER_RUST"))
+}
+
+/// ClipperUtils.hpp:29 `static constexpr const float ClipperSafetyOffset = 10.f;`
+const CLIPPER_SAFETY_OFFSET: f64 = 10.0;
+/// ClipperUtils.hpp:44 `static constexpr const double ClipperOffsetShortestEdgeFactor = 0.005;`
+const CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR: f64 = 0.005;
+
+/// The shim's `read_closed_paths` (clipper_z_shim.cpp): the flat (x, y) pairs and
+/// the per-path point counts the wrappers build, as `ClipperLib::Paths`.
+#[doc(hidden)]
+pub fn clib_read_closed_paths(xy: &[i32], lens: &[i32]) -> crate::clipper::Paths {
+    let mut paths = crate::clipper::Paths::with_capacity(lens.len());
+    let mut cursor = 0usize;
+    for &len in lens {
+        let len = len as usize;
+        let mut path = crate::clipper::Path::with_capacity(len);
+        for i in 0..len {
+            path.push(crate::clipper::IntPoint::new(xy[cursor + 2 * i], xy[cursor + 2 * i + 1]));
+        }
+        cursor += 2 * len;
+        paths.push(path);
+    }
+    paths
+}
+
+/// [`clib_read_closed_paths`] for a wrapper that hands the shim a null pointer
+/// when a buffer is empty: `read_closed_paths` then returns no path at all.
+#[doc(hidden)]
+pub fn clib_read_closed_paths_or_null(xy: &[i32], lens: &[i32]) -> crate::clipper::Paths {
+    if xy.is_empty() || lens.is_empty() {
+        return crate::clipper::Paths::new();
+    }
+    clib_read_closed_paths(xy, lens)
+}
+
+/// What the wrappers do with the `CzZPaths` of a flat shim routine
+/// (`marshal_paths`): every path becomes a `Polygon`, in order. A result without
+/// any point has a null `coords` there and decodes to nothing.
+#[doc(hidden)]
+pub fn clib_polygons_from_paths(paths: &crate::clipper::Paths) -> Vec<Polygon> {
+    if paths.iter().all(|p| p.is_empty()) {
+        return Vec::new();
+    }
+    paths
+        .iter()
+        .map(|p| Polygon::from_points(p.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()))
+        .collect()
+}
+
+/// The shim's code of a fill type: 0=pftEvenOdd, 1=pftNonZero, 2=pftPositive,
+/// 3=pftNegative, anything else pftNonZero.
+#[doc(hidden)]
+pub fn clib_fill_type(fill_type: i32) -> crate::clipper::PolyFillType {
+    match fill_type {
+        0 => crate::clipper::PolyFillType::pftEvenOdd,
+        1 => crate::clipper::PolyFillType::pftNonZero,
+        2 => crate::clipper::PolyFillType::pftPositive,
+        3 => crate::clipper::PolyFillType::pftNegative,
+        _ => crate::clipper::PolyFillType::pftNonZero,
+    }
+}
+
+/// The shim's code of a join type: 0=jtMiter, 1=jtRound, 2=jtSquare, anything
+/// else jtMiter.
+#[doc(hidden)]
+pub fn clib_join_type(join_type: i32) -> crate::clipper::JoinType {
+    match join_type {
+        1 => crate::clipper::JoinType::jtRound,
+        2 => crate::clipper::JoinType::jtSquare,
+        _ => crate::clipper::JoinType::jtMiter,
+    }
+}
+
+/// The `TResult` of the ClipperUtils.cpp templates: `ClipperLib::Paths` or
+/// `ClipperLib::PolyTree`, the two solutions `Clipper::Execute` writes.
+#[doc(hidden)]
+pub trait ClipperResult: Default {
+    /// `clipper.Execute(clipType, retval, subjFillType, clipFillType)`
+    fn execute(
+        clipper: &mut crate::clipper::Clipper,
+        clip_type: crate::clipper::ClipType,
+        retval: &mut Self,
+        subj_fill_type: crate::clipper::PolyFillType,
+        clip_fill_type: crate::clipper::PolyFillType,
+    ) -> bool;
+    /// ClipperUtils.cpp:375-379
+    /// C++: template<class Container> static void remove_outermost_polygon(Container & solution);
+    fn remove_outermost_polygon(&mut self);
+}
+
+impl ClipperResult for crate::clipper::Paths {
+    fn execute(
+        clipper: &mut crate::clipper::Clipper,
+        clip_type: crate::clipper::ClipType,
+        retval: &mut Self,
+        subj_fill_type: crate::clipper::PolyFillType,
+        clip_fill_type: crate::clipper::PolyFillType,
+    ) -> bool {
+        clipper.execute(clip_type, retval, subj_fill_type, clip_fill_type)
+    }
+
+    /// ClipperUtils.cpp:376-377
+    /// C++: template<> void remove_outermost_polygon<ClipperLib::Paths>(ClipperLib::Paths &solution)
+    fn remove_outermost_polygon(&mut self) {
+        if !self.is_empty() {
+            self.remove(0);
+        }
+    }
+}
+
+impl ClipperResult for crate::clipper::PolyTree {
+    fn execute(
+        clipper: &mut crate::clipper::Clipper,
+        clip_type: crate::clipper::ClipType,
+        retval: &mut Self,
+        subj_fill_type: crate::clipper::PolyFillType,
+        clip_fill_type: crate::clipper::PolyFillType,
+    ) -> bool {
+        clipper.execute_poly_tree(clip_type, retval, subj_fill_type, clip_fill_type)
+    }
+
+    /// ClipperUtils.cpp:378-379
+    /// C++: template<> void remove_outermost_polygon<ClipperLib::PolyTree>(ClipperLib::PolyTree &solution)
+    fn remove_outermost_polygon(&mut self) {
+        crate::clipper::PolyTree::remove_outermost_polygon(self);
+    }
+}
+
+/// ClipperUtils.cpp:175-210
+/// C++: static ExPolygons PolyTreeToExPolygons(ClipperLib::PolyTree &&polytree)
+///
+/// Replaces the shim's `polytree_to_grouped` + `marshal_grouped` and the decoding
+/// of that layout in the wrappers (a contour, its holes, then the contours nested
+/// in the holes): the same ExPolygons in the same order.
+#[doc(hidden)]
+pub fn poly_tree_to_ex_polygons(polytree: &crate::clipper::PolyTree) -> ExPolygons {
+    fn to_polygon(contour: &crate::clipper::Path) -> Polygon {
+        Polygon::from_points(contour.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect())
+    }
+    // static void PolyTreeToExPolygonsRecursive(ClipperLib::PolyNode &&polynode, ExPolygons *expolygons)
+    fn poly_tree_to_ex_polygons_recursive(
+        polytree: &crate::clipper::PolyTree,
+        polynode: usize,
+        expolygons: &mut ExPolygons,
+    ) {
+        let node = polytree.node(polynode);
+        let cnt = expolygons.len();
+        expolygons.push(ExPolygon::new(to_polygon(&node.contour)));
+        expolygons[cnt].holes.reserve(node.child_count() as usize);
+        for i in 0..node.child_count() as usize {
+            let hole = polytree.node(node.childs[i]);
+            expolygons[cnt].holes.push(to_polygon(&hole.contour));
+        }
+        for i in 0..node.child_count() as usize {
+            let hole = polytree.node(node.childs[i]);
+            // Add outer polygons contained by (nested within) holes.
+            for j in 0..hole.child_count() as usize {
+                poly_tree_to_ex_polygons_recursive(polytree, hole.childs[j], expolygons);
+            }
+        }
+    }
+
+    let mut retval: ExPolygons = Vec::new();
+    for i in 0..polytree.child_count() as usize {
+        poly_tree_to_ex_polygons_recursive(polytree, polytree.root.childs[i], &mut retval);
+    }
+    retval
+}
+
+/// ClipperUtils.cpp:213-229
+/// C++: Polylines PolyTreeToPolylines(ClipperLib::PolyTree &&polytree)
+///
+/// The contours as `ClipperLib::Paths`: the tree itself first (its contour is
+/// empty), then every node before its children.
+#[doc(hidden)]
+pub fn poly_tree_to_polylines(polytree: &crate::clipper::PolyTree) -> crate::clipper::Paths {
+    // static void AddPolyNodeToPaths(ClipperLib::PolyNode &polynode, Polylines &out)
+    fn add_poly_node_to_paths(polytree: &crate::clipper::PolyTree, polynode: usize, out: &mut crate::clipper::Paths) {
+        let node = polytree.node(polynode);
+        if !node.contour.is_empty() {
+            out.push(node.contour.clone());
+        }
+        for &child in &node.childs {
+            add_poly_node_to_paths(polytree, child, out);
+        }
+    }
+
+    let mut out = crate::clipper::Paths::new();
+    out.reserve(polytree.total().max(0) as usize);
+    add_poly_node_to_paths(polytree, crate::clipper::POLY_TREE_ROOT, &mut out);
+    out
+}
+
+/// ClipperUtils.cpp:270-300
+/// C++: template<typename PathsProvider> static ClipperLib::Paths raw_offset(PathsProvider &&paths, float offset, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::EndType endType = ClipperLib::etClosedPolygon)
+///
+/// Offset CCW contours outside, CW contours (holes) inside.
+/// Don't calculate union of the output paths.
+#[doc(hidden)]
+pub fn raw_offset(
+    paths: &crate::clipper::Paths,
+    offset: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+    end_type: crate::clipper::EndType,
+) -> crate::clipper::Paths {
+    let mut co = crate::clipper::ClipperOffset::default();
+    let mut out = crate::clipper::Paths::new();
+    out.reserve(paths.len());
+    let mut out_this = crate::clipper::Paths::new();
+    if join_type == crate::clipper::JoinType::jtRound {
+        co.arc_tolerance = miter_limit;
+    } else {
+        co.miter_limit = miter_limit;
+    }
+    co.shortest_edge_length = (offset * CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR).abs();
+    for path in paths {
+        co.clear();
+        // Execute reorients the contours so that the outer most contour has a positive area. Thus the output
+        // contours will be CCW oriented even though the input paths are CW oriented.
+        // Offset is applied after contour reorientation, thus the signum of the offset value is reversed.
+        co.add_path(path, join_type, end_type);
+        let ccw = if end_type == crate::clipper::EndType::etClosedPolygon {
+            crate::clipper::orientation(path)
+        } else {
+            true
+        };
+        co.execute(&mut out_this, if ccw { offset } else { -offset });
+        if !ccw {
+            // Reverse the resulting contours.
+            for path in out_this.iter_mut() {
+                path.reverse();
+            }
+        }
+        out.append(&mut out_this);
+    }
+    out
+}
+
+/// ClipperUtils.cpp:302-307
+/// C++: template<typename PathsProvider> static ClipperLib::Paths safety_offset(PathsProvider &&paths)
+///
+/// Offset outside by 10um, one by one. The shim's `cz_safety_offset`.
+#[doc(hidden)]
+pub fn safety_offset(paths: &crate::clipper::Paths) -> crate::clipper::Paths {
+    raw_offset(
+        paths,
+        CLIPPER_SAFETY_OFFSET,
+        crate::clipper::JoinType::jtMiter, // DefaultJoinType
+        3.0,                               // DefaultMiterLimit
+        crate::clipper::EndType::etClosedPolygon,
+    )
+}
+
+/// ClipperUtils.cpp:309-322
+/// C++: template<class TResult, class TSubj, class TClip> TResult clipper_do(const ClipperLib::ClipType clipType, TSubj && subject, TClip && clip, const ClipperLib::PolyFillType fillType)
+///
+/// With `TResult = ClipperLib::Paths` this is what the shim runs in
+/// `cz_difference_closed` (ctDifference) and `cz_intersection_closed`
+/// (ctIntersection), both with pftNonZero.
+#[doc(hidden)]
+pub fn clipper_do<TResult: ClipperResult>(
+    clip_type: crate::clipper::ClipType,
+    subject: &crate::clipper::Paths,
+    clip: &crate::clipper::Paths,
+    fill_type: crate::clipper::PolyFillType,
+) -> TResult {
+    let mut clipper = crate::clipper::Clipper::new(0);
+    clipper.add_paths(subject, crate::clipper::PolyType::ptSubject, true);
+    clipper.add_paths(clip, crate::clipper::PolyType::ptClip, true);
+    let mut retval = TResult::default();
+    TResult::execute(&mut clipper, clip_type, &mut retval, fill_type, fill_type);
+    retval
+}
+
+/// ClipperUtils.cpp:324-337
+/// C++: template<class TResult, class TSubj, class TClip> TResult clipper_do(const ClipperLib::ClipType clipType, TSubj && subject, TClip && clip, const ClipperLib::PolyFillType fillType, const ApplySafetyOffset do_safety_offset)
+///
+/// With `ApplySafetyOffset::Yes` and `TResult = ClipperLib::Paths` this is what
+/// the shim runs in `cz_difference_closed_safety` (ctDifference) and
+/// `cz_intersection_closed_safety` (ctIntersection).
+#[doc(hidden)]
+pub fn clipper_do_safety_offset<TResult: ClipperResult>(
+    clip_type: crate::clipper::ClipType,
+    subject: &crate::clipper::Paths,
+    clip: &crate::clipper::Paths,
+    fill_type: crate::clipper::PolyFillType,
+    do_safety_offset: ApplySafetyOffset,
+) -> TResult {
+    // Safety offset only allowed on intersection and difference.
+    debug_assert!(do_safety_offset == ApplySafetyOffset::No || clip_type != crate::clipper::ClipType::ctUnion);
+    if do_safety_offset == ApplySafetyOffset::Yes {
+        clipper_do::<TResult>(clip_type, subject, &safety_offset(clip), fill_type)
+    } else {
+        clipper_do::<TResult>(clip_type, subject, clip, fill_type)
+    }
+}
+
+/// ClipperUtils.cpp:339-350
+/// C++: template<class TResult, class TSubj> TResult clipper_union(TSubj && subject, const ClipperLib::PolyFillType fillType = ClipperLib::pftNonZero)
+///
+/// With `TResult = ClipperLib::Paths` and pftNonZero this is the shim's
+/// `cz_union_flat`; with `TResult = ClipperLib::PolyTree`, followed by
+/// [`poly_tree_to_ex_polygons`], its `cz_union_polytree`.
+#[doc(hidden)]
+pub fn clipper_union<TResult: ClipperResult>(
+    subject: &crate::clipper::Paths,
+    // fillType pftNonZero and pftPositive "should" produce the same result for "normalized with implicit union" set of polygons
+    fill_type: crate::clipper::PolyFillType,
+) -> TResult {
+    let mut clipper = crate::clipper::Clipper::new(0);
+    clipper.add_paths(subject, crate::clipper::PolyType::ptSubject, true);
+    let mut retval = TResult::default();
+    TResult::execute(&mut clipper, crate::clipper::ClipType::ctUnion, &mut retval, fill_type, fill_type);
+    retval
+}
+
+/// ClipperUtils.cpp:359-364
+/// C++: template<typename PathsProvider> static ClipperLib::Paths raw_offset_polyline(PathsProvider &&paths, float offset, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::EndType end_type = ClipperLib::etOpenButt)
+#[doc(hidden)]
+pub fn raw_offset_polyline(
+    paths: &crate::clipper::Paths,
+    offset: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+    end_type: crate::clipper::EndType,
+) -> crate::clipper::Paths {
+    debug_assert!(offset > 0.0);
+    raw_offset(paths, offset, join_type, miter_limit, end_type)
+}
+
+/// ClipperUtils.cpp:366-372
+/// C++: template<class TResult, typename PathsProvider> static TResult expand_paths(PathsProvider &&paths, float offset, ClipperLib::JoinType joinType, double miterLimit)
+#[doc(hidden)]
+pub fn expand_paths<TResult: ClipperResult>(
+    paths: &crate::clipper::Paths,
+    offset: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> TResult {
+    // BBS
+    //assert(offset > 0);
+    clipper_union::<TResult>(
+        &raw_offset(paths, offset, join_type, miter_limit, crate::clipper::EndType::etClosedPolygon),
+        crate::clipper::PolyFillType::pftNonZero,
+    )
+}
+
+/// ClipperUtils.cpp:381-397
+/// C++: template<class TResult, typename PathsProvider> static TResult shrink_paths(PathsProvider &&paths, float offset, ClipperLib::JoinType joinType, double miterLimit)
+#[doc(hidden)]
+pub fn shrink_paths<TResult: ClipperResult>(
+    paths: &crate::clipper::Paths,
+    offset: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> TResult {
+    // BBS
+    //assert(offset > 0);
+    let mut out = TResult::default();
+    let raw = raw_offset(paths, -offset, join_type, miter_limit, crate::clipper::EndType::etClosedPolygon);
+    if !raw.is_empty() {
+        let mut clipper = crate::clipper::Clipper::new(0);
+        clipper.add_paths(&raw, crate::clipper::PolyType::ptSubject, true);
+        let r = clipper.get_bounds();
+        clipper.add_path(
+            &vec![
+                crate::clipper::IntPoint::new(r.left.wrapping_sub(10), r.bottom.wrapping_add(10)),
+                crate::clipper::IntPoint::new(r.right.wrapping_add(10), r.bottom.wrapping_add(10)),
+                crate::clipper::IntPoint::new(r.right.wrapping_add(10), r.top.wrapping_sub(10)),
+                crate::clipper::IntPoint::new(r.left.wrapping_sub(10), r.top.wrapping_sub(10)),
+            ],
+            crate::clipper::PolyType::ptSubject,
+            true,
+        );
+        clipper.set_reverse_solution(true);
+        TResult::execute(
+            &mut clipper,
+            crate::clipper::ClipType::ctUnion,
+            &mut out,
+            crate::clipper::PolyFillType::pftNegative,
+            crate::clipper::PolyFillType::pftNegative,
+        );
+        out.remove_outermost_polygon();
+    }
+    out
+}
+
+/// ClipperUtils.cpp:399-408
+/// C++: template<class TResult, typename PathsProvider> static TResult offset_paths(PathsProvider &&paths, float offset, ClipperLib::JoinType joinType, double miterLimit)
+///
+/// With `TResult = ClipperLib::Paths` this is the shim's `cz_offset_paths`
+/// (`offset(const Polygons&, float delta)`, ClipperUtils.cpp:413); with
+/// `TResult = ClipperLib::PolyTree`, followed by [`poly_tree_to_ex_polygons`], its
+/// `cz_offset_ex_paths` (`offset_ex(const Polygons&, float delta)`,
+/// ClipperUtils.cpp:415).
+#[doc(hidden)]
+pub fn offset_paths<TResult: ClipperResult>(
+    paths: &crate::clipper::Paths,
+    offset: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> TResult {
+    // BBS
+    //assert(offset != 0);
+
+    if offset > 0.0 {
+        expand_paths::<TResult>(paths, offset, join_type, miter_limit)
+    } else {
+        shrink_paths::<TResult>(paths, -offset, join_type, miter_limit)
+    }
+}
+
+/// ClipperUtils.cpp:418-419
+/// C++: Slic3r::Polygons offset(const Slic3r::Polyline &polyline, const float delta, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::EndType end_type)
+///
+/// The shim's `cz_offset_polyline`, which fixes `joinType` to jtSquare
+/// (DefaultLineJoinType) and `end_type` to etOpenButt (DefaultEndType), returns
+/// nothing for a polyline of fewer than two points, and skips the union of an
+/// empty offset.
+#[doc(hidden)]
+pub fn offset_polyline_paths(polyline: &crate::clipper::Path, delta: f64, miter_limit: f64) -> crate::clipper::Paths {
+    if polyline.len() < 2 {
+        return crate::clipper::Paths::new();
+    }
+    let raw = raw_offset_polyline(
+        &vec![polyline.clone()],
+        delta,
+        crate::clipper::JoinType::jtSquare,
+        miter_limit,
+        crate::clipper::EndType::etOpenButt,
+    );
+    if raw.is_empty() {
+        return crate::clipper::Paths::new();
+    }
+    clipper_union::<crate::clipper::Paths>(&raw, crate::clipper::PolyFillType::pftNonZero)
+}
+
+/// ClipperUtils.cpp:436-501
+/// C++: static int offset_expolygon_inner(const Slic3r::ExPolygon &expoly, const float delta, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::Paths &out)
+///
+/// returns number of expolygons collected (0 or 1).
+#[doc(hidden)]
+pub fn offset_expolygon_inner(
+    contour: &crate::clipper::Path,
+    expoly_holes: &crate::clipper::Paths,
+    delta: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+    out: &mut crate::clipper::Paths,
+) -> i32 {
+    // 1) Offset the outer contour.
+    let mut contours = crate::clipper::Paths::new();
+    {
+        let mut co = crate::clipper::ClipperOffset::default();
+        if join_type == crate::clipper::JoinType::jtRound {
+            co.arc_tolerance = miter_limit;
+        } else {
+            co.miter_limit = miter_limit;
+        }
+        co.shortest_edge_length = (delta * CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR).abs();
+        co.add_path(contour, join_type, crate::clipper::EndType::etClosedPolygon);
+        co.execute(&mut contours, delta);
+    }
+    if contours.is_empty() {
+        // No need to try to offset the holes.
+        return 0;
+    }
+
+    if expoly_holes.is_empty() {
+        // No need to subtract holes from the offsetted expolygon, we are done.
+        out.append(&mut contours);
+    } else {
+        // 2) Offset the holes one by one, collect the offsetted holes.
+        let mut holes = crate::clipper::Paths::new();
+        {
+            for hole in expoly_holes {
+                let mut co = crate::clipper::ClipperOffset::default();
+                if join_type == crate::clipper::JoinType::jtRound {
+                    co.arc_tolerance = miter_limit;
+                } else {
+                    co.miter_limit = miter_limit;
+                }
+                co.shortest_edge_length = (delta * CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR).abs();
+                co.add_path(hole, join_type, crate::clipper::EndType::etClosedPolygon);
+                let mut out2 = crate::clipper::Paths::new();
+                // Execute reorients the contours so that the outer most contour has a positive area. Thus the output
+                // contours will be CCW oriented even though the input paths are CW oriented.
+                // Offset is applied after contour reorientation, thus the signum of the offset value is reversed.
+                co.execute(&mut out2, -delta);
+                holes.append(&mut out2);
+            }
+        }
+
+        // 3) Subtract holes from the contours.
+        if holes.is_empty() {
+            // No hole remaining after an offset. Just copy the outer contour.
+            out.append(&mut contours);
+        } else if delta < 0.0 {
+            // Negative offset. There is a chance, that the offsetted hole intersects the outer contour.
+            // Subtract the offsetted holes from the offsetted contours.
+            let mut output = clipper_do::<crate::clipper::Paths>(
+                crate::clipper::ClipType::ctDifference,
+                &contours,
+                &holes,
+                crate::clipper::PolyFillType::pftNonZero,
+            );
+            if !output.is_empty() {
+                out.append(&mut output);
+            } else {
+                // The offsetted holes have eaten up the offsetted outer contour.
+                return 0;
+            }
+        } else {
+            // Positive offset. As long as the Clipper offset does what one expects it to do, the offsetted hole will have a smaller
+            // area than the original hole or even disappear, therefore there will be no new intersections.
+            // Just collect the reversed holes.
+            out.reserve(contours.len() + holes.len());
+            out.append(&mut contours);
+            // Reverse the holes in place.
+            for hole in holes.iter_mut() {
+                hole.reverse();
+            }
+            out.append(&mut holes);
+        }
+    }
+
+    1
+}
+
+/// ClipperUtils.cpp:508-513
+/// C++: ClipperLib::Paths expolygon_offset(const Slic3r::ExPolygon &expolygon, const float delta, ClipperLib::JoinType joinType, double miterLimit)
+///
+/// The shim's `cz_offset_expolygon`.
+#[doc(hidden)]
+pub fn expolygon_offset(
+    contour: &crate::clipper::Path,
+    holes: &crate::clipper::Paths,
+    delta: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> crate::clipper::Paths {
+    let mut out = crate::clipper::Paths::new();
+    offset_expolygon_inner(contour, holes, delta, join_type, miter_limit, &mut out);
+    out
+}
+
+/// ClipperUtils.cpp:515-531
+/// C++: template<typename ExPolygonVector> static std::pair<ClipperLib::Paths, size_t> expolygons_offset_raw(const ExPolygonVector &expolygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)
+///
+/// An expolygon is its contour and its holes.
+#[doc(hidden)]
+pub fn expolygons_offset_raw(
+    expolygons: &[(crate::clipper::Path, crate::clipper::Paths)],
+    delta: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> (crate::clipper::Paths, usize) {
+    // Offsetted ExPolygons before they are united.
+    let mut output = crate::clipper::Paths::new();
+    output.reserve(expolygons.len());
+    // How many non-empty offsetted expolygons were actually collected into output?
+    // If only one, then there is no need to do a final union.
+    let mut expolygons_collected = 0usize;
+    for (contour, holes) in expolygons {
+        expolygons_collected += offset_expolygon_inner(contour, holes, delta, join_type, miter_limit, &mut output) as usize;
+    }
+    (output, expolygons_collected)
+}
+
+/// ClipperUtils.cpp:533-545
+/// C++: template<typename ExPolygonVector> static ClipperLib::Paths expolygons_offset(const ExPolygonVector &expolygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)
+///
+/// See comment on expolygon_offsets_raw. In addition, for positive offset the contours are united.
+#[doc(hidden)]
+pub fn expolygons_offset(
+    expolygons: &[(crate::clipper::Path, crate::clipper::Paths)],
+    delta: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> crate::clipper::Paths {
+    let (output, expolygons_collected) = expolygons_offset_raw(expolygons, delta, join_type, miter_limit);
+    // Unite the offsetted expolygons.
+    if expolygons_collected > 1 && delta > 0.0 {
+        // There is a chance that the outwards offsetted expolygons may intersect. Perform a union.
+        clipper_union::<crate::clipper::Paths>(&output, crate::clipper::PolyFillType::pftNonZero)
+    } else {
+        // Negative offset. The shrunk expolygons shall not mutually intersect. Just copy the output.
+        output
+    }
+}
+
+/// ClipperUtils.cpp:581-584
+/// C++: ExPolygons offset2_ex(const ExPolygons &expolygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)
+///
+/// The shim's `cz_offset2_ex`. `xy`, `lens` and `is_hole` are the layout the
+/// wrapper builds for it: a path with `is_hole == 0` starts an expolygon, the
+/// others are the holes of the expolygon before them.
+#[doc(hidden)]
+pub fn offset2_ex_paths(
+    xy: &[i32],
+    lens: &[i32],
+    is_hole: &[i32],
+    delta1: f64,
+    delta2: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> ExPolygons {
+    let mut expolys: Vec<(crate::clipper::Path, crate::clipper::Paths)> = Vec::new();
+    for (p, path) in clib_read_closed_paths(xy, lens).into_iter().enumerate() {
+        if is_hole[p] == 0 {
+            expolys.push((path, crate::clipper::Paths::new()));
+        } else if let Some(last) = expolys.last_mut() {
+            last.1.push(path);
+        }
+    }
+    poly_tree_to_ex_polygons(&offset_paths::<crate::clipper::PolyTree>(
+        &expolygons_offset(&expolys, delta1, join_type, miter_limit),
+        delta2,
+        join_type,
+        miter_limit,
+    ))
+}
+
+/// ClipperUtils.cpp:636-654
+/// C++: template<typename PathProvider1, typename PathProvider2> inline ClipperLib::PolyTree clipper_do_polytree(const ClipperLib::ClipType clipType, PathProvider1 &&subject, PathProvider2 &&clip, const ClipperLib::PolyFillType fillType)
+///
+/// 1) Peform the Clipper operation with the output to Paths. This method handles overlaps in a reasonable time.
+/// 2) Run Clipper Union once again to extract the PolyTree from the result of 1).
+///
+/// With ctUnion and no clip, followed by [`poly_tree_to_ex_polygons`], this is the
+/// shim's `cz_union_ex` (`union_ex(const Polygons&, PolyFillType)`,
+/// ClipperUtils.cpp:813-814).
+#[doc(hidden)]
+pub fn clipper_do_polytree(
+    clip_type: crate::clipper::ClipType,
+    subject: &crate::clipper::Paths,
+    clip: &crate::clipper::Paths,
+    fill_type: crate::clipper::PolyFillType,
+) -> crate::clipper::PolyTree {
+    // Perform the operation with the output to input_subject.
+    // This pass does not generate a PolyTree, which is a very expensive operation with the current Clipper library
+    // if there are overapping edges.
+    let output = clipper_do::<crate::clipper::Paths>(clip_type, subject, clip, fill_type);
+    if !output.is_empty() {
+        // Perform an additional Union operation to generate the PolyTree ordering.
+        return clipper_union::<crate::clipper::PolyTree>(&output, fill_type);
+    }
+    crate::clipper::PolyTree::new()
+}
+
+/// The shim's `cz_union_ex_safety`, which stands for
+/// `union_safety_offset_ex(const Polygons&)` (ClipperUtils.hpp:372): the subject
+/// goes through [`safety_offset`] and then through the two unions of
+/// [`clipper_do_polytree`].
+///
+/// FIDELITY-NOTE: the C++ `union_safety_offset_ex` is `offset_ex(polygons,
+/// ClipperSafetyOffset)`, that is [`offset_paths`] into a PolyTree: one union
+/// after the raw offset, not two. This follows the shim, so the output of the
+/// engine does not change with the gate.
+#[doc(hidden)]
+pub fn union_safety_offset_ex_paths(subject: &crate::clipper::Paths) -> ExPolygons {
+    poly_tree_to_ex_polygons(&clipper_do_polytree(
+        crate::clipper::ClipType::ctUnion,
+        &safety_offset(subject),
+        &crate::clipper::Paths::new(),
+        crate::clipper::PolyFillType::pftNonZero,
+    ))
+}
+
+/// ClipperUtils.cpp:838-847
+/// C++: template<typename PathsProvider1, typename PathsProvider2> Polylines _clipper_pl_open(ClipperLib::ClipType clipType, PathsProvider1 &&subject, PathsProvider2 &&clip)
+///
+/// The shim's `cz_intersection_pl` (ctIntersection) and `cz_diff_pl`
+/// (ctDifference).
+#[doc(hidden)]
+pub fn _clipper_pl_open(
+    clip_type: crate::clipper::ClipType,
+    subject: &crate::clipper::Paths,
+    clip: &crate::clipper::Paths,
+) -> crate::clipper::Paths {
+    let mut clipper = crate::clipper::Clipper::new(0);
+    clipper.add_paths(subject, crate::clipper::PolyType::ptSubject, false);
+    clipper.add_paths(clip, crate::clipper::PolyType::ptClip, true);
+    let mut retval = crate::clipper::PolyTree::new();
+    clipper.execute_poly_tree(
+        clip_type,
+        &mut retval,
+        crate::clipper::PolyFillType::pftNonZero,
+        crate::clipper::PolyFillType::pftNonZero,
+    );
+    poly_tree_to_polylines(&retval)
+}
+
+/// ClipperUtils.cpp:1077-1093
+/// C++: ClipperLib::Paths fix_after_outer_offset(const ClipperLib::Path &input, ClipperLib::PolyFillType filltype, bool reverse_result)
+///
+/// Outer offset shall not split the input contour into multiples. It is expected, that the solution will be non empty and it will contain just a single polygon.
+#[doc(hidden)]
+pub fn fix_after_outer_offset(
+    input: &crate::clipper::Path,
+    filltype: crate::clipper::PolyFillType,
+    reverse_result: bool,
+) -> crate::clipper::Paths {
+    let mut solution = crate::clipper::Paths::new();
+    if !input.is_empty() {
+        let mut clipper = crate::clipper::Clipper::new(0);
+        clipper.add_path(input, crate::clipper::PolyType::ptSubject, true);
+        clipper.set_reverse_solution(reverse_result);
+        clipper.execute(crate::clipper::ClipType::ctUnion, &mut solution, filltype, filltype);
+    }
+    solution
+}
+
+/// ClipperUtils.cpp:1095-1118
+/// C++: ClipperLib::Paths fix_after_inner_offset(const ClipperLib::Path &input, ClipperLib::PolyFillType filltype, bool reverse_result)
+///
+/// Inner offset may split the source contour into multiple contours, but one resulting contour shall not lie inside the other.
+#[doc(hidden)]
+pub fn fix_after_inner_offset(
+    input: &crate::clipper::Path,
+    filltype: crate::clipper::PolyFillType,
+    reverse_result: bool,
+) -> crate::clipper::Paths {
+    let mut solution = crate::clipper::Paths::new();
+    if !input.is_empty() {
+        let mut clipper = crate::clipper::Clipper::new(0);
+        clipper.add_path(input, crate::clipper::PolyType::ptSubject, true);
+        let mut r = clipper.get_bounds();
+        r.left = r.left.wrapping_sub(10);
+        r.top = r.top.wrapping_sub(10);
+        r.right = r.right.wrapping_add(10);
+        r.bottom = r.bottom.wrapping_add(10);
+        if filltype == crate::clipper::PolyFillType::pftPositive {
+            clipper.add_path(
+                &vec![
+                    crate::clipper::IntPoint::new(r.left, r.bottom),
+                    crate::clipper::IntPoint::new(r.left, r.top),
+                    crate::clipper::IntPoint::new(r.right, r.top),
+                    crate::clipper::IntPoint::new(r.right, r.bottom),
+                ],
+                crate::clipper::PolyType::ptSubject,
+                true,
+            );
+        } else {
+            clipper.add_path(
+                &vec![
+                    crate::clipper::IntPoint::new(r.left, r.bottom),
+                    crate::clipper::IntPoint::new(r.right, r.bottom),
+                    crate::clipper::IntPoint::new(r.right, r.top),
+                    crate::clipper::IntPoint::new(r.left, r.top),
+                ],
+                crate::clipper::PolyType::ptSubject,
+                true,
+            );
+        }
+        clipper.set_reverse_solution(reverse_result);
+        clipper.execute(crate::clipper::ClipType::ctUnion, &mut solution, filltype, filltype);
+        if !solution.is_empty() {
+            solution.remove(0);
+        }
+    }
+    solution
+}
+
+/// ClipperUtils.cpp:1120-1258
+/// C++: ClipperLib::Path mittered_offset_path_scaled(const Points &contour, const std::vector<float> &deltas, double miter_limit)
+///
+/// As the shim's `vo::mittered_offset_path_scaled` has it: the points and the
+/// normals as pairs of doubles instead of `Vec2d`, the number of deltas checked
+/// instead of asserted equal to the number of points. A product that the C++
+/// adds to or subtracts from another term in the same expression is fused into
+/// that sum (`mul_add`), as clang compiles the shim (`-ffp-contract=on`, its
+/// default) for a target with a fused multiply-add.
+///
+/// [`crate::clipper2_utils`] has the same function for the Clipper2 paths of the
+/// other variable offsets; that one does not fuse.
+#[doc(hidden)]
+pub fn mittered_offset_path_scaled(
+    contour: &crate::clipper::Path,
+    deltas: &[f32],
+    mut miter_limit: f64,
+) -> crate::clipper::Path {
+    let mut out = crate::clipper::Path::new();
+    if deltas.len() > 2 {
+        out.reserve(contour.len() * 2);
+
+        // Clamp miter limit to 2.
+        miter_limit = if miter_limit > 2.0 { 2.0 / (miter_limit * miter_limit) } else { 0.5 };
+
+        // Add a new point to the output, round to cInt.
+        let add_offset_point = |out: &mut crate::clipper::Path, mut x: f64, mut y: f64| {
+            x += 0.5 - ((x < 0.0) as i32 as f64);
+            y += 0.5 - ((y < 0.0) as i32 as f64);
+            out.push(crate::clipper::IntPoint::new(x as crate::clipper::cInt, y as crate::clipper::cInt));
+        };
+        let pt_of = |p: &crate::clipper::IntPoint| -> (f64, f64) { (p.x as f64, p.y as f64) };
+
+        // Minimum edge length, squared.
+        // `*std::max_element(deltas.begin(), deltas.end())`: the first of the largest.
+        let mut largest = deltas[0];
+        for &d in &deltas[1..] {
+            if largest < d {
+                largest = d;
+            }
+        }
+        let lmin = largest as f64 * CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR;
+        let l2min = lmin * lmin;
+        // Minimum angle to consider two edges to be parallel.
+        // Implementation equal to Clipper.
+        let sin_min_parallel = 1.0_f64;
+
+        // Find the last point further from pt by l2min.
+        let (mut ptx, mut pty) = pt_of(&contour[0]);
+        let mut iprev = contour.len() - 1;
+        let (mut ppx, mut ppy) = (0.0_f64, 0.0_f64);
+        while iprev > 0 {
+            (ppx, ppy) = pt_of(&contour[iprev]);
+            let (dx, dy) = (ppx - ptx, ppy - pty);
+            if dx.mul_add(dx, dy * dy) > l2min {
+                break;
+            }
+            iprev -= 1;
+        }
+
+        if iprev != 0 {
+            let ilast = iprev;
+            // Normal to the (pt - ptprev) segment.
+            let (vx, vy) = (ptx - ppx, pty - ppy);
+            let (mut npx, mut npy) = (vy, -vx);
+            {
+                let n = npx.mul_add(npx, npy * npy).sqrt();
+                npx /= n;
+                npy /= n;
+            }
+            let mut i = 0usize;
+            loop {
+                // Find the next point further from pt by l2min.
+                let mut j = i + 1;
+                let (mut nxx, mut nxy) = (0.0_f64, 0.0_f64);
+                while j <= ilast {
+                    (nxx, nxy) = pt_of(&contour[j]);
+                    let (dx, dy) = (nxx - ptx, nxy - pty);
+                    if dx.mul_add(dx, dy * dy) > l2min {
+                        break;
+                    }
+                    j += 1;
+                }
+                if j > ilast {
+                    // If the last edge is too short, merge it with the previous edge.
+                    i = ilast;
+                    (nxx, nxy) = pt_of(&contour[0]);
+                }
+
+                // Normal to the (ptnext - pt) segment.
+                let (wx, wy) = (nxx - ptx, nxy - pty);
+                let (mut nnx, mut nny) = (wy, -wx);
+                {
+                    let n = nnx.mul_add(nnx, nny * nny).sqrt();
+                    nnx /= n;
+                    nny /= n;
+                }
+
+                let delta = deltas[i] as f64;
+                // cross2(nprev, nnext): `ax * by - ay * bx`
+                let mut sin_a = npx.mul_add(nny, -(npy * nnx));
+                if sin_a < -1.0 {
+                    sin_a = -1.0;
+                } else if sin_a > 1.0 {
+                    sin_a = 1.0;
+                }
+                let convex = sin_a * delta;
+                if convex <= -sin_min_parallel {
+                    // Concave corner.
+                    add_offset_point(&mut out, npx.mul_add(delta, ptx), npy.mul_add(delta, pty));
+                    add_offset_point(&mut out, ptx, pty);
+                    add_offset_point(&mut out, nnx.mul_add(delta, ptx), nny.mul_add(delta, pty));
+                } else {
+                    let dot = npx.mul_add(nnx, npy * nny);
+                    if convex < sin_min_parallel && dot > 0.0 {
+                        // Nearly parallel.
+                        if dot > 0.0 {
+                            add_offset_point(&mut out, npx.mul_add(delta, ptx), npy.mul_add(delta, pty));
+                        } else {
+                            add_offset_point(&mut out, ptx, pty);
+                        }
+                    } else {
+                        // Convex corner.
+                        let r = 1.0 + dot;
+                        if r >= miter_limit {
+                            add_offset_point(
+                                &mut out,
+                                (npx + nnx).mul_add(delta / r, ptx),
+                                (npy + nny).mul_add(delta / r, pty),
+                            );
+                        } else {
+                            let dx = (sin_a.atan2(dot) / 4.0).tan();
+                            // newpt1 = pt + (nprev - perp(nprev) * dx) * delta, perp(nprev) = (npy, -npx)
+                            add_offset_point(
+                                &mut out,
+                                (-npy).mul_add(dx, npx).mul_add(delta, ptx),
+                                npx.mul_add(dx, npy).mul_add(delta, pty),
+                            );
+                            // newpt2 = pt + (nnext + perp(nnext) * dx) * delta, perp(nnext) = (nny, -nnx)
+                            add_offset_point(
+                                &mut out,
+                                nny.mul_add(dx, nnx).mul_add(delta, ptx),
+                                (-nnx).mul_add(dx, nny).mul_add(delta, pty),
+                            );
+                        }
+                    }
+                }
+
+                if i == ilast {
+                    break;
+                }
+
+                (ppx, ppy) = (ptx, pty);
+                (npx, npy) = (nnx, nny);
+                (ptx, pty) = (nxx, nxy);
+                i = j;
+            }
+            let _ = (ppx, ppy);
+        }
+    }
+    out
+}
+
+/// ClipperUtils.cpp:1390-1440
+/// C++: ExPolygons variable_offset_inner_ex(const ExPolygon &expoly, const std::vector<std::vector<float>> &deltas, double miter_limit)
+///
+/// The shim's `cz_variable_offset_inner_ex`. `rings` is the contour followed by
+/// the holes, `deltas` the offsets of all their points one ring after the other.
+#[doc(hidden)]
+pub fn variable_offset_inner_ex_paths(rings: &crate::clipper::Paths, deltas: &[f32], miter_limit: f64) -> ExPolygons {
+    let mut d = 0usize;
+    // 1) Offset the outer contour.
+    let contours = fix_after_inner_offset(
+        &mittered_offset_path_scaled(&rings[0], &deltas[d..d + rings[0].len()], miter_limit),
+        crate::clipper::PolyFillType::pftNegative,
+        true,
+    );
+    d += rings[0].len();
+
+    // 2) Offset the holes one by one, collect the results.
+    let mut holes = crate::clipper::Paths::new();
+    for hole in &rings[1..] {
+        holes.append(&mut fix_after_outer_offset(
+            &mittered_offset_path_scaled(hole, &deltas[d..d + hole.len()], miter_limit),
+            crate::clipper::PolyFillType::pftNegative,
+            false,
+        ));
+        d += hole.len();
+    }
+
+    // 3) Subtract holes from the contours.
+    if holes.is_empty() {
+        contours
+            .iter()
+            .map(|path| ExPolygon::new(Polygon::from_points(path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect())))
+            .collect()
+    } else {
+        let mut clipper = crate::clipper::Clipper::new(0);
+        clipper.add_paths(&contours, crate::clipper::PolyType::ptSubject, true);
+        clipper.add_paths(&holes, crate::clipper::PolyType::ptClip, true);
+        let mut polytree = crate::clipper::PolyTree::new();
+        clipper.execute_poly_tree(
+            crate::clipper::ClipType::ctDifference,
+            &mut polytree,
+            crate::clipper::PolyFillType::pftNonZero,
+            crate::clipper::PolyFillType::pftNonZero,
+        );
+        poly_tree_to_ex_polygons(&polytree)
+    }
+}
+
 /// Faithful `offset_expolygon_inner` (ClipperUtils.cpp:437) for a single
 /// ExPolygon via the vertex-exact ClipperLib shim. `delta` is in mm (positive =
 /// grow, negative = shrink); coords/delta are scaled to i64@1e5 then narrowed to
@@ -1293,6 +2293,23 @@ fn clib_offset_expolygon_paths_scaled(
     hole_lens: Vec<i32>,
 ) -> Vec<Polygon> {
     let _ = expoly;
+
+    if clipper_rust() {
+        // The shim reads the contour, and the holes when there are any.
+        let contour = clib_read_closed_paths(&contour_xy, &[contour_n]).swap_remove(0);
+        let holes = if expoly.holes.is_empty() {
+            crate::clipper::Paths::new()
+        } else {
+            clib_read_closed_paths(&holes_xy, &hole_lens)
+        };
+        return clib_polygons_from_paths(&expolygon_offset(
+            &contour,
+            &holes,
+            delta_scaled,
+            clib_join_type(clib_join_code(join_type)),
+            CLIB_MITER_LIMIT,
+        ));
+    }
 
     // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
     // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
@@ -1505,6 +2522,14 @@ pub fn offset_ex_polygons_clib(
         OffsetJoinType::Round => 1,
         OffsetJoinType::Square => 2,
     };
+    if clipper_rust() {
+        return poly_tree_to_ex_polygons(&offset_paths::<crate::clipper::PolyTree>(
+            &clib_read_closed_paths(&xy, &lens),
+            delta_scaled,
+            clib_join_type(jt),
+            CLIB_MITER_LIMIT,
+        ));
+    }
     // SAFETY: pointers reference live Vecs for the call; the shim only reads
     // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
     let raw = unsafe {
@@ -1619,6 +2644,14 @@ pub fn difference_polygons_clib(subject: &[Polygon], clip: &[ExPolygon]) -> Vec<
     if subject_num == 0 {
         return vec![];
     }
+    if clipper_rust() {
+        return clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
+            crate::clipper::ClipType::ctDifference,
+            &clib_read_closed_paths(&subject_xy, &subject_lens),
+            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+            crate::clipper::PolyFillType::pftNonZero,
+        ));
+    }
     // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
     // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
     // out then free via cz_free_zpaths.
@@ -1668,6 +2701,18 @@ fn clib_boolean_polygons_raw(subject: &[Polygon], clip: &[Polygon], intersection
     let (clip_xy, clip_lens, clip_num) = clib_flatten_polygons(clip);
     if subject_num == 0 {
         return vec![];
+    }
+    if clipper_rust() {
+        return clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
+            if intersection {
+                crate::clipper::ClipType::ctIntersection
+            } else {
+                crate::clipper::ClipType::ctDifference
+            },
+            &clib_read_closed_paths(&subject_xy, &subject_lens),
+            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+            crate::clipper::PolyFillType::pftNonZero,
+        ));
     }
     let clip_xy_ptr = if clip_xy.is_empty() { std::ptr::null() } else { clip_xy.as_ptr() };
     let clip_lens_ptr = if clip_lens.is_empty() { std::ptr::null() } else { clip_lens.as_ptr() };
@@ -1749,6 +2794,14 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
         return vec![];
     }
 
+    let all_paths: Vec<Polygon> = if clipper_rust() {
+        clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
+            crate::clipper::ClipType::ctDifference,
+            &clib_read_closed_paths(&subject_xy, &subject_lens),
+            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+            crate::clipper::PolyFillType::pftNonZero,
+        ))
+    } else {
     // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
     // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
     // out then free via cz_free_zpaths.
@@ -1795,6 +2848,8 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
 
     // SAFETY: `raw` was produced by cz_difference_closed and not freed yet.
     unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    all_paths
+    };
 
     if all_paths.is_empty() {
         return vec![];
@@ -1836,6 +2891,14 @@ pub fn intersection_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygon
         return vec![];
     }
 
+    let all_paths: Vec<Polygon> = if clipper_rust() {
+        clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
+            crate::clipper::ClipType::ctIntersection,
+            &clib_read_closed_paths(&subject_xy, &subject_lens),
+            &clib_read_closed_paths(&clip_xy, &clip_lens),
+            crate::clipper::PolyFillType::pftNonZero,
+        ))
+    } else {
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
     let raw = unsafe {
         clipper_z_sys::cz_intersection_closed(
@@ -1872,6 +2935,8 @@ pub fn intersection_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygon
 
     // SAFETY: `raw` was produced by cz_intersection_closed and not freed yet.
     unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    all_paths
+    };
 
     if all_paths.is_empty() {
         return vec![];
@@ -1904,6 +2969,15 @@ pub fn intersection_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> Ex
     if subject_num == 0 || clip_num == 0 {
         return vec![];
     }
+    let all_paths: Vec<Polygon> = if clipper_rust() {
+        clib_polygons_from_paths(&clipper_do_safety_offset::<crate::clipper::Paths>(
+            crate::clipper::ClipType::ctIntersection,
+            &clib_read_closed_paths(&subject_xy, &subject_lens),
+            &clib_read_closed_paths(&clip_xy, &clip_lens),
+            crate::clipper::PolyFillType::pftNonZero,
+            ApplySafetyOffset::Yes,
+        ))
+    } else {
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
     let raw = unsafe {
         clipper_z_sys::cz_intersection_closed_safety(
@@ -1937,6 +3011,8 @@ pub fn intersection_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> Ex
     }
     // SAFETY: raw produced by the shim and not yet freed.
     unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    all_paths
+    };
     if all_paths.is_empty() {
         return vec![];
     }
@@ -1957,6 +3033,15 @@ pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPo
         return vec![];
     }
 
+    let all_paths: Vec<Polygon> = if clipper_rust() {
+        clib_polygons_from_paths(&clipper_do_safety_offset::<crate::clipper::Paths>(
+            crate::clipper::ClipType::ctDifference,
+            &clib_read_closed_paths(&subject_xy, &subject_lens),
+            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+            crate::clipper::PolyFillType::pftNonZero,
+            ApplySafetyOffset::Yes,
+        ))
+    } else {
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
     let raw = unsafe {
         clipper_z_sys::cz_difference_closed_safety(
@@ -2001,6 +3086,8 @@ pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPo
 
     // SAFETY: `raw` was produced by cz_difference_closed_safety and not freed yet.
     unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    all_paths
+    };
 
     if all_paths.is_empty() {
         return vec![];
@@ -2050,6 +3137,12 @@ pub fn union_flat_clib(loops: &[Polygon]) -> Vec<Polygon> {
     let num = lens.len() as i32;
     if num == 0 {
         return vec![];
+    }
+    if clipper_rust() {
+        return clib_polygons_from_paths(&clipper_union::<crate::clipper::Paths>(
+            &clib_read_closed_paths(&xy, &lens),
+            crate::clipper::PolyFillType::pftNonZero,
+        ));
     }
     // SAFETY: pointers reference live Vecs; shim only reads; output freed below.
     let raw = unsafe { clipper_z_sys::cz_union_flat(xy.as_ptr(), lens.as_ptr(), num) };
@@ -2137,6 +3230,9 @@ pub fn variable_offset_inner_ex_clib(
         push_ring(hole.points(), &deltas[1 + h]);
     }
     let num = lens.len() as i32;
+    if clipper_rust() {
+        return variable_offset_inner_ex_paths(&clib_read_closed_paths(&xy, &lens), &flat_deltas, miter_limit);
+    }
     let raw = unsafe {
         clipper_z_sys::cz_variable_offset_inner_ex(
             xy.as_ptr(),
@@ -2232,6 +3328,24 @@ fn union_ex_clib_impl(loops: &[Polygon], fill_type: i32, one_pass: bool) -> ExPo
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
     // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
     let t_ffi = if prof { Some(std::time::Instant::now()) } else { None };
+    let result: ExPolygons = if clipper_rust() {
+        let subject = clib_read_closed_paths(&xy, &lens);
+        let polytree = if one_pass {
+            clipper_union::<crate::clipper::PolyTree>(&subject, crate::clipper::PolyFillType::pftNonZero)
+        } else {
+            clipper_do_polytree(
+                crate::clipper::ClipType::ctUnion,
+                &subject,
+                &crate::clipper::Paths::new(),
+                clib_fill_type(fill_type),
+            )
+        };
+        if let Some(t) = t_ffi {
+            use std::sync::atomic::Ordering::Relaxed;
+            UNIONPROF_FFI_NANOS.fetch_add(t.elapsed().as_nanos() as usize, Relaxed);
+        }
+        poly_tree_to_ex_polygons(&polytree)
+    } else {
     let raw = unsafe {
         if one_pass {
             clipper_z_sys::cz_union_polytree(xy.as_ptr(), lens.as_ptr(), num)
@@ -2279,6 +3393,8 @@ fn union_ex_clib_impl(loops: &[Polygon], fill_type: i32, one_pass: bool) -> ExPo
 
     // SAFETY: `raw` was produced by cz_union_ex and not freed yet.
     unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    result
+    };
 
     if let Some(t) = t_start {
         use std::sync::atomic::Ordering::Relaxed;
@@ -2319,6 +3435,9 @@ pub fn union_safety_offset_ex_clib(loops: &[Polygon]) -> ExPolygons {
     let num = lens.len() as i32;
     if num == 0 {
         return vec![];
+    }
+    if clipper_rust() {
+        return union_safety_offset_ex_paths(&clib_read_closed_paths(&xy, &lens));
     }
     // SAFETY: live correctly-sized buffers; shim only reads; output freed below.
     let raw = unsafe { clipper_z_sys::cz_union_ex_safety(xy.as_ptr(), lens.as_ptr(), num) };
@@ -2431,6 +3550,17 @@ pub fn offset2_ex_clib_miter(
     let delta1 = ((delta1_mm / 0.00001_f64) as f32) as f64;
     let delta2 = ((delta2_mm / 0.00001_f64) as f32) as f64;
 
+    if clipper_rust() {
+        return offset2_ex_paths(
+            &xy,
+            &lens,
+            &is_hole,
+            delta1,
+            delta2,
+            clib_join_type(clib_join_code(join_type)),
+            miter_limit,
+        );
+    }
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
     // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
     let raw = unsafe {
@@ -2509,6 +3639,14 @@ pub fn simplify_polygons_clib(loops: &[Polygon], fill_type: i32) -> Vec<Polygon>
     if num == 0 {
         return vec![];
     }
+    if clipper_rust() {
+        // ClipperLib::SimplifyPolygons (clipper.hpp:558-566), which is all the shim's
+        // cz_simplify_polygons runs.
+        return clib_polygons_from_paths(&crate::clipper::simplify_polygons(
+            &clib_read_closed_paths(&xy, &lens),
+            clib_fill_type(fill_type),
+        ));
+    }
     // SAFETY: live, correctly-sized buffers; shim only reads them, returns malloc'd
     // output we copy out then free.
     let raw = unsafe { clipper_z_sys::cz_simplify_polygons(xy.as_ptr(), lens.as_ptr(), num, fill_type) };
@@ -2581,6 +3719,14 @@ pub fn offset_polygons_clib_ml(
         OffsetJoinType::Square => 2,
         _ => 0,
     };
+    if clipper_rust() {
+        return clib_polygons_from_paths(&offset_paths::<crate::clipper::Paths>(
+            &clib_read_closed_paths(&xy, &lens),
+            delta,
+            clib_join_type(jt),
+            miter_limit,
+        ));
+    }
     // SAFETY: live, correctly-sized buffers; shim only reads them, returns malloc'd
     // output we copy out then free.
     let raw = unsafe { clipper_z_sys::cz_offset_paths(xy.as_ptr(), lens.as_ptr(), num, delta, jt, miter_limit) };
@@ -3130,6 +4276,17 @@ pub fn intersection_pl_clib(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<P
         return vec![];
     }
 
+    if clipper_rust() {
+        return _clipper_pl_open(
+            crate::clipper::ClipType::ctIntersection,
+            &clib_read_closed_paths(&subject_xy, &subject_lens),
+            &clib_read_closed_paths(&clip_xy, &clip_lens),
+        )
+        .iter()
+        .filter(|path| path.len() >= 2)
+        .map(|path| Polyline::from_points(path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()))
+        .collect();
+    }
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
     let raw = unsafe {
         clipper_z_sys::cz_intersection_pl(
@@ -3193,6 +4350,16 @@ pub fn diff_pl_clib(polylines: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
     }
     let (clip_xy, clip_lens, clip_num) = clib_flatten_polygons(clip);
 
+    if clipper_rust() {
+        return _clipper_pl_open(
+            crate::clipper::ClipType::ctDifference,
+            &clib_read_closed_paths(&subject_xy, &subject_lens),
+            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+        )
+        .iter()
+        .map(|path| Polyline::from_points(path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()))
+        .collect();
+    }
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
     let raw = unsafe {
         clipper_z_sys::cz_diff_pl(
