@@ -1652,3 +1652,38 @@ extern "C" int32_t cz_ref_clean_polygon(const int32_t *xy, int32_t n, double dis
     }
     return int32_t(out.size());
 }
+
+// ---------------------------------------------------------------------------
+// Reference export for the Rust port of the Clipper class (clipper.cpp
+// 1048-3313, 3762-3826). Not called by the engine: tests/
+// clipper_execute_native_parity.rs compares Clipper::execute of the port with it.
+// Every subject goes in with AddPath(ptSubject, closed), every clip with
+// AddPath(ptClip, closed); the solution comes back in the order, and each path
+// with the start vertex, that Execute produced. clip_type and the fill types are
+// the values of ClipperLib::ClipType and ClipperLib::PolyFillType. *succeeded
+// (when not null) receives what Execute returned.
+// ---------------------------------------------------------------------------
+extern "C" CzZPaths cz_ref_execute(const int32_t *subj_xy, const int32_t *subj_lens, int32_t subj_num,
+                                   const int32_t *clip_xy, const int32_t *clip_lens, int32_t clip_num,
+                                   int32_t clip_type, int32_t subj_fill, int32_t clip_fill,
+                                   int32_t strictly_simple, int32_t preserve_collinear,
+                                   int32_t reverse_solution, int32_t *succeeded)
+{
+    ClipperLib::Paths subject = read_closed_paths(subj_xy, subj_lens, subj_num);
+    ClipperLib::Paths clip    = read_closed_paths(clip_xy, clip_lens, clip_num);
+    ClipperLib::Clipper c;
+    c.StrictlySimple(strictly_simple != 0);
+    c.PreserveCollinear(preserve_collinear != 0);
+    c.ReverseSolution(reverse_solution != 0);
+    for (const ClipperLib::Path &p : subject)
+        c.AddPath(p, ClipperLib::ptSubject, true);
+    for (const ClipperLib::Path &p : clip)
+        c.AddPath(p, ClipperLib::ptClip, true);
+    ClipperLib::Paths solution;
+    bool ok = c.Execute(static_cast<ClipperLib::ClipType>(clip_type), solution,
+                        static_cast<ClipperLib::PolyFillType>(subj_fill),
+                        static_cast<ClipperLib::PolyFillType>(clip_fill));
+    if (succeeded != nullptr)
+        *succeeded = ok ? 1 : 0;
+    return marshal_paths(solution);
+}

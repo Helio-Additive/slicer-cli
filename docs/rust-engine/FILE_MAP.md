@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 754 |
 | of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4575 |
+| Rust functions with no C++ function of that name in the pair | 4667 |
 
 By tier:
 
@@ -12356,50 +12356,142 @@ Rust only:
 
 ### `clipper` (.cpp+.hpp) and `clipper.rs`
 
-Tier 3. C++ functions 0, Rust functions 40. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
+Tier 3. C++ functions 0, Rust functions 132. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
 
 Rust only:
 
-- `IntPoint::new` :26
-- `area` :38 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arrange`, `BoundingBox`
-- `orientation` :57 — C++ has it in `Line`
-- `point_in_polygon` :64
-- `reverse_path` :119
-- `reverse_paths` :125
-- `distance_sqrd` :134
-- `distance_from_line_sqrd` :142
-- `slopes_near_collinear` :160
-- `points_are_close` :184
-- `exclude_op` :202
-- `clean_polygon` :213
-- `clean_polygons` :270
-- `near_zero` :365
-- `round` :408 — C++ has it in `PlaceholderParser`
-- `slopes_equal` :415
-- `slopes_equal_edges` :422
-- `slopes_equal_3` :430
-- `slopes_equal_4` :442
-- `is_horizontal` :454
-- `get_dx` :461
-- `top_x` :472
-- `intersect_point` :482
-- `reverse_poly_pt_links` :544
-- `init_edge` :561
-- `init_edge2` :572
-- `remove_edge` :599 — C++ has it in `MultiMaterialSegmentation`
-- `reverse_horizontal` :613
-- `get_overlap_segment` :622
-- `first_is_bottom_pt` :656
-- `get_bottom_pt` :684
-- `pt2_is_between_pt1_and_pt3` :718
-- `horz_segments_overlap` :730
-- `find_next_loc_min` :745
-- `ClipperBase::add_path` :807
-- `ClipperBase::add_path_internal` :840
-- `ClipperBase::reset` :1039 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
-- `ClipperBase::get_bounds` :1075
-- `ClipperBase::clear` :1117 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ClipperBase::process_bound` :1126
+- `IntPoint::new` :30
+- `area` :42 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arrange`, `BoundingBox`
+- `orientation` :61 — C++ has it in `Line`
+- `point_in_polygon` :68
+- `reverse_path` :123
+- `reverse_paths` :129
+- `distance_sqrd` :138
+- `distance_from_line_sqrd` :146
+- `slopes_near_collinear` :164
+- `points_are_close` :188
+- `exclude_op` :206
+- `clean_polygon` :217
+- `clean_polygons` :274
+- `near_zero` :369
+- `round` :412 — C++ has it in `PlaceholderParser`
+- `slopes_equal` :419
+- `slopes_equal_edges` :426
+- `slopes_equal_3` :434
+- `slopes_equal_4` :446
+- `is_horizontal` :458
+- `get_dx` :465
+- `top_x` :476
+- `intersect_point` :486
+- `reverse_poly_pt_links` :548
+- `init_edge` :565
+- `init_edge2` :576
+- `remove_edge` :603 — C++ has it in `MultiMaterialSegmentation`
+- `reverse_horizontal` :617
+- `get_overlap_segment` :626
+- `first_is_bottom_pt` :660
+- `get_bottom_pt` :688
+- `pt2_is_between_pt1_and_pt3` :722
+- `horz_segments_overlap` :734
+- `find_next_loc_min` :749
+- `ClipperBase::add_path` :811
+- `ClipperBase::add_path_internal` :844
+- `ClipperBase::reset` :1043 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `ClipperBase::get_bounds` :1078
+- `ClipperBase::clear` :1120 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ClipperBase::process_bound` :1129
+- `libcxx_sort3` :1286
+- `libcxx_sort4` :1314
+- `libcxx_sort5` :1328
+- `libcxx_insertion_sort` :1353
+- `libcxx_insertion_sort_unguarded` :1384
+- `libcxx_insertion_sort_incomplete` :1412
+- `libcxx_partition_with_equals_on_right` :1472
+- `libcxx_partition_with_equals_on_left` :1529
+- `libcxx_sift_down` :1586
+- `libcxx_floyd_sift_down` :1624
+- `libcxx_sift_up` :1645
+- `libcxx_pop_heap` :1670
+- `libcxx_heap_sort` :1688
+- `libcxx_introsort` :1717
+- `libcxx_sort` :1817
+- `area_out_rec` :1884
+- `point_in_polygon_out_pt` :1906
+- `poly2_contains_poly1` :1962
+- `get_lowermost_rec` :1980
+- `param1_right_of_param2` :2014
+- `is_maxima` :2031
+- `is_intermediate` :2041
+- `get_maxima_pair` :2048
+- `get_horz_direction` :2073
+- `edges_adjacent` :2084
+- `point_count` :2091 — C++ has it in `OpenVDBUtils`
+- `e2_inserts_before_e1` :2108
+- `get_overlap` :2122
+- `update_out_pt_idxs` :2145
+- `Clipper::default` :2190
+- `Clipper::e` :2197 — C++ has it in `Extruder`, `GCodeReader`
+- `Clipper::em` :2202
+- `Clipper::pt` :2208
+- `Clipper::nx` :2214
+- `Clipper::pv` :2220
+- `Clipper::swap_side` :2226
+- `Clipper::swap_out_idx` :2234
+- `Clipper::new` :2242
+- `Clipper::add_path` :2269
+- `Clipper::clear` :2275 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `Clipper::preserve_collinear` :2282
+- `Clipper::set_preserve_collinear` :2288
+- `Clipper::reverse_solution` :2294
+- `Clipper::set_reverse_solution` :2300
+- `Clipper::strictly_simple` :2306
+- `Clipper::set_strictly_simple` :2312
+- `Clipper::is_even_odd_fill_type` :2319
+- `Clipper::is_even_odd_alt_fill_type` :2330
+- `Clipper::reset` :2340 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `Clipper::execute` :2353 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `Clipper::execute_internal` :2378
+- `Clipper::allocate_out_pt` :2468
+- `Clipper::dispose_out_pt` :2484
+- `Clipper::dispose_out_pts` :2492
+- `Clipper::dispose_all_out_recs` :2502
+- `Clipper::set_winding_count` :2510
+- `Clipper::is_contributing` :2610
+- `Clipper::add_local_min_poly` :2690
+- `Clipper::add_local_max_poly` :2735
+- `Clipper::add_edge_to_sel` :2752
+- `Clipper::copy_ael_to_sel` :2772
+- `Clipper::insert_local_minima_into_ael` :2786
+- `Clipper::delete_from_ael` :2900
+- `Clipper::delete_from_sel` :2920
+- `Clipper::intersect_edges` :2940
+- `Clipper::set_hole_state` :3123
+- `Clipper::get_out_rec` :3142
+- `Clipper::append_polygon` :3152
+- `Clipper::create_out_rec` :3244
+- `Clipper::add_out_pt` :3260
+- `Clipper::get_last_out_pt` :3304
+- `Clipper::process_horizontals` :3316
+- `Clipper::swap_positions_in_ael` :3328
+- `Clipper::swap_positions_in_sel` :3392
+- `Clipper::process_horizontal` :3464
+- `Clipper::update_edge_into_ael` :3711
+- `Clipper::process_intersections` :3744
+- `Clipper::build_intersect_list` :3774
+- `Clipper::fixup_intersection_order` :3819
+- `Clipper::do_maxima` :3848
+- `Clipper::process_edges_at_top_of_scanbeam` :3903
+- `Clipper::fixup_out_polyline` :4032
+- `Clipper::fixup_out_polygon` :4058
+- `Clipper::build_result` :4102
+- `Clipper::insert_edge_into_ael` :4124
+- `Clipper::dup_out_pt` :4159
+- `Clipper::join_horz` :4181
+- `Clipper::join_points` :4286
+- `Clipper::fixup_first_lefts1` :4462
+- `Clipper::fixup_first_lefts2` :4492
+- `Clipper::join_common_edges` :4503
+- `Clipper::do_simple_polygons` :4644
 
 ### `pchheader` (.cpp+.hpp) and `pchheader.rs`
 
@@ -13125,7 +13217,7 @@ Missing in the Rust file:
 - `SLAPrint::Steps::label` :1099 (8 tokens, overload) — in `preset.rs`
 - `SLAPrint::Steps::progressrange` :1109 (10 tokens)
 - `SLAPrint::Steps::progressrange` :1114 (16 tokens)
-- `SLAPrint::Steps::execute` :1119 (86 tokens, overload) — in `marching_squares.rs`, `sla/support_point_generator.rs`, `sla/support_tree_buildsteps.rs`
+- `SLAPrint::Steps::execute` :1119 (86 tokens, overload) — in `clipper.rs`, `marching_squares.rs`, `sla/support_point_generator.rs`
 
 Rust only:
 

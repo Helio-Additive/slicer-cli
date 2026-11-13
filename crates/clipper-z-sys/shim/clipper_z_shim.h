@@ -230,6 +230,18 @@ double  cz_ref_area(const int32_t *xy, int32_t n);
 int32_t cz_ref_point_in_polygon(int32_t px, int32_t py, const int32_t *xy, int32_t n);
 int32_t cz_ref_clean_polygon(const int32_t *xy, int32_t n, double distance, int32_t *out_xy);
 
+// Reference export for the Rust port of the Clipper class; called by tests
+// only. ClipperLib::Clipper (2D) with every subject and clip added closed through
+// AddPath; returns the solution of Execute(clip_type, solution, subj_fill, clip_fill)
+// as produced (z always 0) and writes what Execute returned to *succeeded. clip_type:
+// 0=ctIntersection, 1=ctUnion, 2=ctDifference, 3=ctXor; fills: 0=pftEvenOdd,
+// 1=pftNonZero, 2=pftPositive, 3=pftNegative. Free via cz_free_zpaths.
+CzZPaths cz_ref_execute(const int32_t *subj_xy, const int32_t *subj_lens, int32_t subj_num,
+                        const int32_t *clip_xy, const int32_t *clip_lens, int32_t clip_num,
+                        int32_t clip_type, int32_t subj_fill, int32_t clip_fill,
+                        int32_t strictly_simple, int32_t preserve_collinear,
+                        int32_t reverse_solution, int32_t *succeeded);
+
 #ifdef __cplusplus
 }
 #endif

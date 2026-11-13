@@ -262,6 +262,28 @@ extern "C" {
     pub fn cz_ref_point_in_polygon(px: i32, py: i32, xy: *const i32, n: i32) -> i32;
     /// R885: `ClipperLib::CleanPolygon(in, out, distance)`; writes at most `n` points.
     pub fn cz_ref_clean_polygon(xy: *const i32, n: i32, distance: f64, out_xy: *mut i32) -> i32;
+    /// `ClipperLib::Clipper::Execute(clip_type, Paths&, subj_fill, clip_fill)` with
+    /// every subject and clip added closed through `AddPath`, for the tests of the Rust
+    /// port of the Clipper class. The solution is as the library produced it (order of the
+    /// paths, start vertex; z always 0); `*succeeded` receives what `Execute` returned.
+    /// `clip_type`: 0=ctIntersection, 1=ctUnion, 2=ctDifference, 3=ctXor; fills:
+    /// 0=pftEvenOdd, 1=pftNonZero, 2=pftPositive, 3=pftNegative. Free via [`cz_free_zpaths`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn cz_ref_execute(
+        subj_xy: *const i32,
+        subj_lens: *const i32,
+        subj_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+        clip_type: i32,
+        subj_fill: i32,
+        clip_fill: i32,
+        strictly_simple: i32,
+        preserve_collinear: i32,
+        reverse_solution: i32,
+        succeeded: *mut i32,
+    ) -> CzZPaths;
     /// R803: faithful `offset(const Polygons&, float delta)` — flat Paths in
     /// Clipper's BuildResult order (ring START vertex preserved).
     pub fn cz_offset_paths(xy: *const i32, lens: *const i32, num: i32, delta: f64, join_type: i32, miter_limit: f64) -> CzZPaths;
