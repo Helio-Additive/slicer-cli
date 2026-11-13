@@ -1687,6 +1687,24 @@ fn active_place_seam(
     })
 }
 
+/// LOOP_SPLIT_NONPERIMETER (on unless =0): GCode.cpp:6679-6684. Only a loop
+/// extruded with the description "perimeter" is given to the seam placer; any
+/// other loop (the closed gap fills of VariableWidth.cpp:224-225, which reach
+/// `extrude_loop` through `extrude_infill`) is split at the point of the loop
+/// nearest the nozzle, `loop.split_at(last_pos, false)`. The description is
+/// not carried by the port; the role tells the two apart, since `extrude_perimeters`
+/// only sees the three perimeter roles.
+fn loop_is_split_at_last_pos(l: &crate::extrusion_entity::ExtrusionLoop) -> bool {
+    use crate::extrusion_entity::ExtrusionRole;
+    crate::faithful_gate("LOOP_SPLIT_NONPERIMETER")
+        && !matches!(
+            l.role(),
+            ExtrusionRole::ExternalPerimeter
+                | ExtrusionRole::Perimeter
+                | ExtrusionRole::OverhangPerimeter
+        )
+}
+
 /// Apply a placed seam to a perimeter loop, making it the loop's start vertex.
 ///
 /// SeamPlacer.cpp:1521-1527 — native is a TWO-STEP:
@@ -1946,20 +1964,31 @@ pub fn extrude_loop(
     // (SeamPlacer.cpp:1463). Otherwise fall back to the legacy per-loop
     // angle/nearest heuristic (`find_best_seam_index`).
     let polygon = loop_copy.as_polygon();
-    let seam_point = match active_place_seam(&loop_copy, &polygon, last_pos) {
-        Some(p) => p,
-        None => {
-            let seam_idx = crate::gcode::seam_placer::find_best_seam_index(
-                &polygon,
-                Some(last_pos),
-                &crate::gcode::seam_placer::SeamPlacerConfig::default(),
-            );
-            polygon.points()[seam_idx]
+    let split_at_last_pos = loop_is_split_at_last_pos(&loop_copy);
+    let seam_point = if split_at_last_pos {
+        last_pos
+    } else {
+        match active_place_seam(&loop_copy, &polygon, last_pos) {
+            Some(p) => p,
+            None => {
+                let seam_idx = crate::gcode::seam_placer::find_best_seam_index(
+                    &polygon,
+                    Some(last_pos),
+                    &crate::gcode::seam_placer::SeamPlacerConfig::default(),
+                );
+                polygon.points()[seam_idx]
+            }
         }
     };
-    // SeamPlacer.cpp:1521-1527 — try the vertex rotate first, project only as a
-    // fallback. See `apply_seam_split`.
-    apply_seam_split(&mut loop_copy, &seam_point);
+    if split_at_last_pos {
+        // GCode.cpp:6684 — `loop.split_at(last_pos, false)`, with the default
+        // epsilon of ExtrusionEntity.hpp, scaled<double>(0.001).
+        loop_copy.split_at(&last_pos, false, crate::scale(0.001) as f64);
+    } else {
+        // SeamPlacer.cpp:1521-1527 — try the vertex rotate first, project only as a
+        // fallback. See `apply_seam_split`.
+        apply_seam_split(&mut loop_copy, &seam_point);
+    }
 
     if std::env::var("SPLITDBG2").is_ok() {
         let post = loop_copy
@@ -2924,6 +2953,20 @@ fn travel_target_for_entity(
 ) -> Option<Point> {
     use crate::extrusion_entity::ExtrusionEntityType;
     if let ExtrusionEntityType::Loop(l) = entity {
+        if loop_is_split_at_last_pos(l) {
+            // GCode.cpp:6667-6684 — the copy is turned counter-clockwise, then
+            // split at the nozzle's position; the travel goes to its first point.
+            let mut probe = l.clone();
+            probe.make_counter_clockwise();
+            probe.split_at(&last_pos, false, crate::scale(0.001) as f64);
+            if let Some(fp) = probe
+                .paths
+                .first()
+                .and_then(|pa| pa.polyline.points().first().copied())
+            {
+                return Some(fp);
+            }
+        }
         let polygon = l.as_polygon();
         if let Some(seam) = active_place_seam(l, &polygon, last_pos) {
             // R228: native travels to loop.first_point() AFTER split_at

@@ -931,11 +931,24 @@ impl LayerRegion {
                 let gap_fill_flow = self
                     .flow(FlowRole::SolidInfill, layer_height)
                     .unwrap_or_else(|_| perimeter_flow.clone());
-                let paths = convert_thin_walls_to_extrusion_paths(
-                    &polylines,
-                    ExtrusionRole::GapFill,
-                    &gap_fill_flow,
-                );
+                // GAPFILL_LOOP (on unless =0): VariableWidth.cpp:220-230 keeps the
+                // paths of one thick polyline together and, when the first point
+                // of the first equals the last point of the last, appends them as
+                // one ExtrusionLoop; the port appended every path on its own, so a
+                // closed gap fill was never split at the nozzle's position, clipped
+                // at its end or turned counter-clockwise by `extrude_loop`.
+                let gapfill_loop = crate::faithful_gate("GAPFILL_LOOP");
+                let mut paths: Vec<crate::extrusion_entity::ExtrusionPath> = Vec::new();
+                // The end index, in `paths`, of each thick polyline's paths.
+                let mut group_ends: Vec<usize> = Vec::new();
+                for tp in &polylines {
+                    paths.extend(convert_thin_walls_to_extrusion_paths(
+                        &vec![tp.clone()],
+                        ExtrusionRole::GapFill,
+                        &gap_fill_flow,
+                    ));
+                    group_ends.push(paths.len());
+                }
 
                 // PerimeterGenerator.cpp:1373 — remove the gap-fill extrusion footprint
                 // from the infill area so the gap-filled band is NOT also classified as
@@ -992,10 +1005,31 @@ impl LayerRegion {
                     }
                 }
 
-                for path in paths {
-                    self.thin_fills
-                        .entities
-                        .push(ExtrusionEntityType::Path(path));
+                let mut paths_iter = paths.into_iter();
+                let mut group_begin = 0usize;
+                for group_end in group_ends {
+                    let group: Vec<crate::extrusion_entity::ExtrusionPath> =
+                        paths_iter.by_ref().take(group_end - group_begin).collect();
+                    group_begin = group_end;
+                    // VariableWidth.cpp:223-229
+                    if gapfill_loop
+                        && !group.is_empty()
+                        && group.first().unwrap().first_point()
+                            == group.last().unwrap().last_point()
+                    {
+                        self.thin_fills.entities.push(ExtrusionEntityType::Loop(
+                            crate::extrusion_entity::ExtrusionLoop::new(
+                                group,
+                                crate::extrusion_entity::ExtrusionLoopRole::DEFAULT,
+                            ),
+                        ));
+                    } else {
+                        for path in group {
+                            self.thin_fills
+                                .entities
+                                .push(ExtrusionEntityType::Path(path));
+                        }
+                    }
                 }
 
                 if !covered.is_empty() {

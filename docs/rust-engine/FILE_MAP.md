@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4520 |
+| Rust functions with no C++ function of that name in the pair | 4521 |
 
 By tier:
 
@@ -3915,27 +3915,27 @@ Rust only:
 
 ### `GCode` (.cpp+.hpp) and `g_code.rs`
 
-Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Rust functions 131. Matched 30: faithful 13, partial 6, divergent 11, stub 0.
+Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Rust functions 132. Matched 30: faithful 13, partial 6, divergent 11, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Wipe::wipe` :440 and `wipe` :4526 (31%, 0.72x)
+- partial: `Wipe::wipe` :440 and `wipe` :4569 (31%, 0.72x)
 - divergent: `WipeTowerIntegration::append_tcr` :741 and `append_tcr` :628 (14%, 0.55x)
 - divergent: `WipeTowerIntegration::post_process_wipe_tower_moves` :1383 and `post_process_wipe_tower_moves` :499 (25%, 0.89x)
-- divergent: `GCode::unretract` :1959 and `unretract` :4475 (17%, 1.12x)
+- divergent: `GCode::unretract` :1959 and `unretract` :4518 (17%, 1.12x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :1361 (8%, 1.33x)
-- partial: `GCode::change_layer` :6473 and `change_layer` :5104 (39%, 1.11x)
-- divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :1898 (17%, 1.9x)
-- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :3594 (55%, 4.62x)
-- divergent: `GCode::extrude_path` :6927 and `extrude_path` :3096 (5%, 0.05x)
-- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3763 (28%, 1.68x)
-- partial: `GCode::extrude_support` :7011 and `extrude_support` :4171 (33%, 1.62x)
-- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9220 (50%, 1.06x)
-- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5244 (30%, 1.08x)
-- divergent: `GCode::travel_to` :8198 and `travel_to` :4331 (11%, 0.21x)
-- divergent: `GCode::retract` :8498 and `retract` :4417 (8%, 0.21x)
-- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4703 (2%, 0.03x)
-- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6737 (0%, 0.06x)
+- partial: `GCode::change_layer` :6473 and `change_layer` :5147 (39%, 1.11x)
+- divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :1916 (18%, 1.94x)
+- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :3637 (55%, 4.62x)
+- divergent: `GCode::extrude_path` :6927 and `extrude_path` :3139 (5%, 0.05x)
+- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3806 (28%, 1.68x)
+- partial: `GCode::extrude_support` :7011 and `extrude_support` :4214 (33%, 1.62x)
+- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9263 (50%, 1.06x)
+- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5287 (30%, 1.08x)
+- divergent: `GCode::travel_to` :8198 and `travel_to` :4374 (11%, 0.21x)
+- divergent: `GCode::retract` :8498 and `retract` :4460 (8%, 0.21x)
+- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4746 (2%, 0.03x)
+- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6780 (0%, 0.06x)
 
 Missing in the Rust file:
 
@@ -4082,89 +4082,90 @@ Rust only:
 - `SeamContextGuard::install` :1655
 - `SeamContextGuard::drop` :1666
 - `active_place_seam` :1675
-- `apply_seam_split` :1713
-- `TravelConfig::default` :1742
-- `overhang_fan_marker_needed` :1768
-- `overhang_degree_corr_speed` :1789
-- `perimeter_base_speed` :1849
-- `loop_path_acceleration` :1868
-- `ExpProfGuard::drop` :2370
-- `expprof_report` :2377
-- `extrude_collection` :2390
-- `travel_target_for_entity` :2921
-- `writer_last_pos` :2952
-- `chained_path_from` :2966 — C++ has it in `ExtrusionEntityCollection`
-- `volumetric_capped_speed` :2989
-- `get_entity_mm3_per_mm` :3004
-- `get_entity_first_point` :3017
-- `get_entity_role` :3033
-- `fmt_g6` :3081
-- `extrude_path_ex` :3112
-- `extrude_path_with_arc_fitting` :3127
-- `extrude_perimeters_entities` :3943
-- `extrude_infill_entities` :4061
-- `apply_layer_cooling` :4855
-- `bridge_fan_speed` :4919
-- `overhang_fan_speed` :4938
-- `set_fan_speed_for_role` :4960
-- `GCodeLayerState::default` :5050
-- `lift_type_code` :5083
-- `emit_layer_preamble` :5154
-- `emit_layer_postamble` :5211
-- `emit_object_start_label` :5286
-- `emit_object_end_label` :5315
-- `emit_layer_object_labels` :5341
-- `set_loop_wipe_path` :6596
-- `first_extrusion_path` :6612
-- `width_tag_before_speed` :6623
-- `set_speed_before_path` :6646
-- `GCode::new` :6680
-- `GCode::from_content_and_stats` :6688
-- `GCode::from_string` :6693 — C++ has it in `Config`
-- `GCode::from_string_with_stats` :6701
-- `GCode::content` :6706
-- `GCode::as_bytes` :6711
-- `GCode::len` :6716
-- `GCode::is_empty` :6721 — C++ has it in `PresetBundle`
-- `GCode::split_off` :6727
-- `GCode::append_line` :6731
-- `GCode::append_comment` :6742
-- `GCode::write_to_file` :6749
-- `GCode::read_from_file` :6760 — C++ has it in `Model`
-- `GCode::line_count` :6766
-- `GCode::lines` :6771 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
-- `GCode::clear` :6776 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `GCode::fmt` :6783
-- `GCode::fmt` :6794
-- `GCode::from` :6800 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `String::from` :6806 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `GCodeStats::new` :6852
-- `GCodeStats::calculate_filament_stats` :6868
-- `GCodeStats::print_time_formatted` :6881
-- `GCodeStats::filament_used_meters` :6890
-- `GCodeStats::fmt` :6896
-- `GCodeHeader::new` :6940
-- `GCodeHeader::with_raw_settings` :6944
-- `GCodeHeader::with_estimated_time` :6957
-- `GCodeHeader::with_estimated_times` :6987
-- `GCodeHeader::generate_header_block` :7004
-- `GCodeHeader::generate_config_block` :7066
-- `GCodeHeader::generate_minimal_config_block` :7153
-- `GCodeHeader::generate_executable_block_start` :7212
-- `GCodeHeader::generate_executable_block_content` :7219
-- `GCodeHeader::generate_complete_header` :7376
-- `is_config_key_skipped` :7538
-- `format_config_value` :7598
-- `process_gcode_template` :7809
-- `eval_condition` :8362
-- `eval_expr` :8549
-- `resolve_all_vars_in_expr` :8687
-- `eval_math` :8737
-- `scale_` :8911 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale_` :8916 — C++ has it in `Point`, `libslic3r`
-- `point_mul_f64` :8922
-- `path_from` :8929
-- `poly_len` :8962
+- `loop_is_split_at_last_pos` :1697
+- `apply_seam_split` :1731
+- `TravelConfig::default` :1760
+- `overhang_fan_marker_needed` :1786
+- `overhang_degree_corr_speed` :1807
+- `perimeter_base_speed` :1867
+- `loop_path_acceleration` :1886
+- `ExpProfGuard::drop` :2399
+- `expprof_report` :2406
+- `extrude_collection` :2419
+- `travel_target_for_entity` :2950
+- `writer_last_pos` :2995
+- `chained_path_from` :3009 — C++ has it in `ExtrusionEntityCollection`
+- `volumetric_capped_speed` :3032
+- `get_entity_mm3_per_mm` :3047
+- `get_entity_first_point` :3060
+- `get_entity_role` :3076
+- `fmt_g6` :3124
+- `extrude_path_ex` :3155
+- `extrude_path_with_arc_fitting` :3170
+- `extrude_perimeters_entities` :3986
+- `extrude_infill_entities` :4104
+- `apply_layer_cooling` :4898
+- `bridge_fan_speed` :4962
+- `overhang_fan_speed` :4981
+- `set_fan_speed_for_role` :5003
+- `GCodeLayerState::default` :5093
+- `lift_type_code` :5126
+- `emit_layer_preamble` :5197
+- `emit_layer_postamble` :5254
+- `emit_object_start_label` :5329
+- `emit_object_end_label` :5358
+- `emit_layer_object_labels` :5384
+- `set_loop_wipe_path` :6639
+- `first_extrusion_path` :6655
+- `width_tag_before_speed` :6666
+- `set_speed_before_path` :6689
+- `GCode::new` :6723
+- `GCode::from_content_and_stats` :6731
+- `GCode::from_string` :6736 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :6744
+- `GCode::content` :6749
+- `GCode::as_bytes` :6754
+- `GCode::len` :6759
+- `GCode::is_empty` :6764 — C++ has it in `PresetBundle`
+- `GCode::split_off` :6770
+- `GCode::append_line` :6774
+- `GCode::append_comment` :6785
+- `GCode::write_to_file` :6792
+- `GCode::read_from_file` :6803 — C++ has it in `Model`
+- `GCode::line_count` :6809
+- `GCode::lines` :6814 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :6819 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :6826
+- `GCode::fmt` :6837
+- `GCode::from` :6843 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :6849 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :6895
+- `GCodeStats::calculate_filament_stats` :6911
+- `GCodeStats::print_time_formatted` :6924
+- `GCodeStats::filament_used_meters` :6933
+- `GCodeStats::fmt` :6939
+- `GCodeHeader::new` :6983
+- `GCodeHeader::with_raw_settings` :6987
+- `GCodeHeader::with_estimated_time` :7000
+- `GCodeHeader::with_estimated_times` :7030
+- `GCodeHeader::generate_header_block` :7047
+- `GCodeHeader::generate_config_block` :7109
+- `GCodeHeader::generate_minimal_config_block` :7196
+- `GCodeHeader::generate_executable_block_start` :7255
+- `GCodeHeader::generate_executable_block_content` :7262
+- `GCodeHeader::generate_complete_header` :7419
+- `is_config_key_skipped` :7581
+- `format_config_value` :7641
+- `process_gcode_template` :7852
+- `eval_condition` :8405
+- `eval_expr` :8592
+- `resolve_all_vars_in_expr` :8730
+- `eval_math` :8780
+- `scale_` :8954 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale_` :8959 — C++ has it in `Point`, `libslic3r`
+- `point_mul_f64` :8965
+- `path_from` :8972
+- `poly_len` :9005
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
@@ -5786,12 +5787,12 @@ Tier 1. C++ functions 56 (plus 5 constructors, 2 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2204 (11%, 0.26x)
-- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2060 (46%, 0.79x)
-- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2099 (31%, 0.44x)
-- partial: `Layer::has_compatible_layer_regions` :173 and `Layer::has_compatible_layer_regions` :1670 (50%, 0.56x)
-- divergent: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :1753 (28%, 0.6x)
-- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :2405 (36%, 1.15x)
+- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2238 (11%, 0.26x)
+- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2094 (46%, 0.79x)
+- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2133 (31%, 0.44x)
+- partial: `Layer::has_compatible_layer_regions` :173 and `Layer::has_compatible_layer_regions` :1704 (50%, 0.56x)
+- divergent: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :1787 (28%, 0.6x)
+- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :2439 (36%, 1.15x)
 
 Missing in the Rust file:
 
@@ -5845,40 +5846,40 @@ Rust only:
 - `LayerRegion::slices_to_fill_surfaces_clipped` :369 — C++ has it in `LayerRegion`
 - `LayerRegion::prepare_fill_surfaces` :412 — C++ has it in `LayerRegion`
 - `LayerRegion::make_perimeters` :469 — C++ has it in `LayerRegion`, `PrintObject`
-- `LayerRegion::process_external_surfaces` :1150 — C++ has it in `LayerRegion`, `PrintObject`
-- `LayerRegion::infill_area_threshold_with_flow` :1226
-- `LayerRegion::infill_area_threshold` :1237 — C++ has it in `LayerRegion`
-- `LayerRegion::trim_surfaces` :1244 — C++ has it in `LayerRegion`
-- `LayerRegion::elephant_foot_compensation_step` :1271 — C++ has it in `LayerRegion`
-- `convert_polygon_to_extrusion_loop` :1332
-- `convert_polyline_to_extrusion_path` :1354
-- `extract_and_union_surfaces` :1370
-- `LoopNode::new` :1406
-- `LoopNode::default` :1420
-- `Layer::new` :1504
-- `Layer::object_id` :1545 — C++ has it in `Exception`, `ObjectID`
-- `Layer::wire_config_hierarchy` :1581
-- `Layer::get_region_mut` :1616
-- `Layer::regions` :1622
-- `Layer::regions_mut` :1628
-- `Layer::make_perimeters_with_lower` :1722
-- `Layer::make_perimeters_with_neighbors` :1731
-- `Layer::record_cooling_node_for_each_extrusion` :2368
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :3719 — C++ has it in `Fill/Fill`
-- `Layer::make_ironing` :4043 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :4166
-- `Layer::generate_sparse_infill` :4173
-- `Layer::new_f` :4182 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :4194
-- `Layer::height_mm` :4200
-- `Layer::set_lower_layer` :4206
-- `Layer::set_upper_layer` :4212
-- `Layer::all_slices` :4218
-- `LayerRegion::set_slices` :4227
-- `chain_points` :4237 — C++ has it in `ShortestPath`
-- `get_extents_layer_region` :4280
-- `get_extents_layer_regions` :4303
-- `mpprobe` :4325
+- `LayerRegion::process_external_surfaces` :1184 — C++ has it in `LayerRegion`, `PrintObject`
+- `LayerRegion::infill_area_threshold_with_flow` :1260
+- `LayerRegion::infill_area_threshold` :1271 — C++ has it in `LayerRegion`
+- `LayerRegion::trim_surfaces` :1278 — C++ has it in `LayerRegion`
+- `LayerRegion::elephant_foot_compensation_step` :1305 — C++ has it in `LayerRegion`
+- `convert_polygon_to_extrusion_loop` :1366
+- `convert_polyline_to_extrusion_path` :1388
+- `extract_and_union_surfaces` :1404
+- `LoopNode::new` :1440
+- `LoopNode::default` :1454
+- `Layer::new` :1538
+- `Layer::object_id` :1579 — C++ has it in `Exception`, `ObjectID`
+- `Layer::wire_config_hierarchy` :1615
+- `Layer::get_region_mut` :1650
+- `Layer::regions` :1656
+- `Layer::regions_mut` :1662
+- `Layer::make_perimeters_with_lower` :1756
+- `Layer::make_perimeters_with_neighbors` :1765
+- `Layer::record_cooling_node_for_each_extrusion` :2402
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :3753 — C++ has it in `Fill/Fill`
+- `Layer::make_ironing` :4077 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :4200
+- `Layer::generate_sparse_infill` :4207
+- `Layer::new_f` :4216 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :4228
+- `Layer::height_mm` :4234
+- `Layer::set_lower_layer` :4240
+- `Layer::set_upper_layer` :4246
+- `Layer::all_slices` :4252
+- `LayerRegion::set_slices` :4261
+- `chain_points` :4271 — C++ has it in `ShortestPath`
+- `get_extents_layer_region` :4314
+- `get_extents_layer_regions` :4337
+- `mpprobe` :4359
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 
