@@ -58,8 +58,19 @@ functions below are the C++ reference of the `*_native_parity` tests. The table 
 
 ### `boost-voronoi-sys`
 
-Not called by the engine. One example (`examples/voronoi_ab.rs`) uses it. It can go when the medial axis no
-longer needs a second opinion.
+Not a dependency of the engine since R884 (a dev-dependency: `examples/voronoi_ab.rs` uses it). The boost
+Voronoi diagram behind the medial axis is compiled inside `clipper-z-sys`.
+
+### C++ that comes in through published crates
+
+`cargo tree -e normal -p slicer-cli-rust` also lists two C++ libraries the engine does not build itself:
+
+| Crate | Through | What uses it |
+|-|-|-|
+| `clipper-sys` (Clipper 6) | `geo-clipper` | the helpers of `clipper_utils.rs` without `_clib` in the name; none on the fixtures' path since R856 (`GEOCALLS=1`) |
+| `clipper2c-sys` (Clipper2) | `clipper2` | `clipper2_utils.rs` |
+
+A port of `clipper.cpp` and of Clipper2 replaces these as well as `clipper-z-sys` and `clipper2-z-sys`.
 
 ## 2. Child processes
 
@@ -105,6 +116,7 @@ more are missing from a paired Rust file and from every other. `crates/libslic3r
 | Round | Item |
 |-|-|
 | R856 | every helper on the 1 um grid on the fixtures' path computes at coord_t |
+| R884 | `boost-voronoi-sys` removed from the engine's dependencies (a dev-dependency for one example) |
 | R883 | `eigen-transform-sys` removed from the engine's dependencies (a dev-dependency for the tests that compare with the C++) |
 | R882 | `raycast_visibility_native`, the last `eigen-transform-sys` function on the engine's path, is replaced (`RAYCAST_RUST`, `AABB_EIGEN_FLOAT`): `raycast_visibility` equals the C++ on the Benchy's 30,000 samples in `tests/raycast_visibility_native_parity.rs` |
 | R880 | `short_edge_collapse` of `eigen-transform-sys` is off the engine's path (`SEC_RUST`): `its_short_edge_collpase` equals the C++ on the Benchy and 106 synthetic meshes in `tests/short_edge_collapse_native_parity.rs` |

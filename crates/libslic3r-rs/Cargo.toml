@@ -44,9 +44,6 @@ clipper2-z-sys = { path = "../clipper2-z-sys" }
 # Eigen FFI shim for the bit-exact slice-time vertex transform (R86): calls the
 # real Eigen so the f32 matmul matches C++ exactly (sidesteps the pure-rust
 # Eigen-reproduction 1-ULP wall, R85).
-# R772 — exact-backend boost::polygon voronoi (AWALL 0/726 exact: the rust
-# boostvoronoi port drifts by ULPs against the -O3 native headers).
-boost-voronoi-sys = { path = "../boost-voronoi-sys" }
 ordered-float = "4.2"
 boostvoronoi = "0.12"
 # Polygon tessellation (pure-Rust earcut; wasm-safe). Backend for Tesselate.cpp.
@@ -99,6 +96,8 @@ tokio = { version = "1.34", features = ["full"] }
 winapi = { version = "0.3", features = ["processthreadsapi", "psapi", "winnt"] }
 
 [dev-dependencies]
+# Called by examples/voronoi_ab.rs only (a second opinion on the Voronoi diagram).
+boost-voronoi-sys = { path = "../boost-voronoi-sys" }
 # The C++ the port replaced, kept as the reference of the *_native_parity tests.
 eigen-transform-sys = { path = "../eigen-transform-sys" }
 criterion = "0.5"
