@@ -3554,8 +3554,41 @@ pub fn extrude_path_with_arc_fitting(
                     // Origin/extruder offset cancels in the difference, so plain
                     // unscale matches the linear path's coordinate convention.
                     // Unscale each endpoint then subtract, mirroring C++'s ordering.
-                    let i = unscale(arc.circle.center.x()) - unscale(arc.start_point.x());
-                    let j = unscale(arc.circle.center.y()) - unscale(arc.start_point.y());
+                    // ARC_CENTER_OFFSET_ORDER (on unless =0): GCode.cpp:8041,
+                    // `point_to_gcode(arc.center) - point_to_gcode(arc.start_point)`.
+                    // The origin and the extruder offset are in both terms and do
+                    // not cancel in double: each term is rounded after they are
+                    // added, so the difference can land on the other side of a
+                    // half of the third decimal the I and J words are written to.
+                    // =0 subtracts the unscaled coordinates directly.
+                    if crate::probe_enabled("ARCP") {
+                        eprintln!(
+                            "ARCP {} {} {} {} {} {} {:?}",
+                            arc.start_point.x(),
+                            arc.start_point.y(),
+                            arc.end_point.x(),
+                            arc.end_point.y(),
+                            arc.circle.center.x(),
+                            arc.circle.center.y(),
+                            arc.circle.radius
+                        );
+                    }
+                    let (i, j) = if crate::faithful_gate("ARC_CENTER_OFFSET_ORDER") {
+                        let (cx, cy) = writer.point_to_gcode_mm(
+                            unscale(arc.circle.center.x()),
+                            unscale(arc.circle.center.y()),
+                        );
+                        let (sx, sy) = writer.point_to_gcode_mm(
+                            unscale(arc.start_point.x()),
+                            unscale(arc.start_point.y()),
+                        );
+                        (cx - sx, cy - sy)
+                    } else {
+                        (
+                            unscale(arc.circle.center.x()) - unscale(arc.start_point.x()),
+                            unscale(arc.circle.center.y()) - unscale(arc.start_point.y()),
+                        )
+                    };
                     let de = arc_length * e_per_mm;
                     writer.extrude_arc(
                         unscale(arc.end_point.x()),

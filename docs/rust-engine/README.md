@@ -125,19 +125,19 @@ round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md). What still 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R861) |
+| Fixture | As brought over (R808) | Now (R864) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 187,118 (98.02%) |
 | Benchy arachne | 32,769 (13.68%) | 240,269 (98.70%) |
-| Majora | 1,512,438 (55.88%) | 2,830,440 (98.60%) |
+| Majora | 1,512,438 (55.88%) | 2,832,110 (98.66%) |
 | Majora, prime tower | 83.5% | 99.6% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R861:
+missing most often. Lines of the oracle's body the port has verbatim, at R864:
 Benchy classic 193,072 of 196,495 (98.3%), Benchy arachne 245,716 of 248,190
-(99.0%), Majora 3,000,989 of 3,024,752 (99.2%).
+(99.0%), Majora 3,002,669 of 3,024,752 (99.3%).
 
 Majora's percentage rose in R853 with the matched count unchanged: the port wrote
 `; LINE_WIDTH` twice after each prime tower visit (3,339 lines), and no longer does.
@@ -224,6 +224,8 @@ every call site that reached a `clipper_utils` helper computing on the geo-clipp
 grid (1 um) and not at coord_t. The table is empty on the three fixtures (R856);
 on a new job each line is a call to port to the `_clib` helper of the same name.
 
+`ARCP=1` prints every arc as it is written: start, end and centre in scaled units and the
+radius; the C++ twin is one `fprintf` after GCode.cpp:8041.
 `RECT=1` prints three lines per `fill_surface_by_lines` call (`RECT1` the
 intersections, `RECT2` the links and the link limit, `RECT3` the polylines), as sums;
 the C++ twin is three `fprintf` in a probed FillRectilinear.cpp, after

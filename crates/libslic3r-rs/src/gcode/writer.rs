@@ -564,6 +564,16 @@ impl GCodeWriter {
         }
     }
 
+    /// `GCode::point_to_gcode` (GCode.cpp:9029-9033) on unscaled coordinates:
+    /// `unscale(point) + m_origin - extruder_offset`, left to right, with
+    /// `m_origin` stored here negated.
+    pub fn point_to_gcode_mm(&self, x: f64, y: f64) -> (f64, f64) {
+        (
+            (x - self.gcode_origin_x) - self.config.extruder_offset_x,
+            (y - self.gcode_origin_y) - self.config.extruder_offset_y,
+        )
+    }
+
     /// The export origin as stored here, which is `-m_origin` of the C++ GCode.
     pub fn gcode_origin(&self) -> (f64, f64) {
         (self.gcode_origin_x, self.gcode_origin_y)

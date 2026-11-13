@@ -229,7 +229,7 @@ their function names come from, when there is one.
 | `gcode/ironing.rs` | no C++ file of this name | 34 |  |
 | `gcode/mod.rs` | module | 1 |  |
 | `gcode/multi_material.rs` | no C++ file of this name | 42 |  |
-| `gcode/writer.rs` | no C++ file of this name | 131 |  |
+| `gcode/writer.rs` | no C++ file of this name | 132 |  |
 | `geometry/aabb_tree.rs` | no C++ file of this name | 77 |  |
 | `geometry/mod.rs` | module | 19 | `Geometry` |
 | `geometry/simplify.rs` | no C++ file of this name | 19 |  |
@@ -3920,22 +3920,22 @@ Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Wipe::wipe` :440 and `wipe` :4636 (31%, 0.72x)
+- partial: `Wipe::wipe` :440 and `wipe` :4669 (31%, 0.72x)
 - divergent: `WipeTowerIntegration::append_tcr` :741 and `append_tcr` :628 (14%, 0.55x)
 - divergent: `WipeTowerIntegration::post_process_wipe_tower_moves` :1383 and `post_process_wipe_tower_moves` :499 (25%, 0.89x)
-- divergent: `GCode::unretract` :1959 and `unretract` :4585 (17%, 1.12x)
+- divergent: `GCode::unretract` :1959 and `unretract` :4618 (17%, 1.12x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :1361 (8%, 1.33x)
-- partial: `GCode::change_layer` :6473 and `change_layer` :5214 (39%, 1.11x)
+- partial: `GCode::change_layer` :6473 and `change_layer` :5247 (39%, 1.11x)
 - divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :1916 (18%, 1.94x)
 - divergent: `GCode::extrude_path` :6927 and `extrude_path` :3146 (5%, 0.05x)
-- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3873 (28%, 1.68x)
-- partial: `GCode::extrude_support` :7011 and `extrude_support` :4281 (33%, 1.62x)
-- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9331 (50%, 1.06x)
-- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5354 (30%, 1.08x)
-- divergent: `GCode::travel_to` :8198 and `travel_to` :4441 (11%, 0.21x)
-- divergent: `GCode::retract` :8498 and `retract` :4527 (8%, 0.21x)
-- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4813 (2%, 0.03x)
-- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6848 (0%, 0.06x)
+- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3906 (28%, 1.68x)
+- partial: `GCode::extrude_support` :7011 and `extrude_support` :4314 (33%, 1.62x)
+- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9364 (50%, 1.06x)
+- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5387 (30%, 1.08x)
+- divergent: `GCode::travel_to` :8198 and `travel_to` :4474 (11%, 0.21x)
+- divergent: `GCode::retract` :8498 and `retract` :4560 (8%, 0.21x)
+- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4846 (2%, 0.03x)
+- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6881 (0%, 0.06x)
 
 Missing in the Rust file:
 
@@ -4102,70 +4102,70 @@ Rust only:
 - `fmt_g6` :3131
 - `extrude_path_ex` :3162
 - `extrude_path_with_arc_fitting` :3177
-- `extrude_perimeters_entities` :4053
-- `extrude_infill_entities` :4171
-- `apply_layer_cooling` :4965
-- `bridge_fan_speed` :5029
-- `overhang_fan_speed` :5048
-- `set_fan_speed_for_role` :5070
-- `GCodeLayerState::default` :5160
-- `lift_type_code` :5193
-- `emit_layer_preamble` :5264
-- `emit_layer_postamble` :5321
-- `emit_object_start_label` :5396
-- `emit_object_end_label` :5425
-- `emit_layer_object_labels` :5451
-- `set_loop_wipe_path` :6706
-- `first_extrusion_path` :6722
-- `width_tag_before_speed` :6734
-- `set_speed_before_path` :6757
-- `GCode::new` :6791
-- `GCode::from_content_and_stats` :6799
-- `GCode::from_string` :6804 — C++ has it in `Config`
-- `GCode::from_string_with_stats` :6812
-- `GCode::content` :6817
-- `GCode::as_bytes` :6822
-- `GCode::len` :6827
-- `GCode::is_empty` :6832 — C++ has it in `PresetBundle`
-- `GCode::split_off` :6838
-- `GCode::append_line` :6842
-- `GCode::append_comment` :6853
-- `GCode::write_to_file` :6860
-- `GCode::read_from_file` :6871 — C++ has it in `Model`
-- `GCode::line_count` :6877
-- `GCode::lines` :6882 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
-- `GCode::clear` :6887 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `GCode::fmt` :6894
-- `GCode::fmt` :6905
-- `GCode::from` :6911 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `String::from` :6917 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `GCodeStats::new` :6963
-- `GCodeStats::calculate_filament_stats` :6979
-- `GCodeStats::print_time_formatted` :6992
-- `GCodeStats::filament_used_meters` :7001
-- `GCodeStats::fmt` :7007
-- `GCodeHeader::new` :7051
-- `GCodeHeader::with_raw_settings` :7055
-- `GCodeHeader::with_estimated_time` :7068
-- `GCodeHeader::with_estimated_times` :7098
-- `GCodeHeader::generate_header_block` :7115
-- `GCodeHeader::generate_config_block` :7177
-- `GCodeHeader::generate_minimal_config_block` :7264
-- `GCodeHeader::generate_executable_block_start` :7323
-- `GCodeHeader::generate_executable_block_content` :7330
-- `GCodeHeader::generate_complete_header` :7487
-- `is_config_key_skipped` :7649
-- `format_config_value` :7709
-- `process_gcode_template` :7920
-- `eval_condition` :8473
-- `eval_expr` :8660
-- `resolve_all_vars_in_expr` :8798
-- `eval_math` :8848
-- `scale_` :9022 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale_` :9027 — C++ has it in `Point`, `libslic3r`
-- `point_mul_f64` :9033
-- `path_from` :9040
-- `poly_len` :9073
+- `extrude_perimeters_entities` :4086
+- `extrude_infill_entities` :4204
+- `apply_layer_cooling` :4998
+- `bridge_fan_speed` :5062
+- `overhang_fan_speed` :5081
+- `set_fan_speed_for_role` :5103
+- `GCodeLayerState::default` :5193
+- `lift_type_code` :5226
+- `emit_layer_preamble` :5297
+- `emit_layer_postamble` :5354
+- `emit_object_start_label` :5429
+- `emit_object_end_label` :5458
+- `emit_layer_object_labels` :5484
+- `set_loop_wipe_path` :6739
+- `first_extrusion_path` :6755
+- `width_tag_before_speed` :6767
+- `set_speed_before_path` :6790
+- `GCode::new` :6824
+- `GCode::from_content_and_stats` :6832
+- `GCode::from_string` :6837 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :6845
+- `GCode::content` :6850
+- `GCode::as_bytes` :6855
+- `GCode::len` :6860
+- `GCode::is_empty` :6865 — C++ has it in `PresetBundle`
+- `GCode::split_off` :6871
+- `GCode::append_line` :6875
+- `GCode::append_comment` :6886
+- `GCode::write_to_file` :6893
+- `GCode::read_from_file` :6904 — C++ has it in `Model`
+- `GCode::line_count` :6910
+- `GCode::lines` :6915 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :6920 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :6927
+- `GCode::fmt` :6938
+- `GCode::from` :6944 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :6950 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :6996
+- `GCodeStats::calculate_filament_stats` :7012
+- `GCodeStats::print_time_formatted` :7025
+- `GCodeStats::filament_used_meters` :7034
+- `GCodeStats::fmt` :7040
+- `GCodeHeader::new` :7084
+- `GCodeHeader::with_raw_settings` :7088
+- `GCodeHeader::with_estimated_time` :7101
+- `GCodeHeader::with_estimated_times` :7131
+- `GCodeHeader::generate_header_block` :7148
+- `GCodeHeader::generate_config_block` :7210
+- `GCodeHeader::generate_minimal_config_block` :7297
+- `GCodeHeader::generate_executable_block_start` :7356
+- `GCodeHeader::generate_executable_block_content` :7363
+- `GCodeHeader::generate_complete_header` :7520
+- `is_config_key_skipped` :7682
+- `format_config_value` :7742
+- `process_gcode_template` :7953
+- `eval_condition` :8506
+- `eval_expr` :8693
+- `resolve_all_vars_in_expr` :8831
+- `eval_math` :8881
+- `scale_` :9055 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale_` :9060 — C++ has it in `Point`, `libslic3r`
+- `point_mul_f64` :9066
+- `path_from` :9073
+- `poly_len` :9106
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
