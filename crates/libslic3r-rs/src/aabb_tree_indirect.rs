@@ -689,6 +689,15 @@ where
 /// Cross product of two 3D vectors
 /// AABBTreeIndirect.hpp:322 (inline)
 fn cross_product(a: &Point3F, b: &Point3F) -> Point3F {
+    // AABB_EIGEN_FLOAT (on unless =0): `Vec3d::cross` as the C++ build evaluates it,
+    // each component `fma(a, b, -(c * d))` (the order found for `Vec3f`, R876).
+    if crate::faithful_gate("AABB_EIGEN_FLOAT") {
+        return Point3F::new(
+            a.y.mul_add(b.z, -(a.z * b.y)),
+            a.z.mul_add(b.x, -(a.x * b.z)),
+            a.x.mul_add(b.y, -(a.y * b.x)),
+        );
+    }
     Point3F::new(
         a.y * b.z - a.z * b.y,
         a.z * b.x - a.x * b.z,
@@ -699,6 +708,11 @@ fn cross_product(a: &Point3F, b: &Point3F) -> Point3F {
 /// Dot product of two 3D vectors
 /// AABBTreeIndirect.hpp:324 (inline)
 fn dot_product(a: &Point3F, b: &Point3F) -> f64 {
+    // AABB_EIGEN_FLOAT: `Vec3d::dot` as `fma(a.z, b.z, a.x * b.x + a.y * b.y)`
+    // (the order found for `Vec3f`, R880).
+    if crate::faithful_gate("AABB_EIGEN_FLOAT") {
+        return a.z.mul_add(b.z, a.x * b.x + a.y * b.y);
+    }
     a.x * b.x + a.y * b.y + a.z * b.z
 }
 
@@ -761,10 +775,35 @@ pub fn build_aabb_tree_over_indexed_triangle_set(
         let v2 = &vertices[face[1]];
         let v3 = &vertices[face[2]];
 
-        let centroid = Point3F {
-            x: (v1.x + v2.x + v3.x) / 3.0,
-            y: (v1.y + v2.y + v3.y) / 3.0,
-            z: (v1.z + v2.z + v3.z) / 3.0,
+        // AABB_EIGEN_FLOAT: AABBTreeIndirect.hpp:707,
+        // `n.m_centroid = (1./3.) * (v1 + v2 + v3)`. The seam placer's tree is a
+        // `Tree3f`: the vertices and the centroid are floats, the sum is a float
+        // sum and the third is `float(1./3.)`. This crate's tree holds doubles, so
+        // with the gate on a triangle whose coordinates are all floats gets the
+        // float centroid, and any other one the double product. =0 divides the
+        // double sum by three.
+        let centroid = if crate::faithful_gate("AABB_EIGEN_FLOAT") {
+            let is_f32 = |p: &Point3F| {
+                (p.x as f32) as f64 == p.x && (p.y as f32) as f64 == p.y && (p.z as f32) as f64 == p.z
+            };
+            if is_f32(v1) && is_f32(v2) && is_f32(v3) {
+                let third = (1.0f64 / 3.0) as f32;
+                let c = |a: f64, b: f64, c: f64| (third * ((a as f32 + b as f32) + c as f32)) as f64;
+                Point3F { x: c(v1.x, v2.x, v3.x), y: c(v1.y, v2.y, v3.y), z: c(v1.z, v2.z, v3.z) }
+            } else {
+                let third = 1.0f64 / 3.0;
+                Point3F {
+                    x: third * ((v1.x + v2.x) + v3.x),
+                    y: third * ((v1.y + v2.y) + v3.y),
+                    z: third * ((v1.z + v2.z) + v3.z),
+                }
+            }
+        } else {
+            Point3F {
+                x: (v1.x + v2.x + v3.x) / 3.0,
+                y: (v1.y + v2.y + v3.y) / 3.0,
+                z: (v1.z + v2.z + v3.z) / 3.0,
+            }
         };
 
         let mut bbox = BoundingBox3F::new();
@@ -896,6 +935,16 @@ fn intersect_ray_recursive_first_hit(
         ) {
             if t > 0.0 {
                 // AABBTreeIndirect.hpp:417
+                // AABB_EIGEN_FLOAT: AABBTreeIndirect.hpp:417,
+                // `hit = igl::Hit { int(node.idx), -1, float(u), float(v), float(t) }`.
+                // The hit's members are floats, and it is the float `t` that the
+                // callers above compare with `min_t` and copy into it. =0 keeps
+                // the doubles, which ranks two hits a float apart the other way.
+                let (t, u, v) = if crate::faithful_gate("AABB_EIGEN_FLOAT") {
+                    ((t as f32) as f64, (u as f32) as f64, (v as f32) as f64)
+                } else {
+                    (t, u, v)
+                };
                 *hit = Some(RayHit {
                     face_idx: node.idx,
                     u,

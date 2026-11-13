@@ -382,9 +382,9 @@ Tier 1. C++ functions 41 (plus 1 constructors, 0 destructors, 2 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `intersect_ray_first_hit` :742 and `intersect_ray_first_hit` :801 (42%, 0.2x)
-- divergent: `intersect_ray_all_hits` :774 and `intersect_ray_all_hits` :952 (31%, 0.1x)
-- partial: `squared_distance_to_indexed_triangle_set` :815 and `squared_distance_to_indexed_triangle_set` :1067 (55%, 1.18x)
+- divergent: `intersect_ray_first_hit` :742 and `intersect_ray_first_hit` :840 (42%, 0.2x)
+- divergent: `intersect_ray_all_hits` :774 and `intersect_ray_all_hits` :1001 (31%, 0.1x)
+- partial: `squared_distance_to_indexed_triangle_set` :815 and `squared_distance_to_indexed_triangle_set` :1116 (55%, 1.18x)
 
 Missing in the Rust file:
 
@@ -413,10 +413,10 @@ Rust only:
 - `Tree::default` :369
 - `next_highest_power_of_2` :376 — C++ has it in `Utils`
 - `cross_product` :691
-- `dot_product` :701
-- `intersect_ray_first_hit_eps` :816
-- `intersect_ray_all_hits_eps` :967
-- `bbox_squared_exterior_distance` :1126
+- `dot_product` :710
+- `intersect_ray_first_hit_eps` :855
+- `intersect_ray_all_hits_eps` :1016
+- `bbox_squared_exterior_distance` :1175
 
 ### `AABBTreeLines` (.hpp) and `aabb_tree_lines.rs`
 
@@ -4565,13 +4565,13 @@ Tier 1. C++ functions 45 (plus 8 constructors, 0 destructors, 1 operators), Rust
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `angle` :34 and `angle` :395 (44%, 0.38x)
-- divergent: `compute_global_occlusion` :575 and `compute_global_occlusion` :1032 (19%, 2.84x)
-- partial: `gather_enforcers_blockers` :645 and `gather_enforcers_blockers` :1206 (40%, 2.0x)
-- partial: `SeamPlacer::gather_seam_candidates` :952 and `SeamPlacer::gather_seam_candidates` :2478 (46%, 0.71x)
-- partial: `SeamPlacer::calculate_candidates_visibility` :983 and `SeamPlacer::calculate_candidates_visibility` :2537 (50%, 0.65x)
-- partial: `SeamPlacer::calculate_overhangs_and_layer_embedding` :995 and `SeamPlacer::calculate_overhangs_and_layer_embedding` :2572 (54%, 0.95x)
-- partial: `SeamPlacer::init` :1495 and `SeamPlacer::init` :3280 (51%, 1.84x)
-- partial: `SeamPlacer::place_seam` :1563 and `SeamPlacer::place_seam` :3444 (46%, 1.85x)
+- divergent: `compute_global_occlusion` :575 and `compute_global_occlusion` :1043 (19%, 2.84x)
+- partial: `gather_enforcers_blockers` :645 and `gather_enforcers_blockers` :1217 (40%, 2.0x)
+- partial: `SeamPlacer::gather_seam_candidates` :952 and `SeamPlacer::gather_seam_candidates` :2489 (46%, 0.71x)
+- partial: `SeamPlacer::calculate_candidates_visibility` :983 and `SeamPlacer::calculate_candidates_visibility` :2548 (50%, 0.65x)
+- partial: `SeamPlacer::calculate_overhangs_and_layer_embedding` :995 and `SeamPlacer::calculate_overhangs_and_layer_embedding` :2583 (54%, 0.95x)
+- partial: `SeamPlacer::init` :1495 and `SeamPlacer::init` :3291 (51%, 1.84x)
+- partial: `SeamPlacer::place_seam` :1563 and `SeamPlacer::place_seam` :3455 (46%, 1.85x)
 
 Missing in the Rust file:
 
@@ -4590,35 +4590,35 @@ Rust only:
 - `Frame::default` :458
 - `Frame::new` :465
 - `Frame::from_xyz` :474
-- `Frame::binormal` :506
-- `Frame::tangent` :511
-- `Frame::normal` :516 — C++ has it in `Arachne/SkeletalTrapezoidation`, `Line`, `SLA/Rotfinder`
-- `its_face_normal_f32` :556
-- `point_sub` :818
-- `CoordinateFunctor::new` :832
-- `CoordinateFunctor::call` :840
-- `GlobalModelInfo::default` :870
-- `GlobalModelInfo::any_triangle_in_radius` :906
-- `GlobalModelInfo::build_mesh_samples_tree` :947
-- `finish_global_occlusion` :1246
-- `occlusion_set_from_volumes` :1352
-- `collect_points` :1439 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`
-- `entity_role` :1469
-- `SeamComparator::new` :1860
-- `SeamCandidate::perimeter_flow_width` :2043
-- `SeamCandidate::set_flow_width_hint` :2054
-- `PerimeterDistancer::new` :2244
-- `unscale_point` :2308
-- `SeamPlacerConfig::default` :2350
-- `Point3f::new` :2371
-- `SeamPlacer::new` :2413
-- `SeamPlacer::stats` :2421
-- `SeamPlacer::init_simple` :2441
-- `SeamPlacer::seam_frame_offset` :2467
-- `gather_layer_perimeter` :3660
-- `find_best_seam_index` :3730
-- `place_seam` :3781
-- `create_seam_placer` :3790
+- `Frame::binormal` :511
+- `Frame::tangent` :516
+- `Frame::normal` :521 — C++ has it in `Arachne/SkeletalTrapezoidation`, `Line`, `SLA/Rotfinder`
+- `its_face_normal_f32` :563
+- `point_sub` :829
+- `CoordinateFunctor::new` :843
+- `CoordinateFunctor::call` :851
+- `GlobalModelInfo::default` :881
+- `GlobalModelInfo::any_triangle_in_radius` :917
+- `GlobalModelInfo::build_mesh_samples_tree` :958
+- `finish_global_occlusion` :1257
+- `occlusion_set_from_volumes` :1363
+- `collect_points` :1450 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`
+- `entity_role` :1480
+- `SeamComparator::new` :1871
+- `SeamCandidate::perimeter_flow_width` :2054
+- `SeamCandidate::set_flow_width_hint` :2065
+- `PerimeterDistancer::new` :2255
+- `unscale_point` :2319
+- `SeamPlacerConfig::default` :2361
+- `Point3f::new` :2382
+- `SeamPlacer::new` :2424
+- `SeamPlacer::stats` :2432
+- `SeamPlacer::init_simple` :2452
+- `SeamPlacer::seam_frame_offset` :2478
+- `gather_layer_perimeter` :3671
+- `find_best_seam_index` :3741
+- `place_seam` :3792
+- `create_seam_placer` :3801
 
 ### `GCode/Smoothing` (.cpp+.hpp) and `gcode/smoothing.rs`
 

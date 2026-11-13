@@ -68,5 +68,13 @@
   "functions": [
    "its_short_edge_collpase"
   ]
+ },
+ {
+  "unit": "GCode/SeamPlacer",
+  "round": "882",
+  "evidence": "tests/raycast_visibility_native_parity.rs: the visibility of 30,000 samples (25 rays each) on the decimated Benchy equal to the C++, bit for bit; byte-identical G-code on the three fixtures with the shim call replaced",
+  "functions": [
+   "raycast_visibility"
+  ]
  }
 ]

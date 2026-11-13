@@ -481,25 +481,30 @@ impl Frame {
 
     // SeamPlacer.cpp:89-96
     pub fn set_from_z(&mut self, z: &Vec3f) {
-        self.m_z = z.normalize();
+        self.m_z = crate::triangle_set_sampling::eigen_normalized3f(z);
         let tmp_z = self.m_z;
         let tmp_x = if tmp_z.x.abs() > 0.99 {
             Vec3f::new(0.0, 1.0, 0.0)
         } else {
             Vec3f::new(1.0, 0.0, 0.0)
         };
-        self.m_y = tmp_z.cross(&tmp_x).normalize();
-        self.m_x = self.m_y.cross(&tmp_z);
+        self.m_y = crate::triangle_set_sampling::eigen_normalized3f(&crate::triangle_set_sampling::eigen_cross3f(&tmp_z, &tmp_x));
+        self.m_x = crate::triangle_set_sampling::eigen_cross3f(&self.m_y, &tmp_z);
     }
 
     // SeamPlacer.cpp:98
     pub fn to_world(&self, a: &Vec3f) -> Vec3f {
+        // Per component `(a.x * mX + a.y * mY) + a.z * mZ`, unfused.
         a.x * self.m_x + a.y * self.m_y + a.z * self.m_z
     }
 
     // SeamPlacer.cpp:100
     pub fn to_local(&self, a: &Vec3f) -> Vec3f {
-        Vec3f::new(self.m_x.dot(a), self.m_y.dot(a), self.m_z.dot(a))
+        Vec3f::new(
+            crate::triangle_set_sampling::eigen_dot3f(&self.m_x, a),
+            crate::triangle_set_sampling::eigen_dot3f(&self.m_y, a),
+            crate::triangle_set_sampling::eigen_dot3f(&self.m_z, a),
+        )
     }
 
     // SeamPlacer.cpp:102
@@ -532,11 +537,13 @@ pub fn sample_sphere_uniform(samples: &Vec2f) -> Vec3f {
 /// SeamPlacer.cpp:119-124
 pub fn sample_hemisphere_uniform(samples: &Vec2f) -> Vec3f {
     let term1 = 2.0 * PI * samples.x;
-    let term2 = 2.0 * (samples.y - samples.y * samples.y).sqrt();
+    // `y - y * y` and `1 - 2 * y` are each one expression, which the C++ build
+    // contracts into a fused multiply-add.
+    let term2 = 2.0 * (-samples.y).mul_add(samples.y, samples.y).sqrt();
     Vec3f::new(
         term1.cos() * term2,
         term1.sin() * term2,
-        (1.0 - 2.0 * samples.y).abs(),
+        (-2.0f32).mul_add(samples.y, 1.0).abs(),
     )
 }
 
@@ -558,7 +565,7 @@ fn its_face_normal_f32(its: &indexed_triangle_set, face_idx: usize) -> Vec3f {
     let v0 = its.vertices[f.x as usize];
     let v1 = its.vertices[f.y as usize];
     let v2 = its.vertices[f.z as usize];
-    (v1 - v0).cross(&(v2 - v1)).normalize()
+    crate::triangle_set_sampling::eigen_normalized3f(&crate::triangle_set_sampling::eigen_normalized3f(&crate::triangle_set_sampling::eigen_cross3f(&(v1 - v0), &(v2 - v1))))
 }
 
 /// SeamPlacer.cpp:135-214 — `raycast_visibility`.
@@ -592,8 +599,12 @@ pub fn raycast_visibility(
     // shim (AABBTreeIndirect + Frame + hemisphere dirs) — 112/750k edge-grazing
     // ray decisions differed between the rust port and native Eigen/igl codegen.
     // Benchy has no negative volumes; fall through to the rust port otherwise.
+    // RAYCAST_RUST (on unless =0): the Rust below in place of the shim;
+    // tests/raycast_visibility_native_parity.rs holds it equal to the C++ on the
+    // Benchy's 30,000 samples. =0 calls the shim, as R190 to R881 did.
     if negative_volumes_start_index >= triangles.indices.len()
         && crate::faithful_gate("ZSMOOTH_FAITHFUL")
+        && !crate::faithful_gate("RAYCAST_RUST")
     {
         let verts_flat: Vec<f32> = triangles
             .vertices
@@ -631,10 +642,10 @@ pub fn raycast_visibility(
     // SeamPlacer.cpp:145-152
     for x_idx in 0..SQR_RAYS_PER_SAMPLE_POINT {
         // C++: float sample_x = x_idx * step_size + step_size / 2.0;
-        let sample_x = x_idx as f32 * step_size + step_size / 2.0;
+        let sample_x = ((x_idx as f32 * step_size) as f64 + step_size as f64 / 2.0) as f32;
         for y_idx in 0..SQR_RAYS_PER_SAMPLE_POINT {
             let dir_index = x_idx * SQR_RAYS_PER_SAMPLE_POINT + y_idx;
-            let sample_y = y_idx as f32 * step_size + step_size / 2.0;
+            let sample_y = ((y_idx as f32 * step_size) as f64 + step_size as f64 / 2.0) as f32;
             precomputed_sample_directions[dir_index] =
                 sample_hemisphere_uniform(&Vec2f::new(sample_x, sample_y));
         }
@@ -689,7 +700,7 @@ pub fn raycast_visibility(
                         );
                         // SeamPlacer.cpp:180 — hit && face_normal·ray_dir <= 0
                         if let Some((_t, face_id, _p)) = hit {
-                            if its_face_normal_f32(triangles, face_id).dot(&final_ray_dir) <= 0.0 {
+                            if crate::triangle_set_sampling::eigen_dot3f(&its_face_normal_f32(triangles, face_id), &final_ray_dir) <= 0.0 {
                                 *out -= decrease_step;
                             }
                         }
