@@ -434,7 +434,7 @@ fn log(text: &str) {
     }
 }
 
-/// `cz_clip_extrusion`, as `clip_extrusion_shim` calls it. `None` when the library died.
+/// `cz_clip_extrusion`, as the engine called it until R895. `None` when the library died.
 fn library_clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> Option<ZPaths> {
     let (subject_flat, _) = flat(&vec![subject.clone()]);
     let (clip_flat, clip_lens) = flat(clip);
@@ -456,7 +456,7 @@ fn library_clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -
     Some(unsafe { take_paths(out) })
 }
 
-/// `cz_detect_floating`, as `detect_floating_shim` calls it. `None` when the library died.
+/// `cz_detect_floating`, as the engine called it until R895. `None` when the library died.
 fn library_detect_floating(subject: &ZPath, clip: &ZPaths, subject_idx_range: i32) -> Option<(ZPaths, usize)> {
     let (subject_flat, _) = flat(&vec![subject.clone()]);
     let (clip_flat, clip_lens) = flat(clip);

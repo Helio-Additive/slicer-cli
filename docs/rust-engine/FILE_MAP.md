@@ -209,7 +209,7 @@ their function names come from, when there is one.
 | `clipper_build_xy.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xyz.rs` | no C++ file of this name | 9 |  |
 | `clipper_lib_z.rs` | no C++ file of this name | 1 |  |
-| `clipper_z.rs` | no C++ file of this name | 17 |  |
+| `clipper_z.rs` | no C++ file of this name | 15 |  |
 | `color_space_convert.rs` | no C++ file of this name | 1 |  |
 | `csg_mesh/mod.rs` | module | 0 |  |
 | `debug/compare.rs` | no C++ file of this name | 48 |  |

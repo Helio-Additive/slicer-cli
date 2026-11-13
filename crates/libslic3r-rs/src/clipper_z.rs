@@ -1,6 +1,6 @@
-//! Safe Rust wrapper over the vendored `ClipperLib_Z` `clip_extrusion`
-//! primitive (`clipper-z-sys`), the faithful Z-tagged open-path clip from
-//! BambuStudio's `OverhangDetector.cpp:18-108`.
+//! `clip_extrusion`, the Z-tagged open-path clip of BambuStudio's
+//! `OverhangDetector.cpp:18-108`, and `detect_floating`, on the Rust `ClipperLib_Z`
+//! (`crate::clipper_lib_z`). Nothing here calls `clipper-z-sys`.
 //!
 //! This is the primitive the crate's Clipper2 backend cannot express: a boolean
 //! clip of an *open* subject path against *closed* clip paths, where each output
@@ -47,19 +47,14 @@ fn narrow_i32(v: i64) -> i32 {
 /// width; `clip` are CLOSED clip paths. Returns the clipped open paths with
 /// interpolated Z (width) tags. Empty `subject` yields an empty result.
 ///
-/// Runs on the Rust `ClipperLib_Z` unless the environment has `CLIPPER_Z_RUST=0`, which
-/// runs the C++ of `clipper-z-sys` (`clip_extrusion_shim`). On the Rust `ClipperLib_Z` the
-/// pass over the vertices left with Z == 0 is the engine's (OverhangDetector.cpp:68-98,
-/// `clip_extrusion_cpp`) unless the environment has `CLIP_EXTRUSION_CPP=0`, which runs
-/// the shim's pass (`clip_extrusion_port`).
+/// Runs on the Rust `ClipperLib_Z`. The pass over the vertices left with Z == 0 is the
+/// engine's (OverhangDetector.cpp:68-98, `clip_extrusion_cpp`) unless the environment has
+/// `CLIP_EXTRUSION_CPP=0`, which runs the pass the C++ shim had (`clip_extrusion_port`).
 pub fn clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
-    if crate::faithful_gate("CLIPPER_Z_RUST") {
-        if crate::faithful_gate("CLIP_EXTRUSION_CPP") {
-            return clip_extrusion_cpp(subject, clip, clip_type);
-        }
-        return clip_extrusion_port(subject, clip, clip_type);
+    if crate::faithful_gate("CLIP_EXTRUSION_CPP") {
+        return clip_extrusion_cpp(subject, clip, clip_type);
     }
-    clip_extrusion_shim(subject, clip, clip_type)
+    clip_extrusion_port(subject, clip, clip_type)
 }
 
 /// `ZPath` (libslic3r coordinates, `i64`) to `ClipperLib_Z::Path` (`cInt` is `i32`).
@@ -90,7 +85,7 @@ fn squared_norm_of_difference(a: &clipper_lib_z::IntPoint, b: &clipper_lib_z::In
 /// `clip_extrusion` on the Rust `ClipperLib_Z` (`crate::clipper_lib_z`): the body of
 /// `cz_clip_extrusion` (`crates/clipper-z-sys/shim/clipper_z_shim.cpp`), statement for
 /// statement, which follows OverhangDetector.cpp:18-108.
-/// `tests/clipper_z_engine_native_parity.rs` holds it equal to `clip_extrusion_shim`.
+/// `tests/clipper_z_engine_native_parity.rs` holds it equal to `cz_clip_extrusion` of the shim.
 /// Its pass over the vertices left with Z == 0 is the shim's, which is not the engine's:
 /// `clip_extrusion_cpp` has the engine's.
 pub fn clip_extrusion_port(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
@@ -350,85 +345,6 @@ fn clip_extrusion_impl(subject: &ZPath, clip: &ZPaths, clip_type: ClipType, cpp_
     from_clipper_lib_z_paths(&clipped_paths)
 }
 
-/// `clip_extrusion` through the C++ of `clipper-z-sys` (`cz_clip_extrusion`).
-pub fn clip_extrusion_shim(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
-    if subject.is_empty() {
-        return Vec::new();
-    }
-
-    // Flatten the subject into x,y,z i32 triples.
-    let mut subject_flat: Vec<i32> = Vec::with_capacity(subject.len() * 3);
-    for &(x, y, z) in subject {
-        subject_flat.push(narrow_i32(x));
-        subject_flat.push(narrow_i32(y));
-        subject_flat.push(narrow_i32(z));
-    }
-
-    // Flatten the clip paths + per-path lengths.
-    let mut clip_flat: Vec<i32> = Vec::new();
-    let mut clip_lens: Vec<i32> = Vec::with_capacity(clip.len());
-    for path in clip {
-        clip_lens.push(path.len() as i32);
-        clip_flat.reserve(path.len() * 3);
-        for &(x, y, z) in path {
-            clip_flat.push(narrow_i32(x));
-            clip_flat.push(narrow_i32(y));
-            clip_flat.push(narrow_i32(z));
-        }
-    }
-
-    // SAFETY: pointers reference live, correctly-sized Vecs for the duration of
-    // the call; the shim only reads them. The returned CzZPaths owns malloc'd
-    // buffers that we copy out and then free via cz_free_zpaths.
-    let raw = unsafe {
-        clipper_z_sys::cz_clip_extrusion(
-            subject_flat.as_ptr(),
-            subject.len() as i32,
-            if clip_flat.is_empty() {
-                std::ptr::null()
-            } else {
-                clip_flat.as_ptr()
-            },
-            if clip_lens.is_empty() {
-                std::ptr::null()
-            } else {
-                clip_lens.as_ptr()
-            },
-            clip.len() as i32,
-            clip_type as i32,
-        )
-    };
-
-    let mut out: ZPaths = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: the shim guarantees path_lens has num_paths entries and coords
-        // has 3*total_points i32s, with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut path: ZPath = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                let z = coords[cursor * 3 + 2] as i64;
-                path.push((x, y, z) as ZPoint);
-                cursor += 1;
-            }
-            out.push(path);
-        }
-    }
-
-    // SAFETY: `raw` was produced by cz_clip_extrusion and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-
-    out
-}
-
 /// Faithful `detect_floating_line` Z-clipper (FillFloatingConcentric.cpp:431-475).
 ///
 /// Runs the ClipperLib_Z Clipper twice on the same inputs — `ctIntersection` and
@@ -448,19 +364,15 @@ pub fn clip_extrusion_shim(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) 
 /// NOT coordinates — they are passed through unscaled (and fit i32: the hash is
 /// masked to `0x7fffffff` then negated).
 ///
-/// Runs on the Rust `ClipperLib_Z` (`detect_floating_port`) unless the environment has
-/// `CLIPPER_Z_RUST=0`, which runs the C++ of `clipper-z-sys` (`detect_floating_shim`).
+/// Runs on the Rust `ClipperLib_Z` (`detect_floating_port`).
 pub fn detect_floating(subject: &ZPath, clip: &ZPaths, subject_idx_range: i32) -> (ZPaths, usize) {
-    if crate::faithful_gate("CLIPPER_Z_RUST") {
-        return detect_floating_port(subject, clip, subject_idx_range);
-    }
-    detect_floating_shim(subject, clip, subject_idx_range)
+    detect_floating_port(subject, clip, subject_idx_range)
 }
 
 /// `detect_floating` on the Rust `ClipperLib_Z` (`crate::clipper_lib_z`): the body of
 /// `cz_detect_floating` (`crates/clipper-z-sys/shim/clipper_z_shim.cpp`), statement for
 /// statement, which follows FillFloatingConcentric.cpp:407-481 (`detect_floating_line`).
-/// `tests/clipper_z_engine_native_parity.rs` holds it equal to `detect_floating_shim`.
+/// `tests/clipper_z_engine_native_parity.rs` holds it equal to `cz_detect_floating` of the shim.
 pub fn detect_floating_port(subject: &ZPath, clip: &ZPaths, subject_idx_range: i32) -> (ZPaths, usize) {
     use clipper_lib_z::IntPoint;
     // The wrapper of the shim returns before it calls the shim.
@@ -543,82 +455,6 @@ pub fn detect_floating_port(subject: &ZPath, clip: &ZPaths, subject_idx_range: i
     to_merge.extend(intersect_out.iter().cloned());
 
     (from_clipper_lib_z_paths(&to_merge), out_num_diff_paths)
-}
-
-/// `detect_floating` through the C++ of `clipper-z-sys` (`cz_detect_floating`).
-pub fn detect_floating_shim(subject: &ZPath, clip: &ZPaths, subject_idx_range: i32) -> (ZPaths, usize) {
-    if subject.is_empty() {
-        return (Vec::new(), 0);
-    }
-
-    let mut subject_flat: Vec<i32> = Vec::with_capacity(subject.len() * 3);
-    for &(x, y, z) in subject {
-        subject_flat.push(narrow_i32(x));
-        subject_flat.push(narrow_i32(y));
-        subject_flat.push(narrow_i32(z));
-    }
-
-    let mut clip_flat: Vec<i32> = Vec::new();
-    let mut clip_lens: Vec<i32> = Vec::with_capacity(clip.len());
-    for path in clip {
-        clip_lens.push(path.len() as i32);
-        clip_flat.reserve(path.len() * 3);
-        for &(x, y, z) in path {
-            clip_flat.push(narrow_i32(x));
-            clip_flat.push(narrow_i32(y));
-            clip_flat.push(narrow_i32(z));
-        }
-    }
-
-    let mut num_diff_paths: i32 = 0;
-    // SAFETY: pointers reference live, correctly-sized Vecs for the duration of
-    // the call; the shim only reads them. The returned CzZPaths owns malloc'd
-    // buffers copied out and freed below.
-    let raw = unsafe {
-        clipper_z_sys::cz_detect_floating(
-            subject_flat.as_ptr(),
-            subject.len() as i32,
-            if clip_flat.is_empty() {
-                std::ptr::null()
-            } else {
-                clip_flat.as_ptr()
-            },
-            if clip_lens.is_empty() {
-                std::ptr::null()
-            } else {
-                clip_lens.as_ptr()
-            },
-            clip.len() as i32,
-            subject_idx_range,
-            &mut num_diff_paths as *mut i32,
-        )
-    };
-
-    let mut out: ZPaths = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut path: ZPath = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                let z = coords[cursor * 3 + 2] as i64;
-                path.push((x, y, z) as ZPoint);
-                cursor += 1;
-            }
-            out.push(path);
-        }
-    }
-
-    // SAFETY: `raw` was produced by cz_detect_floating and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-
-    (out, num_diff_paths.max(0) as usize)
 }
 
 // ---------------------------------------------------------------------------
