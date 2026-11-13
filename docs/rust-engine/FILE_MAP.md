@@ -6522,9 +6522,9 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `MMU_Graph::remove_edge` :102 and `MmuGraph::remove_edge` :181 (50%, 0.71x)
 - divergent: `MMU_Graph::is_edge_attach_to_contour` :193 and `MmuGraph::is_edge_attach_to_contour` :317 (25%, 0.6x)
 - divergent: `MMU_Graph::is_edge_connecting_two_contour_vertices` :198 and `MmuGraph::is_edge_connecting_two_contour_vertices` :327 (25%, 0.6x)
-- partial: `is_point_closer_to_beginning_of_line` :1716 and `is_point_closer_to_beginning_of_line` :1675 (50%, 0.71x)
-- partial: `clip_finite_voronoi_edge` :1721 and `clip_finite_voronoi_edge` :2017 (38%, 0.78x)
-- partial: `merge_segmented_layers` :2039 and `merge_segmented_layers` :3244 (50%, 0.99x)
+- partial: `is_point_closer_to_beginning_of_line` :1716 and `is_point_closer_to_beginning_of_line` :1673 (50%, 0.71x)
+- partial: `clip_finite_voronoi_edge` :1721 and `clip_finite_voronoi_edge` :2015 (38%, 0.78x)
+- partial: `merge_segmented_layers` :2039 and `merge_segmented_layers` :3242 (50%, 0.99x)
 
 Missing in the Rust file:
 
@@ -6570,42 +6570,42 @@ Rust only:
 - `colored_points_to_polygon_one` :522
 - `is_equal_eps` :814
 - `is_less_eps` :823
-- `line_distance_to_squared` :896
-- `PaintedLineVisitor::new` :941
-- `PaintedLineVisitor::visit` :957 — C++ has it in `KDTreeIndirect`, `MeshSplitImpl`
-- `cos_threshold2` :1027
-- `append_threshold` :1032
-- `append_threshold2` :1037
-- `get_extents_colored` :1042
-- `to_lines_colored` :1055
-- `CPoint::with_contour` :1731
-- `CPoint::new` :1742
-- `CPointLookup::new` :1765
-- `CPointLookup::insert` :1798 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
-- `CPointLookup::find` :1804 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
-- `CPointLookup::find_all` :1834 — C++ has it in `Point`
-- `ulp_eq` :1869
-- `edge_cell_source_index` :1891
-- `vd_vertex_xy` :1898
-- `retrieve_point_vd` :1906
-- `clip_infinite_edge` :1923 — C++ has it in `Geometry/MedialAxis`, `Geometry/VoronoiVisualUtils`
-- `prev_contour_line` :2045
-- `next_contour_line` :2060
-- `append_edge_if_intersects_with_contour` :2077
-- `polygons_extents` :2475
-- `tb_scaled_f32` :2734
-- `tb_mm` :2741
-- `tb_union_ex` :2747
-- `tb_opening_ex` :2756
-- `tb_is_volume_sinking` :2769
-- `mmu_segmentation_top_and_bottom_layers_tier1` :2799
-- `upper_bound_f64` :3334
-- `expolygons_to_edge_grid_contours` :3351
-- `multi_material_segmentation_by_painting_tier1` :3428
-- `sqr_f64` :4226
-- `perp` :4232 — C++ has it in `Point`
-- `next_idx_modulo` :4238 — C++ has it in `Utils`
-- `_parity_anchors` :4250
+- `line_distance_to_squared` :894
+- `PaintedLineVisitor::new` :939
+- `PaintedLineVisitor::visit` :955 — C++ has it in `KDTreeIndirect`, `MeshSplitImpl`
+- `cos_threshold2` :1025
+- `append_threshold` :1030
+- `append_threshold2` :1035
+- `get_extents_colored` :1040
+- `to_lines_colored` :1053
+- `CPoint::with_contour` :1729
+- `CPoint::new` :1740
+- `CPointLookup::new` :1763
+- `CPointLookup::insert` :1796 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
+- `CPointLookup::find` :1802 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
+- `CPointLookup::find_all` :1832 — C++ has it in `Point`
+- `ulp_eq` :1867
+- `edge_cell_source_index` :1889
+- `vd_vertex_xy` :1896
+- `retrieve_point_vd` :1904
+- `clip_infinite_edge` :1921 — C++ has it in `Geometry/MedialAxis`, `Geometry/VoronoiVisualUtils`
+- `prev_contour_line` :2043
+- `next_contour_line` :2058
+- `append_edge_if_intersects_with_contour` :2075
+- `polygons_extents` :2473
+- `tb_scaled_f32` :2732
+- `tb_mm` :2739
+- `tb_union_ex` :2745
+- `tb_opening_ex` :2754
+- `tb_is_volume_sinking` :2767
+- `mmu_segmentation_top_and_bottom_layers_tier1` :2797
+- `upper_bound_f64` :3332
+- `expolygons_to_edge_grid_contours` :3349
+- `multi_material_segmentation_by_painting_tier1` :3426
+- `sqr_f64` :4224
+- `perp` :4230 — C++ has it in `Point`
+- `next_idx_modulo` :4236 — C++ has it in `Utils`
+- `_parity_anchors` :4248
 
 ### `MultiNozzleUtils` (.cpp+.hpp) and `multi_nozzle_utils.rs`
 

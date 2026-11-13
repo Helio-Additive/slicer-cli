@@ -826,14 +826,13 @@ fn is_less_eps(left: f32, right: f32, eps: f32) -> bool {
 
 // Assumes that is at most same projected_l length or below than projection_l
 // MultiMaterialSegmentation.cpp:493
-fn project_line_on_line(projection_l: &Line, projected_l: &Line, new_projected: &mut Line) -> bool {
-    // R806 MMS_PROJECT_SHIM (faithful ON): the native 2D dot products contract to
-    // FMA under clang's default -ffp-contract=on; the pure-rust twin does not, and
-    // the truncating cast turns that ULP into a 1-unit endpoint flip on ~1% of
-    // painted-line projections (layer-12 Majora: 6/625 coloured lines), which
-    // then moves Voronoi vertices and every segmented piece. Same expression,
-    // same Eigen, same codegen via the shim.
-    if crate::faithful_gate("MMS_PROJECT_SHIM") {
+pub fn project_line_on_line(projection_l: &Line, projected_l: &Line, new_projected: &mut Line) -> bool {
+    // MMS_PROJECT_RUST (on unless =0): the C++ below in plain double, which
+    // `tests/project_line_on_line_native_parity.rs` holds equal to the C++
+    // compiled with Eigen (no step is fused; the products of coordinate
+    // differences are exact). =0 calls that C++ through `eigen-transform-sys`,
+    // as R806 to R872 did.
+    if !crate::faithful_gate("MMS_PROJECT_RUST") {
         return match eigen_transform_sys::project_line_on_line(
             (projection_l.a.x, projection_l.a.y),
             (projection_l.b.x, projection_l.b.y),
@@ -841,12 +840,6 @@ fn project_line_on_line(projection_l: &Line, projected_l: &Line, new_projected: 
             (projected_l.b.x, projected_l.b.y),
         ) {
             Some(o) => {
-                if crate::probe_enabled("PROJDBG") && (o[0] == -7803031 || o[0] == -7803032 || o[2] == -7803031 || o[2] == -7803032) {
-                    let v1 = pt_to_vec2d(projection_l.b - projection_l.a);
-                    let va = pt_to_vec2d(projected_l.a - projection_l.a);
-                    let l2 = v1.length_squared();
-                    eprintln!("PROJDBG pa={},{} pb={},{} qa={},{} qb={},{} t1={:.17e} dot1={:.17e} l2={:.17e} -> {},{} {},{}", projection_l.a.x, projection_l.a.y, projection_l.b.x, projection_l.b.y, projected_l.a.x, projected_l.a.y, projected_l.b.x, projected_l.b.y, (va.dot(&v1) / l2).clamp(0.0, 1.0), va.dot(&v1), l2, o[0], o[1], o[2], o[3]);
-                }
                 *new_projected = Line::new(Point::new(o[0], o[1]), Point::new(o[2], o[3]));
                 true
             }
@@ -854,26 +847,31 @@ fn project_line_on_line(projection_l: &Line, projected_l: &Line, new_projected: 
         };
     }
     // MultiMaterialSegmentation.cpp:495-498
-    let v1 = pt_to_vec2d(projection_l.b - projection_l.a);
-    let va = pt_to_vec2d(projected_l.a - projection_l.a);
-    let vb = pt_to_vec2d(projected_l.b - projection_l.a);
-    let l2 = v1.length_squared(); // avoid a sqrt
+    let v1x = (projection_l.b.x - projection_l.a.x) as f64;
+    let v1y = (projection_l.b.y - projection_l.a.y) as f64;
+    let vax = (projected_l.a.x - projection_l.a.x) as f64;
+    let vay = (projected_l.a.y - projection_l.a.y) as f64;
+    let vbx = (projected_l.b.x - projection_l.a.x) as f64;
+    let vby = (projected_l.b.y - projection_l.a.y) as f64;
+    let l2 = v1x * v1x + v1y * v1y; // avoid a sqrt
     if l2 == 0.0 {
         return false;
     }
     // MultiMaterialSegmentation.cpp:501-508
-    let mut t1 = va.dot(&v1) / l2;
-    let mut t2 = vb.dot(&v1) / l2;
+    let mut t1 = (vax * v1x + vay * v1y) / l2;
+    let mut t2 = (vbx * v1x + vby * v1y) / l2;
     t1 = t1.clamp(0.0, 1.0);
     t2 = t2.clamp(0.0, 1.0);
-    debug_assert!(t1 >= 0.0);
-    debug_assert!(t2 >= 0.0);
-    debug_assert!(t1 <= 1.0);
-    debug_assert!(t2 <= 1.0);
 
-    // MultiMaterialSegmentation.cpp:510-512
-    let p1 = projection_l.a + vec2d_to_pt(v1 * t1);
-    let p2 = projection_l.a + vec2d_to_pt(v1 * t2);
+    // MultiMaterialSegmentation.cpp:510-512 — `.cast<coord_t>()` truncates.
+    let p1 = Point::new(
+        projection_l.a.x + (t1 * v1x) as crate::Coord,
+        projection_l.a.y + (t1 * v1y) as crate::Coord,
+    );
+    let p2 = Point::new(
+        projection_l.a.x + (t2 * v1x) as crate::Coord,
+        projection_l.a.y + (t2 * v1y) as crate::Coord,
+    );
     *new_projected = Line::new(p1, p2);
     true
 }

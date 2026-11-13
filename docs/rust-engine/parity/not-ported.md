@@ -48,7 +48,7 @@ is left on the fixtures' path (`GEOCALLS=1` lists them, README "Probes").
 |-|-|-|
 | `transform_verts_unified` (3), `transform_verts_for_slicing`, `transform_verts_affine_f32_pair` | `triangle_mesh_slicer.rs`, `multi_material_segmentation.rs`, `app_slice.rs` | `its_transform`, the vertex transform of `slice_mesh` (Eigen float evaluation order) |
 | `douglas_peucker_keep` | `tests/douglas_peucker_native_parity.rs` only (since R870) | `MultiPoint::_douglas_peucker`; replaced by the Rust port in R867, kept as the test's reference |
-| `project_line_on_line` | `multi_material_segmentation.rs` | the projection in `MultiMaterialSegmentation.cpp` |
+| `project_line_on_line` | `multi_material_segmentation.rs` (only with `MMS_PROJECT_RUST=0`), `tests/project_line_on_line_native_parity.rs` | `project_line_on_line` of MultiMaterialSegmentation.cpp; replaced by the Rust port in R873 |
 | `short_edge_collapse` | `short_edge_collapse.rs` | `its_short_edge_collpase` |
 | `sample_uniform` | `triangle_set_sampling.rs` | `sample_its_uniform_parallel` |
 | `raycast_visibility_native` | `gcode/seam_placer.rs` | the visibility rays of SeamPlacer.cpp (AABBTreeIndirect) |
@@ -102,5 +102,6 @@ more are missing from a paired Rust file and from every other. `crates/libslic3r
 | Round | Item |
 |-|-|
 | R856 | every helper on the 1 um grid on the fixtures' path computes at coord_t |
+| R873 | `project_line_on_line` of `eigen-transform-sys` is off the engine's path: the Rust port gives the same bytes on the fixtures and the same result as the C++ on 900,000 test cases |
 | R867 | `douglas_peucker_keep` of `eigen-transform-sys` is no longer on the engine's path: `multi_point::douglas_peucker_faithful` gives the same bytes on the fixtures and the same result as the C++ on 400,000 test polylines |
 | R861 | `ExtrusionMultiPath` is an entity (`ExtrusionEntityType::MultiPath`); ConflictChecker, LayerRegion, PrintExtents and ShortestPath dispatch on it as C++ does |

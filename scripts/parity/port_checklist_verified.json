@@ -36,5 +36,13 @@
   "functions": [
    "MultiPoint::_douglas_peucker"
   ]
+ },
+ {
+  "unit": "MultiMaterialSegmentation",
+  "round": "873",
+  "evidence": "tests/project_line_on_line_native_parity.rs: 900,000 line pairs at three magnitudes equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced",
+  "functions": [
+   "project_line_on_line"
+  ]
  }
 ]

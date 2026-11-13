@@ -16,8 +16,8 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 |-|-|-|-|
 | not started `[ ]` | 3176 | 35.1% | 47.9% |
 | partial `[~]` | 2733 | 30.2% | 28.3% |
-| ported `[x]` | 3126 | 34.5% | 23.2% |
-| verified `[v]` | 17 | 0.2% | 0.5% |
+| ported `[x]` | 3125 | 34.5% | 23.2% |
+| verified `[v]` | 18 | 0.2% | 0.6% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -250,7 +250,7 @@ the end; the goal is none.
 | `Model` | 1 | `model.rs` | partial | 374 | 251 | 115 | 8 | 0 |
 | `ModelArrange` | 1 | `model_arrange.rs` | partial | 14 | 9 | 3 | 2 | 0 |
 | `MTUtils` | 1 | `mt_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
-| `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 13 | 40 | 0 |
+| `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 13 | 39 | 1 |
 | `MultiNozzleUtils` | 1 | `multi_nozzle_utils.rs` | partial | 59 | 9 | 11 | 39 | 0 |
 | `MultiPoint` | 1 | `multi_point.rs` | partial | 52 | 0 | 38 | 13 | 1 |
 | `MutablePolygon` | 1 | `mutable_polygon.rs` | partial | 47 | 0 | 20 | 27 | 0 |
@@ -8518,7 +8518,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 - [ ] `mk_point` (line 45) → `multi_material_segmentation.rs`
 - [ ] `mk_vec2` (line 47) → `multi_material_segmentation.rs`
 - [~] `vertex_equal_to_point` (line 49) → `geometry/voronoi_annotation.rs` — not in the paired file
-- [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:1863`
+- [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:1861`
 - [~] `colored_points_to_polygon` (line 314) → `multi_material_segmentation.rs` — another overload of the name is ported
 - [x] `colored_points_to_polygon` (line 322) → `multi_material_segmentation.rs:532`
 - [x] `get_all_next_arcs` (line 330) → `multi_material_segmentation.rs:542`
@@ -8528,18 +8528,18 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 - [x] `extract_colored_segments` (line 414) → `multi_material_segmentation.rs:699`
 - [x] `is_equal` (line 485) → `multi_material_segmentation.rs:810`
 - [x] `is_less` (line 489) → `multi_material_segmentation.rs:819`
-- [x] `project_line_on_line` (line 494) → `multi_material_segmentation.rs:829`
+- [v] `project_line_on_line` (line 494) → `multi_material_segmentation.rs:829` — R873: tests/project_line_on_line_native_parity.rs: 900,000 line pairs at three magnitudes equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced
 - [~] `get_extents` (line 593) → `ex_polygon.rs, ex_polygon_collection.rs, fill/lightning/tree_node.rs` — not in the paired file
 - [~] `to_lines` (line 605) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [x] `get_segments` (line 617) → `multi_material_segmentation.rs:1068`
-- [x] `filter_painted_lines` (line 642) → `multi_material_segmentation.rs:1103`
-- [x] `post_process_painted_lines` (line 689) → `multi_material_segmentation.rs:1177`
-- [x] `are_lines_connected` (line 722) → `multi_material_segmentation.rs:1245`
-- [x] `colorize_line` (line 731) → `multi_material_segmentation.rs:1255`
-- [x] `filter_colorized_polygon` (line 808) → `multi_material_segmentation.rs:1363`
-- [x] `colorize_contour` (line 897) → `multi_material_segmentation.rs:1503`
-- [x] `colorize_contours` (line 937) → `multi_material_segmentation.rs:1572`
-- [x] `points_inside` (line 961) → `multi_material_segmentation.rs:1617`
+- [x] `get_segments` (line 617) → `multi_material_segmentation.rs:1066`
+- [x] `filter_painted_lines` (line 642) → `multi_material_segmentation.rs:1101`
+- [x] `post_process_painted_lines` (line 689) → `multi_material_segmentation.rs:1175`
+- [x] `are_lines_connected` (line 722) → `multi_material_segmentation.rs:1243`
+- [x] `colorize_line` (line 731) → `multi_material_segmentation.rs:1253`
+- [x] `filter_colorized_polygon` (line 808) → `multi_material_segmentation.rs:1361`
+- [x] `colorize_contour` (line 897) → `multi_material_segmentation.rs:1501`
+- [x] `colorize_contours` (line 937) → `multi_material_segmentation.rs:1570`
+- [x] `points_inside` (line 961) → `multi_material_segmentation.rs:1615`
 - [ ] `export_graph_to_svg` (line 984) → `multi_material_segmentation.rs`
 - [ ] `non_deleted_edge_count` (line 1016) → `multi_material_segmentation.rs`
 - [ ] `can_vertex_be_deleted` (line 1027) → `multi_material_segmentation.rs`
@@ -8551,26 +8551,26 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 - [ ] `calc_total_edge_length` (line 1077) → `multi_material_segmentation.rs`
 - [ ] `remove_multiple_edges_in_vertex` (line 1118) → `multi_material_segmentation.rs`
 - [~] `extract_colored_segments` (line 1151) → `multi_material_segmentation.rs` — another overload of the name is ported
-- [x] `cut_segmented_layers` (line 1285) → `multi_material_segmentation.rs:2614`
+- [x] `cut_segmented_layers` (line 1285) → `multi_material_segmentation.rs:2612`
 - [ ] `is_volume_sinking` (line 1311) → `multi_material_segmentation.rs`
 - [ ] `effective_color_penetration_layers` (line 1328) → `multi_material_segmentation.rs`
 - [ ] `mmu_segmentation_top_and_bottom_layers` (line 1356) → `multi_material_segmentation.rs`
-- [x] `init_polygon_indices` (line 1688) → `multi_material_segmentation.rs:1639`
-- [x] `line_intersection_with_epsilon` (line 1703) → `multi_material_segmentation.rs:1658`
-- [x] `mark_processed` (line 1710) → `multi_material_segmentation.rs:2036`
-- [~] `is_point_closer_to_beginning_of_line` (line 1716) → `multi_material_segmentation.rs:1675` — partial
-- [~] `clip_finite_voronoi_edge` (line 1721) → `multi_material_segmentation.rs:2017` — partial
-- [x] `has_same_color` (line 1739) → `multi_material_segmentation.rs:1681`
-- [x] `build_graph` (line 1741) → `multi_material_segmentation.rs:2112`
-- [x] `get_all_segments` (line 1958) → `multi_material_segmentation.rs:2486`
-- [x] `compute_edge_length` (line 1968) → `multi_material_segmentation.rs:2496`
-- [x] `remove_multiple_edges_in_vertices` (line 2008) → `multi_material_segmentation.rs:2553`
-- [~] `merge_segmented_layers` (line 2039) → `multi_material_segmentation.rs:3244` — partial
+- [x] `init_polygon_indices` (line 1688) → `multi_material_segmentation.rs:1637`
+- [x] `line_intersection_with_epsilon` (line 1703) → `multi_material_segmentation.rs:1656`
+- [x] `mark_processed` (line 1710) → `multi_material_segmentation.rs:2034`
+- [~] `is_point_closer_to_beginning_of_line` (line 1716) → `multi_material_segmentation.rs:1673` — partial
+- [~] `clip_finite_voronoi_edge` (line 1721) → `multi_material_segmentation.rs:2015` — partial
+- [x] `has_same_color` (line 1739) → `multi_material_segmentation.rs:1679`
+- [x] `build_graph` (line 1741) → `multi_material_segmentation.rs:2110`
+- [x] `get_all_segments` (line 1958) → `multi_material_segmentation.rs:2484`
+- [x] `compute_edge_length` (line 1968) → `multi_material_segmentation.rs:2494`
+- [x] `remove_multiple_edges_in_vertices` (line 2008) → `multi_material_segmentation.rs:2551`
+- [~] `merge_segmented_layers` (line 2039) → `multi_material_segmentation.rs:3242` — partial
 - [ ] `export_regions_to_svg` (line 2083) → `multi_material_segmentation.rs`
 - [ ] `export_processed_input_expolygons_to_svg` (line 2103) → `multi_material_segmentation.rs`
 - [ ] `export_painted_lines_to_svg` (line 2120) → `multi_material_segmentation.rs`
 - [ ] `export_colorized_polygons_to_svg` (line 2138) → `multi_material_segmentation.rs`
-- [x] `has_layer_only_one_color` (line 2153) → `multi_material_segmentation.rs:2590`
+- [x] `has_layer_only_one_color` (line 2153) → `multi_material_segmentation.rs:2588`
 
 **class `MMU_Graph`**
 
@@ -8593,7 +8593,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **class `PaintedLineVisitor`**
 
-- [x] `reset` (line 532) → `multi_material_segmentation.rs:952`
+- [x] `reset` (line 532) → `multi_material_segmentation.rs:950`
 
 **class `segment_traits<Slic3r::ColoredLine>`**
 
