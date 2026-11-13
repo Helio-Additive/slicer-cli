@@ -149,84 +149,11 @@ impl SimplifyConfig {
 ///
 /// A new vector of simplified points. The first and last points are always preserved.
 pub fn douglas_peucker(points: &[Point], tolerance: CoordF) -> Vec<Point> {
-    // R806 DP_SHIM (faithful ON): native's Line::distance_to_squared contracts to
-    // FMA under clang's default -ffp-contract=on; the pure-rust distances rank two
-    // near-duplicate vertices (1 unit apart) the other way round, so DP keeps a
-    // different one (Majora layer 12 MMS input: 3/1075 points) and every
-    // downstream painted-line projection, Voronoi vertex and segmented piece
-    // inherits it. Same algorithm, same Eigen, same codegen via the shim.
-    // DP_RUST (on unless =0): the same C++, `MultiPoint::_douglas_peucker`
-    // (MultiPoint.cpp:179-230) over `line_alg::distance_to_squared`
-    // (Line.hpp:43-68), is ported in `multi_point::douglas_peucker_faithful`, and
-    // `tests/douglas_peucker_native_parity.rs` holds it equal to the shim's
-    // result on inputs where rounding decides. What differed from the shim was
-    // not a fused multiply-add but the other algorithm below. =0 calls the
-    // shim, as R806 to R866 did.
-    if points.len() > 2 && crate::faithful_gate("DP_SHIM") && crate::faithful_gate("DP_RUST") {
-        return crate::multi_point::douglas_peucker_faithful(points, scale(tolerance) as f64);
-    }
-    if points.len() > 2 && crate::faithful_gate("DP_SHIM") {
-        let mut xy: Vec<i64> = Vec::with_capacity(points.len() * 2);
-        for p in points {
-            xy.push(p.x);
-            xy.push(p.y);
-        }
-        let keep = eigen_transform_sys::douglas_peucker_keep(&xy, scale(tolerance) as f64);
-        return points.iter().zip(keep.iter()).filter(|(_, &k)| k != 0).map(|(p, _)| *p).collect();
-    }
-    if points.len() <= 2 {
-        return points.to_vec();
-    }
-
-    let tolerance_sq = scale(tolerance) as f64 * scale(tolerance) as f64;
-    let mut result = Vec::with_capacity(points.len());
-    result.push(points[0]);
-
-    // Stack-based implementation (avoids stack overflow for large inputs)
-    let mut stack = vec![(0, points.len() - 1)];
-
-    // Track which points to keep
-    let mut keep = vec![false; points.len()];
-    keep[0] = true;
-    keep[points.len() - 1] = true;
-
-    while let Some((anchor_idx, floater_idx)) = stack.pop() {
-        if anchor_idx + 1 >= floater_idx {
-            continue;
-        }
-
-        let anchor = &points[anchor_idx];
-        let floater = &points[floater_idx];
-
-        // Find point furthest from the anchor-floater line
-        let mut max_dist_sq = 0.0;
-        let mut furthest_idx = anchor_idx;
-
-        for i in (anchor_idx + 1)..floater_idx {
-            let dist_sq = Line::distance_to_squared(points[i], *anchor, *floater);
-            if dist_sq > max_dist_sq {
-                max_dist_sq = dist_sq;
-                furthest_idx = i;
-            }
-        }
-
-        // If furthest point exceeds tolerance, keep it and recurse
-        if max_dist_sq > tolerance_sq {
-            keep[furthest_idx] = true;
-            stack.push((anchor_idx, furthest_idx));
-            stack.push((furthest_idx, floater_idx));
-        }
-    }
-
-    // Collect kept points in order
-    result.clear();
-    for (i, point) in points.iter().enumerate() {
-        if keep[i] {
-            result.push(*point);
-        }
-    }
-
-    result
+    // `MultiPoint::_douglas_peucker` (MultiPoint.cpp:179-230), which lives in
+    // `multi_point::douglas_peucker` and takes a scaled tolerance. Until R869
+    // this went through `eigen-transform-sys` (R806), and before that through
+    // an index-pair stack of its own.
+    crate::multi_point::douglas_peucker(points, scale(tolerance) as f64)
 }
 
 /// Douglas-Peucker simplification for a polygon.

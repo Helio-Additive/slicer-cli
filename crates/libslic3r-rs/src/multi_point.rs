@@ -55,7 +55,6 @@ pub fn douglas_peucker(pts: &[Point], tolerance: f64) -> Vec<Point> {
     dp_stack.push(floater_idx);
 
     let mut anchor_idx = anchor_idx;
-    let true_distance = crate::faithful_gate("DP_TRUE_DISTANCE");
 
     // MultiPoint.cpp:195 — for (;;)
     loop {
@@ -66,16 +65,7 @@ pub fn douglas_peucker(pts: &[Point], tolerance: f64) -> Vec<Point> {
         // MultiPoint.cpp:199 — find point furthest from segment (anchor, floater)
         for i in (anchor_idx + 1)..floater_idx {
             // MultiPoint.cpp:200
-            // DP_TRUE_DISTANCE (on unless =0): `line_alg::distance_to_squared`
-            // (Line.hpp:43-68) returns the squared distance to the segment in
-            // double. The crate's `Line::distance_to_squared` measures to the
-            // projection rounded to integer coordinates, up to a unit off, which
-            // keeps or drops a point at the tolerance. =0 uses the latter.
-            let dist_sq = if true_distance {
-                dp_distance_to_squared_faithful(pts[i], pts[anchor_idx], pts[floater_idx])
-            } else {
-                Line::distance_to_squared(pts[i], pts[anchor_idx], pts[floater_idx])
-            };
+            let dist_sq = Line::distance_to_squared(pts[i], pts[anchor_idx], pts[floater_idx]);
 
             // MultiPoint.cpp:201-204
             if dist_sq > max_dist_sq {
@@ -115,88 +105,6 @@ pub fn douglas_peucker(pts: &[Point], tolerance: f64) -> Vec<Point> {
     debug_assert_eq!(result_pts.last(), pts.last());
 
     // MultiPoint.cpp:244
-    result_pts
-}
-
-/// R122: native `line_alg::distance_to_squared` (Line.hpp:43-69) — the point-to-
-/// SEGMENT squared distance the DP actually needs. The crate's
-/// `Line::distance_to_squared` (geometry/line.rs) computes the distance to the
-/// integer-ROUNDED projection (`project_onto_segment` then integer distance),
-/// which differs from native by up to ~1 unit at the tolerance boundary and flips
-/// near-tolerance points in EITHER direction (drop or keep). Native returns the
-/// pure-`double` perpendicular distance `(t·v − va)²` (the `nearest_point`
-/// rounding does NOT affect the returned value). This reproduces that exactly.
-#[inline]
-fn dp_distance_to_squared_faithful(p: Point, a: Point, b: Point) -> f64 {
-    let vx = (b.x - a.x) as f64;
-    let vy = (b.y - a.y) as f64;
-    let vax = (p.x - a.x) as f64;
-    let vay = (p.y - a.y) as f64;
-    let l2 = vx * vx + vy * vy;
-    if l2 == 0.0 {
-        return vax * vax + vay * vay;
-    }
-    let t = (vax * vx + vay * vy) / l2;
-    if t <= 0.0 {
-        vax * vax + vay * vay
-    } else if t >= 1.0 {
-        let dx = (p.x - b.x) as f64;
-        let dy = (p.y - b.y) as f64;
-        dx * dx + dy * dy
-    } else {
-        let ex = t * vx - vax;
-        let ey = t * vy - vay;
-        ex * ex + ey * ey
-    }
-}
-
-/// R122: faithful Douglas-Peucker — identical stack algorithm to [`douglas_peucker`]
-/// but using native's pure-double point-to-segment distance
-/// ([`dp_distance_to_squared_faithful`]) instead of the crate's rounded-projection
-/// `Line::distance_to_squared`. Used only by the gated (F1_UNION) slice-simplify
-/// path so the default path is byte-unchanged. NOTE: the shared `douglas_peucker`
-/// carries the same rounded-projection fidelity gap for ALL its callers
-/// (arc_fitter, polygon/polyline simplify, gcode export) — a global fix candidate
-/// (F2-class), scoped here to avoid destabilizing the default path.
-pub fn douglas_peucker_faithful(pts: &[Point], tolerance: f64) -> Vec<Point> {
-    let mut result_pts = Vec::new();
-    let tolerance_sq = tolerance * tolerance;
-    if pts.is_empty() {
-        return result_pts;
-    }
-    let anchor_idx0 = 0usize;
-    let mut floater_idx = pts.len() - 1;
-    result_pts.reserve(pts.len());
-    result_pts.push(pts[anchor_idx0]);
-    if anchor_idx0 == floater_idx {
-        return result_pts;
-    }
-    let mut dp_stack: Vec<usize> = Vec::with_capacity(pts.len());
-    dp_stack.push(floater_idx);
-    let mut anchor_idx = anchor_idx0;
-    loop {
-        let mut max_dist_sq = 0.0;
-        let mut furthest_idx = anchor_idx;
-        for i in (anchor_idx + 1)..floater_idx {
-            let dist_sq = dp_distance_to_squared_faithful(pts[i], pts[anchor_idx], pts[floater_idx]);
-            if dist_sq > max_dist_sq {
-                max_dist_sq = dist_sq;
-                furthest_idx = i;
-            }
-        }
-        if max_dist_sq <= tolerance_sq {
-            result_pts.push(pts[floater_idx]);
-            anchor_idx = floater_idx;
-            dp_stack.pop();
-            if dp_stack.is_empty() {
-                break;
-            }
-            floater_idx = *dp_stack.last().unwrap();
-        } else {
-            floater_idx = furthest_idx;
-            dp_stack.push(floater_idx);
-        }
-    }
     result_pts
 }
 

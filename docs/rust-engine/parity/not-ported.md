@@ -47,7 +47,7 @@ is left on the fixtures' path (`GEOCALLS=1` lists them, README "Probes").
 | Shim function | Called from | Stands for |
 |-|-|-|
 | `transform_verts_unified` (3), `transform_verts_for_slicing`, `transform_verts_affine_f32_pair` | `triangle_mesh_slicer.rs`, `multi_material_segmentation.rs`, `app_slice.rs` | `its_transform`, the vertex transform of `slice_mesh` (Eigen float evaluation order) |
-| `douglas_peucker_keep` | `geometry/simplify.rs` (only with `DP_RUST=0`), `tests/douglas_peucker_native_parity.rs` | `MultiPoint::_douglas_peucker`; replaced by the Rust port in R867, kept as the test's reference |
+| `douglas_peucker_keep` | `tests/douglas_peucker_native_parity.rs` only (since R870) | `MultiPoint::_douglas_peucker`; replaced by the Rust port in R867, kept as the test's reference |
 | `project_line_on_line` | `multi_material_segmentation.rs` | the projection in `MultiMaterialSegmentation.cpp` |
 | `short_edge_collapse` | `short_edge_collapse.rs` | `its_short_edge_collpase` |
 | `sample_uniform` | `triangle_set_sampling.rs` | `sample_its_uniform_parallel` |

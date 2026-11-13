@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4531 |
+| Rust functions with no C++ function of that name in the pair | 4529 |
 
 By tier:
 
@@ -5932,15 +5932,15 @@ Tier 1. C++ functions 56 (plus 14 constructors, 0 destructors, 1 operators), Rus
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Line::intersection_infinite` :22 and `Line::intersection_infinite` :332 (43%, 1.18x)
-- divergent: `distance_to_squared` :43 and `Line::distance_to_squared` :252 (27%, 1.08x)
-- divergent: `Line::perp_distance_to` :43 and `Line::perp_distance_to` :443 (28%, 1.47x)
-- divergent: `Line::direction` :60 and `LineF::direction` :608 (0%, 0.23x)
-- divergent: `Line::parallel_to` :73 and `Line::parallel_to` :467 (28%, 1.74x)
-- divergent: `distance_to_infinite_squared` :88 and `Line::distance_to_infinite_squared` :292 (18%, 1.41x)
-- partial: `Line::perpendicular_to` :98 and `Line::perpendicular_to` :479 (43%, 1.74x)
-- partial: `Line::clip_with_bbox` :110 and `Line::clip_with_bbox` :542 (50%, 1.35x)
-- divergent: `Line::extend` :121 and `Line::extend` :516 (25%, 2.56x)
+- partial: `Line::intersection_infinite` :22 and `Line::intersection_infinite` :309 (43%, 1.18x)
+- divergent: `distance_to_squared` :43 and `Line::distance_to_squared` :252 (18%, 0.87x)
+- divergent: `Line::perp_distance_to` :43 and `Line::perp_distance_to` :420 (28%, 1.47x)
+- divergent: `Line::direction` :60 and `LineF::direction` :585 (0%, 0.23x)
+- divergent: `Line::parallel_to` :73 and `Line::parallel_to` :444 (28%, 1.74x)
+- divergent: `distance_to_infinite_squared` :88 and `Line::distance_to_infinite_squared` :285 (18%, 0.83x)
+- partial: `Line::perpendicular_to` :98 and `Line::perpendicular_to` :456 (43%, 1.74x)
+- partial: `Line::clip_with_bbox` :110 and `Line::clip_with_bbox` :519 (50%, 1.35x)
+- divergent: `Line::extend` :121 and `Line::extend` :493 (25%, 2.56x)
 - divergent: `intersection` :123 and `Line::intersection` :219 (0%, 0.65x)
 - divergent: `Line::normal` :180 and `Line::normal` :136 (0%, 0.41x)
 
@@ -6000,26 +6000,26 @@ Rust only:
 - `Line::project_point_infinite` :181
 - `Line::contains_point` :199
 - `Line::intersects` :212 — C++ has it in `BoundingBox`, `Frustum`, `SLA/Pad`
-- `Line::angle` :364 — C++ has it in `GCode/SeamPlacer`, `Point`
-- `Line::is_parallel_to` :370
-- `Line::is_perpendicular_to` :376
-- `Line::ccw` :384 — C++ has it in `Point`
-- `Line::rotate_around` :419
-- `Line::to_f64` :428
-- `Line::parallel_to_angle` :530
-- `Line::perpendicular_to_angle` :536
-- `Line::fmt` :560
-- `Line::fmt` :566
-- `Line::from` :580 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `(Point, Point)::from` :587 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `LineF::new` :602
-- `LineF::length_squared` :620
-- `LineF::unit_normal` :641
-- `LineF::angle` :647 — C++ has it in `GCode/SeamPlacer`, `Point`
-- `LineF::to_scaled` :654
-- `LineF::fmt` :663
-- `LineF::fmt` :669
-- `LineF::from` :680 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Line::angle` :341 — C++ has it in `GCode/SeamPlacer`, `Point`
+- `Line::is_parallel_to` :347
+- `Line::is_perpendicular_to` :353
+- `Line::ccw` :361 — C++ has it in `Point`
+- `Line::rotate_around` :396
+- `Line::to_f64` :405
+- `Line::parallel_to_angle` :507
+- `Line::perpendicular_to_angle` :513
+- `Line::fmt` :537
+- `Line::fmt` :543
+- `Line::from` :557 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `(Point, Point)::from` :564 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `LineF::new` :579
+- `LineF::length_squared` :597
+- `LineF::unit_normal` :618
+- `LineF::angle` :624 — C++ has it in `GCode/SeamPlacer`, `Point`
+- `LineF::to_scaled` :631
+- `LineF::fmt` :640
+- `LineF::fmt` :646
+- `LineF::from` :657 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
 
 ### `LocalesUtils` (.cpp+.hpp) and `locales_utils.rs`
 
@@ -6693,13 +6693,13 @@ Rust only:
 
 ### `MultiPoint` (.cpp+.hpp) and `multi_point.rs`
 
-Tier 1. C++ functions 52 (plus 6 constructors, 0 destructors, 1 operators), Rust functions 22. Matched 16: faithful 13, partial 2, divergent 1, stub 0.
+Tier 1. C++ functions 52 (plus 6 constructors, 0 destructors, 1 operators), Rust functions 20. Matched 16: faithful 13, partial 2, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `length` :134 and `length` :263 (0%, 1.07x)
-- partial: `MultiPoint::_douglas_peucker` :179 and `douglas_peucker` :22 (41%, 0.67x)
-- partial: `MultiPoint3::remove_duplicate_points` :414 and `remove_duplicate_points` :350 (50%, 0.91x)
+- divergent: `length` :134 and `length` :171 (0%, 1.07x)
+- partial: `MultiPoint::_douglas_peucker` :179 and `douglas_peucker` :22 (41%, 0.6x)
+- partial: `MultiPoint3::remove_duplicate_points` :414 and `remove_duplicate_points` :258 (50%, 0.91x)
 
 Missing in the Rust file:
 
@@ -6742,12 +6742,10 @@ Missing in the Rust file:
 
 Rust only:
 
-- `dp_distance_to_squared_faithful` :130
-- `douglas_peucker_faithful` :161
-- `scale_xy` :219
-- `rotate_around` :247
-- `find_point_eps` :286
-- `length_points` :573
+- `scale_xy` :127
+- `rotate_around` :155
+- `find_point_eps` :194
+- `length_points` :481
 
 ### `MutablePolygon` (.cpp+.hpp) and `mutable_polygon.rs`
 

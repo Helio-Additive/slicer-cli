@@ -27,7 +27,7 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 | every named function ported | 43 |
 | every named function verified | 0 |
 
-C++ still run through the FFI shim crates: 36 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 8, `boost-voronoi-sys` 0). They are listed at
+C++ still run through the FFI shim crates: 35 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 7, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
 
 ## How to read it
@@ -7580,33 +7580,33 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `distance_to_squared` (line 43) → `geometry/line.rs:252` — divergent
 - [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 80) → `arrange.rs, geometry/point.rs` — not in the paired file
-- [~] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:292` — divergent
+- [~] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:285` — divergent
 - [~] `distance_to_infinite_squared` (line 109) → `geometry/line.rs` — another overload of the name is ported
 - [~] `distance_to_infinite` (line 118) → `geometry/line.rs` — another overload of the name is ported
 - [~] `intersection` (line 123) → `geometry/line.rs:219` — divergent
-- [x] `get_extents` (line 135) → `geometry/line.rs:690`
+- [x] `get_extents` (line 135) → `geometry/line.rs:667`
 
 **class `Line`**
 
-- [~] `intersection_infinite` (line 22) → `geometry/line.rs:332` — partial
-- [~] `perp_distance_to` (line 43) → `geometry/line.rs:443` — divergent
-- [x] `orientation` (line 53) → `geometry/line.rs:456`
-- [~] `direction` (line 60) → `geometry/line.rs:608` — divergent
+- [~] `intersection_infinite` (line 22) → `geometry/line.rs:309` — partial
+- [~] `perp_distance_to` (line 43) → `geometry/line.rs:420` — divergent
+- [x] `orientation` (line 53) → `geometry/line.rs:433`
+- [~] `direction` (line 60) → `geometry/line.rs:585` — divergent
 - [~] `parallel_to` (line 68) → `geometry/line.rs` — another overload of the name is ported
-- [~] `parallel_to` (line 73) → `geometry/line.rs:467` — divergent
-- [x] `overlap` (line 79) → `geometry/line.rs:492`
+- [~] `parallel_to` (line 73) → `geometry/line.rs:444` — divergent
+- [x] `overlap` (line 79) → `geometry/line.rs:469`
 - [~] `perpendicular_to` (line 93) → `geometry/line.rs` — another overload of the name is ported
-- [~] `perpendicular_to` (line 98) → `geometry/line.rs:479` — partial
+- [~] `perpendicular_to` (line 98) → `geometry/line.rs:456` — partial
 - [~] `intersection` (line 105) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
-- [~] `clip_with_bbox` (line 110) → `geometry/line.rs:542` — partial
-- [~] `extend` (line 121) → `geometry/line.rs:516` — divergent
+- [~] `clip_with_bbox` (line 110) → `geometry/line.rs:519` — partial
+- [~] `extend` (line 121) → `geometry/line.rs:493` — divergent
 - [~] `scale` (line 158) → `bounding_box.rs, ex_polygon_collection.rs, extrusion_simulator.rs` — not in the paired file
-- [x] `translate` (line 159) → `geometry/line.rs:392`
+- [x] `translate` (line 159) → `geometry/line.rs:369`
 - [~] `translate` (line 160) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `rotate` (line 161) → `geometry/line.rs:410`
+- [x] `rotate` (line 161) → `geometry/line.rs:387`
 - [x] `reverse` (line 162) → `geometry/line.rs:121`
 - [~] `length` (line 163) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
-- [x] `midpoint` (line 164) → `geometry/line.rs:614`
+- [x] `midpoint` (line 164) → `geometry/line.rs:591`
 - [~] `distance_to_squared` (line 167) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to_squared` (line 168) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 169) → `arrange.rs, geometry/point.rs` — not in the paired file
@@ -7617,7 +7617,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 188) → `arrange.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 192) → `geometry/line.rs` — another overload of the name is ported
-- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:327`
+- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:304`
 
 **class `Line3`**
 
@@ -7626,18 +7626,18 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 
 **class `Line3float`**
 
-- [x] `vector` (line 282) → `geometry/line.rs:437`
+- [x] `vector` (line 282) → `geometry/line.rs:414`
 - [ ] `unit_vector` (line 283) → `geometry/line.rs`
-- [x] `length` (line 284) → `geometry/line.rs:626`
+- [x] `length` (line 284) → `geometry/line.rs:603`
 
 **class `Linef3`**
 
 - [ ] `intersect_plane` (line 128) → `geometry/line.rs`
-- [x] `scale` (line 249) → `geometry/line.rs:401`
+- [x] `scale` (line 249) → `geometry/line.rs:378`
 - [~] `vector` (line 250) → `geometry/line.rs` — another overload of the name is ported
 - [ ] `unit_vector` (line 251) → `geometry/line.rs`
 - [x] `length` (line 252) → `geometry/line.rs:109`
-- [x] `reverse` (line 253) → `geometry/line.rs:632`
+- [x] `reverse` (line 253) → `geometry/line.rs:609`
 - [ ] `get_point_projection_to_line` (line 260) → `geometry/line.rs`
 - [ ] `get_distance_of_point_to_line` (line 267) → `geometry/line.rs`
 
@@ -8686,18 +8686,18 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **free functions**
 
-- [~] `length` (line 134) → `multi_point.rs:263` — divergent
-- [x] `area` (line 144) → `multi_point.rs:588`
-- [x] `get_extents` (line 436) → `multi_point.rs:566`
+- [~] `length` (line 134) → `multi_point.rs:171` — divergent
+- [x] `area` (line 144) → `multi_point.rs:496`
+- [x] `get_extents` (line 436) → `multi_point.rs:474`
 - [~] `get_extents_rotated` (line 441) → `bridge_detector.rs, ex_polygon.rs, geometry/polygon.rs` — not in the paired file
 - [~] `get_extents_rotated` (line 467) → `bridge_detector.rs, ex_polygon.rs, geometry/polygon.rs` — not in the paired file
 
 **class `MultiPoint`**
 
-- [x] `scale` (line 6) → `multi_point.rs:209`
+- [x] `scale` (line 6) → `multi_point.rs:117`
 - [~] `scale` (line 12) → `bounding_box.rs, ex_polygon_collection.rs, extrusion_simulator.rs` — not in the paired file
-- [x] `translate` (line 21) → `multi_point.rs:228`
-- [x] `rotate` (line 27) → `multi_point.rs:236`
+- [x] `translate` (line 21) → `multi_point.rs:136`
+- [x] `rotate` (line 27) → `multi_point.rs:144`
 - [~] `translate` (line 29) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `rotate` (line 31) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
 - [~] `reverse` (line 34) → `arachne/utils/extrusion_line.rs, circle.rs, extrusion_entity.rs` — not in the paired file
@@ -8707,18 +8707,18 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `is_valid` (line 44) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `length` (line 48) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
 - [~] `closest_point_index` (line 53) → `geometry/polygon.rs` — not in the paired file
-- [x] `find_point` (line 58) → `multi_point.rs:275`
+- [x] `find_point` (line 58) → `multi_point.rs:183`
 - [~] `find_point` (line 66) → `geometry/polyline.rs` — not in the paired file
 - [~] `closest_point` (line 68) → `edge_grid.rs, geometry/aabb_tree.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `distance_to` (line 71) → `arrange.rs, geometry/point.rs` — not in the paired file
 - [~] `clear` (line 81) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [~] `append` (line 82) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [x] `has_boundary_point` (line 83) → `multi_point.rs:316`
+- [x] `has_boundary_point` (line 83) → `multi_point.rs:224`
 - [~] `append` (line 83) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [~] `append` (line 84) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [~] `append` (line 85) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [x] `bounding_box` (line 89) → `multi_point.rs:328`
-- [x] `has_duplicate_points` (line 94) → `multi_point.rs:338`
+- [x] `bounding_box` (line 89) → `multi_point.rs:236`
+- [x] `has_duplicate_points` (line 94) → `multi_point.rs:246`
 - [~] `remove_duplicate_points` (line 102) → `geometry/simplify.rs` — not in the paired file
 - [~] `begin` (line 103) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `begin` (line 104) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -8726,14 +8726,14 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `end` (line 106) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cbegin` (line 107) → `mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 108) → `mutable_polygon.rs` — not in the paired file
-- [x] `remove_colinear_points` (line 121) → `multi_point.rs:379`
+- [x] `remove_colinear_points` (line 121) → `multi_point.rs:287`
 - [~] `intersection` (line 136) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
 - [~] `first_intersection` (line 145) → `geometry/polygon.rs` — not in the paired file
 - [~] `intersections` (line 168) → `clipper2_z_utils.rs, clipper_z_utils.rs, geometry/polygon.rs` — not in the paired file
 - [v] `_douglas_peucker` (line 179) → `multi_point.rs:22` — R867: tests/douglas_peucker_native_parity.rs: 400,000 polylines where rounding decides, equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced (the body reads as partial to the estimate)
-- [x] `visivalingam` (line 269) → `multi_point.rs:410`
-- [x] `concave_hull_2d` (line 368) → `multi_point.rs:514`
-- [x] `symmetric_y` (line 472) → `multi_point.rs:558`
+- [x] `visivalingam` (line 269) → `multi_point.rs:318`
+- [x] `concave_hull_2d` (line 368) → `multi_point.rs:422`
+- [x] `symmetric_y` (line 472) → `multi_point.rs:466`
 
 **class `MultiPoint3`**
 
@@ -8743,7 +8743,7 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `translate` (line 396) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `length` (line 401) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
 - [~] `bounding_box` (line 409) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `remove_duplicate_points` (line 414) → `multi_point.rs:350` — partial
+- [~] `remove_duplicate_points` (line 414) → `multi_point.rs:258` — partial
 
 ### `MutablePolygon` (.cpp+.hpp)
 
@@ -13492,7 +13492,6 @@ stands for is in [`../rust-engine/parity/not-ported.md`](../rust-engine/parity/n
 | `clipper2-z-sys` | `cz2_intersect_open_z` | 1 |
 | `clipper2-z-sys` | `cz2_offset_z` | 1 |
 | `clipper2-z-sys` | `cz2_pl_open` | 1 |
-| `eigen-transform-sys` | `douglas_peucker_keep` | 1 |
 | `eigen-transform-sys` | `project_line_on_line` | 1 |
 | `eigen-transform-sys` | `raycast_visibility_native` | 1 |
 | `eigen-transform-sys` | `sample_uniform` | 1 |

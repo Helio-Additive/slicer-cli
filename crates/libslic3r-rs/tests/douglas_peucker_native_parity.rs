@@ -25,12 +25,6 @@ fn check(pts: &[(i64, i64)], tol: f64) {
     let want: Vec<(i64, i64)> =
         pts.iter().zip(keep.iter()).filter(|(_, k)| **k != 0).map(|(p, _)| *p).collect();
     let points: Vec<Point> = pts.iter().map(|p| Point::new(p.0, p.1)).collect();
-    let got: Vec<(i64, i64)> = slicer::multi_point::douglas_peucker_faithful(&points, tol)
-        .iter()
-        .map(|p| (p.x, p.y))
-        .collect();
-    assert_eq!(got, want, "points {pts:?} tolerance {tol}");
-    // The function named after the C++ one (with DP_TRUE_DISTANCE on, the default).
     let got: Vec<(i64, i64)> =
         slicer::multi_point::douglas_peucker(&points, tol).iter().map(|p| (p.x, p.y)).collect();
     assert_eq!(got, want, "multi_point::douglas_peucker, points {pts:?} tolerance {tol}");
