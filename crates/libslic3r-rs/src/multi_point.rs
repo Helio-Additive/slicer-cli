@@ -55,6 +55,7 @@ pub fn douglas_peucker(pts: &[Point], tolerance: f64) -> Vec<Point> {
     dp_stack.push(floater_idx);
 
     let mut anchor_idx = anchor_idx;
+    let true_distance = crate::faithful_gate("DP_TRUE_DISTANCE");
 
     // MultiPoint.cpp:195 — for (;;)
     loop {
@@ -65,7 +66,16 @@ pub fn douglas_peucker(pts: &[Point], tolerance: f64) -> Vec<Point> {
         // MultiPoint.cpp:199 — find point furthest from segment (anchor, floater)
         for i in (anchor_idx + 1)..floater_idx {
             // MultiPoint.cpp:200
-            let dist_sq = Line::distance_to_squared(pts[i], pts[anchor_idx], pts[floater_idx]);
+            // DP_TRUE_DISTANCE (on unless =0): `line_alg::distance_to_squared`
+            // (Line.hpp:43-68) returns the squared distance to the segment in
+            // double. The crate's `Line::distance_to_squared` measures to the
+            // projection rounded to integer coordinates, up to a unit off, which
+            // keeps or drops a point at the tolerance. =0 uses the latter.
+            let dist_sq = if true_distance {
+                dp_distance_to_squared_faithful(pts[i], pts[anchor_idx], pts[floater_idx])
+            } else {
+                Line::distance_to_squared(pts[i], pts[anchor_idx], pts[floater_idx])
+            };
 
             // MultiPoint.cpp:201-204
             if dist_sq > max_dist_sq {

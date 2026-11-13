@@ -8686,18 +8686,18 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **free functions**
 
-- [~] `length` (line 134) → `multi_point.rs:253` — divergent
-- [x] `area` (line 144) → `multi_point.rs:578`
-- [x] `get_extents` (line 436) → `multi_point.rs:556`
+- [~] `length` (line 134) → `multi_point.rs:263` — divergent
+- [x] `area` (line 144) → `multi_point.rs:588`
+- [x] `get_extents` (line 436) → `multi_point.rs:566`
 - [~] `get_extents_rotated` (line 441) → `bridge_detector.rs, ex_polygon.rs, geometry/polygon.rs` — not in the paired file
 - [~] `get_extents_rotated` (line 467) → `bridge_detector.rs, ex_polygon.rs, geometry/polygon.rs` — not in the paired file
 
 **class `MultiPoint`**
 
-- [x] `scale` (line 6) → `multi_point.rs:199`
+- [x] `scale` (line 6) → `multi_point.rs:209`
 - [~] `scale` (line 12) → `bounding_box.rs, ex_polygon_collection.rs, extrusion_simulator.rs` — not in the paired file
-- [x] `translate` (line 21) → `multi_point.rs:218`
-- [x] `rotate` (line 27) → `multi_point.rs:226`
+- [x] `translate` (line 21) → `multi_point.rs:228`
+- [x] `rotate` (line 27) → `multi_point.rs:236`
 - [~] `translate` (line 29) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `rotate` (line 31) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
 - [~] `reverse` (line 34) → `arachne/utils/extrusion_line.rs, circle.rs, extrusion_entity.rs` — not in the paired file
@@ -8707,18 +8707,18 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `is_valid` (line 44) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `length` (line 48) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
 - [~] `closest_point_index` (line 53) → `geometry/polygon.rs` — not in the paired file
-- [x] `find_point` (line 58) → `multi_point.rs:265`
+- [x] `find_point` (line 58) → `multi_point.rs:275`
 - [~] `find_point` (line 66) → `geometry/polyline.rs` — not in the paired file
 - [~] `closest_point` (line 68) → `edge_grid.rs, geometry/aabb_tree.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `distance_to` (line 71) → `arrange.rs, geometry/point.rs` — not in the paired file
 - [~] `clear` (line 81) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [~] `append` (line 82) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [x] `has_boundary_point` (line 83) → `multi_point.rs:306`
+- [x] `has_boundary_point` (line 83) → `multi_point.rs:316`
 - [~] `append` (line 83) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [~] `append` (line 84) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [~] `append` (line 85) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [x] `bounding_box` (line 89) → `multi_point.rs:318`
-- [x] `has_duplicate_points` (line 94) → `multi_point.rs:328`
+- [x] `bounding_box` (line 89) → `multi_point.rs:328`
+- [x] `has_duplicate_points` (line 94) → `multi_point.rs:338`
 - [~] `remove_duplicate_points` (line 102) → `geometry/simplify.rs` — not in the paired file
 - [~] `begin` (line 103) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `begin` (line 104) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -8726,14 +8726,14 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `end` (line 106) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cbegin` (line 107) → `mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 108) → `mutable_polygon.rs` — not in the paired file
-- [x] `remove_colinear_points` (line 121) → `multi_point.rs:369`
+- [x] `remove_colinear_points` (line 121) → `multi_point.rs:379`
 - [~] `intersection` (line 136) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
 - [~] `first_intersection` (line 145) → `geometry/polygon.rs` — not in the paired file
 - [~] `intersections` (line 168) → `clipper2_z_utils.rs, clipper_z_utils.rs, geometry/polygon.rs` — not in the paired file
 - [~] `_douglas_peucker` (line 179) → `multi_point.rs:22` — partial; probe agreed (R867) but the body reads as partial
-- [x] `visivalingam` (line 269) → `multi_point.rs:400`
-- [x] `concave_hull_2d` (line 368) → `multi_point.rs:504`
-- [x] `symmetric_y` (line 472) → `multi_point.rs:548`
+- [x] `visivalingam` (line 269) → `multi_point.rs:410`
+- [x] `concave_hull_2d` (line 368) → `multi_point.rs:514`
+- [x] `symmetric_y` (line 472) → `multi_point.rs:558`
 
 **class `MultiPoint3`**
 
@@ -8743,7 +8743,7 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `translate` (line 396) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `length` (line 401) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
 - [~] `bounding_box` (line 409) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `remove_duplicate_points` (line 414) → `multi_point.rs:340` — partial
+- [~] `remove_duplicate_points` (line 414) → `multi_point.rs:350` — partial
 
 ### `MutablePolygon` (.cpp+.hpp)
 

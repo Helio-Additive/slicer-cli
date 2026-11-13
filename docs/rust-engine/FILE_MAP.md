@@ -6697,9 +6697,9 @@ Tier 1. C++ functions 52 (plus 6 constructors, 0 destructors, 1 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `length` :134 and `length` :253 (0%, 1.07x)
-- partial: `MultiPoint::_douglas_peucker` :179 and `douglas_peucker` :22 (41%, 0.6x)
-- partial: `MultiPoint3::remove_duplicate_points` :414 and `remove_duplicate_points` :340 (50%, 0.91x)
+- divergent: `length` :134 and `length` :263 (0%, 1.07x)
+- partial: `MultiPoint::_douglas_peucker` :179 and `douglas_peucker` :22 (41%, 0.67x)
+- partial: `MultiPoint3::remove_duplicate_points` :414 and `remove_duplicate_points` :350 (50%, 0.91x)
 
 Missing in the Rust file:
 
@@ -6742,12 +6742,12 @@ Missing in the Rust file:
 
 Rust only:
 
-- `dp_distance_to_squared_faithful` :120
-- `douglas_peucker_faithful` :151
-- `scale_xy` :209
-- `rotate_around` :237
-- `find_point_eps` :276
-- `length_points` :563
+- `dp_distance_to_squared_faithful` :130
+- `douglas_peucker_faithful` :161
+- `scale_xy` :219
+- `rotate_around` :247
+- `find_point_eps` :286
+- `length_points` :573
 
 ### `MutablePolygon` (.cpp+.hpp) and `mutable_polygon.rs`
 
