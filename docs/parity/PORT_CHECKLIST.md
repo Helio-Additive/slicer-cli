@@ -10,14 +10,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**34.7% of the named C++ functions are ported or verified (3143 of 9052); 23.8% by size of body.**
+**34.7% of the named C++ functions are ported or verified (3144 of 9052); 23.8% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3176 | 35.1% | 47.9% |
+| not started `[ ]` | 3175 | 35.1% | 47.9% |
 | partial `[~]` | 2733 | 30.2% | 28.3% |
 | ported `[x]` | 3125 | 34.5% | 23.2% |
-| verified `[v]` | 18 | 0.2% | 0.6% |
+| verified `[v]` | 19 | 0.2% | 0.6% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -350,7 +350,7 @@ the end; the goal is none.
 | `Timer` | 1 | `timer.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 34 | 40 | 62 | 0 |
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
-| `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 17 | 13 | 15 | 0 |
+| `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 16 | 13 | 15 | 1 |
 | `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 18 | 21 | 64 | 0 |
 | `TriangleSetSampling` | 3 | `triangle_set_sampling.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `TriangulateWall` | 3 | `triangulate_wall.rs` | partial | 13 | 0 | 1 | 12 | 0 |
@@ -13036,7 +13036,7 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 - [ ] `remove_short_backtracks` (line 1790) → `triangle_mesh_slicer.rs`
 - [ ] `remove_short_backtracks` (line 1834) → `triangle_mesh_slicer.rs`
 - [~] `make_expolygons` (line 1852) → `triangle_mesh_slicer.rs:1302` — partial
-- [ ] `make_trafo_for_slicing` (line 1945) → `triangle_mesh_slicer.rs`
+- [v] `make_trafo_for_slicing` (line 1945) → `triangle_mesh_slicer.rs:2810` — R874: tests/vertex_transform_native_parity.rs: 60,000 transforms of 20 vertices equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim calls replaced (the body reads as partial to the estimate)
 - [~] `is_identity` (line 1953) → `geometry/transform.rs` — not in the paired file
 - [ ] `transform_mesh_vertices_for_slicing` (line 1958) → `triangle_mesh_slicer.rs`
 - [~] `slice_mesh` (line 1982) → `triangle_mesh_slicer.rs:2060` — divergent
@@ -13501,5 +13501,5 @@ stands for is in [`../rust-engine/parity/not-ported.md`](../rust-engine/parity/n
 | `eigen-transform-sys` | `short_edge_collapse` | 1 |
 | `eigen-transform-sys` | `transform_verts_affine_f32_pair` | 1 |
 | `eigen-transform-sys` | `transform_verts_for_slicing` | 1 |
-| `eigen-transform-sys` | `transform_verts_unified` | 3 |
+| `eigen-transform-sys` | `transform_verts_unified` | 1 |
 | `boost-voronoi-sys` | none called by the engine | 0 |

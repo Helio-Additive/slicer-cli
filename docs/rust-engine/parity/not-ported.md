@@ -102,6 +102,7 @@ more are missing from a paired Rust file and from every other. `crates/libslic3r
 | Round | Item |
 |-|-|
 | R856 | every helper on the 1 um grid on the fixtures' path computes at coord_t |
+| R874 | the three vertex transforms of `eigen-transform-sys` are off the engine's path (`XF_RUST`): `make_trafo_for_slicing` and the f32 products are in `triangle_mesh_slicer.rs`, bit-equal to the C++ in `tests/vertex_transform_native_parity.rs` |
 | R873 | `project_line_on_line` of `eigen-transform-sys` is off the engine's path: the Rust port gives the same bytes on the fixtures and the same result as the C++ on 900,000 test cases |
 | R867 | `douglas_peucker_keep` of `eigen-transform-sys` is no longer on the engine's path: `multi_point::douglas_peucker_faithful` gives the same bytes on the fixtures and the same result as the C++ on 400,000 test polylines |
 | R861 | `ExtrusionMultiPath` is an entity (`ExtrusionEntityType::MultiPath`); ConflictChecker, LayerRegion, PrintExtents and ShortestPath dispatch on it as C++ does |

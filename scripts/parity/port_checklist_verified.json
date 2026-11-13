@@ -44,5 +44,13 @@
   "functions": [
    "project_line_on_line"
   ]
+ },
+ {
+  "unit": "TriangleMeshSlicer",
+  "round": "874",
+  "evidence": "tests/vertex_transform_native_parity.rs: 60,000 transforms of 20 vertices equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim calls replaced",
+  "functions": [
+   "make_trafo_for_slicing"
+  ]
  }
 ]

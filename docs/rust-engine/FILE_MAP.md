@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 47 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3729 (41%) |
+| matched to a Rust function in the paired file | 3730 (41%) |
 | estimate: faithful | 3128 (84% of matched) |
-| estimate: partial | 380 (10% of matched) |
+| estimate: partial | 381 (10% of matched) |
 | estimate: divergent | 196 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
-| missing in the paired Rust file | 4655 |
+| missing in the paired Rust file | 4654 |
 | of those, a function of that name exists in another Rust file | 1606 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
-| of the rest, 25 tokens or more | 1929 |
+| of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4524 |
+| Rust functions with no C++ function of that name in the pair | 4534 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2874 | 2400 | 301 | 159 | 14 | 3977 |
+| 1 | 180 | 174 | 6851 | 2875 | 2400 | 302 | 159 | 14 | 3976 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -99,8 +99,8 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/AvoidCrossingPerimeters` | `gcode/avoid_crossing_perimeters.rs` | 59 | 31 | 3 | 0 | 0 | 25 | 17 |
 | 1 | `GCode/TimelapsePosPicker` | `gcode/timelapse_pos_picker.rs` | 20 | 1 | 0 | 0 | 0 | 19 | 17 |
 | 1 | `Layer` | `layer.rs` | 56 | 15 | 4 | 2 | 0 | 35 | 15 |
-| 1 | `TriangleMeshSlicer` | `triangle_mesh_slicer.rs` | 45 | 15 | 6 | 1 | 0 | 23 | 16 |
 | 1 | `TriangleSelector` | `triangle_selector.rs` | 103 | 64 | 1 | 1 | 0 | 37 | 16 |
+| 1 | `TriangleMeshSlicer` | `triangle_mesh_slicer.rs` | 45 | 15 | 7 | 1 | 0 | 22 | 15 |
 | 1 | `PerimeterGenerator` | `perimeter_generator.rs` | 29 | 4 | 2 | 0 | 0 | 23 | 14 |
 | 1 | `Line` | `geometry/line.rs` | 56 | 14 | 4 | 7 | 0 | 31 | 5 |
 | 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 33 | 6 | 0 | 0 | 29 | 11 |
@@ -9417,7 +9417,7 @@ Rust only:
 
 ### `TriangleMeshSlicer` (.cpp+.hpp) and `triangle_mesh_slicer.rs`
 
-Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 55. Matched 22: faithful 15, partial 6, divergent 1, stub 0.
+Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 66. Matched 23: faithful 15, partial 7, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -9426,6 +9426,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `make_slab_loops` :1589 and `make_slab_loops` :2549 (38%, 0.44x)
 - partial: `make_expolygons_simple` :1716 and `make_expolygons_simple` :1248 (46%, 0.44x)
 - partial: `make_expolygons` :1852 and `make_expolygons` :1302 (38%, 1.26x)
+- partial: `make_trafo_for_slicing` :1945 and `make_trafo_for_slicing` :2810 (50%, 1.32x)
 - divergent: `slice_mesh` :1982 and `slice_mesh` :2060 (10%, 0.19x)
 - partial: `slice_mesh_slabs` :2177 and `slice_mesh_slabs` :2626 (34%, 0.4x)
 
@@ -9443,7 +9444,6 @@ Missing in the Rust file:
 - `make_loops` :1534 (308 tokens)
 - `remove_short_backtracks` :1790 (320 tokens)
 - `remove_short_backtracks` :1834 (121 tokens)
-- `make_trafo_for_slicing` :1945 (41 tokens)
 - `is_identity` :1953 (19 tokens) — in `geometry/transform.rs`
 - `transform_mesh_vertices_for_slicing` :1958 (117 tokens)
 - `slice_mesh` :2059 (514 tokens, overload)
@@ -9490,6 +9490,16 @@ Rust only:
 - `to_2d_coord` :2124
 - `slice_mesh_at_z_transformed` :2698
 - `_unscale_marker` :2715
+- `transform3d_cast_float` :2796
+- `transform3f_mul_vec3f` :2826
+- `transform3f_mul_transform3f` :2838
+- `transform_flat` :2853
+- `transform_verts_unified` :2869
+- `transform_verts_for_slicing` :2880
+- `transform_verts_affine_f32_pair` :2895
+- `transform_verts_unified_gated` :2902
+- `transform_verts_for_slicing_gated` :2915
+- `transform_verts_affine_f32_pair_gated` :2923
 
 ### `TriangleSelector` (.cpp+.hpp) and `triangle_selector.rs`
 

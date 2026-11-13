@@ -2834,7 +2834,7 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
                 flat_in.push(p.y);
                 flat_in.push(p.z);
             }
-            let flat_out = eigen_transform_sys::transform_verts_unified(
+            let flat_out = crate::triangle_mesh_slicer::transform_verts_unified_gated(
                 &ctx.trafo16,
                 crate::libslic3r::SCALING_FACTOR,
                 ctx.voff,

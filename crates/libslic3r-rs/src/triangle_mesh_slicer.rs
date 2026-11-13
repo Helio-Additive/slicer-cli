@@ -1490,7 +1490,7 @@ fn slice_mesh_its(
                 flat_in.push(p.y);
                 flat_in.push(p.z);
             }
-            let flat_out = eigen_transform_sys::transform_verts_unified(
+            let flat_out = transform_verts_unified_gated(
                 &t16,
                 crate::libslic3r::SCALING_FACTOR,
                 (0.0, 0.0, 0.0),
@@ -1560,7 +1560,7 @@ fn slice_mesh_its(
                 flat_in.push(p.y);
                 flat_in.push(p.z);
             }
-            let flat_out = eigen_transform_sys::transform_verts_unified(
+            let flat_out = transform_verts_unified_gated(
                 &trafo16,
                 crate::libslic3r::SCALING_FACTOR,
                 voff,
@@ -1578,7 +1578,7 @@ fn slice_mesh_its(
                 flat_in.push(p.y);
                 flat_in.push(p.z);
             }
-            let flat_out = eigen_transform_sys::transform_verts_for_slicing(
+            let flat_out = transform_verts_for_slicing_gated(
                 crate::libslic3r::SCALING_FACTOR,
                 cx,
                 cy,
@@ -2776,5 +2776,154 @@ mod tests {
         // Slice below the cube
         let result = slice_mesh_at_z(&mesh, -10.0);
         assert!(result.is_empty(), "Slice below cube should be empty");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The float transform of the mesh vertices, in Rust.
+//
+// `make_trafo_for_slicing` (TriangleMeshSlicer.cpp:1945-1951) and the
+// `tf * p` it is used for (:2007-2008) are Eigen
+// expressions. Until R873 they ran through `eigen-transform-sys`; the functions
+// below compute the same floats (tests/vertex_transform_native_parity.rs holds
+// them equal to the C++ bit for bit).
+// ---------------------------------------------------------------------------
+
+/// An `Eigen::Transform<float, 3, Affine>`: the three rows of its 3x4 affine part.
+pub type Transform3f = [[f32; 4]; 3];
+
+/// `Transform3d::cast<float>()` of a row-major 4x4 of doubles.
+pub fn transform3d_cast_float(trafo16: &[f64; 16]) -> Transform3f {
+    let mut tf = [[0f32; 4]; 3];
+    for r in 0..3 {
+        for c in 0..4 {
+            tf[r][c] = trafo16[r * 4 + c] as f32;
+        }
+    }
+    tf
+}
+
+/// TriangleMeshSlicer.cpp:1945-1951
+/// C++: auto t = trafo; t.prescale(Vec3d(s, s, 1.)); return t.cast<float>();
+/// with `s = 1. / SCALING_FACTOR`. `prescale` multiplies the rows of the affine
+/// part by the factors, in double, before the cast.
+pub fn make_trafo_for_slicing(trafo16: &[f64; 16], scaling_factor: f64) -> Transform3f {
+    let s = 1.0 / scaling_factor;
+    let mut t = *trafo16;
+    for c in 0..4 {
+        t[c] *= s;
+        t[4 + c] *= s;
+        t[8 + c] *= 1.0;
+    }
+    transform3d_cast_float(&t)
+}
+
+/// `tf * v` for an affine `Transform3f` and a `Vec3f`, as the C++ build
+/// evaluates it: the columns of the linear part are accumulated with fused
+/// multiply-adds, `fma(m2, v2, fma(m1, v1, m0 * v0))`, and the translation is
+/// added last.
+#[inline]
+pub fn transform3f_mul_vec3f(tf: &Transform3f, v: [f32; 3]) -> [f32; 3] {
+    let mut out = [0f32; 3];
+    for r in 0..3 {
+        let m = &tf[r];
+        out[r] = m[2].mul_add(v[2], m[1].mul_add(v[1], m[0] * v[0])) + m[3];
+    }
+    out
+}
+
+/// `a * b` for two affine `Transform3f`: the affine part of `a` times the 4x4
+/// of `b`. The C++ build sums the four products of an element without fusing
+/// them, in the order `((p1 + p2) + p0) + p3`.
+pub fn transform3f_mul_transform3f(a: &Transform3f, b: &Transform3f) -> Transform3f {
+    let mut out = [[0f32; 4]; 3];
+    let b_row3 = [0f32, 0.0, 0.0, 1.0];
+    for r in 0..3 {
+        for c in 0..4 {
+            let p0 = a[r][0] * b[0][c];
+            let p1 = a[r][1] * b[1][c];
+            let p2 = a[r][2] * b[2][c];
+            let p3 = a[r][3] * b_row3[c];
+            out[r][c] = ((p1 + p2) + p0) + p3;
+        }
+    }
+    out
+}
+
+fn transform_flat(tf: &Transform3f, verts_in: &[f32], offset: [f32; 3]) -> Vec<f32> {
+    let mut out = vec![0.0f32; verts_in.len()];
+    for i in 0..verts_in.len() / 3 {
+        let v = [
+            verts_in[3 * i] - offset[0],
+            verts_in[3 * i + 1] - offset[1],
+            verts_in[3 * i + 2] - offset[2],
+        ];
+        let w = transform3f_mul_vec3f(tf, v);
+        out[3 * i..3 * i + 3].copy_from_slice(&w);
+    }
+    out
+}
+
+/// The slice transform of vertices given in the placed frame: the volume offset
+/// is subtracted in f32, then `make_trafo_for_slicing(trafo)` is applied.
+pub fn transform_verts_unified(
+    trafo16: &[f64; 16],
+    scaling_factor: f64,
+    voff: (f64, f64, f64),
+    verts_in: &[f32],
+) -> Vec<f32> {
+    let tf = make_trafo_for_slicing(trafo16, scaling_factor);
+    transform_flat(&tf, verts_in, [voff.0 as f32, voff.1 as f32, voff.2 as f32])
+}
+
+/// `make_trafo_for_slicing(Identity.pretranslate(-cx, -cy, 0))` applied to the vertices.
+pub fn transform_verts_for_slicing(scaling_factor: f64, cx: f64, cy: f64, verts_in: &[f32]) -> Vec<f32> {
+    let mut trafo = [0f64; 16];
+    trafo[0] = 1.0;
+    trafo[5] = 1.0;
+    trafo[10] = 1.0;
+    trafo[15] = 1.0;
+    trafo[3] = -cx;
+    trafo[7] = -cy;
+    trafo[11] = 0.0;
+    let tf = make_trafo_for_slicing(&trafo, scaling_factor);
+    transform_flat(&tf, verts_in, [0.0; 3])
+}
+
+/// MultiMaterialSegmentation.cpp:2303 — `tr = trafo().cast<float>() * get_matrix().cast<float>()`,
+/// then `tr * v` per vertex.
+pub fn transform_verts_affine_f32_pair(a16: &[f64; 16], b16: &[f64; 16], verts_in: &[f32]) -> Vec<f32> {
+    let tr = transform3f_mul_transform3f(&transform3d_cast_float(a16), &transform3d_cast_float(b16));
+    transform_flat(&tr, verts_in, [0.0; 3])
+}
+
+// XF_RUST (on unless =0): the three transforms above in place of the C++ in
+// `eigen-transform-sys`. =0 calls the shim, as the rounds up to R873 did.
+pub(crate) fn transform_verts_unified_gated(
+    trafo16: &[f64; 16],
+    scaling_factor: f64,
+    voff: (f64, f64, f64),
+    verts_in: &[f32],
+) -> Vec<f32> {
+    if crate::faithful_gate("XF_RUST") {
+        transform_verts_unified(trafo16, scaling_factor, voff, verts_in)
+    } else {
+        eigen_transform_sys::transform_verts_unified(trafo16, scaling_factor, voff, verts_in)
+    }
+}
+
+pub(crate) fn transform_verts_for_slicing_gated(scaling_factor: f64, cx: f64, cy: f64, verts_in: &[f32]) -> Vec<f32> {
+    if crate::faithful_gate("XF_RUST") {
+        transform_verts_for_slicing(scaling_factor, cx, cy, verts_in)
+    } else {
+        eigen_transform_sys::transform_verts_for_slicing(scaling_factor, cx, cy, verts_in)
+    }
+}
+
+pub(crate) fn transform_verts_affine_f32_pair_gated(a16: &[f64; 16], b16: &[f64; 16], verts_in: &[f32]) -> Vec<f32> {
+    if crate::faithful_gate("XF_RUST") {
+        transform_verts_affine_f32_pair(a16, b16, verts_in)
+    } else {
+        eigen_transform_sys::transform_verts_affine_f32_pair(a16, b16, verts_in)
     }
 }
