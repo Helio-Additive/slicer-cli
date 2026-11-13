@@ -213,5 +213,13 @@
    "SimplifyPolygon",
    "SimplifyPolygons"
   ]
+ },
+ {
+  "unit": "ElephantFootCompensation",
+  "round": "896",
+  "evidence": "tests/smooth_compensation_banded_native_parity.rs (40,000 contours, bit for bit against the function compiled as C++ in clipper-z-sys)",
+  "functions": [
+   "smooth_compensation_banded"
+  ]
  }
 ]

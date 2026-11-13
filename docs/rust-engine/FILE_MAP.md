@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 748 |
 | of the rest, 25 tokens or more | 1909 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4721 |
+| Rust functions with no C++ function of that name in the pair | 4722 |
 
 By tier:
 
@@ -2426,7 +2426,7 @@ Rust only:
 
 ### `ElephantFootCompensation` (.cpp+.hpp) and `elephant_foot_compensation.rs`
 
-Tier 1. C++ functions 10 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 17. Matched 5: faithful 5, partial 0, divergent 0, stub 0.
+Tier 1. C++ functions 10 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 18. Matched 5: faithful 5, partial 0, divergent 0, stub 0.
 
 Missing in the Rust file:
 
@@ -2445,11 +2445,12 @@ Rust only:
 - `normalized` :70
 - `lower_bound_resampled` :305
 - `lerp_f32` :592
-- `elephant_foot_compensation_with_width` :750
-- `elephant_foot_compensation_with_flow` :868
-- `elephant_foot_compensation_expolygons_with_flow` :880
-- `elephant_foot_compensation_expolygons_with_width` :906
-- `get_extents_expoly_contour` :932
+- `smooth_compensation_banded_shim` :597
+- `elephant_foot_compensation_with_width` :751
+- `elephant_foot_compensation_with_flow` :869
+- `elephant_foot_compensation_expolygons_with_flow` :881
+- `elephant_foot_compensation_expolygons_with_width` :907
+- `get_extents_expoly_contour` :933
 
 ### `ExPolygon` (.cpp+.hpp) and `ex_polygon.rs`
 

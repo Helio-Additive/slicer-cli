@@ -17,8 +17,8 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 |-|-|-|-|
 | not started `[ ]` | 3153 | 34.3% | 47.0% |
 | partial `[~]` | 2749 | 29.9% | 28.0% |
-| ported `[x]` | 3164 | 34.4% | 23.0% |
-| verified `[v]` | 138 | 1.5% | 2.0% |
+| ported `[x]` | 3163 | 34.4% | 22.9% |
+| verified `[v]` | 139 | 1.5% | 2.0% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -125,7 +125,7 @@ the end; the goal is none.
 | `Debounce` | 3 | none | not started | 1 | 1 | 0 | 0 | 0 |
 | `Desensitize` | 3 | none | not started | 9 | 9 | 0 | 0 | 0 |
 | `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 17 | 19 | 11 | 0 |
-| `ElephantFootCompensation` | 1 | `elephant_foot_compensation.rs` | partial | 10 | 5 | 0 | 5 | 0 |
+| `ElephantFootCompensation` | 1 | `elephant_foot_compensation.rs` | partial | 10 | 5 | 0 | 4 | 1 |
 | `Emboss` | 3 | `emboss.rs` | partial | 91 | 40 | 13 | 38 | 0 |
 | `EmbossShape` | 3 | `emboss_shape.rs` | partial | 8 | 0 | 8 | 0 | 0 |
 | `enum_bitmask` | 1 | `enum_bitmask.rs` | partial | 4 | 0 | 1 | 3 | 0 |
@@ -2955,8 +2955,8 @@ Rust file: `elephant_foot_compensation.rs`. Status: **partial**. Not listed: 1 c
 - [x] `contour_distance2` (line 233) → `elephant_foot_compensation.rs:329`
 - [x] `resample_polygon` (line 418) → `elephant_foot_compensation.rs:548`
 - [ ] `smooth_compensation` (line 449) → `elephant_foot_compensation.rs`
-- [x] `smooth_compensation_banded` (line 465) → `elephant_foot_compensation.rs:597`
-- [x] `validate_expoly_orientation` (line 535) → `elephant_foot_compensation.rs:740`
+- [v] `smooth_compensation_banded` (line 465) → `elephant_foot_compensation.rs:614` — R896: tests/smooth_compensation_banded_native_parity.rs (40,000 contours, bit for bit against the function compiled as C++ in clipper-z-sys)
+- [x] `validate_expoly_orientation` (line 535) → `elephant_foot_compensation.rs:741`
 - [ ] `elephant_foot_compensation` (line 544) → `elephant_foot_compensation.rs`
 - [ ] `elephant_foot_compensation` (line 620) → `elephant_foot_compensation.rs`
 - [ ] `elephant_foot_compensation` (line 627) → `elephant_foot_compensation.rs`

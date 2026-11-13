@@ -590,11 +590,28 @@ fn resample_polygon(
 // used in smooth_compensation_banded (Slic3r::lerp). ElephantFootCompensation.cpp:490-491,515-516
 #[inline]
 fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
-    (1.0 - t) * a + t * b
+    (1.0 - t).mul_add(a, t * b)
+}
+
+/// `smooth_compensation_banded` through the C++ of `clipper-z-sys`.
+fn smooth_compensation_banded_shim(contour: &Points, band: f32, compensation: &mut Vec<f32>, strength: f32, num_iterations: usize) {
+    let n = contour.len() as i32;
+    let mut xy: Vec<i32> = Vec::with_capacity(contour.len() * 2);
+    for p in contour {
+        xy.push(p.x as i32);
+        xy.push(p.y as i32);
+    }
+    unsafe {
+        clipper_z_sys::cz_smooth_compensation_banded(xy.as_ptr(), n, compensation.as_mut_ptr(), band, strength, num_iterations as i32);
+    }
 }
 
 // ElephantFootCompensation.cpp:465-532
-fn smooth_compensation_banded(
+//
+// Float arithmetic as the arm64 build contracts it: a sum of two squares is
+// `fma(dx, dx, dy * dy)` and `lerp` is `fma(1 - t, a, t * b)`.
+#[doc(hidden)]
+pub fn smooth_compensation_banded(
     contour: &Points,
     band: f32,
     compensation: &mut Vec<f32>,
@@ -603,30 +620,14 @@ fn smooth_compensation_banded(
 ) {
     debug_assert_eq!(contour.len(), compensation.len());
     debug_assert!(contour.len() > 2);
-    // R324: route through the clipper-z-sys shim — compiled with native's clang,
-    // so its FMA contraction (sqrt/norm/lerp/laplacian) is bit-identical, which
-    // pure-Rust f32 could not reproduce (R323). Only reached via the L0_EFC path;
-    // default lock unaffected. assert_i32_scaled bounds hold for slice coords.
-    {
-        let n = contour.len() as i32;
-        let mut xy: Vec<i32> = Vec::with_capacity(contour.len() * 2);
-        for p in contour {
-            xy.push(p.x as i32);
-            xy.push(p.y as i32);
-        }
-        unsafe {
-            clipper_z_sys::cz_smooth_compensation_banded(
-                xy.as_ptr(),
-                n,
-                compensation.as_mut_ptr(),
-                band,
-                strength,
-                num_iterations as i32,
-            );
-        }
+    // The body below is the port. `EFC_SMOOTH_RUST=0` runs the same function compiled as
+    // C++ in `clipper-z-sys` (`cz_smooth_compensation_banded`), which is what the engine
+    // ran from R324 to R895; `tests/smooth_compensation_banded_native_parity.rs` holds the
+    // two equal bit for bit.
+    if !crate::faithful_gate("EFC_SMOOTH_RUST") {
+        smooth_compensation_banded_shim(contour, band, compensation, strength, num_iterations);
         return;
     }
-    #[allow(unreachable_code)]
     let mut out: Vec<f32> = compensation.clone();
     let dist_min2 = band * band;
     const USE_MIN: bool = false;
@@ -646,7 +647,7 @@ fn smooth_compensation_banded(
             let mut l2 = {
                 let dx = pthis_x - pprev_x;
                 let dy = pthis_y - pprev_y;
-                dx * dx + dy * dy
+                dx.mul_add(dx, dy * dy)
             };
             if l2 < dist_min2 {
                 let mut l = l2.sqrt();
@@ -658,7 +659,7 @@ fn smooth_compensation_banded(
                     let lthis = {
                         let dx = pp_x - pprev_x;
                         let dy = pp_y - pprev_y;
-                        (dx * dx + dy * dy).sqrt()
+                        (dx.mul_add(dx, dy * dy)).sqrt()
                     };
                     let lnext = l + lthis;
                     if lnext > band {
@@ -688,7 +689,7 @@ fn smooth_compensation_banded(
             l2 = {
                 let dx = pprev_x - pthis_x;
                 let dy = pprev_y - pthis_y;
-                dx * dx + dy * dy
+                dx.mul_add(dx, dy * dy)
             };
             if l2 < dist_min2 {
                 let mut l = l2.sqrt();
@@ -700,7 +701,7 @@ fn smooth_compensation_banded(
                     let lthis = {
                         let dx = pp_x - pprev_x;
                         let dy = pp_y - pprev_y;
-                        (dx * dx + dy * dy).sqrt()
+                        (dx.mul_add(dx, dy * dy)).sqrt()
                     };
                     let lnext = l + lthis;
                     if lnext > band {

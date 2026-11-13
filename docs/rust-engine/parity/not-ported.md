@@ -18,8 +18,8 @@ Counted in `crates/libslic3r-rs/src` at R862; a number in brackets is the count 
 Since R891 the engine runs every routine below that uses only the 2D library on the Rust port (`clipper.rs`);
 since R892 it has no shim arm for them, and the shim keeps them as the reference of the tests. Since R893 the two
 ClipperLib_Z routines, `cz_clip_extrusion` and `cz_detect_floating`, run on the Rust Z build too (`clipper_lib_z.rs`);
-since R895 the engine has no shim arm for them either. The engine still calls `medial_axis_native` (boost Voronoi) and
-`cz_smooth_compensation_banded` (the elephant-foot solver). The table is what each routine stands for.
+since R895 the engine has no shim arm for them either. Since R896 the elephant-foot solver
+(`cz_smooth_compensation_banded`) runs in Rust too (`EFC_SMOOTH_RUST`). The engine still calls `medial_axis_native` (boost Voronoi). The table is what each routine stands for.
 
 The engine's own `clipper.cpp` is vendored and compiled; `libslic3r/clipper.cpp` has no Rust file.
 
