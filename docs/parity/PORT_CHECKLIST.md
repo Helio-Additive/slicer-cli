@@ -16,16 +16,16 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 |-|-|-|-|
 | not started `[ ]` | 3175 | 35.1% | 47.9% |
 | partial `[~]` | 2733 | 30.2% | 28.3% |
-| ported `[x]` | 3125 | 34.5% | 23.2% |
-| verified `[v]` | 19 | 0.2% | 0.6% |
+| ported `[x]` | 3124 | 34.5% | 23.2% |
+| verified `[v]` | 20 | 0.2% | 0.6% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 310 |
 | no Rust file of that name | 33 |
 | partial | 229 |
-| every named function ported | 48 |
-| every named function verified | 0 |
+| every named function ported | 47 |
+| every named function verified | 1 |
 
 C++ still run through the FFI shim crates: 31 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 3, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
@@ -352,7 +352,7 @@ the end; the goal is none.
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 16 | 13 | 15 | 1 |
 | `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 18 | 21 | 64 | 0 |
-| `TriangleSetSampling` | 3 | `triangle_set_sampling.rs` | ported | 1 | 0 | 0 | 1 | 0 |
+| `TriangleSetSampling` | 3 | `triangle_set_sampling.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `TriangulateWall` | 3 | `triangulate_wall.rs` | partial | 13 | 0 | 1 | 12 | 0 |
 | `Triangulation` | 1 | `triangulation.rs` | partial | 14 | 1 | 9 | 4 | 0 |
 | `TryCatchSignal` | 3 | `try_catch_signal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
@@ -13207,11 +13207,11 @@ Rust file: `triangle_selector.rs`. Status: **partial**. Not listed: 13 construct
 
 ### `TriangleSetSampling` (.cpp+.hpp)
 
-Rust file: `triangle_set_sampling.rs`. Status: **ported**.
+Rust file: `triangle_set_sampling.rs`. Status: **verified**.
 
 **free functions**
 
-- [x] `sample_its_uniform_parallel` (line 9) → `triangle_set_sampling.rs:62`
+- [v] `sample_its_uniform_parallel` (line 9) → `triangle_set_sampling.rs:80` — R876: tests/triangle_set_sampling_native_parity.rs: total area, triangle, position and normal of 300 samples on 400 random meshes equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim call replaced
 
 ### `TriangulateWall` (.cpp+.hpp)
 

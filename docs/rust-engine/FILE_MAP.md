@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4531 |
+| Rust functions with no C++ function of that name in the pair | 4533 |
 
 By tier:
 
@@ -12263,17 +12263,19 @@ Rust only:
 
 ### `TriangleSetSampling` (.cpp+.hpp) and `triangle_set_sampling.rs`
 
-Tier 3. C++ functions 1, Rust functions 8. Matched 1: faithful 1, partial 0, divergent 0, stub 0.
+Tier 3. C++ functions 1, Rust functions 10. Matched 1: faithful 1, partial 0, divergent 0, stub 0.
 
 Rust only:
 
-- `Mt19937_64::new` :281
-- `Mt19937_64::generate` :296 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
-- `Mt19937_64::next_u64` :310
-- `UniformRealDistribution::new` :335
-- `UniformRealDistribution::sample` :341
-- `UniformRealDistribution::default` :347
-- `generate_canonical_f64_53` :357
+- `eigen_cross3f` :65
+- `eigen_squared_norm3f` :75
+- `Mt19937_64::new` :315
+- `Mt19937_64::generate` :330 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
+- `Mt19937_64::next_u64` :344
+- `UniformRealDistribution::new` :369
+- `UniformRealDistribution::sample` :375
+- `UniformRealDistribution::default` :381
+- `generate_canonical_f64_53` :391
 
 ### `TriangulateWall` (.cpp+.hpp) and `triangulate_wall.rs`
 

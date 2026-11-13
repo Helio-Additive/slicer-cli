@@ -52,5 +52,13 @@
   "functions": [
    "make_trafo_for_slicing"
   ]
+ },
+ {
+  "unit": "TriangleSetSampling",
+  "round": "876",
+  "evidence": "tests/triangle_set_sampling_native_parity.rs: total area, triangle, position and normal of 300 samples on 400 random meshes equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim call replaced",
+  "functions": [
+   "sample_its_uniform_parallel"
+  ]
  }
 ]

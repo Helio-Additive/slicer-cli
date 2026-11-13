@@ -58,6 +58,24 @@ pub struct TriangleSetSamples {
     pub triangle_indices: Vec<usize>,
 }
 
+/// `Vec3f::cross` as the C++ build evaluates it: each component `a * b - c * d`
+/// is one expression, which clang for arm64 contracts into a fused
+/// multiply-add of the left product, `fma(a, b, -(c * d))`.
+#[inline]
+pub fn eigen_cross3f(u: &Vec3f, w: &Vec3f) -> Vec3f {
+    Vec3f::new(
+        u.y.mul_add(w.z, -(u.z * w.y)),
+        u.z.mul_add(w.x, -(u.x * w.z)),
+        u.x.mul_add(w.y, -(u.y * w.x)),
+    )
+}
+
+/// `Vec3f::squaredNorm` as the C++ build evaluates it: `(x * x + y * y) + z * z`, unfused.
+#[inline]
+pub fn eigen_squared_norm3f(v: &Vec3f) -> f32 {
+    (v.x * v.x + v.y * v.y) + v.z * v.z
+}
+
 // TriangleSetSampling.cpp:9
 pub fn sample_its_uniform_parallel(
     samples_count: usize,
@@ -67,7 +85,10 @@ pub fn sample_its_uniform_parallel(
     // shim — the f32 cross/norm areas differ by ulps between nalgebra and the
     // native Eigen codegen (total_area was 1 ulp off), shifting the area-prefix
     // map and every downstream sample/visibility value.
-    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+    // SAMPLE_RUST (on unless =0): the Rust below, whose float operations follow
+    // the C++ build (see `eigen_cross3f`); tests/triangle_set_sampling_native_parity.rs
+    // holds it equal to the C++ bit for bit. =0 calls the shim, as R188 to R875 did.
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") && !crate::faithful_gate("SAMPLE_RUST") {
         let verts_flat: Vec<f32> = triangle_set
             .vertices
             .iter()
@@ -132,7 +153,7 @@ pub fn sample_its_uniform_parallel(
                 // TriangleSetSampling.cpp:18
                 let c = triangle_set.vertices[triangle_set.indices[t_idx].z as usize];
                 // TriangleSetSampling.cpp:19
-                let area = 0.5 * f64::from((b - a).cross(&(c - a)).norm());
+                let area = 0.5 * f64::from(eigen_squared_norm3f(&eigen_cross3f(&(b - a), &(c - a))).sqrt());
                 // TriangleSetSampling.cpp:20
                 *area_out = area;
             });
@@ -226,11 +247,24 @@ pub fn sample_its_uniform_parallel(
                 // TriangleSetSampling.cpp:62
                 // result.positions[s_idx] = A * (1 - sq_u) + B * (sq_u * (1 - v)) + C * (v * sq_u);
                 // Eigen casts the double scalar to float for `Vec3f * double`.
-                *position_out = a * ((1.0 - sq_u) as f32)
-                    + b * ((sq_u * (1.0 - v)) as f32)
-                    + c * ((v * sq_u) as f32);
+                // Per component `(a * w0 + b * w1) + c * w2`, unfused.
+                let (w0, w1, w2) = ((1.0 - sq_u) as f32, (sq_u * (1.0 - v)) as f32, (v * sq_u) as f32);
+                *position_out = Vec3f::new(
+                    (a.x * w0 + b.x * w1) + c.x * w2,
+                    (a.y * w0 + b.y * w1) + c.y * w2,
+                    (a.z * w0 + b.z * w1) + c.z * w2,
+                );
                 // TriangleSetSampling.cpp:63
-                *normal_out = (b - a).cross(&(c - b)).normalize();
+                // `normalized()` divides by the square root of the squared norm
+                // when that is positive.
+                let n = eigen_cross3f(&(b - a), &(c - b));
+                let z = eigen_squared_norm3f(&n);
+                *normal_out = if z > 0.0 {
+                    let l = z.sqrt();
+                    Vec3f::new(n.x / l, n.y / l, n.z / l)
+                } else {
+                    n
+                };
                 // TriangleSetSampling.cpp:64
                 *triangle_index_out = t_idx;
             });
