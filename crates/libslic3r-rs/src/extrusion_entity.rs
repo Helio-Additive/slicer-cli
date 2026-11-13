@@ -302,47 +302,18 @@ pub(crate) fn offset_polyline_clib(polyline: &crate::geometry::Polyline, delta_s
         xy.push(p.x as i32);
         xy.push(p.y as i32);
     }
-    if crate::clipper_utils::clipper_rust() {
-        // ClipperUtils.cpp:418-419 `offset(const Polyline&, delta)`, as the shim's
-        // cz_offset_polyline runs it.
-        let path = crate::clipper_utils::clib_read_closed_paths(&xy, &[pts.len() as i32]).swap_remove(0);
-        return crate::clipper_utils::offset_polyline_paths(&path, delta_scaled, 0.0)
-            .iter()
-            .filter(|ring| ring.len() >= 3)
-            .map(|ring| {
-                Polygon::from_points(
-                    ring.iter().map(|q| crate::geometry::Point::new(q.x as i64, q.y as i64)).collect(),
-                )
-            })
-            .collect();
-    }
-    // SAFETY: live correctly-sized buffer; shim only reads; output freed below.
-    let raw = unsafe {
-        clipper_z_sys::cz_offset_polyline(xy.as_ptr(), pts.len() as i32, delta_scaled, 0.0)
-    };
-    let mut out: Vec<Polygon> = Vec::new();
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees sizes.
-        let lens = unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in lens {
-            let n = len.max(0) as usize;
-            let mut ring: Vec<crate::geometry::Point> = Vec::with_capacity(n);
-            for k in 0..n {
-                let b = (cursor + k) * 3;
-                ring.push(crate::geometry::Point::new(coords[b] as i64, coords[b + 1] as i64));
-            }
-            cursor += n;
-            if ring.len() >= 3 {
-                out.push(Polygon::from_points(ring));
-            }
-        }
-    }
-    // SAFETY: raw produced above, not yet freed.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    out
+    // ClipperUtils.cpp:418-419 `offset(const Polyline&, delta)`, as the shim's
+    // cz_offset_polyline runs it. Until R891 this went through `clipper-z-sys`.
+    let path = crate::clipper_utils::clib_read_closed_paths(&xy, &[pts.len() as i32]).swap_remove(0);
+    return crate::clipper_utils::offset_polyline_paths(&path, delta_scaled, 0.0)
+        .iter()
+        .filter(|ring| ring.len() >= 3)
+        .map(|ring| {
+            Polygon::from_points(
+                ring.iter().map(|q| crate::geometry::Point::new(q.x as i64, q.y as i64)).collect(),
+            )
+        })
+        .collect();
 }
 
 impl ExtrusionPath {

@@ -1208,12 +1208,12 @@ fn assert_i32_scaled(v: Coord) {
 // ============================================================================
 // ClipperUtils.cpp over the Rust port of ClipperLib (`crate::clipper`).
 //
-// The `*_clib` wrappers of this file call the C++ library through the shim of
-// `clipper-z-sys` (`cz_*`). Each shim routine is a few statements of
-// ClipperUtils.cpp around the library. The functions below are those statements
-// in Rust, on `crate::clipper`, and the wrappers call them instead of the shim
-// while the gate `CLIPPER_RUST` is on (the default). `CLIPPER_RUST=0` takes every
-// wrapper back to the shim.
+// The functions below are the ports of the ClipperUtils.cpp functions they are
+// named after, on `crate::clipper`, and the `*_clib` wrappers of this file call
+// them. Until R891 the wrappers went through the shim of `clipper-z-sys`
+// (`cz_*`), each routine of which is those few statements of ClipperUtils.cpp
+// around the C++ library; the shim stays as the reference of the tests
+// (`tests/clipper_utils_native_parity.rs`).
 //
 // They work on `ClipperLib::Paths` (i32 coordinates), like the C++; the wrappers
 // keep their conversion from and to the engine's polygons.
@@ -1222,14 +1222,6 @@ fn assert_i32_scaled(v: Coord) {
 // and its callers round them to f32 before the call where the C++ would; the
 // functions here take the same `f64` the shim takes.
 // ============================================================================
-
-/// The gate of the routing to `crate::clipper`: on unless `CLIPPER_RUST=0`.
-#[doc(hidden)]
-#[inline]
-pub fn clipper_rust() -> bool {
-    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *G.get_or_init(|| crate::faithful_gate("CLIPPER_RUST"))
-}
 
 /// ClipperUtils.hpp:29 `static constexpr const float ClipperSafetyOffset = 10.f;`
 const CLIPPER_SAFETY_OFFSET: f64 = 10.0;
@@ -2294,73 +2286,20 @@ fn clib_offset_expolygon_paths_scaled(
 ) -> Vec<Polygon> {
     let _ = expoly;
 
-    if clipper_rust() {
-        // The shim reads the contour, and the holes when there are any.
-        let contour = clib_read_closed_paths(&contour_xy, &[contour_n]).swap_remove(0);
-        let holes = if expoly.holes.is_empty() {
-            crate::clipper::Paths::new()
-        } else {
-            clib_read_closed_paths(&holes_xy, &hole_lens)
-        };
-        return clib_polygons_from_paths(&expolygon_offset(
-            &contour,
-            &holes,
-            delta_scaled,
-            clib_join_type(clib_join_code(join_type)),
-            CLIB_MITER_LIMIT,
-        ));
-    }
-
-    // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
-    // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
-    // out then free via cz_free_zpaths.
-    let raw = unsafe {
-        clipper_z_sys::cz_offset_expolygon(
-            contour_xy.as_ptr(),
-            contour_n,
-            if holes_xy.is_empty() {
-                std::ptr::null()
-            } else {
-                holes_xy.as_ptr()
-            },
-            if hole_lens.is_empty() {
-                std::ptr::null()
-            } else {
-                hole_lens.as_ptr()
-            },
-            expoly.holes.len() as i32,
-            delta_scaled,
-            clib_join_code(join_type),
-            CLIB_MITER_LIMIT,
-        )
+    // The shim reads the contour, and the holes when there are any.
+    let contour = clib_read_closed_paths(&contour_xy, &[contour_n]).swap_remove(0);
+    let holes = if expoly.holes.is_empty() {
+        crate::clipper::Paths::new()
+    } else {
+        clib_read_closed_paths(&holes_xy, &hole_lens)
     };
-
-    let mut out: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            out.push(Polygon::from_points(pts));
-        }
-    }
-
-    // SAFETY: `raw` was produced by cz_offset_expolygon and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-
-    out
+    return clib_polygons_from_paths(&expolygon_offset(
+        &contour,
+        &holes,
+        delta_scaled,
+        clib_join_type(clib_join_code(join_type)),
+        CLIB_MITER_LIMIT,
+    ));
 }
 
 /// ClipperLib-backed `expolygons_offset` (ClipperUtils.cpp:539): vertex-exact
@@ -2522,59 +2461,12 @@ pub fn offset_ex_polygons_clib(
         OffsetJoinType::Round => 1,
         OffsetJoinType::Square => 2,
     };
-    if clipper_rust() {
-        return poly_tree_to_ex_polygons(&offset_paths::<crate::clipper::PolyTree>(
-            &clib_read_closed_paths(&xy, &lens),
-            delta_scaled,
-            clib_join_type(jt),
-            CLIB_MITER_LIMIT,
-        ));
-    }
-    // SAFETY: pointers reference live Vecs for the call; the shim only reads
-    // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
-    let raw = unsafe {
-        clipper_z_sys::cz_offset_ex_paths(
-            xy.as_ptr(),
-            lens.as_ptr(),
-            num,
-            delta_scaled,
-            jt,
-            CLIB_MITER_LIMIT,
-        )
-    };
-    let mut result: ExPolygons = Vec::new();
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            let mut is_hole = 0i32;
-            for i in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                if i == 0 {
-                    is_hole = coords[cursor * 3 + 2];
-                }
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            let ring = Polygon::from_points(pts);
-            if is_hole == 0 {
-                result.push(ExPolygon::new(ring));
-            } else if let Some(last) = result.last_mut() {
-                last.holes.push(ring);
-            }
-        }
-    }
-    // SAFETY: `raw` was produced by cz_offset_ex_paths and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    result
+    return poly_tree_to_ex_polygons(&offset_paths::<crate::clipper::PolyTree>(
+        &clib_read_closed_paths(&xy, &lens),
+        delta_scaled,
+        clib_join_type(jt),
+        CLIB_MITER_LIMIT,
+    ));
 }
 
 /// Flatten a set of ExPolygons into the flat (x,y i32 pairs + per-path lengths)
@@ -2640,55 +2532,16 @@ pub fn difference_polygons_clib(subject: &[Polygon], clip: &[ExPolygon]) -> Vec<
         return subject.to_vec();
     }
     let (subject_xy, subject_lens, subject_num) = clib_flatten_polygons(subject);
-    let (clip_xy, clip_lens, clip_num) = clib_flatten_expolygons(clip);
+    let (clip_xy, clip_lens, _) = clib_flatten_expolygons(clip);
     if subject_num == 0 {
         return vec![];
     }
-    if clipper_rust() {
-        return clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
-            crate::clipper::ClipType::ctDifference,
-            &clib_read_closed_paths(&subject_xy, &subject_lens),
-            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
-            crate::clipper::PolyFillType::pftNonZero,
-        ));
-    }
-    // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
-    // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
-    // out then free via cz_free_zpaths.
-    let raw = unsafe {
-        clipper_z_sys::cz_difference_closed(
-            subject_xy.as_ptr(),
-            subject_lens.as_ptr(),
-            subject_num,
-            if clip_xy.is_empty() { std::ptr::null() } else { clip_xy.as_ptr() },
-            if clip_lens.is_empty() { std::ptr::null() } else { clip_lens.as_ptr() },
-            clip_num,
-        )
-    };
-    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            all_paths.push(Polygon::from_points(pts));
-        }
-    }
-    // SAFETY: `raw` was produced by cz_difference_closed and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    all_paths
+    return clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
+        crate::clipper::ClipType::ctDifference,
+        &clib_read_closed_paths(&subject_xy, &subject_lens),
+        &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+        crate::clipper::PolyFillType::pftNonZero,
+    ));
 }
 
 /// Raw closed-path boolean over the ClipperLib shim: `_clipper(clipType,
@@ -2698,60 +2551,20 @@ pub fn difference_polygons_clib(subject: &[Polygon], clip: &[ExPolygon]) -> Vec<
 /// otherwise ctDifference. The operation always runs, an empty clip included.
 fn clib_boolean_polygons_raw(subject: &[Polygon], clip: &[Polygon], intersection: bool) -> Vec<Polygon> {
     let (subject_xy, subject_lens, subject_num) = clib_flatten_polygons(subject);
-    let (clip_xy, clip_lens, clip_num) = clib_flatten_polygons(clip);
+    let (clip_xy, clip_lens, _) = clib_flatten_polygons(clip);
     if subject_num == 0 {
         return vec![];
     }
-    if clipper_rust() {
-        return clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
-            if intersection {
-                crate::clipper::ClipType::ctIntersection
-            } else {
-                crate::clipper::ClipType::ctDifference
-            },
-            &clib_read_closed_paths(&subject_xy, &subject_lens),
-            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
-            crate::clipper::PolyFillType::pftNonZero,
-        ));
-    }
-    let clip_xy_ptr = if clip_xy.is_empty() { std::ptr::null() } else { clip_xy.as_ptr() };
-    let clip_lens_ptr = if clip_lens.is_empty() { std::ptr::null() } else { clip_lens.as_ptr() };
-    // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
-    // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
-    // out then free via cz_free_zpaths.
-    let raw = unsafe {
+    return clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
         if intersection {
-            clipper_z_sys::cz_intersection_closed(
-                subject_xy.as_ptr(), subject_lens.as_ptr(), subject_num, clip_xy_ptr, clip_lens_ptr, clip_num,
-            )
+            crate::clipper::ClipType::ctIntersection
         } else {
-            clipper_z_sys::cz_difference_closed(
-                subject_xy.as_ptr(), subject_lens.as_ptr(), subject_num, clip_xy_ptr, clip_lens_ptr, clip_num,
-            )
-        }
-    };
-    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
-                cursor += 1;
-            }
-            all_paths.push(Polygon::from_points(pts));
-        }
-    }
-    // SAFETY: `raw` came from the shim call above and is not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    all_paths
+            crate::clipper::ClipType::ctDifference
+        },
+        &clib_read_closed_paths(&subject_xy, &subject_lens),
+        &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+        crate::clipper::PolyFillType::pftNonZero,
+    ));
 }
 
 /// `diff(const Polygons &subject, const Polygons &clip)` (ClipperUtils.cpp:677),
@@ -2789,67 +2602,17 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
     }
 
     let (subject_xy, subject_lens, subject_num) = clib_flatten_expolygons(subject);
-    let (clip_xy, clip_lens, clip_num) = clib_flatten_expolygons(clip);
+    let (clip_xy, clip_lens, _) = clib_flatten_expolygons(clip);
     if subject_num == 0 {
         return vec![];
     }
 
-    let all_paths: Vec<Polygon> = if clipper_rust() {
-        clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
-            crate::clipper::ClipType::ctDifference,
-            &clib_read_closed_paths(&subject_xy, &subject_lens),
-            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
-            crate::clipper::PolyFillType::pftNonZero,
-        ))
-    } else {
-    // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
-    // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
-    // out then free via cz_free_zpaths.
-    let raw = unsafe {
-        clipper_z_sys::cz_difference_closed(
-            subject_xy.as_ptr(),
-            subject_lens.as_ptr(),
-            subject_num,
-            if clip_xy.is_empty() {
-                std::ptr::null()
-            } else {
-                clip_xy.as_ptr()
-            },
-            if clip_lens.is_empty() {
-                std::ptr::null()
-            } else {
-                clip_lens.as_ptr()
-            },
-            clip_num,
-        )
-    };
-
-    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            all_paths.push(Polygon::from_points(pts));
-        }
-    }
-
-    // SAFETY: `raw` was produced by cz_difference_closed and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    all_paths
-    };
+    let all_paths: Vec<Polygon> = clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
+        crate::clipper::ClipType::ctDifference,
+        &clib_read_closed_paths(&subject_xy, &subject_lens),
+        &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+        crate::clipper::PolyFillType::pftNonZero,
+    ));
 
     if all_paths.is_empty() {
         return vec![];
@@ -2891,52 +2654,12 @@ pub fn intersection_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygon
         return vec![];
     }
 
-    let all_paths: Vec<Polygon> = if clipper_rust() {
-        clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
-            crate::clipper::ClipType::ctIntersection,
-            &clib_read_closed_paths(&subject_xy, &subject_lens),
-            &clib_read_closed_paths(&clip_xy, &clip_lens),
-            crate::clipper::PolyFillType::pftNonZero,
-        ))
-    } else {
-    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
-    let raw = unsafe {
-        clipper_z_sys::cz_intersection_closed(
-            subject_xy.as_ptr(),
-            subject_lens.as_ptr(),
-            subject_num,
-            clip_xy.as_ptr(),
-            clip_lens.as_ptr(),
-            clip_num,
-        )
-    };
-
-    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            all_paths.push(Polygon::from_points(pts));
-        }
-    }
-
-    // SAFETY: `raw` was produced by cz_intersection_closed and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    all_paths
-    };
+    let all_paths: Vec<Polygon> = clib_polygons_from_paths(&clipper_do::<crate::clipper::Paths>(
+        crate::clipper::ClipType::ctIntersection,
+        &clib_read_closed_paths(&subject_xy, &subject_lens),
+        &clib_read_closed_paths(&clip_xy, &clip_lens),
+        crate::clipper::PolyFillType::pftNonZero,
+    ));
 
     if all_paths.is_empty() {
         return vec![];
@@ -2969,50 +2692,13 @@ pub fn intersection_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> Ex
     if subject_num == 0 || clip_num == 0 {
         return vec![];
     }
-    let all_paths: Vec<Polygon> = if clipper_rust() {
-        clib_polygons_from_paths(&clipper_do_safety_offset::<crate::clipper::Paths>(
-            crate::clipper::ClipType::ctIntersection,
-            &clib_read_closed_paths(&subject_xy, &subject_lens),
-            &clib_read_closed_paths(&clip_xy, &clip_lens),
-            crate::clipper::PolyFillType::pftNonZero,
-            ApplySafetyOffset::Yes,
-        ))
-    } else {
-    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
-    let raw = unsafe {
-        clipper_z_sys::cz_intersection_closed_safety(
-            subject_xy.as_ptr(),
-            subject_lens.as_ptr(),
-            subject_num,
-            clip_xy.as_ptr(),
-            clip_lens.as_ptr(),
-            clip_num,
-        )
-    };
-    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees sizes as documented on cz_free_zpaths.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            all_paths.push(Polygon::from_points(pts));
-        }
-    }
-    // SAFETY: raw produced by the shim and not yet freed.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    all_paths
-    };
+    let all_paths: Vec<Polygon> = clib_polygons_from_paths(&clipper_do_safety_offset::<crate::clipper::Paths>(
+        crate::clipper::ClipType::ctIntersection,
+        &clib_read_closed_paths(&subject_xy, &subject_lens),
+        &clib_read_closed_paths(&clip_xy, &clip_lens),
+        crate::clipper::PolyFillType::pftNonZero,
+        ApplySafetyOffset::Yes,
+    ));
     if all_paths.is_empty() {
         return vec![];
     }
@@ -3028,66 +2714,18 @@ pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPo
     }
 
     let (subject_xy, subject_lens, subject_num) = clib_flatten_expolygons(subject);
-    let (clip_xy, clip_lens, clip_num) = clib_flatten_expolygons(clip);
+    let (clip_xy, clip_lens, _) = clib_flatten_expolygons(clip);
     if subject_num == 0 {
         return vec![];
     }
 
-    let all_paths: Vec<Polygon> = if clipper_rust() {
-        clib_polygons_from_paths(&clipper_do_safety_offset::<crate::clipper::Paths>(
-            crate::clipper::ClipType::ctDifference,
-            &clib_read_closed_paths(&subject_xy, &subject_lens),
-            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
-            crate::clipper::PolyFillType::pftNonZero,
-            ApplySafetyOffset::Yes,
-        ))
-    } else {
-    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
-    let raw = unsafe {
-        clipper_z_sys::cz_difference_closed_safety(
-            subject_xy.as_ptr(),
-            subject_lens.as_ptr(),
-            subject_num,
-            if clip_xy.is_empty() {
-                std::ptr::null()
-            } else {
-                clip_xy.as_ptr()
-            },
-            if clip_lens.is_empty() {
-                std::ptr::null()
-            } else {
-                clip_lens.as_ptr()
-            },
-            clip_num,
-        )
-    };
-
-    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            all_paths.push(Polygon::from_points(pts));
-        }
-    }
-
-    // SAFETY: `raw` was produced by cz_difference_closed_safety and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    all_paths
-    };
+    let all_paths: Vec<Polygon> = clib_polygons_from_paths(&clipper_do_safety_offset::<crate::clipper::Paths>(
+        crate::clipper::ClipType::ctDifference,
+        &clib_read_closed_paths(&subject_xy, &subject_lens),
+        &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+        crate::clipper::PolyFillType::pftNonZero,
+        ApplySafetyOffset::Yes,
+    ));
 
     if all_paths.is_empty() {
         return vec![];
@@ -3138,69 +2776,10 @@ pub fn union_flat_clib(loops: &[Polygon]) -> Vec<Polygon> {
     if num == 0 {
         return vec![];
     }
-    if clipper_rust() {
-        return clib_polygons_from_paths(&clipper_union::<crate::clipper::Paths>(
-            &clib_read_closed_paths(&xy, &lens),
-            crate::clipper::PolyFillType::pftNonZero,
-        ));
-    }
-    // SAFETY: pointers reference live Vecs; shim only reads; output freed below.
-    let raw = unsafe { clipper_z_sys::cz_union_flat(xy.as_ptr(), lens.as_ptr(), num) };
-    let mut out: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees sizes as in the other cz_* decoders.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
-                cursor += 1;
-            }
-            out.push(Polygon::from_points(pts));
-        }
-    }
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    out
-}
-
-/// Read a grouped CzZPaths (cz_union_ex layout: z of first point = is_hole)
-/// into ExPolygons, then free it.
-fn read_grouped_zpaths(raw: clipper_z_sys::CzZPaths) -> ExPolygons {
-    let mut result: ExPolygons = Vec::new();
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            let mut is_hole = 0i32;
-            for i in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                if i == 0 {
-                    is_hole = coords[cursor * 3 + 2];
-                }
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            let ring = Polygon::from_points(pts);
-            if is_hole == 0 {
-                result.push(ExPolygon::new(ring));
-            } else if let Some(last) = result.last_mut() {
-                last.holes.push(ring);
-            }
-        }
-    }
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    result
+    return clib_polygons_from_paths(&clipper_union::<crate::clipper::Paths>(
+        &clib_read_closed_paths(&xy, &lens),
+        crate::clipper::PolyFillType::pftNonZero,
+    ));
 }
 
 /// R320: faithful variable_offset_inner_ex via the vendored ClipperLib shim
@@ -3229,20 +2808,7 @@ pub fn variable_offset_inner_ex_clib(
     for (h, hole) in expoly.holes.iter().enumerate() {
         push_ring(hole.points(), &deltas[1 + h]);
     }
-    let num = lens.len() as i32;
-    if clipper_rust() {
-        return variable_offset_inner_ex_paths(&clib_read_closed_paths(&xy, &lens), &flat_deltas, miter_limit);
-    }
-    let raw = unsafe {
-        clipper_z_sys::cz_variable_offset_inner_ex(
-            xy.as_ptr(),
-            lens.as_ptr(),
-            num,
-            flat_deltas.as_ptr(),
-            miter_limit,
-        )
-    };
-    read_grouped_zpaths(raw)
+    return variable_offset_inner_ex_paths(&clib_read_closed_paths(&xy, &lens), &flat_deltas, miter_limit);
 }
 
 /// R729 — call/size/time census for `union_ex_clib`, to separate per-CALL
@@ -3325,10 +2891,8 @@ fn union_ex_clib_impl(loops: &[Polygon], fill_type: i32, one_pass: bool) -> ExPo
         return vec![];
     }
 
-    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
-    // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
     let t_ffi = if prof { Some(std::time::Instant::now()) } else { None };
-    let result: ExPolygons = if clipper_rust() {
+    let result: ExPolygons = {
         let subject = clib_read_closed_paths(&xy, &lens);
         let polytree = if one_pass {
             clipper_union::<crate::clipper::PolyTree>(&subject, crate::clipper::PolyFillType::pftNonZero)
@@ -3345,55 +2909,6 @@ fn union_ex_clib_impl(loops: &[Polygon], fill_type: i32, one_pass: bool) -> ExPo
             UNIONPROF_FFI_NANOS.fetch_add(t.elapsed().as_nanos() as usize, Relaxed);
         }
         poly_tree_to_ex_polygons(&polytree)
-    } else {
-    let raw = unsafe {
-        if one_pass {
-            clipper_z_sys::cz_union_polytree(xy.as_ptr(), lens.as_ptr(), num)
-        } else {
-            clipper_z_sys::cz_union_ex(xy.as_ptr(), lens.as_ptr(), num, fill_type)
-        }
-    };
-    if let Some(t) = t_ffi {
-        use std::sync::atomic::Ordering::Relaxed;
-        UNIONPROF_FFI_NANOS.fetch_add(t.elapsed().as_nanos() as usize, Relaxed);
-    }
-
-    let mut result: ExPolygons = Vec::new();
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            let mut is_hole = 0i32;
-            for i in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                if i == 0 {
-                    is_hole = coords[cursor * 3 + 2];
-                }
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            let ring = Polygon::from_points(pts);
-            if is_hole == 0 {
-                // contour -> new ExPolygon
-                result.push(ExPolygon::new(ring));
-            } else if let Some(last) = result.last_mut() {
-                // hole -> attach to current contour
-                last.holes.push(ring);
-            }
-        }
-    }
-
-    // SAFETY: `raw` was produced by cz_union_ex and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    result
     };
 
     if let Some(t) = t_start {
@@ -3436,43 +2951,7 @@ pub fn union_safety_offset_ex_clib(loops: &[Polygon]) -> ExPolygons {
     if num == 0 {
         return vec![];
     }
-    if clipper_rust() {
-        return union_safety_offset_ex_paths(&clib_read_closed_paths(&xy, &lens));
-    }
-    // SAFETY: live correctly-sized buffers; shim only reads; output freed below.
-    let raw = unsafe { clipper_z_sys::cz_union_ex_safety(xy.as_ptr(), lens.as_ptr(), num) };
-    let mut result: ExPolygons = Vec::new();
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees sizes (see union_ex_clib).
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            let mut is_hole = 0i32;
-            for i in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                if i == 0 {
-                    is_hole = coords[cursor * 3 + 2];
-                }
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            let ring = Polygon::from_points(pts);
-            if is_hole == 0 {
-                result.push(ExPolygon::new(ring));
-            } else if let Some(last) = result.last_mut() {
-                last.holes.push(ring);
-            }
-        }
-    }
-    // SAFETY: raw produced above, not yet freed.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    result
+    return union_safety_offset_ex_paths(&clib_read_closed_paths(&xy, &lens));
 }
 
 /// ClipperLib-backed `offset2_ex(ExPolygons, delta1, delta2)` (ClipperUtils.cpp:581)
@@ -3550,65 +3029,15 @@ pub fn offset2_ex_clib_miter(
     let delta1 = ((delta1_mm / 0.00001_f64) as f32) as f64;
     let delta2 = ((delta2_mm / 0.00001_f64) as f32) as f64;
 
-    if clipper_rust() {
-        return offset2_ex_paths(
-            &xy,
-            &lens,
-            &is_hole,
-            delta1,
-            delta2,
-            clib_join_type(clib_join_code(join_type)),
-            miter_limit,
-        );
-    }
-    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
-    // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
-    let raw = unsafe {
-        clipper_z_sys::cz_offset2_ex(
-            xy.as_ptr(),
-            lens.as_ptr(),
-            is_hole.as_ptr(),
-            num,
-            delta1,
-            delta2,
-            clib_join_code(join_type),
-            miter_limit,
-        )
-    };
-
-    let mut result: ExPolygons = Vec::new();
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            let mut ph = 0i32;
-            for i in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                if i == 0 {
-                    ph = coords[cursor * 3 + 2];
-                }
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            let ring = Polygon::from_points(pts);
-            if ph == 0 {
-                result.push(ExPolygon::new(ring));
-            } else if let Some(last) = result.last_mut() {
-                last.holes.push(ring);
-            }
-        }
-    }
-
-    // SAFETY: `raw` was produced by cz_offset2_ex and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-
-    result
+    return offset2_ex_paths(
+        &xy,
+        &lens,
+        &is_hole,
+        delta1,
+        delta2,
+        clib_join_type(clib_join_code(join_type)),
+        miter_limit,
+    );
 }
 
 /// ClipperLib-backed `simplify_polygons(subject, preserve_collinear=false)`
@@ -3639,37 +3068,12 @@ pub fn simplify_polygons_clib(loops: &[Polygon], fill_type: i32) -> Vec<Polygon>
     if num == 0 {
         return vec![];
     }
-    if clipper_rust() {
-        // ClipperLib::SimplifyPolygons (clipper.hpp:558-566), which is all the shim's
-        // cz_simplify_polygons runs.
-        return clib_polygons_from_paths(&crate::clipper::simplify_polygons(
-            &clib_read_closed_paths(&xy, &lens),
-            clib_fill_type(fill_type),
-        ));
-    }
-    // SAFETY: live, correctly-sized buffers; shim only reads them, returns malloc'd
-    // output we copy out then free.
-    let raw = unsafe { clipper_z_sys::cz_simplify_polygons(xy.as_ptr(), lens.as_ptr(), num, fill_type) };
-    let mut out: Vec<Polygon> = Vec::new();
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
-                cursor += 1;
-            }
-            out.push(Polygon::from_points(pts));
-        }
-    }
-    // SAFETY: `raw` from cz_simplify_polygons, not yet freed.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    out
+    // ClipperLib::SimplifyPolygons (clipper.hpp:558-566), which is all the shim's
+    // cz_simplify_polygons runs.
+    return clib_polygons_from_paths(&crate::clipper::simplify_polygons(
+        &clib_read_closed_paths(&xy, &lens),
+        clib_fill_type(fill_type),
+    ));
 }
 
 /// R803 — faithful `offset(const Polygons&, float delta)` (ClipperUtils.cpp:413)
@@ -3719,37 +3123,12 @@ pub fn offset_polygons_clib_ml(
         OffsetJoinType::Square => 2,
         _ => 0,
     };
-    if clipper_rust() {
-        return clib_polygons_from_paths(&offset_paths::<crate::clipper::Paths>(
-            &clib_read_closed_paths(&xy, &lens),
-            delta,
-            clib_join_type(jt),
-            miter_limit,
-        ));
-    }
-    // SAFETY: live, correctly-sized buffers; shim only reads them, returns malloc'd
-    // output we copy out then free.
-    let raw = unsafe { clipper_z_sys::cz_offset_paths(xy.as_ptr(), lens.as_ptr(), num, delta, jt, miter_limit) };
-    let mut out: Vec<Polygon> = Vec::new();
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
-                cursor += 1;
-            }
-            out.push(Polygon::from_points(pts));
-        }
-    }
-    // SAFETY: `raw` from cz_offset_paths, not yet freed.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    out
+    return clib_polygons_from_paths(&offset_paths::<crate::clipper::Paths>(
+        &clib_read_closed_paths(&xy, &lens),
+        delta,
+        clib_join_type(jt),
+        miter_limit,
+    ));
 }
 
 /// Detect gaps between two polygon sets.
@@ -4276,55 +3655,15 @@ pub fn intersection_pl_clib(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<P
         return vec![];
     }
 
-    if clipper_rust() {
-        return _clipper_pl_open(
-            crate::clipper::ClipType::ctIntersection,
-            &clib_read_closed_paths(&subject_xy, &subject_lens),
-            &clib_read_closed_paths(&clip_xy, &clip_lens),
-        )
-        .iter()
-        .filter(|path| path.len() >= 2)
-        .map(|path| Polyline::from_points(path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()))
-        .collect();
-    }
-    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
-    let raw = unsafe {
-        clipper_z_sys::cz_intersection_pl(
-            subject_xy.as_ptr(),
-            subject_lens.as_ptr(),
-            subject_lens.len() as i32,
-            clip_xy.as_ptr(),
-            clip_lens.as_ptr(),
-            clip_num,
-        )
-    };
-
-    let mut out: Vec<Polyline> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                let x = coords[cursor * 3] as i64;
-                let y = coords[cursor * 3 + 1] as i64;
-                pts.push(Point::new(x, y));
-                cursor += 1;
-            }
-            if pts.len() >= 2 {
-                out.push(Polyline::from_points(pts));
-            }
-        }
-    }
-    // SAFETY: `raw` was produced by cz_intersection_pl and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    out
+    return _clipper_pl_open(
+        crate::clipper::ClipType::ctIntersection,
+        &clib_read_closed_paths(&subject_xy, &subject_lens),
+        &clib_read_closed_paths(&clip_xy, &clip_lens),
+    )
+    .iter()
+    .filter(|path| path.len() >= 2)
+    .map(|path| Polyline::from_points(path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()))
+    .collect();
 }
 
 /// `diff_pl(const Polylines &subject, const Polygons &clip)` (ClipperUtils.cpp
@@ -4348,52 +3687,16 @@ pub fn diff_pl_clib(polylines: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
     if subject_lens.is_empty() {
         return vec![];
     }
-    let (clip_xy, clip_lens, clip_num) = clib_flatten_polygons(clip);
+    let (clip_xy, clip_lens, _) = clib_flatten_polygons(clip);
 
-    if clipper_rust() {
-        return _clipper_pl_open(
-            crate::clipper::ClipType::ctDifference,
-            &clib_read_closed_paths(&subject_xy, &subject_lens),
-            &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
-        )
-        .iter()
-        .map(|path| Polyline::from_points(path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()))
-        .collect();
-    }
-    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
-    let raw = unsafe {
-        clipper_z_sys::cz_diff_pl(
-            subject_xy.as_ptr(),
-            subject_lens.as_ptr(),
-            subject_lens.len() as i32,
-            if clip_xy.is_empty() { std::ptr::null() } else { clip_xy.as_ptr() },
-            if clip_lens.is_empty() { std::ptr::null() } else { clip_lens.as_ptr() },
-            clip_num,
-        )
-    };
-
-    let mut out: Vec<Polyline> = Vec::with_capacity(raw.num_paths.max(0) as usize);
-    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
-        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
-        // 3*total_points i32s with sum(path_lens) == total_points.
-        let path_lens =
-            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
-        let coords =
-            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
-        let mut cursor = 0usize;
-        for &len in path_lens {
-            let len = len.max(0) as usize;
-            let mut pts: Vec<Point> = Vec::with_capacity(len);
-            for _ in 0..len {
-                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
-                cursor += 1;
-            }
-            out.push(Polyline::from_points(pts));
-        }
-    }
-    // SAFETY: `raw` was produced by cz_diff_pl and not freed yet.
-    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-    out
+    return _clipper_pl_open(
+        crate::clipper::ClipType::ctDifference,
+        &clib_read_closed_paths(&subject_xy, &subject_lens),
+        &clib_read_closed_paths_or_null(&clip_xy, &clip_lens),
+    )
+    .iter()
+    .map(|path| Polyline::from_points(path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()))
+    .collect();
 }
 
 /// Compute intersection of a single polyline with ExPolygons.

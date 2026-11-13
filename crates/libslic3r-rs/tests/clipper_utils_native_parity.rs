@@ -1,6 +1,6 @@
 //! The ClipperUtils.cpp routines of `src/clipper_utils.rs` (and the wave propagation of
 //! `src/region_expansion.rs`) that run on the Rust port of ClipperLib, against the shim
-//! routines of `clipper-z-sys` they replace under the gate `CLIPPER_RUST`: the same inputs go
+//! routines of `clipper-z-sys` they replaced (the engine went through the shim until R891): the same inputs go
 //! through the Rust routine and through the `cz_*` function, and the two results must be the
 //! same paths in the same order, each with the same points from the same start vertex (and,
 //! for the routines that return ExPolygons, the same contours with the same holes).
@@ -16,7 +16,7 @@
 //! Every case is made from its own seed; a failure prints the case and its input.
 //!
 //! The last test goes through the wrappers the engine calls (`union_ex_clib`, ...), which
-//! take the Rust routines unless `CLIPPER_RUST=0`, and compares them with the shim.
+//! take the Rust routines, and compares them with the shim.
 
 use clipper_z_sys as cz;
 use slicer::clipper::{self as cl, ClipType, IntPoint, Path, Paths, PolyFillType, PolyTree};
@@ -931,8 +931,8 @@ fn variable_offset_inner_ex_matches_shim() {
             deltas.iter().map(|d| d.to_bits()).collect::<Vec<_>>()
         );
 
-        // The wrapper of the engine, which takes the Rust routine while the gate is on.
-        if cu::clipper_rust() {
+        // The wrapper of the engine, which takes the Rust routine.
+        {
             let mut expolygon = ExPolygon::new(polygons(&vec![rings[0].clone()]).remove(0));
             expolygon.holes = polygons(&rings[1..].to_vec());
             let mut per_ring: Vec<Vec<f32>> = Vec::new();
@@ -1044,14 +1044,10 @@ fn non_empty(paths: &Paths) -> Paths {
     paths.iter().filter(|p| !p.is_empty()).cloned().collect()
 }
 
-/// The wrappers the engine calls, which take the Rust routines while the gate is on, against
+/// The wrappers the engine calls, which take the Rust routines, against
 /// the shim called the way the wrappers call it and decoded the way they decode it.
 #[test]
 fn wrappers_match_shim() {
-    if !cu::clipper_rust() {
-        eprintln!("CLIPPER_RUST=0: the wrappers call the shim; nothing to compare");
-        return;
-    }
     for i in 0..cases(8_000) {
         let mut s = case_seed(18, i);
         let sc = scene(&mut s);

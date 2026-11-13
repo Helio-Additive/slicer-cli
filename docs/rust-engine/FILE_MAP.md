@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 748 |
 | of the rest, 25 tokens or more | 1909 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4724 |
+| Rust functions with no C++ function of that name in the pair | 4721 |
 
 By tier:
 
@@ -1537,7 +1537,7 @@ Rust only:
 
 ### `ClipperUtils` (.cpp+.hpp) and `clipper_utils.rs`
 
-Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 164. Matched 35: faithful 29, partial 4, divergent 2, stub 0.
+Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 162. Matched 35: faithful 29, partial 4, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -1546,7 +1546,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `union_` :727 and `union` :300 (40%, 3.17x)
 - partial: `intersection_ex` :808 and `intersection_ex` :1054 (33%, 3.12x)
 - divergent: `union_ex` :825 and `union_ex` :332 (20%, 5.24x)
-- partial: `mittered_offset_path_scaled` :1120 and `mittered_offset_path_scaled` :2010 (33%, 1.11x)
+- partial: `mittered_offset_path_scaled` :1120 and `mittered_offset_path_scaled` :2002 (33%, 1.11x)
 
 Missing in the Rust file:
 
@@ -1785,95 +1785,93 @@ Rust only:
 - `to_polygons` :1096 — C++ has it in `ExPolygon`, `NSVGUtils`, `Polygon`
 - `clib_join_code` :1185
 - `assert_i32_scaled` :1199
-- `clipper_rust` :1229
-- `clib_read_closed_paths` :1242
-- `clib_read_closed_paths_or_null` :1260
-- `clib_polygons_from_paths` :1271
-- `clib_fill_type` :1284
-- `clib_join_type` :1297
-- `Paths::execute` :1323 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
-- `PolyTree::execute` :1343 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
-- `clipper_do_safety_offset` :1514
-- `offset_polyline_paths` :1653
-- `offset2_ex_paths` :1831
-- `union_safety_offset_ex_paths` :1893
-- `variable_offset_inner_ex_paths` :2166
-- `clib_offset_expolygon_paths_prescaled` :2213
-- `clib_offset_expolygon_paths` :2246
-- `clib_offset_expolygon_paths_scaled` :2286
-- `offset_expolygons_clib_scaled` :2378
-- `offset_expolygons_clib` :2386
-- `offset_expolygons_clib_raw_scaled` :2398
-- `offset_expolygons_clib_raw_scaled_counted` :2409
-- `offset_expolygons_clib_impl` :2426
-- `shrink_clib` :2465
-- `grow_clib` :2474
-- `offset2_clib` :2486
-- `offset_ex_polygons_clib` :2508
-- `clib_flatten_expolygons` :2584
-- `clib_flatten_polygons` :2609
-- `difference_polygons_clib` :2635
-- `clib_boolean_polygons_raw` :2699
-- `diff_polygons_raw_clib` :2759
-- `intersection_polygons_raw_clib` :2765
-- `difference_clib` :2783
-- `intersection_clib` :2883
-- `intersection_clib_safety` :2963
-- `difference_clib_safety` :3022
-- `union_flat_clib` :3118
-- `read_grouped_zpaths` :3173
-- `variable_offset_inner_ex_clib` :3209
-- `unionprof_report` :3261
-- `union_ex_clib` :3283
-- `polytree_ex_clib` :3295
-- `union_ex_clib_impl` :3301
-- `union_safety_offset_ex_clib` :3416
-- `offset2_ex_clib` :3487
-- `offset2_ex_clib_miter` :3499
-- `simplify_polygons_clib` :3619
-- `offset_polygons_clib` :3682
-- `offset_polygons_clib_ml` :3689
-- `detect_gaps` :3769
-- `extract_centerlines` :3826
-- `intersect_polylines_with_expolygons` :3900
-- `clip_polyline_to_expolygons` :3919
-- `clip_segment_to_expolygons` :3970
-- `point_in_expolygons` :4032
-- `clip_clipper_polygon_with_subject_bbox_points` :4058
-- `clip_clipper_polygons_with_subject_bbox_expolygon` :4153
-- `clip_clipper_polygons_with_subject_bbox_polygons` :4180
-- `intersection_pl_clib` :4261
-- `diff_pl_clib` :4333
-- `intersection_polyline_with_expolygons` :4401
-- `intersection_segment_with_expolygons` :4451
-- `diff_polyline_from_expolygons` :4593
-- `diff_segment_from_expolygons` :4643
-- `polygons_to_polylines` :4704
-- `expolygons_to_polylines` :4712
-- `point_to_clipper2` :4746
-- `clipper2_point_to_point` :4750
-- `polyline_to_clipper2_path` :4757
-- `polygon_to_clipper2_path` :4761
-- `clipper2_path_to_polyline` :4765
-- `expolygons_to_clipper2_paths` :4770
-- `polylines_to_clipper2_paths` :4781
-- `clipper2_paths_to_polylines` :4787
-- `union_safety_offset_ex_expolygons` :4855
-- `polygons_ops_clib` :4864
-- `mm_to_scaled_f32` :4870
-- `polygons_as_paths` :4876
-- `shrink_polygons_clib` :4882
-- `closing_polygons_clib` :4888
-- `opening_polygons_clib` :4895
-- `diff_polygons` :4905
-- `diff_ex_polygons_polygons` :4925
-- `intersection_ex_polygons_polygons` :4950
-- `intersection_ex_expolygons_polygons` :4972
-- `expand_polygons` :4993
-- `opening_polygons_2` :5011
-- `clip_clipper_polygons_with_subject_bbox_expolygons` :5032
-- `intersection_pl_2` :5049 — C++ has it in `Clipper2Utils`
-- `diff_pl_2` :5074 — C++ has it in `Clipper2Utils`
+- `clib_read_closed_paths` :1234
+- `clib_read_closed_paths_or_null` :1252
+- `clib_polygons_from_paths` :1263
+- `clib_fill_type` :1276
+- `clib_join_type` :1289
+- `Paths::execute` :1315 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `PolyTree::execute` :1335 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `clipper_do_safety_offset` :1506
+- `offset_polyline_paths` :1645
+- `offset2_ex_paths` :1823
+- `union_safety_offset_ex_paths` :1885
+- `variable_offset_inner_ex_paths` :2158
+- `clib_offset_expolygon_paths_prescaled` :2205
+- `clib_offset_expolygon_paths` :2238
+- `clib_offset_expolygon_paths_scaled` :2278
+- `offset_expolygons_clib_scaled` :2317
+- `offset_expolygons_clib` :2325
+- `offset_expolygons_clib_raw_scaled` :2337
+- `offset_expolygons_clib_raw_scaled_counted` :2348
+- `offset_expolygons_clib_impl` :2365
+- `shrink_clib` :2404
+- `grow_clib` :2413
+- `offset2_clib` :2425
+- `offset_ex_polygons_clib` :2447
+- `clib_flatten_expolygons` :2476
+- `clib_flatten_polygons` :2501
+- `difference_polygons_clib` :2527
+- `clib_boolean_polygons_raw` :2552
+- `diff_polygons_raw_clib` :2572
+- `intersection_polygons_raw_clib` :2578
+- `difference_clib` :2596
+- `intersection_clib` :2646
+- `intersection_clib_safety` :2686
+- `difference_clib_safety` :2708
+- `union_flat_clib` :2756
+- `variable_offset_inner_ex_clib` :2788
+- `unionprof_report` :2827
+- `union_ex_clib` :2849
+- `polytree_ex_clib` :2861
+- `union_ex_clib_impl` :2867
+- `union_safety_offset_ex_clib` :2931
+- `offset2_ex_clib` :2966
+- `offset2_ex_clib_miter` :2978
+- `simplify_polygons_clib` :3048
+- `offset_polygons_clib` :3086
+- `offset_polygons_clib_ml` :3093
+- `detect_gaps` :3148
+- `extract_centerlines` :3205
+- `intersect_polylines_with_expolygons` :3279
+- `clip_polyline_to_expolygons` :3298
+- `clip_segment_to_expolygons` :3349
+- `point_in_expolygons` :3411
+- `clip_clipper_polygon_with_subject_bbox_points` :3437
+- `clip_clipper_polygons_with_subject_bbox_expolygon` :3532
+- `clip_clipper_polygons_with_subject_bbox_polygons` :3559
+- `intersection_pl_clib` :3640
+- `diff_pl_clib` :3672
+- `intersection_polyline_with_expolygons` :3704
+- `intersection_segment_with_expolygons` :3754
+- `diff_polyline_from_expolygons` :3896
+- `diff_segment_from_expolygons` :3946
+- `polygons_to_polylines` :4007
+- `expolygons_to_polylines` :4015
+- `point_to_clipper2` :4049
+- `clipper2_point_to_point` :4053
+- `polyline_to_clipper2_path` :4060
+- `polygon_to_clipper2_path` :4064
+- `clipper2_path_to_polyline` :4068
+- `expolygons_to_clipper2_paths` :4073
+- `polylines_to_clipper2_paths` :4084
+- `clipper2_paths_to_polylines` :4090
+- `union_safety_offset_ex_expolygons` :4158
+- `polygons_ops_clib` :4167
+- `mm_to_scaled_f32` :4173
+- `polygons_as_paths` :4179
+- `shrink_polygons_clib` :4185
+- `closing_polygons_clib` :4191
+- `opening_polygons_clib` :4198
+- `diff_polygons` :4208
+- `diff_ex_polygons_polygons` :4228
+- `intersection_ex_polygons_polygons` :4253
+- `intersection_ex_expolygons_polygons` :4275
+- `expand_polygons` :4296
+- `opening_polygons_2` :4314
+- `clip_clipper_polygons_with_subject_bbox_expolygons` :4335
+- `intersection_pl_2` :4352 — C++ has it in `Clipper2Utils`
+- `diff_pl_2` :4377 — C++ has it in `Clipper2Utils`
 
 ### `ClipperZUtils` (.hpp) and `clipper_z_utils.rs`
 
@@ -2671,10 +2669,10 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 - divergent: `is_infill` :99 and `is_infill` :181 (12%, 1.39x)
 - divergent: `is_solid_infill` :115 and `is_solid_infill` :197 (14%, 1.37x)
-- divergent: `ExtrusionLoop::is_set_speed_discontinuity_area` :516 and `ExtrusionLoop::is_set_speed_discontinuity_area` :1479 (25%, 1.15x)
-- divergent: `ExtrusionEntity::role_to_string` :613 and `role_to_string` :1901 (4%, 0.7x)
-- divergent: `ExtrusionEntity::string_to_role` :643 and `string_to_role` :1930 (4%, 0.81x)
-- partial: `extrusion_entities_append_paths_with_wipe` :671 and `extrusion_entities_append_paths_with_wipe` :2428 (41%, 1.2x)
+- divergent: `ExtrusionLoop::is_set_speed_discontinuity_area` :516 and `ExtrusionLoop::is_set_speed_discontinuity_area` :1450 (25%, 1.15x)
+- divergent: `ExtrusionEntity::role_to_string` :613 and `role_to_string` :1872 (4%, 0.7x)
+- divergent: `ExtrusionEntity::string_to_role` :643 and `string_to_role` :1901 (4%, 0.81x)
+- partial: `extrusion_entities_append_paths_with_wipe` :671 and `extrusion_entities_append_paths_with_wipe` :2399 (41%, 1.2x)
 
 Missing in the Rust file:
 
@@ -2725,75 +2723,75 @@ Rust only:
 - `ExtrusionRole::to_string` :241 — C++ has it in `Arachne/BeadingStrategy/BeadingStrategy`, `Arachne/BeadingStrategy/LimitedBeadingStrategy`, `Arachne/BeadingStrategy/OuterWallContourStrategy`
 - `ExtrusionRole::from_string` :246 — C++ has it in `Config`
 - `offset_polyline_clib` :295
-- `ExtrusionPath::new` :350
-- `ExtrusionPath::with_params` :368
-- `ExtrusionPath::with_overhang` :392
-- `ExtrusionPath::from_polyline_and` :418
-- `ExtrusionPath::first_point` :564
-- `ExtrusionPath::last_point` :569
-- `Slope::default` :707
-- `ExtrusionPathSloped::new` :728
-- `ExtrusionPathSloped::length` :755 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
-- `ExtrusionMultiPath::new` :776
-- `ExtrusionMultiPath::from_path` :784
-- `ExtrusionMultiPath::first_point` :881
-- `ExtrusionMultiPath::last_point` :886
-- `ExtrusionLoop::new` :955
-- `ExtrusionLoop::new_with_flag` :964
-- `ExtrusionLoop::from_path` :977
-- `ExtrusionLoop::as_polygon` :1046
-- `ExtrusionLoop::first_point` :1486
-- `ExtrusionLoop::last_point` :1491
-- `ExtrusionLoop::set_customize_flag` :1532
-- `ExtrusionLoopSloped::new` :1558
-- `ExtrusionLoopSloped::role` :1891 — C++ has it in `ExtrusionEntityCollection`
-- `lerp` :1985 — C++ has it in `Color`, `FilamentMixerModel`, `Point`
-- `is_approx` :1992 — C++ has it in `Point`, `libslic3r`
-- `angle` :1998 — C++ has it in `GCode/SeamPlacer`, `Point`
-- `unscale_point_norm` :2010
-- `ExtrusionPath::can_reverse` :2059 — C++ has it in `Arachne/utils/PolylineStitcher`, `ExtrusionEntityCollection`
-- `ExtrusionPath::reverse` :2062 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntityCollection`
-- `ExtrusionPath::first_point` :2065
-- `ExtrusionPath::last_point` :2068
-- `ExtrusionPath::as_polyline` :2071 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionPath::length` :2080 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
-- `ExtrusionPath::total_volume` :2083 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionPath::min_mm3_per_mm` :2086 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionLoop::role` :2092 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionLoop::reverse` :2103 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntityCollection`
-- `ExtrusionLoop::first_point` :2106
-- `ExtrusionLoop::last_point` :2109
-- `ExtrusionLoop::as_polyline` :2112 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionLoop::length` :2122 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
-- `ExtrusionLoop::total_volume` :2125 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionLoop::min_mm3_per_mm` :2128 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionMultiPath::role` :2134 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionMultiPath::reverse` :2140 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntityCollection`
-- `ExtrusionMultiPath::first_point` :2143
-- `ExtrusionMultiPath::last_point` :2146
-- `ExtrusionMultiPath::as_polyline` :2149 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionMultiPath::length` :2159 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
-- `ExtrusionMultiPath::total_volume` :2162 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionMultiPath::min_mm3_per_mm` :2165 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionEntityCollection::new` :2203
-- `ExtrusionEntityCollection::append` :2214 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
-- `ExtrusionEntityCollection::append_path` :2218
-- `ExtrusionEntityCollection::append_loop` :2222
-- `ExtrusionEntityCollection::append_collection` :2226
-- `ExtrusionEntityCollection::is_empty` :2231 — C++ has it in `PresetBundle`
-- `ExtrusionEntityCollection::len` :2235
-- `ExtrusionEntityCollection::clear` :2239 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ExtrusionEntityCollection::can_reverse` :2258 — C++ has it in `Arachne/utils/PolylineStitcher`, `ExtrusionEntityCollection`
-- `ExtrusionEntityCollection::reverse` :2272 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntityCollection`
-- `ExtrusionEntityCollection::first_point` :2290
-- `ExtrusionEntityCollection::last_point` :2302
-- `ExtrusionEntityCollection::flatten_paths` :2319
-- `ExtrusionEntityCollection::collect_polylines` :2342 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionEntityCollection::length` :2365 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
-- `ExtrusionEntityCollection::total_volume` :2377 — C++ has it in `ExtrusionEntityCollection`
-- `ExtrusionEntityCollection::default` :2391
-- `&'a ExtrusionEntityCollection::into_iter` :2401
-- `ExtrusionEntityCollection::into_iter` :2411
+- `ExtrusionPath::new` :321
+- `ExtrusionPath::with_params` :339
+- `ExtrusionPath::with_overhang` :363
+- `ExtrusionPath::from_polyline_and` :389
+- `ExtrusionPath::first_point` :535
+- `ExtrusionPath::last_point` :540
+- `Slope::default` :678
+- `ExtrusionPathSloped::new` :699
+- `ExtrusionPathSloped::length` :726 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
+- `ExtrusionMultiPath::new` :747
+- `ExtrusionMultiPath::from_path` :755
+- `ExtrusionMultiPath::first_point` :852
+- `ExtrusionMultiPath::last_point` :857
+- `ExtrusionLoop::new` :926
+- `ExtrusionLoop::new_with_flag` :935
+- `ExtrusionLoop::from_path` :948
+- `ExtrusionLoop::as_polygon` :1017
+- `ExtrusionLoop::first_point` :1457
+- `ExtrusionLoop::last_point` :1462
+- `ExtrusionLoop::set_customize_flag` :1503
+- `ExtrusionLoopSloped::new` :1529
+- `ExtrusionLoopSloped::role` :1862 — C++ has it in `ExtrusionEntityCollection`
+- `lerp` :1956 — C++ has it in `Color`, `FilamentMixerModel`, `Point`
+- `is_approx` :1963 — C++ has it in `Point`, `libslic3r`
+- `angle` :1969 — C++ has it in `GCode/SeamPlacer`, `Point`
+- `unscale_point_norm` :1981
+- `ExtrusionPath::can_reverse` :2030 — C++ has it in `Arachne/utils/PolylineStitcher`, `ExtrusionEntityCollection`
+- `ExtrusionPath::reverse` :2033 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntityCollection`
+- `ExtrusionPath::first_point` :2036
+- `ExtrusionPath::last_point` :2039
+- `ExtrusionPath::as_polyline` :2042 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionPath::length` :2051 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
+- `ExtrusionPath::total_volume` :2054 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionPath::min_mm3_per_mm` :2057 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionLoop::role` :2063 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionLoop::reverse` :2074 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntityCollection`
+- `ExtrusionLoop::first_point` :2077
+- `ExtrusionLoop::last_point` :2080
+- `ExtrusionLoop::as_polyline` :2083 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionLoop::length` :2093 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
+- `ExtrusionLoop::total_volume` :2096 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionLoop::min_mm3_per_mm` :2099 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionMultiPath::role` :2105 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionMultiPath::reverse` :2111 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntityCollection`
+- `ExtrusionMultiPath::first_point` :2114
+- `ExtrusionMultiPath::last_point` :2117
+- `ExtrusionMultiPath::as_polyline` :2120 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionMultiPath::length` :2130 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
+- `ExtrusionMultiPath::total_volume` :2133 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionMultiPath::min_mm3_per_mm` :2136 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionEntityCollection::new` :2174
+- `ExtrusionEntityCollection::append` :2185 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
+- `ExtrusionEntityCollection::append_path` :2189
+- `ExtrusionEntityCollection::append_loop` :2193
+- `ExtrusionEntityCollection::append_collection` :2197
+- `ExtrusionEntityCollection::is_empty` :2202 — C++ has it in `PresetBundle`
+- `ExtrusionEntityCollection::len` :2206
+- `ExtrusionEntityCollection::clear` :2210 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ExtrusionEntityCollection::can_reverse` :2229 — C++ has it in `Arachne/utils/PolylineStitcher`, `ExtrusionEntityCollection`
+- `ExtrusionEntityCollection::reverse` :2243 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntityCollection`
+- `ExtrusionEntityCollection::first_point` :2261
+- `ExtrusionEntityCollection::last_point` :2273
+- `ExtrusionEntityCollection::flatten_paths` :2290
+- `ExtrusionEntityCollection::collect_polylines` :2313 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionEntityCollection::length` :2336 — C++ has it in `ExtrusionEntityCollection`, `Line`, `MultiPoint`
+- `ExtrusionEntityCollection::total_volume` :2348 — C++ has it in `ExtrusionEntityCollection`
+- `ExtrusionEntityCollection::default` :2362
+- `&'a ExtrusionEntityCollection::into_iter` :2372
+- `ExtrusionEntityCollection::into_iter` :2382
 
 ### `ExtrusionEntityCollection` (.cpp+.hpp) and `extrusion_entity_collection.rs`
 
@@ -8629,15 +8627,15 @@ Rust only:
 
 ### `RegionExpansion` (.cpp+.hpp) and `region_expansion.rs`
 
-Tier 1. C++ functions 23, Rust functions 51. Matched 14: faithful 9, partial 5, divergent 0, stub 0.
+Tier 1. C++ functions 23, Rust functions 50. Matched 14: faithful 9, partial 5, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `RegionExpansionParameters::build` :32 and `RegionExpansionParameters::build` :220 (96%, 2.58x)
 - partial: `expolygons_to_zpaths64_expanded_opened` :108 and `expolygons_to_zpaths64_expanded_opened` :460 (41%, 1.05x)
 - partial: `merge_splits` :192 and `merge_splits` :528 (39%, 1.0x)
-- partial: `propagate_waves_ex` :508 and `propagate_waves_ex` :1770 (50%, 1.75x)
-- partial: `merge_expansions_into_expolygons` :564 and `merge_expansions_into_expolygons` :1059 (37%, 0.75x)
+- partial: `propagate_waves_ex` :508 and `propagate_waves_ex` :1725 (50%, 1.75x)
+- partial: `merge_expansions_into_expolygons` :564 and `merge_expansions_into_expolygons` :1014 (37%, 0.75x)
 
 Missing in the Rust file:
 
@@ -8657,39 +8655,38 @@ Rust only:
 - `expolygons_to_zpaths64` :435 — C++ has it in `Clipper2ZUtils`
 - `polylines_merge_z` :499
 - `wave_seeds_faithful` :584
-- `propagate_waves_faithful` :691
-- `read_cz_polygons` :898
-- `wave_seeds_polygon_based` :928
-- `propagate_wave_from_seeds` :978
-- `extract_expolygons_by_type` :1151
-- `expand_merge_surfaces` :1183 — C++ has it in `LayerRegion`
-- `ExternalSurfaceConfig::default` :1306
-- `ExternalSurfaceConfig::from_flows` :1330
-- `ExternalSurfaceConfig::expansion_top` :1375
-- `ExternalSurfaceConfig::expansion_bottom` :1389
-- `ExternalSurfaceConfig::expansion_bottom_bridge` :1395
-- `ExternalSurfaceConfig::closing_radius` :1401
-- `process_external_surfaces_wave` :1439
-- `expand_expolygons_with_anchors` :1864
-- `resolve_group_id` :1961
-- `get_grouped_bridges` :1978 — C++ has it in `LayerRegion`
-- `detect_bridging_direction_from_lines` :2065
-- `LibcxxUnorderedMapF64::new` :2240
-- `LibcxxUnorderedMapF64::hash` :2244 — C++ has it in `Config`, `SLAPrintSteps`
-- `LibcxxUnorderedMapF64::constrain` :2253
-- `LibcxxUnorderedMapF64::next_of` :2264
-- `LibcxxUnorderedMapF64::set_next` :2271
-- `LibcxxUnorderedMapF64::next_prime` :2279
-- `LibcxxUnorderedMapF64::rehash` :2300
-- `LibcxxUnorderedMapF64::emplace` :2338
-- `LibcxxUnorderedMapF64::values_in_order` :2388
-- `principal_component_direction` :2403
-- `polylines_to_lines` :2475
-- `detect_bridge_directions_impl` :2495
-- `separate_bridge_directions` :2760 — C++ has it in `LayerRegion`
-- `partition_bridge_anchors` :2821 — C++ has it in `LayerRegion`
-- `merge_bridges` :3107 — C++ has it in `LayerRegion`
-- `expand_bridges_detect_orientations` :3308 — C++ has it in `LayerRegion`
+- `propagate_waves_faithful` :693
+- `wave_seeds_polygon_based` :883
+- `propagate_wave_from_seeds` :933
+- `extract_expolygons_by_type` :1106
+- `expand_merge_surfaces` :1138 — C++ has it in `LayerRegion`
+- `ExternalSurfaceConfig::default` :1261
+- `ExternalSurfaceConfig::from_flows` :1285
+- `ExternalSurfaceConfig::expansion_top` :1330
+- `ExternalSurfaceConfig::expansion_bottom` :1344
+- `ExternalSurfaceConfig::expansion_bottom_bridge` :1350
+- `ExternalSurfaceConfig::closing_radius` :1356
+- `process_external_surfaces_wave` :1394
+- `expand_expolygons_with_anchors` :1819
+- `resolve_group_id` :1916
+- `get_grouped_bridges` :1933 — C++ has it in `LayerRegion`
+- `detect_bridging_direction_from_lines` :2020
+- `LibcxxUnorderedMapF64::new` :2195
+- `LibcxxUnorderedMapF64::hash` :2199 — C++ has it in `Config`, `SLAPrintSteps`
+- `LibcxxUnorderedMapF64::constrain` :2208
+- `LibcxxUnorderedMapF64::next_of` :2219
+- `LibcxxUnorderedMapF64::set_next` :2226
+- `LibcxxUnorderedMapF64::next_prime` :2234
+- `LibcxxUnorderedMapF64::rehash` :2255
+- `LibcxxUnorderedMapF64::emplace` :2293
+- `LibcxxUnorderedMapF64::values_in_order` :2343
+- `principal_component_direction` :2358
+- `polylines_to_lines` :2430
+- `detect_bridge_directions_impl` :2450
+- `separate_bridge_directions` :2715 — C++ has it in `LayerRegion`
+- `partition_bridge_anchors` :2776 — C++ has it in `LayerRegion`
+- `merge_bridges` :3062 — C++ has it in `LayerRegion`
+- `expand_bridges_detect_orientations` :3263 — C++ has it in `LayerRegion`
 
 ### `SVG` (.cpp+.hpp) and `svg.rs`
 

@@ -686,7 +686,9 @@ fn wave_seeds_faithful(
 }
 
 /// Faithful wavefront propagation: group the byte-faithful seeds by (boundary,
-/// src) and drive the ClipperLib `cz_propagate_wave` shim (R131) once per group.
+/// src) and run [`propagate_wave_from_boundary`], the port of `propagate_wave_from_boundary`
+/// of RegionExpansion.cpp:391-467, once per group. Until R891 this went through
+/// `cz_propagate_wave` of `clipper-z-sys` (R131).
 /// This replaces the geo `propagate_wave_from_seeds` on the faithful path.
 fn propagate_waves_faithful(
     src: &[ExPolygon],
@@ -731,7 +733,7 @@ fn propagate_waves_faithful(
                     bnd_xy.push(pt.y as i32);
                 }
             }
-            let polys: Vec<Polygon> = if crate::clipper_utils::clipper_rust() {
+            let polys: Vec<Polygon> = {
                 let seed = crate::clipper_utils::clib_read_closed_paths(&seed_xy, &seed_lens);
                 let clipping = crate::clipper_utils::clib_read_closed_paths(&bnd_xy, &bnd_lens);
                 let mut co = crate::clipper::ClipperOffset::default();
@@ -749,28 +751,6 @@ fn propagate_waves_faithful(
                 .filter(|path| !path.is_empty())
                 .map(|path| Polygon::from_points(path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()))
                 .collect()
-            } else {
-            // ClipperOffset deltas are in scaled units (mm × SCALING_FACTOR).
-            let raw = unsafe {
-                clipper_z_sys::cz_propagate_wave(
-                    seed_xy.as_ptr(),
-                    seed_lens.as_ptr(),
-                    seed_lens.len() as i32,
-                    bnd_xy.as_ptr(),
-                    bnd_lens.as_ptr(),
-                    bnd_lens.len() as i32,
-                    params.scaled.initial_step,
-                    params.scaled.other_step,
-                    params.num_other_steps as i32,
-                    params.scaled.arc_tolerance,
-                    params.scaled.shortest_edge_length,
-                )
-            };
-            // Marshal the expanded closed polygons back; each becomes one
-            // RegionExpansion (polygon = ExPolygon of that single contour).
-            let polys = unsafe { read_cz_polygons(&raw) };
-            unsafe { clipper_z_sys::cz_free_zpaths(raw) };
-            polys
             };
             for poly in polys {
                 out.push(RegionExpansion {
@@ -892,31 +872,6 @@ pub fn propagate_wave_from_boundary(
         polygons = wavefront_clip(&wavefront_step(co, &polygons, other_step), clipping);
     }
     polygons
-}
-
-/// Read a `CzZPaths` (flat x,y,z triples + per-path lens) into `Polygon`s (dropping z).
-unsafe fn read_cz_polygons(raw: &clipper_z_sys::CzZPaths) -> Vec<Polygon> {
-    let num = raw.num_paths as usize;
-    if num == 0 || raw.coords.is_null() || raw.path_lens.is_null() {
-        return Vec::new();
-    }
-    let lens = std::slice::from_raw_parts(raw.path_lens, num);
-    let coords = std::slice::from_raw_parts(raw.coords, (raw.total_points as usize) * 3);
-    let mut out: Vec<Polygon> = Vec::with_capacity(num);
-    let mut cursor = 0usize;
-    for &len in lens {
-        let n = len as usize;
-        let mut pts: Vec<Point> = Vec::with_capacity(n);
-        for k in 0..n {
-            let base = (cursor + k) * 3;
-            pts.push(Point::new(coords[base] as i64, coords[base + 1] as i64));
-        }
-        cursor += n;
-        if !pts.is_empty() {
-            out.push(Polygon::from_points(pts));
-        }
-    }
-    out
 }
 
 // FIDELITY-NOTE(F1): C++ `wave_seeds` (RegionExpansion.cpp:278-389) uses the
