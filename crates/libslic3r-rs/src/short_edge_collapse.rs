@@ -484,34 +484,10 @@ fn cpp_min_f32(a: f32, b: f32) -> f32 {
 /// ShortEdgeCollapse.cpp:11-184
 #[allow(clippy::needless_range_loop)]
 pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_count: usize) {
-    // R188 (ZSMOOTH_FAITHFUL): run the ENTIRE collapse through the native-code
-    // shim. R187's dots-only shim still left round-1 at ±6 faces — the edge
-    // squaredNorm threshold check and the f32/f64 edge_len evolution are further
-    // Eigen-f32 codegen surfaces; the only robust cut is the whole kernel.
-    // SEC_RUST (on unless =0): the Rust below, whose float operations follow the
-    // C++ build (`eigen_cross3f` and its neighbours, here and in
-    // `normal_utils.rs`); tests/short_edge_collapse_native_parity.rs holds it
-    // equal to the C++ on the Benchy and on synthetic meshes. =0 calls the shim,
-    // as R188 to R879 did.
-    if crate::faithful_gate("ZSMOOTH_FAITHFUL") && !crate::faithful_gate("SEC_RUST") {
-        let verts_flat: Vec<f32> = mesh
-            .vertices
-            .iter()
-            .flat_map(|v| [v.x, v.y, v.z])
-            .collect();
-        let idx_flat: Vec<i32> = mesh.indices.iter().flat_map(|t| [t.x, t.y, t.z]).collect();
-        let (out_v, out_i) =
-            eigen_transform_sys::short_edge_collapse(&verts_flat, &idx_flat, target_triangle_count);
-        mesh.vertices = out_v
-            .chunks_exact(3)
-            .map(|c| Vec3f::new(c[0], c[1], c[2]))
-            .collect();
-        mesh.indices = out_i
-            .chunks_exact(3)
-            .map(|c| Vec3i::new(c[0], c[1], c[2]))
-            .collect();
-        return;
-    }
+    // The float operations below follow the C++ build (`eigen_cross3f` and its
+    // neighbours, here and in `normal_utils.rs`);
+    // tests/short_edge_collapse_native_parity.rs holds the result equal to the
+    // C++. Until R880 this ran through `eigen-transform-sys`.
     // whenever vertex is removed, its mapping is update to the index of vertex with wich it merged
     // ShortEdgeCollapse.cpp:13
     let mut vertices_index_mapping: Vec<usize> = vec![0usize; mesh.vertices.len()];

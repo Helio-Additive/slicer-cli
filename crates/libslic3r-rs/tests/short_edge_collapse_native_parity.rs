@@ -85,7 +85,6 @@ fn load_stl(path: &std::path::Path) -> (Vec<f32>, Vec<i32>) {
 
 #[test]
 fn against_the_cpp() {
-    assert!(slicer::faithful_gate("SEC_RUST"), "the Rust arm is not selected");
     let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
     for round in 0..46 {
         // The last rounds are large: tens of thousands of faces, as a real model has.
