@@ -50,12 +50,12 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | estimate: divergent | 196 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
 | missing in the paired Rust file | 4653 |
-| of those, a function of that name exists in another Rust file | 1606 |
-| of the rest, another overload of the name is ported | 365 |
+| of those, a function of that name exists in another Rust file | 1607 |
+| of the rest, another overload of the name is ported | 364 |
 | of the rest, under 25 tokens (accessors, one-liners) | 754 |
 | of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4561 |
+| Rust functions with no C++ function of that name in the pair | 4573 |
 
 By tier:
 
@@ -6540,7 +6540,7 @@ Missing in the Rust file:
 - `mk_point` :45 (33 tokens)
 - `mk_vec2` :47 (17 tokens)
 - `vertex_equal_to_point` :49 (80 tokens, overload) — in `geometry/voronoi_annotation.rs`
-- `MMU_Graph::Node::remove_edge` :82 (76 tokens, overload)
+- `MMU_Graph::Node::remove_edge` :82 (76 tokens, overload) — in `clipper.rs`
 - `colored_points_to_polygon` :314 (43 tokens, overload)
 - `get_extents` :593 (52 tokens) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `fill/lightning/tree_node.rs`
 - `to_lines` :605 (69 tokens) — in `geometry/expolygon.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
@@ -12356,7 +12356,7 @@ Rust only:
 
 ### `clipper` (.cpp+.hpp) and `clipper.rs`
 
-Tier 3. C++ functions 0, Rust functions 26. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
+Tier 3. C++ functions 0, Rust functions 38. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
 
 Rust only:
 
@@ -12386,6 +12386,18 @@ Rust only:
 - `reverse_poly_pt_links` :544
 - `init_edge` :561
 - `init_edge2` :572
+- `remove_edge` :599 — C++ has it in `MultiMaterialSegmentation`
+- `reverse_horizontal` :613
+- `get_overlap_segment` :622
+- `first_is_bottom_pt` :656
+- `get_bottom_pt` :684
+- `pt2_is_between_pt1_and_pt3` :718
+- `horz_segments_overlap` :730
+- `find_next_loc_min` :745
+- `ClipperBase::add_path` :798
+- `ClipperBase::add_path_internal` :831
+- `ClipperBase::clear` :1028 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ClipperBase::process_bound` :1037
 
 ### `pchheader` (.cpp+.hpp) and `pchheader.rs`
 

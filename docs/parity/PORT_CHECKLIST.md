@@ -11,13 +11,13 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**34.5% of the named C++ functions are ported or verified (3173 of 9204); 23.6% by size of body.**
+**34.6% of the named C++ functions are ported or verified (3189 of 9204); 23.8% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3291 | 35.8% | 48.4% |
+| not started `[ ]` | 3275 | 35.6% | 48.2% |
 | partial `[~]` | 2740 | 29.8% | 27.9% |
-| ported `[x]` | 3143 | 34.1% | 22.8% |
+| ported `[x]` | 3159 | 34.3% | 23.1% |
 | verified `[v]` | 30 | 0.3% | 0.8% |
 
 | Files (C++ units) | Count |
@@ -101,7 +101,7 @@ the end; the goal is none.
 | `Channel` | 3 | `channel.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `Circle` | 1 | `circle.rs` | partial | 27 | 2 | 1 | 24 | 0 |
 | `clipper` | 3 | `clipper.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 123 | 8 | 13 | 8 |
+| `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 107 | 8 | 29 | 8 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 6 | 6 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
 | `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 58 | 160 | 9 | 0 |
@@ -1520,16 +1520,16 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 - [x] `ReversePolyPtLinks` (line 433) → `clipper.rs:544`
 - [x] `InitEdge` (line 446) → `clipper.rs:561`
 - [x] `InitEdge2` (line 456) → `clipper.rs:572`
-- [ ] `RemoveEdge` (line 479) → `clipper.rs`
-- [ ] `ReverseHorizontal` (line 490) → `clipper.rs`
-- [ ] `GetOverlapSegment` (line 502) → `clipper.rs`
-- [ ] `FirstIsBottomPt` (line 524) → `clipper.rs`
-- [ ] `GetBottomPt` (line 544) → `clipper.rs`
+- [x] `RemoveEdge` (line 479) → `clipper.rs:599`
+- [x] `ReverseHorizontal` (line 490) → `clipper.rs:613`
+- [x] `GetOverlapSegment` (line 502) → `clipper.rs:622`
+- [x] `FirstIsBottomPt` (line 524) → `clipper.rs:656`
+- [x] `GetBottomPt` (line 544) → `clipper.rs:684`
 - [ ] `SimplifyPolygons` (line 559) → `clipper.rs`
-- [ ] `Pt2IsBetweenPt1AndPt3` (line 582) → `clipper.rs`
-- [ ] `HorzSegmentsOverlap` (line 594) → `clipper.rs`
+- [x] `Pt2IsBetweenPt1AndPt3` (line 582) → `clipper.rs:718`
+- [x] `HorzSegmentsOverlap` (line 594) → `clipper.rs:730`
 - [ ] `RangeTest` (line 607) → `clipper.rs`
-- [ ] `FindNextLocMin` (line 625) → `clipper.rs`
+- [x] `FindNextLocMin` (line 625) → `clipper.rs:745`
 - [ ] `GetLowermostRec` (line 1850) → `clipper.rs`
 - [ ] `Param1RightOfParam2` (line 1870) → `clipper.rs`
 - [ ] `IsMaxima` (line 2066) → `clipper.rs`
@@ -1566,7 +1566,7 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 
 **class `Clipper`**
 
-- [ ] `Clear` (line 393) → `clipper.rs`
+- [x] `Clear` (line 393) → `clipper.rs:1028`
 - [ ] `Execute` (line 394) → `clipper.rs`
 - [ ] `Execute` (line 402) → `clipper.rs`
 - [ ] `ReverseSolution` (line 410) → `clipper.rs`
@@ -1626,18 +1626,18 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 
 **class `ClipperBase`**
 
-- [ ] `ProcessBound` (line 643) → `clipper.rs`
-- [ ] `AddPath` (line 760) → `clipper.rs`
-- [ ] `AddPathInternal` (line 784) → `clipper.rs`
-- [ ] `Clear` (line 962) → `clipper.rs`
+- [x] `ProcessBound` (line 643) → `clipper.rs:1037`
+- [x] `AddPath` (line 760) → `clipper.rs:798`
+- [x] `AddPathInternal` (line 784) → `clipper.rs:831`
+- [x] `Clear` (line 962) → `clipper.rs:1028`
 - [ ] `Reset` (line 976) → `clipper.rs`
 - [ ] `GetBounds` (line 1005) → `clipper.rs`
 
 **class `ClipperOffset`**
 
 - [ ] `AddPaths` (line 515) → `clipper.rs`
-- [ ] `Clear` (line 3336) → `clipper.rs`
-- [ ] `AddPath` (line 3345) → `clipper.rs`
+- [x] `Clear` (line 3336) → `clipper.rs:1028`
+- [x] `AddPath` (line 3345) → `clipper.rs:798`
 - [ ] `FixOrientations` (line 3409) → `clipper.rs`
 - [ ] `Execute` (line 3435) → `clipper.rs`
 - [ ] `Execute` (line 3466) → `clipper.rs`
@@ -1661,7 +1661,7 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 - [ ] `Total` (line 126) → `clipper.rs`
 - [ ] `RemoveOutermostPolygon` (line 160) → `clipper.rs`
 - [ ] `GetFirst` (line 180) → `clipper.rs`
-- [ ] `Clear` (line 181) → `clipper.rs`
+- [x] `Clear` (line 181) → `clipper.rs:1028`
 
 **class `clipperException`**
 
@@ -8768,7 +8768,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **class `MMU_Graph::Node`**
 
-- [~] `remove_edge` (line 82) → `multi_material_segmentation.rs` — another overload of the name is ported
+- [~] `remove_edge` (line 82) → `clipper.rs` — not in the paired file
 
 **class `PaintedLineVisitor`**
 
