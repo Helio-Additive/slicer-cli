@@ -1229,6 +1229,44 @@ fn adjust_sort_for_segment_intersections(intersections: &mut Vec<SegmentIntersec
 /// prev/next vertical line (or on the same line) that shares the same contour.
 /// Build the connection graph.
 ///
+/// `RECT=1` (diagnostics only): the three stages of `fill_surface_by_lines`, as
+/// sums a twin `fprintf` in FillRectilinear.cpp prints after
+/// `slice_region_by_vertical_lines` and `connect_segment_intersections_by_contours`.
+fn rect_probe_segs(stage: u8, n_vlines: usize, x0: Coord, line_spacing: Coord, mono: bool, lml: Coord, segs: &[SegmentedIntersectionLine]) {
+    if stage == 1 {
+        let (mut ni, mut sp, mut sq, mut st, mut spos) = (0i64, 0i64, 0i64, 0i64, 0i64);
+        for sil in segs {
+            spos = spos.wrapping_add(sil.pos as i64);
+            for it in &sil.intersections {
+                ni += 1;
+                sp = sp.wrapping_add(it.pos_p);
+                sq += it.pos_q as i64;
+                st += it.itype as i64;
+            }
+        }
+        eprintln!(
+            "RECT1 nv={} x0={} ls={} mono={} nseg={} nint={} spos={} sp={} sq={} st={}",
+            n_vlines, x0, line_spacing, mono as i32, segs.len(), ni, spos, sp, sq, st
+        );
+    } else {
+        let (mut a1, mut a2, mut a3, mut a4, mut a5, mut a6) = (0i64, 0i64, 0i64, 0i64, 0i64, 0i64);
+        for sil in segs {
+            for it in &sil.intersections {
+                a1 += it.prev_on_contour as i64;
+                a2 += it.next_on_contour as i64;
+                a3 += it.prev_on_contour_type as i64;
+                a4 += it.next_on_contour_type as i64;
+                a5 += it.prev_on_contour_quality as i64;
+                a6 += it.next_on_contour_quality as i64;
+            }
+        }
+        eprintln!(
+            "RECT2 nv={} x0={} prev={} next={} pt={} nt={} pq={} nq={} lml={}",
+            n_vlines, x0, a1, a2, a3, a4, a5, a6, lml
+        );
+    }
+}
+
 /// Port of libslic3r `connect_segment_intersections_by_contours()`.
 pub fn connect_segment_intersections_by_contours(
     poly_with_offset: &ExPolygonWithOffset,
@@ -2238,15 +2276,36 @@ pub fn fill_surface_by_lines(
     // into a single continuous polyline (zero rapids). We honour the value
     // threaded in via FillRectilinearParams::link_max_length.
     let link_max_length = params.link_max_length;
+    let rect_probe = crate::probe_enabled("RECT");
+    if rect_probe {
+        rect_probe_segs(1, n_vlines, x0, line_spacing, false, link_max_length as Coord, &segs);
+    }
     connect_segment_intersections_by_contours(
         &poly_with_offset,
         &mut segs,
         params,
         link_max_length,
     );
+    if rect_probe {
+        rect_probe_segs(2, n_vlines, x0, line_spacing, false, link_max_length as Coord, &segs);
+    }
 
     // Traverse the graph to generate polylines
     traverse_graph_generate_polylines(&poly_with_offset, params, &mut segs, &mut polylines_out);
+    if rect_probe {
+        let (mut np, mut sx, mut sy) = (0i64, 0i64, 0i64);
+        for pl in &polylines_out {
+            for pt in pl.points() {
+                np += 1;
+                sx += pt.x();
+                sy += pt.y();
+            }
+        }
+        eprintln!(
+            "RECT3 nv={} x0={} npl={} np={} sx={} sy={}",
+            n_vlines, x0, polylines_out.len(), np, sx, sy
+        );
+    }
 
     // paths must be rotated back. FillRectilinear.cpp:2967
     for polyline in &mut polylines_out {
@@ -4595,12 +4654,19 @@ pub fn fill_surface_by_lines_monotonic(
     // `link_max_length` (0 for density <= 80%, 3*spacing otherwise), not a
     // value recomputed from line_spacing. See Fill.cpp:683-695.
     let link_max_length = params.link_max_length;
+    let rect_probe = crate::probe_enabled("RECT");
+    if rect_probe {
+        rect_probe_segs(1, n_vlines, x0, line_spacing, true, link_max_length as Coord, &segs);
+    }
     connect_segment_intersections_by_contours(
         &poly_with_offset,
         &mut segs,
         params,
         link_max_length,
     );
+    if rect_probe {
+        rect_probe_segs(2, n_vlines, x0, line_spacing, true, link_max_length as Coord, &segs);
+    }
 
     // Insert phony outer intersections at pinch points
     pinch_contours_insert_phony_outer_intersections(&mut segs);

@@ -123,19 +123,19 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R858) |
+| Fixture | As brought over (R808) | Now (R859) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 185,972 (97.35%) |
-| Benchy arachne | 32,769 (13.68%) | 238,661 (97.97%) |
-| Majora | 1,512,438 (55.88%) | 2,782,538 (97.39%) |
+| Benchy classic | 30,486 (15.72%) | 187,118 (98.02%) |
+| Benchy arachne | 32,769 (13.68%) | 240,025 (98.59%) |
+| Majora | 1,512,438 (55.88%) | 2,786,069 (97.54%) |
 | Majora, prime tower | 83.5% | 99.6% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R858:
-Benchy classic 192,152 of 196,495 (97.8%), Benchy arachne 244,503 of 248,190
-(98.5%), Majora 2,962,695 of 3,024,752 (97.9%).
+missing most often. Lines of the oracle's body the port has verbatim, at R859:
+Benchy classic 193,072 of 196,495 (98.3%), Benchy arachne 245,478 of 248,190
+(98.9%), Majora 2,965,026 of 3,024,752 (98.0%).
 
 Majora's percentage rose in R853 with the matched count unchanged: the port wrote
 `; LINE_WIDTH` twice after each prime tower visit (3,339 lines), and no longer does.
@@ -222,6 +222,11 @@ every call site that reached a `clipper_utils` helper computing on the geo-clipp
 grid (1 um) and not at coord_t. The table is empty on the three fixtures (R856);
 on a new job each line is a call to port to the `_clib` helper of the same name.
 
+`RECT=1` prints three lines per `fill_surface_by_lines` call (`RECT1` the
+intersections, `RECT2` the links and the link limit, `RECT3` the polylines), as sums;
+the C++ twin is three `fprintf` in a probed FillRectilinear.cpp, after
+`slice_region_by_vertical_lines`, after `connect_segment_intersections_by_contours`
+and after the traversal.
 `MONO=1` prints one line per `chain_monotonic_regions` call: the number of regions
 and scan lines, the chosen path (`region:flipped`) and every region's boundaries,
 `len1`, `len2` and `flips`. The C++ twin is one `fprintf` of the same line after

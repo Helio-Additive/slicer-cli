@@ -2613,7 +2613,17 @@ impl GCodeEditorState {
                 if let Some(f_offset) = sline[..end_pos].find(" F") {
                     let fpos = f_offset + 2;
                     let new_feedrate = if line.slowdown {
-                        (60.0 * line.feedrate + 0.5) as i32
+                        // COOLING_F_DOUBLE (on unless =0): GCodeEditor.cpp:620,
+                        // `int(floor(60. * line->feedrate + 0.5))`. `60.` and `0.5`
+                        // are doubles, so the float feedrate is promoted and the
+                        // product is not rounded to float before the half is added.
+                        // =0 computes in f32, which is one off where the product
+                        // lands next to a half (F1166 for F1165).
+                        if crate::faithful_gate("COOLING_F_DOUBLE") {
+                            (60.0f64 * line.feedrate as f64 + 0.5).floor() as i32
+                        } else {
+                            (60.0 * line.feedrate + 0.5) as i32
+                        }
                     } else {
                         let f_str = &sline[fpos..];
                         let f_end = f_str

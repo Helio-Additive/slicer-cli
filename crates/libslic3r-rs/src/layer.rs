@@ -2833,7 +2833,17 @@ impl Layer {
                 // Fill.cpp:687-693
                 if surface_fill.params.density > 80.0 {
                     // C++: link_max_length = 3. * f->spacing;
-                    3.0 * surface_fill.params.spacing
+                    // LINK_MAX_LENGTH_FRESH_FILL (on unless =0): `f` was made by
+                    // `Fill::new_from_type` a few lines up (Fill.cpp:699) and its
+                    // `spacing` is still the constructor's 0. (FillBase.hpp:194);
+                    // `f->spacing = surface_fill.params.spacing` comes after, at
+                    // Fill.cpp:844. So the product is 0 and no link between two
+                    // infill lines is ever too long. =0 takes the surface's spacing.
+                    if crate::faithful_gate("LINK_MAX_LENGTH_FRESH_FILL") {
+                        0.0
+                    } else {
+                        3.0 * surface_fill.params.spacing
+                    }
                 } else {
                     0.0
                 }
@@ -3825,7 +3835,13 @@ impl Layer {
             // C++: link_max_length = 0; if (!bridge && density > 80%) link_max_length = 3*spacing
             let link_max_length_mm = if !surface_fill.params.bridge {
                 if surface_fill.params.density > 80.0 {
-                    3.0 * surface_fill.params.spacing
+                    // LINK_MAX_LENGTH_FRESH_FILL: Fill.cpp:931 reads `f->spacing`
+                    // before Fill.cpp:968 assigns it, as at Fill.cpp:779.
+                    if crate::faithful_gate("LINK_MAX_LENGTH_FRESH_FILL") {
+                        0.0
+                    } else {
+                        3.0 * surface_fill.params.spacing
+                    }
                 } else {
                     0.0
                 }

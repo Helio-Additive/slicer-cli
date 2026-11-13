@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4521 |
+| Rust functions with no C++ function of that name in the pair | 4522 |
 
 By tier:
 
@@ -3402,13 +3402,13 @@ Rust only:
 
 ### `Fill/FillRectilinear` (.cpp+.hpp) and `fill/fill_rectilinear.rs`
 
-Tier 1. C++ functions 109 (plus 2 constructors, 0 destructors, 2 operators), Rust functions 109. Matched 51: faithful 48, partial 2, divergent 1, stub 0.
+Tier 1. C++ functions 109 (plus 2 constructors, 0 destructors, 2 operators), Rust functions 110. Matched 51: faithful 48, partial 2, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `segment_length` :47 and `segment_length` :848 (38%, 0.35x)
-- partial: `intersection_on_prev_next_vertical_line_valid` :566 and `intersection_on_prev_next_vertical_line_valid` :1580 (54%, 1.17x)
-- divergent: `traverse_graph_generate_polylines` :1426 and `traverse_graph_generate_polylines` :1768 (9%, 0.09x)
+- partial: `intersection_on_prev_next_vertical_line_valid` :566 and `intersection_on_prev_next_vertical_line_valid` :1618 (54%, 1.17x)
+- divergent: `traverse_graph_generate_polylines` :1426 and `traverse_graph_generate_polylines` :1806 (9%, 0.09x)
 
 Missing in the Rust file:
 
@@ -3497,40 +3497,41 @@ Rust only:
 - `next_value_modulo` :830
 - `distance_of_segments` :836
 - `distance_f` :876
-- `fill_surface_by_lines` :2148
-- `adjust_solid_spacing` :2267 — C++ has it in `Fill/FillBase`
-- `generate_fill_rectilinear` :2300
-- `generate_grid_raw_lines` :2452
-- `make_fill_lines_raw` :2535
-- `make_fill_lines_raw_bbox` :2546
-- `rotate_back` :2660
-- `vertical_run_bottom` :2687
-- `vertical_run_top` :2715
-- `end_of_vertical_run_raw` :2742
-- `end_of_vertical_run` :2762
-- `overlap_bottom` :2789
-- `overlap_top` :2833
-- `left_overlap` :2882
-- `right_overlap` :2902
-- `MonotonicRegion::new` :3097
-- `MonotonicRegion::length` :3109 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
-- `MonotonicRegion::left_intersection_point` :3117
-- `MonotonicRegion::right_intersection_point` :3125
-- `AntPath::new` :3143
-- `AntPathMatrix::new` :3170
-- `AntPathMatrix::update_initial_pheromone` :3260
-- `AntPathMatrix::get` :3266 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `AntPathMatrix::get_mut` :3279
-- `generate_monotonous_regions` :3299
-- `connect_monotonic_regions` :3390
-- `monotonous_region_path_length` :3538
-- `chain_monotonic_regions` :3725
-- `polylines_from_paths` :4105
-- `fill_surface_by_lines_monotonic` :4517
-- `generate_fill_rectilinear_monotonic` :4661
-- `sample_grid_pattern` :4754
-- `sample_grid_pattern_expolygons` :4799
-- `sample_grid_pattern_polygons` :4815
+- `rect_probe_segs` :1235
+- `fill_surface_by_lines` :2186
+- `adjust_solid_spacing` :2326 — C++ has it in `Fill/FillBase`
+- `generate_fill_rectilinear` :2359
+- `generate_grid_raw_lines` :2511
+- `make_fill_lines_raw` :2594
+- `make_fill_lines_raw_bbox` :2605
+- `rotate_back` :2719
+- `vertical_run_bottom` :2746
+- `vertical_run_top` :2774
+- `end_of_vertical_run_raw` :2801
+- `end_of_vertical_run` :2821
+- `overlap_bottom` :2848
+- `overlap_top` :2892
+- `left_overlap` :2941
+- `right_overlap` :2961
+- `MonotonicRegion::new` :3156
+- `MonotonicRegion::length` :3168 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
+- `MonotonicRegion::left_intersection_point` :3176
+- `MonotonicRegion::right_intersection_point` :3184
+- `AntPath::new` :3202
+- `AntPathMatrix::new` :3229
+- `AntPathMatrix::update_initial_pheromone` :3319
+- `AntPathMatrix::get` :3325 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `AntPathMatrix::get_mut` :3338
+- `generate_monotonous_regions` :3358
+- `connect_monotonic_regions` :3449
+- `monotonous_region_path_length` :3597
+- `chain_monotonic_regions` :3784
+- `polylines_from_paths` :4164
+- `fill_surface_by_lines_monotonic` :4576
+- `generate_fill_rectilinear_monotonic` :4727
+- `sample_grid_pattern` :4820
+- `sample_grid_pattern_expolygons` :4865
+- `sample_grid_pattern_polygons` :4881
 
 ### `Fill/Lightning/DistanceField` (.cpp+.hpp) and `fill/lightning/distance_field.rs`
 
@@ -5865,21 +5866,21 @@ Rust only:
 - `Layer::make_perimeters_with_lower` :1756
 - `Layer::make_perimeters_with_neighbors` :1765
 - `Layer::record_cooling_node_for_each_extrusion` :2402
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :3753 — C++ has it in `Fill/Fill`
-- `Layer::make_ironing` :4077 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :4200
-- `Layer::generate_sparse_infill` :4207
-- `Layer::new_f` :4216 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :4228
-- `Layer::height_mm` :4234
-- `Layer::set_lower_layer` :4240
-- `Layer::set_upper_layer` :4246
-- `Layer::all_slices` :4252
-- `LayerRegion::set_slices` :4261
-- `chain_points` :4271 — C++ has it in `ShortestPath`
-- `get_extents_layer_region` :4314
-- `get_extents_layer_regions` :4337
-- `mpprobe` :4359
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :3763 — C++ has it in `Fill/Fill`
+- `Layer::make_ironing` :4093 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :4216
+- `Layer::generate_sparse_infill` :4223
+- `Layer::new_f` :4232 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :4244
+- `Layer::height_mm` :4250
+- `Layer::set_lower_layer` :4256
+- `Layer::set_upper_layer` :4262
+- `Layer::all_slices` :4268
+- `LayerRegion::set_slices` :4277
+- `chain_points` :4287 — C++ has it in `ShortestPath`
+- `get_extents_layer_region` :4330
+- `get_extents_layer_regions` :4353
+- `mpprobe` :4375
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 
