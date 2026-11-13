@@ -14,5 +14,19 @@
   "functions": [
    "distance_to_infinite_squared"
   ]
+ },
+ {
+  "unit": "Line",
+  "round": "872",
+  "functions": [
+   "Line::intersection_infinite",
+   "Line::perp_distance_to",
+   "Line::parallel_to",
+   "Line::perpendicular_to",
+   "Line::extend",
+   "Line::normal",
+   "intersection",
+   "Line::clip_with_bbox"
+  ]
  }
 ]

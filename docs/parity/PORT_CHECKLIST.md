@@ -10,13 +10,13 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**34.6% of the named C++ functions are ported or verified (3135 of 9052); 23.7% by size of body.**
+**34.7% of the named C++ functions are ported or verified (3143 of 9052); 23.8% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
 | not started `[ ]` | 3176 | 35.1% | 47.9% |
-| partial `[~]` | 2741 | 30.3% | 28.4% |
-| ported `[x]` | 3118 | 34.4% | 23.2% |
+| partial `[~]` | 2733 | 30.2% | 28.3% |
+| ported `[x]` | 3126 | 34.5% | 23.2% |
 | verified `[v]` | 17 | 0.2% | 0.5% |
 
 | Files (C++ units) | Count |
@@ -230,7 +230,7 @@ the end; the goal is none.
 | `Layer` | 1 | `layer.rs` | partial | 56 | 20 | 21 | 15 | 0 |
 | `LayerRegion` | 1 | `layer_region.rs` | partial | 29 | 9 | 19 | 1 | 0 |
 | `libslic3r` | 1 | `libslic3r.rs` | partial | 28 | 12 | 15 | 1 | 0 |
-| `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 35 | 15 | 0 |
+| `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 27 | 23 | 0 |
 | `LocalesUtils` | 1 | `locales_utils.rs` | partial | 3 | 0 | 3 | 0 | 0 |
 | `Log` | 3 | none | not started | 21 | 13 | 8 | 0 | 0 |
 | `LogKeys` | 3 | none | not started | 0 | 0 | 0 | 0 | 0 |
@@ -7580,47 +7580,47 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `transform` (line 10) → `brim_ears_point.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `get_a` (line 38) → `geometry/line.rs`
 - [~] `get_b` (line 39) → `gcode_sender.rs` — not in the paired file
-- [~] `distance_to_squared` (line 43) → `geometry/line.rs:252` — divergent
+- [~] `distance_to_squared` (line 43) → `geometry/line.rs:288` — divergent
 - [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 80) → `arrange.rs, geometry/point.rs` — not in the paired file
-- [x] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:285` — read against the C++ in R871 (the estimate says divergent)
+- [x] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:321` — read against the C++ in R871 (the estimate says divergent)
 - [~] `distance_to_infinite_squared` (line 109) → `geometry/line.rs` — another overload of the name is ported
 - [~] `distance_to_infinite` (line 118) → `geometry/line.rs` — another overload of the name is ported
-- [~] `intersection` (line 123) → `geometry/line.rs:219` — divergent
-- [x] `get_extents` (line 135) → `geometry/line.rs:667`
+- [x] `intersection` (line 123) → `geometry/line.rs:225` — read against the C++ in R872 (the estimate says partial)
+- [x] `get_extents` (line 135) → `geometry/line.rs:708`
 
 **class `Line`**
 
-- [~] `intersection_infinite` (line 22) → `geometry/line.rs:309` — partial
-- [~] `perp_distance_to` (line 43) → `geometry/line.rs:420` — divergent
-- [x] `orientation` (line 53) → `geometry/line.rs:433`
-- [~] `direction` (line 60) → `geometry/line.rs:585` — divergent
+- [x] `intersection_infinite` (line 22) → `geometry/line.rs:345` — read against the C++ in R872 (the estimate says partial)
+- [x] `perp_distance_to` (line 43) → `geometry/line.rs:456` — read against the C++ in R872 (the estimate says divergent)
+- [x] `orientation` (line 53) → `geometry/line.rs:469`
+- [~] `direction` (line 60) → `geometry/line.rs:626` — divergent
 - [~] `parallel_to` (line 68) → `geometry/line.rs` — another overload of the name is ported
-- [~] `parallel_to` (line 73) → `geometry/line.rs:444` — divergent
-- [x] `overlap` (line 79) → `geometry/line.rs:469`
+- [x] `parallel_to` (line 73) → `geometry/line.rs:480` — read against the C++ in R872 (the estimate says divergent)
+- [x] `overlap` (line 79) → `geometry/line.rs:505`
 - [~] `perpendicular_to` (line 93) → `geometry/line.rs` — another overload of the name is ported
-- [~] `perpendicular_to` (line 98) → `geometry/line.rs:456` — partial
+- [x] `perpendicular_to` (line 98) → `geometry/line.rs:492` — read against the C++ in R872 (the estimate says partial)
 - [~] `intersection` (line 105) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
-- [~] `clip_with_bbox` (line 110) → `geometry/line.rs:519` — partial
-- [~] `extend` (line 121) → `geometry/line.rs:493` — divergent
+- [x] `clip_with_bbox` (line 110) → `geometry/line.rs:560` — read against the C++ in R872 (the estimate says partial)
+- [x] `extend` (line 121) → `geometry/line.rs:529` — read against the C++ in R872 (the estimate says divergent)
 - [~] `scale` (line 158) → `bounding_box.rs, ex_polygon_collection.rs, extrusion_simulator.rs` — not in the paired file
-- [x] `translate` (line 159) → `geometry/line.rs:369`
+- [x] `translate` (line 159) → `geometry/line.rs:405`
 - [~] `translate` (line 160) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `rotate` (line 161) → `geometry/line.rs:387`
+- [x] `rotate` (line 161) → `geometry/line.rs:423`
 - [x] `reverse` (line 162) → `geometry/line.rs:121`
 - [~] `length` (line 163) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
-- [x] `midpoint` (line 164) → `geometry/line.rs:591`
+- [x] `midpoint` (line 164) → `geometry/line.rs:632`
 - [~] `distance_to_squared` (line 167) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to_squared` (line 168) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 169) → `arrange.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 170) → `geometry/line.rs` — another overload of the name is ported
 - [x] `atan2_` (line 176) → `geometry/line.rs:59`
 - [~] `vector` (line 179) → `geometry/line.rs` — another overload of the name is ported
-- [~] `normal` (line 180) → `geometry/line.rs:136` — divergent
+- [x] `normal` (line 180) → `geometry/line.rs:136` — read against the C++ in R872 (the estimate says divergent)
 - [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 188) → `arrange.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 192) → `geometry/line.rs` — another overload of the name is ported
-- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:304`
+- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:340`
 
 **class `Line3`**
 
@@ -7629,18 +7629,18 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 
 **class `Line3float`**
 
-- [x] `vector` (line 282) → `geometry/line.rs:414`
+- [x] `vector` (line 282) → `geometry/line.rs:450`
 - [ ] `unit_vector` (line 283) → `geometry/line.rs`
-- [x] `length` (line 284) → `geometry/line.rs:603`
+- [x] `length` (line 284) → `geometry/line.rs:644`
 
 **class `Linef3`**
 
 - [ ] `intersect_plane` (line 128) → `geometry/line.rs`
-- [x] `scale` (line 249) → `geometry/line.rs:378`
+- [x] `scale` (line 249) → `geometry/line.rs:414`
 - [~] `vector` (line 250) → `geometry/line.rs` — another overload of the name is ported
 - [ ] `unit_vector` (line 251) → `geometry/line.rs`
 - [x] `length` (line 252) → `geometry/line.rs:109`
-- [x] `reverse` (line 253) → `geometry/line.rs:609`
+- [x] `reverse` (line 253) → `geometry/line.rs:650`
 - [ ] `get_point_projection_to_line` (line 260) → `geometry/line.rs`
 - [ ] `get_distance_of_point_to_line` (line 267) → `geometry/line.rs`
 
