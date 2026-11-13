@@ -27,7 +27,7 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 | every named function ported | 48 |
 | every named function verified | 0 |
 
-C++ still run through the FFI shim crates: 35 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 7, `boost-voronoi-sys` 0). They are listed at
+C++ still run through the FFI shim crates: 31 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 3, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
 
 ## How to read it
@@ -7580,36 +7580,36 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `transform` (line 10) → `brim_ears_point.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `get_a` (line 38) → `geometry/line.rs`
 - [~] `get_b` (line 39) → `gcode_sender.rs` — not in the paired file
-- [~] `distance_to_squared` (line 43) → `geometry/line.rs:288` — divergent
+- [~] `distance_to_squared` (line 43) → `geometry/line.rs:252` — divergent
 - [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 80) → `arrange.rs, geometry/point.rs` — not in the paired file
-- [x] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:321` — read against the C++ in R871 (the estimate says divergent)
+- [x] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:285` — read against the C++ in R871 (the estimate says divergent)
 - [~] `distance_to_infinite_squared` (line 109) → `geometry/line.rs` — another overload of the name is ported
 - [~] `distance_to_infinite` (line 118) → `geometry/line.rs` — another overload of the name is ported
-- [x] `intersection` (line 123) → `geometry/line.rs:225` — read against the C++ in R872 (the estimate says partial)
-- [x] `get_extents` (line 135) → `geometry/line.rs:708`
+- [x] `intersection` (line 123) → `geometry/line.rs:220` — read against the C++ in R872 (the estimate says partial)
+- [x] `get_extents` (line 135) → `geometry/line.rs:668`
 
 **class `Line`**
 
-- [x] `intersection_infinite` (line 22) → `geometry/line.rs:345` — read against the C++ in R872 (the estimate says partial)
-- [x] `perp_distance_to` (line 43) → `geometry/line.rs:456` — read against the C++ in R872 (the estimate says divergent)
-- [x] `orientation` (line 53) → `geometry/line.rs:469`
-- [~] `direction` (line 60) → `geometry/line.rs:626` — divergent
+- [x] `intersection_infinite` (line 22) → `geometry/line.rs:309` — read against the C++ in R872 (the estimate says partial)
+- [x] `perp_distance_to` (line 43) → `geometry/line.rs:420` — read against the C++ in R872 (the estimate says divergent)
+- [x] `orientation` (line 53) → `geometry/line.rs:433`
+- [~] `direction` (line 60) → `geometry/line.rs:586` — divergent
 - [~] `parallel_to` (line 68) → `geometry/line.rs` — another overload of the name is ported
-- [x] `parallel_to` (line 73) → `geometry/line.rs:480` — read against the C++ in R872 (the estimate says divergent)
-- [x] `overlap` (line 79) → `geometry/line.rs:505`
+- [x] `parallel_to` (line 73) → `geometry/line.rs:444` — read against the C++ in R872 (the estimate says divergent)
+- [x] `overlap` (line 79) → `geometry/line.rs:469`
 - [~] `perpendicular_to` (line 93) → `geometry/line.rs` — another overload of the name is ported
-- [x] `perpendicular_to` (line 98) → `geometry/line.rs:492` — read against the C++ in R872 (the estimate says partial)
+- [x] `perpendicular_to` (line 98) → `geometry/line.rs:456` — read against the C++ in R872 (the estimate says partial)
 - [~] `intersection` (line 105) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
-- [x] `clip_with_bbox` (line 110) → `geometry/line.rs:560` — read against the C++ in R872 (the estimate says partial)
-- [x] `extend` (line 121) → `geometry/line.rs:529` — read against the C++ in R872 (the estimate says divergent)
+- [x] `clip_with_bbox` (line 110) → `geometry/line.rs:520` — read against the C++ in R872 (the estimate says partial)
+- [x] `extend` (line 121) → `geometry/line.rs:493` — read against the C++ in R872 (the estimate says divergent)
 - [~] `scale` (line 158) → `bounding_box.rs, ex_polygon_collection.rs, extrusion_simulator.rs` — not in the paired file
-- [x] `translate` (line 159) → `geometry/line.rs:405`
+- [x] `translate` (line 159) → `geometry/line.rs:369`
 - [~] `translate` (line 160) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `rotate` (line 161) → `geometry/line.rs:423`
+- [x] `rotate` (line 161) → `geometry/line.rs:387`
 - [x] `reverse` (line 162) → `geometry/line.rs:121`
 - [~] `length` (line 163) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
-- [x] `midpoint` (line 164) → `geometry/line.rs:632`
+- [x] `midpoint` (line 164) → `geometry/line.rs:592`
 - [~] `distance_to_squared` (line 167) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to_squared` (line 168) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 169) → `arrange.rs, geometry/point.rs` — not in the paired file
@@ -7620,7 +7620,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 188) → `arrange.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 192) → `geometry/line.rs` — another overload of the name is ported
-- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:340`
+- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:304`
 
 **class `Line3`**
 
@@ -7629,18 +7629,18 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 
 **class `Line3float`**
 
-- [x] `vector` (line 282) → `geometry/line.rs:450`
+- [x] `vector` (line 282) → `geometry/line.rs:414`
 - [ ] `unit_vector` (line 283) → `geometry/line.rs`
-- [x] `length` (line 284) → `geometry/line.rs:644`
+- [x] `length` (line 284) → `geometry/line.rs:604`
 
 **class `Linef3`**
 
 - [ ] `intersect_plane` (line 128) → `geometry/line.rs`
-- [x] `scale` (line 249) → `geometry/line.rs:414`
+- [x] `scale` (line 249) → `geometry/line.rs:378`
 - [~] `vector` (line 250) → `geometry/line.rs` — another overload of the name is ported
 - [ ] `unit_vector` (line 251) → `geometry/line.rs`
 - [x] `length` (line 252) → `geometry/line.rs:109`
-- [x] `reverse` (line 253) → `geometry/line.rs:650`
+- [x] `reverse` (line 253) → `geometry/line.rs:610`
 - [ ] `get_point_projection_to_line` (line 260) → `geometry/line.rs`
 - [ ] `get_distance_of_point_to_line` (line 267) → `geometry/line.rs`
 
@@ -8518,7 +8518,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 - [ ] `mk_point` (line 45) → `multi_material_segmentation.rs`
 - [ ] `mk_vec2` (line 47) → `multi_material_segmentation.rs`
 - [~] `vertex_equal_to_point` (line 49) → `geometry/voronoi_annotation.rs` — not in the paired file
-- [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:1861`
+- [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:1845`
 - [~] `colored_points_to_polygon` (line 314) → `multi_material_segmentation.rs` — another overload of the name is ported
 - [x] `colored_points_to_polygon` (line 322) → `multi_material_segmentation.rs:532`
 - [x] `get_all_next_arcs` (line 330) → `multi_material_segmentation.rs:542`
@@ -8531,15 +8531,15 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 - [v] `project_line_on_line` (line 494) → `multi_material_segmentation.rs:829` — R873: tests/project_line_on_line_native_parity.rs: 900,000 line pairs at three magnitudes equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced
 - [~] `get_extents` (line 593) → `ex_polygon.rs, ex_polygon_collection.rs, fill/lightning/tree_node.rs` — not in the paired file
 - [~] `to_lines` (line 605) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [x] `get_segments` (line 617) → `multi_material_segmentation.rs:1066`
-- [x] `filter_painted_lines` (line 642) → `multi_material_segmentation.rs:1101`
-- [x] `post_process_painted_lines` (line 689) → `multi_material_segmentation.rs:1175`
-- [x] `are_lines_connected` (line 722) → `multi_material_segmentation.rs:1243`
-- [x] `colorize_line` (line 731) → `multi_material_segmentation.rs:1253`
-- [x] `filter_colorized_polygon` (line 808) → `multi_material_segmentation.rs:1361`
-- [x] `colorize_contour` (line 897) → `multi_material_segmentation.rs:1501`
-- [x] `colorize_contours` (line 937) → `multi_material_segmentation.rs:1570`
-- [x] `points_inside` (line 961) → `multi_material_segmentation.rs:1615`
+- [x] `get_segments` (line 617) → `multi_material_segmentation.rs:1050`
+- [x] `filter_painted_lines` (line 642) → `multi_material_segmentation.rs:1085`
+- [x] `post_process_painted_lines` (line 689) → `multi_material_segmentation.rs:1159`
+- [x] `are_lines_connected` (line 722) → `multi_material_segmentation.rs:1227`
+- [x] `colorize_line` (line 731) → `multi_material_segmentation.rs:1237`
+- [x] `filter_colorized_polygon` (line 808) → `multi_material_segmentation.rs:1345`
+- [x] `colorize_contour` (line 897) → `multi_material_segmentation.rs:1485`
+- [x] `colorize_contours` (line 937) → `multi_material_segmentation.rs:1554`
+- [x] `points_inside` (line 961) → `multi_material_segmentation.rs:1599`
 - [ ] `export_graph_to_svg` (line 984) → `multi_material_segmentation.rs`
 - [ ] `non_deleted_edge_count` (line 1016) → `multi_material_segmentation.rs`
 - [ ] `can_vertex_be_deleted` (line 1027) → `multi_material_segmentation.rs`
@@ -8551,26 +8551,26 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 - [ ] `calc_total_edge_length` (line 1077) → `multi_material_segmentation.rs`
 - [ ] `remove_multiple_edges_in_vertex` (line 1118) → `multi_material_segmentation.rs`
 - [~] `extract_colored_segments` (line 1151) → `multi_material_segmentation.rs` — another overload of the name is ported
-- [x] `cut_segmented_layers` (line 1285) → `multi_material_segmentation.rs:2612`
+- [x] `cut_segmented_layers` (line 1285) → `multi_material_segmentation.rs:2596`
 - [ ] `is_volume_sinking` (line 1311) → `multi_material_segmentation.rs`
 - [ ] `effective_color_penetration_layers` (line 1328) → `multi_material_segmentation.rs`
 - [ ] `mmu_segmentation_top_and_bottom_layers` (line 1356) → `multi_material_segmentation.rs`
-- [x] `init_polygon_indices` (line 1688) → `multi_material_segmentation.rs:1637`
-- [x] `line_intersection_with_epsilon` (line 1703) → `multi_material_segmentation.rs:1656`
-- [x] `mark_processed` (line 1710) → `multi_material_segmentation.rs:2034`
-- [~] `is_point_closer_to_beginning_of_line` (line 1716) → `multi_material_segmentation.rs:1673` — partial
-- [~] `clip_finite_voronoi_edge` (line 1721) → `multi_material_segmentation.rs:2015` — partial
-- [x] `has_same_color` (line 1739) → `multi_material_segmentation.rs:1679`
-- [x] `build_graph` (line 1741) → `multi_material_segmentation.rs:2110`
-- [x] `get_all_segments` (line 1958) → `multi_material_segmentation.rs:2484`
-- [x] `compute_edge_length` (line 1968) → `multi_material_segmentation.rs:2494`
-- [x] `remove_multiple_edges_in_vertices` (line 2008) → `multi_material_segmentation.rs:2551`
-- [~] `merge_segmented_layers` (line 2039) → `multi_material_segmentation.rs:3242` — partial
+- [x] `init_polygon_indices` (line 1688) → `multi_material_segmentation.rs:1621`
+- [x] `line_intersection_with_epsilon` (line 1703) → `multi_material_segmentation.rs:1640`
+- [x] `mark_processed` (line 1710) → `multi_material_segmentation.rs:2018`
+- [~] `is_point_closer_to_beginning_of_line` (line 1716) → `multi_material_segmentation.rs:1657` — partial
+- [~] `clip_finite_voronoi_edge` (line 1721) → `multi_material_segmentation.rs:1999` — partial
+- [x] `has_same_color` (line 1739) → `multi_material_segmentation.rs:1663`
+- [x] `build_graph` (line 1741) → `multi_material_segmentation.rs:2094`
+- [x] `get_all_segments` (line 1958) → `multi_material_segmentation.rs:2468`
+- [x] `compute_edge_length` (line 1968) → `multi_material_segmentation.rs:2478`
+- [x] `remove_multiple_edges_in_vertices` (line 2008) → `multi_material_segmentation.rs:2535`
+- [~] `merge_segmented_layers` (line 2039) → `multi_material_segmentation.rs:3226` — partial
 - [ ] `export_regions_to_svg` (line 2083) → `multi_material_segmentation.rs`
 - [ ] `export_processed_input_expolygons_to_svg` (line 2103) → `multi_material_segmentation.rs`
 - [ ] `export_painted_lines_to_svg` (line 2120) → `multi_material_segmentation.rs`
 - [ ] `export_colorized_polygons_to_svg` (line 2138) → `multi_material_segmentation.rs`
-- [x] `has_layer_only_one_color` (line 2153) → `multi_material_segmentation.rs:2588`
+- [x] `has_layer_only_one_color` (line 2153) → `multi_material_segmentation.rs:2572`
 
 **class `MMU_Graph`**
 
@@ -8593,7 +8593,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **class `PaintedLineVisitor`**
 
-- [x] `reset` (line 532) → `multi_material_segmentation.rs:950`
+- [x] `reset` (line 532) → `multi_material_segmentation.rs:934`
 
 **class `segment_traits<Slic3r::ColoredLine>`**
 
@@ -13495,11 +13495,7 @@ stands for is in [`../rust-engine/parity/not-ported.md`](../rust-engine/parity/n
 | `clipper2-z-sys` | `cz2_intersect_open_z` | 1 |
 | `clipper2-z-sys` | `cz2_offset_z` | 1 |
 | `clipper2-z-sys` | `cz2_pl_open` | 1 |
-| `eigen-transform-sys` | `project_line_on_line` | 1 |
 | `eigen-transform-sys` | `raycast_visibility_native` | 1 |
 | `eigen-transform-sys` | `sample_uniform` | 1 |
 | `eigen-transform-sys` | `short_edge_collapse` | 1 |
-| `eigen-transform-sys` | `transform_verts_affine_f32_pair` | 1 |
-| `eigen-transform-sys` | `transform_verts_for_slicing` | 1 |
-| `eigen-transform-sys` | `transform_verts_unified` | 1 |
 | `boost-voronoi-sys` | none called by the engine | 0 |

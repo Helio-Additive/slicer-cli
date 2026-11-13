@@ -1490,7 +1490,7 @@ fn slice_mesh_its(
                 flat_in.push(p.y);
                 flat_in.push(p.z);
             }
-            let flat_out = transform_verts_unified_gated(
+            let flat_out = transform_verts_unified(
                 &t16,
                 crate::libslic3r::SCALING_FACTOR,
                 (0.0, 0.0, 0.0),
@@ -1560,7 +1560,7 @@ fn slice_mesh_its(
                 flat_in.push(p.y);
                 flat_in.push(p.z);
             }
-            let flat_out = transform_verts_unified_gated(
+            let flat_out = transform_verts_unified(
                 &trafo16,
                 crate::libslic3r::SCALING_FACTOR,
                 voff,
@@ -1578,7 +1578,7 @@ fn slice_mesh_its(
                 flat_in.push(p.y);
                 flat_in.push(p.z);
             }
-            let flat_out = transform_verts_for_slicing_gated(
+            let flat_out = transform_verts_for_slicing(
                 crate::libslic3r::SCALING_FACTOR,
                 cx,
                 cy,
@@ -2895,35 +2895,4 @@ pub fn transform_verts_for_slicing(scaling_factor: f64, cx: f64, cy: f64, verts_
 pub fn transform_verts_affine_f32_pair(a16: &[f64; 16], b16: &[f64; 16], verts_in: &[f32]) -> Vec<f32> {
     let tr = transform3f_mul_transform3f(&transform3d_cast_float(a16), &transform3d_cast_float(b16));
     transform_flat(&tr, verts_in, [0.0; 3])
-}
-
-// XF_RUST (on unless =0): the three transforms above in place of the C++ in
-// `eigen-transform-sys`. =0 calls the shim, as the rounds up to R873 did.
-pub(crate) fn transform_verts_unified_gated(
-    trafo16: &[f64; 16],
-    scaling_factor: f64,
-    voff: (f64, f64, f64),
-    verts_in: &[f32],
-) -> Vec<f32> {
-    if crate::faithful_gate("XF_RUST") {
-        transform_verts_unified(trafo16, scaling_factor, voff, verts_in)
-    } else {
-        eigen_transform_sys::transform_verts_unified(trafo16, scaling_factor, voff, verts_in)
-    }
-}
-
-pub(crate) fn transform_verts_for_slicing_gated(scaling_factor: f64, cx: f64, cy: f64, verts_in: &[f32]) -> Vec<f32> {
-    if crate::faithful_gate("XF_RUST") {
-        transform_verts_for_slicing(scaling_factor, cx, cy, verts_in)
-    } else {
-        eigen_transform_sys::transform_verts_for_slicing(scaling_factor, cx, cy, verts_in)
-    }
-}
-
-pub(crate) fn transform_verts_affine_f32_pair_gated(a16: &[f64; 16], b16: &[f64; 16], verts_in: &[f32]) -> Vec<f32> {
-    if crate::faithful_gate("XF_RUST") {
-        transform_verts_affine_f32_pair(a16, b16, verts_in)
-    } else {
-        eigen_transform_sys::transform_verts_affine_f32_pair(a16, b16, verts_in)
-    }
 }

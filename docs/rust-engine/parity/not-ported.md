@@ -46,9 +46,9 @@ is left on the fixtures' path (`GEOCALLS=1` lists them, README "Probes").
 
 | Shim function | Called from | Stands for |
 |-|-|-|
-| `transform_verts_unified` (3), `transform_verts_for_slicing`, `transform_verts_affine_f32_pair` | `triangle_mesh_slicer.rs`, `multi_material_segmentation.rs`, `app_slice.rs` | `its_transform`, the vertex transform of `slice_mesh` (Eigen float evaluation order) |
+| `transform_verts_unified`, `transform_verts_for_slicing`, `transform_verts_affine_f32_pair` | `tests/vertex_transform_native_parity.rs` only (since R875) | `its_transform`, the vertex transform of `slice_mesh` (Eigen float evaluation order) |
 | `douglas_peucker_keep` | `tests/douglas_peucker_native_parity.rs` only (since R870) | `MultiPoint::_douglas_peucker`; replaced by the Rust port in R867, kept as the test's reference |
-| `project_line_on_line` | `multi_material_segmentation.rs` (only with `MMS_PROJECT_RUST=0`), `tests/project_line_on_line_native_parity.rs` | `project_line_on_line` of MultiMaterialSegmentation.cpp; replaced by the Rust port in R873 |
+| `project_line_on_line` | `tests/project_line_on_line_native_parity.rs` only (since R875) | `project_line_on_line` of MultiMaterialSegmentation.cpp; replaced by the Rust port in R873 |
 | `short_edge_collapse` | `short_edge_collapse.rs` | `its_short_edge_collpase` |
 | `sample_uniform` | `triangle_set_sampling.rs` | `sample_its_uniform_parallel` |
 | `raycast_visibility_native` | `gcode/seam_placer.rs` | the visibility rays of SeamPlacer.cpp (AABBTreeIndirect) |

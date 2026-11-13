@@ -827,25 +827,9 @@ fn is_less_eps(left: f32, right: f32, eps: f32) -> bool {
 // Assumes that is at most same projected_l length or below than projection_l
 // MultiMaterialSegmentation.cpp:493
 pub fn project_line_on_line(projection_l: &Line, projected_l: &Line, new_projected: &mut Line) -> bool {
-    // MMS_PROJECT_RUST (on unless =0): the C++ below in plain double, which
-    // `tests/project_line_on_line_native_parity.rs` holds equal to the C++
-    // compiled with Eigen (no step is fused; the products of coordinate
-    // differences are exact). =0 calls that C++ through `eigen-transform-sys`,
-    // as R806 to R872 did.
-    if !crate::faithful_gate("MMS_PROJECT_RUST") {
-        return match eigen_transform_sys::project_line_on_line(
-            (projection_l.a.x, projection_l.a.y),
-            (projection_l.b.x, projection_l.b.y),
-            (projected_l.a.x, projected_l.a.y),
-            (projected_l.b.x, projected_l.b.y),
-        ) {
-            Some(o) => {
-                *new_projected = Line::new(Point::new(o[0], o[1]), Point::new(o[2], o[3]));
-                true
-            }
-            None => false,
-        };
-    }
+    // Plain double, as the C++ build evaluates it: no step is fused and the
+    // products of coordinate differences are exact
+    // (tests/project_line_on_line_native_parity.rs).
     // MultiMaterialSegmentation.cpp:495-498
     let v1x = (projection_l.b.x - projection_l.a.x) as f64;
     let v1y = (projection_l.b.y - projection_l.a.y) as f64;
@@ -2834,7 +2818,7 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
                 flat_in.push(p.y);
                 flat_in.push(p.z);
             }
-            let flat_out = crate::triangle_mesh_slicer::transform_verts_unified_gated(
+            let flat_out = crate::triangle_mesh_slicer::transform_verts_unified(
                 &ctx.trafo16,
                 crate::libslic3r::SCALING_FACTOR,
                 ctx.voff,

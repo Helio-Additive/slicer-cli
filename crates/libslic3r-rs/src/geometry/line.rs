@@ -134,14 +134,9 @@ impl Line {
     /// Get the normal vector (perpendicular to the line, rotated 90° CCW).
     #[inline]
     pub fn normal(&self) -> Point {
-        // LINE_CPP_METHODS (on unless =0): Line.hpp:180,
-        // `Vector((b(1) - a(1)), -(b(0) - a(0)))`, the vector turned clockwise.
-        // =0 turns it counter-clockwise, the opposite sign.
-        if crate::faithful_gate("LINE_CPP_METHODS") {
-            return Point::new(self.b.y - self.a.y, -(self.b.x - self.a.x));
-        }
-        let dir = self.direction();
-        dir.rotate_90_ccw()
+        // Line.hpp:180, `Vector((b(1) - a(1)), -(b(0) - a(0)))`: the vector
+        // turned clockwise.
+        Point::new(self.b.y - self.a.y, -(self.b.x - self.a.x))
     }
 
     /// Get the unit normal vector.
@@ -223,64 +218,33 @@ impl Line {
     /// Returns None if the segments don't intersect.
     /// Line.cpp:105 `Line::intersection` -> Line.hpp:123 `line_alg::intersection`.
     pub fn intersection(&self, other: &Line) -> Option<Point> {
-        // LINE_CPP_METHODS: `line_alg::intersection` (Line.hpp:123-148) in double,
-        // the point cast to coord_t, which truncates. =0 takes the cross products
-        // in exact integers and rounds the point.
-        if crate::faithful_gate("LINE_CPP_METHODS") {
-            // Line.hpp:127-129
-            let v1x = (self.b.x - self.a.x) as CoordF;
-            let v1y = (self.b.y - self.a.y) as CoordF;
-            let v2x = (other.b.x - other.a.x) as CoordF;
-            let v2y = (other.b.y - other.a.y) as CoordF;
-            let denom = v1x * v2y - v1y * v2x;
-            // Line.hpp:130-136
-            if denom.abs() < crate::libslic3r::EPSILON {
-                return None;
-            }
-            // Line.hpp:137-141
-            let v12x = (self.a.x - other.a.x) as CoordF;
-            let v12y = (self.a.y - other.a.y) as CoordF;
-            let nume_a = v2x * v12y - v2y * v12x;
-            let nume_b = v1x * v12y - v1y * v12x;
-            let t1 = nume_a / denom;
-            let t2 = nume_b / denom;
-            // Line.hpp:142-147
-            if t1 >= 0.0 && t1 <= 1.0 && t2 >= 0.0 && t2 <= 1.0 {
-                return Some(Point::new(
-                    (self.a.x as CoordF + t1 * v1x) as Coord,
-                    (self.a.y as CoordF + t1 * v1y) as Coord,
-                ));
-            }
+        // `line_alg::intersection` (Line.hpp:123-148) in double; the point is
+        // cast to coord_t, which truncates.
+        // Line.hpp:127-129
+        let v1x = (self.b.x - self.a.x) as CoordF;
+        let v1y = (self.b.y - self.a.y) as CoordF;
+        let v2x = (other.b.x - other.a.x) as CoordF;
+        let v2y = (other.b.y - other.a.y) as CoordF;
+        let denom = v1x * v2y - v1y * v2x;
+        // Line.hpp:130-136
+        if denom.abs() < crate::libslic3r::EPSILON {
             return None;
         }
-        // v1 = l1.b - l1.a, v2 = l2.b - l2.a
-        let d1 = self.direction();
-        let d2 = other.direction();
-
-        // denom = cross2(v1, v2); C++ rejects when |denom| < EPSILON. For integer
-        // coord_t inputs cross2 is exact, so |denom| < 1e-4 is exactly denom == 0.
-        let cross = d1.cross(&d2);
-        if cross == 0 {
-            return None;
+        // Line.hpp:137-141
+        let v12x = (self.a.x - other.a.x) as CoordF;
+        let v12y = (self.a.y - other.a.y) as CoordF;
+        let nume_a = v2x * v12y - v2y * v12x;
+        let nume_b = v1x * v12y - v1y * v12x;
+        let t1 = nume_a / denom;
+        let t2 = nume_b / denom;
+        // Line.hpp:142-147
+        if t1 >= 0.0 && t1 <= 1.0 && t2 >= 0.0 && t2 <= 1.0 {
+            return Some(Point::new(
+                (self.a.x as CoordF + t1 * v1x) as Coord,
+                (self.a.y as CoordF + t1 * v1y) as Coord,
+            ));
         }
-
-        // C++ v12 = l1.a - l2.a; nume_a = cross2(v2, v12); nume_b = cross2(v1, v12);
-        // diff = l2.a - l1.a = -v12, so:
-        //   diff x d2 = cross2(-v12, v2) = cross2(v2, v12) = nume_a  => t == t1
-        //   diff x d1 = cross2(-v12, v1) = cross2(v1, v12) = nume_b  => u == t2
-        let diff = other.a - self.a;
-        let t = diff.cross(&d2) as CoordF / cross as CoordF;
-        let u = diff.cross(&d1) as CoordF / cross as CoordF;
-
-        // t1 >= 0 && t1 <= 1 && t2 >= 0 && t2 <= 1
-        if t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0 {
-            Some(Point::new(
-                (self.a.x as CoordF + t * d1.x as CoordF).round() as Coord,
-                (self.a.y as CoordF + t * d1.y as CoordF).round() as Coord,
-            ))
-        } else {
-            None
-        }
+        None
     }
 
     /// Static method: Calculate the squared distance from a point to a line segment.
@@ -530,13 +494,9 @@ impl Line {
         let vx = (self.b.x - self.a.x) as CoordF;
         let vy = (self.b.y - self.a.y) as CoordF;
         let norm = (vx * vx + vy * vy).sqrt();
-        // LINE_CPP_METHODS: Line.cpp:123, `offset * vector().normalized()`: the
-        // vector is divided by its norm first. =0 multiplies by the offset first.
-        let (ox, oy) = if crate::faithful_gate("LINE_CPP_METHODS") {
-            ((offset * (vx / norm)) as Coord, (offset * (vy / norm)) as Coord)
-        } else {
-            ((offset * vx / norm) as Coord, (offset * vy / norm) as Coord)
-        };
+        // Line.cpp:123, `offset * vector().normalized()`: the vector is divided
+        // by its norm first.
+        let (ox, oy) = ((offset * (vx / norm)) as Coord, (offset * (vy / norm)) as Coord);
         self.a.x -= ox;
         self.a.y -= oy;
         self.b.x += ox;

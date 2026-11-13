@@ -747,7 +747,7 @@ pub fn slice_3mf_to_gcode(
                     flat.push(v.y);
                     flat.push(v.z);
                 }
-                let out = crate::triangle_mesh_slicer::transform_verts_affine_f32_pair_gated(a16, b16, &flat);
+                let out = crate::triangle_mesh_slicer::transform_verts_affine_f32_pair(a16, b16, &flat);
                 for (v, ch) in its.vertices.iter_mut().zip(out.chunks_exact(3)) {
                     v.x = ch[0];
                     v.y = ch[1];

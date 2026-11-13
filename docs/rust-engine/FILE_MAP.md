@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4534 |
+| Rust functions with no C++ function of that name in the pair | 4531 |
 
 By tier:
 
@@ -5907,17 +5907,17 @@ Tier 1. C++ functions 56 (plus 14 constructors, 0 destructors, 1 operators), Rus
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Line::intersection_infinite` :22 and `Line::intersection_infinite` :345 (43%, 1.18x)
-- divergent: `distance_to_squared` :43 and `Line::distance_to_squared` :288 (18%, 0.87x)
-- divergent: `Line::perp_distance_to` :43 and `Line::perp_distance_to` :456 (28%, 1.47x)
-- divergent: `Line::direction` :60 and `LineF::direction` :626 (0%, 0.23x)
-- divergent: `Line::parallel_to` :73 and `Line::parallel_to` :480 (28%, 1.74x)
-- divergent: `distance_to_infinite_squared` :88 and `Line::distance_to_infinite_squared` :321 (18%, 0.83x)
-- partial: `Line::perpendicular_to` :98 and `Line::perpendicular_to` :492 (43%, 1.74x)
-- partial: `Line::clip_with_bbox` :110 and `Line::clip_with_bbox` :560 (50%, 1.35x)
-- divergent: `Line::extend` :121 and `Line::extend` :529 (25%, 3.49x)
-- partial: `intersection` :123 and `Line::intersection` :225 (43%, 1.65x)
-- divergent: `Line::normal` :180 and `Line::normal` :136 (0%, 1.54x)
+- partial: `Line::intersection_infinite` :22 and `Line::intersection_infinite` :309 (43%, 1.18x)
+- divergent: `distance_to_squared` :43 and `Line::distance_to_squared` :252 (18%, 0.87x)
+- divergent: `Line::perp_distance_to` :43 and `Line::perp_distance_to` :420 (28%, 1.47x)
+- divergent: `Line::direction` :60 and `LineF::direction` :586 (0%, 0.23x)
+- divergent: `Line::parallel_to` :73 and `Line::parallel_to` :444 (28%, 1.74x)
+- divergent: `distance_to_infinite_squared` :88 and `Line::distance_to_infinite_squared` :285 (18%, 0.83x)
+- partial: `Line::perpendicular_to` :98 and `Line::perpendicular_to` :456 (43%, 1.74x)
+- partial: `Line::clip_with_bbox` :110 and `Line::clip_with_bbox` :520 (50%, 1.35x)
+- divergent: `Line::extend` :121 and `Line::extend` :493 (25%, 2.71x)
+- partial: `intersection` :123 and `Line::intersection` :220 (43%, 0.96x)
+- divergent: `Line::normal` :180 and `Line::normal` :136 (0%, 0.85x)
 
 Missing in the Rust file:
 
@@ -5967,34 +5967,34 @@ Rust only:
 - `Line::length_squared` :103
 - `Line::is_point` :115
 - `Line::reverse_mut` :130
-- `Line::unit_normal` :149
-- `Line::distance_to_point` :155
-- `Line::distance_to_point_squared` :161
-- `Line::distance_to_point_infinite` :167
-- `Line::project_point` :182
-- `Line::project_point_infinite` :187
-- `Line::contains_point` :205
-- `Line::intersects` :218 — C++ has it in `BoundingBox`, `Frustum`, `SLA/Pad`
-- `Line::angle` :377 — C++ has it in `GCode/SeamPlacer`, `Point`
-- `Line::is_parallel_to` :383
-- `Line::is_perpendicular_to` :389
-- `Line::ccw` :397 — C++ has it in `Point`
-- `Line::rotate_around` :432
-- `Line::to_f64` :441
-- `Line::parallel_to_angle` :548
-- `Line::perpendicular_to_angle` :554
-- `Line::fmt` :578
-- `Line::fmt` :584
-- `Line::from` :598 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `(Point, Point)::from` :605 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `LineF::new` :620
-- `LineF::length_squared` :638
-- `LineF::unit_normal` :659
-- `LineF::angle` :665 — C++ has it in `GCode/SeamPlacer`, `Point`
-- `LineF::to_scaled` :672
-- `LineF::fmt` :681
-- `LineF::fmt` :687
-- `LineF::from` :698 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Line::unit_normal` :144
+- `Line::distance_to_point` :150
+- `Line::distance_to_point_squared` :156
+- `Line::distance_to_point_infinite` :162
+- `Line::project_point` :177
+- `Line::project_point_infinite` :182
+- `Line::contains_point` :200
+- `Line::intersects` :213 — C++ has it in `BoundingBox`, `Frustum`, `SLA/Pad`
+- `Line::angle` :341 — C++ has it in `GCode/SeamPlacer`, `Point`
+- `Line::is_parallel_to` :347
+- `Line::is_perpendicular_to` :353
+- `Line::ccw` :361 — C++ has it in `Point`
+- `Line::rotate_around` :396
+- `Line::to_f64` :405
+- `Line::parallel_to_angle` :508
+- `Line::perpendicular_to_angle` :514
+- `Line::fmt` :538
+- `Line::fmt` :544
+- `Line::from` :558 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `(Point, Point)::from` :565 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `LineF::new` :580
+- `LineF::length_squared` :598
+- `LineF::unit_normal` :619
+- `LineF::angle` :625 — C++ has it in `GCode/SeamPlacer`, `Point`
+- `LineF::to_scaled` :632
+- `LineF::fmt` :641
+- `LineF::fmt` :647
+- `LineF::from` :658 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
 
 ### `LocalesUtils` (.cpp+.hpp) and `locales_utils.rs`
 
@@ -6522,9 +6522,9 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `MMU_Graph::remove_edge` :102 and `MmuGraph::remove_edge` :181 (50%, 0.71x)
 - divergent: `MMU_Graph::is_edge_attach_to_contour` :193 and `MmuGraph::is_edge_attach_to_contour` :317 (25%, 0.6x)
 - divergent: `MMU_Graph::is_edge_connecting_two_contour_vertices` :198 and `MmuGraph::is_edge_connecting_two_contour_vertices` :327 (25%, 0.6x)
-- partial: `is_point_closer_to_beginning_of_line` :1716 and `is_point_closer_to_beginning_of_line` :1673 (50%, 0.71x)
-- partial: `clip_finite_voronoi_edge` :1721 and `clip_finite_voronoi_edge` :2015 (38%, 0.78x)
-- partial: `merge_segmented_layers` :2039 and `merge_segmented_layers` :3242 (50%, 0.99x)
+- partial: `is_point_closer_to_beginning_of_line` :1716 and `is_point_closer_to_beginning_of_line` :1657 (50%, 0.71x)
+- partial: `clip_finite_voronoi_edge` :1721 and `clip_finite_voronoi_edge` :1999 (38%, 0.78x)
+- partial: `merge_segmented_layers` :2039 and `merge_segmented_layers` :3226 (50%, 0.99x)
 
 Missing in the Rust file:
 
@@ -6570,42 +6570,42 @@ Rust only:
 - `colored_points_to_polygon_one` :522
 - `is_equal_eps` :814
 - `is_less_eps` :823
-- `line_distance_to_squared` :894
-- `PaintedLineVisitor::new` :939
-- `PaintedLineVisitor::visit` :955 — C++ has it in `KDTreeIndirect`, `MeshSplitImpl`
-- `cos_threshold2` :1025
-- `append_threshold` :1030
-- `append_threshold2` :1035
-- `get_extents_colored` :1040
-- `to_lines_colored` :1053
-- `CPoint::with_contour` :1729
-- `CPoint::new` :1740
-- `CPointLookup::new` :1763
-- `CPointLookup::insert` :1796 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
-- `CPointLookup::find` :1802 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
-- `CPointLookup::find_all` :1832 — C++ has it in `Point`
-- `ulp_eq` :1867
-- `edge_cell_source_index` :1889
-- `vd_vertex_xy` :1896
-- `retrieve_point_vd` :1904
-- `clip_infinite_edge` :1921 — C++ has it in `Geometry/MedialAxis`, `Geometry/VoronoiVisualUtils`
-- `prev_contour_line` :2043
-- `next_contour_line` :2058
-- `append_edge_if_intersects_with_contour` :2075
-- `polygons_extents` :2473
-- `tb_scaled_f32` :2732
-- `tb_mm` :2739
-- `tb_union_ex` :2745
-- `tb_opening_ex` :2754
-- `tb_is_volume_sinking` :2767
-- `mmu_segmentation_top_and_bottom_layers_tier1` :2797
-- `upper_bound_f64` :3332
-- `expolygons_to_edge_grid_contours` :3349
-- `multi_material_segmentation_by_painting_tier1` :3426
-- `sqr_f64` :4224
-- `perp` :4230 — C++ has it in `Point`
-- `next_idx_modulo` :4236 — C++ has it in `Utils`
-- `_parity_anchors` :4248
+- `line_distance_to_squared` :878
+- `PaintedLineVisitor::new` :923
+- `PaintedLineVisitor::visit` :939 — C++ has it in `KDTreeIndirect`, `MeshSplitImpl`
+- `cos_threshold2` :1009
+- `append_threshold` :1014
+- `append_threshold2` :1019
+- `get_extents_colored` :1024
+- `to_lines_colored` :1037
+- `CPoint::with_contour` :1713
+- `CPoint::new` :1724
+- `CPointLookup::new` :1747
+- `CPointLookup::insert` :1780 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
+- `CPointLookup::find` :1786 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
+- `CPointLookup::find_all` :1816 — C++ has it in `Point`
+- `ulp_eq` :1851
+- `edge_cell_source_index` :1873
+- `vd_vertex_xy` :1880
+- `retrieve_point_vd` :1888
+- `clip_infinite_edge` :1905 — C++ has it in `Geometry/MedialAxis`, `Geometry/VoronoiVisualUtils`
+- `prev_contour_line` :2027
+- `next_contour_line` :2042
+- `append_edge_if_intersects_with_contour` :2059
+- `polygons_extents` :2457
+- `tb_scaled_f32` :2716
+- `tb_mm` :2723
+- `tb_union_ex` :2729
+- `tb_opening_ex` :2738
+- `tb_is_volume_sinking` :2751
+- `mmu_segmentation_top_and_bottom_layers_tier1` :2781
+- `upper_bound_f64` :3316
+- `expolygons_to_edge_grid_contours` :3333
+- `multi_material_segmentation_by_painting_tier1` :3410
+- `sqr_f64` :4208
+- `perp` :4214 — C++ has it in `Point`
+- `next_idx_modulo` :4220 — C++ has it in `Utils`
+- `_parity_anchors` :4232
 
 ### `MultiNozzleUtils` (.cpp+.hpp) and `multi_nozzle_utils.rs`
 
@@ -9417,7 +9417,7 @@ Rust only:
 
 ### `TriangleMeshSlicer` (.cpp+.hpp) and `triangle_mesh_slicer.rs`
 
-Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 66. Matched 23: faithful 15, partial 7, divergent 1, stub 0.
+Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 63. Matched 23: faithful 15, partial 7, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -9497,9 +9497,6 @@ Rust only:
 - `transform_verts_unified` :2869
 - `transform_verts_for_slicing` :2880
 - `transform_verts_affine_f32_pair` :2895
-- `transform_verts_unified_gated` :2902
-- `transform_verts_for_slicing_gated` :2915
-- `transform_verts_affine_f32_pair_gated` :2923
 
 ### `TriangleSelector` (.cpp+.hpp) and `triangle_selector.rs`
 
