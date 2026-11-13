@@ -36,11 +36,11 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | | |
 |-|-|
 | C++ units | 310 |
-| with a Rust file of the same name | 278 (90%) |
-| of those, same words | 277 |
+| with a Rust file of the same name | 279 (90%) |
+| of those, same words | 278 |
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 6 |
-| C++ units with no Rust file | 32 |
+| C++ units with no Rust file | 31 |
 | Rust files with no C++ file of that name | 47 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 754 |
 | of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4535 |
+| Rust functions with no C++ function of that name in the pair | 4548 |
 
 By tier:
 
@@ -63,7 +63,7 @@ By tier:
 |-|-|-|-|-|-|-|-|-|-|
 | 1 | 180 | 175 | 6851 | 2883 | 2407 | 303 | 159 | 14 | 3968 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
-| 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
+| 3 | 92 | 66 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
 
 ## Biggest gaps
@@ -189,7 +189,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 3 | `LogKeys` | .hpp | 0 | 0 |
 | 3 | `TextureToColor/Callbacks` | .hpp | 0 | 0 |
 | 3 | `Win10ModelRepair` | .hpp | 0 | 0 |
-| 3 | `clipper` | .cpp+.hpp | 0 | 0 |
 
 ## Rust files whose name matches no C++ file
 
@@ -12354,6 +12353,26 @@ Rust only:
 - `Zipper::filename` :405 — C++ has it in `FileParserError`
 - `Zipper::create_file_options` :410
 - `Zipper::drop` :441
+
+### `clipper` (.cpp+.hpp) and `clipper.rs`
+
+Tier 3. C++ functions 0, Rust functions 13. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
+
+Rust only:
+
+- `IntPoint::new` :26
+- `area` :38 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arrange`, `BoundingBox`
+- `orientation` :57 — C++ has it in `Line`
+- `point_in_polygon` :64
+- `reverse_path` :119
+- `reverse_paths` :125
+- `distance_sqrd` :134
+- `distance_from_line_sqrd` :142
+- `slopes_near_collinear` :160
+- `points_are_close` :184
+- `exclude_op` :202
+- `clean_polygon` :213
+- `clean_polygons` :270
 
 ### `pchheader` (.cpp+.hpp) and `pchheader.rs`
 

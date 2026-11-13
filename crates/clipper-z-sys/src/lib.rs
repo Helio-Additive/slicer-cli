@@ -256,6 +256,12 @@ extern "C" {
     /// StrictlySimple(true). The ExPolygon::simplify_p post-DP step. Returns flat
     /// Paths (z=0); caller re-unions into ExPolygons. fill_type: 0..3 as above.
     pub fn cz_simplify_polygons(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
+    /// R885: `ClipperLib::Area`, for the tests of the Rust port of clipper.cpp.
+    pub fn cz_ref_area(xy: *const i32, n: i32) -> f64;
+    /// R885: `ClipperLib::PointInPolygon(pt, path)`.
+    pub fn cz_ref_point_in_polygon(px: i32, py: i32, xy: *const i32, n: i32) -> i32;
+    /// R885: `ClipperLib::CleanPolygon(in, out, distance)`; writes at most `n` points.
+    pub fn cz_ref_clean_polygon(xy: *const i32, n: i32, distance: f64, out_xy: *mut i32) -> i32;
     /// R803: faithful `offset(const Polygons&, float delta)` — flat Paths in
     /// Clipper's BuildResult order (ring START vertex preserved).
     pub fn cz_offset_paths(xy: *const i32, lens: *const i32, num: i32, delta: f64, join_type: i32, miter_limit: f64) -> CzZPaths;

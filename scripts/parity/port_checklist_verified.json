@@ -76,5 +76,20 @@
   "functions": [
    "raycast_visibility"
   ]
+ },
+ {
+  "unit": "clipper/clipper",
+  "round": "885",
+  "evidence": "tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)",
+  "functions": [
+   "Area",
+   "PointInPolygon",
+   "CleanPolygon",
+   "DistanceFromLineSqrd",
+   "SlopesNearCollinear",
+   "PointsAreClose",
+   "ExcludeOp",
+   "Orientation"
+  ]
  }
 ]

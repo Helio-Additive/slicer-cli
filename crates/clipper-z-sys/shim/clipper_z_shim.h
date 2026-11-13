@@ -225,6 +225,11 @@ CzZPaths cz_detect_floating(const int32_t *subject_xyz, int32_t subject_n,
                             int32_t clip_num, int32_t subject_idx_range,
                             int32_t *out_num_diff_paths);
 
+// R885 — reference exports for the Rust port of clipper.cpp; called by tests only.
+double  cz_ref_area(const int32_t *xy, int32_t n);
+int32_t cz_ref_point_in_polygon(int32_t px, int32_t py, const int32_t *xy, int32_t n);
+int32_t cz_ref_clean_polygon(const int32_t *xy, int32_t n, double distance, int32_t *out_xy);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1614,3 +1614,41 @@ extern "C" CzZPaths cz_union_flat(const int32_t *xy, const int32_t *lens, int32_
     clipper.Execute(ClipperLib::ctUnion, retval, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
     return marshal_paths(retval);
 }
+
+// ---------------------------------------------------------------------------
+// R885 — reference exports for the Rust port of clipper.cpp (crates/libslic3r-rs/
+// src/clipper.rs). Not called by the engine: tests/clipper_native_parity.rs
+// compares the port with the library through them.
+// ---------------------------------------------------------------------------
+namespace {
+ClipperLib::Path cz_ref_path(const int32_t *xy, int32_t n)
+{
+    ClipperLib::Path p;
+    p.reserve(n);
+    for (int32_t i = 0; i < n; ++i)
+        p.emplace_back(xy[2 * i], xy[2 * i + 1]);
+    return p;
+}
+} // namespace
+
+extern "C" double cz_ref_area(const int32_t *xy, int32_t n)
+{
+    return ClipperLib::Area(cz_ref_path(xy, n));
+}
+
+extern "C" int32_t cz_ref_point_in_polygon(int32_t px, int32_t py, const int32_t *xy, int32_t n)
+{
+    return ClipperLib::PointInPolygon(ClipperLib::IntPoint(px, py), cz_ref_path(xy, n));
+}
+
+// Writes at most n points to out_xy and returns the number written.
+extern "C" int32_t cz_ref_clean_polygon(const int32_t *xy, int32_t n, double distance, int32_t *out_xy)
+{
+    ClipperLib::Path out;
+    ClipperLib::CleanPolygon(cz_ref_path(xy, n), out, distance);
+    for (size_t i = 0; i < out.size(); ++i) {
+        out_xy[2 * i]     = out[i].x();
+        out_xy[2 * i + 1] = out[i].y();
+    }
+    return int32_t(out.size());
+}

@@ -135,6 +135,7 @@ pub mod by_object_print_data;
 pub mod calib;
 pub mod channel;
 pub mod circle;
+pub mod clipper;
 pub mod clipper2_utils;
 pub mod clipper2_z;
 pub mod clipper2_z_utils;
