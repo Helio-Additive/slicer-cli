@@ -8216,7 +8216,7 @@ Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :4104 (0%, 0.44x)
+- divergent: `DynamicPrintConfig::validate` :8970 and `PrintObjectConfig::validate` :4103 (0%, 0.44x)
 - divergent: `validate` :10643 and `PrintConfig::validate` :934 (9%, 0.11x)
 
 Missing in the Rust file:
@@ -8400,38 +8400,38 @@ Rust only:
 - `parse_i32` :2261
 - `parse_float_or_percent` :2266
 - `PrintConfig::set_deserialize` :2284 — C++ has it in `Config`
-- `PrintObjectConfig::set_deserialize` :3145 — C++ has it in `Config`
-- `PrintObjectConfig::default` :3799
-- `PrintObjectConfig::fmt` :4126
-- `BrimType::from_str_bambu` :4213
-- `PrintSequence::from_str_bambu` :4244
-- `WallInfillOrder::from_str_bambu` :4270
-- `SupportBasePattern::from_str_bambu` :4310
-- `SupportInterfacePattern::from_str_bambu` :4339
-- `IroningType::from_str_bambu` :4364
-- `FuzzySkinType::from_str_bambu` :4397
-- `FuzzySkinType::is_enabled` :4408 — C++ has it in `MeshBoolean`
-- `ScarfSeamType::from_str_bambu` :4427
-- `SurfacePattern::from_str_bambu` :4458
-- `InternalSolidInfillPattern::from_str_bambu` :4485
-- `EnsureVerticalShellThickness::from_str_bambu` :4523
-- `TreeSupportStyle::from_str_bambu` :4600
-- `InfillPattern::from_str_bambu` :4732
-- `TopOneWallType::is_enabled` :4834 — C++ has it in `MeshBoolean`
-- `TopOneWallType::is_all_top` :4839
-- `TopOneWallType::from_str_bambu` :4845
-- `PerimeterMode::is_variable_width` :4872
-- `PerimeterMode::name` :4877
-- `PrintConfig::to_key_value_map` :4895
-- `PrintConfig::apply_key_value_map` :5053
-- `PrintConfig::apply_key_value` :5061
-- `PrintObjectConfig::apply_key_value` :5699
-- `find_from` :6554
-- `s_keys_map_nozzle_volume_type` :6636
-- `nozzle_volume_type_string` :6825
-- `stoi` :6843
-- `atoi` :6847
-- `parse_leading_int` :6851
+- `PrintObjectConfig::set_deserialize` :3144 — C++ has it in `Config`
+- `PrintObjectConfig::default` :3798
+- `PrintObjectConfig::fmt` :4125
+- `BrimType::from_str_bambu` :4212
+- `PrintSequence::from_str_bambu` :4243
+- `WallInfillOrder::from_str_bambu` :4269
+- `SupportBasePattern::from_str_bambu` :4309
+- `SupportInterfacePattern::from_str_bambu` :4338
+- `IroningType::from_str_bambu` :4363
+- `FuzzySkinType::from_str_bambu` :4396
+- `FuzzySkinType::is_enabled` :4407 — C++ has it in `MeshBoolean`
+- `ScarfSeamType::from_str_bambu` :4426
+- `SurfacePattern::from_str_bambu` :4457
+- `InternalSolidInfillPattern::from_str_bambu` :4484
+- `EnsureVerticalShellThickness::from_str_bambu` :4522
+- `TreeSupportStyle::from_str_bambu` :4599
+- `InfillPattern::from_str_bambu` :4731
+- `TopOneWallType::is_enabled` :4833 — C++ has it in `MeshBoolean`
+- `TopOneWallType::is_all_top` :4838
+- `TopOneWallType::from_str_bambu` :4844
+- `PerimeterMode::is_variable_width` :4871
+- `PerimeterMode::name` :4876
+- `PrintConfig::to_key_value_map` :4894
+- `PrintConfig::apply_key_value_map` :5052
+- `PrintConfig::apply_key_value` :5060
+- `PrintObjectConfig::apply_key_value` :5698
+- `find_from` :6553
+- `s_keys_map_nozzle_volume_type` :6635
+- `nozzle_volume_type_string` :6824
+- `stoi` :6842
+- `atoi` :6846
+- `parse_leading_int` :6850
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 

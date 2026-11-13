@@ -123,19 +123,19 @@ Eigen (5.0.1) and Boost (1.90). `slicer_cli` is not reproducible run to run, so
 one oracle G-code per fixture is kept and every round is scored against it. The
 round log is [`parity/rounds-R809-on.md`](parity/rounds-R809-on.md).
 
-| Fixture | As brought over (R808) | Now (R856) |
+| Fixture | As brought over (R808) | Now (R857) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 184,212 (96.14%) |
-| Benchy arachne | 32,769 (13.68%) | 238,663 (97.97%) |
-| Majora | 1,512,438 (55.88%) | 2,782,529 (97.39%) |
+| Benchy classic | 30,486 (15.72%) | 184,213 (96.15%) |
+| Benchy arachne | 32,769 (13.68%) | 238,661 (97.97%) |
+| Majora | 1,512,438 (55.88%) | 2,782,538 (97.39%) |
 | Majora, prime tower | 83.5% | 99.6% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R856:
-Benchy classic 190,340 of 196,495 (96.9%), Benchy arachne 244,497 of 248,190
-(98.5%), Majora 2,962,539 of 3,024,752 (97.9%).
+missing most often. Lines of the oracle's body the port has verbatim, at R857:
+Benchy classic 190,345 of 196,495 (96.9%), Benchy arachne 244,503 of 248,190
+(98.5%), Majora 2,962,695 of 3,024,752 (97.9%).
 
 Majora's percentage rose in R853 with the matched count unchanged: the port wrote
 `; LINE_WIDTH` twice after each prime tower visit (3,339 lines), and no longer does.
@@ -268,14 +268,15 @@ and `56a57d0`:
   `discover_sub_top_surfaces` and the `stSubTop` surface type, `combine_infill`,
   the settings block's 74 new keys. The `M73` lines are written from the
   processor's time estimate (R852). The estimator's differences are found and
-  fixed behind the opt-in gates `GCODE_FLAVOR_KEY`, `ARC_ABS_POS_DOUBLE`,
+  fixed behind the gates `GCODE_FLAVOR_KEY`, `ARC_ABS_POS_DOUBLE`,
   `G28_HAS_CHAR` (R853), `TIME_FLOAT_MODEL` and `TIME_ARC_STALE_STATE` (R854): with
   the five on, the processor run over each oracle's own G-code plans every block
   to the same float as C++ (checked on all 131,695 Benchy blocks) and writes every
-  `M73` line of the three oracles at its place. They stay off by default because
-  the port's G-code, and so its times, still differ, and the moved `M73` lines
-  take 2 in-order lines off Benchy arachne. Turn them on when a fixture's moves
-  agree.
+  `M73` line of the three oracles at its place. They are on by default since R857
+  (they were opt-in before): the port's G-code, and so its times, still differ,
+  and with the exact estimator the moved `M73` lines take 2 in-order lines off
+  Benchy arachne (238,663 to 238,661), which come back when that fixture's moves
+  agree. This is the one accepted exception to "do not lower a fixture's score".
 - The override layer: `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp`
   fixes five out-of-bounds reads in the engine's floating-concentric fill. It is the
   file `slicer_cli` compiles, so the port follows it (gate `FFC_OVERRIDE`, R826), and

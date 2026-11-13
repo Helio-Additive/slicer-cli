@@ -2560,7 +2560,7 @@ impl PrintConfig {
                 true
             }
             "gcode_flavor" => {
-                // GCODE_FLAVOR_KEY (opt-in, =1): the key is read through
+                // GCODE_FLAVOR_KEY (on unless =0): the key is read through
                 // `s_keys_map_GCodeFlavor` (PrintConfig.cpp:545-559), where
                 // "marlin", the value of every Bambu Lab profile, is
                 // gcfMarlinLegacy and "marlin2" is gcfMarlinFirmware. The port
@@ -2569,12 +2569,11 @@ impl PrintConfig {
                 // travel limit (GCodeProcessor.cpp:2032-2035): travels are
                 // planned at 9000 mm/s2 where C++ plans them at 10000. With the
                 // key read, the processor's total over the oracle's own Benchy
-                // G-code is the oracle's (2851.220 s). Opt-in, with
-                // ARC_ABS_POS_DOUBLE and G28_HAS_CHAR: the port's G-code still
-                // differs from the oracle's, so its times do, and every
-                // combination of the three moves a few `M73` lines and takes 1
-                // to 3 in-order lines off one of the Benchy fixtures (R853).
-                if crate::opt_in_gate("GCODE_FLAVOR_KEY") {
+                // G-code is the oracle's (2851.220 s). Opt-in until R857, with
+                // the four other estimator gates: the port's G-code still
+                // differs from the oracle's, so its times do, and the moved
+                // `M73` lines take 2 in-order lines off Benchy arachne.
+                if crate::faithful_gate("GCODE_FLAVOR_KEY") {
                     let v = value.trim().trim_matches('"');
                     let flavor = match v {
                         "marlin" => Some(GCodeFlavor::MarlinLegacy),

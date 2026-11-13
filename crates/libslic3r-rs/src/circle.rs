@@ -1061,7 +1061,7 @@ impl ArcSegment {
             let mut r = (cross).atan2(dot as f64) as f32;
             // Circle.cpp:496-498: `2 * M_PI + radian` adds a float to a double
             // and rounds the sum once.
-            let double_pi = crate::opt_in_gate("TIME_FLOAT_MODEL");
+            let double_pi = crate::faithful_gate("TIME_FLOAT_MODEL");
             if is_ccw {
                 r = if r < 0.0 {
                     if double_pi {

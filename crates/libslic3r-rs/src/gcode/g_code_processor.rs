@@ -554,7 +554,7 @@ fn intersection_distance(
     if acceleration == 0.0 {
         0.0
     } else {
-        if crate::opt_in_gate("TIME_FLOAT_MODEL") {
+        if crate::faithful_gate("TIME_FLOAT_MODEL") {
             // `(2a) * d - sqr(i)` is one fused multiply-subtract on arm64.
             ((2.0 * acceleration).mul_add(distance, -sqr(initial_rate)) + sqr(final_rate))
                 / (4.0 * acceleration)
@@ -569,7 +569,7 @@ fn intersection_distance(
 fn speed_from_distance(initial_feedrate: f32, distance: f32, acceleration: f32) -> f32 {
     // to avoid invalid negative numbers due to numerical errors
     // clang on arm64 contracts `sqr(i) + (2a) * d` into one fused multiply-add.
-    let value = if crate::opt_in_gate("TIME_FLOAT_MODEL") {
+    let value = if crate::faithful_gate("TIME_FLOAT_MODEL") {
         f32::max(0.0, (2.0 * acceleration).mul_add(distance, sqr(initial_feedrate)))
     } else {
         f32::max(0.0, sqr(initial_feedrate) + 2.0 * acceleration * distance)
@@ -584,7 +584,7 @@ fn speed_from_distance(initial_feedrate: f32, distance: f32, acceleration: f32) 
 fn max_allowable_speed(acceleration: f32, target_velocity: f32, distance: f32) -> f32 {
     // to avoid invalid negative numbers due to numerical errors
     // clang on arm64 contracts `sqr(t) - (2a) * d` into one fused multiply-subtract.
-    let value = if crate::opt_in_gate("TIME_FLOAT_MODEL") {
+    let value = if crate::faithful_gate("TIME_FLOAT_MODEL") {
         f32::max(0.0, (-(2.0 * acceleration)).mul_add(distance, sqr(target_velocity)))
     } else {
         f32::max(0.0, sqr(target_velocity) - 2.0 * acceleration * distance)
@@ -3685,13 +3685,13 @@ impl GCodeProcessor {
         let units_inches = self.m_units == EUnits::Inches;
         let start_position = self.m_start_position;
         let origin = self.m_origin;
-        // ARC_ABS_POS_DOUBLE (opt-in, =1; see GCODE_FLAVOR_KEY for why): the lambda returns `m_start_position[..] + ret`,
+        // ARC_ABS_POS_DOUBLE (on unless =0; see GCODE_FLAVOR_KEY for why): the lambda returns `m_start_position[..] + ret`,
         // an `AxisCoords` double plus a float (GCodeProcessor.cpp:4912-4935), so
         // an axis the line does not name keeps its double and its delta is 0. The
         // port returned f32: the E of a spiral lift (`G3 Z.. I.. J.. P1`) came
         // back rounded, the delta was not 0 and the arc was typed Extrude with
         // the current role instead of Travel. Unset, it rounds through f32.
-        let abs_double = crate::opt_in_gate("ARC_ABS_POS_DOUBLE");
+        let abs_double = crate::faithful_gate("ARC_ABS_POS_DOUBLE");
         let absolute_position = |axis: Axis, lineg: &crate::g_code_reader::GCodeLine| -> f64 {
             let mut is_relative = global_relative;
             if axis == Axis::E {
@@ -3780,7 +3780,7 @@ impl GCodeProcessor {
         use crate::circle::ArcSegment;
         use crate::circle::Circle;
 
-        let float_model_arc = crate::opt_in_gate("TIME_FLOAT_MODEL");
+        let float_model_arc = crate::faithful_gate("TIME_FLOAT_MODEL");
         // arc length (cpp:4814-4817)
         let arc_length = if !line.has(Axis::P) {
             ArcSegment::calc_arc_length(start_point, end_point, center, is_ccw)
@@ -3947,7 +3947,7 @@ impl GCodeProcessor {
             // feedrate (it only lowers what the last move left). After a retract
             // (`G1 E-.02 F1800`) the spiral lift therefore inherits the retract's
             // E feedrate and its safe feedrate.
-            let arc_stale_state = crate::opt_in_gate("TIME_ARC_STALE_STATE");
+            let arc_stale_state = crate::faithful_gate("TIME_ARC_STALE_STATE");
             // The axis feedrates are doubles (GCodeProcessor.hpp:639-640); see
             // process_g1 for what TIME_FLOAT_MODEL follows.
             let mut axis_feedrate = [0.0f64; 4];
@@ -4239,12 +4239,12 @@ impl GCodeProcessor {
         let cmd = line.cmd();
         let mut new_line_raw = cmd.to_string();
         let mut found = false;
-        // G28_HAS_CHAR (opt-in, =1; see GCODE_FLAVOR_KEY for why): `line.has('X')` is the `char` overload, which looks
+        // G28_HAS_CHAR (on unless =0; see GCODE_FLAVOR_KEY for why): `line.has('X')` is the `char` overload, which looks
         // for the letter in the raw line (GCodeReader.cpp:225-245), value or not
         // (GCodeProcessor.cpp:5365-5376). `G28 Z P0 T250` has a Z without a
         // number, which the axis mask does not record: the port took it for a
         // bare G28 and homes X and Y as well. Unset, it asks the mask.
-        let by_char = crate::opt_in_gate("G28_HAS_CHAR");
+        let by_char = crate::faithful_gate("G28_HAS_CHAR");
         let has = |c: u8, a: crate::g_code_reader::Axis| {
             if by_char { line.has_char(c) } else { line.has(a) }
         };
@@ -5314,7 +5314,7 @@ impl GCodeProcessor {
             block.layer_id = 1u32.max(self.m_layer_id);
             block.flags.prepare_stage = self.m_processing_start_custom_gcode;
 
-            let float_model_g1 = crate::opt_in_gate("TIME_FLOAT_MODEL");
+            let float_model_g1 = crate::faithful_gate("TIME_FLOAT_MODEL");
             // block acceleration (cpp:4131-4135)
             let mut acceleration = if r#type == EMoveType::Travel {
                 self.get_travel_acceleration(mode)
@@ -5338,7 +5338,7 @@ impl GCodeProcessor {
                     + (v2[2] - v1[2]).powi(2))
                 .sqrt();
                 if norm_diff < 0.5 && norm_diff > 0.00001 {
-                    let float_model = crate::opt_in_gate("TIME_FLOAT_MODEL");
+                    let float_model = crate::faithful_gate("TIME_FLOAT_MODEL");
                     // GCodeProcessor.cpp:4336-4337: float products summed in one
                     // expression, which clang on arm64 contracts into a fused
                     // multiply-add (the left product is the fused one).
