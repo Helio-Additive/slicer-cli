@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4533 |
+| Rust functions with no C++ function of that name in the pair | 4535 |
 
 By tier:
 
@@ -12182,22 +12182,22 @@ Tier 3. C++ functions 1, Rust functions 18. Matched 1: faithful 1, partial 0, di
 Rust only:
 
 - `face_normal` :58 — C++ has it in `TriangleMesh`
-- `face_normal_normalized` :66 — C++ has it in `TriangleMesh`
-- `its_face_normal` :74 — C++ has it in `TriangleMesh`
-- `its_face_normals` :87 — C++ has it in `TriangleMesh`
-- `its_triangle_vertex_index` :104 — C++ has it in `TriangleMesh`
-- `its_triangle_edge` :122 — C++ has it in `TriangleMesh`
-- `VertexFaceIndex::new` :144
-- `VertexFaceIndex::create` :155 — C++ has it in `EdgeGrid`, `Fill/Lightning/TreeNode`, `MultiNozzleUtils`
-- `VertexFaceIndex::faces` :204
-- `create_face_neighbors_index` :221 — C++ has it in `MeshSplitImpl`
-- `its_face_neighbors_par` :299 — C++ has it in `TriangleMesh`
-- `gen_two_uniform_ints` :312
-- `uniform_int` :322
-- `uniform_int_libcxx` :367
-- `shuffle_libcxx` :389
-- `shuffle` :410
-- `cpp_min_f32` :467
+- `face_normal_normalized` :69 — C++ has it in `TriangleMesh`
+- `its_face_normal` :77 — C++ has it in `TriangleMesh`
+- `its_face_normals` :90 — C++ has it in `TriangleMesh`
+- `its_triangle_vertex_index` :107 — C++ has it in `TriangleMesh`
+- `its_triangle_edge` :125 — C++ has it in `TriangleMesh`
+- `VertexFaceIndex::new` :147
+- `VertexFaceIndex::create` :158 — C++ has it in `EdgeGrid`, `Fill/Lightning/TreeNode`, `MultiNozzleUtils`
+- `VertexFaceIndex::faces` :207
+- `create_face_neighbors_index` :224 — C++ has it in `MeshSplitImpl`
+- `its_face_neighbors_par` :302 — C++ has it in `TriangleMesh`
+- `gen_two_uniform_ints` :315
+- `uniform_int` :325
+- `uniform_int_libcxx` :370
+- `shuffle_libcxx` :392
+- `shuffle` :413
+- `cpp_min_f32` :470
 
 ### `SlicesToTriangleMesh` (.cpp+.hpp) and `slices_to_triangle_mesh.rs`
 
@@ -12263,19 +12263,21 @@ Rust only:
 
 ### `TriangleSetSampling` (.cpp+.hpp) and `triangle_set_sampling.rs`
 
-Tier 3. C++ functions 1, Rust functions 10. Matched 1: faithful 1, partial 0, divergent 0, stub 0.
+Tier 3. C++ functions 1, Rust functions 12. Matched 1: faithful 1, partial 0, divergent 0, stub 0.
 
 Rust only:
 
 - `eigen_cross3f` :65
 - `eigen_squared_norm3f` :75
-- `Mt19937_64::new` :315
-- `Mt19937_64::generate` :330 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
-- `Mt19937_64::next_u64` :344
-- `UniformRealDistribution::new` :369
-- `UniformRealDistribution::sample` :375
-- `UniformRealDistribution::default` :381
-- `generate_canonical_f64_53` :391
+- `eigen_normalized3f` :82
+- `eigen_dot3f` :94
+- `Mt19937_64::new` :334
+- `Mt19937_64::generate` :349 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
+- `Mt19937_64::next_u64` :363
+- `UniformRealDistribution::new` :388
+- `UniformRealDistribution::sample` :394
+- `UniformRealDistribution::default` :400
+- `generate_canonical_f64_53` :410
 
 ### `TriangulateWall` (.cpp+.hpp) and `triangulate_wall.rs`
 

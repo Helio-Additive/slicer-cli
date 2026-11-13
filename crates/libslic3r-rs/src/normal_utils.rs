@@ -73,9 +73,9 @@ impl NormalUtils {
         // NormalUtils.cpp:11
         let v2: &StlVertex = &vertices[indices[2] as usize];
         // NormalUtils.cpp:12
-        let mut direction: Vec3f = (v1 - v0).cross(&(v2 - v0));
+        let mut direction: Vec3f = crate::triangle_set_sampling::eigen_cross3f(&(v1 - v0), &(v2 - v0));
         // NormalUtils.cpp:13
-        direction.normalize_mut();
+        direction = crate::triangle_set_sampling::eigen_normalized3f(&direction);
         // NormalUtils.cpp:14
         direction
     }
@@ -137,12 +137,12 @@ impl NormalUtils {
         let mut v2: Vec3f = vertices[i2 as usize] - vertices[i as usize];
 
         // NormalUtils.cpp:60
-        v1.normalize_mut();
+        v1 = crate::triangle_set_sampling::eigen_normalized3f(&v1);
         // NormalUtils.cpp:61
-        v2.normalize_mut();
+        v2 = crate::triangle_set_sampling::eigen_normalized3f(&v2);
 
         // NormalUtils.cpp:63
-        let mut w: f32 = v1.dot(&v2);
+        let mut w: f32 = crate::triangle_set_sampling::eigen_dot3f(&v1, &v2);
         // NormalUtils.cpp:64-67
         if w > 1.0 {
             w = 1.0;
@@ -214,11 +214,11 @@ impl NormalUtils {
             let v2: &StlVertex = &vertices[indice[2] as usize];
 
             // NormalUtils.cpp:110
-            let e0: f32 = (v0 - v1).norm();
+            let e0: f32 = crate::triangle_set_sampling::eigen_squared_norm3f(&(v0 - v1)).sqrt();
             // NormalUtils.cpp:111
-            let e1: f32 = (v1 - v2).norm();
+            let e1: f32 = crate::triangle_set_sampling::eigen_squared_norm3f(&(v1 - v2)).sqrt();
             // NormalUtils.cpp:112
-            let e2: f32 = (v2 - v0).norm();
+            let e2: f32 = crate::triangle_set_sampling::eigen_squared_norm3f(&(v2 - v0)).sqrt();
 
             // NormalUtils.cpp:114
             let coefs: Vec3f = Vec3f::new(e0 * e2, e0 * e1, e1 * e2);

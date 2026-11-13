@@ -76,6 +76,25 @@ pub fn eigen_squared_norm3f(v: &Vec3f) -> f32 {
     (v.x * v.x + v.y * v.y) + v.z * v.z
 }
 
+/// `Vec3f::normalized()` / `normalize()` as Eigen has it: divided by the square
+/// root of the squared norm when that is positive, unchanged otherwise.
+#[inline]
+pub fn eigen_normalized3f(v: &Vec3f) -> Vec3f {
+    let z = eigen_squared_norm3f(v);
+    if z > 0.0 {
+        let l = z.sqrt();
+        Vec3f::new(v.x / l, v.y / l, v.z / l)
+    } else {
+        *v
+    }
+}
+
+/// `Vec3f::dot` in the order of `squaredNorm`: `(a.x * b.x + a.y * b.y) + a.z * b.z`, unfused.
+#[inline]
+pub fn eigen_dot3f(a: &Vec3f, b: &Vec3f) -> f32 {
+    (a.x * b.x + a.y * b.y) + a.z * b.z
+}
+
 // TriangleSetSampling.cpp:9
 pub fn sample_its_uniform_parallel(
     samples_count: usize,

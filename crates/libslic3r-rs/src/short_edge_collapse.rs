@@ -57,7 +57,10 @@ type Vec2i = Vector2<i32>;
 #[inline]
 fn face_normal(vertex: &[Vec3f; 3]) -> Vec3f {
     // (vertex[1] - vertex[0]).cross(vertex[2] - vertex[1]).normalized()
-    (vertex[1] - vertex[0]).cross(&(vertex[2] - vertex[1])).normalize()
+    crate::triangle_set_sampling::eigen_normalized3f(&crate::triangle_set_sampling::eigen_cross3f(
+        &(vertex[1] - vertex[0]),
+        &(vertex[2] - vertex[1]),
+    ))
 }
 
 /// `inline Vec3f face_normal_normalized(const stl_vertex vertex[3])`
@@ -65,7 +68,7 @@ fn face_normal(vertex: &[Vec3f; 3]) -> Vec3f {
 #[inline]
 fn face_normal_normalized(vertex: &[Vec3f; 3]) -> Vec3f {
     // face_normal(vertex).normalized()
-    face_normal(vertex).normalize()
+    crate::triangle_set_sampling::eigen_normalized3f(&face_normal(vertex))
 }
 
 /// `inline Vec3f its_face_normal(const indexed_triangle_set &its, const stl_triangle_vertex_indices face)`
@@ -485,7 +488,12 @@ pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_
     // shim. R187's dots-only shim still left round-1 at ±6 faces — the edge
     // squaredNorm threshold check and the f32/f64 edge_len evolution are further
     // Eigen-f32 codegen surfaces; the only robust cut is the whole kernel.
-    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+    // SEC_RUST (opt-in, =1): the Rust below in place of the shim. Its float
+    // operations follow the C++ build (`eigen_cross3f` and its neighbours, here
+    // and in `normal_utils.rs`) and tests/short_edge_collapse_native_parity.rs
+    // holds it equal to the C++ on bumpy spheres, but on the Benchy and Majora
+    // meshes it still collapses other edges (R877), so the shim stays the default.
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") && !crate::opt_in_gate("SEC_RUST") {
         let verts_flat: Vec<f32> = mesh
             .vertices
             .iter()
@@ -574,17 +582,17 @@ pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_
             // min_vertex_dot_product[t[0]] = std::min(min_vertex_dot_product[t[0]], n.dot(vertex_normals[t[0]]));
             min_vertex_dot_product[t[0] as usize] = cpp_min_f32(
                 min_vertex_dot_product[t[0] as usize],
-                n.dot(&vertex_normals[t[0] as usize]),
+                crate::triangle_set_sampling::eigen_dot3f(&n, &vertex_normals[t[0] as usize]),
             );
             // min_vertex_dot_product[t[1]] = std::min(min_vertex_dot_product[t[1]], n.dot(vertex_normals[t[1]]));
             min_vertex_dot_product[t[1] as usize] = cpp_min_f32(
                 min_vertex_dot_product[t[1] as usize],
-                n.dot(&vertex_normals[t[1] as usize]),
+                crate::triangle_set_sampling::eigen_dot3f(&n, &vertex_normals[t[1] as usize]),
             );
             // min_vertex_dot_product[t[2]] = std::min(min_vertex_dot_product[t[2]], n.dot(vertex_normals[t[2]]));
             min_vertex_dot_product[t[2] as usize] = cpp_min_f32(
                 min_vertex_dot_product[t[2] as usize],
-                n.dot(&vertex_normals[t[2] as usize]),
+                crate::triangle_set_sampling::eigen_dot3f(&n, &vertex_normals[t[2] as usize]),
             );
         }
     }
@@ -723,9 +731,9 @@ pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_
                 //check distance, skip long edges
                 // if ((mesh.vertices[vertex_index_keep] - mesh.vertices[vertex_index_remove]).squaredNorm() > max_edge_len_squared) { continue; }
                 // ShortEdgeCollapse.cpp:113-116
-                if (mesh.vertices[vertex_index_keep] - mesh.vertices[vertex_index_remove])
-                    .norm_squared()
-                    > max_edge_len_squared
+                if crate::triangle_set_sampling::eigen_squared_norm3f(
+                    &(mesh.vertices[vertex_index_keep] - mesh.vertices[vertex_index_remove]),
+                ) > max_edge_len_squared
                 {
                     continue;
                 }

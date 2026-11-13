@@ -11044,7 +11044,7 @@ Rust file: `short_edge_collapse.rs`. Status: **ported**.
 
 **free functions**
 
-- [x] `its_short_edge_collpase` (line 11) → `short_edge_collapse.rs:483`
+- [x] `its_short_edge_collpase` (line 11) → `short_edge_collapse.rs:486`
 
 ### `ShortestPath` (.cpp+.hpp)
 
@@ -13211,7 +13211,7 @@ Rust file: `triangle_set_sampling.rs`. Status: **verified**.
 
 **free functions**
 
-- [v] `sample_its_uniform_parallel` (line 9) → `triangle_set_sampling.rs:80` — R876: tests/triangle_set_sampling_native_parity.rs: total area, triangle, position and normal of 300 samples on 400 random meshes equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim call replaced
+- [v] `sample_its_uniform_parallel` (line 9) → `triangle_set_sampling.rs:99` — R876: tests/triangle_set_sampling_native_parity.rs: total area, triangle, position and normal of 300 samples on 400 random meshes equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim call replaced
 
 ### `TriangulateWall` (.cpp+.hpp)
 
