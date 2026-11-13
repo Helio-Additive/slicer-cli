@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 754 |
 | of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4548 |
+| Rust functions with no C++ function of that name in the pair | 4561 |
 
 By tier:
 
@@ -12356,7 +12356,7 @@ Rust only:
 
 ### `clipper` (.cpp+.hpp) and `clipper.rs`
 
-Tier 3. C++ functions 0, Rust functions 13. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
+Tier 3. C++ functions 0, Rust functions 26. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
 
 Rust only:
 
@@ -12373,6 +12373,19 @@ Rust only:
 - `exclude_op` :202
 - `clean_polygon` :213
 - `clean_polygons` :270
+- `near_zero` :365
+- `round` :408 — C++ has it in `PlaceholderParser`
+- `slopes_equal` :415
+- `slopes_equal_edges` :422
+- `slopes_equal_3` :430
+- `slopes_equal_4` :442
+- `is_horizontal` :454
+- `get_dx` :461
+- `top_x` :472
+- `intersect_point` :482
+- `reverse_poly_pt_links` :544
+- `init_edge` :561
+- `init_edge2` :572
 
 ### `pchheader` (.cpp+.hpp) and `pchheader.rs`
 

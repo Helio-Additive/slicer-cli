@@ -11,13 +11,13 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**34.4% of the named C++ functions are ported or verified (3164 of 9204); 23.6% by size of body.**
+**34.5% of the named C++ functions are ported or verified (3173 of 9204); 23.6% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3304 | 35.9% | 48.5% |
-| partial `[~]` | 2736 | 29.7% | 27.9% |
-| ported `[x]` | 3134 | 34.1% | 22.8% |
+| not started `[ ]` | 3291 | 35.8% | 48.4% |
+| partial `[~]` | 2740 | 29.8% | 27.9% |
+| ported `[x]` | 3143 | 34.1% | 22.8% |
 | verified `[v]` | 30 | 0.3% | 0.8% |
 
 | Files (C++ units) | Count |
@@ -101,7 +101,7 @@ the end; the goal is none.
 | `Channel` | 3 | `channel.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `Circle` | 1 | `circle.rs` | partial | 27 | 2 | 1 | 24 | 0 |
 | `clipper` | 3 | `clipper.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 136 | 4 | 4 | 8 |
+| `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 123 | 8 | 13 | 8 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 6 | 6 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
 | `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 58 | 160 | 9 | 0 |
@@ -1497,7 +1497,7 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 **free functions**
 
 - [ ] `IntPoint2d` (line 108) → `clipper.rs`
-- [ ] `Round` (line 117) → `clipper.rs`
+- [x] `Round` (line 117) → `clipper.rs:408`
 - [v] `Area` (line 177) → `clipper.rs:38` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
 - [~] `Area` (line 192) → `clipper.rs` — another overload of the name is ported
 - [v] `Orientation` (line 192) → `clipper.rs:57` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
@@ -1506,20 +1506,20 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 - [~] `PointInPolygon` (line 260) → `clipper.rs` — another overload of the name is ported
 - [ ] `Poly2ContainsPoly1` (line 300) → `clipper.rs`
 - [ ] `AddPaths` (line 304) → `clipper.rs`
-- [ ] `SlopesEqual` (line 317) → `clipper.rs`
-- [ ] `SlopesEqual` (line 321) → `clipper.rs`
-- [ ] `SlopesEqual` (line 332) → `clipper.rs`
-- [ ] `SlopesEqual` (line 334) → `clipper.rs`
-- [ ] `SlopesEqual` (line 336) → `clipper.rs`
-- [ ] `IsHorizontal` (line 341) → `clipper.rs`
-- [ ] `GetDx` (line 347) → `clipper.rs`
-- [ ] `TopX` (line 354) → `clipper.rs`
+- [x] `SlopesEqual` (line 317) → `clipper.rs:415`
+- [~] `SlopesEqual` (line 321) → `clipper.rs` — another overload of the name is ported
+- [~] `SlopesEqual` (line 332) → `clipper.rs` — another overload of the name is ported
+- [~] `SlopesEqual` (line 334) → `clipper.rs` — another overload of the name is ported
+- [~] `SlopesEqual` (line 336) → `clipper.rs` — another overload of the name is ported
+- [x] `IsHorizontal` (line 341) → `clipper.rs:454`
+- [x] `GetDx` (line 347) → `clipper.rs:461`
+- [x] `TopX` (line 354) → `clipper.rs:472`
 - [ ] `PreserveCollinear` (line 358) → `clipper.rs`
 - [ ] `PreserveCollinear` (line 359) → `clipper.rs`
-- [ ] `IntersectPoint` (line 362) → `clipper.rs`
-- [ ] `ReversePolyPtLinks` (line 433) → `clipper.rs`
-- [ ] `InitEdge` (line 446) → `clipper.rs`
-- [ ] `InitEdge2` (line 456) → `clipper.rs`
+- [x] `IntersectPoint` (line 362) → `clipper.rs:482`
+- [x] `ReversePolyPtLinks` (line 433) → `clipper.rs:544`
+- [x] `InitEdge` (line 446) → `clipper.rs:561`
+- [x] `InitEdge2` (line 456) → `clipper.rs:572`
 - [ ] `RemoveEdge` (line 479) → `clipper.rs`
 - [ ] `ReverseHorizontal` (line 490) → `clipper.rs`
 - [ ] `GetOverlapSegment` (line 502) → `clipper.rs`
