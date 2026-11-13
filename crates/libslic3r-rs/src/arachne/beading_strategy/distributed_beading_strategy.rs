@@ -296,7 +296,7 @@ impl DistributedBeadingStrategy {
     }
 
     // Get the strategy name
-    pub fn name(&self) -> &str {
+    pub fn to_string(&self) -> &str {
         &self.name
     }
 
@@ -315,8 +315,8 @@ impl BeadingStrategy for DistributedBeadingStrategy {
         self.get_optimal_bead_count(thickness)
     }
 
-    fn name(&self) -> &str {
-        self.name()
+    fn to_string(&self) -> &str {
+        self.to_string()
     }
 
     fn optimal_width(&self) -> Coord {
@@ -358,7 +358,7 @@ mod tests {
             2,
         );
 
-        assert_eq!(strategy.name(), "DistributedBeadingStrategy");
+        assert_eq!(strategy.to_string(), "DistributedBeadingStrategy");
         assert_eq!(strategy.optimal_width(), scaled_f64(0.4));
     }
 

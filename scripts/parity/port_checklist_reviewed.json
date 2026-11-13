@@ -1,0 +1,18 @@
+[
+ {
+  "unit": "Arachne/SkeletalTrapezoidationEdge",
+  "round": "871",
+  "functions": [
+   "SkeletalTrapezoidationEdge::hasTransitions",
+   "SkeletalTrapezoidationEdge::hasTransitionEnds",
+   "SkeletalTrapezoidationEdge::hasExtrusionJunctions"
+  ]
+ },
+ {
+  "unit": "Line",
+  "round": "871",
+  "functions": [
+   "distance_to_infinite_squared"
+  ]
+ }
+]

@@ -79,7 +79,7 @@ impl RedistributeBeadingStrategy {
         // overridden toString() returns `"RedistributeBeadingStrategy+" + parent->toString()`.
         // The trait's name() returns &str and is the crate's mapping for toString(),
         // so precompute the composed value here (the parent is owned after the move).
-        let name = format!("RedistributeBeadingStrategy+{}", parent.name());
+        let name = format!("RedistributeBeadingStrategy+{}", parent.to_string());
         Self {
             parent,
             optimal_width_outer,
@@ -266,7 +266,7 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
     // C++: {
     // C++:     return std::string("RedistributeBeadingStrategy+") + parent->toString();
     // C++: }
-    fn name(&self) -> &str {
+    fn to_string(&self) -> &str {
         &self.name
     }
 
@@ -389,7 +389,7 @@ mod tests {
 
         // name() mirrors C++ toString(): "RedistributeBeadingStrategy+" + parent->toString().
         assert_eq!(
-            strategy.name(),
+            strategy.to_string(),
             "RedistributeBeadingStrategy+DistributedBeadingStrategy"
         );
         assert_eq!(strategy.optimal_width_outer, 400_000);

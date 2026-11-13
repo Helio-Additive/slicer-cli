@@ -41,7 +41,7 @@ impl OuterWallContourStrategy {
     // the remaining base getters to `parent` directly (equivalent to the copy).
     pub fn new(parent: BeadingStrategyPtr) -> Self {
         let default_transition_length = parent.default_transition_length();
-        let name = parent.name().to_string();
+        let name = parent.to_string().to_string();
 
         Self {
             parent,
@@ -216,7 +216,7 @@ impl BeadingStrategy for OuterWallContourStrategy {
     // parent in `new()`. The C++ `toString()` additionally prepends
     // `"OuterWallContourStrategy+"`, which cannot be expressed through a `&str`
     // return; like the other meta-strategies in this crate it is omitted.
-    fn name(&self) -> &str {
+    fn to_string(&self) -> &str {
         &self.name
     }
 
@@ -272,7 +272,7 @@ mod tests {
     fn test_outer_wall_contour_strategy_creation() {
         let parent = create_test_parent();
         let strategy = OuterWallContourStrategy::new(parent);
-        assert!(strategy.name().contains("Distributed"));
+        assert!(strategy.to_string().contains("Distributed"));
     }
 
     #[test]

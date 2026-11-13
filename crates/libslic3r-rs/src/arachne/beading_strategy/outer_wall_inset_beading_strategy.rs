@@ -116,7 +116,7 @@ impl BeadingStrategy for OuterWallInsetBeadingStrategy {
     // exposes only its own base-class `name` and drops the `"+parent"` suffix. The
     // value is debug-only and does not affect any slicing computation. Changing it
     // would be a cross-cutting trait change, so it is left consistent here.
-    fn name(&self) -> &str {
+    fn to_string(&self) -> &str {
         &self.name
     }
 
@@ -216,7 +216,7 @@ mod tests {
             parent,
         );
 
-        assert_eq!(strategy.name(), "OuterWallOfsetBeadingStrategy");
+        assert_eq!(strategy.to_string(), "OuterWallOfsetBeadingStrategy");
         assert_eq!(strategy.outer_wall_offset, 50_000);
     }
 

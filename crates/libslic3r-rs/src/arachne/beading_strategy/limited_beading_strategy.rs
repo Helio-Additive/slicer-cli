@@ -93,7 +93,7 @@ impl LimitedBeadingStrategy {
         // Precompute it here since the trait's name() returns &str (the parent is
         // owned). See LimitedBeadingStrategy.cpp:13-16.
         // C++: return std::string("LimitedBeadingStrategy+") + parent->toString();
-        let name = format!("LimitedBeadingStrategy+{}", parent.name());
+        let name = format!("LimitedBeadingStrategy+{}", parent.to_string());
 
         Self {
             max_bead_count,
@@ -293,7 +293,7 @@ impl BeadingStrategy for LimitedBeadingStrategy {
     /// C++: {
     /// C++:     return std::string("LimitedBeadingStrategy+") + parent->toString();
     /// C++: }
-    fn name(&self) -> &str {
+    fn to_string(&self) -> &str {
         &self.name
     }
 
@@ -427,7 +427,7 @@ mod tests {
         );
 
         // toString() composes "LimitedBeadingStrategy+" with the parent's name.
-        assert_eq!(strategy.name(), "LimitedBeadingStrategy+DistributedBeadingStrategy");
+        assert_eq!(strategy.to_string(), "LimitedBeadingStrategy+DistributedBeadingStrategy");
         assert_eq!(strategy.max_bead_count, 4);
     }
 

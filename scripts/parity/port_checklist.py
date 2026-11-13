@@ -31,6 +31,7 @@ import file_map as fm  # noqa: E402
 
 OUT_MD = os.path.join(fm.REPO, "docs", "parity", "PORT_CHECKLIST.md")
 VERIFIED_JSON = os.path.join(HERE, "port_checklist_verified.json")
+REVIEWED_JSON = os.path.join(HERE, "port_checklist_reviewed.json")
 SHIMS = ["clipper-z-sys", "clipper2-z-sys", "eigen-transform-sys", "boost-voronoi-sys"]
 ORDER = ["not started", "partial", "ported", "verified"]
 MARK = {"not started": "[ ]", "partial": "[~]", "ported": "[x]", "verified": "[v]"}
@@ -46,6 +47,19 @@ def load_verified():
     return out
 
 
+def load_reviewed():
+    """Functions a round read side by side with the C++ and found to be the same logic, where the
+    mechanical estimate says partial or divergent (other identifiers for the same thing: `upgrade()`
+    for `lock()`, scalars for an Eigen vector)."""
+    if not os.path.exists(REVIEWED_JSON):
+        return {}
+    out = {}
+    for e in json.load(open(REVIEWED_JSON)):
+        for fn in e["functions"]:
+            out[(e["unit"], fn)] = e["round"]
+    return out
+
+
 def unit_files(units, name):
     rel_dir, stem = os.path.split(name)
     return rel_dir, sorted(units.get((rel_dir, stem), []))
@@ -55,7 +69,7 @@ def qual(cls, name):
     return (cls + "::" + name) if cls else name
 
 
-def rows_of_pair(p, verified):
+def rows_of_pair(p, verified, reviewed):
     """One row per named C++ function of a paired unit."""
     rows = []
     for m in p["matched"]:
@@ -63,6 +77,9 @@ def rows_of_pair(p, verified):
         st = "ported" if est == "faithful" else "partial"
         note = "" if est == "faithful" else est
         key = (p["cpp"], m["cpp"])
+        if key in reviewed and st == "partial" and est != "stub":
+            st = "ported"
+            note = "read against the C++ in R%s (the estimate says %s)" % (reviewed[key], est)
         if key in verified:
             # Evidence against the C++ outranks the mechanical estimate of the body.
             st = "verified"
@@ -118,6 +135,7 @@ def build():
     data = fm.build()
     units = fm.collect_cpp()
     verified = load_verified()
+    reviewed = load_reviewed()
     rust_index = defaultdict(set)
     for rel in fm.collect_rust():
         for f in fm.rust_functions(os.path.join(fm.RS_ROOT, rel)):
@@ -127,7 +145,7 @@ def build():
     files = []
     used = set()
     for p in data["pairs"]:
-        rows = rows_of_pair(p, verified)
+        rows = rows_of_pair(p, verified, reviewed)
         used.update(k for k in verified if k[0] == p["cpp"] and any(r[0] == k[1] for r in rows))
         files.append({"cpp": p["cpp"], "ext": p["ext"], "tier": p["tier"], "rust": p["rust"],
                       "name_match": p["name_match"], "special": p.get("special", {}), "rows": rows})
@@ -211,6 +229,9 @@ def render(files, stale, shims):
     w("  overload is ported, or the body is estimated *partial*, *divergent* or a *stub*.")
     w("- `[x]` **ported**: in the paired Rust file, body estimated *faithful*. The estimate is mechanical (shared")
     w("  identifiers and constants, relative size, no deviation marker); it says where to look, it is not a proof.")
+    w("  A function the estimate calls partial or divergent counts as ported when a round has read it side by")
+    w("  side with the C++ and found the same logic; those are listed in `scripts/parity/port_checklist_reviewed.json`")
+    w("  and say so in their note.")
     w("- `[v]` **verified**: ported, and a twin probe agreed with the C++ over a fixture or a test compares with")
     w("  C++ output; the evidence is in the note. G-code that matches on three fixtures does not by itself verify")
     w("  a function, so this column is short on purpose.")

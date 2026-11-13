@@ -68,7 +68,7 @@ impl WideningBeadingStrategy {
         // C++: {
         // C++:     return std::string("Widening+") + parent->toString();
         // C++: }
-        let name = format!("Widening+{}", parent.name());
+        let name = format!("Widening+{}", parent.to_string());
         Self {
             parent,
             min_input_width,
@@ -152,7 +152,7 @@ impl BeadingStrategy for WideningBeadingStrategy {
     /// C++: {
     /// C++:     return std::string("Widening+") + parent->toString();
     /// C++: }
-    fn name(&self) -> &str {
+    fn to_string(&self) -> &str {
         &self.name
     }
 
@@ -278,7 +278,7 @@ mod tests {
         );
 
         // toString() composes "Widening+" with the parent's name.
-        assert_eq!(strategy.name(), "Widening+DistributedBeadingStrategy");
+        assert_eq!(strategy.to_string(), "Widening+DistributedBeadingStrategy");
         assert_eq!(strategy.min_input_width, 100_000);
         assert_eq!(strategy.min_output_width, 150_000);
     }

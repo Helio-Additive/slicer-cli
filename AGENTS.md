@@ -189,7 +189,9 @@ Rules for it, on top of the ones above:
   the same function, type and method names and the same logic, and no FFI shim left. Regenerate it in every
   round (`python3 scripts/parity/port_checklist.py`; `--check`) and commit it with the round. A function is
   *verified* only with evidence, recorded in `scripts/parity/port_checklist_verified.json`: a twin probe that
-  agreed with the C++ over a fixture, or a test that compares with C++ output. The fixtures' byte parity and
+  agreed with the C++ over a fixture, or a test that compares with C++ output. A function the mechanical
+  estimate undervalues counts as *ported* once a round has read it side by side with the C++
+  (`scripts/parity/port_checklist_reviewed.json`). The fixtures' byte parity and
   the engine tests are how a round's work is checked.
 - **A Rust file is named after the C++ file it ports**, word for word, in snake_case. The map flags the
   ones that are not.

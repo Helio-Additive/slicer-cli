@@ -10,21 +10,21 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**34.5% of the named C++ functions are ported or verified (3126 of 9052); 23.7% by size of body.**
+**34.6% of the named C++ functions are ported or verified (3135 of 9052); 23.7% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
 | not started `[ ]` | 3176 | 35.1% | 47.9% |
-| partial `[~]` | 2750 | 30.4% | 28.4% |
-| ported `[x]` | 3109 | 34.3% | 23.1% |
+| partial `[~]` | 2741 | 30.3% | 28.4% |
+| ported `[x]` | 3118 | 34.4% | 23.2% |
 | verified `[v]` | 17 | 0.2% | 0.5% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 310 |
 | no Rust file of that name | 33 |
-| partial | 234 |
-| every named function ported | 43 |
+| partial | 229 |
+| every named function ported | 48 |
 | every named function verified | 0 |
 
 C++ still run through the FFI shim crates: 35 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 7, `boost-voronoi-sys` 0). They are listed at
@@ -38,6 +38,9 @@ the end; the goal is none.
   overload is ported, or the body is estimated *partial*, *divergent* or a *stub*.
 - `[x]` **ported**: in the paired Rust file, body estimated *faithful*. The estimate is mechanical (shared
   identifiers and constants, relative size, no deviation marker); it says where to look, it is not a proof.
+  A function the estimate calls partial or divergent counts as ported when a round has read it side by
+  side with the C++ and found the same logic; those are listed in `scripts/parity/port_checklist_reviewed.json`
+  and say so in their note.
 - `[v]` **verified**: ported, and a twin probe agreed with the C++ over a fixture or a test compares with
   C++ output; the evidence is in the note. G-code that matches on three fixtures does not by itself verify
   a function, so this column is short on purpose.
@@ -60,13 +63,13 @@ the end; the goal is none.
 | `Arachne/BeadingStrategy/BeadingStrategy` | 1 | `arachne/beading_strategy/beading_strategy.rs` | partial | 9 | 0 | 1 | 8 | 0 |
 | `Arachne/BeadingStrategy/BeadingStrategyFactory` | 1 | `arachne/beading_strategy/beading_strategy_factory.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Arachne/BeadingStrategy/DistributedBeadingStrategy` | 1 | `arachne/beading_strategy/distributed_beading_strategy.rs` | partial | 2 | 0 | 1 | 1 | 0 |
-| `Arachne/BeadingStrategy/LimitedBeadingStrategy` | 1 | `arachne/beading_strategy/limited_beading_strategy.rs` | partial | 7 | 0 | 1 | 6 | 0 |
-| `Arachne/BeadingStrategy/OuterWallContourStrategy` | 1 | `arachne/beading_strategy/outer_wall_contour_strategy.rs` | partial | 8 | 0 | 1 | 7 | 0 |
-| `Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy` | 1 | `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs` | partial | 6 | 0 | 2 | 4 | 0 |
-| `Arachne/BeadingStrategy/RedistributeBeadingStrategy` | 1 | `arachne/beading_strategy/redistribute_beading_strategy.rs` | partial | 7 | 0 | 1 | 6 | 0 |
-| `Arachne/BeadingStrategy/WideningBeadingStrategy` | 1 | `arachne/beading_strategy/widening_beading_strategy.rs` | partial | 8 | 0 | 1 | 7 | 0 |
+| `Arachne/BeadingStrategy/LimitedBeadingStrategy` | 1 | `arachne/beading_strategy/limited_beading_strategy.rs` | ported | 7 | 0 | 0 | 7 | 0 |
+| `Arachne/BeadingStrategy/OuterWallContourStrategy` | 1 | `arachne/beading_strategy/outer_wall_contour_strategy.rs` | ported | 8 | 0 | 0 | 8 | 0 |
+| `Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy` | 1 | `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs` | partial | 6 | 0 | 1 | 5 | 0 |
+| `Arachne/BeadingStrategy/RedistributeBeadingStrategy` | 1 | `arachne/beading_strategy/redistribute_beading_strategy.rs` | ported | 7 | 0 | 0 | 7 | 0 |
+| `Arachne/BeadingStrategy/WideningBeadingStrategy` | 1 | `arachne/beading_strategy/widening_beading_strategy.rs` | ported | 8 | 0 | 0 | 8 | 0 |
 | `Arachne/SkeletalTrapezoidation` | 1 | `arachne/skeletal_trapezoidation.rs` | partial | 41 | 1 | 6 | 34 | 0 |
-| `Arachne/SkeletalTrapezoidationEdge` | 1 | `arachne/skeletal_trapezoidation_edge.rs` | partial | 14 | 0 | 3 | 11 | 0 |
+| `Arachne/SkeletalTrapezoidationEdge` | 1 | `arachne/skeletal_trapezoidation_edge.rs` | ported | 14 | 0 | 0 | 14 | 0 |
 | `Arachne/SkeletalTrapezoidationGraph` | 1 | `arachne/skeletal_trapezoidation_graph.rs` | ported | 12 | 0 | 0 | 12 | 0 |
 | `Arachne/SkeletalTrapezoidationJoint` | 1 | `arachne/skeletal_trapezoidation_joint.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Arachne/utils/ExtrusionJunction` | 1 | `arachne/utils/extrusion_junction.rs` | ported | 0 | 0 | 0 | 0 | 0 |
@@ -227,7 +230,7 @@ the end; the goal is none.
 | `Layer` | 1 | `layer.rs` | partial | 56 | 20 | 21 | 15 | 0 |
 | `LayerRegion` | 1 | `layer_region.rs` | partial | 29 | 9 | 19 | 1 | 0 |
 | `libslic3r` | 1 | `libslic3r.rs` | partial | 28 | 12 | 15 | 1 | 0 |
-| `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 36 | 14 | 0 |
+| `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 35 | 15 | 0 |
 | `LocalesUtils` | 1 | `locales_utils.rs` | partial | 3 | 0 | 3 | 0 | 0 |
 | `Log` | 3 | none | not started | 21 | 13 | 8 | 0 | 0 |
 | `LogKeys` | 3 | none | not started | 0 | 0 | 0 | 0 | 0 |
@@ -670,7 +673,7 @@ Rust file: `arachne/beading_strategy/beading_strategy.rs`. Status: **partial**. 
 - [x] `getTransitioningLength` (line 31) → `arachne/beading_strategy/beading_strategy.rs:144`
 - [x] `getTransitionAnchorPos` (line 38) → `arachne/beading_strategy/beading_strategy.rs:178`
 - [x] `getNonlinearThicknesses` (line 46) → `arachne/beading_strategy/beading_strategy.rs:211`
-- [~] `toString` (line 51) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
+- [~] `toString` (line 51) → `arachne/beading_strategy/distributed_beading_strategy.rs, arachne/beading_strategy/limited_beading_strategy.rs, arachne/beading_strategy/outer_wall_contour_strategy.rs` — not in the paired file
 - [x] `getSplitMiddleThreshold` (line 56) → `arachne/beading_strategy/beading_strategy.rs:223`
 - [x] `getTransitioningAngle` (line 61) → `arachne/beading_strategy/beading_strategy.rs:235`
 - [x] `getOptimalThickness` (line 66) → `arachne/beading_strategy/beading_strategy.rs:94`
@@ -695,11 +698,11 @@ Rust file: `arachne/beading_strategy/distributed_beading_strategy.rs`. Status: *
 
 ### `Arachne/BeadingStrategy/LimitedBeadingStrategy` (.cpp+.hpp)
 
-Rust file: `arachne/beading_strategy/limited_beading_strategy.rs`. Status: **partial**. Not listed: 1 constructors.
+Rust file: `arachne/beading_strategy/limited_beading_strategy.rs`. Status: **ported**. Not listed: 1 constructors.
 
 **class `LimitedBeadingStrategy`**
 
-- [~] `toString` (line 13) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
+- [x] `toString` (line 13) → `arachne/beading_strategy/limited_beading_strategy.rs:296`
 - [x] `getTransitioningLength` (line 18) → `arachne/beading_strategy/limited_beading_strategy.rs:363`
 - [x] `getTransitionAnchorPos` (line 23) → `arachne/beading_strategy/limited_beading_strategy.rs:374`
 - [x] `compute` (line 39) → `arachne/beading_strategy/limited_beading_strategy.rs:111`
@@ -709,11 +712,11 @@ Rust file: `arachne/beading_strategy/limited_beading_strategy.rs`. Status: **par
 
 ### `Arachne/BeadingStrategy/OuterWallContourStrategy` (.cpp+.hpp)
 
-Rust file: `arachne/beading_strategy/outer_wall_contour_strategy.rs`. Status: **partial**. Not listed: 1 constructors.
+Rust file: `arachne/beading_strategy/outer_wall_contour_strategy.rs`. Status: **ported**. Not listed: 1 constructors.
 
 **class `OuterWallContourStrategy`**
 
-- [~] `toString` (line 15) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
+- [x] `toString` (line 15) → `arachne/beading_strategy/outer_wall_contour_strategy.rs:219`
 - [x] `getTransitioningLength` (line 20) → `arachne/beading_strategy/outer_wall_contour_strategy.rs:181`
 - [x] `getTransitionAnchorPos` (line 25) → `arachne/beading_strategy/outer_wall_contour_strategy.rs:190`
 - [x] `getNonlinearThicknesses` (line 30) → `arachne/beading_strategy/outer_wall_contour_strategy.rs:199`
@@ -732,12 +735,12 @@ Rust file: `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs`. Stat
 - [x] `getTransitionThickness` (line 21) → `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs:75`
 - [x] `getOptimalBeadCount` (line 26) → `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs:86`
 - [x] `getTransitioningLength` (line 31) → `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs:97`
-- [~] `toString` (line 36) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
+- [x] `toString` (line 36) → `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs:119`
 - [~] `compute` (line 41) → `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs:127` — partial
 
 ### `Arachne/BeadingStrategy/RedistributeBeadingStrategy` (.cpp+.hpp)
 
-Rust file: `arachne/beading_strategy/redistribute_beading_strategy.rs`. Status: **partial**. Not listed: 1 constructors.
+Rust file: `arachne/beading_strategy/redistribute_beading_strategy.rs`. Status: **ported**. Not listed: 1 constructors.
 
 **class `RedistributeBeadingStrategy`**
 
@@ -746,16 +749,16 @@ Rust file: `arachne/beading_strategy/redistribute_beading_strategy.rs`. Status: 
 - [x] `getOptimalBeadCount` (line 39) → `arachne/beading_strategy/redistribute_beading_strategy.rs:241`
 - [x] `getTransitioningLength` (line 48) → `arachne/beading_strategy/redistribute_beading_strategy.rs:321`
 - [x] `getTransitionAnchorPos` (line 53) → `arachne/beading_strategy/redistribute_beading_strategy.rs:332`
-- [~] `toString` (line 58) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
+- [x] `toString` (line 58) → `arachne/beading_strategy/redistribute_beading_strategy.rs:269`
 - [x] `compute` (line 63) → `arachne/beading_strategy/redistribute_beading_strategy.rs:97`
 
 ### `Arachne/BeadingStrategy/WideningBeadingStrategy` (.cpp+.hpp)
 
-Rust file: `arachne/beading_strategy/widening_beading_strategy.rs`. Status: **partial**. Not listed: 1 constructors.
+Rust file: `arachne/beading_strategy/widening_beading_strategy.rs`. Status: **ported**. Not listed: 1 constructors.
 
 **class `WideningBeadingStrategy`**
 
-- [~] `toString` (line 17) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
+- [x] `toString` (line 17) → `arachne/beading_strategy/widening_beading_strategy.rs:155`
 - [x] `compute` (line 22) → `arachne/beading_strategy/widening_beading_strategy.rs:86`
 - [x] `getOptimalThickness` (line 40) → `arachne/beading_strategy/widening_beading_strategy.rs:166`
 - [x] `getTransitionThickness` (line 45) → `arachne/beading_strategy/widening_beading_strategy.rs:180`
@@ -817,20 +820,20 @@ Rust file: `arachne/skeletal_trapezoidation.rs`. Status: **partial**. Not listed
 
 ### `Arachne/SkeletalTrapezoidationEdge` (.hpp)
 
-Rust file: `arachne/skeletal_trapezoidation_edge.rs`. Status: **partial**. Not listed: 4 constructors.
+Rust file: `arachne/skeletal_trapezoidation_edge.rs`. Status: **ported**. Not listed: 4 constructors.
 
 **class `SkeletalTrapezoidationEdge`**
 
 - [x] `isCentral` (line 60) → `arachne/skeletal_trapezoidation_edge.rs:172`
 - [x] `setIsCentral` (line 65) → `arachne/skeletal_trapezoidation_edge.rs:186`
 - [x] `centralIsSet` (line 69) → `arachne/skeletal_trapezoidation_edge.rs:200`
-- [~] `hasTransitions` (line 74) → `arachne/skeletal_trapezoidation_edge.rs:210` — partial
+- [x] `hasTransitions` (line 74) → `arachne/skeletal_trapezoidation_edge.rs:210` — read against the C++ in R871 (the estimate says partial)
 - [x] `setTransitions` (line 78) → `arachne/skeletal_trapezoidation_edge.rs:224`
 - [x] `getTransitions` (line 82) → `arachne/skeletal_trapezoidation_edge.rs:234`
-- [~] `hasTransitionEnds` (line 87) → `arachne/skeletal_trapezoidation_edge.rs:244` — partial
+- [x] `hasTransitionEnds` (line 87) → `arachne/skeletal_trapezoidation_edge.rs:244` — read against the C++ in R871 (the estimate says partial)
 - [x] `setTransitionEnds` (line 91) → `arachne/skeletal_trapezoidation_edge.rs:258`
 - [x] `getTransitionEnds` (line 95) → `arachne/skeletal_trapezoidation_edge.rs:268`
-- [~] `hasExtrusionJunctions` (line 100) → `arachne/skeletal_trapezoidation_edge.rs:278` — partial
+- [x] `hasExtrusionJunctions` (line 100) → `arachne/skeletal_trapezoidation_edge.rs:278` — read against the C++ in R871 (the estimate says partial)
 - [x] `setExtrusionJunctions` (line 104) → `arachne/skeletal_trapezoidation_edge.rs:292`
 - [x] `getExtrusionJunctions` (line 108) → `arachne/skeletal_trapezoidation_edge.rs:302`
 - [x] `setHoleCompensationFlag` (line 113) → `arachne/skeletal_trapezoidation_edge.rs:312`
@@ -7580,7 +7583,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `distance_to_squared` (line 43) → `geometry/line.rs:252` — divergent
 - [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 80) → `arrange.rs, geometry/point.rs` — not in the paired file
-- [~] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:285` — divergent
+- [x] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:285` — read against the C++ in R871 (the estimate says divergent)
 - [~] `distance_to_infinite_squared` (line 109) → `geometry/line.rs` — another overload of the name is ported
 - [~] `distance_to_infinite` (line 118) → `geometry/line.rs` — another overload of the name is ported
 - [~] `intersection` (line 123) → `geometry/line.rs:219` — divergent
@@ -9536,10 +9539,10 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `unscale` (line 134) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
 - [~] `unscale` (line 135) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
 - [~] `unscale` (line 136) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
-- [~] `to_string` (line 138) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
-- [~] `to_string` (line 139) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
-- [~] `to_string` (line 140) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
-- [~] `to_string` (line 141) → `extrusion_entity.rs, placeholder_parser.rs, semver.rs` — not in the paired file
+- [~] `to_string` (line 138) → `arachne/beading_strategy/distributed_beading_strategy.rs, arachne/beading_strategy/limited_beading_strategy.rs, arachne/beading_strategy/outer_wall_contour_strategy.rs` — not in the paired file
+- [~] `to_string` (line 139) → `arachne/beading_strategy/distributed_beading_strategy.rs, arachne/beading_strategy/limited_beading_strategy.rs, arachne/beading_strategy/outer_wall_contour_strategy.rs` — not in the paired file
+- [~] `to_string` (line 140) → `arachne/beading_strategy/distributed_beading_strategy.rs, arachne/beading_strategy/limited_beading_strategy.rs, arachne/beading_strategy/outer_wall_contour_strategy.rs` — not in the paired file
+- [~] `to_string` (line 141) → `arachne/beading_strategy/distributed_beading_strategy.rs, arachne/beading_strategy/limited_beading_strategy.rs, arachne/beading_strategy/outer_wall_contour_strategy.rs` — not in the paired file
 - [~] `has_reflection` (line 152) → `geometry/transform.rs` — not in the paired file
 - [ ] `get_base` (line 160) → `geometry/point.rs`
 - [ ] `get_x_base` (line 161) → `geometry/point.rs`

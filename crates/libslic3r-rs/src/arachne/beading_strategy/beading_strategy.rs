@@ -86,7 +86,7 @@ pub trait BeadingStrategy: Send + Sync {
     // C++: {
     // BeadingStrategy.cpp:53
     // C++:     return name;
-    fn name(&self) -> &str;
+    fn to_string(&self) -> &str;
 
     // The ideal thickness for a given bead_count.
     // Arachne/BeadingStrategy/BeadingStrategy.hpp:59

@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 47 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3724 (41%) |
-| estimate: faithful | 3123 (84% of matched) |
+| matched to a Rust function in the paired file | 3729 (41%) |
+| estimate: faithful | 3128 (84% of matched) |
 | estimate: partial | 379 (10% of matched) |
 | estimate: divergent | 197 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
-| missing in the paired Rust file | 4660 |
-| of those, a function of that name exists in another Rust file | 1611 |
+| missing in the paired Rust file | 4655 |
+| of those, a function of that name exists in another Rust file | 1606 |
 | of the rest, another overload of the name is ported | 365 |
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4529 |
+| Rust functions with no C++ function of that name in the pair | 4524 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 174 | 6851 | 2869 | 2395 | 300 | 160 | 14 | 3982 |
+| 1 | 180 | 174 | 6851 | 2874 | 2400 | 300 | 160 | 14 | 3977 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 65 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -583,7 +583,7 @@ Tier 1. C++ functions 9 (plus 2 constructors, 0 destructors, 0 operators), Rust 
 
 Missing in the Rust file:
 
-- `BeadingStrategy::toString` :51 (5 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
+- `BeadingStrategy::toString` :51 (5 tokens) — in `arachne/beading_strategy/distributed_beading_strategy.rs`, `arachne/beading_strategy/limited_beading_strategy.rs`, `arachne/beading_strategy/outer_wall_contour_strategy.rs`
 
 Rust only:
 
@@ -609,11 +609,11 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Rust only:
 
 - `DistributedBeadingStrategy::new` :46
-- `DistributedBeadingStrategy::name` :299
+- `DistributedBeadingStrategy::to_string` :299 — C++ has it in `Arachne/BeadingStrategy/BeadingStrategy`, `Arachne/BeadingStrategy/LimitedBeadingStrategy`, `Arachne/BeadingStrategy/OuterWallContourStrategy`
 - `DistributedBeadingStrategy::optimal_width` :304
 - `DistributedBeadingStrategy::compute` :310 — C++ has it in `Arachne/BeadingStrategy/LimitedBeadingStrategy`, `Arachne/BeadingStrategy/OuterWallContourStrategy`, `Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy`
 - `DistributedBeadingStrategy::get_optimal_bead_count` :314 — C++ has it in `Arachne/BeadingStrategy/LimitedBeadingStrategy`, `Arachne/BeadingStrategy/OuterWallContourStrategy`, `Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy`
-- `DistributedBeadingStrategy::name` :318
+- `DistributedBeadingStrategy::to_string` :318 — C++ has it in `Arachne/BeadingStrategy/BeadingStrategy`, `Arachne/BeadingStrategy/LimitedBeadingStrategy`, `Arachne/BeadingStrategy/OuterWallContourStrategy`
 - `DistributedBeadingStrategy::optimal_width` :322
 - `DistributedBeadingStrategy::default_transition_length` :326
 - `DistributedBeadingStrategy::transitioning_angle` :330
@@ -622,17 +622,12 @@ Rust only:
 
 ### `Arachne/BeadingStrategy/LimitedBeadingStrategy` (.cpp+.hpp) and `arachne/beading_strategy/limited_beading_strategy.rs`
 
-Tier 1. C++ functions 7 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 14. Matched 6: faithful 6, partial 0, divergent 0, stub 0.
-
-Missing in the Rust file:
-
-- `LimitedBeadingStrategy::toString` :13 (18 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
+Tier 1. C++ functions 7 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 14. Matched 7: faithful 7, partial 0, divergent 0, stub 0.
 
 Rust only:
 
 - `scaled_coord` :30
 - `LimitedBeadingStrategy::new` :83
-- `LimitedBeadingStrategy::name` :296
 - `LimitedBeadingStrategy::optimal_width` :379
 - `LimitedBeadingStrategy::default_transition_length` :384
 - `LimitedBeadingStrategy::transitioning_angle` :389
@@ -641,16 +636,11 @@ Rust only:
 
 ### `Arachne/BeadingStrategy/OuterWallContourStrategy` (.cpp+.hpp) and `arachne/beading_strategy/outer_wall_contour_strategy.rs`
 
-Tier 1. C++ functions 8 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 15. Matched 7: faithful 7, partial 0, divergent 0, stub 0.
-
-Missing in the Rust file:
-
-- `OuterWallContourStrategy::toString` :15 (18 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
+Tier 1. C++ functions 8 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 15. Matched 8: faithful 8, partial 0, divergent 0, stub 0.
 
 Rust only:
 
 - `OuterWallContourStrategy::new` :42
-- `OuterWallContourStrategy::name` :219
 - `OuterWallContourStrategy::default_transition_length` :224
 - `OuterWallContourStrategy::optimal_width` :229
 - `OuterWallContourStrategy::transitioning_angle` :234
@@ -660,20 +650,15 @@ Rust only:
 
 ### `Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy` (.cpp+.hpp) and `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs`
 
-Tier 1. C++ functions 6 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 12. Matched 5: faithful 4, partial 1, divergent 0, stub 0.
+Tier 1. C++ functions 6 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 12. Matched 6: faithful 5, partial 1, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `OuterWallInsetBeadingStrategy::compute` :41 and `OuterWallInsetBeadingStrategy::compute` :127 (91%, 0.92x)
 
-Missing in the Rust file:
-
-- `OuterWallInsetBeadingStrategy::toString` :36 (18 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
-
 Rust only:
 
 - `OuterWallInsetBeadingStrategy::new` :47
-- `OuterWallInsetBeadingStrategy::name` :119
 - `OuterWallInsetBeadingStrategy::optimal_width` :169
 - `OuterWallInsetBeadingStrategy::default_transition_length` :174
 - `OuterWallInsetBeadingStrategy::transitioning_angle` :179
@@ -682,16 +667,11 @@ Rust only:
 
 ### `Arachne/BeadingStrategy/RedistributeBeadingStrategy` (.cpp+.hpp) and `arachne/beading_strategy/redistribute_beading_strategy.rs`
 
-Tier 1. C++ functions 7 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 13. Matched 6: faithful 6, partial 0, divergent 0, stub 0.
-
-Missing in the Rust file:
-
-- `RedistributeBeadingStrategy::toString` :58 (18 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
+Tier 1. C++ functions 7 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 13. Matched 7: faithful 7, partial 0, divergent 0, stub 0.
 
 Rust only:
 
 - `RedistributeBeadingStrategy::new` :73
-- `RedistributeBeadingStrategy::name` :269
 - `RedistributeBeadingStrategy::optimal_width` :337
 - `RedistributeBeadingStrategy::default_transition_length` :342
 - `RedistributeBeadingStrategy::transitioning_angle` :347
@@ -700,16 +680,11 @@ Rust only:
 
 ### `Arachne/BeadingStrategy/WideningBeadingStrategy` (.cpp+.hpp) and `arachne/beading_strategy/widening_beading_strategy.rs`
 
-Tier 1. C++ functions 8 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 14. Matched 7: faithful 7, partial 0, divergent 0, stub 0.
-
-Missing in the Rust file:
-
-- `WideningBeadingStrategy::toString` :17 (18 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
+Tier 1. C++ functions 8 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 14. Matched 8: faithful 8, partial 0, divergent 0, stub 0.
 
 Rust only:
 
 - `WideningBeadingStrategy::new` :59
-- `WideningBeadingStrategy::name` :155
 - `WideningBeadingStrategy::optimal_width` :230
 - `WideningBeadingStrategy::default_transition_length` :235
 - `WideningBeadingStrategy::transitioning_angle` :240
@@ -7117,11 +7092,11 @@ Missing in the Rust file:
 - `unscale` :134 (30 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
 - `unscale` :135 (42 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
 - `unscale` :136 (42 tokens) — in `g_code.rs`, `lib.rs`, `libslic3r.rs`
-- `to_string` :138 (38 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
-- `to_string` :139 (38 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
-- `to_string` :140 (51 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
+- `to_string` :138 (38 tokens) — in `arachne/beading_strategy/distributed_beading_strategy.rs`, `arachne/beading_strategy/limited_beading_strategy.rs`, `arachne/beading_strategy/outer_wall_contour_strategy.rs`
+- `to_string` :139 (38 tokens) — in `arachne/beading_strategy/distributed_beading_strategy.rs`, `arachne/beading_strategy/limited_beading_strategy.rs`, `arachne/beading_strategy/outer_wall_contour_strategy.rs`
+- `to_string` :140 (51 tokens) — in `arachne/beading_strategy/distributed_beading_strategy.rs`, `arachne/beading_strategy/limited_beading_strategy.rs`, `arachne/beading_strategy/outer_wall_contour_strategy.rs`
 - `Point::projection_onto` :141 (129 tokens) — in `ex_polygon.rs`
-- `to_string` :141 (51 tokens) — in `extrusion_entity.rs`, `placeholder_parser.rs`, `semver.rs`
+- `to_string` :141 (51 tokens) — in `arachne/beading_strategy/distributed_beading_strategy.rs`, `arachne/beading_strategy/limited_beading_strategy.rs`, `arachne/beading_strategy/outer_wall_contour_strategy.rs`
 - `has_reflection` :152 (15 tokens) — in `geometry/transform.rs`
 - `Point::projection_onto` :157 (229 tokens) — in `ex_polygon.rs`
 - `get_base` :160 (14 tokens)
