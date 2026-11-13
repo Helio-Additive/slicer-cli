@@ -4649,7 +4649,12 @@ impl PerimeterGenerator {
                 );
             }
         }
-        if self.config.detect_overhang_wall && line.is_closed {
+        // ARACHNE_OVERHANG_OPEN (on unless =0): the guard of
+        // PerimeterGenerator.cpp:667-668 has no `is_closed` test, so an open
+        // extrusion is split against the lower slices as a closed one is. =0
+        // keeps open extrusions out, as one supported path.
+        let overhang_open = crate::faithful_gate("ARACHNE_OVERHANG_OPEN");
+        if self.config.detect_overhang_wall && (line.is_closed || overhang_open) {
             if let Some(lower) = self.config.lower_slices.as_ref() {
                 if !lower.is_empty() {
                     use crate::clipper_utils::OffsetJoinType;
@@ -5032,7 +5037,33 @@ impl PerimeterGenerator {
 
                     if !paths.is_empty() {
                         // Re-chain the split segments into one continuous loop (cpp:763).
-                        let start = paths[0].polyline.first_point();
+                        let mut start = paths[0].polyline.first_point();
+                        if !line.is_closed {
+                            // PerimeterGenerator.cpp:728-757 — for an open extrusion
+                            // the start is an end of the chain (a point that occurs
+                            // once), a non-overhang one if there is one. C++ walks a
+                            // `std::unordered_map<Point, PointInfo, PointHash>`, so
+                            // which end wins is the container's iteration order.
+                            let mut point_occurrence = LibcxxUnorderedPointMap::new();
+                            for path in &paths {
+                                let is_overhang = path.role == ExtrusionRole::OverhangPerimeter;
+                                for pt in [path.polyline.first_point(), path.polyline.last_point()] {
+                                    let info = point_occurrence.entry(pt);
+                                    info.0 += 1;
+                                    if is_overhang {
+                                        info.1 = true;
+                                    }
+                                }
+                            }
+                            for (pt, (occurrence, is_overhang)) in point_occurrence.in_order() {
+                                if occurrence == 1 {
+                                    start = pt;
+                                    if !is_overhang {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                         crate::shortest_path::chain_and_reorder_extrusion_paths(
                             &mut paths,
                             Some(&start),
@@ -5188,6 +5219,178 @@ impl PerimeterGenerator {
         path.width = avg_width;
         path.height = self.config.layer_height;
         vec![path]
+    }
+}
+
+/// A libc++ `std::unordered_map<Point, PointInfo, PointHash>` that is only
+/// inserted into, with its iteration order (PerimeterGenerator.cpp:739-755).
+/// The value is `(occurrence, is_overhang)`. The container is the one
+/// `region_expansion.rs` emulates for `double` keys; `PointHash`
+/// (Point.hpp:368-372) is `coord_t((89 * 31 + int64_t(x)) * 31 + y)`.
+struct LibcxxUnorderedPointMap {
+    /// (hash, key, value, next)
+    nodes: Vec<(u64, Point, (usize, bool), Option<usize>)>,
+    /// First node of the list (`__p1_.first().__next_`).
+    head: Option<usize>,
+    /// Per bucket: the node before its first node. `Some(None)` is the
+    /// before-begin anchor, `None` an empty bucket.
+    buckets: Vec<Option<Option<usize>>>,
+}
+
+impl LibcxxUnorderedPointMap {
+    fn new() -> Self {
+        Self { nodes: Vec::new(), head: None, buckets: Vec::new() }
+    }
+
+    fn hash(key: &Point) -> u64 {
+        ((89i64 * 31).wrapping_add(key.x()).wrapping_mul(31).wrapping_add(key.y())) as u64
+    }
+
+    /// `std::__constrain_hash`
+    fn constrain(h: u64, bc: usize) -> usize {
+        let bc64 = bc as u64;
+        if bc64 & (bc64 - 1) == 0 {
+            (h & (bc64 - 1)) as usize
+        } else if h < bc64 {
+            h as usize
+        } else {
+            (h % bc64) as usize
+        }
+    }
+
+    fn next_of(&self, pred: Option<usize>) -> Option<usize> {
+        match pred {
+            None => self.head,
+            Some(i) => self.nodes[i].3,
+        }
+    }
+
+    fn set_next(&mut self, pred: Option<usize>, next: Option<usize>) {
+        match pred {
+            None => self.head = next,
+            Some(i) => self.nodes[i].3 = next,
+        }
+    }
+
+    /// `std::__next_prime`: the smallest prime not below `n`.
+    fn next_prime(mut n: usize) -> usize {
+        fn is_prime(n: usize) -> bool {
+            if n < 2 {
+                return false;
+            }
+            let mut d = 2usize;
+            while d * d <= n {
+                if n % d == 0 {
+                    return false;
+                }
+                d += 1;
+            }
+            true
+        }
+        while !is_prime(n) {
+            n += 1;
+        }
+        n
+    }
+
+    /// `__hash_table::__rehash<true>` on the growing path, with `__do_rehash`.
+    fn rehash(&mut self, mut n: usize) {
+        if n == 1 {
+            n = 2;
+        } else if n & (n - 1) != 0 {
+            n = Self::next_prime(n);
+        }
+        if n <= self.buckets.len() {
+            return;
+        }
+        self.buckets = vec![None; n];
+        let mut pp: Option<usize> = None; // before-begin
+        let Some(first) = self.head else { return };
+        let mut phash = Self::constrain(self.nodes[first].0, n);
+        self.buckets[phash] = Some(pp);
+        pp = Some(first);
+        let mut cp = self.nodes[first].3;
+        while let Some(c) = cp {
+            let chash = Self::constrain(self.nodes[c].0, n);
+            if chash == phash {
+                pp = Some(c);
+            } else if self.buckets[chash].is_none() {
+                self.buckets[chash] = Some(pp);
+                pp = Some(c);
+                phash = chash;
+            } else {
+                // Unlink `c` and put it behind its bucket's predecessor.
+                let after = self.nodes[c].3;
+                self.set_next(pp, after);
+                let bucket_pred = self.buckets[chash].unwrap();
+                let bucket_first = self.next_of(bucket_pred);
+                self.nodes[c].3 = bucket_first;
+                self.set_next(bucket_pred, Some(c));
+            }
+            cp = self.next_of(pp);
+        }
+    }
+
+    /// `operator[]`: the value under `key`, default-constructed if new.
+    fn entry(&mut self, key: Point) -> &mut (usize, bool) {
+        let hash = Self::hash(&key);
+        let mut bc = self.buckets.len();
+        let mut chash = 0usize;
+        if bc != 0 {
+            chash = Self::constrain(hash, bc);
+            if let Some(pred) = self.buckets[chash] {
+                let mut nd = self.next_of(pred);
+                while let Some(i) = nd {
+                    let (h, k, _, next) = self.nodes[i];
+                    if !(h == hash || Self::constrain(h, bc) == chash) {
+                        break;
+                    }
+                    if h == hash && k == key {
+                        return &mut self.nodes[i].2;
+                    }
+                    nd = next;
+                }
+            }
+        }
+        let size = self.nodes.len();
+        if (size + 1) as f32 > bc as f32 * 1.0f32 || bc == 0 {
+            let is_power2 = bc > 2 && (bc & (bc - 1)) == 0;
+            let want = (2 * bc + usize::from(!is_power2))
+                .max(((size + 1) as f32 / 1.0f32).ceil() as usize);
+            self.rehash(want);
+            bc = self.buckets.len();
+            chash = Self::constrain(hash, bc);
+        }
+        let new_idx = self.nodes.len();
+        self.nodes.push((hash, key, (0, false), None));
+        match self.buckets[chash] {
+            None => {
+                // Empty bucket: to the front of the list.
+                self.nodes[new_idx].3 = self.head;
+                self.head = Some(new_idx);
+                self.buckets[chash] = Some(None);
+                if let Some(next) = self.nodes[new_idx].3 {
+                    let next_bucket = Self::constrain(self.nodes[next].0, bc);
+                    self.buckets[next_bucket] = Some(Some(new_idx));
+                }
+            }
+            Some(pred) => {
+                let after = self.next_of(pred);
+                self.nodes[new_idx].3 = after;
+                self.set_next(pred, Some(new_idx));
+            }
+        }
+        &mut self.nodes[new_idx].2
+    }
+
+    fn in_order(&self) -> Vec<(Point, (usize, bool))> {
+        let mut out = Vec::with_capacity(self.nodes.len());
+        let mut cur = self.head;
+        while let Some(i) = cur {
+            out.push((self.nodes[i].1, self.nodes[i].2));
+            cur = self.nodes[i].3;
+        }
+        out
     }
 }
 

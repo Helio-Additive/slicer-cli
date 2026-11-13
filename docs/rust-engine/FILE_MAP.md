@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 755 |
 | of the rest, 25 tokens or more | 1929 |
 | in a C++ unit with no Rust file | 668 |
-| Rust functions with no C++ function of that name in the pair | 4522 |
+| Rust functions with no C++ function of that name in the pair | 4531 |
 
 By tier:
 
@@ -2039,7 +2039,7 @@ Missing in the Rust file:
 - `ConfigOptionDef::create_default_option` :309 (140 tokens)
 - `ConfigOptionSingle::set` :315 (59 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `ConfigDef::add` :333 (53 tokens) — in `color.rs`, `extrusion_simulator.rs`, `g_code.rs`
-- `ConfigOptionSingle::hash` :335 (17 tokens) — in `arachne/utils/polygons_point_index.rs`, `region_expansion.rs`, `stl_repair.rs`
+- `ConfigOptionSingle::hash` :335 (17 tokens) — in `arachne/utils/polygons_point_index.rs`, `perimeter_generator.rs`, `region_expansion.rs`
 - `ConfigOptionSingle::serialize` :339 (9 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigDef::add_nullable` :344 (24 tokens)
 - `ConfigOptionVectorBase::scalar_type` :385 (17 tokens)
@@ -2072,7 +2072,7 @@ Missing in the Rust file:
 - `ConfigOptionVector::clear` :725 (10 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
 - `ConfigOptionVector::size` :726 (11 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
 - `ConfigOptionVector::empty` :727 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
-- `ConfigOptionVector::hash` :740 (41 tokens) — in `arachne/utils/polygons_point_index.rs`, `region_expansion.rs`, `stl_repair.rs`
+- `ConfigOptionVector::hash` :740 (41 tokens) — in `arachne/utils/polygons_point_index.rs`, `perimeter_generator.rs`, `region_expansion.rs`
 - `ConfigBase::get_abs_value` :749 (275 tokens, overload)
 - `ConfigOptionVector::overriden_by` :751 (150 tokens)
 - `ConfigOptionVector::apply_override` :773 (292 tokens)
@@ -2161,7 +2161,7 @@ Missing in the Rust file:
 - `ConfigOptionFloatOrPercent::static_type` :1304 (5 tokens)
 - `ConfigOptionFloatOrPercent::type` :1305 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`
 - `ConfigOptionFloatOrPercent::clone` :1306 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `marching_squares.rs`
-- `ConfigOptionFloatOrPercent::hash` :1317 (30 tokens) — in `arachne/utils/polygons_point_index.rs`, `region_expansion.rs`, `stl_repair.rs`
+- `ConfigOptionFloatOrPercent::hash` :1317 (30 tokens) — in `arachne/utils/polygons_point_index.rs`, `perimeter_generator.rs`, `region_expansion.rs`
 - `ConfigOptionFloatOrPercent::set` :1325 (51 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `ConfigOptionFloatOrPercent::serialize` :1332 (40 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigBase::load_from_gcode_string_legacy` :1337 (516 tokens)
@@ -3920,23 +3920,23 @@ Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Wipe::wipe` :440 and `wipe` :4569 (31%, 0.72x)
+- partial: `Wipe::wipe` :440 and `wipe` :4600 (31%, 0.72x)
 - divergent: `WipeTowerIntegration::append_tcr` :741 and `append_tcr` :628 (14%, 0.55x)
 - divergent: `WipeTowerIntegration::post_process_wipe_tower_moves` :1383 and `post_process_wipe_tower_moves` :499 (25%, 0.89x)
-- divergent: `GCode::unretract` :1959 and `unretract` :4518 (17%, 1.12x)
+- divergent: `GCode::unretract` :1959 and `unretract` :4549 (17%, 1.12x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :1361 (8%, 1.33x)
-- partial: `GCode::change_layer` :6473 and `change_layer` :5147 (39%, 1.11x)
+- partial: `GCode::change_layer` :6473 and `change_layer` :5178 (39%, 1.11x)
 - divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :1916 (18%, 1.94x)
-- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :3637 (55%, 4.62x)
+- partial: `GCode::extrude_entity` :6914 and `extrude_entity` :3637 (55%, 5.54x)
 - divergent: `GCode::extrude_path` :6927 and `extrude_path` :3139 (5%, 0.05x)
-- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3806 (28%, 1.68x)
-- partial: `GCode::extrude_support` :7011 and `extrude_support` :4214 (33%, 1.62x)
-- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9263 (50%, 1.06x)
-- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5287 (30%, 1.08x)
-- divergent: `GCode::travel_to` :8198 and `travel_to` :4374 (11%, 0.21x)
-- divergent: `GCode::retract` :8498 and `retract` :4460 (8%, 0.21x)
-- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4746 (2%, 0.03x)
-- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6780 (0%, 0.06x)
+- divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3837 (28%, 1.68x)
+- partial: `GCode::extrude_support` :7011 and `extrude_support` :4245 (33%, 1.62x)
+- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9294 (50%, 1.06x)
+- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5318 (30%, 1.08x)
+- divergent: `GCode::travel_to` :8198 and `travel_to` :4405 (11%, 0.21x)
+- divergent: `GCode::retract` :8498 and `retract` :4491 (8%, 0.21x)
+- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4777 (2%, 0.03x)
+- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6811 (0%, 0.06x)
 
 Missing in the Rust file:
 
@@ -4103,70 +4103,70 @@ Rust only:
 - `fmt_g6` :3124
 - `extrude_path_ex` :3155
 - `extrude_path_with_arc_fitting` :3170
-- `extrude_perimeters_entities` :3986
-- `extrude_infill_entities` :4104
-- `apply_layer_cooling` :4898
-- `bridge_fan_speed` :4962
-- `overhang_fan_speed` :4981
-- `set_fan_speed_for_role` :5003
-- `GCodeLayerState::default` :5093
-- `lift_type_code` :5126
-- `emit_layer_preamble` :5197
-- `emit_layer_postamble` :5254
-- `emit_object_start_label` :5329
-- `emit_object_end_label` :5358
-- `emit_layer_object_labels` :5384
-- `set_loop_wipe_path` :6639
-- `first_extrusion_path` :6655
-- `width_tag_before_speed` :6666
-- `set_speed_before_path` :6689
-- `GCode::new` :6723
-- `GCode::from_content_and_stats` :6731
-- `GCode::from_string` :6736 — C++ has it in `Config`
-- `GCode::from_string_with_stats` :6744
-- `GCode::content` :6749
-- `GCode::as_bytes` :6754
-- `GCode::len` :6759
-- `GCode::is_empty` :6764 — C++ has it in `PresetBundle`
-- `GCode::split_off` :6770
-- `GCode::append_line` :6774
-- `GCode::append_comment` :6785
-- `GCode::write_to_file` :6792
-- `GCode::read_from_file` :6803 — C++ has it in `Model`
-- `GCode::line_count` :6809
-- `GCode::lines` :6814 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
-- `GCode::clear` :6819 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `GCode::fmt` :6826
-- `GCode::fmt` :6837
-- `GCode::from` :6843 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `String::from` :6849 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `GCodeStats::new` :6895
-- `GCodeStats::calculate_filament_stats` :6911
-- `GCodeStats::print_time_formatted` :6924
-- `GCodeStats::filament_used_meters` :6933
-- `GCodeStats::fmt` :6939
-- `GCodeHeader::new` :6983
-- `GCodeHeader::with_raw_settings` :6987
-- `GCodeHeader::with_estimated_time` :7000
-- `GCodeHeader::with_estimated_times` :7030
-- `GCodeHeader::generate_header_block` :7047
-- `GCodeHeader::generate_config_block` :7109
-- `GCodeHeader::generate_minimal_config_block` :7196
-- `GCodeHeader::generate_executable_block_start` :7255
-- `GCodeHeader::generate_executable_block_content` :7262
-- `GCodeHeader::generate_complete_header` :7419
-- `is_config_key_skipped` :7581
-- `format_config_value` :7641
-- `process_gcode_template` :7852
-- `eval_condition` :8405
-- `eval_expr` :8592
-- `resolve_all_vars_in_expr` :8730
-- `eval_math` :8780
-- `scale_` :8954 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale_` :8959 — C++ has it in `Point`, `libslic3r`
-- `point_mul_f64` :8965
-- `path_from` :8972
-- `poly_len` :9005
+- `extrude_perimeters_entities` :4017
+- `extrude_infill_entities` :4135
+- `apply_layer_cooling` :4929
+- `bridge_fan_speed` :4993
+- `overhang_fan_speed` :5012
+- `set_fan_speed_for_role` :5034
+- `GCodeLayerState::default` :5124
+- `lift_type_code` :5157
+- `emit_layer_preamble` :5228
+- `emit_layer_postamble` :5285
+- `emit_object_start_label` :5360
+- `emit_object_end_label` :5389
+- `emit_layer_object_labels` :5415
+- `set_loop_wipe_path` :6670
+- `first_extrusion_path` :6686
+- `width_tag_before_speed` :6697
+- `set_speed_before_path` :6720
+- `GCode::new` :6754
+- `GCode::from_content_and_stats` :6762
+- `GCode::from_string` :6767 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :6775
+- `GCode::content` :6780
+- `GCode::as_bytes` :6785
+- `GCode::len` :6790
+- `GCode::is_empty` :6795 — C++ has it in `PresetBundle`
+- `GCode::split_off` :6801
+- `GCode::append_line` :6805
+- `GCode::append_comment` :6816
+- `GCode::write_to_file` :6823
+- `GCode::read_from_file` :6834 — C++ has it in `Model`
+- `GCode::line_count` :6840
+- `GCode::lines` :6845 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :6850 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :6857
+- `GCode::fmt` :6868
+- `GCode::from` :6874 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :6880 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :6926
+- `GCodeStats::calculate_filament_stats` :6942
+- `GCodeStats::print_time_formatted` :6955
+- `GCodeStats::filament_used_meters` :6964
+- `GCodeStats::fmt` :6970
+- `GCodeHeader::new` :7014
+- `GCodeHeader::with_raw_settings` :7018
+- `GCodeHeader::with_estimated_time` :7031
+- `GCodeHeader::with_estimated_times` :7061
+- `GCodeHeader::generate_header_block` :7078
+- `GCodeHeader::generate_config_block` :7140
+- `GCodeHeader::generate_minimal_config_block` :7227
+- `GCodeHeader::generate_executable_block_start` :7286
+- `GCodeHeader::generate_executable_block_content` :7293
+- `GCodeHeader::generate_complete_header` :7450
+- `is_config_key_skipped` :7612
+- `format_config_value` :7672
+- `process_gcode_template` :7883
+- `eval_condition` :8436
+- `eval_expr` :8623
+- `resolve_all_vars_in_expr` :8761
+- `eval_math` :8811
+- `scale_` :8985 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale_` :8990 — C++ has it in `Point`, `libslic3r`
+- `point_mul_f64` :8996
+- `path_from` :9003
+- `poly_len` :9036
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
@@ -6916,7 +6916,7 @@ Rust only:
 
 ### `PerimeterGenerator` (.cpp+.hpp) and `perimeter_generator.rs`
 
-Tier 1. C++ functions 29 (plus 3 constructors, 0 destructors, 0 operators), Rust functions 29. Matched 6: faithful 4, partial 2, divergent 0, stub 0.
+Tier 1. C++ functions 29 (plus 3 constructors, 0 destructors, 0 operators), Rust functions 38. Matched 6: faithful 4, partial 2, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -6971,9 +6971,18 @@ Rust only:
 - `entity_reverse_inplace` :2567
 - `PerimeterGenerator::generate_arachne` :3355
 - `PerimeterGenerator::arachne_line_to_extrusion_paths` :4568
-- `expolygons_to_polygons` :5196
-- `apply_fuzzy_skin_to_entity` :5208
-- `lastprobe` :5266
+- `LibcxxUnorderedPointMap::new` :5241
+- `LibcxxUnorderedPointMap::hash` :5245 — C++ has it in `Config`, `SLAPrintSteps`
+- `LibcxxUnorderedPointMap::constrain` :5250
+- `LibcxxUnorderedPointMap::next_of` :5261
+- `LibcxxUnorderedPointMap::set_next` :5268
+- `LibcxxUnorderedPointMap::next_prime` :5276
+- `LibcxxUnorderedPointMap::rehash` :5297
+- `LibcxxUnorderedPointMap::entry` :5335
+- `LibcxxUnorderedPointMap::in_order` :5386
+- `expolygons_to_polygons` :5399
+- `apply_fuzzy_skin_to_entity` :5411
+- `lastprobe` :5469
 
 ### `PlaceholderParser` (.cpp+.hpp) and `placeholder_parser.rs`
 
@@ -13066,7 +13075,7 @@ Missing in the Rust file:
 - `SLAPrint::Steps::apply_printer_corrections` :84 (301 tokens)
 - `SLAPrint::Steps::hollow_model` :119 (168 tokens)
 - `FaceHash::to_chars` :155 (103 tokens)
-- `FaceHash::hash` :174 (37 tokens) — in `arachne/utils/polygons_point_index.rs`, `region_expansion.rs`, `stl_repair.rs`
+- `FaceHash::hash` :174 (37 tokens) — in `arachne/utils/polygons_point_index.rs`, `perimeter_generator.rs`, `region_expansion.rs`
 - `FaceHash::facekey` :185 (131 tokens)
 - `FaceHash::find` :210 (21 tokens) — in `geometry/point.rs`, `measure_utils.rs`, `multi_material_segmentation.rs`
 - `create_exclude_mask` :222 (459 tokens)

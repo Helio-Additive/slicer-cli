@@ -3701,7 +3701,38 @@ pub fn extrude_entity(
                         _ => config.initial_layer_speed,
                     }
                 } else {
+                    // PATH_OVERHANG_SPEED (on unless =0): `calc_speed_by_role` of
+                    // `_extrude` (GCode.cpp:7702-7732) is the same for a path of a
+                    // loop and for a path on its own (an open Arachne extrusion is a
+                    // multi-path, GCode.cpp:6884-6889). A wall path takes the speed
+                    // of its overhang degree, an overhang wall of degree 5 the
+                    // `overhang_totally_speed`, any other overhang wall the bridge
+                    // speed. =0 gives the three the plain wall speed.
+                    let overhang_speed = crate::faithful_gate("PATH_OVERHANG_SPEED");
                     match role {
+                        ExtrusionRole::ExternalPerimeter | ExtrusionRole::Perimeter
+                            if overhang_speed && config.enable_overhang_speed =>
+                        {
+                            let normal = if role == ExtrusionRole::ExternalPerimeter {
+                                config.external_perimeter_speed
+                            } else {
+                                config.perimeter_speed
+                            };
+                            let new_speed =
+                                overhang_degree_corr_speed(config, normal, path.overhang_degree);
+                            if new_speed == 0.0 {
+                                normal
+                            } else {
+                                new_speed
+                            }
+                        }
+                        ExtrusionRole::OverhangPerimeter if overhang_speed => {
+                            if path.overhang_degree == 5.0 && config.enable_overhang_speed {
+                                config.overhang_totally_speed
+                            } else {
+                                config.bridge_speed
+                            }
+                        }
                         ExtrusionRole::ExternalPerimeter => config.external_perimeter_speed,
                         ExtrusionRole::Perimeter => config.perimeter_speed,
                         ExtrusionRole::InternalInfill => config.infill_speed,
