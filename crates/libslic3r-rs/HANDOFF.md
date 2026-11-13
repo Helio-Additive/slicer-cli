@@ -72,12 +72,14 @@ the ten `tree_support_integration` failures pass.
 **Hang:** `internal_bridge_detector::tests::test_detect_angle_no_anchors` (every profile);
 `tree_support_integration::test_tree_support_many_layers` (debug assertions off).
 
-**Fail in the lib (44 in every profile):**
-- Stale expectations of the 1e6 scaling (the engine is 1e5 units/mm): `tests::test_scaling`,
-  `flow::tests::test_scaled_values`; probably `arachne::wall_tool_paths::tests::test_meshfix_constants`.
-- Stale number format (`X10.000` expected, the writer trims): `gcode::tests::{test_linear_move,
-  test_rapid_move}`, `gcode::writer::tests::{test_writer_extrude_relative_e,
-  test_writer_extrude_absolute_e, test_writer_travel}`.
+**Fail in the lib (36 in every profile since R863; the list below is the 44 of before, less the first item):**
+- (Corrected in R863, 8 tests, now passing: the expectations were of an older engine, not of the C++.
+  `tests::test_scaling`, `flow::tests::test_scaled_values` and
+  `arachne::wall_tool_paths::tests::test_meshfix_constants` expected the 1e6 scaling or a rounded quotient
+  where `coord_t(v / SCALING_FACTOR)` truncates; `gcode::tests::{test_linear_move, test_rapid_move}` and
+  `gcode::writer::tests::{test_writer_extrude_relative_e, test_writer_extrude_absolute_e,
+  test_writer_travel}` expected untrimmed numbers, and the two extrude tests read the third argument of
+  `extrude_to` as a target where it is dE.)
 - Panics in engine code on degenerate input: `arc_fitter::tests::test_arc_fitting_empty`
   (`points.len() - 1` on an empty list), `fill::fill3_d_honeycomb::tests::test_fill_surface_single_runs`
   (division by zero at spacing 0), `fill::fill_plane_path::tests::{test_fill_surface_single_hilbert,

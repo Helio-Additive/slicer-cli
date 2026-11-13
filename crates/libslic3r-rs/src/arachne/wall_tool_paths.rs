@@ -1927,10 +1927,12 @@ mod tests {
 
     #[test]
     fn test_meshfix_constants() {
-        // scaled<coord_t>(0.5) with SCALING_FACTOR = 100_000 -> 50_000
-        assert_eq!(MESHFIX_MAXIMUM_RESOLUTION, 50_000);
+        // WallToolPaths.hpp:19 `scaled<coord_t>(0.5)` is `coord_t(0.5 / 0.00001)`, and
+        // the quotient is 49999.99999999999 in double: 49_999, not 50_000.
+        assert_eq!(MESHFIX_MAXIMUM_RESOLUTION, 49_999);
         assert_eq!(MESHFIX_MAXIMUM_DEVIATION, 2_500);
-        assert_eq!(MESHFIX_MAXIMUM_EXTRUSION_AREA_DEVIATION, 200_000);
+        // WallToolPaths.hpp:21 `scaled<coord_t>(2.)`: 2. / 0.00001 is 199999.99999999997.
+        assert_eq!(MESHFIX_MAXIMUM_EXTRUSION_AREA_DEVIATION, 199_999);
     }
 
     #[test]

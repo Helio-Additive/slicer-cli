@@ -327,7 +327,8 @@ mod tests {
             z: None,
             f: Some(3000.0),
         };
-        assert_eq!(cmd.to_gcode(), "G0 X10.000 Y20.000 F3000");
+        // The formatter drops trailing zeros (GCodeWriter.hpp, GCodeFormatter::emit_axis).
+        assert_eq!(cmd.to_gcode(), "G0 X10 Y20 F3000");
     }
 
     #[test]
@@ -339,7 +340,7 @@ mod tests {
             e: Some(1.5),
             f: Some(1200.0),
         };
-        assert_eq!(cmd.to_gcode(), "G1 X10.000 Y20.000 E1.50000 F1200");
+        assert_eq!(cmd.to_gcode(), "G1 X10 Y20 E1.5 F1200");
     }
 
     #[test]

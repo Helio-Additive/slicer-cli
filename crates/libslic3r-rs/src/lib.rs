@@ -625,14 +625,14 @@ mod tests {
 
     #[test]
     fn test_scaling() {
-        // 1mm should scale to 1_000_000
-        assert_eq!(scale(1.0), 1_000_000);
+        // libslic3r.h:71 `#define SCALING_FACTOR 0.00001`: 1 mm is 100_000 units.
+        assert_eq!(scale(1.0), 100_000);
 
         // And back
-        assert!((unscale(1_000_000) - 1.0).abs() < 1e-10);
+        assert!((unscale(100_000) - 1.0).abs() < 1e-10);
 
         // Test sub-millimeter precision
-        assert_eq!(scale(0.001), 1_000); // 1 micron
-        assert_eq!(scale(0.0001), 100); // 100 nanometers
+        assert_eq!(scale(0.001), 100); // 1 micron
+        assert_eq!(scale(0.0001), 10); // 100 nanometers
     }
 }

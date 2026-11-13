@@ -3518,8 +3518,8 @@ mod tests {
         // never G0 — there is no GCodeG0Formatter in BambuStudio.
         assert!(gcode.content().contains("G1"));
         assert!(!gcode.content().contains("G0"));
-        assert!(gcode.content().contains("X10.000"));
-        assert!(gcode.content().contains("Y20.000"));
+        // GCodeFormatter::emit_axis drops trailing zeros.
+        assert!(gcode.content().contains("X10 Y20"));
     }
 
     #[test]
@@ -3528,19 +3528,21 @@ mod tests {
         let mut writer = GCodeWriter::new();
         writer.write_preamble(); // Sets up relative E mode
 
-        // First extrusion: from E=0 to E=1.0, so relative output is 1.0
+        // The third argument is dE, as in GCodeWriter::extrude_to_xy(point, dE).
+        // Extruder::extrude (Extruder.cpp:71-88) resets E before adding dE when
+        // the distances are relative, so E is the last dE.
         writer.extrude_to(10.0, 10.0, 1.0, None);
         assert!((writer.e() - 1.0).abs() < 1e-6);
 
-        // Second extrusion: from E=1.0 to E=2.5, so relative output is 1.5
         writer.extrude_to(20.0, 20.0, 2.5, None);
         assert!((writer.e() - 2.5).abs() < 1e-6);
 
         let gcode = writer.gcode();
         assert!(gcode.content().contains("G1"));
         // In relative mode, E values are deltas
-        assert!(gcode.content().contains("E1.00000")); // First move
-        assert!(gcode.content().contains("E1.50000")); // Second move (delta)
+        // (GCodeFormatter::emit_axis drops trailing zeros.)
+        assert!(gcode.content().contains(" E1")); // First move
+        assert!(gcode.content().contains(" E2.5")); // Second move
     }
 
     #[test]
@@ -3554,14 +3556,15 @@ mod tests {
         writer.extrude_to(10.0, 10.0, 1.0, None);
         assert!((writer.e() - 1.0).abs() < 1e-6);
 
+        // dE again: with absolute distances E accumulates (Extruder.cpp:71-88).
         writer.extrude_to(20.0, 20.0, 2.5, None);
-        assert!((writer.e() - 2.5).abs() < 1e-6);
+        assert!((writer.e() - 3.5).abs() < 1e-6);
 
         let gcode = writer.gcode();
         assert!(gcode.content().contains("G1"));
         // In absolute mode, E values are absolute positions
-        assert!(gcode.content().contains("E1.00000"));
-        assert!(gcode.content().contains("E2.50000"));
+        assert!(gcode.content().contains(" E1"));
+        assert!(gcode.content().contains(" E3.5"));
     }
 
     #[test]

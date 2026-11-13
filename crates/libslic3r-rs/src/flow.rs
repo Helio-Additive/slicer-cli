@@ -1080,12 +1080,18 @@ mod tests {
     fn test_scaled_values() {
         let flow = Flow::new(0.45, 0.2, 0.4).unwrap();
 
-        // 0.45mm = 450,000 scaled units (with SCALING_FACTOR = 1_000_000)
-        assert_eq!(flow.scaled_width(), 450_000);
+        // Flow.hpp:62 `coord_t(scale_(m_width))`, with `m_width` a float: 0.45f is
+        // 0.449999988, which divided by SCALING_FACTOR truncates to 44_999.
+        assert_eq!(flow.scaled_width(), 44_999);
 
         // Spacing should also scale correctly
+        // Flow.hpp:68 `coord_t(scale_(m_spacing))`: the float spacing, divided in
+        // double, truncated.
         let spacing = flow.spacing();
-        assert_eq!(flow.scaled_spacing(), scale(spacing));
+        assert_eq!(
+            flow.scaled_spacing(),
+            ((spacing as f32) as f64 / crate::libslic3r::SCALING_FACTOR) as Coord
+        );
     }
 
     // === Parity tests with libslic3r ===

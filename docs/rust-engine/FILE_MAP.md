@@ -866,17 +866,17 @@ Rust only:
 - `WallToolPaths::get_tool_paths` :1673
 - `WallToolPaths::get_inner_contour` :1770
 - `WallToolPaths::get_first_wall_contour` :1783
-- `awst_poly` :1995
-- `awst_dump` :2006
-- `stageprobe` :2024
-- `areaprobe` :2120
-- `agen_fp` :2202
-- `agenpts_max_ov` :2222
-- `agenpts_poly` :2226
-- `agenpts_tp` :2243
-- `agen_dump_poly` :2262
-- `agen_dump_tp` :2282
-- `polyprobe` :2324
+- `awst_poly` :1997
+- `awst_dump` :2008
+- `stageprobe` :2026
+- `areaprobe` :2122
+- `agen_fp` :2204
+- `agenpts_max_ov` :2224
+- `agenpts_poly` :2228
+- `agenpts_tp` :2245
+- `agen_dump_poly` :2264
+- `agen_dump_tp` :2284
+- `polyprobe` :2326
 
 ### `Arachne/utils/ExtrusionJunction` (.cpp+.hpp) and `arachne/utils/extrusion_junction.rs`
 
