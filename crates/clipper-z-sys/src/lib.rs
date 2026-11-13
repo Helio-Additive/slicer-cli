@@ -363,6 +363,91 @@ extern "C" {
         clip_num: i32,
     ) -> CzZPaths;
 
+    /// Reference export, called by tests only: `ClipperLib_Z::Clipper` (the
+    /// `CLIPPERLIB_USE_XYZ` build). Paths are flat (x, y, z) triples, in and out; subjects,
+    /// clips, options and `add_paths` as in [`cz_ref_execute_polytree`]. `z_fill`: 0 = no
+    /// `ZFillFunction`, 1 = the callback of the reference (`cz_ref_z_fill` in
+    /// `clipper_z_shim.cpp`). `output`: 0 = `Execute` into a `PolyTree`, in the encoding of
+    /// [`cz_ref_execute_polytree`] with every point's Z; 1 = the same, then
+    /// `PolyTreeToPaths`; 2 = `Execute` into a `Paths` (closed subjects only).
+    /// The library of this build dies on some inputs (a null iterator in
+    /// `ProcessHorizontal`, a loop without end in `GetBottomPt`): the call runs under a
+    /// guard, and `*died` receives 0 or the signal that ended it (SIGSEGV, SIGBUS, or
+    /// SIGALRM after one second), in which case nothing is returned.
+    /// Free via [`cz_free_zpaths`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn cz_ref_execute_z(
+        subj_xyz: *const i32,
+        subj_lens: *const i32,
+        subj_closed: *const i32,
+        subj_num: i32,
+        clip_xyz: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+        clip_type: i32,
+        subj_fill: i32,
+        clip_fill: i32,
+        strictly_simple: i32,
+        preserve_collinear: i32,
+        reverse_solution: i32,
+        add_paths: i32,
+        z_fill: i32,
+        output: i32,
+        node_info: *mut i32,
+        node_info_cap: i32,
+        num_nodes: *mut i32,
+        total: *mut i32,
+        succeeded: *mut i32,
+        died: *mut i32,
+    ) -> CzZPaths;
+
+    /// [`cz_clip_extrusion`] under the guard of [`cz_ref_execute_z`], for tests: `*died`
+    /// receives 0 or the signal that ended the library.
+    pub fn cz_ref_clip_extrusion_guarded(
+        subject_xyz: *const i32,
+        subject_n: i32,
+        clip_xyz: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+        clip_type: i32,
+        died: *mut i32,
+    ) -> CzZPaths;
+
+    /// [`cz_detect_floating`] under the guard of [`cz_ref_execute_z`], for tests.
+    #[allow(clippy::too_many_arguments)]
+    pub fn cz_ref_detect_floating_guarded(
+        subject_xyz: *const i32,
+        subject_n: i32,
+        clip_xyz: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+        subject_idx_range: i32,
+        out_num_diff_paths: *mut i32,
+        died: *mut i32,
+    ) -> CzZPaths;
+
+    /// Reference export, called by tests only: `ClipperLib_Z::ClipperOffset`, as
+    /// [`cz_ref_offset`] with (x, y, z) triples in and out, and with a `Clear()` after the
+    /// constructor, which leaves `m_lowest` uninitialized in this build. Free via
+    /// [`cz_free_zpaths`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn cz_ref_offset_z(
+        xyz: *const i32,
+        lens: *const i32,
+        join_types: *const i32,
+        end_types: *const i32,
+        num: i32,
+        miter_limit: f64,
+        arc_tolerance: f64,
+        shortest_edge_length: f64,
+        delta: f64,
+        use_polytree: i32,
+        node_info: *mut i32,
+        node_info_cap: i32,
+        num_nodes: *mut i32,
+        total: *mut i32,
+    ) -> CzZPaths;
+
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
 

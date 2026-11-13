@@ -287,6 +287,46 @@ CzZPaths cz_ref_offset(const int32_t *xy, const int32_t *lens, const int32_t *jo
 CzZPaths cz_ref_simplify_polygons(const int32_t *xy, const int32_t *lens, int32_t num,
                                   int32_t fill_type, int32_t which);
 
+// Reference exports for the Rust port of the CLIPPERLIB_USE_XYZ build of clipper.cpp
+// (namespace ClipperLib_Z); called by tests only. Paths are flat (x, y, z) triples, in
+// and out.
+//
+// cz_ref_execute_z: ClipperLib_Z::Clipper; subjects, clips, options and add_paths as
+// in cz_ref_execute_polytree. z_fill: 0 = no ZFillFunction, 1 = the callback of the
+// reference (cz_ref_z_fill in clipper_z_shim.cpp, which documents its formula).
+// output: 0 = Execute into a PolyTree, in the encoding above with every point's Z;
+// 1 = the same, then PolyTreeToPaths; 2 = Execute into a Paths (closed subjects only).
+// The library of this build dies on some inputs (clipper_z_shim.cpp says which): the
+// call runs under a guard, and *died receives 0 or the signal that ended it (SIGSEGV,
+// SIGBUS, or SIGALRM after one second), in which case nothing is returned. Free via
+// cz_free_zpaths.
+CzZPaths cz_ref_execute_z(const int32_t *subj_xyz, const int32_t *subj_lens,
+                          const int32_t *subj_closed, int32_t subj_num,
+                          const int32_t *clip_xyz, const int32_t *clip_lens, int32_t clip_num,
+                          int32_t clip_type, int32_t subj_fill, int32_t clip_fill,
+                          int32_t strictly_simple, int32_t preserve_collinear,
+                          int32_t reverse_solution, int32_t add_paths, int32_t z_fill,
+                          int32_t output, int32_t *node_info, int32_t node_info_cap,
+                          int32_t *num_nodes, int32_t *total, int32_t *succeeded, int32_t *died);
+
+// cz_clip_extrusion and cz_detect_floating under the guard; *died as above.
+CzZPaths cz_ref_clip_extrusion_guarded(const int32_t *subject_xyz, int32_t subject_n,
+                                       const int32_t *clip_xyz, const int32_t *clip_lens,
+                                       int32_t clip_num, int32_t clip_type, int32_t *died);
+CzZPaths cz_ref_detect_floating_guarded(const int32_t *subject_xyz, int32_t subject_n,
+                                        const int32_t *clip_xyz, const int32_t *clip_lens,
+                                        int32_t clip_num, int32_t subject_idx_range,
+                                        int32_t *out_num_diff_paths, int32_t *died);
+
+// cz_ref_offset_z: ClipperLib_Z::ClipperOffset, as cz_ref_offset, with a Clear()
+// after the constructor, which leaves m_lowest uninitialized in this build. Free
+// via cz_free_zpaths.
+CzZPaths cz_ref_offset_z(const int32_t *xyz, const int32_t *lens, const int32_t *join_types,
+                         const int32_t *end_types, int32_t num, double miter_limit,
+                         double arc_tolerance, double shortest_edge_length, double delta,
+                         int32_t use_polytree, int32_t *node_info, int32_t node_info_cap,
+                         int32_t *num_nodes, int32_t *total);
+
 #ifdef __cplusplus
 }
 #endif

@@ -16,8 +16,9 @@ Counted in `crates/libslic3r-rs/src` at R862; a number in brackets is the count 
 ### `clipper-z-sys` (ClipperLib, ClipperLib_Z, boost::polygon Voronoi)
 
 Since R891 the engine runs every routine below that uses only the 2D library on the Rust port (`clipper.rs`);
-since R892 it has no shim arm for them, and the shim keeps them as the reference of the tests. The engine still calls
-`cz_clip_extrusion`, `cz_detect_floating` (ClipperLib_Z), `medial_axis_native` (boost Voronoi) and
+since R892 it has no shim arm for them, and the shim keeps them as the reference of the tests. Since R893 the two
+ClipperLib_Z routines, `cz_clip_extrusion` and `cz_detect_floating`, run on the Rust Z build too (`clipper_lib_z.rs`,
+`CLIPPER_Z_RUST`, on by default). With default gates the engine still calls `medial_axis_native` (boost Voronoi) and
 `cz_smooth_compensation_banded` (the elephant-foot solver). The table is what each routine stands for.
 
 The engine's own `clipper.cpp` is vendored and compiled; `libslic3r/clipper.cpp` has no Rust file.
@@ -121,6 +122,7 @@ more are missing from a paired Rust file and from every other. `crates/libslic3r
 | Round | Item |
 |-|-|
 | R856 | every helper on the 1 um grid on the fixtures' path computes at coord_t |
+| R893 | `ClipperLib_Z` (the XYZ build) is ported as a second compilation of `clipper.rs`, and `clip_extrusion` / `detect_floating` run on it (`CLIPPER_Z_RUST`) |
 | R889-R891 | ClipperLib is ported (`clipper.rs`: the sweep, PolyTree, ClipperOffset, equal to the library on 320,000 cases) and the engine's 2D polygon operations run on it: 19 of the 23 `clipper-z-sys` functions are out of the engine (gate retired in R892) |
 | R884 | `boost-voronoi-sys` removed from the engine's dependencies (a dev-dependency for one example) |
 | R883 | `eigen-transform-sys` removed from the engine's dependencies (a dev-dependency for the tests that compare with the C++) |

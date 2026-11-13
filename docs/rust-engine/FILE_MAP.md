@@ -41,7 +41,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 6 |
 | C++ units with no Rust file | 31 |
-| Rust files with no C++ file of that name | 47 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
+| Rust files with no C++ file of that name | 50 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 3763 (42%) |
@@ -206,7 +206,10 @@ their function names come from, when there is one.
 | `bin/generate-test-meshes.rs` | no C++ file of this name | 9 | `TriangleMesh` |
 | `bin/slicer-cli.rs` | no C++ file of this name | 16 |  |
 | `clipper2_z.rs` | no C++ file of this name | 6 |  |
-| `clipper_z.rs` | no C++ file of this name | 5 |  |
+| `clipper_build_xy.rs` | no C++ file of this name | 6 |  |
+| `clipper_build_xyz.rs` | no C++ file of this name | 9 |  |
+| `clipper_lib_z.rs` | no C++ file of this name | 1 |  |
+| `clipper_z.rs` | no C++ file of this name | 12 |  |
 | `color_space_convert.rs` | no C++ file of this name | 1 |  |
 | `csg_mesh/mod.rs` | module | 0 |  |
 | `debug/compare.rs` | no C++ file of this name | 48 |  |
@@ -12346,182 +12349,182 @@ Tier 3. C++ functions 0, Rust functions 176. Matched 0: faithful 0, partial 0, d
 
 Rust only:
 
-- `IntPoint::new` :33
-- `area` :45 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arrange`, `BoundingBox`
-- `orientation` :64 — C++ has it in `Line`
-- `point_in_polygon` :71
-- `reverse_path` :126
-- `reverse_paths` :132
-- `distance_sqrd` :141
-- `distance_from_line_sqrd` :149
-- `slopes_near_collinear` :167
-- `points_are_close` :191
-- `exclude_op` :209
-- `clean_polygon` :220
-- `clean_polygons` :277
-- `near_zero` :372
-- `round` :415 — C++ has it in `PlaceholderParser`
-- `slopes_equal` :422
-- `slopes_equal_edges` :429
-- `slopes_equal_3` :437
-- `slopes_equal_4` :449
-- `is_horizontal` :461
-- `get_dx` :468
-- `top_x` :479
-- `intersect_point` :489
-- `reverse_poly_pt_links` :551
-- `init_edge` :568
-- `init_edge2` :579
-- `remove_edge` :606 — C++ has it in `MultiMaterialSegmentation`
-- `reverse_horizontal` :620
-- `get_overlap_segment` :629
-- `first_is_bottom_pt` :663
-- `get_bottom_pt` :691
-- `pt2_is_between_pt1_and_pt3` :725
-- `horz_segments_overlap` :737
-- `find_next_loc_min` :752
-- `ClipperBase::add_path` :814
-- `ClipperBase::add_paths` :846
-- `ClipperBase::add_path_internal` :909
-- `ClipperBase::reset` :1108 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
-- `ClipperBase::get_bounds` :1143
-- `ClipperBase::clear` :1185 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ClipperBase::process_bound` :1194
-- `libcxx_sort3` :1351
-- `libcxx_sort4` :1379
-- `libcxx_sort5` :1393
-- `libcxx_insertion_sort` :1418
-- `libcxx_insertion_sort_unguarded` :1449
-- `libcxx_insertion_sort_incomplete` :1477
-- `libcxx_partition_with_equals_on_right` :1537
-- `libcxx_partition_with_equals_on_left` :1594
-- `libcxx_sift_down` :1651
-- `libcxx_floyd_sift_down` :1689
-- `libcxx_sift_up` :1710
-- `libcxx_pop_heap` :1735
-- `libcxx_heap_sort` :1753
-- `libcxx_introsort` :1782
-- `libcxx_sort` :1882
-- `PolyNode::default` :1977
-- `PolyNode::new` :1987
-- `PolyNode::is_open` :2001 — C++ has it in `GCode`
-- `PolyNode::child_count` :2007
-- `PolyTree::new` :2024
-- `PolyTree::node` :2030 — C++ has it in `Fill/Lightning/TreeNode`
-- `PolyTree::node_mut` :2039
-- `PolyTree::total` :2049 — C++ has it in `Print`
-- `PolyTree::add_child` :2062 — C++ has it in `Fill/Lightning/TreeNode`
-- `PolyTree::is_hole` :2072 — C++ has it in `ExPolygonsIndex`
-- `PolyTree::get_next` :2085
-- `PolyTree::get_next_sibling_up` :2096
-- `PolyTree::get_first` :2113
-- `PolyTree::clear` :2123 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `PolyTree::child_count` :2129
-- `PolyTree::remove_outermost_polygon` :2135 — C++ has it in `ClipperUtils`
-- `area_out_rec` :2155
-- `point_in_polygon_out_pt` :2177
-- `poly2_contains_poly1` :2233
-- `get_lowermost_rec` :2251
-- `param1_right_of_param2` :2285
-- `is_maxima` :2302
-- `is_intermediate` :2312
-- `get_maxima_pair` :2319
-- `get_horz_direction` :2344
-- `edges_adjacent` :2355
-- `point_count` :2362 — C++ has it in `OpenVDBUtils`
-- `e2_inserts_before_e1` :2379
-- `get_overlap` :2393
-- `update_out_pt_idxs` :2416
-- `Clipper::default` :2461
-- `Clipper::e` :2468 — C++ has it in `Extruder`, `GCodeReader`
-- `Clipper::em` :2473
-- `Clipper::pt` :2479
-- `Clipper::nx` :2485
-- `Clipper::pv` :2491
-- `Clipper::swap_side` :2497
-- `Clipper::swap_out_idx` :2505
-- `Clipper::new` :2513
-- `Clipper::add_path` :2540
-- `Clipper::add_paths` :2545
-- `Clipper::get_bounds` :2550
-- `Clipper::clear` :2556 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `Clipper::preserve_collinear` :2563
-- `Clipper::set_preserve_collinear` :2569
-- `Clipper::reverse_solution` :2575
-- `Clipper::set_reverse_solution` :2581
-- `Clipper::strictly_simple` :2587
-- `Clipper::set_strictly_simple` :2593
-- `Clipper::is_even_odd_fill_type` :2600
-- `Clipper::is_even_odd_alt_fill_type` :2611
-- `Clipper::reset` :2621 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
-- `Clipper::execute` :2634 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
-- `Clipper::execute_poly_tree` :2659
-- `Clipper::execute_internal` :2680
-- `Clipper::allocate_out_pt` :2770
-- `Clipper::dispose_out_pt` :2786
-- `Clipper::dispose_out_pts` :2794
-- `Clipper::dispose_all_out_recs` :2804
-- `Clipper::set_winding_count` :2812
-- `Clipper::is_contributing` :2912
-- `Clipper::add_local_min_poly` :2992
-- `Clipper::add_local_max_poly` :3037
-- `Clipper::add_edge_to_sel` :3054
-- `Clipper::copy_ael_to_sel` :3074
-- `Clipper::insert_local_minima_into_ael` :3088
-- `Clipper::delete_from_ael` :3202
-- `Clipper::delete_from_sel` :3222
-- `Clipper::intersect_edges` :3242
-- `Clipper::set_hole_state` :3425
-- `Clipper::get_out_rec` :3444
-- `Clipper::append_polygon` :3454
-- `Clipper::create_out_rec` :3546
-- `Clipper::add_out_pt` :3563
-- `Clipper::get_last_out_pt` :3607
-- `Clipper::process_horizontals` :3619
-- `Clipper::swap_positions_in_ael` :3631
-- `Clipper::swap_positions_in_sel` :3695
-- `Clipper::process_horizontal` :3767
-- `Clipper::update_edge_into_ael` :4014
-- `Clipper::process_intersections` :4047
-- `Clipper::build_intersect_list` :4077
-- `Clipper::fixup_intersection_order` :4122
-- `Clipper::do_maxima` :4151
-- `Clipper::process_edges_at_top_of_scanbeam` :4206
-- `Clipper::fixup_out_polyline` :4335
-- `Clipper::fixup_out_polygon` :4361
-- `Clipper::build_result` :4405
-- `Clipper::build_result2` :4427
-- `Clipper::insert_edge_into_ael` :4486
-- `Clipper::dup_out_pt` :4521
-- `Clipper::join_horz` :4543
-- `Clipper::join_points` :4648
-- `Clipper::fixup_first_lefts1` :4824
-- `Clipper::fixup_first_lefts2` :4854
-- `Clipper::join_common_edges` :4865
-- `Clipper::do_simple_polygons` :5006
-- `DoublePoint::new` :5089
-- `get_unit_normal` :5096
-- `sin_cos` :5125
-- `ClipperOffset::default` :5175
-- `ClipperOffset::new` :5185
-- `ClipperOffset::clear` :5208 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ClipperOffset::add_path` :5217
-- `ClipperOffset::add_paths` :5300
-- `ClipperOffset::fix_orientations` :5308
-- `ClipperOffset::execute` :5334 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
-- `ClipperOffset::execute_poly_tree` :5364
-- `ClipperOffset::src_plus` :5395
-- `ClipperOffset::do_offset` :5404
-- `ClipperOffset::offset_point` :5585
-- `ClipperOffset::do_square` :5633
-- `ClipperOffset::do_miter` :5654
-- `ClipperOffset::do_round` :5667
-- `simplify_polygon` :5690
-- `simplify_polygons` :5701 — C++ has it in `ClipperUtils`, `Geometry`
-- `add_poly_node_to_paths` :5721
-- `poly_tree_to_paths` :5740
-- `closed_paths_from_poly_tree` :5748
-- `open_paths_from_poly_tree` :5756
+- `area` :47 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arrange`, `BoundingBox`
+- `orientation` :66 — C++ has it in `Line`
+- `point_in_polygon` :73
+- `reverse_path` :128
+- `reverse_paths` :134
+- `distance_sqrd` :143
+- `distance_from_line_sqrd` :151
+- `slopes_near_collinear` :169
+- `points_are_close` :193
+- `exclude_op` :211
+- `clean_polygon` :222
+- `clean_polygons` :279
+- `near_zero` :374
+- `round` :417 — C++ has it in `PlaceholderParser`
+- `slopes_equal` :424
+- `slopes_equal_edges` :431
+- `slopes_equal_3` :439
+- `slopes_equal_4` :451
+- `is_horizontal` :463
+- `get_dx` :470
+- `top_x` :481
+- `intersect_point` :491
+- `reverse_poly_pt_links` :558
+- `init_edge` :575
+- `init_edge2` :586
+- `remove_edge` :613 — C++ has it in `MultiMaterialSegmentation`
+- `reverse_horizontal` :627
+- `get_overlap_segment` :643
+- `first_is_bottom_pt` :677
+- `get_bottom_pt` :705
+- `pt2_is_between_pt1_and_pt3` :739
+- `horz_segments_overlap` :751
+- `find_next_loc_min` :766
+- `ClipperBase::add_path` :828
+- `ClipperBase::add_paths` :860
+- `ClipperBase::add_path_internal` :923
+- `ClipperBase::reset` :1122 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `ClipperBase::get_bounds` :1157
+- `ClipperBase::clear` :1199 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ClipperBase::process_bound` :1208
+- `libcxx_sort3` :1365
+- `libcxx_sort4` :1393
+- `libcxx_sort5` :1407
+- `libcxx_insertion_sort` :1432
+- `libcxx_insertion_sort_unguarded` :1463
+- `libcxx_insertion_sort_incomplete` :1491
+- `libcxx_partition_with_equals_on_right` :1551
+- `libcxx_partition_with_equals_on_left` :1608
+- `libcxx_sift_down` :1665
+- `libcxx_floyd_sift_down` :1703
+- `libcxx_sift_up` :1724
+- `libcxx_pop_heap` :1749
+- `libcxx_heap_sort` :1767
+- `libcxx_introsort` :1796
+- `libcxx_sort` :1896
+- `PolyNode::default` :1991
+- `PolyNode::new` :2001
+- `PolyNode::is_open` :2015 — C++ has it in `GCode`
+- `PolyNode::child_count` :2021
+- `PolyTree::new` :2038
+- `PolyTree::node` :2044 — C++ has it in `Fill/Lightning/TreeNode`
+- `PolyTree::node_mut` :2053
+- `PolyTree::total` :2063 — C++ has it in `Print`
+- `PolyTree::add_child` :2076 — C++ has it in `Fill/Lightning/TreeNode`
+- `PolyTree::is_hole` :2086 — C++ has it in `ExPolygonsIndex`
+- `PolyTree::get_next` :2099
+- `PolyTree::get_next_sibling_up` :2110
+- `PolyTree::get_first` :2127
+- `PolyTree::clear` :2137 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `PolyTree::child_count` :2143
+- `PolyTree::remove_outermost_polygon` :2149 — C++ has it in `ClipperUtils`
+- `area_out_rec` :2169
+- `point_in_polygon_out_pt` :2191
+- `poly2_contains_poly1` :2247
+- `get_lowermost_rec` :2265
+- `param1_right_of_param2` :2299
+- `is_maxima` :2316
+- `is_intermediate` :2326
+- `get_maxima_pair` :2333
+- `get_horz_direction` :2358
+- `edges_adjacent` :2369
+- `point_count` :2376 — C++ has it in `OpenVDBUtils`
+- `e2_inserts_before_e1` :2393
+- `get_overlap` :2407
+- `update_out_pt_idxs` :2430
+- `Clipper::default` :2478
+- `Clipper::e` :2485 — C++ has it in `Extruder`, `GCodeReader`
+- `Clipper::em` :2490
+- `Clipper::pt` :2496
+- `Clipper::nx` :2502
+- `Clipper::pv` :2508
+- `Clipper::swap_side` :2514
+- `Clipper::swap_out_idx` :2522
+- `Clipper::new` :2530
+- `Clipper::add_path` :2559
+- `Clipper::add_paths` :2564
+- `Clipper::get_bounds` :2569
+- `Clipper::clear` :2575 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `Clipper::preserve_collinear` :2582
+- `Clipper::set_preserve_collinear` :2588
+- `Clipper::reverse_solution` :2594
+- `Clipper::set_reverse_solution` :2600
+- `Clipper::strictly_simple` :2606
+- `Clipper::set_strictly_simple` :2612
+- `Clipper::is_even_odd_fill_type` :2619
+- `Clipper::is_even_odd_alt_fill_type` :2630
+- `Clipper::reset` :2640 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `Clipper::execute` :2653 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `Clipper::execute_poly_tree` :2678
+- `Clipper::execute_internal` :2699
+- `Clipper::allocate_out_pt` :2789
+- `Clipper::dispose_out_pt` :2805
+- `Clipper::dispose_out_pts` :2813
+- `Clipper::dispose_all_out_recs` :2823
+- `Clipper::set_winding_count` :2831
+- `Clipper::is_contributing` :2931
+- `Clipper::add_local_min_poly` :3011
+- `Clipper::add_local_max_poly` :3056
+- `Clipper::add_edge_to_sel` :3073
+- `Clipper::copy_ael_to_sel` :3093
+- `Clipper::insert_local_minima_into_ael` :3107
+- `Clipper::delete_from_ael` :3226
+- `Clipper::delete_from_sel` :3246
+- `Clipper::set_z` :3269
+- `Clipper::intersect_edges` :3293
+- `Clipper::set_hole_state` :3482
+- `Clipper::get_out_rec` :3501
+- `Clipper::append_polygon` :3511
+- `Clipper::create_out_rec` :3603
+- `Clipper::add_out_pt` :3620
+- `Clipper::get_last_out_pt` :3664
+- `Clipper::process_horizontals` :3676
+- `Clipper::swap_positions_in_ael` :3688
+- `Clipper::swap_positions_in_sel` :3752
+- `Clipper::process_horizontal` :3824
+- `Clipper::update_edge_into_ael` :4071
+- `Clipper::process_intersections` :4104
+- `Clipper::build_intersect_list` :4137
+- `Clipper::fixup_intersection_order` :4182
+- `Clipper::do_maxima` :4211
+- `Clipper::process_edges_at_top_of_scanbeam` :4269
+- `Clipper::fixup_out_polyline` :4402
+- `Clipper::fixup_out_polygon` :4428
+- `Clipper::build_result` :4472
+- `Clipper::build_result2` :4494
+- `Clipper::insert_edge_into_ael` :4553
+- `Clipper::dup_out_pt` :4588
+- `Clipper::join_horz` :4610
+- `Clipper::join_points` :4715
+- `Clipper::fixup_first_lefts1` :4891
+- `Clipper::fixup_first_lefts2` :4921
+- `Clipper::join_common_edges` :4932
+- `Clipper::do_simple_polygons` :5073
+- `DoublePoint::new` :5156
+- `get_unit_normal` :5163
+- `sin_cos` :5192
+- `ClipperOffset::default` :5242
+- `ClipperOffset::new` :5252
+- `ClipperOffset::clear` :5282 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ClipperOffset::add_path` :5291
+- `ClipperOffset::add_paths` :5374
+- `ClipperOffset::fix_orientations` :5382
+- `ClipperOffset::execute` :5408 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `ClipperOffset::execute_poly_tree` :5438
+- `ClipperOffset::src_plus` :5469
+- `ClipperOffset::do_offset` :5478
+- `ClipperOffset::offset_point` :5659
+- `ClipperOffset::do_square` :5707
+- `ClipperOffset::do_miter` :5728
+- `ClipperOffset::do_round` :5741
+- `simplify_polygon` :5764
+- `simplify_polygons` :5775 — C++ has it in `ClipperUtils`, `Geometry`
+- `add_poly_node_to_paths` :5795
+- `poly_tree_to_paths` :5814
+- `closed_paths_from_poly_tree` :5822
+- `open_paths_from_poly_tree` :5830
 
 ### `pchheader` (.cpp+.hpp) and `pchheader.rs`
 

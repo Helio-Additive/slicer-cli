@@ -1,39 +1,41 @@
 //! Port of ClipperLib, `src/clipper/clipper.cpp` and `clipper.hpp` of the engine (the file
 //! `libslic3r/clipper.cpp` compiles it into libslic3r).
 //!
-//! In progress: this file holds the library's free functions, `ClipperBase`, `Clipper` with
-//! `Execute` into `Paths` and into a `PolyTree`, `PolyNode` and `PolyTree`, `ClipperOffset`,
+//! This file holds the library's free functions, `ClipperBase`, `Clipper` with `Execute` into
+//! `Paths` and into a `PolyTree`, `PolyNode` and `PolyTree`, `ClipperOffset`,
 //! `SimplifyPolygon(s)` and the functions that turn a tree into paths. Not ported: the Minkowski
-//! functions (clipper.cpp:4003-4090) and the stream operators. Nothing in the engine calls the
-//! clipper here yet: the engine's clipping still runs as C++ through `clipper-z-sys`; see
-//! `docs/rust-engine/parity/not-ported.md`.
+//! functions (clipper.cpp:4003-4090) and the stream operators. The engine's polygon operations
+//! run on it (`clipper_utils.rs`, `clipper_z.rs`).
+//!
+//! The engine compiles clipper.cpp twice: as `namespace ClipperLib`, and with
+//! `CLIPPERLIB_USE_XYZ` defined (clipper_z.cpp) as `namespace ClipperLib_Z`, where `IntPoint`
+//! has a third coordinate and `Clipper` a callback that sets it at an intersection. This file
+//! is compiled twice the same way: as `crate::clipper` and, from `clipper_lib_z.rs`, as
+//! `crate::clipper_lib_z`. What the macro switches comes from `super::clipperlib_build`
+//! (`clipper_build_xy.rs` for the first, `clipper_build_xyz.rs` for the second): the point
+//! type, `IntPoint::new` (the C++ `IntPoint2d`), `ZFillCallback` and the constant
+//! `CLIPPERLIB_USE_XYZ`, and every `#ifdef CLIPPERLIB_USE_XYZ` arm of the C++ is an
+//! `if CLIPPERLIB_USE_XYZ` here, which the build without it compiles to nothing. A point is
+//! copied whole wherever the C++ copies it and compared with `==` wherever the C++ does, so the
+//! Z travels with it and takes part in every comparison of the XYZ build, as in the C++, where
+//! `==` of the Eigen vector of three compares the three coordinates.
 //!
 //! The engine builds ClipperLib with `CLIPPERLIB_INT32` (clipper.hpp:83-95), so `cInt` is a
-//! 32-bit integer, with `use_lines` and, here, without `CLIPPERLIB_USE_XYZ`. The float
+//! 32-bit integer, and with `use_lines`. The float
 //! expressions below are written as the C++ build evaluates them: clang for arm64 contracts a
 //! product into a fused multiply-add inside one expression.
 //! `tests/clipper_native_parity.rs` holds the free functions equal to the library,
 //! `tests/clipper_execute_native_parity.rs` holds `Clipper::execute` equal to it,
-//! `tests/clipper_polytree_native_parity.rs` the `PolyTree` and `tests/clipper_offset_native_parity.rs`
-//! `ClipperOffset`.
+//! `tests/clipper_polytree_native_parity.rs` the `PolyTree`, `tests/clipper_offset_native_parity.rs`
+//! `ClipperOffset` and `tests/clipper_z_native_parity.rs` the XYZ build.
 
 #![allow(non_camel_case_types)]
 
-/// clipper.hpp:88 `typedef int32_t cInt;`
-pub type cInt = i32;
-
-/// clipper.hpp `IntPoint`: an integer point.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
-pub struct IntPoint {
-    pub x: cInt,
-    pub y: cInt,
-}
-
-impl IntPoint {
-    pub fn new(x: cInt, y: cInt) -> Self {
-        Self { x, y }
-    }
-}
+// `cInt` (clipper.hpp:88), `IntPoint` (clipper.hpp:99-107), `IntPoint2d` (clipper.cpp:108-115,
+// here `IntPoint::new`) and `ZFillCallback` (clipper.hpp:125-127) are what the two builds of
+// this file differ in: they come from the build, `clipper_build_xy.rs` or `clipper_build_xyz.rs`.
+pub use super::clipperlib_build::{cInt, IntPoint, ZFillCallback, CLIPPERLIB_USE_XYZ};
+use super::clipperlib_build::{point_set_z, point_z};
 
 /// clipper.hpp:113 `typedef std::vector<IntPoint> Path;`
 pub type Path = Vec<IntPoint>;
@@ -487,6 +489,11 @@ pub fn top_x(edge: &TEdge, current_y: cInt) -> cInt {
 /// clipper.cpp:362-427
 /// C++: void IntersectPoint(TEdge &Edge1, TEdge &Edge2, IntPoint &ip)
 pub fn intersect_point(edge1: &TEdge, edge2: &TEdge, ip: &mut IntPoint) {
+    // clipper.cpp:364-366
+    if CLIPPERLIB_USE_XYZ {
+        point_set_z(ip, 0);
+    }
+
     if edge1.dx == edge2.dx {
         ip.y = edge1.curr.y;
         ip.x = top_x(edge1, ip.y);
@@ -622,6 +629,13 @@ pub fn reverse_horizontal(e: &mut TEdge) {
     // progression of the bounds - ie so their xbots will align with the
     // adjoining lower edge. [Helpful in the ProcessHorizontal() method.]
     std::mem::swap(&mut e.top.x, &mut e.bot.x);
+    // clipper.cpp:496-498
+    if CLIPPERLIB_USE_XYZ {
+        // std::swap(e.Top.z(), e.Bot.z());
+        let (top_z, bot_z) = (point_z(&e.top), point_z(&e.bot));
+        point_set_z(&mut e.top, bot_z);
+        point_set_z(&mut e.bot, top_z);
+    }
 }
 
 /// clipper.cpp:502-521
@@ -2454,6 +2468,9 @@ pub struct Clipper {
     /// Does the result go to a PolyTree or Paths?
     pub m_using_poly_tree: bool,
     pub m_strict_simple: bool,
+    /// clipper.hpp:448-450 custom callback, a member under `CLIPPERLIB_USE_XYZ`; the
+    /// build without it holds an empty struct here.
+    pub m_z_fill: ZFillCallback,
 }
 
 impl Default for Clipper {
@@ -2533,6 +2550,8 @@ impl Clipper {
             m_reverse_output: (init_options & IO_REVERSE_SOLUTION) != 0,
             m_using_poly_tree: false,
             m_strict_simple: (init_options & IO_STRICTLY_SIMPLE) != 0,
+            // clipper.cpp:1060-1062
+            m_z_fill: ZFillCallback::none(),
         }
     }
 
@@ -3188,8 +3207,13 @@ impl Clipper {
                         let ei = e.expect("rb is in the AEL after lb");
                         // nb: For calculating winding counts etc, IntersectEdges() assumes
                         // that param1 will be to the Right of param2 ABOVE the intersection ...
-                        let curr = self.e(lb).curr;
-                        self.intersect_edges(rb, ei, &curr); // order important here
+                        // `Pt` is a reference to `lb->Curr`: SetZ, the first thing
+                        // IntersectEdges does, writes the Z there.
+                        let mut curr = self.e(lb).curr;
+                        self.intersect_edges(rb, ei, &mut curr); // order important here
+                        if CLIPPERLIB_USE_XYZ {
+                            self.em(lb).curr = curr;
+                        }
                         e = self.e(ei).next_in_ael;
                     }
                 }
@@ -3237,11 +3261,44 @@ impl Clipper {
         self.em(e).prev_in_sel = None;
     }
 
+    /// clipper.cpp:1624-1634, under `CLIPPERLIB_USE_XYZ`
+    /// C++: void Clipper::SetZ(IntPoint& pt, TEdge& e1, TEdge& e2)
+    /// `==` compares the three coordinates, and `pt.z()` is 0 where it is compared: a
+    /// point at an end of an edge keeps Z = 0 unless that end has Z = 0 as well.
+    #[inline]
+    pub fn set_z(&self, pt: &mut IntPoint, e1: usize, e2: usize) {
+        if point_z(pt) != 0 || !self.m_z_fill.is_set() {
+            return;
+        }
+        let (e1, e2) = (self.e(e1), self.e(e2));
+        if *pt == e1.bot {
+            point_set_z(pt, point_z(&e1.bot));
+        } else if *pt == e1.top {
+            point_set_z(pt, point_z(&e1.top));
+        } else if *pt == e2.bot {
+            point_set_z(pt, point_z(&e2.bot));
+        } else if *pt == e2.top {
+            point_set_z(pt, point_z(&e2.top));
+        } else {
+            self.m_z_fill.call(&e1.bot, &e1.top, &e2.bot, &e2.top, pt);
+        }
+    }
+
     /// clipper.cpp:1637-1829
     /// C++: void Clipper::IntersectEdges(TEdge *e1, TEdge *e2, IntPoint &Pt)
-    pub fn intersect_edges(&mut self, e1: usize, e2: usize, pt: &IntPoint) {
+    /// `Pt` is not const: under `CLIPPERLIB_USE_XYZ` SetZ writes its Z, and the caller
+    /// sees it. A caller whose `Pt` is a member (`lb->Curr`, `iNode.Pt`, `e->Top`) passes
+    /// a copy and stores it back; nothing below reads such a member another way, except
+    /// `e->Top` of DoMaxima, which is `e1.Top` here and which SetZ leaves as it is.
+    pub fn intersect_edges(&mut self, e1: usize, e2: usize, pt: &mut IntPoint) {
         let e1_contributing = self.e(e1).out_idx >= 0;
         let e2_contributing = self.e(e2).out_idx >= 0;
+
+        // clipper.cpp:1642-1644
+        if CLIPPERLIB_USE_XYZ {
+            self.set_z(pt, e1, e2);
+        }
+        let pt: &IntPoint = pt;
 
         // `use_lines` is defined (clipper.hpp:48).
         // if either edge is on an OPEN path ...
@@ -3903,11 +3960,11 @@ impl Clipper {
                 }
 
                 if dir == Direction::dLeftToRight {
-                    let pt = IntPoint::new(self.e(ei).curr.x, self.e(horz_edge).curr.y);
-                    self.intersect_edges(horz_edge, ei, &pt);
+                    let mut pt = IntPoint::new(self.e(ei).curr.x, self.e(horz_edge).curr.y);
+                    self.intersect_edges(horz_edge, ei, &mut pt);
                 } else {
-                    let pt = IntPoint::new(self.e(ei).curr.x, self.e(horz_edge).curr.y);
-                    self.intersect_edges(ei, horz_edge, &pt);
+                    let mut pt = IntPoint::new(self.e(ei).curr.x, self.e(horz_edge).curr.y);
+                    self.intersect_edges(ei, horz_edge, &mut pt);
                 }
                 let e_next = if dir == Direction::dLeftToRight {
                     self.e(ei).next_in_ael
@@ -4060,8 +4117,11 @@ impl Clipper {
         }
         if il_size == 1 || self.fixup_intersection_order() {
             for i in 0..self.m_intersect_list.len() {
-                let i_node = self.m_intersect_list[i];
-                self.intersect_edges(i_node.edge1, i_node.edge2, &i_node.pt);
+                let mut i_node = self.m_intersect_list[i];
+                self.intersect_edges(i_node.edge1, i_node.edge2, &mut i_node.pt);
+                if CLIPPERLIB_USE_XYZ {
+                    self.m_intersect_list[i].pt = i_node.pt;
+                }
                 self.swap_positions_in_ael(i_node.edge1, i_node.edge2);
             }
             self.m_intersect_list.clear();
@@ -4163,8 +4223,11 @@ impl Clipper {
             if en == e_max_pair {
                 break;
             }
-            let top = self.e(e).top;
-            self.intersect_edges(e, en, &top);
+            let mut top = self.e(e).top;
+            self.intersect_edges(e, en, &mut top);
+            if CLIPPERLIB_USE_XYZ {
+                self.em(e).top = top;
+            }
             self.swap_positions_in_ael(e, en);
             e_next = self.e(e).next_in_ael;
         }
@@ -4255,7 +4318,11 @@ impl Clipper {
                             && self.e(e_prev).curr.x == self.e(ei).curr.x
                             && self.e(e_prev).wind_delta != 0
                         {
-                            let pt = self.e(ei).curr;
+                            let mut pt = self.e(ei).curr;
+                            // clipper.cpp:2628-2630
+                            if CLIPPERLIB_USE_XYZ {
+                                self.set_z(&mut pt, e_prev, ei);
+                            }
                             let op = self.add_out_pt(e_prev, &pt);
                             let op2 = self.add_out_pt(ei, &pt);
                             self.m_joins.push(Join { out_pt1: Some(op), out_pt2: Some(op2), off_pt: pt }); // StrictlySimple (type-3) join
@@ -5197,6 +5264,13 @@ impl ClipperOffset {
             m_cos: 0.0,
             m_miter_lim: 0.0,
             m_steps_per_rad: 0.0,
+            // FIDELITY-NOTE: `m_lowest(-1, 0)` (clipper.hpp:510) gives (-1, 0) without
+            // CLIPPERLIB_USE_XYZ. With it `IntPoint` is an Eigen vector of three, for which
+            // a constructor of two integers takes them as a number of rows and columns and
+            // sets no coefficient: the C++ `ClipperLib_Z::ClipperOffset` starts with
+            // `m_lowest` uninitialized, and what it does until a Clear() is undefined (the
+            // engine never makes one). Here that build starts from (-1, 0, 0), what the
+            // C++ has after a Clear().
             m_lowest: IntPoint::new(-1, 0),
             m_poly_nodes: PolyNode::new(),
             m_poly_nodes_childs: Vec::new(),

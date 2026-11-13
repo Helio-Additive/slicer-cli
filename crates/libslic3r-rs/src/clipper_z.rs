@@ -18,6 +18,7 @@
 //! widens `i32 → i64` on the way out; in debug builds it asserts the inputs are
 //! within `i32` range so any out-of-range geometry is caught immediately.
 
+use crate::clipper_lib_z;
 use crate::clipper_z_utils::{ZPath, ZPaths, ZPoint};
 
 /// `ClipperLib_Z::ClipType` (clipper.hpp:72). Discriminants match the C++ enum
@@ -45,7 +46,188 @@ fn narrow_i32(v: i64) -> i32 {
 /// (OverhangDetector.cpp:18). `subject` is an OPEN path whose Z holds extrusion
 /// width; `clip` are CLOSED clip paths. Returns the clipped open paths with
 /// interpolated Z (width) tags. Empty `subject` yields an empty result.
+///
+/// Runs on the Rust `ClipperLib_Z` (`clip_extrusion_port`) unless the environment has
+/// `CLIPPER_Z_RUST=0`, which runs the C++ of `clipper-z-sys` (`clip_extrusion_shim`).
 pub fn clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
+    if crate::faithful_gate("CLIPPER_Z_RUST") {
+        return clip_extrusion_port(subject, clip, clip_type);
+    }
+    clip_extrusion_shim(subject, clip, clip_type)
+}
+
+/// `ZPath` (libslic3r coordinates, `i64`) to `ClipperLib_Z::Path` (`cInt` is `i32`).
+fn to_clipper_lib_z_path(path: &ZPath) -> clipper_lib_z::Path {
+    path.iter().map(|&(x, y, z)| clipper_lib_z::IntPoint::new_xyz(narrow_i32(x), narrow_i32(y), narrow_i32(z))).collect()
+}
+
+/// `ClipperLib_Z::Paths` back to `ZPaths`.
+fn from_clipper_lib_z_paths(paths: &clipper_lib_z::Paths) -> ZPaths {
+    paths.iter().map(|path| path.iter().map(|p| (p.x as i64, p.y as i64, p.z as i64) as ZPoint).collect()).collect()
+}
+
+/// `(a - b).cast<double>().squaredNorm()` of two `ClipperLib_Z::IntPoint`: the difference
+/// is taken in `cInt` over the three coordinates, Z among them, and each is squared as a
+/// double. The build sums them left to right, `(x*x + y*y) + z*z`, and fuses nothing (the
+/// squares and the sums are separate functions of Eigen): measured on the build's Eigen
+/// and flags with two million random pairs, of which 974,656 tell the orders and the
+/// fused forms apart. The tests here cannot tell them apart: the Z that comes of it is
+/// truncated to an integer.
+#[inline]
+fn squared_norm_of_difference(a: &clipper_lib_z::IntPoint, b: &clipper_lib_z::IntPoint) -> f64 {
+    let dx = a.x.wrapping_sub(b.x) as f64;
+    let dy = a.y.wrapping_sub(b.y) as f64;
+    let dz = a.z.wrapping_sub(b.z) as f64;
+    (dx * dx + dy * dy) + dz * dz
+}
+
+/// `clip_extrusion` on the Rust `ClipperLib_Z` (`crate::clipper_lib_z`): the body of
+/// `cz_clip_extrusion` (`crates/clipper-z-sys/shim/clipper_z_shim.cpp`), statement for
+/// statement, which follows OverhangDetector.cpp:18-108.
+/// `tests/clipper_z_engine_native_parity.rs` holds it equal to `clip_extrusion_shim`.
+pub fn clip_extrusion_port(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
+    use clipper_lib_z::IntPoint;
+    // The wrapper of the shim returns before it calls the shim.
+    if subject.is_empty() {
+        return Vec::new();
+    }
+
+    // Build the open subject ZPath.
+    let subject: clipper_lib_z::Path = to_clipper_lib_z_path(subject);
+
+    // Build the closed clip ZPaths.
+    let clip: clipper_lib_z::Paths = clip.iter().map(to_clipper_lib_z_path).collect();
+
+    let mut clipper = clipper_lib_z::Clipper::new(0);
+    // OverhangDetector.cpp:21-55 — the ZFillFunction lambda.
+    clipper.z_fill_function(clipper_lib_z::ZFillCallback::new(
+        |e1bot: &IntPoint, e1top: &IntPoint, e2bot: &IntPoint, e2top: &IntPoint, pt: &mut IntPoint| {
+            // Both ends of each edge belong to the same source: subject or clip.
+
+            // Start & end points of the clipped polyline (extrusion path).
+            let mut start = *e1bot;
+            let mut end = *e1top;
+            if start.z <= 0 && end.z <= 0 {
+                start = *e2bot;
+                end = *e2top;
+            }
+
+            if start.z <= 0 && end.z <= 0 {
+                // Self intersection on the source contour.
+                pt.z = 0;
+            } else {
+                // Interpolate extrusion line width.
+                let length_sqr = squared_norm_of_difference(&end, &start);
+                let dist_sqr = squared_norm_of_difference(pt, &start);
+                let t = (dist_sqr / length_sqr).sqrt();
+                // pt.z() = start.z() + coord_t((end.z() - start.z()) * t);
+                // FIDELITY-NOTE: a double outside coord_t (a subject edge of no length
+                // gives an infinite or NaN `t`) is undefined in the C++; the arm64 build
+                // converts as Rust's `as` does (toward zero, saturating, 0 for a NaN),
+                // which is what stands here. Other targets may give the C++ another value.
+                pt.z = start.z.wrapping_add((end.z.wrapping_sub(start.z) as f64 * t) as i32);
+            }
+        },
+    ));
+
+    clipper.add_path(&subject, clipper_lib_z::PolyType::ptSubject, false);
+    clipper.add_paths(&clip, clipper_lib_z::PolyType::ptClip, true);
+
+    let mut clipped_polytree = clipper_lib_z::PolyTree::new();
+    let mut clipped_paths = clipper_lib_z::Paths::new();
+    let clip_type = match clip_type {
+        ClipType::Intersection => clipper_lib_z::ClipType::ctIntersection,
+        ClipType::Union => clipper_lib_z::ClipType::ctUnion,
+        ClipType::Difference => clipper_lib_z::ClipType::ctDifference,
+        ClipType::Xor => clipper_lib_z::ClipType::ctXor,
+    };
+    clipper.execute_poly_tree(
+        clip_type,
+        &mut clipped_polytree,
+        clipper_lib_z::PolyFillType::pftNonZero,
+        clipper_lib_z::PolyFillType::pftNonZero,
+    );
+    clipper_lib_z::poly_tree_to_paths(&clipped_polytree, &mut clipped_paths);
+
+    // Clipped path could contain vertices from the clip with Z == 0; assign a
+    // value from the subject by projecting onto the nearest subject segment.
+    // FIDELITY-NOTE: this is the shim's post-pass, not OverhangDetector.cpp:68-98. The
+    // engine projects with Point::projection_onto(Line) (Point.cpp:157-180), which keeps
+    // the projection on the segment (the nearer end when it falls outside) and truncates
+    // it to integer coordinates; the shim projects onto the infinite line and keeps the
+    // doubles. The port follows the shim, which is what the engine has run until now.
+    for path in clipped_paths.iter_mut() {
+        for c_pt in path.iter_mut() {
+            if c_pt.z != 0 {
+                continue;
+            }
+            if subject.len() <= 2 {
+                continue;
+            }
+
+            let px = c_pt.x as f64;
+            let py = c_pt.y as f64;
+            let mut dist_sqr_min = f64::MAX;
+            let mut it_min: usize = 0;
+            let (mut proj_min_x, mut proj_min_y) = (0.0f64, 0.0f64);
+
+            let mut prev_x = subject[0].x as f64;
+            let mut prev_y = subject[0].y as f64;
+            for i in 1..subject.len() {
+                let cx = subject[i].x as f64;
+                let cy = subject[i].y as f64;
+                // Projection of pt onto segment (prev -> curr) as an infinite line.
+                let dx = cx - prev_x;
+                let dy = cy - prev_y;
+                // dx * dx + dy * dy: the left product is fused into the sum.
+                let seg_len_sqr = dx.mul_add(dx, dy * dy);
+                let (proj_x, proj_y);
+                if seg_len_sqr <= 0.0 {
+                    proj_x = prev_x;
+                    proj_y = prev_y;
+                } else {
+                    // ((px - prev_x) * dx + (py - prev_y) * dy) / seg_len_sqr
+                    let tparam = (px - prev_x).mul_add(dx, (py - prev_y) * dy) / seg_len_sqr;
+                    // prev_x + tparam * dx
+                    proj_x = tparam.mul_add(dx, prev_x);
+                    proj_y = tparam.mul_add(dy, prev_y);
+                }
+                let ddx = proj_x - px;
+                let ddy = proj_y - py;
+                let dist_sqr = ddx.mul_add(ddx, ddy * ddy);
+                if dist_sqr < dist_sqr_min {
+                    dist_sqr_min = dist_sqr;
+                    proj_min_x = proj_x;
+                    proj_min_y = proj_y;
+                    it_min = i - 1;
+                }
+                prev_x = cx;
+                prev_y = cy;
+            }
+
+            let pa_x = subject[it_min].x as f64;
+            let pa_y = subject[it_min].y as f64;
+            let pb_x = subject[it_min + 1].x as f64;
+            let pb_y = subject[it_min + 1].y as f64;
+            let line_len = (pb_x - pa_x).mul_add(pb_x - pa_x, (pb_y - pa_y) * (pb_y - pa_y)).sqrt();
+            let dist = (proj_min_x - pa_x).mul_add(proj_min_x - pa_x, (proj_min_y - pa_y) * (proj_min_y - pa_y)).sqrt();
+            let za = subject[it_min].z as f64;
+            let zb = subject[it_min + 1].z as f64;
+            if line_len > 0.0 {
+                // (coord_t)(za + (dist / line_len) * (zb - za))
+                c_pt.z = (dist / line_len).mul_add(zb - za, za) as i32;
+            } else {
+                c_pt.z = za as i32;
+            }
+        }
+    }
+
+    // Marshal into the output.
+    from_clipper_lib_z_paths(&clipped_paths)
+}
+
+/// `clip_extrusion` through the C++ of `clipper-z-sys` (`cz_clip_extrusion`).
+pub fn clip_extrusion_shim(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
     if subject.is_empty() {
         return Vec::new();
     }
@@ -141,7 +323,106 @@ pub fn clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZP
 /// Note: unlike `clip_extrusion`, the Z values here are vertex indices / hashes,
 /// NOT coordinates — they are passed through unscaled (and fit i32: the hash is
 /// masked to `0x7fffffff` then negated).
+///
+/// Runs on the Rust `ClipperLib_Z` (`detect_floating_port`) unless the environment has
+/// `CLIPPER_Z_RUST=0`, which runs the C++ of `clipper-z-sys` (`detect_floating_shim`).
 pub fn detect_floating(subject: &ZPath, clip: &ZPaths, subject_idx_range: i32) -> (ZPaths, usize) {
+    if crate::faithful_gate("CLIPPER_Z_RUST") {
+        return detect_floating_port(subject, clip, subject_idx_range);
+    }
+    detect_floating_shim(subject, clip, subject_idx_range)
+}
+
+/// `detect_floating` on the Rust `ClipperLib_Z` (`crate::clipper_lib_z`): the body of
+/// `cz_detect_floating` (`crates/clipper-z-sys/shim/clipper_z_shim.cpp`), statement for
+/// statement, which follows FillFloatingConcentric.cpp:407-481 (`detect_floating_line`).
+/// `tests/clipper_z_engine_native_parity.rs` holds it equal to `detect_floating_shim`.
+pub fn detect_floating_port(subject: &ZPath, clip: &ZPaths, subject_idx_range: i32) -> (ZPaths, usize) {
+    use clipper_lib_z::IntPoint;
+    // The wrapper of the shim returns before it calls the shim.
+    if subject.is_empty() {
+        return (Vec::new(), 0);
+    }
+
+    // FillFloatingConcentric.cpp:412-415 — build the OPEN subject ZPath (one path).
+    let subject_paths: clipper_lib_z::Paths = vec![to_clipper_lib_z_path(subject)];
+
+    // FillFloatingConcentric.cpp:418-426 — build the CLOSED clip ZPaths.
+    let clip_paths: clipper_lib_z::Paths = clip.iter().map(to_clipper_lib_z_path).collect();
+
+    // FillFloatingConcentric.cpp:407-411 — the hash function. The arithmetic is `int`,
+    // which wraps in the build.
+    let hash_function = |a1: i32, b1: i32, a2: i32, b2: i32| -> i32 {
+        // int32_t hash_val = 1000 * (a1 * 13 + b1) + (a2 * 17 + b2) + 1;
+        let mut hash_val = 1000i32
+            .wrapping_mul(a1.wrapping_mul(13).wrapping_add(b1))
+            .wrapping_add(a2.wrapping_mul(17).wrapping_add(b2))
+            .wrapping_add(1);
+        hash_val &= 0x7fffffff;
+        hash_val
+    };
+
+    // FillFloatingConcentric.cpp:431-456 — the ZFillFunction. The lambda captures
+    // subject_idx_range and reads it in its diagnostics only, which the shim drops.
+    let _ = subject_idx_range;
+    let z_filler = clipper_lib_z::ZFillCallback::new(
+        move |e1_a: &IntPoint, e1_b: &IntPoint, e2_a: &IntPoint, e2_b: &IntPoint, d: &mut IntPoint| {
+            // FillFloatingConcentric.cpp:440-445 — both edges from the subject:
+            // the intersect is generated by two lines in subject -> keep subject z.
+            if e1_a.z == e1_b.z && e1_b.z == e2_a.z && e2_a.z == e2_b.z {
+                d.z = e1_a.z;
+                return;
+            }
+            // FillFloatingConcentric.cpp:447 — subject x clip intersection -> negative hash.
+            d.z = hash_function(e1_a.z, e1_b.z, e2_a.z, e2_b.z).wrapping_neg();
+        },
+    );
+
+    // FillFloatingConcentric.cpp:457-464 — ctIntersection pass.
+    let mut intersect_out = clipper_lib_z::Paths::new();
+    {
+        let mut c = clipper_lib_z::Clipper::new(0);
+        let mut polytree = clipper_lib_z::PolyTree::new();
+        c.z_fill_function(z_filler.clone());
+        c.add_paths(&subject_paths, clipper_lib_z::PolyType::ptSubject, false);
+        c.add_paths(&clip_paths, clipper_lib_z::PolyType::ptClip, true);
+        c.execute_poly_tree(
+            clipper_lib_z::ClipType::ctIntersection,
+            &mut polytree,
+            clipper_lib_z::PolyFillType::pftNonZero,
+            clipper_lib_z::PolyFillType::pftNonZero,
+        );
+        clipper_lib_z::poly_tree_to_paths(&polytree, &mut intersect_out);
+    }
+
+    // FillFloatingConcentric.cpp:467-474 — ctDifference pass.
+    let mut diff_out = clipper_lib_z::Paths::new();
+    {
+        let mut c = clipper_lib_z::Clipper::new(0);
+        let mut polytree = clipper_lib_z::PolyTree::new();
+        c.z_fill_function(z_filler.clone());
+        c.add_paths(&subject_paths, clipper_lib_z::PolyType::ptSubject, false);
+        c.add_paths(&clip_paths, clipper_lib_z::PolyType::ptClip, true);
+        c.execute_poly_tree(
+            clipper_lib_z::ClipType::ctDifference,
+            &mut polytree,
+            clipper_lib_z::PolyFillType::pftNonZero,
+            clipper_lib_z::PolyFillType::pftNonZero,
+        );
+        clipper_lib_z::poly_tree_to_paths(&polytree, &mut diff_out);
+    }
+
+    // FillFloatingConcentric.cpp:477-481 — to_merge = diff_out ++ intersect_out;
+    // floating_flags true for the intersect tail.
+    let out_num_diff_paths = diff_out.len();
+    let mut to_merge = diff_out;
+    to_merge.extend(intersect_out.iter().cloned());
+
+    (from_clipper_lib_z_paths(&to_merge), out_num_diff_paths)
+}
+
+/// `detect_floating` through the C++ of `clipper-z-sys` (`cz_detect_floating`).
+pub fn detect_floating_shim(subject: &ZPath, clip: &ZPaths, subject_idx_range: i32) -> (ZPaths, usize) {
     if subject.is_empty() {
         return (Vec::new(), 0);
     }

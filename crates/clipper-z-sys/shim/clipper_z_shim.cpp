@@ -1832,3 +1832,276 @@ extern "C" CzZPaths cz_ref_simplify_polygons(const int32_t *xy, const int32_t *l
         return marshal_paths(ClipperLib::SimplifyPolygon(paths.empty() ? ClipperLib::Path() : paths.front(), ft));
     return marshal_paths(ClipperLib::SimplifyPolygons(paths, ft));
 }
+
+// ---------------------------------------------------------------------------
+// Reference exports for the Rust port of the CLIPPERLIB_USE_XYZ build of
+// clipper.cpp, namespace ClipperLib_Z (crates/libslic3r-rs/src/clipper_lib_z.rs).
+// Not called by the engine: tests/clipper_z_native_parity.rs compares the port
+// with the library through them.
+//
+// The library of this build does not survive every input. Two ways it dies are
+// known: Clipper::ProcessHorizontal (clipper.cpp:2227-2246) dereferences an
+// iterator it never set when a run of horizontals turns round, and an edge of no
+// length (one place, two Z) is such a turn; and GetBottomPt (clipper.cpp:544-579)
+// never leaves `while (dups->Pt != pp->Pt)` once pp is a point that shares its
+// place, but not its Z, with the point the outer loop waits for. So the exports
+// below run the library under cz_ref_guard: a SIGSEGV or SIGBUS of the calling
+// thread, or one second without a result, ends the call with a jump out of the
+// library (whatever it had allocated stays allocated), and the export reports it in
+// *died instead of returning a result. One guarded call runs at a time.
+// ---------------------------------------------------------------------------
+#include <csetjmp>
+#include <csignal>
+#include <mutex>
+#include <pthread.h>
+#include <sys/time.h>
+
+namespace {
+std::mutex            cz_ref_guard_mutex;
+sigjmp_buf            cz_ref_guard_jmp;
+volatile sig_atomic_t cz_ref_guard_on = 0;
+pthread_t             cz_ref_guard_thread;
+
+void cz_ref_guard_signal(int sig)
+{
+    if (cz_ref_guard_on && !pthread_equal(pthread_self(), cz_ref_guard_thread)) {
+        if (sig == SIGALRM) {
+            // The timer's signal goes to any thread: pass it on to the guarded one.
+            pthread_kill(cz_ref_guard_thread, SIGALRM);
+            return;
+        }
+    } else if (cz_ref_guard_on) {
+        siglongjmp(cz_ref_guard_jmp, sig);
+    }
+    // Not a signal of the guarded call: let it take its default course.
+    signal(sig, SIG_DFL);
+}
+
+// Runs f. Returns 0 when it returned, the number of the signal that ended it otherwise.
+template <typename F> int cz_ref_guard(F &&f)
+{
+    std::lock_guard<std::mutex> lock(cz_ref_guard_mutex);
+    struct sigaction action, old_alrm, old_segv, old_bus;
+    action.sa_handler = cz_ref_guard_signal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    sigaction(SIGALRM, &action, &old_alrm);
+    sigaction(SIGSEGV, &action, &old_segv);
+    sigaction(SIGBUS, &action, &old_bus);
+    cz_ref_guard_thread = pthread_self();
+    struct itimerval one_second = { { 0, 0 }, { 1, 0 } }, off = { { 0, 0 }, { 0, 0 } };
+    int died = sigsetjmp(cz_ref_guard_jmp, 1);
+    if (died == 0) {
+        cz_ref_guard_on = 1;
+        setitimer(ITIMER_REAL, &one_second, nullptr);
+        f();
+    }
+    cz_ref_guard_on = 0;
+    setitimer(ITIMER_REAL, &off, nullptr);
+    sigaction(SIGALRM, &old_alrm, nullptr);
+    sigaction(SIGSEGV, &old_segv, nullptr);
+    sigaction(SIGBUS, &old_bus, nullptr);
+    return died;
+}
+
+ClipperLib_Z::Paths cz_ref_read_zpaths(const int32_t *xyz, const int32_t *lens, int32_t num)
+{
+    ClipperLib_Z::Paths paths;
+    if (num <= 0 || xyz == nullptr || lens == nullptr)
+        return paths;
+    paths.reserve(num);
+    const int32_t *cursor = xyz;
+    for (int32_t p = 0; p < num; ++p) {
+        int32_t len = lens[p];
+        ClipperLib_Z::Path path;
+        path.reserve(len);
+        for (int32_t i = 0; i < len; ++i)
+            path.emplace_back(cursor[3 * i], cursor[3 * i + 1], cursor[3 * i + 2]);
+        cursor += 3 * len;
+        paths.emplace_back(std::move(path));
+    }
+    return paths;
+}
+
+void cz_ref_list_znode(const ClipperLib_Z::PolyNode &node, int32_t parent, ClipperLib_Z::Paths &contours,
+                       std::vector<int32_t> &info)
+{
+    for (int i = 0; i < node.ChildCount(); ++i) {
+        const ClipperLib_Z::PolyNode &child = *node.Childs[i];
+        int32_t me = int32_t(contours.size());
+        contours.push_back(child.Contour);
+        info.push_back(parent);
+        info.push_back(child.IsHole() ? 1 : 0);
+        info.push_back(child.IsOpen() ? 1 : 0);
+        info.push_back(child.ChildCount());
+        cz_ref_list_znode(child, me, contours, info);
+    }
+}
+
+CzZPaths cz_ref_marshal_zpolytree(const ClipperLib_Z::PolyTree &tree, int32_t *node_info, int32_t node_info_cap,
+                                  int32_t *num_nodes, int32_t *total)
+{
+    ClipperLib_Z::Paths contours;
+    std::vector<int32_t> info;
+    cz_ref_list_znode(tree, -1, contours, info);
+    if (node_info != nullptr)
+        for (size_t i = 0; i < info.size() && i < size_t(node_info_cap) * 4; ++i)
+            node_info[i] = info[i];
+    if (num_nodes != nullptr)
+        *num_nodes = int32_t(contours.size());
+    if (total != nullptr)
+        *total = contours.empty() && tree.ChildCount() == 0 ? 0 : tree.Total();
+    return marshal_zpaths(contours);
+}
+
+// The Z-fill callback of the reference. One round per value v, in this order:
+//   h = (h ^ uint32(v)) * 0x01000193, starting from h = 0x9E3779B9, over
+//   e1bot.x, e1bot.y, e1bot.z, e1top.x, e1top.y, e1top.z,
+//   e2bot.x, e2bot.y, e2bot.z, e2top.x, e2top.y, e2top.z, pt.x, pt.y;
+// then h ^= h >> 15, and pt.z = 0 when h % 5 == 0, int32(h) otherwise. Every
+// argument and its position counts, and a result of 0 leaves the point to be
+// filled again by the next intersection at it.
+void cz_ref_z_fill(const ClipperLib_Z::IntPoint &e1bot, const ClipperLib_Z::IntPoint &e1top,
+                   const ClipperLib_Z::IntPoint &e2bot, const ClipperLib_Z::IntPoint &e2top,
+                   ClipperLib_Z::IntPoint &pt)
+{
+    uint32_t h = 0x9E3779B9u;
+    auto mix = [&h](int32_t v) { h = (h ^ uint32_t(v)) * 0x01000193u; };
+    for (const ClipperLib_Z::IntPoint *p : { &e1bot, &e1top, &e2bot, &e2top }) {
+        mix(p->x());
+        mix(p->y());
+        mix(p->z());
+    }
+    mix(pt.x());
+    mix(pt.y());
+    h ^= h >> 15;
+    pt.z() = (h % 5u == 0u) ? 0 : int32_t(h);
+}
+} // namespace
+
+// ClipperLib_Z::Clipper. The paths are flat (x, y, z) triples. Subject i is
+// closed when subj_closed[i] != 0, open otherwise; clips are closed. add_paths
+// == 0: every path through AddPath, subjects first; otherwise three AddPaths
+// calls (closed subjects, open subjects, clips). z_fill: 0 = no ZFillFunction
+// (an intersection gets Z = 0), 1 = cz_ref_z_fill above. output:
+//   0: Execute into a PolyTree, returned in the encoding of
+//      cz_ref_execute_polytree, every point with its Z;
+//   1: the same Execute, then PolyTreeToPaths;
+//   2: Execute into a Paths (only without open subjects: Execute throws on them).
+// *succeeded receives what Execute returned. *died receives 0, or the signal that
+// ended the library (see cz_ref_guard above; nothing is returned then). Free via
+// cz_free_zpaths.
+extern "C" CzZPaths cz_ref_execute_z(const int32_t *subj_xyz, const int32_t *subj_lens,
+                                     const int32_t *subj_closed, int32_t subj_num,
+                                     const int32_t *clip_xyz, const int32_t *clip_lens, int32_t clip_num,
+                                     int32_t clip_type, int32_t subj_fill, int32_t clip_fill,
+                                     int32_t strictly_simple, int32_t preserve_collinear,
+                                     int32_t reverse_solution, int32_t add_paths, int32_t z_fill,
+                                     int32_t output, int32_t *node_info, int32_t node_info_cap,
+                                     int32_t *num_nodes, int32_t *total, int32_t *succeeded,
+                                     int32_t *died)
+{
+    CzZPaths result = { nullptr, nullptr, 0, 0 };
+    *died = cz_ref_guard([&] {
+        result = [&]() -> CzZPaths {
+    ClipperLib_Z::Paths subject = cz_ref_read_zpaths(subj_xyz, subj_lens, subj_num);
+    ClipperLib_Z::Paths clip    = cz_ref_read_zpaths(clip_xyz, clip_lens, clip_num);
+    ClipperLib_Z::Clipper c;
+    c.StrictlySimple(strictly_simple != 0);
+    c.PreserveCollinear(preserve_collinear != 0);
+    c.ReverseSolution(reverse_solution != 0);
+    if (z_fill != 0)
+        c.ZFillFunction(cz_ref_z_fill);
+    if (add_paths == 0) {
+        for (size_t i = 0; i < subject.size(); ++i)
+            c.AddPath(subject[i], ClipperLib_Z::ptSubject, subj_closed[i] != 0);
+        for (const ClipperLib_Z::Path &p : clip)
+            c.AddPath(p, ClipperLib_Z::ptClip, true);
+    } else {
+        ClipperLib_Z::Paths closed, open;
+        for (size_t i = 0; i < subject.size(); ++i)
+            (subj_closed[i] != 0 ? closed : open).push_back(subject[i]);
+        c.AddPaths(closed, ClipperLib_Z::ptSubject, true);
+        c.AddPaths(open, ClipperLib_Z::ptSubject, false);
+        c.AddPaths(clip, ClipperLib_Z::ptClip, true);
+    }
+    ClipperLib_Z::ClipType     ct = static_cast<ClipperLib_Z::ClipType>(clip_type);
+    ClipperLib_Z::PolyFillType sf = static_cast<ClipperLib_Z::PolyFillType>(subj_fill);
+    ClipperLib_Z::PolyFillType cf = static_cast<ClipperLib_Z::PolyFillType>(clip_fill);
+    if (output == 2) {
+        ClipperLib_Z::Paths solution;
+        bool ok = c.Execute(ct, solution, sf, cf);
+        if (succeeded != nullptr)
+            *succeeded = ok ? 1 : 0;
+        return marshal_zpaths(solution);
+    }
+    ClipperLib_Z::PolyTree tree;
+    bool ok = c.Execute(ct, tree, sf, cf);
+    if (succeeded != nullptr)
+        *succeeded = ok ? 1 : 0;
+    if (output == 0)
+        return cz_ref_marshal_zpolytree(tree, node_info, node_info_cap, num_nodes, total);
+    ClipperLib_Z::Paths paths;
+    ClipperLib_Z::PolyTreeToPaths(tree, paths);
+    return marshal_zpaths(paths);
+        }();
+    });
+    return result;
+}
+
+// ClipperLib_Z::ClipperOffset(miter_limit, arc_tolerance, shortest_edge_length),
+// then Clear() (see below); the rest as cz_ref_offset, with (x, y, z) triples in
+// and out. Free via cz_free_zpaths.
+extern "C" CzZPaths cz_ref_offset_z(const int32_t *xyz, const int32_t *lens, const int32_t *join_types,
+                                    const int32_t *end_types, int32_t num, double miter_limit,
+                                    double arc_tolerance, double shortest_edge_length, double delta,
+                                    int32_t use_polytree, int32_t *node_info, int32_t node_info_cap,
+                                    int32_t *num_nodes, int32_t *total)
+{
+    ClipperLib_Z::Paths paths = cz_ref_read_zpaths(xyz, lens, num);
+    ClipperLib_Z::ClipperOffset co(miter_limit, arc_tolerance, shortest_edge_length);
+    // The constructor (clipper.hpp:509-510) initializes m_lowest with `m_lowest(-1, 0)`.
+    // For the vector of three of this build Eigen takes the two integers as a number of
+    // rows and columns, not as coefficients, and leaves m_lowest as it was: not
+    // initialized (a build with assertions stops there). Clear() sets m_lowest.x() to
+    // -1, which is all AddPath and FixOrientations read before they assign it.
+    co.Clear();
+    for (size_t i = 0; i < paths.size(); ++i)
+        co.AddPath(paths[i], static_cast<ClipperLib_Z::JoinType>(join_types[i]),
+                   static_cast<ClipperLib_Z::EndType>(end_types[i]));
+    if (use_polytree == 0) {
+        ClipperLib_Z::Paths solution;
+        co.Execute(solution, delta);
+        return marshal_zpaths(solution);
+    }
+    ClipperLib_Z::PolyTree tree;
+    co.Execute(tree, delta);
+    return cz_ref_marshal_zpolytree(tree, node_info, node_info_cap, num_nodes, total);
+}
+
+// cz_clip_extrusion and cz_detect_floating under cz_ref_guard, for
+// tests/clipper_z_engine_native_parity.rs: the same arguments and results, and
+// *died as in cz_ref_execute_z.
+extern "C" CzZPaths cz_ref_clip_extrusion_guarded(const int32_t *subject_xyz, int32_t subject_n,
+                                                  const int32_t *clip_xyz, const int32_t *clip_lens,
+                                                  int32_t clip_num, int32_t clip_type, int32_t *died)
+{
+    CzZPaths result = { nullptr, nullptr, 0, 0 };
+    *died = cz_ref_guard([&] {
+        result = cz_clip_extrusion(subject_xyz, subject_n, clip_xyz, clip_lens, clip_num, clip_type);
+    });
+    return result;
+}
+
+extern "C" CzZPaths cz_ref_detect_floating_guarded(const int32_t *subject_xyz, int32_t subject_n,
+                                                   const int32_t *clip_xyz, const int32_t *clip_lens,
+                                                   int32_t clip_num, int32_t subject_idx_range,
+                                                   int32_t *out_num_diff_paths, int32_t *died)
+{
+    CzZPaths result = { nullptr, nullptr, 0, 0 };
+    *died = cz_ref_guard([&] {
+        result = cz_detect_floating(subject_xyz, subject_n, clip_xyz, clip_lens, clip_num, subject_idx_range,
+                                    out_num_diff_paths);
+    });
+    return result;
+}
