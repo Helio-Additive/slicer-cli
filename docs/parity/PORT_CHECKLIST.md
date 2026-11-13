@@ -11,13 +11,13 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**34.6% of the named C++ functions are ported or verified (3189 of 9204); 23.8% by size of body.**
+**34.7% of the named C++ functions are ported or verified (3190 of 9204); 23.9% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3275 | 35.6% | 48.2% |
-| partial `[~]` | 2740 | 29.8% | 27.9% |
-| ported `[x]` | 3159 | 34.3% | 23.1% |
+| not started `[ ]` | 3272 | 35.5% | 48.2% |
+| partial `[~]` | 2742 | 29.8% | 28.0% |
+| ported `[x]` | 3160 | 34.3% | 23.1% |
 | verified `[v]` | 30 | 0.3% | 0.8% |
 
 | Files (C++ units) | Count |
@@ -101,7 +101,7 @@ the end; the goal is none.
 | `Channel` | 3 | `channel.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `Circle` | 1 | `circle.rs` | partial | 27 | 2 | 1 | 24 | 0 |
 | `clipper` | 3 | `clipper.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 107 | 8 | 29 | 8 |
+| `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 104 | 10 | 30 | 8 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 6 | 6 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
 | `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 58 | 160 | 9 | 0 |
@@ -1566,7 +1566,7 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 
 **class `Clipper`**
 
-- [x] `Clear` (line 393) → `clipper.rs:1028`
+- [x] `Clear` (line 393) → `clipper.rs:1117`
 - [ ] `Execute` (line 394) → `clipper.rs`
 - [ ] `Execute` (line 402) → `clipper.rs`
 - [ ] `ReverseSolution` (line 410) → `clipper.rs`
@@ -1578,7 +1578,7 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 - [ ] `IsEvenOddAltFillType` (line 454) → `clipper.rs`
 - [ ] `DisposeOutPt` (line 481) → `clipper.rs`
 - [ ] `DisposeOutPts` (line 482) → `clipper.rs`
-- [ ] `Reset` (line 1066) → `clipper.rs`
+- [~] `Reset` (line 1066) → `clipper.rs:1039` — the Rust body is marked as deviating from the C++
 - [ ] `Execute` (line 1080) → `clipper.rs`
 - [ ] `Execute` (line 1098) → `clipper.rs`
 - [ ] `ExecuteInternal` (line 1113) → `clipper.rs`
@@ -1626,18 +1626,18 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 
 **class `ClipperBase`**
 
-- [x] `ProcessBound` (line 643) → `clipper.rs:1037`
-- [x] `AddPath` (line 760) → `clipper.rs:798`
-- [x] `AddPathInternal` (line 784) → `clipper.rs:831`
-- [x] `Clear` (line 962) → `clipper.rs:1028`
-- [ ] `Reset` (line 976) → `clipper.rs`
-- [ ] `GetBounds` (line 1005) → `clipper.rs`
+- [x] `ProcessBound` (line 643) → `clipper.rs:1126`
+- [x] `AddPath` (line 760) → `clipper.rs:807`
+- [x] `AddPathInternal` (line 784) → `clipper.rs:840`
+- [x] `Clear` (line 962) → `clipper.rs:1117`
+- [~] `Reset` (line 976) → `clipper.rs:1039` — the Rust body is marked as deviating from the C++
+- [x] `GetBounds` (line 1005) → `clipper.rs:1075`
 
 **class `ClipperOffset`**
 
 - [ ] `AddPaths` (line 515) → `clipper.rs`
-- [x] `Clear` (line 3336) → `clipper.rs:1028`
-- [x] `AddPath` (line 3345) → `clipper.rs:798`
+- [x] `Clear` (line 3336) → `clipper.rs:1117`
+- [x] `AddPath` (line 3345) → `clipper.rs:807`
 - [ ] `FixOrientations` (line 3409) → `clipper.rs`
 - [ ] `Execute` (line 3435) → `clipper.rs`
 - [ ] `Execute` (line 3466) → `clipper.rs`
@@ -1661,7 +1661,7 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 - [ ] `Total` (line 126) → `clipper.rs`
 - [ ] `RemoveOutermostPolygon` (line 160) → `clipper.rs`
 - [ ] `GetFirst` (line 180) → `clipper.rs`
-- [x] `Clear` (line 181) → `clipper.rs:1028`
+- [x] `Clear` (line 181) → `clipper.rs:1117`
 
 **class `clipperException`**
 
@@ -1995,7 +1995,7 @@ Rust file: `clonable_ptr.rs`. Status: **partial**. Not listed: 4 constructors, 1
 **class `clonable_ptr`**
 
 - [x] `reset` (line 75) → `clonable_ptr.rs:55`
-- [~] `reset` (line 80) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 80) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [x] `swap` (line 88) → `clonable_ptr.rs:105`
 - [ ] `release` (line 96) → `clonable_ptr.rs`
 - [x] `get` (line 118) → `clonable_ptr.rs:124`
@@ -4805,12 +4805,12 @@ Rust file: none. Status: **not started**.
 
 **class `_3MF_Importer::CurrentObject`**
 
-- [~] `reset` (line 448) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — a function of this name is in another Rust file
+- [~] `reset` (line 448) → `app_config.rs, bounding_box.rs, clipper.rs` — a function of this name is in another Rust file
 
 **class `_3MF_Importer::Geometry`**
 
 - [~] `empty` (line 425) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — a function of this name is in another Rust file
-- [~] `reset` (line 427) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — a function of this name is in another Rust file
+- [~] `reset` (line 427) → `app_config.rs, bounding_box.rs, clipper.rs` — a function of this name is in another Rust file
 
 **class `coordinate_policy_fixed`**
 
@@ -5214,13 +5214,13 @@ Rust file: `format/bbs_3mf.rs`. Status: **partial**. Not listed: 16 constructors
 
 **class `_BBS_3MF_Importer::CurrentObject`**
 
-- [~] `reset` (line 1157) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 1157) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 
 **class `_BBS_3MF_Importer::Geometry`**
 
 - [~] `empty` (line 1111) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
 - [~] `swap` (line 1114) → `clonable_ptr.rs, extrusion_entity_collection.rs` — not in the paired file
-- [~] `reset` (line 1125) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 1125) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 
 **class `_BBS_3MF_Importer::ObjectImporter`**
 
@@ -5817,7 +5817,7 @@ Rust file: `gcode/g_code_editor.rs`. Status: **partial**. Not listed: 2 construc
 
 **class `GCodeEditor`**
 
-- [~] `reset` (line 35) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 35) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [~] `process_layer` (line 75) → `gcode/cooling.rs, gcode/spiral_vase.rs` — not in the paired file
 - [~] `parse_layer_gcode` (line 104) → `gcode/cooling.rs` — not in the paired file
 - [~] `write_layer_gcode` (line 379) → `gcode/cooling.rs` — not in the paired file
@@ -5877,7 +5877,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [ ] `initialize_step_1` (line 429) → `gcode/g_code_processor.rs`
 - [ ] `initialize_step_2` (line 435) → `gcode/g_code_processor.rs`
 - [ ] `initialize_step_3` (line 438) → `gcode/g_code_processor.rs`
-- [~] `reset` (line 444) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 444) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 
 **class `FilamentPrintableResult`**
 
@@ -6026,7 +6026,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 **class `GCodeProcessor::DataChecker`**
 
 - [~] `update` (line 1122) → `fill/lightning/distance_field.rs, gcode/pressure_equalizer.rs, mutable_priority_queue.rs` — not in the paired file
-- [~] `reset` (line 1132) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 1132) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [ ] `get_min` (line 1134) → `gcode/g_code_processor.rs`
 - [ ] `get_max` (line 1146) → `gcode/g_code_processor.rs`
 - [~] `output` (line 1158) → `sla/support_point_generator.rs` — not in the paired file
@@ -6039,7 +6039,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 - [~] `set` (line 1077) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `update` (line 1082) → `fill/lightning/distance_field.rs, gcode/pressure_equalizer.rs, mutable_priority_queue.rs` — not in the paired file
-- [~] `reset` (line 1096) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 1096) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 
 **class `GCodeProcessor::PreCoolingInjector`**
 
@@ -6113,7 +6113,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 - [~] `lock` (line 383) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
 - [~] `unlock` (line 384) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
-- [~] `reset` (line 1537) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 1537) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [~] `reset` (line 1571) → `gcode/g_code_processor.rs:2318` — partial
 
 **class `GCodeProcessorResult::MoveVertex`**
@@ -6378,7 +6378,7 @@ Rust file: `gcode/timelapse_pos_picker.rs`. Status: **partial**.
 **class `TimelapsePosPicker`**
 
 - [~] `init` (line 9) → `gcode/avoid_crossing_perimeters.rs, gcode/seam_placer.rs, libslic3r.rs` — not in the paired file
-- [~] `reset` (line 32) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 32) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [ ] `get_object_list` (line 54) → `gcode/timelapse_pos_picker.rs`
 - [ ] `construct_printable_area_by_printer` (line 72) → `gcode/timelapse_pos_picker.rs`
 - [ ] `collect_object_slices_data` (line 128) → `gcode/timelapse_pos_picker.rs`
@@ -10210,7 +10210,7 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [ ] `has_defauls_only` (line 439) → `preset_bundle.rs`
 - [ ] `load_config_from_wizard` (line 453) → `preset_bundle.rs`
 - [ ] `load_config_model` (line 458) → `preset_bundle.rs`
-- [~] `reset` (line 465) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 465) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [ ] `setup_directories` (line 486) → `preset_bundle.rs`
 - [ ] `update_compatible` (line 519) → `preset_bundle.rs`
 - [ ] `copy_files` (line 535) → `preset_bundle.rs`
@@ -10589,7 +10589,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `SupportStageTimes`**
 
-- [~] `reset` (line 79) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 79) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [~] `total` (line 80) → `debug/validation.rs` — not in the paired file
 
 **class `WipeTowerData`**
@@ -13513,7 +13513,7 @@ Rust file: `utils.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **class `ScopeGuard`**
 
-- [~] `reset` (line 470) → `app_config.rs, bounding_box.rs, clipper2_z_utils.rs` — not in the paired file
+- [~] `reset` (line 470) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 
 ### `utils` (.cpp)
 

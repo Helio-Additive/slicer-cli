@@ -130,7 +130,7 @@ def rows_of_extra(name, files, rust, verified):
     if os.path.exists(rs_path):
         for f in fm.rust_functions(rs_path):
             if not f["test"]:
-                have.setdefault(fm.letters(f["name"]), f["line"])
+                have.setdefault(fm.letters(f["name"]), (f["line"], bool(f.get("deviation"))))
     rows, special, credited = [], {}, set()
     for rel in files:
         for c in fm.cpp_functions(os.path.join(src_root, rel)):
@@ -138,13 +138,18 @@ def rows_of_extra(name, files, rust, verified):
                 special[c["kind"]] = special.get(c["kind"], 0) + 1
                 continue
             q = qual(c["cls"], c["name"])
-            line = have.get(fm.letters(c["name"]))
+            line, deviates = have.get(fm.letters(c["name"]), (None, False))
             if line is None:
                 rows.append((q, c["line"], c["tokens"], rust, None, "not started", ""))
             elif q in credited:
                 # The Rust file has one function of this name: it stands for the first overload.
                 rows.append((q, c["line"], c["tokens"], rust, None, "partial",
                              "another overload of the name is ported"))
+            elif deviates:
+                # The Rust body carries a deviation marker (FIDELITY-NOTE and the like).
+                credited.add(q)
+                rows.append((q, c["line"], c["tokens"], rust, line, "partial",
+                             "the Rust body is marked as deviating from the C++"))
             elif credited.add(q) is None and (name, q) in verified:
                 rows.append((q, c["line"], c["tokens"], rust, line, "verified", "R%s: %s" % verified[(name, q)]))
             else:

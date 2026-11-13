@@ -770,6 +770,15 @@ pub fn find_next_loc_min(edges: &[TEdge], mut e: usize) -> usize {
     e
 }
 
+/// clipper.hpp:213 `struct IntRect { cInt left; cInt top; cInt right; cInt bottom; };`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct IntRect {
+    pub left: cInt,
+    pub top: cInt,
+    pub right: cInt,
+    pub bottom: cInt,
+}
+
 /// clipper.hpp:258-262 `struct LocalMinimum`: a local minimum of the input, with the two
 /// bounds that rise from it.
 #[derive(Debug, Clone, Copy, Default)]
@@ -1021,6 +1030,86 @@ impl ClipperBase {
             }
         }
         true
+    }
+
+    /// clipper.cpp:976-1001
+    /// C++: void ClipperBase::Reset()
+    /// Initialize the Local Minima List:
+    /// Sort the LML entries, initialize the left / right bound edges of each Local Minima.
+    pub fn reset(&mut self) {
+        if self.m_minima_list.is_empty() {
+            return; // ie nothing to process
+        }
+        // std::sort(m_MinimaList.begin(), m_MinimaList.end(), [](lm1, lm2){ return lm1.Y < lm2.Y; });
+        //
+        // FIDELITY-NOTE: `std::sort` is not stable. Which of two local minima at
+        // the same Y comes first is decided by libc++'s algorithm, and the sweep
+        // takes them in that order. This is a stable sort, which agrees with
+        // libc++ only where libc++ happens to keep equal elements in place; to be
+        // settled against the library when the sweep is compared with it.
+        self.m_minima_list.sort_by(|lm1, lm2| lm1.y.cmp(&lm2.y));
+
+        // reset all edges ...
+        for i in 0..self.m_minima_list.len() {
+            let lm = self.m_minima_list[i];
+            if let Some(e) = lm.left_bound {
+                let e = &mut self.m_edges[e];
+                e.curr = e.bot;
+                e.side = EdgeSide::esLeft;
+                e.out_idx = UNASSIGNED;
+            }
+
+            if let Some(e) = lm.right_bound {
+                let e = &mut self.m_edges[e];
+                e.curr = e.bot;
+                e.side = EdgeSide::esRight;
+                e.out_idx = UNASSIGNED;
+            }
+        }
+    }
+
+    /// clipper.cpp:1005-1043
+    /// C++: IntRect ClipperBase::GetBounds()
+    /// Get bounds of the edges referenced by the Local Minima List.
+    /// Returns (0,0,0,0) for an empty rectangle.
+    pub fn get_bounds(&self) -> IntRect {
+        let mut result = IntRect::default();
+        if self.m_minima_list.is_empty() {
+            return result;
+        }
+        let first = self.m_minima_list[0].left_bound.expect("GetBounds reads LeftBound");
+        result.left = self.m_edges[first].bot.x;
+        result.top = self.m_edges[first].bot.y;
+        result.right = self.m_edges[first].bot.x;
+        result.bottom = self.m_edges[first].bot.y;
+        for lm in &self.m_minima_list {
+            let left_bound = lm.left_bound.expect("GetBounds reads LeftBound");
+            result.bottom = result.bottom.max(self.m_edges[left_bound].bot.y);
+            let mut e = left_bound;
+            loop {
+                let bottom_e = e;
+                while let Some(next) = self.m_edges[e].next_in_lml {
+                    if self.m_edges[e].bot.x < result.left {
+                        result.left = self.m_edges[e].bot.x;
+                    }
+                    if self.m_edges[e].bot.x > result.right {
+                        result.right = self.m_edges[e].bot.x;
+                    }
+                    e = next;
+                }
+                result.left = result.left.min(self.m_edges[e].bot.x);
+                result.right = result.right.max(self.m_edges[e].bot.x);
+                result.left = result.left.min(self.m_edges[e].top.x);
+                result.right = result.right.max(self.m_edges[e].top.x);
+                result.top = result.top.min(self.m_edges[e].top.y);
+                if bottom_e == left_bound {
+                    e = lm.right_bound.expect("GetBounds reads RightBound");
+                } else {
+                    break;
+                }
+            }
+        }
+        result
     }
 
     /// clipper.cpp:962-971
@@ -1323,6 +1412,24 @@ mod tests {
         let (flat, ok) = base_with(&[(0, 3), (5, 3), (9, 3)]);
         assert!(!ok);
         assert!(flat.m_edges.is_empty() && flat.m_minima_list.is_empty());
+    }
+
+    #[test]
+    fn reset_sorts_the_minima_and_get_bounds_covers_the_path() {
+        let mut c = ClipperBase::default();
+        let p = |v: &[(cInt, cInt)]| -> Path { v.iter().map(|q| IntPoint::new(q.0, q.1)).collect() };
+        assert!(c.add_path(&p(&[(0, 20), (10, 20), (10, 30), (0, 30)]), PolyType::ptSubject, true));
+        assert!(c.add_path(&p(&[(-5, 0), (40, 0), (40, 10), (-5, 10)]), PolyType::ptClip, true));
+        c.reset();
+        let ys: Vec<cInt> = c.m_minima_list.iter().map(|lm| lm.y).collect();
+        assert_eq!(ys, vec![10, 30]);
+        for lm in &c.m_minima_list {
+            let (l, r) = (lm.left_bound.unwrap(), lm.right_bound.unwrap());
+            assert_eq!(c.m_edges[l].curr, c.m_edges[l].bot);
+            assert_eq!((c.m_edges[l].side, c.m_edges[r].side), (EdgeSide::esLeft, EdgeSide::esRight));
+        }
+        assert_eq!(c.get_bounds(), IntRect { left: -5, top: 0, right: 40, bottom: 30 });
+        assert_eq!(ClipperBase::default().get_bounds(), IntRect::default());
     }
 
 }

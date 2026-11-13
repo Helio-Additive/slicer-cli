@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 754 |
 | of the rest, 25 tokens or more | 1928 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4573 |
+| Rust functions with no C++ function of that name in the pair | 4575 |
 
 By tier:
 
@@ -3698,8 +3698,8 @@ Missing in the Rust file:
 - `MaterialColorResources::parse_numbers` :1038 (80 tokens)
 - `_BBS_3MF_Importer::Geometry::empty` :1111 (15 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
 - `_BBS_3MF_Importer::Geometry::swap` :1114 (90 tokens) — in `clonable_ptr.rs`, `extrusion_entity_collection.rs`
-- `_BBS_3MF_Importer::Geometry::reset` :1125 (50 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
-- `_BBS_3MF_Importer::CurrentObject::reset` :1157 (46 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `_BBS_3MF_Importer::Geometry::reset` :1125 (50 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
+- `_BBS_3MF_Importer::CurrentObject::reset` :1157 (46 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `_BBS_3MF_Importer::ObjectImporter::_destroy_object_xml_parser` :1310 (19 tokens)
 - `_BBS_3MF_Importer::ObjectImporter::_stop_object_xml_parser` :1318 (39 tokens)
 - `_BBS_3MF_Importer::ObjectImporter::object_parse_error` :1328 (5 tokens)
@@ -4248,7 +4248,7 @@ Tier 1. C++ functions 30 (plus 2 constructors, 0 destructors, 3 operators), Rust
 
 Missing in the Rust file:
 
-- `GCodeEditor::reset` :35 (102 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `GCodeEditor::reset` :35 (102 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `GCodeEditor::process_layer` :75 (69 tokens) — in `gcode/cooling.rs`, `gcode/spiral_vase.rs`
 - `CoolingLine::adjustable` :76 (32 tokens, overload) — in `gcode/cooling.rs`
 - `CoolingLine::adjustable` :84 (75 tokens, overload) — in `gcode/cooling.rs`
@@ -4333,7 +4333,7 @@ Missing in the Rust file:
 - `ExtruderUsageBlcok::initialize_step_1` :429 (18 tokens)
 - `ExtruderUsageBlcok::initialize_step_2` :435 (6 tokens)
 - `ExtruderUsageBlcok::initialize_step_3` :438 (18 tokens)
-- `ExtruderUsageBlcok::reset` :444 (9 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `ExtruderUsageBlcok::reset` :444 (9 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `GCodeProcessor::is_helio_gcode` :546 (5 tokens)
 - `GCodeProcessor::FilamentVariantRows::value_at` :791 (34 tokens)
 - `GCodeProcessor::SeamsDetector::activate` :1050 (24 tokens)
@@ -4343,9 +4343,9 @@ Missing in the Rust file:
 - `GCodeProcessor::SeamsDetector::has_first_vertex` :1062 (9 tokens)
 - `GCodeProcessor::OptionsZCorrector::set` :1077 (26 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `GCodeProcessor::OptionsZCorrector::update` :1082 (105 tokens) — in `fill/lightning/distance_field.rs`, `gcode/pressure_equalizer.rs`, `mutable_priority_queue.rs`
-- `GCodeProcessor::OptionsZCorrector::reset` :1096 (14 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `GCodeProcessor::OptionsZCorrector::reset` :1096 (14 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `GCodeProcessor::DataChecker::update` :1122 (49 tokens) — in `fill/lightning/distance_field.rs`, `gcode/pressure_equalizer.rs`, `mutable_priority_queue.rs`
-- `GCodeProcessor::DataChecker::reset` :1132 (16 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `GCodeProcessor::DataChecker::reset` :1132 (16 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `GCodeProcessor::DataChecker::get_min` :1134 (64 tokens)
 - `GCodeProcessor::DataChecker::get_max` :1146 (65 tokens)
 - `GCodeProcessor::DataChecker::output` :1158 (118 tokens) — in `sla/support_point_generator.rs`
@@ -4358,7 +4358,7 @@ Missing in the Rust file:
 - `GCodeProcessor::parse_helioadditive_comment` :1343 (147 tokens)
 - `GCodeProcessor::TimeProcessor::handle_offsets_of_second_process` :1367 (67 tokens)
 - `GCodeProcessor::UsedFilaments::process_caches` :1526 (31 tokens)
-- `GCodeProcessorResult::reset` :1537 (182 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `GCodeProcessorResult::reset` :1537 (182 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `GCodeProcessor::check_multi_extruder_gcode_valid` :1785 (1503 tokens)
 - `GCodeProcessor::apply_config` :1964 (1245 tokens, overload) — in `g_code_reader.rs`
 - `skip_whitespaces` :2649 (32 tokens) — in `config.rs`, `g_code_reader.rs`
@@ -4679,7 +4679,7 @@ Tier 1. C++ functions 20, Rust functions 3. Matched 1: faithful 1, partial 0, di
 Missing in the Rust file:
 
 - `TimelapsePosPicker::init` :9 (172 tokens) — in `gcode/avoid_crossing_perimeters.rs`, `gcode/seam_placer.rs`, `libslic3r.rs`
-- `TimelapsePosPicker::reset` :32 (60 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `TimelapsePosPicker::reset` :32 (60 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `TimelapsePosPicker::get_object_list` :54 (84 tokens)
 - `TimelapsePosPicker::construct_printable_area_by_printer` :72 (565 tokens)
 - `TimelapsePosPicker::collect_object_slices_data` :128 (336 tokens)
@@ -7657,7 +7657,7 @@ Missing in the Rust file:
 - `PresetBundle::has_defauls_only` :439 (21 tokens)
 - `PresetBundle::load_config_from_wizard` :453 (22 tokens)
 - `PresetBundle::load_config_model` :458 (20 tokens)
-- `PresetBundle::reset` :465 (138 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `PresetBundle::reset` :465 (138 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `PresetBundle::setup_directories` :486 (162 tokens)
 - `copy_dir` :515 (170 tokens)
 - `PresetBundle::update_compatible` :519 (11 tokens)
@@ -7800,7 +7800,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `SupportStageTimes::reset` :79 (8 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `SupportStageTimes::reset` :79 (8 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `SupportStageTimes::total` :80 (13 tokens) — in `debug/validation.rs`
 - `Print::invalidate_state_by_config_options` :87 (1741 tokens)
 - `PrintRegion::config_hash` :157 (5 tokens) — in `print_region.rs`
@@ -9653,7 +9653,7 @@ Missing in the Rust file:
 - `prev_idx_modulo` :381 (14 tokens, overload)
 - `next_idx_modulo` :387 (14 tokens, overload) — in `multi_material_segmentation.rs`
 - `FilePtr::close` :435 (24 tokens) — in `svg.rs`
-- `ScopeGuard::reset` :470 (8 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `ScopeGuard::reset` :470 (8 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `get_local_utc_offset_seconds` :573 (154 tokens)
 - `get_local_utc_offset_seconds` :597 (13 tokens)
 - `get_bbl_finish_time` :701 (246 tokens)
@@ -9757,7 +9757,7 @@ Tier 1. C++ functions 7 (plus 4 constructors, 1 destructors, 7 operators), Rust 
 
 Missing in the Rust file:
 
-- `clonable_ptr::reset` :80 (25 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper2_z_utils.rs`
+- `clonable_ptr::reset` :80 (25 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `clonable_ptr::release` :96 (6 tokens)
 - `clonable_ptr::destroy` :126 (9 tokens)
 - `clonable_ptr::release` :133 (6 tokens)
@@ -12356,7 +12356,7 @@ Rust only:
 
 ### `clipper` (.cpp+.hpp) and `clipper.rs`
 
-Tier 3. C++ functions 0, Rust functions 38. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
+Tier 3. C++ functions 0, Rust functions 40. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
 
 Rust only:
 
@@ -12394,10 +12394,12 @@ Rust only:
 - `pt2_is_between_pt1_and_pt3` :718
 - `horz_segments_overlap` :730
 - `find_next_loc_min` :745
-- `ClipperBase::add_path` :798
-- `ClipperBase::add_path_internal` :831
-- `ClipperBase::clear` :1028 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ClipperBase::process_bound` :1037
+- `ClipperBase::add_path` :807
+- `ClipperBase::add_path_internal` :840
+- `ClipperBase::reset` :1039 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `ClipperBase::get_bounds` :1075
+- `ClipperBase::clear` :1117 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ClipperBase::process_bound` :1126
 
 ### `pchheader` (.cpp+.hpp) and `pchheader.rs`
 
