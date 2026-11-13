@@ -16,16 +16,16 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 |-|-|-|-|
 | not started `[ ]` | 3168 | 35.0% | 47.8% |
 | partial `[~]` | 2732 | 30.2% | 28.3% |
-| ported `[x]` | 3132 | 34.6% | 23.2% |
-| verified `[v]` | 20 | 0.2% | 0.6% |
+| ported `[x]` | 3131 | 34.6% | 23.2% |
+| verified `[v]` | 21 | 0.2% | 0.7% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 310 |
 | no Rust file of that name | 32 |
 | partial | 229 |
-| every named function ported | 48 |
-| every named function verified | 1 |
+| every named function ported | 47 |
+| every named function verified | 2 |
 
 C++ still run through the FFI shim crates: 30 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 2, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
@@ -293,7 +293,7 @@ the end; the goal is none.
 | `RegionExpansion` | 1 | `region_expansion.rs` | partial | 23 | 9 | 9 | 5 | 0 |
 | `Semver` | 1 | `semver.rs` | partial | 21 | 0 | 2 | 19 | 0 |
 | `Shape/TextShape` | 3 | `shape/text_shape.rs` | partial | 6 | 0 | 5 | 1 | 0 |
-| `ShortEdgeCollapse` | 3 | `short_edge_collapse.rs` | ported | 1 | 0 | 0 | 1 | 0 |
+| `ShortEdgeCollapse` | 3 | `short_edge_collapse.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `ShortestPath` | 1 | `shortest_path.rs` | partial | 37 | 8 | 7 | 22 | 0 |
 | `SLA/AGGRaster` | 4 | `sla/agg_raster.rs` | partial | 17 | 0 | 2 | 15 | 0 |
 | `SLA/bicubic` | 4 | `sla/bicubic.rs` | partial | 53 | 0 | 53 | 0 | 0 |
@@ -11040,11 +11040,11 @@ Rust file: `shape/text_shape.rs`. Status: **partial**.
 
 ### `ShortEdgeCollapse` (.cpp+.hpp)
 
-Rust file: `short_edge_collapse.rs`. Status: **ported**.
+Rust file: `short_edge_collapse.rs`. Status: **verified**.
 
 **free functions**
 
-- [x] `its_short_edge_collpase` (line 11) → `short_edge_collapse.rs:486`
+- [v] `its_short_edge_collpase` (line 11) → `short_edge_collapse.rs:486` — R880: tests/short_edge_collapse_native_parity.rs: the Benchy decimated to 16,000 and 2,000 faces and 106 synthetic meshes equal to the C++ compiled with Eigen, vertices bit for bit; byte-identical G-code on the three fixtures with the shim call replaced
 
 ### `ShortestPath` (.cpp+.hpp)
 
@@ -13211,7 +13211,7 @@ Rust file: `triangle_set_sampling.rs`. Status: **verified**.
 
 **free functions**
 
-- [v] `sample_its_uniform_parallel` (line 9) → `triangle_set_sampling.rs:99` — R876: tests/triangle_set_sampling_native_parity.rs: total area, triangle, position and normal of 300 samples on 400 random meshes equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim call replaced
+- [v] `sample_its_uniform_parallel` (line 9) → `triangle_set_sampling.rs:102` — R876: tests/triangle_set_sampling_native_parity.rs: total area, triangle, position and normal of 300 samples on 400 random meshes equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim call replaced
 
 ### `TriangulateWall` (.cpp+.hpp)
 

@@ -60,5 +60,13 @@
   "functions": [
    "sample_its_uniform_parallel"
   ]
+ },
+ {
+  "unit": "ShortEdgeCollapse",
+  "round": "880",
+  "evidence": "tests/short_edge_collapse_native_parity.rs: the Benchy decimated to 16,000 and 2,000 faces and 106 synthetic meshes equal to the C++ compiled with Eigen, vertices bit for bit; byte-identical G-code on the three fixtures with the shim call replaced",
+  "functions": [
+   "its_short_edge_collpase"
+  ]
  }
 ]

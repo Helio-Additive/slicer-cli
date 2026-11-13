@@ -12276,14 +12276,14 @@ Rust only:
 - `eigen_cross3f` :65
 - `eigen_squared_norm3f` :75
 - `eigen_normalized3f` :82
-- `eigen_dot3f` :94
-- `Mt19937_64::new` :283
-- `Mt19937_64::generate` :298 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
-- `Mt19937_64::next_u64` :312
-- `UniformRealDistribution::new` :337
-- `UniformRealDistribution::sample` :343
-- `UniformRealDistribution::default` :349
-- `generate_canonical_f64_53` :359
+- `eigen_dot3f` :97
+- `Mt19937_64::new` :286
+- `Mt19937_64::generate` :301 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
+- `Mt19937_64::next_u64` :315
+- `UniformRealDistribution::new` :340
+- `UniformRealDistribution::sample` :346
+- `UniformRealDistribution::default` :352
+- `generate_canonical_f64_53` :362
 
 ### `TriangulateWall` (.cpp+.hpp) and `triangulate_wall.rs`
 

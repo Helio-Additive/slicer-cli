@@ -89,10 +89,13 @@ pub fn eigen_normalized3f(v: &Vec3f) -> Vec3f {
     }
 }
 
-/// `Vec3f::dot` in the order of `squaredNorm`: `(a.x * b.x + a.y * b.y) + a.z * b.z`, unfused.
+/// `Vec3f::dot` as the C++ build evaluates it: the first two products are added
+/// and the third is fused in, `fma(a.z, b.z, a.x * b.x + a.y * b.y)`. Found
+/// against the C++ on the Benchy's 112,662 vertices (R880); the unfused order
+/// of `squaredNorm` is wrong for it on 17,080 of them.
 #[inline]
 pub fn eigen_dot3f(a: &Vec3f, b: &Vec3f) -> f32 {
-    (a.x * b.x + a.y * b.y) + a.z * b.z
+    a.z.mul_add(b.z, a.x * b.x + a.y * b.y)
 }
 
 // TriangleSetSampling.cpp:9
