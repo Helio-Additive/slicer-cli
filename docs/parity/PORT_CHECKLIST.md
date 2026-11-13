@@ -27,7 +27,7 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 | every named function ported | 47 |
 | every named function verified | 1 |
 
-C++ still run through the FFI shim crates: 31 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 3, `boost-voronoi-sys` 0). They are listed at
+C++ still run through the FFI shim crates: 30 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 2, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
 
 ## How to read it
@@ -13496,6 +13496,5 @@ stands for is in [`../rust-engine/parity/not-ported.md`](../rust-engine/parity/n
 | `clipper2-z-sys` | `cz2_offset_z` | 1 |
 | `clipper2-z-sys` | `cz2_pl_open` | 1 |
 | `eigen-transform-sys` | `raycast_visibility_native` | 1 |
-| `eigen-transform-sys` | `sample_uniform` | 1 |
 | `eigen-transform-sys` | `short_edge_collapse` | 1 |
 | `boost-voronoi-sys` | none called by the engine | 0 |
