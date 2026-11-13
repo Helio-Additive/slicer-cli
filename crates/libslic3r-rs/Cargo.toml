@@ -44,7 +44,6 @@ clipper2-z-sys = { path = "../clipper2-z-sys" }
 # Eigen FFI shim for the bit-exact slice-time vertex transform (R86): calls the
 # real Eigen so the f32 matmul matches C++ exactly (sidesteps the pure-rust
 # Eigen-reproduction 1-ULP wall, R85).
-eigen-transform-sys = { path = "../eigen-transform-sys" }
 # R772 — exact-backend boost::polygon voronoi (AWALL 0/726 exact: the rust
 # boostvoronoi port drifts by ULPs against the -O3 native headers).
 boost-voronoi-sys = { path = "../boost-voronoi-sys" }
@@ -100,6 +99,8 @@ tokio = { version = "1.34", features = ["full"] }
 winapi = { version = "0.3", features = ["processthreadsapi", "psapi", "winnt"] }
 
 [dev-dependencies]
+# The C++ the port replaced, kept as the reference of the *_native_parity tests.
+eigen-transform-sys = { path = "../eigen-transform-sys" }
 criterion = "0.5"
 approx = "0.5"
 tempfile = "3.8"

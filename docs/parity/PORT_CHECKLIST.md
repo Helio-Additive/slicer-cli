@@ -27,7 +27,7 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 | every named function ported | 47 |
 | every named function verified | 2 |
 
-C++ still run through the FFI shim crates: 29 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 1, `boost-voronoi-sys` 0). They are listed at
+C++ still run through the FFI shim crates: 28 functions called from the engine (`clipper-z-sys` 23, `clipper2-z-sys` 5, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
 
 ## How to read it
@@ -414,19 +414,19 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 - [~] `intersect_triangle` (line 372) → `aabb_tree_indirect.rs` — another overload of the name is ported
 - [x] `intersect_triangle` (line 378) → `aabb_tree_indirect.rs:481`
 - [ ] `intersect_triangle_epsilon` (line 384) → `aabb_tree_indirect.rs`
-- [x] `intersect_ray_recursive_first_hit` (line 396) → `aabb_tree_indirect.rs:903`
-- [x] `intersect_ray_recursive_all_hits` (line 443) → `aabb_tree_indirect.rs:1052`
+- [x] `intersect_ray_recursive_first_hit` (line 396) → `aabb_tree_indirect.rs:883`
+- [x] `intersect_ray_recursive_all_hits` (line 443) → `aabb_tree_indirect.rs:1027`
 - [x] `closest_point_to_triangle` (line 475) → `aabb_tree_indirect.rs:570`
 - [~] `squared_exterior_distance` (line 552) → `aabb_tree_lines.rs, geometry/aabb_tree.rs` — not in the paired file
-- [x] `squared_distance_to_indexed_primitives_recursive` (line 571) → `aabb_tree_indirect.rs:1203`
-- [x] `indexed_primitives_within_distance_squared_recurisve` (line 654) → `aabb_tree_indirect.rs:1376`
-- [x] `build_aabb_tree_over_indexed_triangle_set` (line 691) → `aabb_tree_indirect.rs:733`
-- [~] `intersect_ray_first_hit` (line 742) → `aabb_tree_indirect.rs:840` — divergent
-- [~] `intersect_ray_all_hits` (line 774) → `aabb_tree_indirect.rs:1001` — divergent
-- [~] `squared_distance_to_indexed_triangle_set` (line 815) → `aabb_tree_indirect.rs:1116` — partial
-- [x] `is_any_triangle_in_radius` (line 841) → `aabb_tree_indirect.rs:1311`
-- [x] `all_triangles_in_radius` (line 872) → `aabb_tree_indirect.rs:1348`
-- [x] `get_candidate_idxs` (line 901) → `aabb_tree_indirect.rs:1430`
+- [x] `squared_distance_to_indexed_primitives_recursive` (line 571) → `aabb_tree_indirect.rs:1178`
+- [x] `indexed_primitives_within_distance_squared_recurisve` (line 654) → `aabb_tree_indirect.rs:1351`
+- [x] `build_aabb_tree_over_indexed_triangle_set` (line 691) → `aabb_tree_indirect.rs:723`
+- [~] `intersect_ray_first_hit` (line 742) → `aabb_tree_indirect.rs:820` — divergent
+- [~] `intersect_ray_all_hits` (line 774) → `aabb_tree_indirect.rs:976` — divergent
+- [~] `squared_distance_to_indexed_triangle_set` (line 815) → `aabb_tree_indirect.rs:1091` — partial
+- [x] `is_any_triangle_in_radius` (line 841) → `aabb_tree_indirect.rs:1286`
+- [x] `all_triangles_in_radius` (line 872) → `aabb_tree_indirect.rs:1323`
+- [x] `get_candidate_idxs` (line 901) → `aabb_tree_indirect.rs:1405`
 - [ ] `intersecting` (line 939) → `aabb_tree_indirect.rs`
 - [ ] `within` (line 956) → `aabb_tree_indirect.rs`
 - [x] `traverse_recurse` (line 963) → `aabb_tree_indirect.rs:657`
@@ -439,7 +439,7 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 
 **class `IndexedTriangleSetDistancer`**
 
-- [x] `closest_point_to_origin` (line 539) → `aabb_tree_indirect.rs:1149`
+- [x] `closest_point_to_origin` (line 539) → `aabb_tree_indirect.rs:1124`
 
 **class `Intersecting<Eigen::AlignedBox<CoordType, NumD>>`**
 
@@ -6065,16 +6065,16 @@ Rust file: `gcode/seam_placer.rs`. Status: **partial**. Not listed: 8 constructo
 - [x] `sample_hemisphere_uniform` (line 119) → `gcode/seam_placer.rs:538`
 - [x] `sample_power_cosine_hemisphere` (line 126) → `gcode/seam_placer.rs:551`
 - [v] `raycast_visibility` (line 135) → `gcode/seam_placer.rs:589` — R882: tests/raycast_visibility_native_parity.rs: the visibility of 30,000 samples (25 rays each) on the decimated Benchy equal to the C++, bit for bit; byte-identical G-code on the three fixtures with the shim call replaced
-- [x] `calculate_polygon_angles_at_vertices` (line 216) → `gcode/seam_placer.rs:764`
-- [x] `extract_perimeter_polygons` (line 372) → `gcode/seam_placer.rs:1494`
-- [x] `process_perimeter_polygon` (line 422) → `gcode/seam_placer.rs:1596`
-- [x] `find_previous_and_next_perimeter_point` (line 553) → `gcode/seam_placer.rs:1829`
-- [~] `compute_global_occlusion` (line 575) → `gcode/seam_placer.rs:1043` — divergent
-- [~] `gather_enforcers_blockers` (line 645) → `gcode/seam_placer.rs:1217` — partial
+- [x] `calculate_polygon_angles_at_vertices` (line 216) → `gcode/seam_placer.rs:728`
+- [x] `extract_perimeter_polygons` (line 372) → `gcode/seam_placer.rs:1458`
+- [x] `process_perimeter_polygon` (line 422) → `gcode/seam_placer.rs:1560`
+- [x] `find_previous_and_next_perimeter_point` (line 553) → `gcode/seam_placer.rs:1793`
+- [~] `compute_global_occlusion` (line 575) → `gcode/seam_placer.rs:1007` — divergent
+- [~] `gather_enforcers_blockers` (line 645) → `gcode/seam_placer.rs:1181` — partial
 - [ ] `debug_export_points` (line 755) → `gcode/seam_placer.rs`
-- [x] `pick_seam_point` (line 802) → `gcode/seam_placer.rs:2076`
-- [x] `pick_nearest_seam_point_index` (line 813) → `gcode/seam_placer.rs:2103`
-- [x] `pick_random_seam_point` (line 826) → `gcode/seam_placer.rs:2134`
+- [x] `pick_seam_point` (line 802) → `gcode/seam_placer.rs:2040`
+- [x] `pick_nearest_seam_point_index` (line 813) → `gcode/seam_placer.rs:2067`
+- [x] `pick_random_seam_point` (line 826) → `gcode/seam_placer.rs:2098`
 - [ ] `adaptive_merge_group_bottom` (line 929) → `gcode/seam_placer.rs`
 - [ ] `adaptive_merge_walls_merged_out` (line 941) → `gcode/seam_placer.rs`
 
@@ -6086,14 +6086,14 @@ Rust file: `gcode/seam_placer.rs`. Status: **partial**. Not listed: 8 constructo
 
 **class `GlobalModelInfo`**
 
-- [x] `is_enforced` (line 287) → `gcode/seam_placer.rs:899`
-- [x] `is_blocked` (line 294) → `gcode/seam_placer.rs:908`
-- [x] `calculate_point_visibility` (line 301) → `gcode/seam_placer.rs:975`
+- [x] `is_enforced` (line 287) → `gcode/seam_placer.rs:863`
+- [x] `is_blocked` (line 294) → `gcode/seam_placer.rs:872`
+- [x] `calculate_point_visibility` (line 301) → `gcode/seam_placer.rs:939`
 - [ ] `debug_export` (line 329) → `gcode/seam_placer.rs`
 
 **class `PerimeterDistancer`**
 
-- [x] `distance_from_perimeter` (line 906) → `gcode/seam_placer.rs:2283`
+- [x] `distance_from_perimeter` (line 906) → `gcode/seam_placer.rs:2247`
 
 **class `PrintObjectSeamData`**
 
@@ -6105,22 +6105,22 @@ Rust file: `gcode/seam_placer.rs`. Status: **partial**. Not listed: 8 constructo
 
 **class `SeamComparator`**
 
-- [x] `is_first_better` (line 682) → `gcode/seam_placer.rs:1885`
-- [x] `is_first_not_much_worse` (line 718) → `gcode/seam_placer.rs:1963`
-- [x] `are_similar` (line 751) → `gcode/seam_placer.rs:2039`
+- [x] `is_first_better` (line 682) → `gcode/seam_placer.rs:1849`
+- [x] `is_first_not_much_worse` (line 718) → `gcode/seam_placer.rs:1927`
+- [x] `are_similar` (line 751) → `gcode/seam_placer.rs:2003`
 
 **class `SeamPlacer`**
 
-- [~] `gather_seam_candidates` (line 952) → `gcode/seam_placer.rs:2489` — partial
-- [~] `calculate_candidates_visibility` (line 983) → `gcode/seam_placer.rs:2548` — partial
-- [~] `calculate_overhangs_and_layer_embedding` (line 995) → `gcode/seam_placer.rs:2583` — partial
-- [x] `find_next_seam_in_layer` (line 1117) → `gcode/seam_placer.rs:2779`
-- [x] `find_seam_string` (line 1174) → `gcode/seam_placer.rs:2873`
-- [x] `align_seam_points` (line 1239) → `gcode/seam_placer.rs:2952`
-- [x] `gather_all_seams_of_object` (line 1385) → `gcode/seam_placer.rs:3129`
-- [x] `filter_scarf_seam_switch_by_angle` (line 1403) → `gcode/seam_placer.rs:3154`
-- [~] `init` (line 1495) → `gcode/seam_placer.rs:3291` — partial
-- [~] `place_seam` (line 1563) → `gcode/seam_placer.rs:3455` — partial
+- [~] `gather_seam_candidates` (line 952) → `gcode/seam_placer.rs:2453` — partial
+- [~] `calculate_candidates_visibility` (line 983) → `gcode/seam_placer.rs:2512` — partial
+- [~] `calculate_overhangs_and_layer_embedding` (line 995) → `gcode/seam_placer.rs:2547` — partial
+- [x] `find_next_seam_in_layer` (line 1117) → `gcode/seam_placer.rs:2743`
+- [x] `find_seam_string` (line 1174) → `gcode/seam_placer.rs:2837`
+- [x] `align_seam_points` (line 1239) → `gcode/seam_placer.rs:2916`
+- [x] `gather_all_seams_of_object` (line 1385) → `gcode/seam_placer.rs:3093`
+- [x] `filter_scarf_seam_switch_by_angle` (line 1403) → `gcode/seam_placer.rs:3118`
+- [~] `init` (line 1495) → `gcode/seam_placer.rs:3255` — partial
+- [~] `place_seam` (line 1563) → `gcode/seam_placer.rs:3419` — partial
 
 ### `GCode/Smoothing` (.cpp+.hpp)
 
@@ -13495,5 +13495,5 @@ stands for is in [`../rust-engine/parity/not-ported.md`](../rust-engine/parity/n
 | `clipper2-z-sys` | `cz2_intersect_open_z` | 1 |
 | `clipper2-z-sys` | `cz2_offset_z` | 1 |
 | `clipper2-z-sys` | `cz2_pl_open` | 1 |
-| `eigen-transform-sys` | `raycast_visibility_native` | 1 |
+| `eigen-transform-sys` | none called by the engine | 0 |
 | `boost-voronoi-sys` | none called by the engine | 0 |

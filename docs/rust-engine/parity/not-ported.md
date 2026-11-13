@@ -44,6 +44,9 @@ is left on the fixtures' path (`GEOCALLS=1` lists them, README "Probes").
 
 ### `eigen-transform-sys` (Eigen, AABB tree)
 
+Since R883 the engine does not depend on this crate: it is a dev-dependency of `libslic3r-rs`, and the
+functions below are the C++ reference of the `*_native_parity` tests. The table is kept for what each stood for.
+
 | Shim function | Called from | Stands for |
 |-|-|-|
 | `transform_verts_unified`, `transform_verts_for_slicing`, `transform_verts_affine_f32_pair` | `tests/vertex_transform_native_parity.rs` only (since R875) | `its_transform`, the vertex transform of `slice_mesh` (Eigen float evaluation order) |
@@ -102,6 +105,7 @@ more are missing from a paired Rust file and from every other. `crates/libslic3r
 | Round | Item |
 |-|-|
 | R856 | every helper on the 1 um grid on the fixtures' path computes at coord_t |
+| R883 | `eigen-transform-sys` removed from the engine's dependencies (a dev-dependency for the tests that compare with the C++) |
 | R882 | `raycast_visibility_native`, the last `eigen-transform-sys` function on the engine's path, is replaced (`RAYCAST_RUST`, `AABB_EIGEN_FLOAT`): `raycast_visibility` equals the C++ on the Benchy's 30,000 samples in `tests/raycast_visibility_native_parity.rs` |
 | R880 | `short_edge_collapse` of `eigen-transform-sys` is off the engine's path (`SEC_RUST`): `its_short_edge_collpase` equals the C++ on the Benchy and 106 synthetic meshes in `tests/short_edge_collapse_native_parity.rs` |
 | R876 | `sample_uniform` of `eigen-transform-sys` is off the engine's path (`SAMPLE_RUST`): `sample_its_uniform_parallel` is bit-equal to the C++ in `tests/triangle_set_sampling_native_parity.rs` |
