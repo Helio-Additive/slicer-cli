@@ -47,10 +47,16 @@ fn narrow_i32(v: i64) -> i32 {
 /// width; `clip` are CLOSED clip paths. Returns the clipped open paths with
 /// interpolated Z (width) tags. Empty `subject` yields an empty result.
 ///
-/// Runs on the Rust `ClipperLib_Z` (`clip_extrusion_port`) unless the environment has
-/// `CLIPPER_Z_RUST=0`, which runs the C++ of `clipper-z-sys` (`clip_extrusion_shim`).
+/// Runs on the Rust `ClipperLib_Z` unless the environment has `CLIPPER_Z_RUST=0`, which
+/// runs the C++ of `clipper-z-sys` (`clip_extrusion_shim`). On the Rust `ClipperLib_Z` the
+/// pass over the vertices left with Z == 0 is the engine's (OverhangDetector.cpp:68-98,
+/// `clip_extrusion_cpp`) unless the environment has `CLIP_EXTRUSION_CPP=0`, which runs
+/// the shim's pass (`clip_extrusion_port`).
 pub fn clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
     if crate::faithful_gate("CLIPPER_Z_RUST") {
+        if crate::faithful_gate("CLIP_EXTRUSION_CPP") {
+            return clip_extrusion_cpp(subject, clip, clip_type);
+        }
         return clip_extrusion_port(subject, clip, clip_type);
     }
     clip_extrusion_shim(subject, clip, clip_type)
@@ -85,7 +91,118 @@ fn squared_norm_of_difference(a: &clipper_lib_z::IntPoint, b: &clipper_lib_z::In
 /// `cz_clip_extrusion` (`crates/clipper-z-sys/shim/clipper_z_shim.cpp`), statement for
 /// statement, which follows OverhangDetector.cpp:18-108.
 /// `tests/clipper_z_engine_native_parity.rs` holds it equal to `clip_extrusion_shim`.
+/// Its pass over the vertices left with Z == 0 is the shim's, which is not the engine's:
+/// `clip_extrusion_cpp` has the engine's.
 pub fn clip_extrusion_port(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
+    clip_extrusion_impl(subject, clip, clip_type, false)
+}
+
+/// `clip_extrusion` of OverhangDetector.cpp:18-108 on the Rust `ClipperLib_Z`, statement
+/// for statement: `clip_extrusion_port` with the engine's own pass over the vertices left
+/// with Z == 0 (OverhangDetector.cpp:68-98, `assign_z_from_subject_cpp`) in place of the
+/// shim's.
+pub fn clip_extrusion_cpp(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZPaths {
+    clip_extrusion_impl(subject, clip, clip_type, true)
+}
+
+/// `(a - b).cast<double>().squaredNorm()` of two `Point` (`Vec2crd`, `coord_t` is
+/// `int32_t`, libslic3r.h:40): the difference is taken in `coord_t`, each coordinate is
+/// squared as a double and the two are summed; nothing is fused (the squares and the sum
+/// are separate functions of Eigen).
+#[inline]
+fn squared_norm_of_difference_2d(a: (i32, i32), b: (i32, i32)) -> f64 {
+    let dx = a.0.wrapping_sub(b.0) as f64;
+    let dy = a.1.wrapping_sub(b.1) as f64;
+    dx * dx + dy * dy
+}
+
+/// `Point::projection_onto(const Line &line)` (Point.cpp:157-180), `self` being `pt` and
+/// the line `(a, b)`, on `coord_t` (`int32_t`) coordinates.
+///
+/// Written here and not taken from `Point::project_onto_segment` (geometry/point.rs),
+/// whose `theta` does not fuse the numerator as the arm64 build does and which works on
+/// the crate's 64-bit `Point`; the two agree while the products are exact in a double.
+#[inline]
+fn projection_onto_line_cpp(pt: (i32, i32), a: (i32, i32), b: (i32, i32)) -> (i32, i32) {
+    // Point.cpp:159
+    if a == b {
+        return a;
+    }
+    // Point.cpp:170-171
+    let lx = b.0.wrapping_sub(a.0) as f64;
+    let ly = b.1.wrapping_sub(a.1) as f64;
+    // Point.cpp:172-173. The numerator is one expression, `p*lx + q*ly`: the left product
+    // is fused into the sum. The denominator sums two calls of sqr<double>: not fused.
+    let theta = (b.0.wrapping_sub(pt.0) as f64).mul_add(lx, (b.1.wrapping_sub(pt.1) as f64) * ly) / (lx * lx + ly * ly);
+    // Point.cpp:175-176: (theta * a.cast<coordf_t>() + (1.0-theta) * b.cast<coordf_t>()).cast<coord_t>(),
+    // an Eigen expression (products and sum are separate functions: not fused), truncated.
+    if 0.0 <= theta && theta <= 1.0 {
+        return (
+            (theta * a.0 as f64 + (1.0 - theta) * b.0 as f64) as i32,
+            (theta * a.1 as f64 + (1.0 - theta) * b.1 as f64) as i32,
+        );
+    }
+    // Point.cpp:178-179: else pick closest endpoint.
+    if squared_norm_of_difference_2d(a, pt) < squared_norm_of_difference_2d(b, pt) {
+        a
+    } else {
+        b
+    }
+}
+
+/// OverhangDetector.cpp:68-98: the vertices of the clipped paths that came from the clip
+/// have Z == 0; each takes the width of the subject at the nearest point of the subject.
+fn assign_z_from_subject_cpp(clipped_paths: &mut clipper_lib_z::Paths, subject: &clipper_lib_z::Path) {
+    // OverhangDetector.cpp:68-70
+    for path in clipped_paths.iter_mut() {
+        for c_pt in path.iter_mut() {
+            if c_pt.z != 0 {
+                continue;
+            }
+            // OverhangDetector.cpp:72
+            if subject.len() <= 2 {
+                continue;
+            }
+
+            // OverhangDetector.cpp:74-78
+            let pt = (c_pt.x, c_pt.y);
+            let mut projected_pt_min = (0i32, 0i32); // Point() is (0, 0), Point.hpp:176
+            let mut it_min: usize = 0;
+            let mut dist_sqr_min = f64::MAX;
+            let mut prev = (subject[0].x, subject[0].y);
+            // OverhangDetector.cpp:79-88
+            for it in 1..subject.len() {
+                let curr = (subject[it].x, subject[it].y);
+                // Point::projection_onto(Line): on the segment, in integer coordinates.
+                let projected_pt = projection_onto_line_cpp(pt, prev, curr);
+                let dist_sqr = squared_norm_of_difference_2d(projected_pt, pt);
+                if dist_sqr < dist_sqr_min {
+                    dist_sqr_min = dist_sqr;
+                    projected_pt_min = projected_pt;
+                    it_min = it - 1;
+                }
+                prev = curr;
+            }
+
+            // OverhangDetector.cpp:93-97
+            let pt_a = (subject[it_min].x, subject[it_min].y);
+            let pt_b = (subject[it_min + 1].x, subject[it_min + 1].y);
+            let line_len = squared_norm_of_difference_2d(pt_b, pt_a).sqrt();
+            let dist = squared_norm_of_difference_2d(projected_pt_min, pt_a).sqrt();
+            // c_pt.z() = coord_t(double(it_min->z()) + (dist / line_len) * double(std::next(it_min)->z() - it_min->z()));
+            // The product is fused into the sum. A subject segment of no length gives
+            // 0 / 0, a NaN, which the arm64 build converts to 0, as Rust's `as` does;
+            // the shim's pass gives the Z of the segment's first point there.
+            let z_a = subject[it_min].z;
+            let z_b = subject[it_min + 1].z;
+            c_pt.z = (dist / line_len).mul_add(z_b.wrapping_sub(z_a) as f64, z_a as f64) as i32;
+        }
+    }
+}
+
+/// The body of `clip_extrusion_port` and `clip_extrusion_cpp`: `cpp_post_pass` chooses
+/// the pass over the vertices left with Z == 0, the engine's or the shim's.
+fn clip_extrusion_impl(subject: &ZPath, clip: &ZPaths, clip_type: ClipType, cpp_post_pass: bool) -> ZPaths {
     use clipper_lib_z::IntPoint;
     // The wrapper of the shim returns before it calls the shim.
     if subject.is_empty() {
@@ -151,11 +268,18 @@ pub fn clip_extrusion_port(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) 
 
     // Clipped path could contain vertices from the clip with Z == 0; assign a
     // value from the subject by projecting onto the nearest subject segment.
-    // FIDELITY-NOTE: this is the shim's post-pass, not OverhangDetector.cpp:68-98. The
-    // engine projects with Point::projection_onto(Line) (Point.cpp:157-180), which keeps
-    // the projection on the segment (the nearer end when it falls outside) and truncates
-    // it to integer coordinates; the shim projects onto the infinite line and keeps the
-    // doubles. The port follows the shim, which is what the engine has run until now.
+    if cpp_post_pass {
+        // OverhangDetector.cpp:68-98, the engine's pass.
+        assign_z_from_subject_cpp(&mut clipped_paths, &subject);
+        return from_clipper_lib_z_paths(&clipped_paths);
+    }
+    // FIDELITY-NOTE: what follows is the shim's post-pass, not OverhangDetector.cpp:68-98
+    // (that one is `assign_z_from_subject_cpp`). The engine projects with
+    // Point::projection_onto(Line) (Point.cpp:157-180), which keeps the projection on the
+    // segment (the nearer end when it falls outside) and truncates it to integer
+    // coordinates; the shim projects onto the infinite line and keeps the doubles, and
+    // gives a subject segment of no length the Z of its first point where the engine's
+    // 0 / 0 converts to 0. Kept for `CLIP_EXTRUSION_CPP=0` and for the test against the shim.
     for path in clipped_paths.iter_mut() {
         for c_pt in path.iter_mut() {
             if c_pt.z != 0 {
