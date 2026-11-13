@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**35.3% of the named C++ functions are ported or verified (3252 of 9204); 24.6% by size of body.**
+**35.6% of the named C++ functions are ported or verified (3277 of 9204); 24.8% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3204 | 34.8% | 47.4% |
-| partial `[~]` | 2748 | 29.9% | 28.0% |
-| ported `[x]` | 3142 | 34.1% | 22.8% |
-| verified `[v]` | 110 | 1.2% | 1.7% |
+| not started `[ ]` | 3177 | 34.5% | 47.2% |
+| partial `[~]` | 2750 | 29.9% | 28.0% |
+| ported `[x]` | 3139 | 34.1% | 22.8% |
+| verified `[v]` | 138 | 1.5% | 2.0% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -101,10 +101,10 @@ the end; the goal is none.
 | `Channel` | 3 | `channel.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `Circle` | 1 | `circle.rs` | partial | 27 | 2 | 1 | 24 | 0 |
 | `clipper` | 3 | `clipper.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 36 | 16 | 12 | 88 |
+| `clipper/clipper` | 1 | `clipper.rs` | partial | 152 | 11 | 16 | 9 | 116 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 6 | 6 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
-| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 58 | 160 | 9 | 0 |
+| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 56 | 162 | 9 | 0 |
 | `ClipperZUtils` | 1 | `clipper_z_utils.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `clonable_ptr` | 1 | `clonable_ptr.rs` | partial | 7 | 3 | 1 | 3 | 0 |
 | `Color` | 1 | `color.rs` | partial | 97 | 10 | 15 | 72 | 0 |
@@ -1497,171 +1497,171 @@ Rust file: `clipper.rs`. Status: **partial**. Not listed: 8 constructors, 6 dest
 **free functions**
 
 - [ ] `IntPoint2d` (line 108) → `clipper.rs`
-- [v] `Round` (line 117) → `clipper.rs:412` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `Area` (line 177) → `clipper.rs:42` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
+- [v] `Round` (line 117) → `clipper.rs:415` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `Area` (line 177) → `clipper.rs:45` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
 - [~] `Area` (line 192) → `clipper.rs` — another overload of the name is ported
-- [v] `Orientation` (line 192) → `clipper.rs:61` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
+- [v] `Orientation` (line 192) → `clipper.rs:64` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
 - [ ] `PointIsVertex` (line 205) → `clipper.rs`
-- [v] `PointInPolygon` (line 220) → `clipper.rs:68` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
+- [v] `PointInPolygon` (line 220) → `clipper.rs:71` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
 - [~] `PointInPolygon` (line 260) → `clipper.rs` — another overload of the name is ported
-- [v] `Poly2ContainsPoly1` (line 300) → `clipper.rs:1962` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [ ] `AddPaths` (line 304) → `clipper.rs`
-- [v] `SlopesEqual` (line 317) → `clipper.rs:419` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `Poly2ContainsPoly1` (line 300) → `clipper.rs:2233` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddPaths` (line 304) → `clipper.rs:846` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `SlopesEqual` (line 317) → `clipper.rs:422` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 - [~] `SlopesEqual` (line 321) → `clipper.rs` — another overload of the name is ported
 - [~] `SlopesEqual` (line 332) → `clipper.rs` — another overload of the name is ported
 - [~] `SlopesEqual` (line 334) → `clipper.rs` — another overload of the name is ported
 - [~] `SlopesEqual` (line 336) → `clipper.rs` — another overload of the name is ported
-- [v] `IsHorizontal` (line 341) → `clipper.rs:458` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `GetDx` (line 347) → `clipper.rs:465` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `TopX` (line 354) → `clipper.rs:476` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `PreserveCollinear` (line 358) → `clipper.rs:2282` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `IsHorizontal` (line 341) → `clipper.rs:461` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetDx` (line 347) → `clipper.rs:468` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `TopX` (line 354) → `clipper.rs:479` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `PreserveCollinear` (line 358) → `clipper.rs:2563` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 - [~] `PreserveCollinear` (line 359) → `clipper.rs` — another overload of the name is ported
-- [v] `IntersectPoint` (line 362) → `clipper.rs:486` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [x] `ReversePolyPtLinks` (line 433) → `clipper.rs:548`
-- [v] `InitEdge` (line 446) → `clipper.rs:565` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `InitEdge2` (line 456) → `clipper.rs:576` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `RemoveEdge` (line 479) → `clipper.rs:603` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `ReverseHorizontal` (line 490) → `clipper.rs:617` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `GetOverlapSegment` (line 502) → `clipper.rs:626` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [x] `FirstIsBottomPt` (line 524) → `clipper.rs:660`
-- [x] `GetBottomPt` (line 544) → `clipper.rs:688`
-- [ ] `SimplifyPolygons` (line 559) → `clipper.rs`
-- [v] `Pt2IsBetweenPt1AndPt3` (line 582) → `clipper.rs:722` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `HorzSegmentsOverlap` (line 594) → `clipper.rs:734` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `IntersectPoint` (line 362) → `clipper.rs:489` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `ReversePolyPtLinks` (line 433) → `clipper.rs:551` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `InitEdge` (line 446) → `clipper.rs:568` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `InitEdge2` (line 456) → `clipper.rs:579` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `RemoveEdge` (line 479) → `clipper.rs:606` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `ReverseHorizontal` (line 490) → `clipper.rs:620` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetOverlapSegment` (line 502) → `clipper.rs:629` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `FirstIsBottomPt` (line 524) → `clipper.rs:663` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `GetBottomPt` (line 544) → `clipper.rs:691` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `SimplifyPolygons` (line 559) → `clipper.rs:5701` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `Pt2IsBetweenPt1AndPt3` (line 582) → `clipper.rs:725` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `HorzSegmentsOverlap` (line 594) → `clipper.rs:737` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 - [ ] `RangeTest` (line 607) → `clipper.rs`
-- [v] `FindNextLocMin` (line 625) → `clipper.rs:749` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `GetLowermostRec` (line 1850) → `clipper.rs:1980` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `Param1RightOfParam2` (line 1870) → `clipper.rs:2014` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `IsMaxima` (line 2066) → `clipper.rs:2031` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `IsIntermediate` (line 2072) → `clipper.rs:2041` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `GetMaximaPair` (line 2078) → `clipper.rs:2048` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `GetHorzDirection` (line 2187) → `clipper.rs:2073` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `EdgesAdjacent` (line 2496) → `clipper.rs:2084` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `PointCount` (line 2754) → `clipper.rs:2091` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `E2InsertsBeforeE1` (line 2846) → `clipper.rs:2108` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `GetOverlap` (line 2858) → `clipper.rs:2122` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `UpdateOutPtIdxs` (line 2876) → `clipper.rs:2145` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [ ] `GetUnitNormal` (line 3319) → `clipper.rs`
-- [x] `ReversePath` (line 3829) → `clipper.rs:123`
-- [x] `ReversePaths` (line 3835) → `clipper.rs:129`
-- [ ] `SimplifyPolygon` (line 3842) → `clipper.rs`
-- [v] `DistanceSqrd` (line 3854) → `clipper.rs:138` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DistanceFromLineSqrd` (line 3862) → `clipper.rs:146` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
-- [v] `SlopesNearCollinear` (line 3879) → `clipper.rs:164` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
-- [v] `PointsAreClose` (line 3906) → `clipper.rs:188` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
-- [v] `ExcludeOp` (line 3914) → `clipper.rs:206` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
-- [v] `CleanPolygon` (line 3925) → `clipper.rs:217` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
+- [v] `FindNextLocMin` (line 625) → `clipper.rs:752` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetLowermostRec` (line 1850) → `clipper.rs:2251` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `Param1RightOfParam2` (line 1870) → `clipper.rs:2285` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `IsMaxima` (line 2066) → `clipper.rs:2302` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `IsIntermediate` (line 2072) → `clipper.rs:2312` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetMaximaPair` (line 2078) → `clipper.rs:2319` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetHorzDirection` (line 2187) → `clipper.rs:2344` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `EdgesAdjacent` (line 2496) → `clipper.rs:2355` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `PointCount` (line 2754) → `clipper.rs:2362` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `E2InsertsBeforeE1` (line 2846) → `clipper.rs:2379` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetOverlap` (line 2858) → `clipper.rs:2393` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `UpdateOutPtIdxs` (line 2876) → `clipper.rs:2416` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetUnitNormal` (line 3319) → `clipper.rs:5096` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [x] `ReversePath` (line 3829) → `clipper.rs:126`
+- [x] `ReversePaths` (line 3835) → `clipper.rs:132`
+- [v] `SimplifyPolygon` (line 3842) → `clipper.rs:5690` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `DistanceSqrd` (line 3854) → `clipper.rs:141` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DistanceFromLineSqrd` (line 3862) → `clipper.rs:149` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
+- [v] `SlopesNearCollinear` (line 3879) → `clipper.rs:167` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
+- [v] `PointsAreClose` (line 3906) → `clipper.rs:191` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
+- [v] `ExcludeOp` (line 3914) → `clipper.rs:209` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
+- [v] `CleanPolygon` (line 3925) → `clipper.rs:220` — R885: tests/clipper_native_parity.rs: 120,000 polygons at four magnitudes, equal to ClipperLib compiled in clipper-z-sys (the area bit for bit)
 - [~] `CleanPolygon` (line 3984) → `clipper.rs` — another overload of the name is ported
-- [x] `CleanPolygons` (line 3990) → `clipper.rs:274`
+- [x] `CleanPolygons` (line 3990) → `clipper.rs:277`
 - [~] `CleanPolygons` (line 3997) → `clipper.rs` — another overload of the name is ported
 - [ ] `Minkowski` (line 4003) → `clipper.rs`
 - [ ] `MinkowskiSum` (line 4047) → `clipper.rs`
 - [ ] `TranslatePath` (line 4056) → `clipper.rs`
 - [ ] `MinkowskiSum` (line 4065) → `clipper.rs`
 - [ ] `MinkowskiDiff` (line 4084) → `clipper.rs`
-- [ ] `AddPolyNodeToPaths` (line 4095) → `clipper.rs`
-- [ ] `PolyTreeToPaths` (line 4108) → `clipper.rs`
-- [ ] `ClosedPathsFromPolyTree` (line 4116) → `clipper.rs`
-- [ ] `OpenPathsFromPolyTree` (line 4124) → `clipper.rs`
+- [v] `AddPolyNodeToPaths` (line 4095) → `clipper.rs:5721` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `PolyTreeToPaths` (line 4108) → `clipper.rs:5740` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `ClosedPathsFromPolyTree` (line 4116) → `clipper.rs:5748` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `OpenPathsFromPolyTree` (line 4124) → `clipper.rs:5756` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
 
 **class `Clipper`**
 
-- [x] `Clear` (line 393) → `clipper.rs:1120`
+- [x] `Clear` (line 393) → `clipper.rs:1185`
 - [~] `Execute` (line 394) → `clipper.rs` — another overload of the name is ported
 - [~] `Execute` (line 402) → `clipper.rs` — another overload of the name is ported
-- [v] `ReverseSolution` (line 410) → `clipper.rs:2294` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `ReverseSolution` (line 410) → `clipper.rs:2575` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 - [~] `ReverseSolution` (line 411) → `clipper.rs` — another overload of the name is ported
-- [v] `StrictlySimple` (line 412) → `clipper.rs:2306` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `StrictlySimple` (line 412) → `clipper.rs:2587` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 - [~] `StrictlySimple` (line 413) → `clipper.rs` — another overload of the name is ported
 - [ ] `ZFillFunction` (line 416) → `clipper.rs`
-- [v] `IsEvenOddFillType` (line 452) → `clipper.rs:2319` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `IsEvenOddAltFillType` (line 454) → `clipper.rs:2330` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DisposeOutPt` (line 481) → `clipper.rs:2484` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DisposeOutPts` (line 482) → `clipper.rs:2492` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `Reset` (line 1066) → `clipper.rs:1043` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `Execute` (line 1080) → `clipper.rs:2353` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `IsEvenOddFillType` (line 452) → `clipper.rs:2600` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `IsEvenOddAltFillType` (line 454) → `clipper.rs:2611` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DisposeOutPt` (line 481) → `clipper.rs:2786` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DisposeOutPts` (line 482) → `clipper.rs:2794` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `Reset` (line 1066) → `clipper.rs:1108` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `Execute` (line 1080) → `clipper.rs:2634` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 - [~] `Execute` (line 1098) → `clipper.rs` — another overload of the name is ported
-- [v] `ExecuteInternal` (line 1113) → `clipper.rs:2378` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AllocateOutPt` (line 1183) → `clipper.rs:2468` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DisposeAllOutRecs` (line 1202) → `clipper.rs:2502` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `SetWindingCount` (line 1215) → `clipper.rs:2510` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `IsContributing` (line 1310) → `clipper.rs:2610` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AddLocalMinPoly` (line 1411) → `clipper.rs:2690` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AddLocalMaxPoly` (line 1452) → `clipper.rs:2735` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AddEdgeToSEL` (line 1468) → `clipper.rs:2752` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `CopyAELToSEL` (line 1488) → `clipper.rs:2772` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `InsertLocalMinimaIntoAEL` (line 1503) → `clipper.rs:2786` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DeleteFromAEL` (line 1598) → `clipper.rs:2900` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DeleteFromSEL` (line 1611) → `clipper.rs:2920` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `ExecuteInternal` (line 1113) → `clipper.rs:2680` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AllocateOutPt` (line 1183) → `clipper.rs:2770` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DisposeAllOutRecs` (line 1202) → `clipper.rs:2804` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `SetWindingCount` (line 1215) → `clipper.rs:2812` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `IsContributing` (line 1310) → `clipper.rs:2912` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddLocalMinPoly` (line 1411) → `clipper.rs:2992` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddLocalMaxPoly` (line 1452) → `clipper.rs:3037` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddEdgeToSEL` (line 1468) → `clipper.rs:3054` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `CopyAELToSEL` (line 1488) → `clipper.rs:3074` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `InsertLocalMinimaIntoAEL` (line 1503) → `clipper.rs:3088` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DeleteFromAEL` (line 1598) → `clipper.rs:3202` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DeleteFromSEL` (line 1611) → `clipper.rs:3222` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 - [ ] `SetZ` (line 1625) → `clipper.rs`
-- [v] `IntersectEdges` (line 1637) → `clipper.rs:2940` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `SetHoleState` (line 1832) → `clipper.rs:3123` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `GetOutRec` (line 1881) → `clipper.rs:3142` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AppendPolygon` (line 1890) → `clipper.rs:3152` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `CreateOutRec` (line 1989) → `clipper.rs:3244` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AddOutPt` (line 2004) → `clipper.rs:3260` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `GetLastOutPt` (line 2043) → `clipper.rs:3304` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `ProcessHorizontals` (line 2053) → `clipper.rs:3316` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `SwapPositionsInAEL` (line 2094) → `clipper.rs:3328` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `SwapPositionsInSEL` (line 2141) → `clipper.rs:3392` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [~] `ProcessHorizontal` (line 2213) → `clipper.rs:3464` — the Rust body is marked as deviating from the C++
-- [v] `UpdateEdgeIntoAEL` (line 2400) → `clipper.rs:3711` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `ProcessIntersections` (line 2424) → `clipper.rs:3744` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `BuildIntersectList` (line 2452) → `clipper.rs:3774` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `FixupIntersectionOrder` (line 2503) → `clipper.rs:3819` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DoMaxima` (line 2527) → `clipper.rs:3848` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `ProcessEdgesAtTopOfScanbeam` (line 2579) → `clipper.rs:3903` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [x] `FixupOutPolyline` (line 2684) → `clipper.rs:4032`
-- [v] `FixupOutPolygon` (line 2711) → `clipper.rs:4058` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `BuildResult` (line 2769) → `clipper.rs:4102` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [ ] `BuildResult2` (line 2791) → `clipper.rs`
-- [v] `InsertEdgeIntoAEL` (line 2888) → `clipper.rs:4124` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DupOutPt` (line 2917) → `clipper.rs:4159` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `JoinHorz` (line 2940) → `clipper.rs:4181` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `JoinPoints` (line 3027) → `clipper.rs:4286` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [x] `FixupFirstLefts1` (line 3187) → `clipper.rs:4462`
-- [x] `FixupFirstLefts2` (line 3203) → `clipper.rs:4492`
-- [v] `JoinCommonEdges` (line 3211) → `clipper.rs:4503` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `DoSimplePolygons` (line 3762) → `clipper.rs:4644` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `IntersectEdges` (line 1637) → `clipper.rs:3242` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `SetHoleState` (line 1832) → `clipper.rs:3425` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetOutRec` (line 1881) → `clipper.rs:3444` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AppendPolygon` (line 1890) → `clipper.rs:3454` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `CreateOutRec` (line 1989) → `clipper.rs:3546` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddOutPt` (line 2004) → `clipper.rs:3563` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `GetLastOutPt` (line 2043) → `clipper.rs:3607` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `ProcessHorizontals` (line 2053) → `clipper.rs:3619` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `SwapPositionsInAEL` (line 2094) → `clipper.rs:3631` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `SwapPositionsInSEL` (line 2141) → `clipper.rs:3695` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [~] `ProcessHorizontal` (line 2213) → `clipper.rs:3767` — the Rust body is marked as deviating from the C++
+- [v] `UpdateEdgeIntoAEL` (line 2400) → `clipper.rs:4014` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `ProcessIntersections` (line 2424) → `clipper.rs:4047` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `BuildIntersectList` (line 2452) → `clipper.rs:4077` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `FixupIntersectionOrder` (line 2503) → `clipper.rs:4122` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DoMaxima` (line 2527) → `clipper.rs:4151` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `ProcessEdgesAtTopOfScanbeam` (line 2579) → `clipper.rs:4206` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `FixupOutPolyline` (line 2684) → `clipper.rs:4335` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `FixupOutPolygon` (line 2711) → `clipper.rs:4361` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `BuildResult` (line 2769) → `clipper.rs:4405` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `BuildResult2` (line 2791) → `clipper.rs:4427` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `InsertEdgeIntoAEL` (line 2888) → `clipper.rs:4486` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DupOutPt` (line 2917) → `clipper.rs:4521` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `JoinHorz` (line 2940) → `clipper.rs:4543` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `JoinPoints` (line 3027) → `clipper.rs:4648` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `FixupFirstLefts1` (line 3187) → `clipper.rs:4824` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `FixupFirstLefts2` (line 3203) → `clipper.rs:4854` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `JoinCommonEdges` (line 3211) → `clipper.rs:4865` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `DoSimplePolygons` (line 3762) → `clipper.rs:5006` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 
 **class `ClipperBase`**
 
-- [v] `ProcessBound` (line 643) → `clipper.rs:1129` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AddPath` (line 760) → `clipper.rs:811` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AddPathInternal` (line 784) → `clipper.rs:844` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [x] `Clear` (line 962) → `clipper.rs:1120`
-- [v] `Reset` (line 976) → `clipper.rs:1043` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [x] `GetBounds` (line 1005) → `clipper.rs:1078`
+- [v] `ProcessBound` (line 643) → `clipper.rs:1194` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddPath` (line 760) → `clipper.rs:814` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddPathInternal` (line 784) → `clipper.rs:909` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [x] `Clear` (line 962) → `clipper.rs:1185`
+- [v] `Reset` (line 976) → `clipper.rs:1108` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [x] `GetBounds` (line 1005) → `clipper.rs:1143`
 
 **class `ClipperOffset`**
 
-- [ ] `AddPaths` (line 515) → `clipper.rs`
-- [v] `Clear` (line 3336) → `clipper.rs:1120` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [v] `AddPath` (line 3345) → `clipper.rs:811` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
-- [ ] `FixOrientations` (line 3409) → `clipper.rs`
-- [v] `Execute` (line 3435) → `clipper.rs:2353` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddPaths` (line 515) → `clipper.rs:846` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `Clear` (line 3336) → `clipper.rs:1185` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `AddPath` (line 3345) → `clipper.rs:814` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `FixOrientations` (line 3409) → `clipper.rs:5308` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `Execute` (line 3435) → `clipper.rs:2634` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 - [~] `Execute` (line 3466) → `clipper.rs` — another overload of the name is ported
-- [ ] `DoOffset` (line 3497) → `clipper.rs`
-- [ ] `OffsetPoint` (line 3667) → `clipper.rs`
-- [ ] `DoSquare` (line 3711) → `clipper.rs`
-- [ ] `DoMiter` (line 3724) → `clipper.rs`
-- [ ] `DoRound` (line 3732) → `clipper.rs`
+- [v] `DoOffset` (line 3497) → `clipper.rs:5404` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `OffsetPoint` (line 3667) → `clipper.rs:5585` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `DoSquare` (line 3711) → `clipper.rs:5633` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `DoMiter` (line 3724) → `clipper.rs:5654` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `DoRound` (line 3732) → `clipper.rs:5667` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
 
 **class `PolyNode`**
 
-- [ ] `AddChild` (line 138) → `clipper.rs`
-- [ ] `GetNext` (line 145) → `clipper.rs`
-- [ ] `IsOpen` (line 147) → `clipper.rs`
-- [ ] `IsHole` (line 148) → `clipper.rs`
-- [ ] `ChildCount` (line 148) → `clipper.rs`
-- [ ] `GetNextSiblingUp` (line 154) → `clipper.rs`
+- [v] `AddChild` (line 138) → `clipper.rs:2062` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [x] `GetNext` (line 145) → `clipper.rs:2085`
+- [v] `IsOpen` (line 147) → `clipper.rs:2001` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `IsHole` (line 148) → `clipper.rs:2072` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `ChildCount` (line 148) → `clipper.rs:2007` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [x] `GetNextSiblingUp` (line 154) → `clipper.rs:2096`
 
 **class `PolyTree`**
 
-- [ ] `Total` (line 126) → `clipper.rs`
-- [ ] `RemoveOutermostPolygon` (line 160) → `clipper.rs`
-- [ ] `GetFirst` (line 180) → `clipper.rs`
-- [v] `Clear` (line 181) → `clipper.rs:1120` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
+- [v] `Total` (line 126) → `clipper.rs:2049` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [v] `RemoveOutermostPolygon` (line 160) → `clipper.rs:2135` — R890: tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys
+- [x] `GetFirst` (line 180) → `clipper.rs:2113`
+- [v] `Clear` (line 181) → `clipper.rs:1185` — R889: tests/clipper_execute_native_parity.rs: Clipper::Execute equal to ClipperLib compiled in clipper-z-sys on 95,432 cases (all clip types, fill types and options; same paths, order and start vertex), which runs this function
 
 **class `clipperException`**
 
@@ -1745,8 +1745,8 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `union_safety_offset` (line 371) → `bridge_detector.rs` — not in the paired file
 - [~] `union_safety_offset_ex` (line 372) → `clipper_utils.rs` — another overload of the name is ported
 - [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:3651`
-- [ ] `remove_outermost_polygon` (line 376) → `clipper_utils.rs`
-- [ ] `remove_outermost_polygon` (line 378) → `clipper_utils.rs`
+- [~] `remove_outermost_polygon` (line 376) → `clipper.rs` — not in the paired file
+- [~] `remove_outermost_polygon` (line 378) → `clipper.rs` — not in the paired file
 - [~] `expand` (line 381) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `shrink_paths` (line 382) → `clipper_utils.rs`
 - [~] `expand` (line 383) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
@@ -1893,7 +1893,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [ ] `traverse_pt_noholes` (line 989) → `clipper_utils.rs`
 - [ ] `traverse_pt_outside_in` (line 999) → `clipper_utils.rs`
 - [~] `union_pt_chained_outside_in` (line 1019) → `fill/fill_concentric.rs` — not in the paired file
-- [~] `simplify_polygons` (line 1026) → `arachne/wall_tool_paths.rs, emboss.rs, geometry/geometry.rs` — not in the paired file
+- [~] `simplify_polygons` (line 1026) → `arachne/wall_tool_paths.rs, clipper.rs, emboss.rs` — not in the paired file
 - [ ] `simplify_polygons_ex` (line 1043) → `clipper_utils.rs`
 - [ ] `top_level_islands` (line 1059) → `clipper_utils.rs`
 - [~] `fix_after_outer_offset` (line 1077) → `clipper2_utils.rs` — not in the paired file
@@ -4561,7 +4561,7 @@ Rust file: `fill/lightning/tree_node.rs`. Status: **partial**. Not listed: 1 con
 
 - [x] `getWeightedDistance` (line 10) → `fill/lightning/tree_node.rs:109`
 - [x] `hasOffspring` (line 22) → `fill/lightning/tree_node.rs:133`
-- [~] `addChild` (line 34) → `fill/lightning/tree_node.rs` — another overload of the name is ported
+- [~] `addChild` (line 34) → `clipper.rs` — not in the paired file
 - [x] `addChild` (line 41) → `fill/lightning/tree_node.rs:161`
 - [~] `create` (line 45) → `fill/lightning/tree_node.rs:64` — divergent
 - [x] `propagateToNextLayer` (line 51) → `fill/lightning/tree_node.rs:176`
@@ -5604,7 +5604,7 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 
 **class `GCode::GCodeOutputStream`**
 
-- [~] `is_open` (line 300) → `edge_grid.rs` — not in the paired file
+- [~] `is_open` (line 300) → `clipper.rs, edge_grid.rs` — not in the paired file
 - [~] `write` (line 311) → `zipper.rs` — not in the paired file
 - [ ] `is_error` (line 7082) → `g_code.rs`
 - [ ] `get_last_error` (line 7087) → `g_code.rs`
@@ -10590,7 +10590,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 **class `SupportStageTimes`**
 
 - [~] `reset` (line 79) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
-- [~] `total` (line 80) → `debug/validation.rs` — not in the paired file
+- [~] `total` (line 80) → `clipper.rs, debug/validation.rs` — not in the paired file
 
 **class `WipeTowerData`**
 

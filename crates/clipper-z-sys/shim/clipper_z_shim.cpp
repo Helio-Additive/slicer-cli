@@ -1687,3 +1687,148 @@ extern "C" CzZPaths cz_ref_execute(const int32_t *subj_xy, const int32_t *subj_l
         *succeeded = ok ? 1 : 0;
     return marshal_paths(solution);
 }
+
+// ---------------------------------------------------------------------------
+// Reference exports for the Rust port of PolyNode / PolyTree, the PolyTree
+// Execute of Clipper and ClipperOffset (clipper.cpp 122-171, 1098-1110,
+// 2791-2843, 3315-3751, 3842-3850, 4093-4132). Not called by the engine:
+// tests/clipper_polytree_native_parity.rs and tests/clipper_offset_native_parity.rs
+// compare the port with them.
+//
+// The encoding of a PolyTree: the contours of its nodes as a CzZPaths (z always
+// 0) in pre-order (a node, then its children in the order of Childs, each with
+// its own descendants; the tree itself is not listed), every contour with the
+// points and the start vertex the library produced. For node i of that listing
+// node_info[4*i .. 4*i+4] receives: the index in the listing of its Parent (-1
+// when the Parent is the tree itself), IsHole(), IsOpen(), ChildCount(). At
+// most node_info_cap nodes are written; *num_nodes receives the number of nodes
+// listed, *total what PolyTree::Total() returns.
+// ---------------------------------------------------------------------------
+namespace {
+void cz_ref_list_node(const ClipperLib::PolyNode &node, int32_t parent, ClipperLib::Paths &contours,
+                      std::vector<int32_t> &info)
+{
+    for (int i = 0; i < node.ChildCount(); ++i) {
+        const ClipperLib::PolyNode &child = *node.Childs[i];
+        int32_t me = int32_t(contours.size());
+        contours.push_back(child.Contour);
+        info.push_back(parent);
+        info.push_back(child.IsHole() ? 1 : 0);
+        info.push_back(child.IsOpen() ? 1 : 0);
+        info.push_back(child.ChildCount());
+        cz_ref_list_node(child, me, contours, info);
+    }
+}
+
+CzZPaths cz_ref_marshal_polytree(const ClipperLib::PolyTree &tree, int32_t *node_info, int32_t node_info_cap,
+                                 int32_t *num_nodes, int32_t *total)
+{
+    ClipperLib::Paths contours;
+    std::vector<int32_t> info;
+    cz_ref_list_node(tree, -1, contours, info);
+    if (node_info != nullptr)
+        for (size_t i = 0; i < info.size() && i < size_t(node_info_cap) * 4; ++i)
+            node_info[i] = info[i];
+    if (num_nodes != nullptr)
+        *num_nodes = int32_t(contours.size());
+    if (total != nullptr)
+        *total = contours.empty() && tree.ChildCount() == 0 ? 0 : tree.Total();
+    return marshal_paths(contours);
+}
+} // namespace
+
+// ClipperLib::Clipper::Execute(clip_type, PolyTree&, subj_fill, clip_fill).
+// Subject i is closed when subj_closed[i] != 0 and open otherwise; the clips are
+// closed. With add_paths == 0 every path goes in through AddPath, subjects first,
+// in the given order; otherwise through three AddPaths calls: the closed
+// subjects, the open subjects, the clips. output selects what comes back:
+//   0: the tree, in the encoding above;
+//   1: PolyTreeToPaths(tree);  2: ClosedPathsFromPolyTree(tree);
+//   3: OpenPathsFromPolyTree(tree)   (node_info is not written for 1-3).
+// *succeeded receives what Execute returned. Free via cz_free_zpaths.
+extern "C" CzZPaths cz_ref_execute_polytree(const int32_t *subj_xy, const int32_t *subj_lens,
+                                            const int32_t *subj_closed, int32_t subj_num,
+                                            const int32_t *clip_xy, const int32_t *clip_lens, int32_t clip_num,
+                                            int32_t clip_type, int32_t subj_fill, int32_t clip_fill,
+                                            int32_t strictly_simple, int32_t preserve_collinear,
+                                            int32_t reverse_solution, int32_t add_paths, int32_t output,
+                                            int32_t *node_info, int32_t node_info_cap, int32_t *num_nodes,
+                                            int32_t *total, int32_t *succeeded)
+{
+    ClipperLib::Paths subject = read_closed_paths(subj_xy, subj_lens, subj_num);
+    ClipperLib::Paths clip    = read_closed_paths(clip_xy, clip_lens, clip_num);
+    ClipperLib::Clipper c;
+    c.StrictlySimple(strictly_simple != 0);
+    c.PreserveCollinear(preserve_collinear != 0);
+    c.ReverseSolution(reverse_solution != 0);
+    if (add_paths == 0) {
+        for (size_t i = 0; i < subject.size(); ++i)
+            c.AddPath(subject[i], ClipperLib::ptSubject, subj_closed[i] != 0);
+        for (const ClipperLib::Path &p : clip)
+            c.AddPath(p, ClipperLib::ptClip, true);
+    } else {
+        ClipperLib::Paths closed, open;
+        for (size_t i = 0; i < subject.size(); ++i)
+            (subj_closed[i] != 0 ? closed : open).push_back(subject[i]);
+        c.AddPaths(closed, ClipperLib::ptSubject, true);
+        c.AddPaths(open, ClipperLib::ptSubject, false);
+        c.AddPaths(clip, ClipperLib::ptClip, true);
+    }
+    ClipperLib::PolyTree tree;
+    bool ok = c.Execute(static_cast<ClipperLib::ClipType>(clip_type), tree,
+                        static_cast<ClipperLib::PolyFillType>(subj_fill),
+                        static_cast<ClipperLib::PolyFillType>(clip_fill));
+    if (succeeded != nullptr)
+        *succeeded = ok ? 1 : 0;
+    if (output == 0)
+        return cz_ref_marshal_polytree(tree, node_info, node_info_cap, num_nodes, total);
+    ClipperLib::Paths paths;
+    if (output == 1)
+        ClipperLib::PolyTreeToPaths(tree, paths);
+    else if (output == 2)
+        ClipperLib::ClosedPathsFromPolyTree(tree, paths);
+    else
+        ClipperLib::OpenPathsFromPolyTree(tree, paths);
+    return marshal_paths(paths);
+}
+
+// ClipperLib::ClipperOffset(miter_limit, arc_tolerance, shortest_edge_length):
+// path i goes in through AddPath(path, join_types[i], end_types[i]) (the values
+// of ClipperLib::JoinType and ClipperLib::EndType), then Execute(solution,
+// delta). With use_polytree == 0 the solution is a Paths and comes back as
+// produced; otherwise it is a PolyTree and comes back in the encoding above
+// (node_info, num_nodes, total as in cz_ref_execute_polytree). Free via
+// cz_free_zpaths.
+extern "C" CzZPaths cz_ref_offset(const int32_t *xy, const int32_t *lens, const int32_t *join_types,
+                                  const int32_t *end_types, int32_t num, double miter_limit,
+                                  double arc_tolerance, double shortest_edge_length, double delta,
+                                  int32_t use_polytree, int32_t *node_info, int32_t node_info_cap,
+                                  int32_t *num_nodes, int32_t *total)
+{
+    ClipperLib::Paths paths = read_closed_paths(xy, lens, num);
+    ClipperLib::ClipperOffset co(miter_limit, arc_tolerance, shortest_edge_length);
+    for (size_t i = 0; i < paths.size(); ++i)
+        co.AddPath(paths[i], static_cast<ClipperLib::JoinType>(join_types[i]),
+                   static_cast<ClipperLib::EndType>(end_types[i]));
+    if (use_polytree == 0) {
+        ClipperLib::Paths solution;
+        co.Execute(solution, delta);
+        return marshal_paths(solution);
+    }
+    ClipperLib::PolyTree tree;
+    co.Execute(tree, delta);
+    return cz_ref_marshal_polytree(tree, node_info, node_info_cap, num_nodes, total);
+}
+
+// ClipperLib::SimplifyPolygon(path, fill_type) when which == 0 (the first path
+// only), ClipperLib::SimplifyPolygons(paths, fill_type) otherwise. Free via
+// cz_free_zpaths.
+extern "C" CzZPaths cz_ref_simplify_polygons(const int32_t *xy, const int32_t *lens, int32_t num,
+                                             int32_t fill_type, int32_t which)
+{
+    ClipperLib::Paths paths = read_closed_paths(xy, lens, num);
+    ClipperLib::PolyFillType ft = static_cast<ClipperLib::PolyFillType>(fill_type);
+    if (which == 0)
+        return marshal_paths(ClipperLib::SimplifyPolygon(paths.empty() ? ClipperLib::Path() : paths.front(), ft));
+    return marshal_paths(ClipperLib::SimplifyPolygons(paths, ft));
+}

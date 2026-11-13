@@ -284,6 +284,69 @@ extern "C" {
         reverse_solution: i32,
         succeeded: *mut i32,
     ) -> CzZPaths;
+    /// `ClipperLib::Clipper::Execute(clip_type, PolyTree&, subj_fill, clip_fill)`, for the tests
+    /// of the Rust port of the polygon tree. Subject `i` is closed when `subj_closed[i] != 0`
+    /// and open otherwise; clips are closed. `add_paths == 0`: every path through `AddPath`,
+    /// subjects first; otherwise three `AddPaths` calls (closed subjects, open subjects, clips).
+    ///
+    /// `output == 0` returns the tree: the contours of its nodes in pre-order (a node, then its
+    /// children in the order of `Childs`, each with its descendants; the tree itself is not
+    /// listed), as the library produced them (z always 0). For node `i` of that listing
+    /// `node_info[4*i..4*i+4]` receives the index in the listing of its `Parent` (-1 when that
+    /// is the tree itself), `IsHole()`, `IsOpen()` and `ChildCount()`; at most `node_info_cap`
+    /// nodes are written, `*num_nodes` receives the number listed and `*total` what
+    /// `PolyTree::Total()` returns. `output` 1, 2, 3 return `PolyTreeToPaths`,
+    /// `ClosedPathsFromPolyTree`, `OpenPathsFromPolyTree` of the tree instead.
+    /// Free via [`cz_free_zpaths`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn cz_ref_execute_polytree(
+        subj_xy: *const i32,
+        subj_lens: *const i32,
+        subj_closed: *const i32,
+        subj_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+        clip_type: i32,
+        subj_fill: i32,
+        clip_fill: i32,
+        strictly_simple: i32,
+        preserve_collinear: i32,
+        reverse_solution: i32,
+        add_paths: i32,
+        output: i32,
+        node_info: *mut i32,
+        node_info_cap: i32,
+        num_nodes: *mut i32,
+        total: *mut i32,
+        succeeded: *mut i32,
+    ) -> CzZPaths;
+    /// `ClipperLib::ClipperOffset(miter_limit, arc_tolerance, shortest_edge_length)`, for the
+    /// tests of its Rust port: path `i` through `AddPath(path, join_types[i], end_types[i])`
+    /// (join: 0=jtSquare, 1=jtRound, 2=jtMiter; end: 0=etClosedPolygon, 1=etClosedLine,
+    /// 2=etOpenButt, 3=etOpenSquare, 4=etOpenRound), then `Execute(solution, delta)` into a
+    /// `Paths` (`use_polytree == 0`, returned as produced) or into a `PolyTree` (returned in the
+    /// encoding of [`cz_ref_execute_polytree`]). Free via [`cz_free_zpaths`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn cz_ref_offset(
+        xy: *const i32,
+        lens: *const i32,
+        join_types: *const i32,
+        end_types: *const i32,
+        num: i32,
+        miter_limit: f64,
+        arc_tolerance: f64,
+        shortest_edge_length: f64,
+        delta: f64,
+        use_polytree: i32,
+        node_info: *mut i32,
+        node_info_cap: i32,
+        num_nodes: *mut i32,
+        total: *mut i32,
+    ) -> CzZPaths;
+    /// `ClipperLib::SimplifyPolygon(first path, fill_type)` when `which == 0`,
+    /// `ClipperLib::SimplifyPolygons(paths, fill_type)` otherwise. Free via [`cz_free_zpaths`].
+    pub fn cz_ref_simplify_polygons(xy: *const i32, lens: *const i32, num: i32, fill_type: i32, which: i32) -> CzZPaths;
     /// R803: faithful `offset(const Polygons&, float delta)` — flat Paths in
     /// Clipper's BuildResult order (ring START vertex preserved).
     pub fn cz_offset_paths(xy: *const i32, lens: *const i32, num: i32, delta: f64, join_type: i32, miter_limit: f64) -> CzZPaths;

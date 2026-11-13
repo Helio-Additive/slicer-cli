@@ -1,18 +1,21 @@
 //! Port of ClipperLib, `src/clipper/clipper.cpp` and `clipper.hpp` of the engine (the file
 //! `libslic3r/clipper.cpp` compiles it into libslic3r).
 //!
-//! In progress: this file holds the library's free functions, `ClipperBase` and `Clipper`
-//! with `Execute` into `Paths` (clipper.cpp up to line 3313 and `DoSimplePolygons`). Nothing in
-//! the engine calls the clipper here yet: `ClipperOffset`, `PolyTree` and `BuildResult2` are not
-//! ported, and the engine's clipping still runs as C++ through `clipper-z-sys`; see
+//! In progress: this file holds the library's free functions, `ClipperBase`, `Clipper` with
+//! `Execute` into `Paths` and into a `PolyTree`, `PolyNode` and `PolyTree`, `ClipperOffset`,
+//! `SimplifyPolygon(s)` and the functions that turn a tree into paths. Not ported: the Minkowski
+//! functions (clipper.cpp:4003-4090) and the stream operators. Nothing in the engine calls the
+//! clipper here yet: the engine's clipping still runs as C++ through `clipper-z-sys`; see
 //! `docs/rust-engine/parity/not-ported.md`.
 //!
 //! The engine builds ClipperLib with `CLIPPERLIB_INT32` (clipper.hpp:83-95), so `cInt` is a
 //! 32-bit integer, with `use_lines` and, here, without `CLIPPERLIB_USE_XYZ`. The float
 //! expressions below are written as the C++ build evaluates them: clang for arm64 contracts a
 //! product into a fused multiply-add inside one expression.
-//! `tests/clipper_native_parity.rs` holds the free functions equal to the library, and
-//! `tests/clipper_execute_native_parity.rs` holds `Clipper::execute` equal to it.
+//! `tests/clipper_native_parity.rs` holds the free functions equal to the library,
+//! `tests/clipper_execute_native_parity.rs` holds `Clipper::execute` equal to it,
+//! `tests/clipper_polytree_native_parity.rs` the `PolyTree` and `tests/clipper_offset_native_parity.rs`
+//! `ClipperOffset`.
 
 #![allow(non_camel_case_types)]
 
@@ -833,6 +836,68 @@ impl ClipperBase {
             // The C++ drops the edge array it did not remember. Local minima that
             // were pushed before the failure cannot refer to it: every `return
             // false` of AddPathInternal comes before the first push.
+            self.m_edges.truncate(base);
+        }
+        result
+    }
+
+    /// clipper.hpp:303-352
+    /// C++: template<typename PathsProvider> bool AddPaths(PathsProvider &&paths_provider, PolyType PolyTyp, bool Closed)
+    pub fn add_paths(&mut self, paths_provider: &Paths, poly_typ: PolyType, closed: bool) -> bool {
+        let num_paths = paths_provider.len();
+        if num_paths == 0 {
+            return false;
+        }
+        if num_paths == 1 {
+            return self.add_path(&paths_provider[0], poly_typ, closed);
+        }
+
+        let mut num_edges: Vec<i32> = vec![0; num_paths];
+        let mut num_edges_total: i32 = 0;
+        let mut i = 0usize;
+        for pg in paths_provider {
+            // Remove duplicate end point from a closed input path.
+            // Remove duplicate points from the end of the input path.
+            let mut high_i = pg.len() as i32 - 1;
+            if closed {
+                while high_i > 0 && pg[high_i as usize] == pg[0] {
+                    high_i -= 1;
+                }
+            }
+            while high_i > 0 && pg[high_i as usize] == pg[high_i as usize - 1] {
+                high_i -= 1;
+            }
+            if (closed && high_i < 2) || (!closed && high_i < 1) {
+                high_i = -1;
+            }
+            num_edges[i] = high_i + 1;
+            i += 1;
+            num_edges_total += high_i + 1;
+        }
+        if num_edges_total == 0 {
+            return false;
+        }
+
+        // Allocate a new edge array.
+        let base = self.m_edges.len();
+        self.m_edges.resize(base + num_edges_total as usize, TEdge::default());
+        // Fill in the edge array.
+        let mut result = false;
+        let mut p_edge = base;
+        i = 0;
+        for pg in paths_provider {
+            if num_edges[i] != 0 {
+                let res = self.add_path_internal(pg, num_edges[i] - 1, poly_typ, closed, p_edge);
+                if res {
+                    p_edge += num_edges[i] as usize;
+                    result = true;
+                }
+            }
+            i += 1;
+        }
+        if !result {
+            // At least some edges were generated: the C++ remembers the edge array.
+            // Otherwise it drops it, as `add_path` does.
             self.m_edges.truncate(base);
         }
         result
@@ -1835,7 +1900,7 @@ const OUT_PT_NULL: usize = usize::MAX;
 
 /// clipper.cpp:88-104 `struct OutRec`: an output polygon. An `OutRec*` is the index
 /// of the record in `Clipper::m_poly_outs`, an `OutPt*` an index into
-/// `Clipper::m_out_pts`. `PolyNd` is used by `BuildResult2` only, which is not ported.
+/// `Clipper::m_out_pts`, a `PolyNode*` the index of the node in `PolyTree::all_nodes`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OutRec {
     pub idx: i32,
@@ -1846,6 +1911,8 @@ pub struct OutRec {
     /// parsed left from the current edge (owning OutRec) until the owner OutRec
     /// is found.
     pub first_left: Option<usize>,
+    /// Used only by void Clipper::BuildResult2(PolyTree& polytree)
+    pub poly_nd: Option<usize>,
     /// Linked list of output points.
     pub pts: Option<usize>,
     pub bottom_pt: Option<usize>,
@@ -1878,6 +1945,210 @@ pub const IO_PRESERVE_COLLINEAR: i32 = 4;
 /// nothing in the library catches are panics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClipperException(pub &'static str);
+
+// ---------------------------------------------------------------------------
+// The polygon tree (clipper.hpp:133-189, clipper.cpp:122-171). The C++ nodes hold
+// pointers to each other (`Parent`, `Childs`); here a `PolyNode*` is an index: the
+// index of the node in `PolyTree::all_nodes`, or `POLY_TREE_ROOT` for the tree
+// itself, which in C++ is a `PolyNode` too (`class PolyTree: public PolyNode`).
+// The members that follow those pointers (`GetNext`, `IsHole`, `AddChild`) are
+// therefore methods of the tree that take the node.
+// ---------------------------------------------------------------------------
+
+/// The `PolyNode*` that points at the `PolyTree` itself: the `Parent` of the
+/// top-level nodes.
+pub const POLY_TREE_ROOT: usize = usize::MAX;
+
+/// clipper.hpp:136-159 `class PolyNode`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolyNode {
+    pub contour: Path,
+    /// clipper.hpp:134 `typedef std::vector< PolyNode* > PolyNodes;`
+    pub childs: Vec<usize>,
+    pub parent: Option<usize>,
+    /// node index in Parent.Childs
+    pub index: u32,
+    pub m_is_open: bool,
+    pub m_jointype: JoinType,
+    pub m_endtype: EndType,
+}
+
+impl Default for PolyNode {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PolyNode {
+    /// clipper.hpp:139
+    /// C++: PolyNode() : Childs(), Parent(0), Index(0), m_IsOpen(false) {}
+    /// The C++ leaves `m_jointype` and `m_endtype` unset; nothing reads them before
+    /// `ClipperOffset::AddPath` writes them. Here they hold the first enumerator.
+    pub fn new() -> Self {
+        Self {
+            contour: Path::new(),
+            childs: Vec::new(),
+            parent: None,
+            index: 0,
+            m_is_open: false,
+            m_jointype: JoinType::jtSquare,
+            m_endtype: EndType::etClosedPolygon,
+        }
+    }
+
+    /// clipper.hpp:147
+    /// C++: bool IsOpen() const { return m_IsOpen; }
+    pub fn is_open(&self) -> bool {
+        self.m_is_open
+    }
+
+    /// clipper.hpp:148
+    /// C++: int ChildCount() const { return (int)Childs.size(); }
+    pub fn child_count(&self) -> i32 {
+        self.childs.len() as i32
+    }
+}
+
+/// clipper.hpp:161-189 `class PolyTree: public PolyNode`. The base class is the
+/// field `root`. The move constructor and move assignment (clipper.hpp:165-179) are
+/// Rust moves: the nodes refer to each other by index, so nothing has to be re-pointed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PolyTree {
+    pub root: PolyNode,
+    pub all_nodes: Vec<PolyNode>,
+}
+
+impl PolyTree {
+    /// clipper.hpp:164
+    /// C++: PolyTree() {}
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `*node`: the node a `PolyNode*` points at.
+    #[inline]
+    pub fn node(&self, node: usize) -> &PolyNode {
+        if node == POLY_TREE_ROOT {
+            &self.root
+        } else {
+            &self.all_nodes[node]
+        }
+    }
+
+    #[inline]
+    fn node_mut(&mut self, node: usize) -> &mut PolyNode {
+        if node == POLY_TREE_ROOT {
+            &mut self.root
+        } else {
+            &mut self.all_nodes[node]
+        }
+    }
+
+    /// clipper.cpp:126-132
+    /// C++: int PolyTree::Total() const
+    pub fn total(&self) -> i32 {
+        let mut result = self.all_nodes.len() as i32;
+        // with negative offsets, ignore the hidden outer polygon ...
+        // `Childs.front() != &AllNodes.front()`: the first node is index 0.
+        if result > 0 && self.root.childs[0] != 0 {
+            result -= 1;
+        }
+        result
+    }
+
+    /// clipper.cpp:138-144
+    /// C++: void PolyNode::AddChild(PolyNode& child)
+    /// `node` is `this`.
+    pub fn add_child(&mut self, node: usize, child: usize) {
+        let cnt = self.node(node).childs.len() as u32;
+        self.node_mut(node).childs.push(child);
+        self.node_mut(child).parent = Some(node);
+        self.node_mut(child).index = cnt;
+    }
+
+    /// clipper.cpp:148-158
+    /// C++: bool PolyNode::IsHole() const
+    /// Edge delimits a hole if it has an odd number of parent loops.
+    pub fn is_hole(&self, node: usize) -> bool {
+        let mut result = true;
+        let mut node = self.node(node).parent;
+        while let Some(n) = node {
+            result = !result;
+            node = self.node(n).parent;
+        }
+        result
+    }
+
+    /// clipper.hpp:145
+    /// C++: PolyNode* GetNext() const { return Childs.empty() ? GetNextSiblingUp() : Childs.front(); }
+    /// Traversal of the polygon tree in a depth first fashion.
+    pub fn get_next(&self, node: usize) -> Option<usize> {
+        let n = self.node(node);
+        if n.childs.is_empty() {
+            self.get_next_sibling_up(node)
+        } else {
+            Some(n.childs[0])
+        }
+    }
+
+    /// clipper.hpp:154
+    /// C++: PolyNode* GetNextSiblingUp() const
+    pub fn get_next_sibling_up(&self, node: usize) -> Option<usize> {
+        let n = self.node(node);
+        match n.parent {
+            Some(parent) => {
+                let p = self.node(parent);
+                if n.index as usize == p.childs.len().wrapping_sub(1) {
+                    self.get_next_sibling_up(parent)
+                } else {
+                    Some(p.childs[n.index as usize + 1])
+                }
+            }
+            None => None,
+        }
+    }
+
+    /// clipper.hpp:180
+    /// C++: PolyNode* GetFirst() const { return Childs.empty() ? nullptr : Childs.front(); }
+    pub fn get_first(&self) -> Option<usize> {
+        if self.root.childs.is_empty() {
+            None
+        } else {
+            Some(self.root.childs[0])
+        }
+    }
+
+    /// clipper.hpp:181
+    /// C++: void Clear() {  AllNodes.clear(); Childs.clear(); }
+    pub fn clear(&mut self) {
+        self.all_nodes.clear();
+        self.root.childs.clear();
+    }
+
+    /// `PolyNode::ChildCount` of the tree itself (clipper.hpp:148).
+    pub fn child_count(&self) -> i32 {
+        self.root.child_count()
+    }
+
+    /// clipper.cpp:160-171
+    /// C++: void PolyTree::RemoveOutermostPolygon()
+    pub fn remove_outermost_polygon(&mut self) {
+        if self.child_count() == 1 && self.node(self.root.childs[0]).child_count() > 0 {
+            let outer_node = self.root.childs[0];
+            let outer_child_count = self.all_nodes[outer_node].child_count();
+            self.root.childs.reserve(outer_child_count as usize);
+            self.root.childs[0] = self.all_nodes[outer_node].childs[0];
+            let first = self.root.childs[0];
+            self.all_nodes[first].parent = self.all_nodes[outer_node].parent;
+            for i in 1..outer_child_count {
+                let child = self.all_nodes[outer_node].childs[i as usize];
+                self.add_child(POLY_TREE_ROOT, child);
+            }
+        } else {
+            self.clear();
+        }
+    }
+}
 
 /// clipper.cpp:192-202
 /// C++: double Area(const OutRec &outRec)
@@ -2270,6 +2541,16 @@ impl Clipper {
         self.base.add_path(pg, poly_typ, closed)
     }
 
+    /// `ClipperBase::AddPaths`, which `Clipper` inherits (clipper.hpp:303-352).
+    pub fn add_paths(&mut self, paths_provider: &Paths, poly_typ: PolyType, closed: bool) -> bool {
+        self.base.add_paths(paths_provider, poly_typ, closed)
+    }
+
+    /// `ClipperBase::GetBounds`, which `Clipper` inherits (clipper.cpp:1005-1043).
+    pub fn get_bounds(&self) -> IntRect {
+        self.base.get_bounds()
+    }
+
     /// clipper.hpp:393
     /// C++: void Clear() { ClipperBase::Clear(); DisposeAllOutRecs(); }
     pub fn clear(&mut self) {
@@ -2368,6 +2649,27 @@ impl Clipper {
         let succeeded = self.execute_internal();
         if succeeded {
             self.build_result(solution);
+        }
+        self.dispose_all_out_recs();
+        succeeded
+    }
+
+    /// clipper.cpp:1098-1110
+    /// C++: bool Clipper::Execute(ClipType clipType, PolyTree& polytree, PolyFillType subjFillType, PolyFillType clipFillType)
+    pub fn execute_poly_tree(
+        &mut self,
+        clip_type: ClipType,
+        polytree: &mut PolyTree,
+        subj_fill_type: PolyFillType,
+        clip_fill_type: PolyFillType,
+    ) -> bool {
+        self.m_subj_fill_type = subj_fill_type;
+        self.m_clip_fill_type = clip_fill_type;
+        self.m_clip_type = clip_type;
+        self.m_using_poly_tree = true;
+        let succeeded = self.execute_internal();
+        if succeeded {
+            self.build_result2(polytree);
         }
         self.dispose_all_out_recs();
         succeeded
@@ -3249,6 +3551,7 @@ impl Clipper {
             first_left: None,
             pts: None,
             bottom_pt: None,
+            poly_nd: None,
         };
         result.idx = self.m_poly_outs.len() as i32;
         self.m_poly_outs.push(result);
@@ -4119,6 +4422,65 @@ impl Clipper {
         }
     }
 
+    /// clipper.cpp:2791-2843
+    /// C++: void Clipper::BuildResult2(PolyTree& polytree)
+    pub fn build_result2(&mut self, polytree: &mut PolyTree) {
+        polytree.clear();
+        polytree.all_nodes.reserve(self.m_poly_outs.len());
+        // add each output polygon/contour to polytree ...
+        for i in 0..self.m_poly_outs.len() {
+            let out_rec = self.m_poly_outs[i];
+            let cnt = point_count(&self.m_out_pts, out_rec.pts);
+            if (out_rec.is_open && cnt < 2) || (!out_rec.is_open && cnt < 3) {
+                // Ignore an invalid output loop or a polyline.
+                continue;
+            }
+
+            // skip OutRecs that (a) contain outermost polygons or
+            // (b) already have the correct owner/child linkage ...
+            if let Some(fl) = out_rec.first_left {
+                if out_rec.is_hole == self.m_poly_outs[fl].is_hole || self.m_poly_outs[fl].pts.is_none() {
+                    let mut orfl = out_rec.first_left;
+                    while let Some(o) = orfl {
+                        if !(self.m_poly_outs[o].is_hole == out_rec.is_hole || self.m_poly_outs[o].pts.is_none()) {
+                            break;
+                        }
+                        orfl = self.m_poly_outs[o].first_left;
+                    }
+                    self.m_poly_outs[i].first_left = orfl;
+                }
+            }
+
+            // nb: polytree takes ownership of all the PolyNodes
+            polytree.all_nodes.push(PolyNode::new());
+            let pn = polytree.all_nodes.len() - 1;
+            self.m_poly_outs[i].poly_nd = Some(pn);
+            polytree.all_nodes[pn].parent = None;
+            polytree.all_nodes[pn].index = 0;
+            polytree.all_nodes[pn].contour.reserve(cnt as usize);
+            let mut op = self.pv(out_rec.pts.expect("a counted loop has points"));
+            for _ in 0..cnt {
+                polytree.all_nodes[pn].contour.push(self.pt(op));
+                op = self.pv(op);
+            }
+        }
+
+        // fixup PolyNode links etc ...
+        polytree.root.childs.reserve(self.m_poly_outs.len());
+        for i in 0..self.m_poly_outs.len() {
+            let out_rec = self.m_poly_outs[i];
+            let Some(poly_nd) = out_rec.poly_nd else { continue };
+            if out_rec.is_open {
+                polytree.all_nodes[poly_nd].m_is_open = true;
+                polytree.add_child(POLY_TREE_ROOT, poly_nd);
+            } else if let Some(parent_nd) = out_rec.first_left.and_then(|fl| self.m_poly_outs[fl].poly_nd) {
+                polytree.add_child(parent_nd, poly_nd);
+            } else {
+                polytree.add_child(POLY_TREE_ROOT, poly_nd);
+            }
+        }
+    }
+
     /// clipper.cpp:2888-2914
     /// C++: void Clipper::InsertEdgeIntoAEL(TEdge *edge, TEdge* startEdge)
     pub fn insert_edge_into_ael(&mut self, edge: usize, mut start_edge: Option<usize>) {
@@ -4708,6 +5070,700 @@ impl Clipper {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ClipperOffset (clipper.hpp:507-544, clipper.cpp:3315-3751).
+// `tests/clipper_offset_native_parity.rs` holds it equal to the library. The float
+// expressions are written as clang for arm64 evaluates them: inside one expression
+// the left product of a sum or difference is fused (`a * b + c * d` is
+// `fma(a, b, c * d)`, `a - b * c` is `fma(-b, c, a)`).
+// ---------------------------------------------------------------------------
+
+/// clipper.hpp:109 `using DoublePoint = Eigen::Matrix<double, 2, 1, Eigen::DontAlign>;`
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct DoublePoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl DoublePoint {
+    pub fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+}
+
+/// clipper.cpp:3319-3330
+/// C++: DoublePoint GetUnitNormal(const IntPoint &pt1, const IntPoint &pt2)
+pub fn get_unit_normal(pt1: &IntPoint, pt2: &IntPoint) -> DoublePoint {
+    if pt2.x == pt1.x && pt2.y == pt1.y {
+        return DoublePoint::new(0.0, 0.0);
+    }
+
+    // The differences are taken in cInt and wrap as the C++ ones do.
+    let mut dx = pt2.x.wrapping_sub(pt1.x) as f64;
+    let mut dy = pt2.y.wrapping_sub(pt1.y) as f64;
+    // double f = 1.0 / std::sqrt( Dx*Dx + dy*dy );
+    let f = 1.0 / dx.mul_add(dx, dy * dy).sqrt();
+    dx *= f;
+    dy *= f;
+    DoublePoint::new(dy, -dx)
+}
+
+/// `std::sin(x)` and `std::cos(x)` of one argument, as `ClipperOffset::DoOffset` takes them
+/// (clipper.cpp:3529-3530), in the order (sin, cos).
+///
+/// clang for macOS turns the two calls into one call of `__sincos_stret`, whose sine is not
+/// always the one `sin` returns: one unit in the last place apart for about one argument in
+/// 500 (the cosines are equal), which is enough to move a point of a round join
+/// (`tests/clipper_offset_native_parity.rs`, `sin_and_cos_of_one_call`). So on Apple targets
+/// this calls `__sincos_stret` itself rather than leave it to the optimizer to merge
+/// `x.sin()` and `x.cos()` the same way.
+///
+/// FIDELITY-NOTE: on the other targets this is `x.sin()` and `x.cos()`. Whether the Linux and
+/// Windows builds of the C++ get the same bits from their C library there (`sincos` of
+/// glibc, the two calls of the MSVC runtime) has not been tested.
+#[inline]
+pub fn sin_cos(x: f64) -> (f64, f64) {
+    #[cfg(target_vendor = "apple")]
+    {
+        #[repr(C)]
+        struct Double2 {
+            sinval: f64,
+            cosval: f64,
+        }
+        extern "C" {
+            fn __sincos_stret(x: f64) -> Double2;
+        }
+        // SAFETY: `__sincos_stret` of libSystem takes a double and returns the two doubles by value.
+        let r = unsafe { __sincos_stret(x) };
+        (r.sinval, r.cosval)
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    {
+        (x.sin(), x.cos())
+    }
+}
+
+/// clipper.hpp:507-544 `class ClipperOffset`. `m_polyNodes` is a `PolyNode` whose
+/// children the C++ allocates with `new` one by one; here they are the elements of
+/// `m_poly_nodes_childs`, and `m_poly_nodes.childs` holds their indices in it.
+#[derive(Debug, Clone)]
+pub struct ClipperOffset {
+    pub miter_limit: f64,
+    pub arc_tolerance: f64,
+    pub shortest_edge_length: f64,
+
+    m_dest_polys: Paths,
+    m_src_poly: Path,
+    m_dest_poly: Path,
+    m_normals: Vec<DoublePoint>,
+    m_delta: f64,
+    m_sin_a: f64,
+    m_sin: f64,
+    m_cos: f64,
+    m_miter_lim: f64,
+    m_steps_per_rad: f64,
+    /// x: index of the lowest contour in m_polyNodes
+    /// y: index of the lowest point in the lowest contour
+    m_lowest: IntPoint,
+    m_poly_nodes: PolyNode,
+    /// The nodes `m_polyNodes.Childs` points at.
+    m_poly_nodes_childs: Vec<PolyNode>,
+}
+
+impl Default for ClipperOffset {
+    /// clipper.hpp:510 `ClipperOffset(double miterLimit = 2.0, double roundPrecision = 0.25, double shortestEdgeLength = 0.)`
+    fn default() -> Self {
+        Self::new(2.0, 0.25, 0.0)
+    }
+}
+
+impl ClipperOffset {
+    /// clipper.hpp:510-511
+    /// C++: ClipperOffset(double miterLimit = 2.0, double roundPrecision = 0.25, double shortestEdgeLength = 0.)
+    /// The C++ leaves the doubles `m_delta` ... `m_StepsPerRad` unset; `DoOffset`
+    /// writes them before anything reads them.
+    pub fn new(miter_limit: f64, round_precision: f64, shortest_edge_length: f64) -> Self {
+        Self {
+            miter_limit,
+            arc_tolerance: round_precision,
+            shortest_edge_length,
+            m_dest_polys: Paths::new(),
+            m_src_poly: Path::new(),
+            m_dest_poly: Path::new(),
+            m_normals: Vec::new(),
+            m_delta: 0.0,
+            m_sin_a: 0.0,
+            m_sin: 0.0,
+            m_cos: 0.0,
+            m_miter_lim: 0.0,
+            m_steps_per_rad: 0.0,
+            m_lowest: IntPoint::new(-1, 0),
+            m_poly_nodes: PolyNode::new(),
+            m_poly_nodes_childs: Vec::new(),
+        }
+    }
+
+    /// clipper.cpp:3336-3342
+    /// C++: void ClipperOffset::Clear()
+    pub fn clear(&mut self) {
+        // for (...) delete m_polyNodes.Childs[i];
+        self.m_poly_nodes_childs.clear();
+        self.m_poly_nodes.childs.clear();
+        self.m_lowest.x = -1;
+    }
+
+    /// clipper.cpp:3345-3406
+    /// C++: void ClipperOffset::AddPath(const Path& path, JoinType joinType, EndType endType)
+    pub fn add_path(&mut self, path: &Path, join_type: JoinType, end_type: EndType) {
+        let mut high_i = path.len() as i32 - 1;
+        if high_i < 0 {
+            return;
+        }
+        let mut new_node = PolyNode::new();
+        new_node.m_jointype = join_type;
+        new_node.m_endtype = end_type;
+
+        // strip duplicate points from path and also get index to the lowest point ...
+        let has_shortest_edge_length = self.shortest_edge_length > 0.0;
+        let shortest_edge_length2 =
+            if has_shortest_edge_length { self.shortest_edge_length * self.shortest_edge_length } else { 0.0 };
+        if end_type == EndType::etClosedLine || end_type == EndType::etClosedPolygon {
+            while high_i > 0 {
+                let same;
+                if has_shortest_edge_length {
+                    let dx = path[high_i as usize].x.wrapping_sub(path[0].x) as f64;
+                    let dy = path[high_i as usize].y.wrapping_sub(path[0].y) as f64;
+                    // same = dx*dx + dy*dy < shortest_edge_length2;
+                    same = dx.mul_add(dx, dy * dy) < shortest_edge_length2;
+                } else {
+                    same = path[0] == path[high_i as usize];
+                }
+                if !same {
+                    break;
+                }
+                high_i -= 1;
+            }
+        }
+        new_node.contour.reserve(high_i as usize + 1);
+        new_node.contour.push(path[0]);
+        let (mut j, mut k) = (0i32, 0i32);
+        for i in 1..=high_i as usize {
+            let same;
+            if has_shortest_edge_length {
+                let dx = path[i].x.wrapping_sub(new_node.contour[j as usize].x) as f64;
+                let dy = path[i].y.wrapping_sub(new_node.contour[j as usize].y) as f64;
+                // same = dx*dx + dy*dy < shortest_edge_length2;
+                same = dx.mul_add(dx, dy * dy) < shortest_edge_length2;
+            } else {
+                same = new_node.contour[j as usize] == path[i];
+            }
+            if same {
+                continue;
+            }
+            j += 1;
+            new_node.contour.push(path[i]);
+            if path[i].y > new_node.contour[k as usize].y
+                || (path[i].y == new_node.contour[k as usize].y && path[i].x < new_node.contour[k as usize].x)
+            {
+                k = j;
+            }
+        }
+        if end_type == EndType::etClosedPolygon && j < 2 {
+            // delete newNode;
+            return;
+        }
+        // m_polyNodes.AddChild(*newNode); (clipper.cpp:138-144)
+        let cnt = self.m_poly_nodes.childs.len() as u32;
+        self.m_poly_nodes.childs.push(self.m_poly_nodes_childs.len());
+        new_node.parent = Some(POLY_TREE_ROOT);
+        new_node.index = cnt;
+        let new_node_k = new_node.contour[k as usize];
+        self.m_poly_nodes_childs.push(new_node);
+
+        // if this path's lowest pt is lower than all the others then update m_lowest
+        if end_type != EndType::etClosedPolygon {
+            return;
+        }
+        if self.m_lowest.x < 0 {
+            self.m_lowest = IntPoint::new(self.m_poly_nodes.child_count() - 1, k);
+        } else {
+            let ip = self.m_poly_nodes_childs[self.m_poly_nodes.childs[self.m_lowest.x as usize]].contour
+                [self.m_lowest.y as usize];
+            if new_node_k.y > ip.y || (new_node_k.y == ip.y && new_node_k.x < ip.x) {
+                self.m_lowest = IntPoint::new(self.m_poly_nodes.child_count() - 1, k);
+            }
+        }
+    }
+
+    /// clipper.hpp:514-518
+    /// C++: template<typename PathsProvider> void AddPaths(PathsProvider &&paths, JoinType joinType, EndType endType)
+    pub fn add_paths(&mut self, paths: &Paths, join_type: JoinType, end_type: EndType) {
+        for path in paths {
+            self.add_path(path, join_type, end_type);
+        }
+    }
+
+    /// clipper.cpp:3409-3432
+    /// C++: void ClipperOffset::FixOrientations()
+    pub fn fix_orientations(&mut self) {
+        // fixup orientations of all closed paths if the orientation of the
+        // closed path with the lowermost vertex is wrong ...
+        if self.m_lowest.x >= 0
+            && !orientation(&self.m_poly_nodes_childs[self.m_poly_nodes.childs[self.m_lowest.x as usize]].contour)
+        {
+            for i in 0..self.m_poly_nodes.child_count() as usize {
+                let node = &mut self.m_poly_nodes_childs[self.m_poly_nodes.childs[i]];
+                if node.m_endtype == EndType::etClosedPolygon
+                    || (node.m_endtype == EndType::etClosedLine && orientation(&node.contour))
+                {
+                    reverse_path(&mut node.contour);
+                }
+            }
+        } else {
+            for i in 0..self.m_poly_nodes.child_count() as usize {
+                let node = &mut self.m_poly_nodes_childs[self.m_poly_nodes.childs[i]];
+                if node.m_endtype == EndType::etClosedLine && !orientation(&node.contour) {
+                    reverse_path(&mut node.contour);
+                }
+            }
+        }
+    }
+
+    /// clipper.cpp:3435-3463
+    /// C++: void ClipperOffset::Execute(Paths& solution, double delta)
+    pub fn execute(&mut self, solution: &mut Paths, delta: f64) {
+        solution.clear();
+        self.fix_orientations();
+        self.do_offset(delta);
+
+        // now clean up 'corners' ...
+        let mut clpr = Clipper::new(0);
+        clpr.add_paths(&self.m_dest_polys, PolyType::ptSubject, true);
+        if delta > 0.0 {
+            clpr.execute(ClipType::ctUnion, solution, PolyFillType::pftPositive, PolyFillType::pftPositive);
+        } else {
+            let r = clpr.get_bounds();
+            let outer: Path = vec![
+                IntPoint::new(r.left.wrapping_sub(10), r.bottom.wrapping_add(10)),
+                IntPoint::new(r.right.wrapping_add(10), r.bottom.wrapping_add(10)),
+                IntPoint::new(r.right.wrapping_add(10), r.top.wrapping_sub(10)),
+                IntPoint::new(r.left.wrapping_sub(10), r.top.wrapping_sub(10)),
+            ];
+
+            clpr.add_path(&outer, PolyType::ptSubject, true);
+            clpr.set_reverse_solution(true);
+            clpr.execute(ClipType::ctUnion, solution, PolyFillType::pftNegative, PolyFillType::pftNegative);
+            if !solution.is_empty() {
+                solution.remove(0);
+            }
+        }
+    }
+
+    /// clipper.cpp:3466-3494
+    /// C++: void ClipperOffset::Execute(PolyTree& solution, double delta)
+    pub fn execute_poly_tree(&mut self, solution: &mut PolyTree, delta: f64) {
+        solution.clear();
+        self.fix_orientations();
+        self.do_offset(delta);
+
+        // now clean up 'corners' ...
+        let mut clpr = Clipper::new(0);
+        clpr.add_paths(&self.m_dest_polys, PolyType::ptSubject, true);
+        if delta > 0.0 {
+            clpr.execute_poly_tree(ClipType::ctUnion, solution, PolyFillType::pftPositive, PolyFillType::pftPositive);
+        } else {
+            let r = clpr.get_bounds();
+            let outer: Path = vec![
+                IntPoint::new(r.left.wrapping_sub(10), r.bottom.wrapping_add(10)),
+                IntPoint::new(r.right.wrapping_add(10), r.bottom.wrapping_add(10)),
+                IntPoint::new(r.right.wrapping_add(10), r.top.wrapping_sub(10)),
+                IntPoint::new(r.left.wrapping_sub(10), r.top.wrapping_sub(10)),
+            ];
+
+            clpr.add_path(&outer, PolyType::ptSubject, true);
+            clpr.set_reverse_solution(true);
+            clpr.execute_poly_tree(ClipType::ctUnion, solution, PolyFillType::pftNegative, PolyFillType::pftNegative);
+            // remove the outer PolyNode rectangle ...
+            solution.remove_outermost_polygon();
+        }
+    }
+
+    /// `IntPoint2d(Round(m_srcPoly[j].x() + n.x() * delta), Round(m_srcPoly[j].y() + n.y() * delta))`:
+    /// the point `j` of the source moved along `n` by `delta`. The product is fused
+    /// into the sum with the coordinate.
+    #[inline]
+    fn src_plus(&self, j: usize, n: DoublePoint, delta: f64) -> IntPoint {
+        IntPoint::new(
+            round(n.x.mul_add(delta, self.m_src_poly[j].x as f64)),
+            round(n.y.mul_add(delta, self.m_src_poly[j].y as f64)),
+        )
+    }
+
+    /// clipper.cpp:3497-3664
+    /// C++: void ClipperOffset::DoOffset(double delta)
+    pub fn do_offset(&mut self, delta: f64) {
+        self.m_dest_polys.clear();
+        self.m_delta = delta;
+
+        // if Zero offset, just copy any CLOSED polygons to m_p and return ...
+        if near_zero(delta) {
+            self.m_dest_polys.reserve(self.m_poly_nodes.child_count() as usize);
+            for i in 0..self.m_poly_nodes.child_count() as usize {
+                let node = &self.m_poly_nodes_childs[self.m_poly_nodes.childs[i]];
+                if node.m_endtype == EndType::etClosedPolygon {
+                    self.m_dest_polys.push(node.contour.clone());
+                }
+            }
+            return;
+        }
+
+        // see offset_triginometry3.svg in the documentation folder ...
+        self.m_miter_lim = if self.miter_limit > 2.0 { 2.0 / (self.miter_limit * self.miter_limit) } else { 0.5 };
+
+        let y;
+        if self.arc_tolerance <= 0.0 {
+            y = DEF_ARC_TOLERANCE;
+        } else if self.arc_tolerance > delta.abs() * DEF_ARC_TOLERANCE {
+            y = delta.abs() * DEF_ARC_TOLERANCE;
+        } else {
+            y = self.arc_tolerance;
+        }
+        // see offset_triginometry2.svg in the documentation folder ...
+        let mut steps = PI / (1.0 - y / delta.abs()).acos();
+        if steps > delta.abs() * PI {
+            steps = delta.abs() * PI; // ie excessive precision check
+        }
+        // m_sin = std::sin(two_pi / steps); m_cos = std::cos(two_pi / steps);
+        (self.m_sin, self.m_cos) = sin_cos(TWO_PI / steps);
+        self.m_steps_per_rad = steps / TWO_PI;
+        if delta < 0.0 {
+            self.m_sin = -self.m_sin;
+        }
+
+        self.m_dest_polys.reserve(self.m_poly_nodes.child_count() as usize * 2);
+        for i in 0..self.m_poly_nodes.child_count() as usize {
+            let node_idx = self.m_poly_nodes.childs[i];
+            let node_jointype = self.m_poly_nodes_childs[node_idx].m_jointype;
+            let node_endtype = self.m_poly_nodes_childs[node_idx].m_endtype;
+            self.m_src_poly = self.m_poly_nodes_childs[node_idx].contour.clone();
+
+            let len = self.m_src_poly.len() as i32;
+            if len == 0 || (delta <= 0.0 && (len < 3 || node_endtype != EndType::etClosedPolygon)) {
+                continue;
+            }
+
+            self.m_dest_poly.clear();
+            if len == 1 {
+                if node_jointype == JoinType::jtRound {
+                    let (mut x, mut y) = (1.0f64, 0.0f64);
+                    let mut j: cInt = 1;
+                    while j as f64 <= steps {
+                        let p = self.src_plus(0, DoublePoint::new(x, y), delta);
+                        self.m_dest_poly.push(p);
+                        let x2 = x;
+                        // X = X * m_cos - m_sin * Y;
+                        x = x.mul_add(self.m_cos, -(self.m_sin * y));
+                        // Y = X2 * m_sin + Y * m_cos;
+                        y = x2.mul_add(self.m_sin, y * self.m_cos);
+                        j += 1;
+                    }
+                } else {
+                    let (mut x, mut y) = (-1.0f64, -1.0f64);
+                    for _ in 0..4 {
+                        let p = self.src_plus(0, DoublePoint::new(x, y), delta);
+                        self.m_dest_poly.push(p);
+                        if x < 0.0 {
+                            x = 1.0;
+                        } else if y < 0.0 {
+                            y = 1.0;
+                        } else {
+                            x = -1.0;
+                        }
+                    }
+                }
+                self.m_dest_polys.push(self.m_dest_poly.clone());
+                continue;
+            }
+            // build m_normals ...
+            self.m_normals.clear();
+            self.m_normals.reserve(len as usize);
+            for j in 0..(len - 1) as usize {
+                self.m_normals.push(get_unit_normal(&self.m_src_poly[j], &self.m_src_poly[j + 1]));
+            }
+            if node_endtype == EndType::etClosedLine || node_endtype == EndType::etClosedPolygon {
+                self.m_normals.push(get_unit_normal(&self.m_src_poly[len as usize - 1], &self.m_src_poly[0]));
+            } else {
+                self.m_normals.push(self.m_normals[len as usize - 2]);
+            }
+
+            if node_endtype == EndType::etClosedPolygon {
+                let mut k = len - 1;
+                for j in 0..len {
+                    self.offset_point(j, &mut k, node_jointype);
+                }
+                self.m_dest_polys.push(self.m_dest_poly.clone());
+            } else if node_endtype == EndType::etClosedLine {
+                let mut k = len - 1;
+                for j in 0..len {
+                    self.offset_point(j, &mut k, node_jointype);
+                }
+                self.m_dest_polys.push(self.m_dest_poly.clone());
+                self.m_dest_poly.clear();
+                // re-build m_normals ...
+                let n = self.m_normals[len as usize - 1];
+                for j in (1..len as usize).rev() {
+                    self.m_normals[j] = DoublePoint::new(-self.m_normals[j - 1].x, -self.m_normals[j - 1].y);
+                }
+                self.m_normals[0] = DoublePoint::new(-n.x, -n.y);
+                k = 0;
+                for j in (0..len).rev() {
+                    self.offset_point(j, &mut k, node_jointype);
+                }
+                self.m_dest_polys.push(self.m_dest_poly.clone());
+            } else {
+                let mut k = 0i32;
+                for j in 1..len - 1 {
+                    self.offset_point(j, &mut k, node_jointype);
+                }
+
+                let mut pt1;
+                if node_endtype == EndType::etOpenButt {
+                    let j = len as usize - 1;
+                    // Round(m_srcPoly[j].x() + m_normals[j].x() * delta)
+                    pt1 = self.src_plus(j, self.m_normals[j], delta);
+                    self.m_dest_poly.push(pt1);
+                    // Round(m_srcPoly[j].x() - m_normals[j].x() * delta): fma(-n, delta, x)
+                    pt1 = self.src_plus(j, DoublePoint::new(-self.m_normals[j].x, -self.m_normals[j].y), delta);
+                    self.m_dest_poly.push(pt1);
+                } else {
+                    let j = len - 1;
+                    k = len - 2;
+                    self.m_sin_a = 0.0;
+                    self.m_normals[j as usize] =
+                        DoublePoint::new(-self.m_normals[j as usize].x, -self.m_normals[j as usize].y);
+                    if node_endtype == EndType::etOpenSquare {
+                        self.do_square(j, k);
+                    } else {
+                        self.do_round(j, k);
+                    }
+                }
+
+                // re-build m_normals ...
+                for j in (1..len as usize).rev() {
+                    self.m_normals[j] = DoublePoint::new(-self.m_normals[j - 1].x, -self.m_normals[j - 1].y);
+                }
+                self.m_normals[0] = DoublePoint::new(-self.m_normals[1].x, -self.m_normals[1].y);
+
+                k = len - 1;
+                let mut j = k - 1;
+                while j > 0 {
+                    self.offset_point(j, &mut k, node_jointype);
+                    j -= 1;
+                }
+
+                if node_endtype == EndType::etOpenButt {
+                    pt1 = self.src_plus(0, DoublePoint::new(-self.m_normals[0].x, -self.m_normals[0].y), delta);
+                    self.m_dest_poly.push(pt1);
+                    pt1 = self.src_plus(0, self.m_normals[0], delta);
+                    self.m_dest_poly.push(pt1);
+                } else {
+                    // k = 1;
+                    self.m_sin_a = 0.0;
+                    if node_endtype == EndType::etOpenSquare {
+                        self.do_square(0, 1);
+                    } else {
+                        self.do_round(0, 1);
+                    }
+                }
+                self.m_dest_polys.push(self.m_dest_poly.clone());
+            }
+        }
+    }
+
+    /// clipper.cpp:3667-3708
+    /// C++: void ClipperOffset::OffsetPoint(int j, int& k, JoinType jointype)
+    pub fn offset_point(&mut self, j: i32, k: &mut i32, jointype: JoinType) {
+        let (nj, nk) = (self.m_normals[j as usize], self.m_normals[*k as usize]);
+        // cross product ...
+        // m_sinA = (m_normals[k].x() * m_normals[j].y() - m_normals[j].x() * m_normals[k].y());
+        self.m_sin_a = nk.x.mul_add(nj.y, -(nj.x * nk.y));
+        if (self.m_sin_a * self.m_delta).abs() < 1.0 {
+            // dot product ...
+            // double cosA = (m_normals[k].x() * m_normals[j].x() + m_normals[j].y() * m_normals[k].y() );
+            let cos_a = nk.x.mul_add(nj.x, nj.y * nk.y);
+            if cos_a > 0.0 {
+                // angle => 0 degrees
+                let p = self.src_plus(j as usize, nk, self.m_delta);
+                self.m_dest_poly.push(p);
+                return;
+            }
+            // else angle => 180 degrees
+        } else if self.m_sin_a > 1.0 {
+            self.m_sin_a = 1.0;
+        } else if self.m_sin_a < -1.0 {
+            self.m_sin_a = -1.0;
+        }
+
+        if self.m_sin_a * self.m_delta < 0.0 {
+            let p = self.src_plus(j as usize, nk, self.m_delta);
+            self.m_dest_poly.push(p);
+            self.m_dest_poly.push(self.m_src_poly[j as usize]);
+            let p = self.src_plus(j as usize, nj, self.m_delta);
+            self.m_dest_poly.push(p);
+        } else {
+            match jointype {
+                JoinType::jtMiter => {
+                    // double r = 1 + (m_normals[j].x() * m_normals[k].x() + m_normals[j].y() * m_normals[k].y());
+                    let r = 1.0 + nj.x.mul_add(nk.x, nj.y * nk.y);
+                    if r >= self.m_miter_lim {
+                        self.do_miter(j, *k, r);
+                    } else {
+                        self.do_square(j, *k);
+                    }
+                }
+                JoinType::jtSquare => self.do_square(j, *k),
+                JoinType::jtRound => self.do_round(j, *k),
+            }
+        }
+        *k = j;
+    }
+
+    /// clipper.cpp:3711-3721
+    /// C++: void ClipperOffset::DoSquare(int j, int k)
+    pub fn do_square(&mut self, j: i32, k: i32) {
+        let (nj, nk) = (self.m_normals[j as usize], self.m_normals[k as usize]);
+        let src = self.m_src_poly[j as usize];
+        // double dx = std::tan(std::atan2(m_sinA, m_normals[k].x() * m_normals[j].x() + m_normals[k].y() * m_normals[j].y()) / 4);
+        let dx = (self.m_sin_a.atan2(nk.x.mul_add(nj.x, nk.y * nj.y)) / 4.0).tan();
+        // Round(m_srcPoly[j].x() + m_delta * (m_normals[k].x() - m_normals[k].y() * dx)),
+        // Round(m_srcPoly[j].y() + m_delta * (m_normals[k].y() + m_normals[k].x() * dx))
+        self.m_dest_poly.push(IntPoint::new(
+            round(self.m_delta.mul_add((-nk.y).mul_add(dx, nk.x), src.x as f64)),
+            round(self.m_delta.mul_add(nk.x.mul_add(dx, nk.y), src.y as f64)),
+        ));
+        // Round(m_srcPoly[j].x() + m_delta * (m_normals[j].x() + m_normals[j].y() * dx)),
+        // Round(m_srcPoly[j].y() + m_delta * (m_normals[j].y() - m_normals[j].x() * dx))
+        self.m_dest_poly.push(IntPoint::new(
+            round(self.m_delta.mul_add(nj.y.mul_add(dx, nj.x), src.x as f64)),
+            round(self.m_delta.mul_add((-nj.x).mul_add(dx, nj.y), src.y as f64)),
+        ));
+    }
+
+    /// clipper.cpp:3724-3729
+    /// C++: void ClipperOffset::DoMiter(int j, int k, double r)
+    pub fn do_miter(&mut self, j: i32, k: i32, r: f64) {
+        let (nj, nk) = (self.m_normals[j as usize], self.m_normals[k as usize]);
+        let src = self.m_src_poly[j as usize];
+        let q = self.m_delta / r;
+        // Round(m_srcPoly[j].x() + (m_normals[k].x() + m_normals[j].x()) * q)
+        self.m_dest_poly.push(IntPoint::new(
+            round((nk.x + nj.x).mul_add(q, src.x as f64)),
+            round((nk.y + nj.y).mul_add(q, src.y as f64)),
+        ));
+    }
+
+    /// clipper.cpp:3732-3751
+    /// C++: void ClipperOffset::DoRound(int j, int k)
+    pub fn do_round(&mut self, j: i32, k: i32) {
+        let (nj, nk) = (self.m_normals[j as usize], self.m_normals[k as usize]);
+        // double a = std::atan2(m_sinA, m_normals[k].x() * m_normals[j].x() + m_normals[k].y() * m_normals[j].y());
+        let a = self.m_sin_a.atan2(nk.x.mul_add(nj.x, nk.y * nj.y));
+        let steps = round(self.m_steps_per_rad * a.abs()).max(1);
+
+        let (mut x, mut y) = (nk.x, nk.y);
+        for _ in 0..steps {
+            let p = self.src_plus(j as usize, DoublePoint::new(x, y), self.m_delta);
+            self.m_dest_poly.push(p);
+            let x2 = x;
+            // X = X * m_cos - m_sin * Y;
+            x = x.mul_add(self.m_cos, -(self.m_sin * y));
+            // Y = X2 * m_sin + Y * m_cos;
+            y = x2.mul_add(self.m_sin, y * self.m_cos);
+        }
+        let p = self.src_plus(j as usize, nj, self.m_delta);
+        self.m_dest_poly.push(p);
+    }
+}
+
+/// clipper.cpp:3842-3850
+/// C++: Paths SimplifyPolygon(const Path &in_poly, PolyFillType fillType)
+pub fn simplify_polygon(in_poly: &Path, fill_type: PolyFillType) -> Paths {
+    let mut c = Clipper::new(0);
+    c.set_strictly_simple(true);
+    c.add_path(in_poly, PolyType::ptSubject, true);
+    let mut out = Paths::new();
+    c.execute(ClipType::ctUnion, &mut out, fill_type, fill_type);
+    out
+}
+
+/// clipper.hpp:558-566
+/// C++: template<typename PathsProvider> inline Paths SimplifyPolygons(PathsProvider &&in_polys, PolyFillType fillType = pftEvenOdd)
+pub fn simplify_polygons(in_polys: &Paths, fill_type: PolyFillType) -> Paths {
+    let mut c = Clipper::new(0);
+    c.set_strictly_simple(true);
+    c.add_paths(in_polys, PolyType::ptSubject, true);
+    let mut out = Paths::new();
+    c.execute(ClipType::ctUnion, &mut out, fill_type, fill_type);
+    out
+}
+
+/// clipper.cpp:4093 `enum NodeType {ntAny, ntOpen, ntClosed};`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeType {
+    ntAny,
+    ntOpen,
+    ntClosed,
+}
+
+/// clipper.cpp:4095-4105
+/// C++: void AddPolyNodeToPaths(const PolyNode& polynode, NodeType nodetype, Paths& paths)
+/// `polynode` is a node of `polytree` (`POLY_TREE_ROOT` for the tree itself).
+pub fn add_poly_node_to_paths(polytree: &PolyTree, polynode: usize, nodetype: NodeType, paths: &mut Paths) {
+    let node = polytree.node(polynode);
+    let mut r#match = true;
+    if nodetype == NodeType::ntClosed {
+        r#match = !node.is_open();
+    } else if nodetype == NodeType::ntOpen {
+        return;
+    }
+
+    if !node.contour.is_empty() && r#match {
+        paths.push(node.contour.clone());
+    }
+    for i in 0..node.child_count() as usize {
+        add_poly_node_to_paths(polytree, node.childs[i], nodetype, paths);
+    }
+}
+
+/// clipper.cpp:4108-4113
+/// C++: void PolyTreeToPaths(const PolyTree& polytree, Paths& paths)
+pub fn poly_tree_to_paths(polytree: &PolyTree, paths: &mut Paths) {
+    paths.clear();
+    paths.reserve(polytree.total() as usize);
+    add_poly_node_to_paths(polytree, POLY_TREE_ROOT, NodeType::ntAny, paths);
+}
+
+/// clipper.cpp:4116-4121
+/// C++: void ClosedPathsFromPolyTree(const PolyTree& polytree, Paths& paths)
+pub fn closed_paths_from_poly_tree(polytree: &PolyTree, paths: &mut Paths) {
+    paths.clear();
+    paths.reserve(polytree.total() as usize);
+    add_poly_node_to_paths(polytree, POLY_TREE_ROOT, NodeType::ntClosed, paths);
+}
+
+/// clipper.cpp:4124-4132
+/// C++: void OpenPathsFromPolyTree(PolyTree& polytree, Paths& paths)
+pub fn open_paths_from_poly_tree(polytree: &PolyTree, paths: &mut Paths) {
+    paths.clear();
+    paths.reserve(polytree.total() as usize);
+    // Open paths are top level only, so ...
+    for i in 0..polytree.child_count() as usize {
+        if polytree.node(polytree.root.childs[i]).is_open() {
+            paths.push(polytree.node(polytree.root.childs[i]).contour.clone());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5058,4 +6114,186 @@ mod tests {
         assert_eq!(ClipperBase::default().get_bounds(), IntRect::default());
     }
 
+    fn path(v: &[(cInt, cInt)]) -> Path {
+        v.iter().map(|q| IntPoint::new(q.0, q.1)).collect()
+    }
+
+    #[test]
+    fn execute_into_a_tree_nests_holes_and_outers() {
+        // Three squares, one inside the other: outer, hole, island.
+        let mut c = Clipper::new(0);
+        c.add_path(&path(&[(0, 0), (30, 0), (30, 30), (0, 30)]), PolyType::ptSubject, true);
+        c.add_path(&path(&[(5, 5), (25, 5), (25, 25), (5, 25)]), PolyType::ptSubject, true);
+        c.add_path(&path(&[(10, 10), (20, 10), (20, 20), (10, 20)]), PolyType::ptSubject, true);
+        let mut tree = PolyTree::new();
+        assert!(c.execute_poly_tree(ClipType::ctUnion, &mut tree, PolyFillType::pftEvenOdd, PolyFillType::pftEvenOdd));
+        assert_eq!((tree.total(), tree.child_count()), (3, 1));
+        assert!(tree.is_hole(POLY_TREE_ROOT));
+
+        let outer = tree.get_first().unwrap();
+        let hole = tree.get_next(outer).unwrap();
+        let island = tree.get_next(hole).unwrap();
+        assert_eq!(tree.get_next(island), None);
+        assert_eq!((tree.is_hole(outer), tree.is_hole(hole), tree.is_hole(island)), (false, true, false));
+        assert_eq!((tree.node(outer).parent, tree.node(hole).parent, tree.node(island).parent), (Some(POLY_TREE_ROOT), Some(outer), Some(hole)));
+        assert_eq!((area(&tree.node(outer).contour), area(&tree.node(hole).contour), area(&tree.node(island).contour)), (900.0, -400.0, 100.0));
+        assert!(!tree.node(outer).is_open());
+
+        let (mut all, mut closed, mut open) = (Paths::new(), Paths::new(), vec![Path::new()]);
+        poly_tree_to_paths(&tree, &mut all);
+        closed_paths_from_poly_tree(&tree, &mut closed);
+        open_paths_from_poly_tree(&tree, &mut open);
+        assert_eq!(all.len(), 3);
+        assert_eq!(all, closed);
+        assert!(open.is_empty());
+
+        // The outermost polygon removed: its hole becomes the top level.
+        tree.remove_outermost_polygon();
+        assert_eq!((tree.child_count(), tree.get_first()), (1, Some(hole)));
+        assert_eq!(tree.node(hole).parent, Some(POLY_TREE_ROOT));
+        // Total() leaves the hidden outer polygon out.
+        assert_eq!(tree.total(), 2);
+        // Nothing below the only child: the tree is emptied.
+        let mut flat = PolyTree::new();
+        let mut c = Clipper::new(0);
+        c.add_path(&path(SQUARE_A), PolyType::ptSubject, true);
+        assert!(c.execute_poly_tree(ClipType::ctUnion, &mut flat, PolyFillType::pftNonZero, PolyFillType::pftNonZero));
+        assert_eq!(flat.total(), 1);
+        flat.remove_outermost_polygon();
+        assert_eq!((flat.total(), flat.child_count(), flat.get_first()), (0, 0, None));
+    }
+
+    #[test]
+    fn execute_into_a_tree_clips_an_open_path() {
+        // A line through a square: the part inside, as an open node at the top level.
+        let mut c = Clipper::new(0);
+        c.add_path(&path(&[(-5, 5), (15, 5)]), PolyType::ptSubject, false);
+        c.add_path(&path(SQUARE_A), PolyType::ptClip, true);
+        let mut tree = PolyTree::new();
+        assert!(c.execute_poly_tree(ClipType::ctIntersection, &mut tree, PolyFillType::pftNonZero, PolyFillType::pftNonZero));
+        assert_eq!(tree.child_count(), 1);
+        let node = tree.node(tree.get_first().unwrap());
+        assert!(node.is_open());
+        let mut ends = node.contour.clone();
+        ends.sort_by_key(|p| p.x);
+        assert_eq!(ends, path(&[(0, 5), (10, 5)]));
+        let (mut closed, mut open) = (Paths::new(), Paths::new());
+        closed_paths_from_poly_tree(&tree, &mut closed);
+        open_paths_from_poly_tree(&tree, &mut open);
+        assert!(closed.is_empty());
+        assert_eq!(open, vec![node.contour.clone()]);
+    }
+
+    #[test]
+    fn add_paths_is_add_path_for_each() {
+        let squares: Paths = vec![path(SQUARE_A), path(&[(0, 0), (1, 1)]), path(SQUARE_B)];
+        let mut one = Clipper::new(0);
+        assert!(one.add_paths(&squares, PolyType::ptSubject, true));
+        let mut each = Clipper::new(0);
+        for p in &squares {
+            each.add_path(p, PolyType::ptSubject, true);
+        }
+        let (mut a, mut b) = (Paths::new(), Paths::new());
+        assert!(one.execute(ClipType::ctUnion, &mut a, PolyFillType::pftNonZero, PolyFillType::pftNonZero));
+        assert!(each.execute(ClipType::ctUnion, &mut b, PolyFillType::pftNonZero, PolyFillType::pftNonZero));
+        assert_eq!(a, b);
+        assert_eq!(area(&a[0]), 175.0);
+        // Nothing usable: no edges are kept.
+        let mut none = ClipperBase::default();
+        assert!(!none.add_paths(&vec![path(&[(0, 0), (1, 1)]), path(&[(2, 2)])], PolyType::ptSubject, true));
+        assert!(!none.add_paths(&Paths::new(), PolyType::ptSubject, true));
+        assert!(none.m_edges.is_empty());
+    }
+
+    #[test]
+    fn simplify_polygon_splits_a_figure_of_eight() {
+        let eight = path(&[(0, 0), (10, 10), (10, 0), (0, 10)]);
+        let simple = simplify_polygon(&eight, PolyFillType::pftEvenOdd);
+        assert_eq!(simple.len(), 2);
+        assert_eq!(simple.iter().map(area).sum::<f64>(), 50.0);
+        assert_eq!(simplify_polygons(&vec![eight.clone(), eight], PolyFillType::pftNonZero).len(), 2);
+    }
+
+    #[test]
+    fn unit_normal_points_to_the_right_of_the_edge() {
+        assert_eq!(get_unit_normal(&IntPoint::new(0, 0), &IntPoint::new(10, 0)), DoublePoint::new(0.0, -1.0));
+        assert_eq!(get_unit_normal(&IntPoint::new(0, 0), &IntPoint::new(0, 4)), DoublePoint::new(1.0, -0.0));
+        assert_eq!(get_unit_normal(&IntPoint::new(3, 3), &IntPoint::new(3, 3)), DoublePoint::new(0.0, 0.0));
+        let n = get_unit_normal(&IntPoint::new(0, 0), &IntPoint::new(3, 4));
+        assert_eq!((n.x, n.y), (0.8, -0.6000000000000001));
+    }
+
+    fn offset(p: &[(cInt, cInt)], join: JoinType, end: EndType, delta: f64) -> Paths {
+        let mut co = ClipperOffset::default();
+        co.add_path(&path(p), join, end);
+        let mut solution = vec![vec![IntPoint::new(7, 7)]];
+        co.execute(&mut solution, delta);
+        solution
+    }
+
+    #[test]
+    fn offset_grows_shrinks_and_collapses_a_square() {
+        // Miter joins keep the corners: the square grows by the delta on every side.
+        let grown = offset(SQUARE_A, JoinType::jtMiter, EndType::etClosedPolygon, 2.0);
+        assert_eq!(grown.len(), 1);
+        assert_eq!((grown[0].len(), area(&grown[0])), (4, 196.0));
+        // The other orientation gives the same: FixOrientations turns the path round.
+        let reversed: Vec<(cInt, cInt)> = SQUARE_A.iter().rev().copied().collect();
+        assert_eq!(offset(&reversed, JoinType::jtMiter, EndType::etClosedPolygon, 2.0), grown);
+        // Square joins cut the corners, round joins put an arc there.
+        let cut = offset(SQUARE_A, JoinType::jtSquare, EndType::etClosedPolygon, 2.0);
+        assert_eq!(cut[0].len(), 8);
+        let round = offset(SQUARE_A, JoinType::jtRound, EndType::etClosedPolygon, 20.0);
+        let exact = 100.0 + 4.0 * 10.0 * 20.0 + PI * 400.0;
+        assert!(round[0].len() > 8 && area(&round[0]) < exact && area(&round[0]) > exact * 0.97, "{:?}", area(&round[0]));
+
+        let shrunk = offset(SQUARE_A, JoinType::jtMiter, EndType::etClosedPolygon, -2.0);
+        assert_eq!((shrunk.len(), area(&shrunk[0])), (1, 36.0));
+        assert!(offset(SQUARE_A, JoinType::jtMiter, EndType::etClosedPolygon, -5.0).is_empty());
+        assert!(offset(SQUARE_A, JoinType::jtMiter, EndType::etClosedPolygon, -50.0).is_empty());
+        // A zero delta copies closed polygons.
+        assert_eq!(offset(SQUARE_A, JoinType::jtMiter, EndType::etClosedPolygon, 0.0).len(), 1);
+    }
+
+    #[test]
+    fn offset_of_open_paths_and_of_a_hole() {
+        let line: &[(cInt, cInt)] = &[(0, 0), (10, 0)];
+        let butt = offset(line, JoinType::jtMiter, EndType::etOpenButt, 2.0);
+        assert_eq!((butt[0].len(), area(&butt[0])), (4, 40.0));
+        let square = offset(line, JoinType::jtMiter, EndType::etOpenSquare, 2.0);
+        assert_eq!((square[0].len(), area(&square[0])), (4, 56.0));
+        let round = offset(line, JoinType::jtMiter, EndType::etOpenRound, 2.0);
+        assert!(area(&round[0]) > 40.0 && area(&round[0]) < 56.0);
+        // An open path has no inside: a negative delta gives nothing.
+        assert!(offset(line, JoinType::jtMiter, EndType::etOpenButt, -2.0).is_empty());
+        // A single point becomes a square, or a circle with round joins.
+        let dot = offset(&[(5, 5)], JoinType::jtSquare, EndType::etOpenSquare, 3.0);
+        assert_eq!((dot[0].len(), area(&dot[0])), (4, 36.0));
+        assert!(offset(&[(5, 5)], JoinType::jtRound, EndType::etOpenRound, 3.0)[0].len() > 4);
+
+        // An outer with a hole, into a tree: growing shrinks the hole.
+        let mut co = ClipperOffset::new(3.0, 0.25, 0.0);
+        co.add_paths(
+            &vec![path(&[(0, 0), (30, 0), (30, 30), (0, 30)]), path(&[(10, 10), (10, 20), (20, 20), (20, 10)])],
+            JoinType::jtMiter,
+            EndType::etClosedPolygon,
+        );
+        let mut tree = PolyTree::new();
+        co.execute_poly_tree(&mut tree, 2.0);
+        assert_eq!((tree.total(), tree.child_count()), (2, 1));
+        let outer = tree.get_first().unwrap();
+        let hole = tree.node(outer).childs[0];
+        assert!(tree.is_hole(hole) && !tree.is_hole(outer));
+        assert_eq!((area(&tree.node(outer).contour), area(&tree.node(hole).contour)), (1156.0, -36.0));
+        // Shrinking: the hidden outer rectangle is removed from the tree.
+        co.execute_poly_tree(&mut tree, -2.0);
+        assert_eq!(tree.child_count(), 1);
+        let outer = tree.get_first().unwrap();
+        assert_eq!(tree.node(outer).parent, Some(POLY_TREE_ROOT));
+        assert_eq!((area(&tree.node(outer).contour), area(&tree.node(tree.node(outer).childs[0]).contour)), (676.0, -196.0));
+        co.clear();
+        let mut solution = Paths::new();
+        co.execute(&mut solution, 2.0);
+        assert!(solution.is_empty());
+    }
 }

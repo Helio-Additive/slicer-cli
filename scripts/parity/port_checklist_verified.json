@@ -178,5 +178,40 @@
    "TopX",
    "UpdateOutPtIdxs"
   ]
+ },
+ {
+  "unit": "clipper/clipper",
+  "round": "890",
+  "evidence": "tests/clipper_polytree_native_parity.rs (112,288 cases: the tree of Clipper::Execute node for node, open paths included, and the tree-to-paths functions) and tests/clipper_offset_native_parity.rs (112,506 cases: ClipperOffset::Execute over every join and end type), equal to ClipperLib compiled in clipper-z-sys",
+  "functions": [
+   "AddPaths",
+   "AddPolyNodeToPaths",
+   "Clipper::BuildResult2",
+   "Clipper::FixupFirstLefts1",
+   "Clipper::FixupFirstLefts2",
+   "Clipper::FixupOutPolyline",
+   "ClipperOffset::AddPaths",
+   "ClipperOffset::DoMiter",
+   "ClipperOffset::DoOffset",
+   "ClipperOffset::DoRound",
+   "ClipperOffset::DoSquare",
+   "ClipperOffset::FixOrientations",
+   "ClipperOffset::OffsetPoint",
+   "ClosedPathsFromPolyTree",
+   "FirstIsBottomPt",
+   "GetBottomPt",
+   "GetUnitNormal",
+   "OpenPathsFromPolyTree",
+   "PolyNode::AddChild",
+   "PolyNode::ChildCount",
+   "PolyNode::IsHole",
+   "PolyNode::IsOpen",
+   "PolyTree::RemoveOutermostPolygon",
+   "PolyTree::Total",
+   "PolyTreeToPaths",
+   "ReversePolyPtLinks",
+   "SimplifyPolygon",
+   "SimplifyPolygons"
+  ]
  }
 ]

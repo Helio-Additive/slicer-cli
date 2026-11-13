@@ -242,6 +242,51 @@ CzZPaths cz_ref_execute(const int32_t *subj_xy, const int32_t *subj_lens, int32_
                         int32_t strictly_simple, int32_t preserve_collinear,
                         int32_t reverse_solution, int32_t *succeeded);
 
+// Reference exports for the Rust port of PolyNode / PolyTree, the PolyTree Execute
+// of Clipper, ClipperOffset and SimplifyPolygon(s); called by tests only.
+//
+// The encoding of a PolyTree: the contours of its nodes as a CzZPaths (z always 0)
+// in pre-order (a node, then its children in the order of Childs, each with its
+// own descendants; the tree itself is not listed), every contour with the points
+// and the start vertex the library produced. For node i of that listing
+// node_info[4*i .. 4*i+4] receives: the index in the listing of its Parent (-1 when
+// the Parent is the tree itself), IsHole(), IsOpen(), ChildCount(). At most
+// node_info_cap nodes are written; *num_nodes receives the number of nodes listed,
+// *total what PolyTree::Total() returns.
+//
+// cz_ref_execute_polytree: Clipper::Execute(clip_type, PolyTree&, subj_fill,
+// clip_fill). Subject i is closed when subj_closed[i] != 0, open otherwise; clips
+// are closed. add_paths == 0: every path through AddPath, subjects first;
+// otherwise three AddPaths calls (closed subjects, open subjects, clips). output:
+// 0 = the tree in the encoding above, 1 = PolyTreeToPaths, 2 =
+// ClosedPathsFromPolyTree, 3 = OpenPathsFromPolyTree (node_info not written for
+// 1-3). Free via cz_free_zpaths.
+CzZPaths cz_ref_execute_polytree(const int32_t *subj_xy, const int32_t *subj_lens,
+                                 const int32_t *subj_closed, int32_t subj_num,
+                                 const int32_t *clip_xy, const int32_t *clip_lens, int32_t clip_num,
+                                 int32_t clip_type, int32_t subj_fill, int32_t clip_fill,
+                                 int32_t strictly_simple, int32_t preserve_collinear,
+                                 int32_t reverse_solution, int32_t add_paths, int32_t output,
+                                 int32_t *node_info, int32_t node_info_cap, int32_t *num_nodes,
+                                 int32_t *total, int32_t *succeeded);
+
+// cz_ref_offset: ClipperOffset(miter_limit, arc_tolerance, shortest_edge_length);
+// path i through AddPath(path, join_types[i], end_types[i]) (join: 0=jtSquare,
+// 1=jtRound, 2=jtMiter; end: 0=etClosedPolygon, 1=etClosedLine, 2=etOpenButt,
+// 3=etOpenSquare, 4=etOpenRound); then Execute(solution, delta) into a Paths
+// (use_polytree == 0, returned as produced) or into a PolyTree (returned in the
+// encoding above). Free via cz_free_zpaths.
+CzZPaths cz_ref_offset(const int32_t *xy, const int32_t *lens, const int32_t *join_types,
+                       const int32_t *end_types, int32_t num, double miter_limit,
+                       double arc_tolerance, double shortest_edge_length, double delta,
+                       int32_t use_polytree, int32_t *node_info, int32_t node_info_cap,
+                       int32_t *num_nodes, int32_t *total);
+
+// cz_ref_simplify_polygons: SimplifyPolygon(first path, fill_type) when which == 0,
+// SimplifyPolygons(paths, fill_type) otherwise. Free via cz_free_zpaths.
+CzZPaths cz_ref_simplify_polygons(const int32_t *xy, const int32_t *lens, int32_t num,
+                                  int32_t fill_type, int32_t which);
+
 #ifdef __cplusplus
 }
 #endif
