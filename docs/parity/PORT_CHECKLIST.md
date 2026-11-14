@@ -7288,11 +7288,11 @@ Rust file: `geometry/medial_axis.rs`. Status: **partial**. Not listed: 2 constru
 
 **class `MedialAxis`**
 
-- [~] `edge_data` (line 34) → `geometry/medial_axis.rs:1093` — divergent
-- [~] `build` (line 449) → `geometry/medial_axis.rs:1098` — partial
+- [~] `edge_data` (line 34) → `geometry/medial_axis.rs:1101` — divergent
+- [~] `build` (line 449) → `geometry/medial_axis.rs:1106` — partial
 - [~] `build` (line 534) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [x] `process_edge_neighbors` (line 543) → `geometry/medial_axis.rs:1177`
-- [x] `validate_edge` (line 588) → `geometry/medial_axis.rs:1300`
+- [x] `process_edge_neighbors` (line 543) → `geometry/medial_axis.rs:1185`
+- [x] `validate_edge` (line 588) → `geometry/medial_axis.rs:1308`
 
 **class `voronoi_visual_utils`**
 

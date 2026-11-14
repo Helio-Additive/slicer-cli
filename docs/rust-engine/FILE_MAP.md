@@ -5458,8 +5458,8 @@ Tier 1. C++ functions 16 (plus 2 constructors, 0 destructors, 1 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `MedialAxis::edge_data` :34 and `MedialAxis::edge_data` :1093 (20%, 0.41x)
-- partial: `MedialAxis::build` :449 and `MedialAxis::build` :1098 (59%, 1.03x)
+- divergent: `MedialAxis::edge_data` :34 and `MedialAxis::edge_data` :1101 (20%, 0.41x)
+- partial: `MedialAxis::build` :449 and `MedialAxis::build` :1106 (59%, 1.03x)
 
 Missing in the Rust file:
 
@@ -5504,13 +5504,13 @@ Rust only:
 - `nearest_boundary_distance_lines` :999
 - `MedialAxisThickPolyline::reverse` :1038 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntity`
 - `MedialAxisThickPolyline::clear` :1051 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `point_from_doubles` :1061
-- `MedialAxis::new` :1082
-- `MedialAxis::retrieve_segment` :1229
-- `MedialAxis::retrieve_endpoint` :1236
-- `MedialAxis::distance_to` :1253 — C++ has it in `Arrange`, `Line`, `MultiPoint`
-- `MedialAxis::orientation` :1279 — C++ has it in `Line`
-- `MedialAxis::norm` :1293 — C++ has it in `Arrange`
+- `point_from_doubles` :1069
+- `MedialAxis::new` :1090
+- `MedialAxis::retrieve_segment` :1237
+- `MedialAxis::retrieve_endpoint` :1244
+- `MedialAxis::distance_to` :1261 — C++ has it in `Arrange`, `Line`, `MultiPoint`
+- `MedialAxis::orientation` :1287 — C++ has it in `Line`
+- `MedialAxis::norm` :1301 — C++ has it in `Arrange`
 
 ### `Geometry/Voronoi` (.cpp+.hpp) and `geometry/voronoi.rs`
 

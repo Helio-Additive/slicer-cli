@@ -1051,7 +1051,15 @@ impl MedialAxisThickPolyline {
     pub fn clear(&mut self) {
         self.points.clear();
         self.width.clear();
-        self.endpoints = (false, false);
+        // Polyline.hpp:265-268 leaves `endpoints` as it is; `MEDIAL_AXIS_CLEAR_CPP=1` does so.
+        // Off by default (the flags are reset, as the shim does). Measured in R899 on Benchy
+        // classic, the C++ behaviour brings 74 more lines onto the oracle's verbatim and 50
+        // more in order by a true longest common subsequence, but the recorded in-order
+        // score, whose matcher is a lower bound, reads 37 fewer (two groups of one layer).
+        // Opt-in until the recorded score can take it (docs/rust-engine/parity, R899).
+        if !crate::opt_in_gate("MEDIAL_AXIS_CLEAR_CPP") {
+            self.endpoints = (false, false);
+        }
     }
 }
 
