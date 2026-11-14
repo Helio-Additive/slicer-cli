@@ -169,6 +169,13 @@ with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED
             d = json.loads(data)
             for k, v in pairs:
                 d[k] = json.loads(v)
+            # The edits are the maker's own changes: a Bambu Studio project
+            # keeps a value only when different_settings_to_system lists it
+            # (the app, and slicer_cli, take every other value from the preset).
+            diff = d.get("different_settings_to_system") or [""]
+            listed = [k for k in diff[0].split(";") if k]
+            diff[0] = ";".join(listed + [k for k, _ in pairs if k not in listed])
+            d["different_settings_to_system"] = diff
             data = json.dumps(d, indent=4).encode()
         zout.writestr(item, data)
 PY

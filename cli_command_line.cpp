@@ -61,6 +61,7 @@ enum class Legacy {
     PrinterPreset, ProcessPreset, FilamentPreset, ListPresets, ListSettings, Printer,
     AllowSubstitution, EngineInfo, LayerHeight, SingleInstance, ListFlags,
     Simplify, SimplifyRatio, SimplifyTriangles, SimplifyObjects, SimplifyKeepPaint,
+    ProjectSettingsAsSaved,
 };
 
 struct LegacyFlag {
@@ -114,6 +115,7 @@ const std::vector<LegacyFlag>& legacy_flags() {
         {"simplify-triangles",        Legacy::SimplifyTriangles, true,  "N",       "Simplify: reduce each part to about N triangles"},
         {"simplify-objects",          Legacy::SimplifyObjects,   true,  "IDS",     "Simplify only these objects, by the ids --engine-info lists (what --skip-objects takes); default: every object"},
         {"simplify-keep-paint",       Legacy::SimplifyKeepPaint, false, "",        "Simplify: carry painted colours, supports and seams onto the reduced mesh (slicer_cli, slicer_cli-orcaslicer)"},
+        {"project-settings-as-saved", Legacy::ProjectSettingsAsSaved, false, "",   "Slice a Bambu Studio project with the values saved in the file, as the official command line does; default: values the maker did not change come from this engine's presets, as the desktop app loads it"},
 #ifdef ENGINE_SNAPMAKER
         // Snapmaker Orca's engine has no allow_mix_temp setting (PrintConfig.cpp
         // at bac6fd5), so this build takes the desktop's temperature rule as its
@@ -678,6 +680,7 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
                 break;
             }
             case Legacy::SimplifyKeepPaint: o.simplify.keep_paint = true; break;
+            case Legacy::ProjectSettingsAsSaved: o.project_settings_as_saved = true; break;
             }
             continue;
         }

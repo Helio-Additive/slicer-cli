@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "libslic3r/BuildVolume.hpp"
+#include "libslic3r/Model.hpp"
 #include "libslic3r/PrintConfig.hpp"
 
 namespace slicer_cli {
@@ -20,5 +22,29 @@ namespace slicer_cli {
 std::string filament_map_flag_refusal(const std::vector<int>& map,
                                       const Slic3r::DynamicPrintConfig& config,
                                       size_t project_filaments);
+
+/// What --filament-map-mode and --filament-map decided for one plate.
+struct FilamentMapFlagStep {
+    enum class Kind { NotGiven, Applied, ModeOnly, Refused };
+    Kind             kind = Kind::NotGiven;
+    std::string      refusal;     // Refused: the sentence
+    std::string      mode_name;   // the mode the plate slices with
+    std::vector<int> map;         // Applied: the map
+    bool             manual = false;
+    std::string      message;     // the event's sentence
+};
+
+/// --filament-map-mode and --filament-map on one plate: checks them, fills
+/// the maps a manual mode needs into `extra`, and sets the mode and the map
+/// on `config`. `one_plate` is false when the run slices every plate. Not for
+/// the Snapmaker build, whose plate carries no map.
+FilamentMapFlagStep filament_map_flag_step(Slic3r::DynamicPrintConfig& extra, Slic3r::DynamicPrintConfig& config,
+                                           size_t project_filaments, bool one_plate);
+
+/// The official reach check before the slice: why a filament cannot print
+/// where its object is placed, or empty. `blocked` gets the filament. Not for
+/// the Snapmaker build, which has no per-extruder areas.
+std::string extruder_reach_refusal(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+                                   const Slic3r::BuildVolume& build_volume, size_t extruder_count, int& blocked);
 
 } // namespace slicer_cli

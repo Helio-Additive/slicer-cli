@@ -160,8 +160,11 @@ BASE_3MF="$FIXTURES/calib_base$FIXTURE_SUFFIX.3mf"
 if [ -f "$TOKEN_3MF" ]; then
     # (1) Default: slice succeeds, an audit notice is emitted, and the literal
     #     token is gone from the exported G-code.
+    #     The token is in the file's own saved start G-code, so the file's
+    #     values are sliced (--project-settings-as-saved): by default a Bambu
+    #     Studio project takes today's preset G-code, as the desktop app does.
     GC=$(mktmp_gcode)
-    run_slice "$GC" "$TOKEN_3MF"
+    run_slice "$GC" "$TOKEN_3MF" --project-settings-as-saved
     if [ "$LAST_EXIT" -eq 0 ] \
        && grep -q "LegacyGcodeTokenAliased" <<<"$LAST_OUTPUT" \
        && ! grep -q "$TOKEN" "$GC"; then

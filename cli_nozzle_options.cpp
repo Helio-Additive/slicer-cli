@@ -68,7 +68,7 @@ std::string estimate_mode_nozzle_settings(DynamicPrintConfig& extra, const Dynam
     return {};
 }
 
-bool command_line_nozzle_rack(const DynamicPrintConfig& extra, DynamicPrintConfig& config, int new_extruder_count,
+bool command_line_nozzle_rack(DynamicPrintConfig& extra, DynamicPrintConfig& config, int new_extruder_count,
                               ExtruderNozzleStat& stats) {
     if (!extra.has("extruder_nozzle_count") || !extra.has("extruder_nozzle_volume_type"))
         return false;
@@ -135,17 +135,22 @@ bool command_line_nozzle_rack(const DynamicPrintConfig& extra, DynamicPrintConfi
     if (!extra.has("ams_nozzle_idx"))
         config.option<ConfigOptionInts>("ams_nozzle_idx", true)->values = {-1};
     config.option<ConfigOptionFloats>("extruder_nozzle_diameter", true)->values = extruder_nozzle_diameters;
+    // The flags are laid over the settings once more before the slice: they
+    // carry the lists as normalised here, not as typed.
+    extra.option<ConfigOptionInts>("extruder_nozzle_count", true)->values = extruder_nozzle_counts;
+    extra.option<ConfigOptionEnumsGeneric>("extruder_nozzle_volume_type", true)->values = extruder_nozzle_volume_types;
+    if (extra.has("extruder_nozzle_diameter"))
+        extra.option<ConfigOptionFloats>("extruder_nozzle_diameter", true)->values = extruder_nozzle_diameters;
     return true;
 }
 
-void sync_rack_ams_count(DynamicPrintConfig& config, bool estimate_mode) {
-    if (!is_single_ext_multi_nozzle(config))
+void sync_ams_count_with_command_line(const DynamicPrintConfig& extra, DynamicPrintConfig& config) {
+    if (!extra.has("ams_nozzle_idx") || !is_single_ext_multi_nozzle(config))
         return;
     const auto* ams_idx_opt = config.option<ConfigOptionInts>("ams_nozzle_idx");
     const int ams_idx = (ams_idx_opt && !ams_idx_opt->values.empty()) ? ams_idx_opt->get_at(0) : -1;
-    const std::string estimate_ams_str = estimate_mode ? "1#0|4#2" : "1#0|4#1";
     config.option<ConfigOptionStrings>("extruder_ams_count", true)->values.assign(extruder_count(config),
-                                                                                  ams_idx >= 0 ? estimate_ams_str : "0#0");
+                                                                                  ams_idx >= 0 ? "1#0|4#1" : "0#0");
 }
 
 std::string quality_mode_refusal(const DynamicPrintConfig& config) {
@@ -184,8 +189,8 @@ std::string rack_group_maps(std::vector<int>& map, std::vector<int>& nozzle_map,
             if (map[i] == 1)
                 return "--filament-map gives 1 (the nozzle the AMS feeds) for filament " + std::to_string(i + 1) +
                        ", but the settings state no AMS on this printer" + printer +
-                       " (ams_nozzle_idx is -1): every nozzle is a fixed nozzle. Give --ams-nozzle-idx with the rack "
-                       "nozzle the AMS feeds (0 is the first), or 2 for every filament.";
+                       ": every nozzle is a fixed nozzle. Give --ams-nozzle-idx with the rack nozzle the AMS feeds "
+                       "(0 is the first), or 2 for every filament.";
     nozzle_map.assign(map.size(), 0);
     if (ams_idx >= 0) {
         int fixed_group_nozzle_idx = 0;

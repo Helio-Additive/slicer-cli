@@ -3609,88 +3609,11 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
         return false;
     }
 #ifndef ENGINE_SNAPMAKER
-    // Nozzles that each reach only part of the bed: a one-filament object in
-    // an area some extruders do not reach makes its filament unprintable on
-    // those (BambuStudio.cpp 7026-7052 at v02.09.01.70; OrcaSlicer.cpp
-    // 5795-5806 at 8500fcd). In an automatic mode a filament no extruder can
-    // print ends the run, in a manual mode a filament whose map names an
-    // extruder that cannot reach it (7254-7281, 7347-7355; OrcaSlicer.cpp
-    // 5937), both CLI_FILAMENT_CAN_NOT_MAP, before the slice.
+    // The official reach check before the slice (cli_filament_map.cpp).
     if (extruder_areas.size() > 1) {
-        std::vector<std::set<int>> unprintable(extruder_areas.size());
-#ifndef ENGINE_ORCA
-        const Slic3r::GlobalFeatureFilaments global_features = Slic3r::GlobalFeatureFilaments::from_full_config(config);
-#endif
-        const auto volume_filaments = [&](const Slic3r::ModelVolume* vol) {
-#ifdef ENGINE_ORCA
-            return vol->get_extruders();
-#else
-            return vol->get_extruders(global_features);
-#endif
-        };
-        for (const Slic3r::ModelObject* object : model.objects) {
-            std::set<int> object_filaments;
-            for (const Slic3r::ModelVolume* vol : object->volumes) {
-                const std::vector<int> filaments = volume_filaments(vol);
-                object_filaments.insert(filaments.begin(), filaments.end());
-            }
-            if (object_filaments.size() != 1)
-                continue;   // only a single-colour object is checked
-            for (const Slic3r::ModelInstance* inst : object->instances) {
-                if (inst->print_volume_state != Slic3r::ModelInstancePVS_Inside)
-                    continue;
-                const Slic3r::Transform3d& inst_matrix = inst->get_transformation().get_matrix();
-                for (const Slic3r::ModelVolume* vol : object->volumes) {
-                    if (!vol->is_model_part())
-                        continue;
-                    const Slic3r::BoundingBoxf3 bbox = vol->get_convex_hull().transformed_bounding_box(inst_matrix * vol->get_matrix());
-                    std::vector<bool> inside_extruders;
-                    if (build_volume.check_volume_bbox_state_with_extruder_areas(bbox, inside_extruders) !=
-                        Slic3r::BuildVolume::ObjectState::Limited)
-                        continue;
-                    const std::vector<int> filaments = volume_filaments(vol);
-                    for (size_t j = 0; j < inside_extruders.size() && j < unprintable.size(); ++j)
-                        if (!inside_extruders[j])
-                            unprintable[j].insert(filaments.begin(), filaments.end());
-                }
-            }
-        }
-        Slic3r::FilamentMapMode mode = Slic3r::FilamentMapMode::fmmAutoForFlush;
-        if (const auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode"))
-            mode = mode_opt->value;
-        bool manual = mode == Slic3r::FilamentMapMode::fmmManual;
-#ifndef ENGINE_ORCA
-        manual = manual || mode == Slic3r::FilamentMapMode::fmmNozzleManual;
-#endif
-        int blocked = 0, blocked_extruder = 0;
-        if (manual) {
-            if (const auto* maps = config.option<Slic3r::ConfigOptionInts>("filament_map"))
-                for (size_t index = 0; index < maps->values.size() && blocked == 0; ++index) {
-                    const int extruder = maps->values[index];
-                    if (extruder >= 1 && extruder <= (int)unprintable.size() && unprintable[extruder - 1].count(int(index) + 1)) {
-                        blocked = int(index) + 1;
-                        blocked_extruder = extruder;
-                    }
-                }
-        } else {
-            std::set<int> everywhere = unprintable.front();
-            for (size_t j = 1; j < unprintable.size(); ++j) {
-                std::set<int> both;
-                std::set_intersection(everywhere.begin(), everywhere.end(), unprintable[j].begin(), unprintable[j].end(),
-                                      std::inserter(both, both.begin()));
-                everywhere = std::move(both);
-            }
-            if (!everywhere.empty())
-                blocked = *everywhere.begin();
-        }
-        if (blocked != 0) {
-            const std::string detail = manual
-                ? "Filament " + std::to_string(blocked) + " prints an object placed where extruder " + std::to_string(blocked_extruder) +
-                  (unprintable.size() == 2 ? (blocked_extruder == 1 ? " (left)" : " (right)") : "") +
-                  " cannot reach, and the filament map names that extruder for it. Give it the other extruder in "
-                  "--filament-map, or move the object to where both nozzles reach (--arrange 1)."
-                : "Filament " + std::to_string(blocked) + " prints objects placed where no single extruder reaches all of "
-                  "them. Move the objects to where both nozzles reach (--arrange 1).";
+        int blocked = 0;
+        const std::string detail = slicer_cli::extruder_reach_refusal(model, config, build_volume, extruder_areas.size(), blocked);
+        if (!detail.empty()) {
             set_outcome_failure(outcome, CLI_FILAMENT_CAN_NOT_MAP, detail);
             emit_event({{"event","plate_error"}, {"tag","FilamentCannotMapToExtruder"}, {"filament", blocked},
                         {"message", detail}});
@@ -5555,6 +5478,7 @@ static std::string config_value_text(const Slic3r::ConfigBase& config, const cha
     return opt != nullptr ? opt->serialize() : std::string();
 }
 
+#endif
 /// True when this engine ships the system presets the project names. The
 /// desktop loads the project over the preset it names and only warns when the
 /// preset is missing (Preset.cpp 2446-2457 load_external_preset runs with
@@ -5574,6 +5498,7 @@ static bool project_presets_shipped(Slic3r::PresetBundle& bundle, const std::str
            bundle.prints.find_preset(process, false) != nullptr;
 #endif
 }
+#ifdef ENGINE_ORCA
 #endif
 
 #ifdef ENGINE_ORCA
@@ -5770,6 +5695,7 @@ static std::string bambu_action_message(const BambuValueAction& action) {
     return "converted " + action.key + " from \"" + action.from + "\" to \"" + action.value + "\"";
 }
 
+#endif
 /// A value's text as the file states it: a string as it is, a number without
 /// json's own formatting, a boolean as "1"/"0". Empty when the key is not there.
 static std::string json_scalar_text(const json& settings, const char* key) {
@@ -5790,6 +5716,7 @@ static std::string json_scalar_text(const json& settings, const char* key) {
         return it->get<bool>() ? "1" : "0";
     return it->dump();
 }
+#ifdef ENGINE_ORCA
 
 /// Writes one scope's conversions and reports them, then the values worth a
 /// warning. `write` sets a key in that scope's own config; `drop_substitution`
@@ -5887,6 +5814,7 @@ static std::vector<FileObjectSettings> project_object_settings(const std::string
     return out;
 }
 
+#endif
 /// Metadata/project_settings.config of a project 3MF, parsed. A null json when
 /// the file has none or it cannot be read.
 static json project_settings_json(const std::string& path) {
@@ -5900,6 +5828,7 @@ static json project_settings_json(const std::string& path) {
         return json();
     }
 }
+#ifdef ENGINE_ORCA
 
 /// True when the maker listed `key` among the keys it changed. The desktop (and
 /// this command line) keep those keys' file values and take the rest from the
@@ -8120,92 +8049,44 @@ static FilamentMapFlag apply_filament_map_flag(const CliOptions& o, Slic3r::Dyna
                                                Slic3r::DynamicPrintConfig& config, RunState& rs,
                                                std::optional<Slic3r::DynamicPrintConfig>& project_settings,
                                                size_t project_filaments, int plate_id, PlateOutcome& outcome) {
-    using Slic3r::FilamentMapMode;
-    const auto* cli_mode = extra.option<Slic3r::ConfigOptionEnum<FilamentMapMode>>("filament_map_mode");
-    auto* cli_map = extra.option<Slic3r::ConfigOptionInts>("filament_map");
-    if (cli_mode == nullptr && cli_map == nullptr)
+    // The checks and the maps are cli_filament_map.cpp's; this applies what
+    // they decided to the run's own records.
+    const slicer_cli::FilamentMapFlagStep step =
+        slicer_cli::filament_map_flag_step(extra, config, project_filaments, !(o.slice_mode && o.slice_plate == 0));
+    using Kind = slicer_cli::FilamentMapFlagStep::Kind;
+    if (step.kind == Kind::NotGiven)
         return FilamentMapFlag::NotGiven;
-    const FilamentMapMode mode = cli_mode ? cli_mode->value : FilamentMapMode::fmmManual;
-#ifdef ENGINE_BAMBU
-    const bool manual = mode == FilamentMapMode::fmmManual || mode == FilamentMapMode::fmmNozzleManual;
-    bool rack_groups = false;
-#else
-    const bool manual = mode == FilamentMapMode::fmmManual;
-#endif
-    const auto refuse = [&](const std::string& why) {
-        std::cerr << "Error: " << why << "\n";
-        set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
+    if (step.kind == Kind::Refused) {
+        std::cerr << "Error: " << step.refusal << "\n";
+        set_outcome_failure(outcome, CLI_INVALID_PARAMS, step.refusal);
         return FilamentMapFlag::Refused;
-    };
-#ifdef ENGINE_BAMBU
-    if (mode == FilamentMapMode::fmmAutoForQuality)
-        if (const std::string why = slicer_cli::quality_mode_refusal(config); !why.empty())
-            return refuse(why);
-#endif
-    if (cli_map != nullptr) {
-        cli_map->values = slicer_cli::sanitized_filament_map(cli_map->values);
-        std::string why;
-#ifdef ENGINE_BAMBU
-        if (mode == FilamentMapMode::fmmManual && Slic3r::is_single_ext_multi_nozzle(config) &&
-            !extra.has("filament_nozzle_map")) {
-            std::vector<int> nozzle_map;
-            why = slicer_cli::rack_group_maps(cli_map->values, nozzle_map, config, project_filaments);
-            if (why.empty())
-                extra.option<Slic3r::ConfigOptionInts>("filament_nozzle_map", true)->values = nozzle_map;
-            rack_groups = true;
-        } else
-#endif
-        if (manual)
-            why = slicer_cli::filament_map_flag_refusal(cli_map->values, config, project_filaments);
-        if (!why.empty())
-            return refuse(why);
     }
-#ifdef ENGINE_BAMBU
-    if (manual) {
-        const std::string why = slicer_cli::manual_mode_nozzle_maps(extra, config, mode, std::max<size_t>(1, project_filaments),
-                                                                    !(o.slice_mode && o.slice_plate == 0));
-        if (!why.empty())
-            return refuse(why);
-        // The maps this step wrote, over the plate's (7332-7339).
-        for (const char* key : {"filament_volume_map", "filament_nozzle_map"})
-            if (const Slic3r::ConfigOption* opt = extra.option(key))
-                config.set_key_value(key, opt->clone());
-    }
-#endif
-    const std::string mode_name = Slic3r::ConfigOptionEnum<FilamentMapMode>(mode).serialize();
-    Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-    config.set_deserialize("filament_map_mode", mode_name, subst);
     // The project's settings state the mode with the map they already carry:
     // --export-settings writes them (BambuStudio.cpp 6366-6370; OrcaSlicer.cpp
     // 5499-5503), and a map saved with an automatic mode is regrouped on the
     // next slice.
-    rs.base.set_deserialize("filament_map_mode", mode_name, subst);
+    Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+    rs.base.set_deserialize("filament_map_mode", step.mode_name, subst);
     if (project_settings)
-        project_settings->set_deserialize("filament_map_mode", mode_name, subst);
-    if (cli_map == nullptr) {
+        project_settings->set_deserialize("filament_map_mode", step.mode_name, subst);
+    // The exported project's plate states the mode, and in a manual mode the
+    // map, the slice used (store_bbs_3mf writes a plate's mode and map,
+    // bbs_3mf.cpp).
+    if (o.slice_mode && !o.export_3mf.empty()) {
+        outcome.derived_filament_map_mode = step.mode_name;
+        if (step.kind == Kind::Applied && step.manual)
+            outcome.derived_filament_map = step.map;
+        else
+            outcome.derived_filament_map.clear();
+    }
+    if (step.kind == Kind::ModeOnly) {
         emit_event({{"event","config_normalized"}, {"tag","FilamentMapModeFromCommandLine"},
-                    {"plate_id", plate_id}, {"filament_map_mode", mode_name},
-                    {"message","--filament-map-mode sets the filament grouping mode to " + mode_name}});
+                    {"plate_id", plate_id}, {"filament_map_mode", step.mode_name}, {"message", step.message}});
         return FilamentMapFlag::ModeOnly;
     }
-    const std::vector<int>& pm = cli_map->values;
-    config.option<Slic3r::ConfigOptionInts>("filament_map", true)->values = pm;
-    // The exported project's plate states the map the slice used
-    // (store_bbs_3mf writes a plate's mode and map, bbs_3mf.cpp).
-    if (manual && o.slice_mode && !o.export_3mf.empty()) {
-        outcome.derived_filament_map = pm;
-        outcome.derived_filament_map_mode = mode_name;
-    }
     emit_event({{"event","config_normalized"}, {"tag","FilamentMapFromCommandLine"},
-                {"plate_id", plate_id}, {"filament_map", pm}, {"filament_map_mode", mode_name},
-                {"message",
-#ifdef ENGINE_BAMBU
-                 rack_groups ? "--filament-map sets each filament's nozzle group (1 = the nozzle the AMS feeds, 2 = the "
-                               "fixed nozzles) in Manual mode; filament_map itself is 1 for every filament" :
-#endif
-                 manual ? "--filament-map sets each filament's nozzle (1 = left, 2 = right) in " + mode_name + " mode"
-                                   : "--filament-map is given with the automatic mode " + mode_name +
-                                     ": the engine groups the filaments itself"}});
+                {"plate_id", plate_id}, {"filament_map", step.map}, {"filament_map_mode", step.mode_name},
+                {"message", step.message}});
     return FilamentMapFlag::Applied;
 }
 #endif // ENGINE_SNAPMAKER
@@ -8606,7 +8487,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 }
             }
 #endif
-            if (bambu_made_project) {
+#else
+            // The BambuStudio build loads every Bambu Studio project the same
+            // way: Bambu Studio's own Plater does (load_config_model,
+            // Plater.cpp 12155 at v02.09.01.70 -> load_config_file_config,
+            // PresetBundle.cpp 5265 -> load_external_preset, Preset.cpp:
+            // update_non_diff_values_to_base_config for every key the file
+            // does not list in different_settings_to_system). A project saved
+            // by an older version then slices with today's start G-code, and a
+            // setting the maker never changed takes today's preset value, as
+            // it does on the desktop. --project-settings-as-saved keeps the
+            // file's own values, which is what the official command line does.
+            const bool bambu_made_project = is_bbl_3mf;
+#endif
+            if (bambu_made_project && !o.project_settings_as_saved) {
                 // The settings as the file states them, for read_project_facts
                 // below: the facts describe the file (its printer, bed, plate
                 // membership and the maker's own changed-key list), not the
@@ -8647,6 +8541,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             file_printer = config_id_text(config, "printer_settings_id");
                         if (file_process.empty())
                             file_process = config_id_text(config, "print_settings_id");
+#ifdef ENGINE_BAMBU
+                        // The presets saved inside the project and the file's
+                        // own nozzle rack, as the desktop keeps them
+                        // (desktop_presets.cpp).
+                        const Slic3r::DynamicPrintConfig file_nozzle_keys =
+                            slicer_cli::load_project_embedded_presets(bundle, presets, config);
+#endif
                         if (!project_presets_shipped(bundle, file_printer, file_process)) {
                             unavailable = "this engine ships no '" + file_printer + "' / '" + file_process +
                                           "' system preset";
@@ -8674,10 +8575,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         // the rebase itself succeeded.
                         Slic3r::DynamicPrintConfig file_config_for_bundle = config;
                         bundle.load_config_model(input_file, std::move(file_config_for_bundle), file_version);
+#ifdef ENGINE_BAMBU
+                        // The file's nozzles win over the selected printer's
+                        // (NozzleInventory::open_project, Plater.cpp 12160).
+                        bundle.nozzle_inventory.open_project(bundle.printers, file_nozzle_keys);
+#endif
 #ifdef ENGINE_SNAPMAKER
                         rebased = bundle.full_config();   // see above: full_fff_config at bac6fd5
 #else
                         rebased = bundle.full_config(false);
+#endif
+#ifdef ENGINE_BAMBU
+                        // extruder_ams_count: a newly started app takes the
+                        // file's (PresetBundle.cpp 5362-5366: the bundle's own
+                        // counts are empty then), and so does this run.
 #endif
                         // A project whose preset name this bundle cannot
                         // resolve is loaded as an external preset built from the
@@ -8695,6 +8606,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                           std::to_string(file_filaments);
                             rebase = false;
                         }
+                        // The same for the extruders: a file that states
+                        // another number of extruders than the printer preset
+                        // it names is not that preset's project, and its
+                        // settings are sliced as the file states them.
+                        const auto extruder_count = [](const Slic3r::DynamicPrintConfig& c) {
+                            const auto* d = c.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
+                            return d ? d->values.size() : size_t(0);
+                        };
+                        if (rebase && extruder_count(config) != 0 && extruder_count(rebased) != extruder_count(config)) {
+                            unavailable = "the printer preset the project names has " +
+                                          std::to_string(extruder_count(rebased)) + " extruder(s) where the file states " +
+                                          std::to_string(extruder_count(config));
+                            rebase = false;
+                        }
                         if (has_wipe_tower_x)
                             rebased.set_key_value("wipe_tower_x", new Slic3r::ConfigOptionFloats(file_wipe_tower_x));
                         if (has_wipe_tower_y)
@@ -8710,6 +8635,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // the file (6639-6642), so the project is not widened here:
                     // the reason is named, and any refusal of the plate says
                     // which key it is.
+#ifdef ENGINE_ORCA
                     const auto empty = filament_keys_split_reads_empty(config, project_settings_json(input_file));
                     if (!empty.empty()) {
                         std::string names;
@@ -8728,6 +8654,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             "desktop presets; slice it with slicer_cli (BambuStudio), or re-save it with one " +
                             names + " entry per filament.";
                     }
+#endif
                 }
                 if (rebase) {
                     config = std::move(rebased);
@@ -8748,6 +8675,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                 {"message","The project keeps the values the file states: " + unavailable}});
                 }
             }
+#ifdef ENGINE_ORCA
             // ── The file's own words, in this engine's values ───────────────
             // The engine's own legacy pass (PrintConfigDef::handle_legacy,
             // PrintConfig.cpp 7867-8151 at 31f6803) runs per key while a config
@@ -10062,7 +9990,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // The rack the command line describes wins over the input's
                     // (7103-7172, cli_nozzle_options.cpp).
                     const bool from_flags = slicer_cli::command_line_nozzle_rack(extra, config, new_extruder_count, nozzle_stats_obj);
-                    slicer_cli::sync_rack_ams_count(config, o.given_flag("estimate_mode") && o.cli.opt_bool("estimate_mode"));
+                    slicer_cli::sync_ams_count_with_command_line(extra, config);
                     const bool derived = !from_flags && !Slic3r::per_slot_nozzle_options_consistent(config);
                     if (derived) {
                         for (size_t eid = 0; eid < new_nozzle_volume_type.size(); ++eid) {
@@ -12538,9 +12466,10 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         // 3860-3863), and a plate mode other than Default wins over the
         // project's (PartPlate.cpp 278-289). The objects keep their own
         // filaments, so an object with copies on other plates stays as it is.
-        if (!out.derived_filament_map.empty()) {
-            ConfigSubstitutionContext mode_subst(ForwardCompatibilitySubstitutionRule::Enable);
+        if (!out.derived_filament_map.empty())
             pd->config.option<ConfigOptionInts>("filament_map", true)->values = out.derived_filament_map;
+        if (!out.derived_filament_map_mode.empty()) {
+            ConfigSubstitutionContext mode_subst(ForwardCompatibilitySubstitutionRule::Enable);
             pd->config.set_deserialize("filament_map_mode", out.derived_filament_map_mode, mode_subst);
         }
 #endif

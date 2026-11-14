@@ -833,7 +833,7 @@ std::string sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int p
     } else {
         // 1 (nvtBigTraffic in nozzle_volume_type) is the high-flow type.
         const int wanted = (!types.empty() && types.front() == 1 && supports_high_flow) ? 1 : 0;
-        const bool uniform = !flow_opt->values.empty() &&
+        const bool uniform = flow_opt->values.size() == (size_t)filament_count &&
                              std::all_of(flow_opt->values.begin(), flow_opt->values.end(),
                                          [wanted](int v) { return v == wanted; });
         if (!uniform)

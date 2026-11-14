@@ -208,7 +208,31 @@ flag takes its value as the next word or after `=`.
 | `--skip-modified-gcodes` | `=0` or `=1` | Keep the system presets' G-code where the project changed it | all binaries |
 | `--allow-newer-file` | `=0` or `=1` | Slice a 3MF saved by a newer app version | all binaries |
 | `--allow-substitution` | | With `--slice`: slice a 3MF whose values this engine has to substitute | all binaries |
+| `--project-settings-as-saved` | | Slice a Bambu Studio project with the values saved in the file | all binaries |
 | `--datadir` | folder | Accepted; no effect (slicer-cli keeps no settings between runs) | all binaries |
+
+**A Bambu Studio project loads the way the desktop app loads it.** A project
+file holds a full copy of its printer, process and filament settings from the
+day it was saved, and the list of the settings the maker changed
+(`different_settings_to_system`). The app keeps the changed ones and takes
+every other value from the preset it has today (`load_config_model`,
+`Plater.cpp` 12155 at v02.09.01.70, `load_external_preset` in `Preset.cpp`);
+the presets saved inside the project and the file's own nozzle rack are kept
+(`Plater.cpp` 11953-11958, 12160). All three programs do the same with the
+presets the package ships, and say so (event `config_normalized` /
+`ProjectRebasedOnSystemPresets`). So a project saved by an older version
+slices with today's start G-code, as it does in the app. A project whose
+printer or process preset the package does not ship keeps its saved values
+(`ProjectPresetRebaseSkipped`).
+
+`--project-settings-as-saved` turns this off: the run slices the values in
+the file, which is what the official command lines do. `slicer_cli-orcaslicer`
+and `slicer_cli-snapmaker` load only a Bambu Studio project this way; a
+project their own app saved is sliced as saved.
+
+The app can also download newer presets than the ones its installer ships,
+and slices with those. slicer-cli has the presets of its pinned engine
+version, so a setting Bambu changed after that version differs.
 
 Settings priority, highest first: setting flags on the command line, then
 `--load-settings` and `--load-filaments`, then the 3MF.
@@ -323,11 +347,13 @@ needs it (`enable_filament_dynamic_map`). As in the official command line,
 
 `--filament-map` on a printer with one extruder and a nozzle rack (the H3C,
 `slicer_cli`): 1 puts a filament on the nozzle the AMS feeds, 2 on the fixed
-nozzles, where the engine picks the nozzle that fits. As in the official
-command line, the printer has an AMS when `ams_nozzle_idx` names a rack
-nozzle (the H3C presets name the first) and none when it is -1;
-`--ams-nozzle-idx N` sets it. Without an AMS every nozzle is a fixed one,
-and a value of 1 is refused.
+nozzles, where the engine picks the nozzle that fits. The settings must
+state an AMS: a project saved with one does, and `--ams-nozzle-idx N` names
+the rack nozzle it feeds (0 is the first; -1 is no AMS). Nothing is assumed:
+with no flag the run slices with what the file says, as Bambu Studio does
+with no printer connected (the official command line instead puts an AMS on
+every such plate, `BambuStudio.cpp` 7448-7455). State the AMS the person has.
+Without an AMS every nozzle is a fixed one, and a value of 1 is refused.
 
 `--filament-map-mode "Nozzle Manual"` (`slicer_cli`, printers with a nozzle
 rack) names the rack nozzle of each filament. As in the official command

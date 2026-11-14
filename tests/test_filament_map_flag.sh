@@ -440,9 +440,9 @@ PY
     # The H3C: one extruder with a rack. --filament-map is Bambu Studio's
     # grouping, 1 = the nozzle the AMS feeds, 2 = the fixed nozzles.
     PRINTER="$H3C"; H2=(--filament-preset "Bambu PLA Basic @BBL H3C" --filament-preset "Bambu PLA Basic @BBL H3C")
-    # The preset's ams_nozzle_idx (0) states the AMS, as in the official CLI.
+    # --ams-nozzle-idx states the AMS the person has; nothing is assumed.
     expect_header "h3c-ams-then-fixed" "filament_map = 1,1;;filament_nozzle_map = 0,1;;filament_map_mode = Manual" "0,1" \
-        "${H2[@]}" --filament-map 1,2
+        "${H2[@]}" --ams-nozzle-idx 0 --filament-map 1,2
     expect_header "h3c-fixed-then-ams" "filament_map = 1,1;;filament_nozzle_map = 1,0;;filament_map_mode = Manual" "1,0" \
         "${H2[@]}" --ams-nozzle-idx 0 --filament-map 2,1
     expect_header "h3c-nozzle-manual" "filament_map_mode = Nozzle Manual;;filament_nozzle_map = 2,4" "2,4" \
@@ -450,7 +450,7 @@ PY
         --filament-nozzle-map 2,4 --extruder-nozzle-count 6 \
         --extruder-nozzle-volume-type "Standard,Standard,Standard,Standard,Standard,Standard"
     expect_refusal "refuse-h3c-no-ams" "$WORKDIR/two.3mf" "$H3C" "the settings state no AMS on this printer" \
-        "${H2[@]}" --ams-nozzle-idx=-1 --filament-map 1,2
+        "${H2[@]}" --filament-map 1,2
     expect_refusal "refuse-h3c-group" "$WORKDIR/two.3mf" "$H3C" "has one extruder with a nozzle rack" \
         "${H2[@]}" --ams-nozzle-idx 0 --filament-map 3,1
 fi
