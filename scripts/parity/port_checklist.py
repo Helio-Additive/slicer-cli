@@ -121,6 +121,7 @@ EXTRA_UNITS = [
     ("clipper2/clipper.core", ["clipper2/Clipper2Lib/include/clipper2/clipper.core.h"], "clipper2/clipper_core.rs"),
     ("clipper2/clipper.engine", ["clipper2/Clipper2Lib/src/clipper.engine.cpp",
                                  "clipper2/Clipper2Lib/include/clipper2/clipper.engine.h"], "clipper2/clipper_engine.rs"),
+    ("clipper2/clipper", ["clipper2/Clipper2Lib/include/clipper2/clipper.h"], "clipper2/clipper_h.rs"),
     ("clipper2/clipper.offset", ["clipper2/Clipper2Lib/src/clipper.offset.cpp",
                                  "clipper2/Clipper2Lib/include/clipper2/clipper.offset.h"], "clipper2/clipper_offset.rs"),
     ("clipper2/clipper.rectclip", ["clipper2/Clipper2Lib/src/clipper.rectclip.cpp",

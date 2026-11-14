@@ -4350,8 +4350,74 @@ pub fn clip_clipper_polygons_with_subject_bbox_expolygons(
 }
 
 pub fn intersection_pl_2(subject: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
+    intersection_pl_2_impl(clipper2_rust_crate(), subject, clip)
+}
+
+/// The gate of `intersection_pl_2` and `diff_pl_2` of this file: `CLIPPER2_RUST` and its
+/// sub-gate `CLIPPER2_RUST_CRATE`, both on unless set to 0. On: `crate::clipper2`, the Rust
+/// port of the Clipper2 the engine pins. Off: the `clipper2` crate (Clipper2 1.5.4).
+#[inline]
+fn clipper2_rust_crate() -> bool {
+    crate::faithful_gate("CLIPPER2_RUST") && crate::faithful_gate("CLIPPER2_RUST_CRATE")
+}
+
+/// What `subject_paths.to_clipper_open_subject().add_clip(clip_paths).intersect(NonZero)`
+/// and `.difference(NonZero)` of the `clipper2` crate (0.5.4) come to, on `crate::clipper2`,
+/// with the conversions of this file around them:
+///  - `point_to_clipper2` and `clipper2::Point::<Centi>::new` (point.rs:121-130): a
+///    coordinate `v` goes in as `((v as f64 / 100.0) * 100.0).round() as i64`;
+///  - `Clipper::add_open_subject`, `add_clip` (clipper.rs:138-207):
+///    `Clipper64::AddOpenSubject`, `AddClip`;
+///  - `Clipper::boolean_operation` (clipper.rs:286-316): `Clipper64::Execute(clip_type,
+///    fill_rule, closed_path, open_path)`, of which it returns the CLOSED paths only — the
+///    open paths, which is where the pieces of an open subject are, are deleted;
+///  - `clipper2_point_to_point` with `Point::x` (point.rs:139-146): a coordinate `v` comes
+///    out as `((v as f64 / 100.0) * 100.0).round()`;
+///  - `clipper2_paths_to_polylines`: paths of fewer than two points are left out.
+fn clipper2_crate_pl_open_rust(clip_type: crate::clipper2::ClipType, subject: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
+    use crate::clipper2 as c2;
+    let scaled = |v: Coord| -> i64 { ((v as f64 / 100.0) * 100.0).round() as i64 };
+    let subject_paths: c2::Paths64 = subject.iter().map(|pl| pl.points().iter().map(|p| c2::Point64::new(scaled(p.x), scaled(p.y))).collect()).collect();
+    let mut clip_paths = c2::Paths64::new();
+    for ep in clip {
+        clip_paths.push(ep.contour.points().iter().map(|p| c2::Point64::new(scaled(p.x), scaled(p.y))).collect());
+        for hole in &ep.holes {
+            clip_paths.push(hole.points().iter().map(|p| c2::Point64::new(scaled(p.x), scaled(p.y))).collect());
+        }
+    }
+
+    let mut clipper = c2::Clipper64::new();
+    clipper.add_open_subject(&subject_paths);
+    clipper.add_clip(&clip_paths);
+    let mut closed_path = c2::Paths64::new();
+    let mut open_path = c2::Paths64::new();
+    let success = clipper.execute_open(clip_type, c2::FillRule::NonZero, &mut closed_path, &mut open_path);
+    if !success {
+        // Err(ClipperError::FailedBooleanOperation) => vec![]
+        return vec![];
+    }
+
+    let mut result = Vec::new();
+    for path in &closed_path {
+        let pts: Vec<Point> =
+            path.iter().map(|p| Point::new(((p.x as f64 / 100.0) * 100.0).round() as Coord, ((p.y as f64 / 100.0) * 100.0).round() as Coord)).collect();
+        let pl = Polyline::from_points(pts);
+        if pl.len() >= 2 {
+            result.push(pl);
+        }
+    }
+    result
+}
+
+/// `intersection_pl_2` with the arm of the gate given (`rust`): what
+/// `tests/clipper2_utils_native_parity.rs` compares the two arms through.
+#[doc(hidden)]
+pub fn intersection_pl_2_impl(rust: bool, subject: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
     if subject.is_empty() || clip.is_empty() {
         return vec![];
+    }
+    if rust {
+        return clipper2_crate_pl_open_rust(crate::clipper2::ClipType::Intersection, subject, clip);
     }
 
     let subject_paths = polylines_to_clipper2_paths(subject);
@@ -4375,11 +4441,20 @@ pub fn intersection_pl_2(subject: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyli
 ///
 /// Returns the portions of `subject` polylines that lie **outside** the `clip` regions.
 pub fn diff_pl_2(subject: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
+    diff_pl_2_impl(clipper2_rust_crate(), subject, clip)
+}
+
+/// `diff_pl_2` with the arm of the gate given (`rust`).
+#[doc(hidden)]
+pub fn diff_pl_2_impl(rust: bool, subject: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
     if subject.is_empty() {
         return vec![];
     }
     if clip.is_empty() {
         return subject.to_vec();
+    }
+    if rust {
+        return clipper2_crate_pl_open_rust(crate::clipper2::ClipType::Difference, subject, clip);
     }
 
     let subject_paths = polylines_to_clipper2_paths(subject);

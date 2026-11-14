@@ -41,27 +41,27 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 6 |
 | C++ units with no Rust file | 31 |
-| Rust files with no C++ file of that name | 56 (plus 22 `mod.rs`/`lib.rs`/`main.rs`) |
+| Rust files with no C++ file of that name | 58 (plus 22 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 3776 (42%) |
-| estimate: faithful | 3169 (84% of matched) |
-| estimate: partial | 382 (10% of matched) |
-| estimate: divergent | 200 (5% of matched) |
+| estimate: faithful | 3170 (84% of matched) |
+| estimate: partial | 379 (10% of matched) |
+| estimate: divergent | 202 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
 | missing in the paired Rust file | 4615 |
-| of those, a function of that name exists in another Rust file | 1609 |
+| of those, a function of that name exists in another Rust file | 1617 |
 | of the rest, another overload of the name is ported | 367 |
-| of the rest, under 25 tokens (accessors, one-liners) | 741 |
-| of the rest, 25 tokens or more | 1898 |
+| of the rest, under 25 tokens (accessors, one-liners) | 737 |
+| of the rest, 25 tokens or more | 1894 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4791 |
+| Rust functions with no C++ function of that name in the pair | 4816 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 175 | 6851 | 2921 | 2441 | 303 | 163 | 14 | 3930 |
+| 1 | 180 | 175 | 6851 | 2921 | 2442 | 300 | 165 | 14 | 3930 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 66 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -95,13 +95,13 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `PlaceholderParser` | `placeholder_parser.rs` | 85 | 31 | 9 | 3 | 0 | 42 | 16 |
 | 1 | `TriangleMesh` | `triangle_mesh.rs` | 136 | 62 | 1 | 4 | 0 | 69 | 15 |
 | 1 | `Calib` | `calib.rs` | 51 | 12 | 2 | 3 | 3 | 31 | 12 |
-| 1 | `EdgeGrid` | `edge_grid.rs` | 47 | 11 | 2 | 2 | 0 | 32 | 15 |
 | 1 | `GCode/AvoidCrossingPerimeters` | `gcode/avoid_crossing_perimeters.rs` | 59 | 31 | 3 | 0 | 0 | 25 | 17 |
 | 1 | `GCode/TimelapsePosPicker` | `gcode/timelapse_pos_picker.rs` | 20 | 1 | 0 | 0 | 0 | 19 | 17 |
 | 1 | `Layer` | `layer.rs` | 56 | 15 | 4 | 2 | 0 | 35 | 15 |
 | 1 | `TriangleSelector` | `triangle_selector.rs` | 103 | 64 | 1 | 1 | 0 | 37 | 16 |
 | 1 | `TriangleMeshSlicer` | `triangle_mesh_slicer.rs` | 45 | 15 | 7 | 1 | 0 | 22 | 15 |
 | 1 | `PerimeterGenerator` | `perimeter_generator.rs` | 29 | 4 | 2 | 0 | 0 | 23 | 14 |
+| 1 | `EdgeGrid` | `edge_grid.rs` | 47 | 11 | 2 | 2 | 0 | 32 | 11 |
 | 1 | `Line` | `geometry/line.rs` | 56 | 14 | 4 | 7 | 0 | 31 | 5 |
 | 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 33 | 6 | 0 | 0 | 29 | 11 |
 | 1 | `LayerRegion` | `layer_region.rs` | 29 | 1 | 3 | 0 | 0 | 25 | 9 |
@@ -122,6 +122,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `ShortestPath` | `shortest_path.rs` | 37 | 22 | 2 | 0 | 0 | 13 | 6 |
 | 1 | `Algorithm/LineSegmentation/LineSegmentation` | `algorithm/line_segmentation/line_segmentation.rs` | 29 | 5 | 3 | 0 | 0 | 21 | 5 |
 | 1 | `AppConfig` | `app_config.rs` | 72 | 53 | 3 | 2 | 0 | 14 | 3 |
+| 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 7 | 1 | 3 | 0 | 3 | 2 |
 | 1 | `ElephantFootCompensation` | `elephant_foot_compensation.rs` | 10 | 5 | 0 | 0 | 0 | 5 | 5 |
 | 1 | `Geometry/VoronoiOffset` | `geometry/voronoi_offset.rs` | 39 | 23 | 2 | 0 | 0 | 14 | 5 |
 | 1 | `Geometry/VoronoiUtils` | `geometry/voronoi_utils.rs` | 13 | 5 | 2 | 2 | 0 | 4 | 3 |
@@ -138,7 +139,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Utils` | `utils.rs` | 36 | 14 | 4 | 2 | 0 | 16 | 2 |
 | 1 | `AABBTreeIndirect` | `aabb_tree_indirect.rs` | 41 | 25 | 1 | 2 | 0 | 13 | 1 |
 | 1 | `Arachne/SkeletalTrapezoidation` | `arachne/skeletal_trapezoidation.rs` | 41 | 33 | 0 | 2 | 0 | 6 | 1 |
-| 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 6 | 4 | 1 | 0 | 3 | 2 |
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
 | 1 | `GCode/ToolOrderUtils` | `gcode/tool_order_utils.rs` | 32 | 26 | 1 | 0 | 0 | 5 | 3 |
 | 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 3 | 0 | 1 | 0 | 12 | 2 |
@@ -206,13 +206,15 @@ their function names come from, when there is one.
 | `bin/generate-test-meshes.rs` | no C++ file of this name | 9 | `TriangleMesh` |
 | `bin/slicer-cli.rs` | no C++ file of this name | 16 |  |
 | `boost_polygon_voronoi.rs` | no C++ file of this name | 288 |  |
-| `clipper2/build_xy.rs` | no C++ file of this name | 7 |  |
-| `clipper2/build_xyz.rs` | no C++ file of this name | 11 |  |
+| `clipper2/build_xy.rs` | no C++ file of this name | 10 |  |
+| `clipper2/build_xyz.rs` | no C++ file of this name | 14 |  |
 | `clipper2/clipper2_z.rs` | no C++ file of this name | 0 |  |
-| `clipper2/clipper_core.rs` | no C++ file of this name | 45 |  |
-| `clipper2/clipper_engine.rs` | no C++ file of this name | 156 |  |
+| `clipper2/clipper_core.rs` | no C++ file of this name | 59 |  |
+| `clipper2/clipper_engine.rs` | no C++ file of this name | 159 |  |
+| `clipper2/clipper_h.rs` | no C++ file of this name | 26 |  |
+| `clipper2/clipper_offset.rs` | no C++ file of this name | 52 |  |
 | `clipper2/mod.rs` | module | 0 |  |
-| `clipper2_z.rs` | no C++ file of this name | 6 |  |
+| `clipper2_z.rs` | no C++ file of this name | 13 |  |
 | `clipper_build_xy.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xyz.rs` | no C++ file of this name | 9 |  |
 | `clipper_lib_z.rs` | no C++ file of this name | 1 |  |
@@ -1479,15 +1481,14 @@ Rust only:
 
 ### `Clipper2Utils` (.cpp+.hpp) and `clipper2_utils.rs`
 
-Tier 1. C++ functions 14, Rust functions 38. Matched 11: faithful 6, partial 4, divergent 1, stub 0.
+Tier 1. C++ functions 14, Rust functions 59. Matched 11: faithful 7, partial 1, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `PolyTreeToExPolygons` :46 and `poly_tree_to_expolygons` :378 (40%, 0.24x)
-- partial: `_clipper2_pl_open` :119 and `clipper2_pl_open` :531 (53%, 5.82x)
-- divergent: `union_ex_2` :143 and `union_ex_2` :689 (18%, 0.18x)
-- partial: `offset_ex_2` :174 and `offset_ex_2` :746 (42%, 0.44x)
-- partial: `offset2_ex_2` :186 and `offset2_ex_2` :788 (47%, 0.41x)
+- partial: `PolyTreeToExPolygons` :46 and `poly_tree_to_expolygons` :511 (40%, 0.24x)
+- divergent: `union_ex_2` :143 and `union_ex_2` :855 (9%, 0.14x)
+- divergent: `offset_ex_2` :174 and `offset_ex_2` :930 (17%, 0.18x)
+- divergent: `offset2_ex_2` :186 and `offset2_ex_2` :987 (18%, 0.11x)
 
 Missing in the Rust file:
 
@@ -1497,33 +1498,54 @@ Missing in the Rust file:
 
 Rust only:
 
-- `paths64_to_native` :79
-- `native_to_paths64` :101
-- `slic3r_polylines_to_paths64` :164
-- `slic3r_polygons_points_to_paths64` :176
-- `polynode_polygon` :278
-- `polynode_count` :294
-- `polynode_child` :300
-- `poly_tree_count_expolygons` :313
-- `poly_tree_to_expolygons_recursive` :340
-- `clipper64_union_tree_to_expolygons` :400
-- `clipper_offset_execute` :435
-- `offset_paths_to_expolygons` :465
-- `simplify_poly_tree_paths` :485
-- `union_ex_2_expolygons` :718
-- `pt_to_d_2` :847
-- `clipper64_union_paths` :855
-- `clipper64_difference_tree_to_expolygons` :886
-- `clipper64_difference_paths` :924
-- `path64_to_polygon` :958
-- `fix_after_outer_offset` :966 — C++ has it in `ClipperUtils`
-- `fix_after_inner_offset` :986 — C++ has it in `ClipperUtils`
-- `mittered_offset_path_scaled` :1034 — C++ has it in `ClipperUtils`
-- `normalize_pf` :1190
-- `variable_offset_inner` :1197 — C++ has it in `ClipperUtils`
-- `variable_offset_outer` :1248 — C++ has it in `ClipperUtils`
-- `variable_offset_outer_ex` :1299 — C++ has it in `ClipperUtils`
-- `variable_offset_inner_ex` :1357 — C++ has it in `ClipperUtils`
+- `paths64_to_native` :86
+- `native_to_paths64` :108
+- `clipper2_rust_utils` :132
+- `paths64_to_c2` :137
+- `c2_to_paths64` :142
+- `path64_to_points_c2` :148
+- `paths64_to_polylines_c2` :158
+- `poly_tree_count_expolygons_c2` :168
+- `poly_tree_to_expolygons_recursive_c2` :180
+- `poly_tree_to_expolygons_c2` :197
+- `simplify_poly_tree_c2` :212
+- `union_ex_2_c2` :224
+- `fill_rule_c2` :237
+- `slic3r_polylines_to_paths64` :297
+- `slic3r_polygons_points_to_paths64` :309
+- `polynode_polygon` :411
+- `polynode_count` :427
+- `polynode_child` :433
+- `poly_tree_count_expolygons` :446
+- `poly_tree_to_expolygons_recursive` :473
+- `clipper64_union_tree_to_expolygons` :533
+- `clipper_offset_execute` :568
+- `offset_paths_to_expolygons` :598
+- `simplify_poly_tree_paths` :618
+- `intersection_pl_2_impl` :817
+- `diff_pl_2_impl` :831
+- `union_ex_2_impl` :861
+- `union_ex_2_expolygons` :893
+- `union_ex_2_expolygons_impl` :899
+- `offset_ex_2_impl` :936
+- `offset2_ex_2_impl` :993
+- `pt_to_d_2` :1074
+- `clipper64_union_paths` :1082
+- `clipper64_difference_tree_to_expolygons` :1124
+- `clipper64_difference_paths` :1173
+- `path64_to_polygon` :1217
+- `fix_after_outer_offset` :1225 — C++ has it in `ClipperUtils`
+- `fix_after_inner_offset` :1246 — C++ has it in `ClipperUtils`
+- `mittered_offset_path_scaled` :1295 — C++ has it in `ClipperUtils`
+- `normalize_pf` :1451
+- `variable_offset_inner` :1458 — C++ has it in `ClipperUtils`
+- `variable_offset_inner_impl` :1464
+- `variable_offset_outer` :1517 — C++ has it in `ClipperUtils`
+- `variable_offset_outer_impl` :1523
+- `variable_offset_outer_ex` :1576 — C++ has it in `ClipperUtils`
+- `variable_offset_outer_ex_impl` :1586
+- `variable_offset_inner_ex` :1647 — C++ has it in `ClipperUtils`
+- `variable_offset_inner_ex_impl` :1657
 
 ### `Clipper2ZUtils` (.hpp) and `clipper2_z_utils.rs`
 
@@ -1547,7 +1569,7 @@ Rust only:
 
 ### `ClipperUtils` (.cpp+.hpp) and `clipper_utils.rs`
 
-Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 162. Matched 35: faithful 29, partial 4, divergent 2, stub 0.
+Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 166. Matched 35: faithful 29, partial 4, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -1685,10 +1707,10 @@ Missing in the Rust file:
 - `intersection` :707 (26 tokens, overload) — in `aabb_tree_lines.rs`, `enum_bitmask.rs`, `geometry/bounding_box.rs`
 - `intersection` :709 (26 tokens, overload) — in `aabb_tree_lines.rs`, `enum_bitmask.rs`, `geometry/bounding_box.rs`
 - `intersection` :711 (26 tokens, overload) — in `aabb_tree_lines.rs`, `enum_bitmask.rs`, `geometry/bounding_box.rs`
-- `union_` :721 (27 tokens, overload) — in `bridge_detector.rs`, `enum_bitmask.rs`, `support/tree_model_volumes.rs`
-- `union_` :723 (27 tokens, overload) — in `bridge_detector.rs`, `enum_bitmask.rs`, `support/tree_model_volumes.rs`
-- `union_` :725 (37 tokens, overload) — in `bridge_detector.rs`, `enum_bitmask.rs`, `support/tree_model_volumes.rs`
-- `union_` :735 (28 tokens, overload) — in `bridge_detector.rs`, `enum_bitmask.rs`, `support/tree_model_volumes.rs`
+- `union_` :721 (27 tokens, overload) — in `bridge_detector.rs`, `clipper2/clipper_h.rs`, `enum_bitmask.rs`
+- `union_` :723 (27 tokens, overload) — in `bridge_detector.rs`, `clipper2/clipper_h.rs`, `enum_bitmask.rs`
+- `union_` :725 (37 tokens, overload) — in `bridge_detector.rs`, `clipper2/clipper_h.rs`, `enum_bitmask.rs`
+- `union_` :735 (28 tokens, overload) — in `bridge_detector.rs`, `clipper2/clipper_h.rs`, `enum_bitmask.rs`
 - `_clipper_ex` :738 (35 tokens)
 - `diff_ex` :741 (26 tokens, overload)
 - `diff_ex` :743 (26 tokens, overload)
@@ -1881,7 +1903,11 @@ Rust only:
 - `opening_polygons_2` :4314
 - `clip_clipper_polygons_with_subject_bbox_expolygons` :4335
 - `intersection_pl_2` :4352 — C++ has it in `Clipper2Utils`
-- `diff_pl_2` :4377 — C++ has it in `Clipper2Utils`
+- `clipper2_rust_crate` :4360
+- `clipper2_crate_pl_open_rust` :4377
+- `intersection_pl_2_impl` :4415
+- `diff_pl_2` :4443 — C++ has it in `Clipper2Utils`
+- `diff_pl_2_impl` :4449
 
 ### `ClipperZUtils` (.hpp) and `clipper_z_utils.rs`
 
@@ -2371,15 +2397,15 @@ Missing in the Rust file:
 - `EdgeGrid::Grid::create` :104 (127 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
 - `Grid::create` :111 (13 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
 - `EdgeGrid::Grid::create` :117 (158 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
-- `Grid::intersect` :120 (18 tokens)
-- `Grid::intersect` :121 (36 tokens)
-- `Grid::intersect` :122 (52 tokens)
-- `Grid::intersect` :123 (36 tokens)
+- `Grid::intersect` :120 (18 tokens) — in `clipper2/clipper_h.rs`
+- `Grid::intersect` :121 (36 tokens) — in `clipper2/clipper_h.rs`
+- `Grid::intersect` :122 (52 tokens) — in `clipper2/clipper_h.rs`
+- `Grid::intersect` :123 (36 tokens) — in `clipper2/clipper_h.rs`
 - `EdgeGrid::Grid::create_from_m_contours` :142 (1397 tokens)
 - `Grid::ClosestPointResult::valid` :147 (10 tokens) — in `build_volume.rs`, `fill/fill_base.rs`, `gcode/conflict_checker.rs`
 - `Grid::visit_intersect_line_impl` :173 (762 tokens)
 - `div_floor` :339 (30 tokens)
-- `EdgeGrid::Grid::intersect` :347 (915 tokens)
+- `EdgeGrid::Grid::intersect` :347 (915 tokens) — in `clipper2/clipper_h.rs`
 - `Grid::line` :402 (39 tokens) — in `file_parser_error.rs`, `fill/fill_line.rs`, `gcode/wipe_tower.rs`
 - `Grid::cell_inside_or_crossing` :420 (78 tokens)
 - `EdgeGrid::Grid::line_cell_intersect` :484 (368 tokens)
@@ -2836,7 +2862,7 @@ Missing in the Rust file:
 - `ExtrusionEntityCollection::as_polyline` :127 (17 tokens) — in `extrusion_entity.rs`
 - `ExtrusionEntityCollection::collect_polylines` :132 (19 tokens) — in `extrusion_entity.rs`
 - `ExtrusionEntityCollection::collect_points` :137 (19 tokens) — in `gcode/seam_placer.rs`
-- `ExtrusionEntityCollection::length` :142 (15 tokens) — in `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`, `fill/fill_rectilinear.rs`
+- `ExtrusionEntityCollection::length` :142 (15 tokens) — in `clipper2/clipper_h.rs`, `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`
 
 Rust only:
 
@@ -6001,7 +6027,7 @@ Missing in the Rust file:
 - `Linef3::intersect_plane` :128 (75 tokens)
 - `Line::scale` :158 (14 tokens, overload) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `extrusion_simulator.rs`
 - `Line::translate` :160 (14 tokens, overload) — in `bounding_box.rs`, `emboss.rs`, `ex_polygon_collection.rs`
-- `Line::length` :163 (20 tokens, overload) — in `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`, `fill/fill_rectilinear.rs`
+- `Line::length` :163 (20 tokens, overload) — in `clipper2/clipper_h.rs`, `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`
 - `Line::distance_to_squared` :167 (16 tokens, overload) — in `aabb_tree_lines.rs`
 - `Line::distance_to_squared` :168 (15 tokens, overload) — in `aabb_tree_lines.rs`
 - `Line::distance_to` :169 (16 tokens) — in `arrange.rs`, `geometry/medial_axis.rs`, `geometry/point.rs`
@@ -6010,7 +6036,7 @@ Missing in the Rust file:
 - `Line::distance_to_squared` :187 (25 tokens, overload) — in `aabb_tree_lines.rs`
 - `Line::distance_to` :188 (15 tokens) — in `arrange.rs`, `geometry/medial_axis.rs`, `geometry/point.rs`
 - `Line::distance_to_infinite_squared` :192 (25 tokens, overload)
-- `Line3::length` :218 (24 tokens, overload) — in `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`, `fill/fill_rectilinear.rs`
+- `Line3::length` :218 (24 tokens, overload) — in `clipper2/clipper_h.rs`, `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`
 - `Line3::vector` :219 (11 tokens, overload)
 - `Linef3::vector` :250 (11 tokens, overload)
 - `Linef3::unit_vector` :251 (25 tokens)
@@ -6756,7 +6782,7 @@ Missing in the Rust file:
 - `MultiPoint::size` :41 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `MultiPoint::empty` :42 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `MultiPoint::is_valid` :44 (13 tokens) — in `aabb_mesh.rs`, `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
-- `MultiPoint::length` :48 (53 tokens, overload) — in `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`, `fill/fill_rectilinear.rs`
+- `MultiPoint::length` :48 (53 tokens, overload) — in `clipper2/clipper_h.rs`, `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`
 - `MultiPoint::closest_point_index` :53 (119 tokens) — in `geometry/polygon.rs`
 - `MultiPoint::find_point` :66 (113 tokens, overload) — in `geometry/polyline.rs`
 - `MultiPoint::closest_point` :68 (26 tokens) — in `edge_grid.rs`, `geometry/aabb_tree.rs`, `geometry/expolygon.rs`
@@ -6780,7 +6806,7 @@ Missing in the Rust file:
 - `MultiPoint::intersections` :168 (62 tokens) — in `clipper2_z_utils.rs`, `clipper_z_utils.rs`, `geometry/polygon.rs`
 - `MultiPoint3::translate` :388 (32 tokens, overload) — in `bounding_box.rs`, `emboss.rs`, `ex_polygon_collection.rs`
 - `MultiPoint3::translate` :396 (17 tokens, overload) — in `bounding_box.rs`, `emboss.rs`, `ex_polygon_collection.rs`
-- `MultiPoint3::length` :401 (31 tokens, overload) — in `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`, `fill/fill_rectilinear.rs`
+- `MultiPoint3::length` :401 (31 tokens, overload) — in `clipper2/clipper_h.rs`, `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`
 - `MultiPoint3::bounding_box` :409 (8 tokens, overload) — in `build_volume.rs`, `geometry/expolygon.rs`, `geometry/polygon.rs`
 - `get_extents_rotated` :441 (300 tokens) — in `bridge_detector.rs`, `ex_polygon.rs`, `geometry/polygon.rs`
 - `get_extents_rotated` :467 (12 tokens) — in `bridge_detector.rs`, `ex_polygon.rs`, `geometry/polygon.rs`
@@ -10717,7 +10743,7 @@ Tier 3. C++ functions 6 (plus 1 constructors, 0 destructors, 0 operators), Rust 
 Missing in the Rust file:
 
 - `TracerTraits_::foreach_reachable` :24 (11 tokens) — in `jump_point_search.rs`
-- `TracerTraits_::distance` :28 (12 tokens) — in `aabb_mesh.rs`, `frustum.rs`, `gcode/spiral_vase.rs`
+- `TracerTraits_::distance` :28 (12 tokens) — in `aabb_mesh.rs`, `clipper2/clipper_h.rs`, `frustum.rs`
 - `TracerTraits_::goal_heuristic` :35 (10 tokens) — in `jump_point_search.rs`
 - `TracerTraits_::unique_id` :38 (10 tokens) — in `jump_point_search.rs`
 
@@ -11851,7 +11877,7 @@ Missing in the Rust file:
 - `_cgal_do` :274 (124 tokens)
 - `minus` :296 (11 tokens)
 - `plus` :297 (11 tokens)
-- `intersect` :298 (11 tokens)
+- `intersect` :298 (11 tokens) — in `clipper2/clipper_h.rs`
 - `does_self_intersect` :299 (12 tokens)
 - `segment` :301 (345 tokens) — in `edge_grid.rs`
 - `segment` :365 (75 tokens) — in `edge_grid.rs`
@@ -11861,10 +11887,10 @@ Missing in the Rust file:
 - `_mesh_boolean_do` :418 (62 tokens)
 - `minus` :430 (11 tokens)
 - `plus` :435 (11 tokens)
-- `intersect` :440 (11 tokens)
+- `intersect` :440 (11 tokens) — in `clipper2/clipper_h.rs`
 - `minus` :445 (11 tokens)
 - `plus` :450 (11 tokens)
-- `intersect` :455 (11 tokens)
+- `intersect` :455 (11 tokens) — in `clipper2/clipper_h.rs`
 - `does_self_intersect` :460 (34 tokens)
 - `does_bound_a_volume` :469 (21 tokens)
 - `empty` :474 (11 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
@@ -13014,7 +13040,7 @@ Tier 4. C++ functions 24 (plus 9 constructors, 0 destructors, 0 operators), Rust
 
 Missing in the Rust file:
 
-- `distance` :57 (15 tokens, overload) — in `aabb_mesh.rs`, `frustum.rs`, `gcode/spiral_vase.rs`
+- `distance` :57 (15 tokens, overload) — in `aabb_mesh.rs`, `clipper2/clipper_h.rs`, `frustum.rs`
 - `SupportTreeBuilder::add_pillar` :273 (160 tokens, overload)
 - `SupportTreeBuilder::pillar` :401 (56 tokens, overload)
 
@@ -13321,7 +13347,7 @@ Missing in the Rust file:
 - `SLAPrint::Steps::label` :1099 (8 tokens, overload) — in `preset.rs`
 - `SLAPrint::Steps::progressrange` :1109 (10 tokens)
 - `SLAPrint::Steps::progressrange` :1114 (16 tokens)
-- `SLAPrint::Steps::execute` :1119 (86 tokens, overload) — in `clipper.rs`, `clipper2/clipper_engine.rs`, `clipper_utils.rs`
+- `SLAPrint::Steps::execute` :1119 (86 tokens, overload) — in `clipper.rs`, `clipper2/clipper_engine.rs`, `clipper2/clipper_offset.rs`
 
 Rust only:
 

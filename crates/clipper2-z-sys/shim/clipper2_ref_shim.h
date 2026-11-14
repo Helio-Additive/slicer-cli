@@ -39,6 +39,24 @@ typedef struct {
     int32_t prefix##point_in_polygon(int64_t x, int64_t y, const int64_t *xyz, int32_t n);                  \
     double prefix##area(const int64_t *xyz, int32_t n);                                                     \
     void prefix##core(const int64_t *p, int64_t *out_i, double *out_d, int32_t *out_b);                     \
+    /* ClipperOffset of the pin (clipper.offset.cpp). See clipper2_ref_shim.cpp. */                         \
+    Cz2RefResult prefix##offset(const int64_t *xyz, const int32_t *lens, const int32_t *group_sizes,        \
+                                const int32_t *group_join, const int32_t *group_end, int32_t num_groups,    \
+                                double delta, double delta2, double miter_limit, double arc_tolerance,      \
+                                int32_t preserve_collinear, int32_t reverse_solution, int32_t use_tree,     \
+                                int32_t mode, int32_t delta_cb, int32_t z_callback);                        \
+    /* The helpers of clipper.h on one path. See clipper2_ref_shim.cpp. */                                  \
+    Cz2RefResult prefix##path_op(int32_t op, const int64_t *xyz, int32_t n, double a, double b,             \
+                                 int64_t flag, double *out_d);                                              \
+    /* BooleanOp and its wrappers of clipper.h. See clipper2_ref_shim.cpp. */                               \
+    Cz2RefResult prefix##boolean_op(int32_t op, int32_t clip_type, int32_t fill_rule,                       \
+                                    const int64_t *subj_xyz, const int32_t *subj_lens, int32_t subj_num,    \
+                                    const int64_t *clip_xyz, const int32_t *clip_lens, int32_t clip_num);   \
+    /* The calls of libslic3r's Clipper2Utils.cpp on the pin. See clipper2_ref_shim.cpp. */                 \
+    Cz2RefResult prefix##utils(int32_t op, const int64_t *xyz, const int32_t *lens, int32_t num,            \
+                               const int64_t *clip_xyz, const int32_t *clip_lens, int32_t clip_num,         \
+                               double delta1, double delta2);                                               \
+    void prefix##sin_cos(double x, double *out);                                                            \
     int32_t prefix##from_pin(void);                                                                         \
     const char *prefix##version(void);
 

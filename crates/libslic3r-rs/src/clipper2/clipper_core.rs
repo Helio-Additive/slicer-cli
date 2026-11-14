@@ -8,14 +8,17 @@
 //! place is a `mul_add` here, and nothing else is: a product kept in a variable or returned
 //! by a function (`Sqr`) is rounded first, as in the C++.
 //!
-//! The templates on `PointD` (`ScalePath`, `ScalePaths`, `TransformPath`, `StripNearEqual`,
-//! `TranslatePoint`, `ReflectPoint`, `CheckPrecisionRange`, the two-vector `CrossProduct`
-//! and `DotProduct`, `ScaleRect`, `RectD`) serve `ClipperD`, clipper.offset.cpp and
-//! clipper.rectclip.cpp, and come with those.
+//! `PointD` and what clipper.offset.cpp takes of the templates on it are here: the
+//! conversions between `Point64` and `PointD`, `TranslatePoint`, `ReflectPoint`, the
+//! two-vector `CrossProduct` and `DotProduct`, `GetSegmentIntersectPt` on doubles. The
+//! templates that serve `ClipperD` and clipper.rectclip.cpp only (`ScalePath`,
+//! `ScalePaths`, `TransformPath`, `StripNearEqual`, `CheckPrecisionRange`, `ScaleRect`,
+//! `RectD`) are not ported: nothing the engine calls reaches them.
 
 use std::cell::Cell;
 
-pub use super::clipper2_build::{Point64, ZCallback64, USINGZ};
+use super::clipper2_build::{point_xyz, point_z, pointd_xyz, pointd_z};
+pub use super::clipper2_build::{Point64, PointD, ZCallback64, USINGZ};
 
 // clipper.core.h:51-56 error codes (2^n)
 pub const PRECISION_ERROR_I: i32 = 1; // non-fatal
@@ -23,6 +26,99 @@ pub const SCALE_ERROR_I: i32 = 2; // non-fatal
 pub const NON_PAIR_ERROR_I: i32 = 4; // non-fatal
 pub const UNDEFINED_ERROR_I: i32 = 32; // fatal
 pub const RANGE_ERROR_I: i32 = 64;
+
+// -------------------------------------------------------------------------------------------
+// The differences of Clipper2 1.5.4, as a test probe.
+//
+// The engine pins Clipper2 1.5.2 and this port follows it. Three of the engine's callers
+// used to reach Clipper2 through `clipper2c-sys`, which is 1.5.4, and
+// `tests/clipper2_utils_native_parity.rs` compares those callers on the port with what they
+// were on the C++ library. To account for every difference it finds, that test makes the
+// port behave as 1.5.4: each behavioural change between the two versions
+// (clipper.engine.cpp, clipper.offset.cpp; clipper.core.h, clipper.h, clipper.rectclip.cpp
+// have none in what is ported) is written out beside the pin's code, behind one of the bits
+// below, and is taken only while the test has switched the bit on for its thread.
+// Nothing in the engine switches a bit on: `version_154_probe` has no other caller, and
+// with no bit set every line that runs is the pin's.
+// -------------------------------------------------------------------------------------------
+
+/// clipper.engine.cpp of 1.5.4, `PointInOpPolygon` (:534-536, :544-546): the side of the
+/// point is `CrossProductSign` (exact, 128 bit) where the pin has `CrossProduct` (doubles).
+pub const V154_POINT_IN_OP_POLYGON: u32 = 1;
+/// clipper.engine.cpp of 1.5.4, `Path2ContainsPath1` (:576-599, with the template of
+/// clipper.h:716-742) where the pin has `Path1InsidePath2` (clipper.engine.cpp:584-603).
+pub const V154_PATH2_CONTAINS_PATH1: u32 = 2;
+/// clipper.engine.cpp of 1.5.4, `IsValidAelOrder` (:1125-1153): `CrossProductSign` where the
+/// pin has `CrossProduct`.
+pub const V154_IS_VALID_AEL_ORDER: u32 = 4;
+/// clipper.engine.cpp of 1.5.4, `FixSelfIntersects` (:1646-1681): adjacent intersections
+/// are joined, not split off, and a triangle ends the loop only before it and after a split.
+pub const V154_FIX_SELF_INTERSECTS: u32 = 8;
+/// clipper.engine.cpp of 1.5.4, `AdjustCurrXAndCopyToSEL` (:2112-2126): a joined edge gets
+/// its own `TopX`, where the pin copies the `curr_x` of the edge it is joined with.
+pub const V154_ADJUST_CURR_X: u32 = 16;
+/// clipper.engine.cpp of 1.5.4, `MoveSplits` (:2269-2277, #987): an `OutRec` is not moved
+/// into its own splits.
+pub const V154_MOVE_SPLITS: u32 = 32;
+/// clipper.engine.cpp of 1.5.4, `CheckSplitOwner` (:2941-2964, #942, #957).
+pub const V154_CHECK_SPLIT_OWNER: u32 = 64;
+/// clipper.offset.cpp of 1.5.4, `GetLowestClosedPathInfo` (:36-58) where the pin has
+/// `GetLowestClosedPathIdx` (clipper.offset.cpp:40-57): a path without area is not the
+/// lowest path of a group.
+pub const V154_LOWEST_CLOSED_PATH: u32 = 128;
+/// clipper.offset.cpp of 1.5.4, `ExecuteInternal` (:610): the finishing union takes the
+/// offsetter's `preserve_collinear_`, where the pin gives it `false`.
+pub const V154_OFFSET_PRESERVE_COLLINEAR: u32 = 256;
+/// Every change.
+pub const V154_ALL: u32 = 511;
+/// The changes by name.
+pub const V154_NAMES: [(u32, &str); 9] = [
+    (V154_POINT_IN_OP_POLYGON, "PointInOpPolygon by CrossProductSign"),
+    (V154_PATH2_CONTAINS_PATH1, "Path2ContainsPath1 for Path1InsidePath2"),
+    (V154_IS_VALID_AEL_ORDER, "IsValidAelOrder by CrossProductSign"),
+    (V154_FIX_SELF_INTERSECTS, "FixSelfIntersects"),
+    (V154_ADJUST_CURR_X, "AdjustCurrXAndCopyToSEL"),
+    (V154_MOVE_SPLITS, "MoveSplits"),
+    (V154_CHECK_SPLIT_OWNER, "CheckSplitOwner"),
+    (V154_LOWEST_CLOSED_PATH, "GetLowestClosedPathInfo"),
+    (V154_OFFSET_PRESERVE_COLLINEAR, "the offsetter's PreserveCollinear"),
+];
+
+thread_local! {
+    static VERSION_154: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Switches the changes of Clipper2 1.5.4 named by `bits` on for this thread (0: the pin)
+/// and returns what was on before. For `tests/clipper2_utils_native_parity.rs` only.
+#[doc(hidden)]
+pub fn version_154_probe(bits: u32) -> u32 {
+    VERSION_154.with(|v| v.replace(bits))
+}
+
+/// Whether the test probe has switched the change `bit` of 1.5.4 on.
+#[inline]
+pub(crate) fn v154(bit: u32) -> bool {
+    VERSION_154.with(|v| v.get()) & bit != 0
+}
+
+/// clipper.core.h of 1.5.4, :753-793 (not in the pin; see `version_154_probe`)
+/// C++: inline int CrossProductSign(const Point<T>& pt1, const Point<T>& pt2, const Point<T>& pt3)
+/// The first arm (`__int128_t`), which the reference build takes.
+pub(crate) fn cross_product_sign_v154(pt1: &Point64, pt2: &Point64, pt3: &Point64) -> i32 {
+    let a = pt2.x - pt1.x;
+    let b = pt3.y - pt2.y;
+    let c = pt2.y - pt1.y;
+    let d = pt3.x - pt2.x;
+    let ab = (a as i128) * (b as i128);
+    let cd = (c as i128) * (d as i128);
+    if ab > cd {
+        1
+    } else if ab < cd {
+        -1
+    } else {
+        0
+    }
+}
 
 /// clipper.core.h:59
 pub const PI: f64 = 3.141592653589793238;
@@ -101,6 +197,65 @@ impl Point64 {
 pub type Path64 = Vec<Point64>;
 /// clipper.core.h:256 `using Paths64 = std::vector< Path64>;`
 pub type Paths64 = Vec<Path64>;
+
+/// clipper.core.h:255 `using PathD = Path<double>;`
+pub type PathD = Vec<PointD>;
+
+impl PointD {
+    /// clipper.core.h:146-151 / 198-199 with `T = T2 = double`
+    /// C++: Point(const T2 x_, const T2 y_) { Init(x_, y_); }
+    /// `Init` takes its `else` arm (`T` is not integral): the values as they are, z = 0.
+    #[inline]
+    pub fn new(x: f64, y: f64) -> Self {
+        pointd_xyz(x, y, 0)
+    }
+
+    /// clipper.core.h:241
+    /// C++: inline void Negate() { x = -x; y = -y; }
+    #[inline]
+    pub fn negate(&mut self) {
+        self.x = -self.x;
+        self.y = -self.y;
+    }
+}
+
+/// clipper.core.h:216-224
+/// C++: friend bool operator==(const Point& a, const Point& b) { return a.x == b.x && a.y == b.y; }
+impl PartialEq for PointD {
+    #[inline]
+    fn eq(&self, b: &PointD) -> bool {
+        self.x == b.x && self.y == b.y
+    }
+}
+
+/// clipper.core.h:125-139 / 181-194 `Init` with `T = int64_t` and `T2 = double`, as the
+/// constructors `Point(const T2 x_, const T2 y_, const z_type z_ = 0)` (clipper.core.h:146-151,
+/// 198-199) call it:
+/// C++: x = static_cast<T>(std::round(x_)); y = static_cast<T>(std::round(y_)); z = z_;
+/// `std::round` rounds halves away from zero, which is `f64::round`.
+///
+/// FIDELITY-NOTE: `static_cast<int64_t>` of a double outside the range of `int64_t`, or of
+/// a NaN, is undefined in the C++. What is reproduced is what the reference build (clang,
+/// arm64: `fcvtzs`) does, which is also what `as i64` does: the conversion saturates, and
+/// NaN gives 0.
+#[inline]
+pub fn point64_from_doubles(x: f64, y: f64, z: i64) -> Point64 {
+    point_xyz(x.round() as i64, y.round() as i64, z)
+}
+
+/// clipper.core.h:153-157 / 201-202 with `T = int64_t`, `T2 = double`
+/// C++: explicit Point(const Point<T2>& p) { Init(p.x, p.y, p.z); }
+#[inline]
+pub fn point64_from_pointd(p: &PointD) -> Point64 {
+    point64_from_doubles(p.x, p.y, pointd_z(p))
+}
+
+/// clipper.core.h:153-157 / 201-202 with `T = double`, `T2 = int64_t`
+/// C++: explicit Point(const Point<T2>& p) { Init(p.x, p.y, p.z); }
+#[inline]
+pub fn pointd_from_point64(p: &Point64) -> PointD {
+    pointd_xyz(p.x as f64, p.y as f64, point_z(p))
+}
 
 /// clipper.core.h:259-261
 pub const INVALID_POINT64: Point64 = Point64::new(i64::MAX, i64::MAX);
@@ -399,6 +554,25 @@ pub fn cross_product(pt1: &Point64, pt2: &Point64, pt3: &Point64) -> f64 {
     ((pt2.x - pt1.x) as f64).mul_add((pt3.y - pt2.y) as f64, -(((pt2.y - pt1.y) as f64) * ((pt3.x - pt2.x) as f64)))
 }
 
+/// clipper.core.h:761-765 with `T = double`
+/// C++: inline double CrossProduct(const Point<T>& vec1, const Point<T>& vec2)
+/// C++: return static_cast<double>(vec1.y * vec2.x) - static_cast<double>(vec2.y * vec1.x);
+/// The casts of a double to double are nothing, so this is one expression `a * b - c * d`:
+/// fma(a, b, -(c * d)).
+#[inline]
+pub fn cross_product_vec(vec1: &PointD, vec2: &PointD) -> f64 {
+    vec1.y.mul_add(vec2.x, -(vec2.y * vec1.x))
+}
+
+/// clipper.core.h:773-777 with `T = double`
+/// C++: inline double DotProduct(const Point<T>& vec1, const Point<T>& vec2)
+/// C++: return static_cast<double>(vec1.x * vec2.x) + static_cast<double>(vec1.y * vec2.y);
+/// `a * b + c * d`: fma(a, b, c * d).
+#[inline]
+pub fn dot_product_vec(vec1: &PointD, vec2: &PointD) -> f64 {
+    vec1.x.mul_add(vec2.x, vec1.y * vec2.y)
+}
+
 /// clipper.core.h:767-771
 /// C++: inline double DotProduct(const Point<T>& pt1, const Point<T>& pt2, const Point<T>& pt3)
 /// `a * b + c * d` in one expression: `fma(a, b, c * d)`.
@@ -507,6 +681,51 @@ pub fn get_segment_intersect_pt(ln1a: &Point64, ln1b: &Point64, ln2a: &Point64, 
         ip.y = t.mul_add(dy1, ln1a.y as f64) as i64;
     }
     true
+}
+
+/// clipper.core.h:897-918 with `T = double`
+/// C++: inline bool GetSegmentIntersectPt(const Point<T>& ln1a, const Point<T>& ln1b, const Point<T>& ln2a, const Point<T>& ln2b, Point<T>& ip)
+/// As `get_segment_intersect_pt`, on doubles: the differences are of doubles and
+/// `static_cast<T>` is nothing. `ip = ln1a` and `ip = ln1b` copy the whole point, z too.
+pub fn get_segment_intersect_pt_d(ln1a: &PointD, ln1b: &PointD, ln2a: &PointD, ln2b: &PointD, ip: &mut PointD) -> bool {
+    let dx1 = ln1b.x - ln1a.x;
+    let dy1 = ln1b.y - ln1a.y;
+    let dx2 = ln2b.x - ln2a.x;
+    let dy2 = ln2b.y - ln2a.y;
+
+    // `dy1 * dx2 - dy2 * dx1`: fma(dy1, dx2, -(dy2 * dx1)).
+    let det = dy1.mul_add(dx2, -(dy2 * dx1));
+    if det == 0.0 {
+        return false;
+    }
+    // `((ln1a.x - ln2a.x) * dy2 - (ln1a.y - ln2a.y) * dx2) / det`
+    let t = (ln1a.x - ln2a.x).mul_add(dy2, -((ln1a.y - ln2a.y) * dx2)) / det;
+    if t <= 0.0 {
+        *ip = *ln1a;
+    } else if t >= 1.0 {
+        *ip = *ln1b;
+    } else {
+        // `ln1a.x + t * dx1`: fma(t, dx1, ln1a.x).
+        ip.x = t.mul_add(dx1, ln1a.x);
+        ip.y = t.mul_add(dy1, ln1a.y);
+    }
+    true
+}
+
+/// clipper.core.h:920-928 with `T = double`
+/// C++: inline Point<T> TranslatePoint(const Point<T>& pt, double dx, double dy)
+/// `dx` and `dy` are parameters: whatever product the caller passes is rounded before the
+/// sum.
+#[inline]
+pub fn translate_point_d(pt: &PointD, dx: f64, dy: f64) -> PointD {
+    pointd_xyz(pt.x + dx, pt.y + dy, pointd_z(pt))
+}
+
+/// clipper.core.h:931-939 with `T = double`
+/// C++: inline Point<T> ReflectPoint(const Point<T>& pt, const Point<T>& pivot)
+#[inline]
+pub fn reflect_point_d(pt: &PointD, pivot: &PointD) -> PointD {
+    pointd_xyz(pivot.x + (pivot.x - pt.x), pivot.y + (pivot.y - pt.y), pointd_z(pt))
 }
 
 /// clipper.core.h:942-947

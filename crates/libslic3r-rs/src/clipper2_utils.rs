@@ -4,7 +4,14 @@
 //!
 //! C++ Reference: `src/libslic3r/Clipper2Utils.cpp`, `src/libslic3r/Clipper2Utils.hpp`
 //!
-//! The C++ code works directly on `Clipper2Lib::Paths64` (raw 64-bit integer
+//! Behind the gate `CLIPPER2_RUST` (and its sub-gate `CLIPPER2_RUST_UTILS`, both on unless
+//! set to 0) every function here runs on `crate::clipper2`, the Rust port of the Clipper2
+//! the engine pins (1.5.2), called the way Clipper2Utils.cpp calls the library. With the
+//! gate off they run as before, on the C++ library through FFI, described below. Each
+//! public function has an `*_impl(rust, ...)` twin that takes the arm, for
+//! `tests/clipper2_utils_native_parity.rs`.
+//!
+//! The FFI arm: the C++ code works directly on `Clipper2Lib::Paths64` (raw 64-bit integer
 //! coordinates, i.e. Slic3r `coord_t`). To preserve byte-exact behaviour we use
 //! the `clipper2` crate with the `One` point scaler (multiplier 1.0) so that the
 //! Slic3r `coord_t` (i64) coordinates pass through Clipper2 unscaled — exactly as
@@ -111,6 +118,132 @@ unsafe fn native_to_paths64(ptr: *mut ClipperPaths64) -> Paths64 {
         out.push(path);
     }
     out
+}
+
+// ============================================================================
+// The Rust arm: `crate::clipper2` (`namespace Clipper2Lib` of the pin).
+// ============================================================================
+
+use crate::clipper2 as c2;
+
+/// The gate of this file: `CLIPPER2_RUST` and its sub-gate `CLIPPER2_RUST_UTILS`, both on
+/// unless set to 0.
+#[inline]
+fn clipper2_rust_utils() -> bool {
+    crate::faithful_gate("CLIPPER2_RUST") && crate::faithful_gate("CLIPPER2_RUST_UTILS")
+}
+
+/// This file's `Paths64` (pairs) as `Clipper2Lib::Paths64`.
+fn paths64_to_c2(paths: &Paths64) -> c2::Paths64 {
+    paths.iter().map(|path| path.iter().map(|&(x, y)| c2::Point64::new(x, y)).collect()).collect()
+}
+
+/// `Clipper2Lib::Paths64` as this file's `Paths64` (pairs).
+fn c2_to_paths64(paths: &c2::Paths64) -> Paths64 {
+    paths.iter().map(|path| path.iter().map(|p| (p.x, p.y)).collect()).collect()
+}
+
+/// Clipper2Utils.cpp:38-44
+/// C++: Points Path64ToPoints(const Clipper2Lib::Path64& path64)
+fn path64_to_points_c2(path64: &c2::Path64) -> Vec<Point> {
+    let mut points: Vec<Point> = Vec::with_capacity(path64.len());
+    for point64 in path64 {
+        points.push(Point::new(point64.x, point64.y));
+    }
+    points
+}
+
+/// Clipper2Utils.cpp:8-21
+/// C++: Slic3r::Polylines Paths64_to_polylines(const Clipper2Lib::Paths64& in)
+fn paths64_to_polylines_c2(in_paths: &c2::Paths64) -> Vec<Polyline> {
+    let mut out: Vec<Polyline> = Vec::with_capacity(in_paths.len());
+    for path64 in in_paths {
+        out.push(Polyline::from_points(path64_to_points_c2(path64)));
+    }
+    out
+}
+
+/// Clipper2Utils.cpp:64-71 (Inner::PolyTreeCountExPolygons)
+/// C++: static size_t PolyTreeCountExPolygons(const Clipper2Lib::PolyPath64& polynode)
+fn poly_tree_count_expolygons_c2(polynode: &c2::PolyPath64) -> usize {
+    let mut cnt: usize = 1;
+    for i in 0..polynode.count() {
+        for j in 0..polynode.child(i).count() {
+            cnt += poly_tree_count_expolygons_c2(polynode.child(i).child(j));
+        }
+    }
+    cnt
+}
+
+/// Clipper2Utils.cpp:50-62 (Inner::PolyTreeToExPolygonsRecursive)
+/// C++: static void PolyTreeToExPolygonsRecursive(Clipper2Lib::PolyTree64 &&polynode, ExPolygons *expolygons)
+fn poly_tree_to_expolygons_recursive_c2(polynode: &c2::PolyPath64, expolygons: &mut ExPolygons) {
+    let cnt = expolygons.len();
+    expolygons.push(ExPolygon::empty());
+    expolygons[cnt].contour = Polygon::from_points(path64_to_points_c2(polynode.polygon()));
+
+    expolygons[cnt].holes = vec![Polygon::default(); polynode.count()];
+    for i in 0..polynode.count() {
+        expolygons[cnt].holes[i] = Polygon::from_points(path64_to_points_c2(polynode.child(i).polygon()));
+        // Add outer polygons contained by (nested within) holes.
+        for j in 0..polynode.child(i).count() {
+            poly_tree_to_expolygons_recursive_c2(polynode.child(i).child(j), expolygons);
+        }
+    }
+}
+
+/// Clipper2Utils.cpp:46-80
+/// C++: static ExPolygons PolyTreeToExPolygons(Clipper2Lib::PolyTree64 &&polytree)
+fn poly_tree_to_expolygons_c2(polytree: &c2::PolyTree64) -> ExPolygons {
+    let mut retval: ExPolygons = Vec::new();
+    let mut cnt: usize = 0;
+    for i in 0..polytree.count() {
+        cnt += poly_tree_count_expolygons_c2(polytree.child(i));
+    }
+    retval.reserve(cnt);
+    for i in 0..polytree.count() {
+        poly_tree_to_expolygons_recursive_c2(polytree.child(i), &mut retval);
+    }
+    retval
+}
+
+/// Clipper2Utils.cpp:82-88
+/// C++: void SimplifyPolyTree(const Clipper2Lib::PolyPath64 &polytree, double epsilon, Clipper2Lib::PolyPath64 &result)
+fn simplify_poly_tree_c2(polytree: &c2::PolyPath64, epsilon: f64, result: &mut c2::PolyPath64) {
+    for child in polytree.iter() {
+        // `Clipper2Lib::SimplifyPath(child->Polygon(), epsilon)`: isClosedPath = true.
+        let newchild = result.add_child(&c2::simplify_path(child.polygon(), epsilon, true));
+        simplify_poly_tree_c2(child, epsilon, newchild);
+    }
+}
+
+/// `union_ex_2` in the Rust arm (Clipper2Utils.cpp:143-156 and 158-172 from `c.AddSubject`):
+/// C++: Clipper2Lib::Clipper64 c; c.AddSubject(subject);
+/// C++: c.Execute(Clipper2Lib::ClipType::Union, Clipper2Lib::FillRule::NonZero, solution);
+/// C++: ExPolygons results = PolyTreeToExPolygons(std::move(solution));
+fn union_ex_2_c2(subject: &Paths64) -> ExPolygons {
+    let mut c = c2::Clipper64::new();
+    c.add_subject(&paths64_to_c2(subject));
+
+    let ct = c2::ClipType::Union;
+    let fr = c2::FillRule::NonZero;
+    let mut solution = c2::PolyTree64::new();
+    c.execute_tree(ct, fr, &mut solution);
+
+    poly_tree_to_expolygons_c2(&solution)
+}
+
+/// The fill rule of the FFI (`ClipperFillRule`) as `Clipper2Lib::FillRule`.
+fn fill_rule_c2(fillrule: ClipperFillRule) -> c2::FillRule {
+    if fillrule == ClipperFillRule_POSITIVE {
+        c2::FillRule::Positive
+    } else if fillrule == ClipperFillRule_NEGATIVE {
+        c2::FillRule::Negative
+    } else if fillrule == ClipperFillRule_NON_ZERO {
+        c2::FillRule::NonZero
+    } else {
+        c2::FillRule::EvenOdd
+    }
 }
 
 // ============================================================================
@@ -528,7 +661,28 @@ pub enum ClipType {
 /// C++:
 /// C++:     return out;
 /// C++: }
-fn clipper2_pl_open(clip_type: ClipType, subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
+fn clipper2_pl_open(rust: bool, clip_type: ClipType, subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
+    if rust {
+        // Clipper2Utils.cpp:119-136, on `crate::clipper2`.
+        let mut c = c2::Clipper64::new();
+        c.add_open_subject(&paths64_to_c2(&slic3r_polylines_to_paths64(subject)));
+        c.add_clip(&paths64_to_c2(&slic3r_polygons_points_to_paths64(clip)));
+
+        let ct = match clip_type {
+            ClipType::Intersection => c2::ClipType::Intersection,
+            ClipType::Difference => c2::ClipType::Difference,
+        };
+        let fr = c2::FillRule::NonZero;
+        let mut solution = c2::Paths64::new();
+        let mut solution_open = c2::Paths64::new();
+        c.execute_open(ct, fr, &mut solution, &mut solution_open);
+
+        let mut out: Vec<Polyline> = Vec::with_capacity(solution.len() + solution_open.len());
+        out.extend(paths64_to_polylines_c2(&solution));
+        out.extend(paths64_to_polylines_c2(&solution_open));
+
+        return out;
+    }
     // R196 (ZSMOOTH_FAITHFUL): route through the NATIVE Clipper2 1.5.2
     // (clipper2-z-sys vendored from the reference tree) — clipper2c-sys ships
     // 1.5.4 whose open-path clipping (split coords / rounding) differs.
@@ -655,7 +809,13 @@ fn clipper2_pl_open(clip_type: ClipType, subject: &[Polyline], clip: &[Polygon])
 /// C++: Slic3r::Polylines intersection_pl_2(const Slic3r::Polylines& subject, const Slic3r::Polygons& clip)
 /// C++:     { return _clipper2_pl_open(Clipper2Lib::ClipType::Intersection, subject, clip); }
 pub fn intersection_pl_2(subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
-    clipper2_pl_open(ClipType::Intersection, subject, clip)
+    intersection_pl_2_impl(clipper2_rust_utils(), subject, clip)
+}
+
+/// `intersection_pl_2` with the arm of the gate given.
+#[doc(hidden)]
+pub fn intersection_pl_2_impl(rust: bool, subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
+    clipper2_pl_open(rust, ClipType::Intersection, subject, clip)
 }
 
 /// Clipper2Utils.hpp:11
@@ -663,7 +823,13 @@ pub fn intersection_pl_2(subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline
 /// C++: Slic3r::Polylines  diff_pl_2(const Slic3r::Polylines& subject, const Slic3r::Polygons& clip)
 /// C++:     { return _clipper2_pl_open(Clipper2Lib::ClipType::Difference, subject, clip); }
 pub fn diff_pl_2(subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
-    clipper2_pl_open(ClipType::Difference, subject, clip)
+    diff_pl_2_impl(clipper2_rust_utils(), subject, clip)
+}
+
+/// `diff_pl_2` with the arm of the gate given.
+#[doc(hidden)]
+pub fn diff_pl_2_impl(rust: bool, subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
+    clipper2_pl_open(rust, ClipType::Difference, subject, clip)
 }
 
 // ============================================================================
@@ -687,6 +853,15 @@ pub fn diff_pl_2(subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
 /// C++:     return results;
 /// C++: }
 pub fn union_ex_2(polygons: &[Polygon]) -> ExPolygons {
+    union_ex_2_impl(clipper2_rust_utils(), polygons)
+}
+
+/// `union_ex_2` with the arm of the gate given.
+#[doc(hidden)]
+pub fn union_ex_2_impl(rust: bool, polygons: &[Polygon]) -> ExPolygons {
+    if rust {
+        return union_ex_2_c2(&slic3r_polygons_to_paths64(polygons));
+    }
     // C++: c.AddSubject(Slic3rPolygons_to_Paths64(polygons));
     // C++: Clipper2Lib::ClipType ct = Clipper2Lib::ClipType::Union;
     // C++: Clipper2Lib::FillRule fr = Clipper2Lib::FillRule::NonZero;
@@ -716,6 +891,15 @@ pub fn union_ex_2(polygons: &[Polygon]) -> ExPolygons {
 /// (C++ overloads `union_ex_2`; Rust has no overloading so the ExPolygons
 /// variant is suffixed `_expolygons`.)
 pub fn union_ex_2_expolygons(expolygons: &ExPolygons) -> ExPolygons {
+    union_ex_2_expolygons_impl(clipper2_rust_utils(), expolygons)
+}
+
+/// `union_ex_2_expolygons` with the arm of the gate given.
+#[doc(hidden)]
+pub fn union_ex_2_expolygons_impl(rust: bool, expolygons: &ExPolygons) -> ExPolygons {
+    if rust {
+        return union_ex_2_c2(&slic3r_expolygons_to_paths64(expolygons));
+    }
     // C++: c.AddSubject(Slic3rExPolygons_to_Paths64(expolygons));
     // C++: Clipper2Lib::ClipType   ct = Clipper2Lib::ClipType::Union;
     // C++: Clipper2Lib::FillRule   fr = Clipper2Lib::FillRule::NonZero;
@@ -744,6 +928,21 @@ pub fn union_ex_2_expolygons(expolygons: &ExPolygons) -> ExPolygons {
 /// C++:     return results;
 /// C++: }
 pub fn offset_ex_2(expolygons: &ExPolygons, delta: f64) -> ExPolygons {
+    offset_ex_2_impl(clipper2_rust_utils(), expolygons, delta)
+}
+
+/// `offset_ex_2` with the arm of the gate given.
+#[doc(hidden)]
+pub fn offset_ex_2_impl(rust: bool, expolygons: &ExPolygons, delta: f64) -> ExPolygons {
+    if rust {
+        // Clipper2Utils.cpp:174-184, on `crate::clipper2`.
+        let subject = paths64_to_c2(&slic3r_expolygons_to_paths64(expolygons));
+        let mut offsetter = c2::ClipperOffset::default();
+        offsetter.add_paths(&subject, c2::JoinType::Round, c2::EndType::Polygon);
+        let mut polytree = c2::PolyPath64::new();
+        offsetter.execute_tree(delta, &mut polytree);
+        return poly_tree_to_expolygons_c2(&polytree);
+    }
     unsafe {
         // C++: Clipper2Lib::Paths64 subject = Slic3rExPolygons_to_Paths64(expolygons);
         let subject = slic3r_expolygons_to_paths64(expolygons);
@@ -786,6 +985,34 @@ pub fn offset_ex_2(expolygons: &ExPolygons, delta: f64) -> ExPolygons {
 /// C++:     return results;
 /// C++: }
 pub fn offset2_ex_2(expolygons: &ExPolygons, delta1: f64, delta2: f64) -> ExPolygons {
+    offset2_ex_2_impl(clipper2_rust_utils(), expolygons, delta1, delta2)
+}
+
+/// `offset2_ex_2` with the arm of the gate given.
+#[doc(hidden)]
+pub fn offset2_ex_2_impl(rust: bool, expolygons: &ExPolygons, delta1: f64, delta2: f64) -> ExPolygons {
+    if rust {
+        // Clipper2Utils.cpp:186-208, on `crate::clipper2`.
+        // 1st offset
+        let subject = paths64_to_c2(&slic3r_expolygons_to_paths64(expolygons));
+        let mut offsetter = c2::ClipperOffset::default();
+        offsetter.add_paths(&subject, c2::JoinType::Round, c2::EndType::Polygon);
+        let mut polytree = c2::PolyPath64::new();
+        offsetter.execute_tree(delta1, &mut polytree);
+
+        // simplify the result
+        let mut polytree2 = c2::PolyPath64::new();
+        simplify_poly_tree_c2(&polytree, SCALED_EPSILON, &mut polytree2);
+
+        // 2nd offset
+        offsetter.clear();
+        offsetter.add_paths(&c2::poly_tree_to_paths64(&polytree2), c2::JoinType::Round, c2::EndType::Polygon);
+        polytree.clear();
+        offsetter.execute_tree(delta2, &mut polytree);
+
+        // convert back to expolygons
+        return poly_tree_to_expolygons_c2(&polytree);
+    }
     unsafe {
         // 1st offset
         // C++: Clipper2Lib::Paths64       subject = Slic3rExPolygons_to_Paths64(expolygons);
@@ -853,10 +1080,21 @@ fn pt_to_d_2(p: Point) -> PointF {
 /// `ClipperLib::Clipper` usage in `fix_after_outer_offset` / `fix_after_inner_offset`
 /// (`c.AddPath(...); c.ReverseSolution(rev); c.Execute(ctUnion, solution, fill, fill)`).
 unsafe fn clipper64_union_paths(
+    rust: bool,
     subject: &Paths64,
     fillrule: ClipperFillRule,
     reverse_solution: bool,
 ) -> Paths64 {
+    if rust {
+        // The same calls on `crate::clipper2`.
+        let mut c = c2::Clipper64::new();
+        c.add_subject(&paths64_to_c2(subject));
+        c.set_reverse_solution(reverse_solution);
+        let mut solution = c2::Paths64::new();
+        let mut open = c2::Paths64::new();
+        c.execute_open(c2::ClipType::Union, fill_rule_c2(fillrule), &mut solution, &mut open);
+        return c2_to_paths64(&solution);
+    }
     let c_mem = clipper_allocate(clipper_clipper64_size());
     let c = clipper_clipper64(c_mem);
 
@@ -884,9 +1122,20 @@ unsafe fn clipper64_union_paths(
 /// reconstruct ExPolygons. Mirrors the `ClipperLib::Clipper` difference into a
 /// `PolyTree` used by `variable_offset_inner_ex` / `variable_offset_outer_ex`.
 unsafe fn clipper64_difference_tree_to_expolygons(
+    rust: bool,
     subject: &Paths64,
     clip: &Paths64,
 ) -> ExPolygons {
+    if rust {
+        // The same calls on `crate::clipper2`.
+        let mut c = c2::Clipper64::new();
+        c.add_subject(&paths64_to_c2(subject));
+        c.add_clip(&paths64_to_c2(clip));
+        let mut tree = c2::PolyTree64::new();
+        let mut open = c2::Paths64::new();
+        c.execute_tree_open(c2::ClipType::Difference, c2::FillRule::NonZero, &mut tree, &mut open);
+        return poly_tree_to_expolygons_c2(&tree);
+    }
     let c_mem = clipper_allocate(clipper_clipper64_size());
     let c = clipper_clipper64(c_mem);
 
@@ -921,7 +1170,17 @@ unsafe fn clipper64_difference_tree_to_expolygons(
 /// Run a `Clipper64` DIFFERENCE (subject minus clip) into flat Paths64.
 /// Mirrors the `ClipperLib::Clipper` difference into `Paths` used by
 /// `variable_offset_inner` / `variable_offset_outer`.
-unsafe fn clipper64_difference_paths(subject: &Paths64, clip: &Paths64) -> Paths64 {
+unsafe fn clipper64_difference_paths(rust: bool, subject: &Paths64, clip: &Paths64) -> Paths64 {
+    if rust {
+        // The same calls on `crate::clipper2`.
+        let mut c = c2::Clipper64::new();
+        c.add_subject(&paths64_to_c2(subject));
+        c.add_clip(&paths64_to_c2(clip));
+        let mut solution = c2::Paths64::new();
+        let mut open = c2::Paths64::new();
+        c.execute_open(c2::ClipType::Difference, c2::FillRule::NonZero, &mut solution, &mut open);
+        return c2_to_paths64(&solution);
+    }
     let c_mem = clipper_allocate(clipper_clipper64_size());
     let c = clipper_clipper64(c_mem);
 
@@ -964,6 +1223,7 @@ fn path64_to_polygon(path: &Path64) -> Polygon {
 /// that the solution will be non empty and it will contain just a single polygon.
 /// Defaults: filltype = pftPositive, reverse_result = false.
 fn fix_after_outer_offset(
+    rust: bool,
     input: &Path64,
     filltype: ClipperFillRule,
     reverse_result: bool,
@@ -974,7 +1234,7 @@ fn fix_after_outer_offset(
         // c.AddPath(input, ptSubject, true);
         // c.ReverseSolution(reverse_result);
         // c.Execute(ctUnion, solution, filltype, filltype);
-        solution = unsafe { clipper64_union_paths(&vec![input.clone()], filltype, reverse_result) };
+        solution = unsafe { clipper64_union_paths(rust, &vec![input.clone()], filltype, reverse_result) };
     }
     solution
 }
@@ -984,6 +1244,7 @@ fn fix_after_outer_offset(
 /// resulting contour shall not lie inside the other.
 /// Defaults: filltype = pftNegative, reverse_result = true.
 fn fix_after_inner_offset(
+    rust: bool,
     input: &Path64,
     filltype: ClipperFillRule,
     reverse_result: bool,
@@ -1021,7 +1282,7 @@ fn fix_after_inner_offset(
         // c.ReverseSolution(reverse_result);
         // c.Execute(ctUnion, solution, filltype, filltype);
         let subject: Paths64 = vec![input.clone(), rect];
-        solution = unsafe { clipper64_union_paths(&subject, filltype, reverse_result) };
+        solution = unsafe { clipper64_union_paths(rust, &subject, filltype, reverse_result) };
         // if (! solution.empty()) solution.erase(solution.begin());
         if !solution.is_empty() {
             solution.remove(0);
@@ -1195,6 +1456,12 @@ fn normalize_pf(v: PointF) -> PointF {
 /// ClipperUtils.cpp:1260 — variable_offset_inner
 /// hpp:668 — Polygons variable_offset_inner(const ExPolygon&, const std::vector<std::vector<float>>&, double miter_limit)
 pub fn variable_offset_inner(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> Polygons {
+    variable_offset_inner_impl(clipper2_rust_utils(), expoly, deltas, miter_limit)
+}
+
+/// `variable_offset_inner` with the arm of the gate given.
+#[doc(hidden)]
+pub fn variable_offset_inner_impl(rust: bool, expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> Polygons {
     #[cfg(debug_assertions)]
     {
         // ClipperUtils.cpp:1262-1267 — deltas are all non positive.
@@ -1208,6 +1475,7 @@ pub fn variable_offset_inner(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limi
 
     // ClipperUtils.cpp:1270-1271 — 1) Offset the outer contour.
     let contours = fix_after_inner_offset(
+        rust,
         &mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit),
         ClipperFillRule_NEGATIVE,
         true,
@@ -1222,6 +1490,7 @@ pub fn variable_offset_inner(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limi
     holes.reserve(expoly.holes.len());
     for (h, hole) in expoly.holes.iter().enumerate() {
         let mut part = fix_after_outer_offset(
+            rust,
             &mittered_offset_path_scaled(&hole.points, &deltas[1 + h], miter_limit),
             ClipperFillRule_NEGATIVE,
             false,
@@ -1237,7 +1506,7 @@ pub fn variable_offset_inner(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limi
     let output: Paths64 = if holes.is_empty() {
         contours
     } else {
-        unsafe { clipper64_difference_paths(&contours, &holes) }
+        unsafe { clipper64_difference_paths(rust, &contours, &holes) }
     };
 
     output.iter().map(path64_to_polygon).collect()
@@ -1246,6 +1515,12 @@ pub fn variable_offset_inner(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limi
 /// ClipperUtils.cpp:1302 — variable_offset_outer
 /// hpp:669 — Polygons variable_offset_outer(const ExPolygon&, const std::vector<std::vector<float>>&, double miter_limit)
 pub fn variable_offset_outer(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> Polygons {
+    variable_offset_outer_impl(clipper2_rust_utils(), expoly, deltas, miter_limit)
+}
+
+/// `variable_offset_outer` with the arm of the gate given.
+#[doc(hidden)]
+pub fn variable_offset_outer_impl(rust: bool, expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> Polygons {
     #[cfg(debug_assertions)]
     {
         // ClipperUtils.cpp:1304-1309 — deltas are all non negative.
@@ -1259,6 +1534,7 @@ pub fn variable_offset_outer(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limi
 
     // ClipperUtils.cpp:1312-1313 — 1) Offset the outer contour.
     let contours = fix_after_outer_offset(
+        rust,
         &mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit),
         ClipperFillRule_POSITIVE,
         false,
@@ -1273,6 +1549,7 @@ pub fn variable_offset_outer(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limi
     holes.reserve(expoly.holes.len());
     for (h, hole) in expoly.holes.iter().enumerate() {
         let mut part = fix_after_inner_offset(
+            rust,
             &mittered_offset_path_scaled(&hole.points, &deltas[1 + h], miter_limit),
             ClipperFillRule_POSITIVE,
             true,
@@ -1288,7 +1565,7 @@ pub fn variable_offset_outer(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limi
     let output: Paths64 = if holes.is_empty() {
         contours
     } else {
-        unsafe { clipper64_difference_paths(&contours, &holes) }
+        unsafe { clipper64_difference_paths(rust, &contours, &holes) }
     };
 
     output.iter().map(path64_to_polygon).collect()
@@ -1297,6 +1574,17 @@ pub fn variable_offset_outer(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limi
 /// ClipperUtils.cpp:1344 — variable_offset_outer_ex
 /// hpp:670 — ExPolygons variable_offset_outer_ex(const ExPolygon&, const std::vector<std::vector<float>>&, double miter_limit)
 pub fn variable_offset_outer_ex(
+    expoly: &ExPolygon,
+    deltas: &[Vec<f32>],
+    miter_limit: f64,
+) -> ExPolygons {
+    variable_offset_outer_ex_impl(clipper2_rust_utils(), expoly, deltas, miter_limit)
+}
+
+/// `variable_offset_outer_ex` with the arm of the gate given.
+#[doc(hidden)]
+pub fn variable_offset_outer_ex_impl(
+    rust: bool,
     expoly: &ExPolygon,
     deltas: &[Vec<f32>],
     miter_limit: f64,
@@ -1314,6 +1602,7 @@ pub fn variable_offset_outer_ex(
 
     // ClipperUtils.cpp:1354-1355 — 1) Offset the outer contour.
     let contours = fix_after_outer_offset(
+        rust,
         &mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit),
         ClipperFillRule_POSITIVE,
         false,
@@ -1328,6 +1617,7 @@ pub fn variable_offset_outer_ex(
     holes.reserve(expoly.holes.len());
     for (h, hole) in expoly.holes.iter().enumerate() {
         let mut part = fix_after_inner_offset(
+            rust,
             &mittered_offset_path_scaled(&hole.points, &deltas[1 + h], miter_limit),
             ClipperFillRule_POSITIVE,
             true,
@@ -1348,13 +1638,24 @@ pub fn variable_offset_outer_ex(
         }
         output
     } else {
-        unsafe { clipper64_difference_tree_to_expolygons(&contours, &holes) }
+        unsafe { clipper64_difference_tree_to_expolygons(rust, &contours, &holes) }
     }
 }
 
 /// ClipperUtils.cpp:1390 — variable_offset_inner_ex
 /// hpp:671 — ExPolygons variable_offset_inner_ex(const ExPolygon&, const std::vector<std::vector<float>>&, double miter_limit)
 pub fn variable_offset_inner_ex(
+    expoly: &ExPolygon,
+    deltas: &[Vec<f32>],
+    miter_limit: f64,
+) -> ExPolygons {
+    variable_offset_inner_ex_impl(clipper2_rust_utils(), expoly, deltas, miter_limit)
+}
+
+/// `variable_offset_inner_ex` with the arm of the gate given.
+#[doc(hidden)]
+pub fn variable_offset_inner_ex_impl(
+    rust: bool,
     expoly: &ExPolygon,
     deltas: &[Vec<f32>],
     miter_limit: f64,
@@ -1372,6 +1673,7 @@ pub fn variable_offset_inner_ex(
 
     // ClipperUtils.cpp:1400-1401 — 1) Offset the outer contour.
     let contours = fix_after_inner_offset(
+        rust,
         &mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit),
         ClipperFillRule_NEGATIVE,
         true,
@@ -1386,6 +1688,7 @@ pub fn variable_offset_inner_ex(
     holes.reserve(expoly.holes.len());
     for (h, hole) in expoly.holes.iter().enumerate() {
         let mut part = fix_after_outer_offset(
+            rust,
             &mittered_offset_path_scaled(&hole.points, &deltas[1 + h], miter_limit),
             ClipperFillRule_NEGATIVE,
             false,
@@ -1405,7 +1708,7 @@ pub fn variable_offset_inner_ex(
         }
         output
     } else {
-        unsafe { clipper64_difference_tree_to_expolygons(&contours, &holes) }
+        unsafe { clipper64_difference_tree_to_expolygons(rust, &contours, &holes) }
     }
 }
 

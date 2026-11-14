@@ -99,6 +99,28 @@ extern "C" {
     pub fn cz2_ref_z_area(xyz: *const i64, n: i32) -> f64;
     /// `p`: 12 values, `out_i`: 9, `out_d`: 4, `out_b`: 6 (see clipper2_ref_shim.cpp).
     pub fn cz2_ref_z_core(p: *const i64, out_i: *mut i64, out_d: *mut f64, out_b: *mut i32);
+    /// `ClipperOffset` of the pin; see clipper2_ref_shim.cpp for the arguments.
+    pub fn cz2_ref_z_offset(
+        xyz: *const i64, lens: *const i32, group_sizes: *const i32, group_join: *const i32,
+        group_end: *const i32, num_groups: i32, delta: f64, delta2: f64, miter_limit: f64,
+        arc_tolerance: f64, preserve_collinear: i32, reverse_solution: i32, use_tree: i32,
+        mode: i32, delta_cb: i32, z_callback: i32,
+    ) -> Cz2RefResult;
+    /// One helper of clipper.h on one path; `out_d`: 4 values (see clipper2_ref_shim.cpp).
+    pub fn cz2_ref_z_path_op(op: i32, xyz: *const i64, n: i32, a: f64, b: f64, flag: i64, out_d: *mut f64) -> Cz2RefResult;
+    /// `BooleanOp` and its wrappers of clipper.h (see clipper2_ref_shim.cpp).
+    pub fn cz2_ref_z_boolean_op(
+        op: i32, clip_type: i32, fill_rule: i32,
+        subj_xyz: *const i64, subj_lens: *const i32, subj_num: i32,
+        clip_xyz: *const i64, clip_lens: *const i32, clip_num: i32,
+    ) -> Cz2RefResult;
+    /// The calls of libslic3r's Clipper2Utils.cpp on the pin (see clipper2_ref_shim.cpp).
+    pub fn cz2_ref_z_utils(
+        op: i32, xyz: *const i64, lens: *const i32, num: i32,
+        clip_xyz: *const i64, clip_lens: *const i32, clip_num: i32, delta1: f64, delta2: f64,
+    ) -> Cz2RefResult;
+    /// `out`: sin and cos as the offsetter takes them, then each from a call of its own.
+    pub fn cz2_ref_z_sin_cos(x: f64, out: *mut f64);
     pub fn cz2_ref_z_from_pin() -> i32;
     pub fn cz2_ref_z_version() -> *const c_char;
 
@@ -114,6 +136,28 @@ extern "C" {
     pub fn cz2_ref_xy_area(xyz: *const i64, n: i32) -> f64;
     /// `p`: 12 values, `out_i`: 9, `out_d`: 4, `out_b`: 6 (see clipper2_ref_shim.cpp).
     pub fn cz2_ref_xy_core(p: *const i64, out_i: *mut i64, out_d: *mut f64, out_b: *mut i32);
+    /// `ClipperOffset` of the pin; see clipper2_ref_shim.cpp for the arguments.
+    pub fn cz2_ref_xy_offset(
+        xyz: *const i64, lens: *const i32, group_sizes: *const i32, group_join: *const i32,
+        group_end: *const i32, num_groups: i32, delta: f64, delta2: f64, miter_limit: f64,
+        arc_tolerance: f64, preserve_collinear: i32, reverse_solution: i32, use_tree: i32,
+        mode: i32, delta_cb: i32, z_callback: i32,
+    ) -> Cz2RefResult;
+    /// One helper of clipper.h on one path; `out_d`: 4 values (see clipper2_ref_shim.cpp).
+    pub fn cz2_ref_xy_path_op(op: i32, xyz: *const i64, n: i32, a: f64, b: f64, flag: i64, out_d: *mut f64) -> Cz2RefResult;
+    /// `BooleanOp` and its wrappers of clipper.h (see clipper2_ref_shim.cpp).
+    pub fn cz2_ref_xy_boolean_op(
+        op: i32, clip_type: i32, fill_rule: i32,
+        subj_xyz: *const i64, subj_lens: *const i32, subj_num: i32,
+        clip_xyz: *const i64, clip_lens: *const i32, clip_num: i32,
+    ) -> Cz2RefResult;
+    /// The calls of libslic3r's Clipper2Utils.cpp on the pin (see clipper2_ref_shim.cpp).
+    pub fn cz2_ref_xy_utils(
+        op: i32, xyz: *const i64, lens: *const i32, num: i32,
+        clip_xyz: *const i64, clip_lens: *const i32, clip_num: i32, delta1: f64, delta2: f64,
+    ) -> Cz2RefResult;
+    /// `out`: sin and cos as the offsetter takes them, then each from a call of its own.
+    pub fn cz2_ref_xy_sin_cos(x: f64, out: *mut f64);
     pub fn cz2_ref_xy_from_pin() -> i32;
     pub fn cz2_ref_xy_version() -> *const c_char;
 }

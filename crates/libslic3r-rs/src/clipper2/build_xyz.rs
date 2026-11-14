@@ -1,4 +1,4 @@
-//! What `clipper_core.rs` and `clipper_engine.rs` are compiled with as
+//! What `clipper_core.rs`, `clipper_engine.rs`, `clipper_offset.rs` and `clipper_h.rs` are compiled with as
 //! `crate::clipper2::clipper2_z`, the C++ `namespace Clipper2Lib_Z`: the sources with
 //! `USINGZ` (clipper2_z.cpp:1-8). See `build_xy.rs`, which defines the same names for the
 //! build without the macro.
@@ -92,4 +92,39 @@ impl ZCallback64 {
     pub(crate) fn call(&self, e1bot: &Point64, e1top: &Point64, e2bot: &Point64, e2top: &Point64, pt: &mut Point64) {
         (self.0.as_ref().expect("the callback is called only when it is set"))(e1bot, e1top, e2bot, e2top, pt)
     }
+}
+
+/// clipper.core.h:119-243 `template <typename T> struct Point` with `T = double`
+/// (`using PointD = Point<double>`, clipper.core.h:247), the `USINGZ` arm: `z_type z` is
+/// `int64_t` for a `PointD` as well (clipper.core.h:113-115, 126).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PointD {
+    pub x: f64,
+    pub y: f64,
+    pub z: i64,
+}
+
+/// `PointD(x, y, z)`
+#[inline(always)]
+pub(crate) fn pointd_xyz(x: f64, y: f64, z: i64) -> PointD {
+    PointD { x, y, z }
+}
+
+/// `pt.z` of a `PointD`
+#[inline(always)]
+pub(crate) fn pointd_z(pt: &PointD) -> i64 {
+    pt.z
+}
+
+/// clipper.offset.cpp:609-614
+/// C++: auto fp = std::bind(&ClipperOffset::ZCB, this, _1, _2, _3, _4, _5); c.SetZCallback(fp);
+/// `ZCB` reads one member of `this`, `zCallback64_`: the callback made here holds a copy of
+/// it (a `std::function` copy shares nothing the offsetter changes while the clipper runs).
+#[inline(always)]
+pub(crate) fn bind_zcb(
+    zcb: fn(&ZCallback64, &Point64, &Point64, &Point64, &Point64, &mut Point64),
+    z_callback64: &ZCallback64,
+) -> ZCallback64 {
+    let user = z_callback64.clone();
+    ZCallback64::new(move |bot1, top1, bot2, top2, ip| zcb(&user, bot1, top1, bot2, top2, ip))
 }
