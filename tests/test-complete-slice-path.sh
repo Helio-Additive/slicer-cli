@@ -4467,20 +4467,23 @@ import json, sys
 s = json.load(open("d4l.json"))["extruder_nozzle_stats"]
 assert ";".join(s) == sys.argv[1], (s, sys.argv[1])
 ' "$want" || { fail "D4 bambu: --export-settings does not hold the computed extruder_nozzle_stats"; d4_ok=0; }
-# The keep guard: the project's own value, which no computation gives.
+# The keep guard: the project's own value, which no computation gives. The
+# newer extruder_nozzle_stats_new wins over the older key and comes out
+# re-serialised, as the official CLI writes it (BambuStudio.cpp 4555-4559,
+# 7191; Bambu Studio 2.9.1 gives this line for this project).
 py '
 import json, zipfile
 with zipfile.ZipFile("d4.3mf") as zin, zipfile.ZipFile("d4keep.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
     for item in zin.infolist():
         data = zin.read(item.filename)
         if item.filename == "Metadata/project_settings.config":
-            d = json.loads(data); d["extruder_nozzle_stats"] = ["Standard#1|High Flow#0", "Standard#1"]
+            d = json.loads(data); d["extruder_nozzle_stats_new"] = ["High Flow#1", "Standard#1"]
             data = json.dumps(d, indent=4).encode()
         zout.writestr(item, data)
 ' || { fail "D4 bambu: no exported H2D project for the keep check"; d4_ok=0; }
 run d4k "$B" d4keep.3mf --plate 1 -o d4k.gcode
 got=$(hdr d4k.gcode extruder_nozzle_stats)
-[ "$(rc d4k)" = 0 ] && [ "$got" = "Standard#1|High Flow#0;Standard#1" ] || { show d4k; fail "D4 bambu: a 3MF's own extruder_nozzle_stats became '$got' (exit $(rc d4k))"; d4_ok=0; }
+[ "$(rc d4k)" = 0 ] && [ "$got" = "High Flow#1;Standard#1" ] || { show d4k; fail "D4 bambu: a 3MF's own extruder_nozzle_stats became '$got' (exit $(rc d4k))"; d4_ok=0; }
 [ $d4_ok = 1 ] && echo "PASS: D4 input without extruder_nozzle_stats gets the official CLI's value, a 3MF keeps its own (Bambu build)"
 
 # D5: each plate prints its own per-layer custom G-code. The loader keys

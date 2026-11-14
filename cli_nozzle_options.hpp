@@ -32,13 +32,12 @@ std::string estimate_mode_nozzle_settings(Slic3r::DynamicPrintConfig& extra, con
 bool command_line_nozzle_rack(const Slic3r::DynamicPrintConfig& extra, Slic3r::DynamicPrintConfig& config,
                               int new_extruder_count, Slic3r::ExtruderNozzleStat& stats);
 
-/// --ams-nozzle-idx on a printer with one extruder and a nozzle rack: the
-/// plate's extruder_ams_count follows it, an AMS when the index names a
-/// nozzle and none when it is -1 (BambuStudio.cpp 7448-7455). The engine
-/// reads the AMS nozzle only with a count above zero
-/// (get_effective_ams_nozzle_idx, PrintConfig.cpp 1176-1195). Without the
-/// flag the input's own count stands, as in the app with no printer connected.
-void sync_ams_count_with_command_line(const Slic3r::DynamicPrintConfig& extra, Slic3r::DynamicPrintConfig& config);
+/// A printer with one extruder and a nozzle rack: extruder_ams_count follows
+/// ams_nozzle_idx, an AMS when the index names a nozzle and none when it is
+/// -1, as the official CLI sets it for every such plate (BambuStudio.cpp
+/// 7448-7455). The engine reads the AMS nozzle only with a count above zero
+/// (get_effective_ams_nozzle_idx, PrintConfig.cpp 1176-1195).
+void sync_rack_ams_count(Slic3r::DynamicPrintConfig& config, bool estimate_mode);
 
 /// "Auto For Quality" groups by the difference between a printer's extruders,
 /// so the engine and the app offer it only when their types differ

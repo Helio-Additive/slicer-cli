@@ -10,6 +10,7 @@
 #include <map>
 #include <vector>
 #include <optional>
+#include <iterator>
 #include <set>
 #include <cstdint>
 #include <cstdlib>
@@ -3607,6 +3608,96 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
         emit_event({{"event","plate_error"}, {"tag","NoObjectInsideBed"}, {"message", detail}});
         return false;
     }
+#ifndef ENGINE_SNAPMAKER
+    // Nozzles that each reach only part of the bed: a one-filament object in
+    // an area some extruders do not reach makes its filament unprintable on
+    // those (BambuStudio.cpp 7026-7052 at v02.09.01.70; OrcaSlicer.cpp
+    // 5795-5806 at 8500fcd). In an automatic mode a filament no extruder can
+    // print ends the run, in a manual mode a filament whose map names an
+    // extruder that cannot reach it (7254-7281, 7347-7355; OrcaSlicer.cpp
+    // 5937), both CLI_FILAMENT_CAN_NOT_MAP, before the slice.
+    if (extruder_areas.size() > 1) {
+        std::vector<std::set<int>> unprintable(extruder_areas.size());
+#ifndef ENGINE_ORCA
+        const Slic3r::GlobalFeatureFilaments global_features = Slic3r::GlobalFeatureFilaments::from_full_config(config);
+#endif
+        const auto volume_filaments = [&](const Slic3r::ModelVolume* vol) {
+#ifdef ENGINE_ORCA
+            return vol->get_extruders();
+#else
+            return vol->get_extruders(global_features);
+#endif
+        };
+        for (const Slic3r::ModelObject* object : model.objects) {
+            std::set<int> object_filaments;
+            for (const Slic3r::ModelVolume* vol : object->volumes) {
+                const std::vector<int> filaments = volume_filaments(vol);
+                object_filaments.insert(filaments.begin(), filaments.end());
+            }
+            if (object_filaments.size() != 1)
+                continue;   // only a single-colour object is checked
+            for (const Slic3r::ModelInstance* inst : object->instances) {
+                if (inst->print_volume_state != Slic3r::ModelInstancePVS_Inside)
+                    continue;
+                const Slic3r::Transform3d& inst_matrix = inst->get_transformation().get_matrix();
+                for (const Slic3r::ModelVolume* vol : object->volumes) {
+                    if (!vol->is_model_part())
+                        continue;
+                    const Slic3r::BoundingBoxf3 bbox = vol->get_convex_hull().transformed_bounding_box(inst_matrix * vol->get_matrix());
+                    std::vector<bool> inside_extruders;
+                    if (build_volume.check_volume_bbox_state_with_extruder_areas(bbox, inside_extruders) !=
+                        Slic3r::BuildVolume::ObjectState::Limited)
+                        continue;
+                    const std::vector<int> filaments = volume_filaments(vol);
+                    for (size_t j = 0; j < inside_extruders.size() && j < unprintable.size(); ++j)
+                        if (!inside_extruders[j])
+                            unprintable[j].insert(filaments.begin(), filaments.end());
+                }
+            }
+        }
+        Slic3r::FilamentMapMode mode = Slic3r::FilamentMapMode::fmmAutoForFlush;
+        if (const auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode"))
+            mode = mode_opt->value;
+        bool manual = mode == Slic3r::FilamentMapMode::fmmManual;
+#ifndef ENGINE_ORCA
+        manual = manual || mode == Slic3r::FilamentMapMode::fmmNozzleManual;
+#endif
+        int blocked = 0, blocked_extruder = 0;
+        if (manual) {
+            if (const auto* maps = config.option<Slic3r::ConfigOptionInts>("filament_map"))
+                for (size_t index = 0; index < maps->values.size() && blocked == 0; ++index) {
+                    const int extruder = maps->values[index];
+                    if (extruder >= 1 && extruder <= (int)unprintable.size() && unprintable[extruder - 1].count(int(index) + 1)) {
+                        blocked = int(index) + 1;
+                        blocked_extruder = extruder;
+                    }
+                }
+        } else {
+            std::set<int> everywhere = unprintable.front();
+            for (size_t j = 1; j < unprintable.size(); ++j) {
+                std::set<int> both;
+                std::set_intersection(everywhere.begin(), everywhere.end(), unprintable[j].begin(), unprintable[j].end(),
+                                      std::inserter(both, both.begin()));
+                everywhere = std::move(both);
+            }
+            if (!everywhere.empty())
+                blocked = *everywhere.begin();
+        }
+        if (blocked != 0) {
+            const std::string detail = manual
+                ? "Filament " + std::to_string(blocked) + " prints an object placed where extruder " + std::to_string(blocked_extruder) +
+                  (unprintable.size() == 2 ? (blocked_extruder == 1 ? " (left)" : " (right)") : "") +
+                  " cannot reach, and the filament map names that extruder for it. Give it the other extruder in "
+                  "--filament-map, or move the object to where both nozzles reach (--arrange 1)."
+                : "Filament " + std::to_string(blocked) + " prints objects placed where no single extruder reaches all of "
+                  "them. Move the objects to where both nozzles reach (--arrange 1).";
+            set_outcome_failure(outcome, CLI_FILAMENT_CAN_NOT_MAP, detail);
+            emit_event({{"event","plate_error"}, {"tag","FilamentCannotMapToExtruder"}, {"filament", blocked},
+                        {"message", detail}});
+            return false;
+        }
+    }
+#endif
     return true;
 }
 
@@ -9487,6 +9578,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // The settings before any flag: the settings check's desktop baseline.
         const Slic3r::DynamicPrintConfig settings_before_flags = config;
 #ifdef ENGINE_BAMBU
+        // The filament switcher and the smart filament assignment that needs
+        // it are off unless a flag states them, whatever the project or its
+        // plate saved: the official CLI's rule (BambuStudio.cpp 4436-4439 at
+        // v02.09.01.70). They describe hardware fitted to the maker's
+        // printer, which a headless run cannot see.
+        for (const char* key : {"enable_filament_dynamic_map", "has_filament_switcher"})
+            if (!extra.has(key))
+                extra.set_key_value(key, new Slic3r::ConfigOptionBool(false));
         // --estimate-mode slices with the automatic grouping and a full
         // Standard rack (BambuStudio.cpp 4441-4474 at v02.09.01.70).
         if (o.given_flag("estimate_mode") && o.cli.opt_bool("estimate_mode")) {
@@ -9963,7 +10062,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // The rack the command line describes wins over the input's
                     // (7103-7172, cli_nozzle_options.cpp).
                     const bool from_flags = slicer_cli::command_line_nozzle_rack(extra, config, new_extruder_count, nozzle_stats_obj);
-                    slicer_cli::sync_ams_count_with_command_line(extra, config);
+                    slicer_cli::sync_rack_ams_count(config, o.given_flag("estimate_mode") && o.cli.opt_bool("estimate_mode"));
                     const bool derived = !from_flags && !Slic3r::per_slot_nozzle_options_consistent(config);
                     if (derived) {
                         for (size_t eid = 0; eid < new_nozzle_volume_type.size(); ++eid) {
@@ -9977,12 +10076,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             nozzle_stats_obj, max_nozzle_count, config_id_text(config, "printer_variant"));
                         Slic3r::sync_per_slot_nozzle_options_from_full_stat(config, full_stat);
                     }
-                    // The official re-serialises the stats every time (7191); a
-                    // value the input carries and nothing changed is kept as
-                    // written (the parser drops what it does not know, 1232-1237).
-                    if (carried == nullptr || derived || from_flags)
-                        config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats", true)->values =
-                            Slic3r::save_extruder_nozzle_stats_to_string(nozzle_stats_obj.get_raw_stat());
+                    // The official re-serialises the stats every time (7191), so
+                    // a project whose newer extruder_nozzle_stats_new differs
+                    // from its older key (a rack with a TPU nozzle) slices with
+                    // the newer one.
+                    config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats", true)->values =
+                        Slic3r::save_extruder_nozzle_stats_to_string(nozzle_stats_obj.get_raw_stat());
                 }
             }
         }

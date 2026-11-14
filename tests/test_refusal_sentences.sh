@@ -438,9 +438,10 @@ for e in bambu orca; do
           cube.stl --slice 1 --load-defaultfila --load-filaments ";"
 done
 
-# The mixed-filament check is BambuStudio's (the OrcaSlicer CLI has none).
-check mixed-filament bambu "*give the project one filament per extruder, or slice it in the desktop app*" \
-      "mixed-bambu.3mf" --slice 1
+# No mixed-filament refusal: Bambu Studio 2.9.1 slices a mixed filament, and its
+# normative check is the scripts alone (BambuStudio.cpp 2130-2140 at
+# v02.09.01.70).
+check_slices mixed-filament bambu filament_is_mixed 1 "mixed-bambu.3mf" --slice 1
 
 # The plate/filament refusal (-61) names the plates the filaments do share, not
 # only the one they do not. Two filaments of very different temperatures on the

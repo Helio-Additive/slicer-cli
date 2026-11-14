@@ -309,14 +309,25 @@ prime tower gets the tower inside the area both nozzles reach. In a manual
 mode `slicer_cli` refuses a filament the plate uses that cannot print with
 the extruder its map names (the filament's `filament_printable`; return code
 -68, as the official command line), whether the map comes from the flag or
-from the plate.
+from the plate. An object placed where only one nozzle reaches is checked
+before slicing, in `slicer_cli` and `slicer_cli-orcaslicer`: a manual map
+that names the other extruder for its filament, or in an automatic mode a
+filament no single extruder can print, ends the run with return code -66 and
+a `plate_error` / `FilamentCannotMapToExtruder` event.
+
+A project and its plates remember whether the maker's printer had a filament
+switcher (`has_filament_switcher`) and the smart filament assignment that
+needs it (`enable_filament_dynamic_map`). As in the official command line,
+`slicer_cli` slices with both off unless a flag states them
+(`--enable-filament-dynamic-map=1`, `--has-filament-switcher=1`).
 
 `--filament-map` on a printer with one extruder and a nozzle rack (the H3C,
 `slicer_cli`): 1 puts a filament on the nozzle the AMS feeds, 2 on the fixed
-nozzles, where the engine picks the nozzle that fits. The settings must
-state an AMS: a project saved with one does, and `--ams-nozzle-idx N` names
-the rack nozzle it feeds (0 is the first; -1 is no AMS). Without an AMS
-every nozzle is a fixed one, and a value of 1 is refused.
+nozzles, where the engine picks the nozzle that fits. As in the official
+command line, the printer has an AMS when `ams_nozzle_idx` names a rack
+nozzle (the H3C presets name the first) and none when it is -1;
+`--ams-nozzle-idx N` sets it. Without an AMS every nozzle is a fixed one,
+and a value of 1 is refused.
 
 `--filament-map-mode "Nozzle Manual"` (`slicer_cli`, printers with a nozzle
 rack) names the rack nozzle of each filament. As in the official command
@@ -403,7 +414,7 @@ These older shortcuts set one setting each and keep working:
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | all binaries |
 | `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | all binaries |
 | `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate. `slicer_cli` accepts it and does nothing with it: Bambu Studio 2.9.1 dropped the plate-level temperature-mix check, so there is nothing to lift; the `slicer_cli` run says so once with a `warning` / `AllowMixTempIgnored` event. `slicer_cli-snapmaker` applies it to its own pre-slice temperature check | all binaries |
-| `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19), or with a mixed filament (-25, Bambu Studio). On by default with `--slice` | all binaries |
+| `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19). On by default with `--slice` | all binaries |
 | `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | all binaries |
 | `--load-slicedata` | folder | Slice each plate from the slicing data saved in `<folder>/<plate>`; a plate without usable data is sliced normally | all binaries |
 | `--export-slicedata` | folder | Save each plate's slicing data in `<folder>/<plate>` | all binaries |
@@ -816,7 +827,7 @@ for -2):
 | -19 | The project names post-processing scripts |
 | -21 | Arrange failed |
 | -24 | The 3MF is from a newer app version |
-| -25 | Unsupported feature in the 3MF (mixed filament, slicer_cli) |
+| -25 | Unsupported feature in the 3MF (the official code; no slicer-cli check gives it since Bambu Studio 2.9.1 slices a mixed filament) |
 | -50 | A plate is empty, or an object is larger than the bed |
 | -51 | Invalid slicing settings |
 | -52 | An object is partly outside the bed |
@@ -869,6 +880,12 @@ them as they are.
   - Folgertech i3 0.6: its `printable_area` is not a rectangle
     (0x0, 20x0, 200x200, 0x200). No flag avoids it; without `--arrange 1` the
     part is refused as over the bed edge (-52).
+- **The prime volume of a Bambu project is kept as the file has it.** The
+  official Bambu Studio command line sets `filament_prime_volume` to 45 for
+  every filament of a Bambu project it slices without `--load-filaments`
+  (`BambuStudio.cpp` 7422-7431 at v02.09.01.70); the desktop app slices with
+  the file's value, and so does slicer-cli. For the official command line's
+  G-code, pass `--filament-prime-volume` with 45 for each filament.
 - **A deep prime tower can be refused -104 at the desktop's own tower spot.**
   On a plate with a fixed layout (`--load-assemble-list` with
   `need_arrange: false`) and two or more filaments, slicer_cli-orcaslicer puts

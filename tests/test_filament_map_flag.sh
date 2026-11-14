@@ -345,6 +345,29 @@ if [ "$status" = 0 ] && python3 -c 'import json,sys; p=json.load(open(sys.argv[1
 else
     fail "mode-auto-over-manual-plate" "exit $status, or the plate's Manual stayed"
 fi
+# An object where only the left nozzle reaches (the H2D's right nozzle starts
+# at x = 25): the map that names the right extruder is refused before slicing
+# (-66, as the official command lines), the left one slices.
+python3 - "$WORKDIR/edge.stl" <<'PY'
+import sys
+x0, y0, s = 2.0, 150.0, 20.0
+v = [(x0 + dx * s, y0 + dy * s, dz * s) for dz in (0, 1) for dy in (0, 1) for dx in (0, 1)]
+faces = [(0, 2, 1), (1, 2, 3), (4, 5, 6), (5, 7, 6), (0, 1, 4), (1, 5, 4),
+         (2, 6, 3), (3, 6, 7), (0, 4, 2), (2, 4, 6), (1, 3, 5), (3, 7, 5)]
+with open(sys.argv[1], "w") as f:
+    f.write("solid cube\n")
+    for a, b, c in faces:
+        f.write("facet normal 0 0 0\nouter loop\n")
+        for i in (a, b, c):
+            f.write("vertex %g %g %g\n" % v[i])
+        f.write("endloop\nendfacet\n")
+    f.write("endsolid cube\n")
+PY
+EDGE_L="${L%%,*}"; EDGE_R="${R%%,*}"; [ "$ENGINE" = orcaslicer ] && { EDGE_L="1,1"; EDGE_R="2,2"; }
+CODE=-66 expect_refusal "refuse-extruder-cannot-reach" "$WORKDIR/edge.stl" "$H2D" "cannot reach" --arrange 0 --filament-map "$EDGE_R"
+status=$(slice "extruder-reaches" "$WORKDIR/edge.stl" --arrange 0 --filament-map "$EDGE_L")
+[ "$status" = 0 ] && pass "extruder-reaches" || { fail "extruder-reaches" "exit $status"; tail -n 3 "$WORKDIR/extruder-reaches/stderr"; }
+
 expect_header "flow-type-per-extruder" "nozzle_volume_type = High Flow,Standard" "" "${D2[@]}" \
     --nozzle-volume-type "High Flow,Standard"
 
@@ -354,6 +377,40 @@ if [ "$ENGINE" = orcaslicer ]; then
 else
     expect_header "manual-flow-type-follows-extruder" "filament_map = 1,2;;filament_volume_map = 1,0;;filament_map_mode = Manual" "" \
         "${D2[@]}" --filament-map 1,2 --nozzle-volume-type "High Flow,Standard"
+    # A plate that remembers a filament switcher and smart filament
+    # assignment: both are off unless a flag states them, as in the official
+    # command line.
+    SWITCHER="$WORKDIR/switcher.3mf"
+    python3 - "$WORKDIR/h2d-two-1-2/sliced.3mf" "$SWITCHER" <<'PY'
+import re, sys, zipfile
+src, dst = sys.argv[1:]
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for info in zin.infolist():
+        data = zin.read(info.filename)
+        if info.filename == "Metadata/model_settings.config":
+            text = data.decode()
+            text, n = re.subn(r'(<plate>\s*)', r'\1<metadata key="enable_filament_dynamic_map" value="true"/>\n    '
+                              r'<metadata key="has_filament_switcher" value="true"/>\n    ', text, count=1)
+            assert n == 1, "no <plate> in model_settings.config"
+            data = text.encode()
+        zout.writestr(info, data)
+PY
+    expect_header_of() { # label, input, wanted G-code lines, flags...
+        local label="$1" input="$2" want="$3"; shift 3
+        local status; status=$(slice "$label" "$input" "$@")
+        [ "$status" = 0 ] || { fail "$label" "exit $status"; tail -n 3 "$WORKDIR/$label/stderr"; return 1; }
+        python3 - "$WORKDIR/$label" "$want" <<'PY' && pass "$label" || fail "$label" "the G-code does not state: $want"
+import sys, zipfile
+d, want = sys.argv[1:]
+z = zipfile.ZipFile(d + "/sliced.3mf")
+gcode = z.read([n for n in z.namelist() if n.endswith(".gcode")][0]).decode(errors="ignore")
+sys.exit(0 if all(("\n; " + line + "\n") in gcode for line in want.split(";;")) else 1)
+PY
+    }
+    expect_header_of "switcher-off-without-the-flag" "$SWITCHER" "enable_filament_dynamic_map = 0;;has_filament_switcher = 0"
+    expect_header_of "switcher-on-with-the-flag" "$SWITCHER" "enable_filament_dynamic_map = 1;;has_filament_switcher = 1" \
+        --enable-filament-dynamic-map=1 --has-filament-switcher=1
+
     # Bambu PET-CF prints with the H2D's left extruder only (filament_printable).
     CF=(--filament-preset "Bambu PET-CF @BBL H2D" --filament-preset "Bambu PET-CF @BBL H2D")
     expect_header "printable-on-the-mapped-extruder" "filament_map = 1,1" "" "${CF[@]}" --filament-map 1,1
@@ -383,8 +440,9 @@ else
     # The H3C: one extruder with a rack. --filament-map is Bambu Studio's
     # grouping, 1 = the nozzle the AMS feeds, 2 = the fixed nozzles.
     PRINTER="$H3C"; H2=(--filament-preset "Bambu PLA Basic @BBL H3C" --filament-preset "Bambu PLA Basic @BBL H3C")
+    # The preset's ams_nozzle_idx (0) states the AMS, as in the official CLI.
     expect_header "h3c-ams-then-fixed" "filament_map = 1,1;;filament_nozzle_map = 0,1;;filament_map_mode = Manual" "0,1" \
-        "${H2[@]}" --ams-nozzle-idx 0 --filament-map 1,2
+        "${H2[@]}" --filament-map 1,2
     expect_header "h3c-fixed-then-ams" "filament_map = 1,1;;filament_nozzle_map = 1,0;;filament_map_mode = Manual" "1,0" \
         "${H2[@]}" --ams-nozzle-idx 0 --filament-map 2,1
     expect_header "h3c-nozzle-manual" "filament_map_mode = Nozzle Manual;;filament_nozzle_map = 2,4" "2,4" \
@@ -392,7 +450,7 @@ else
         --filament-nozzle-map 2,4 --extruder-nozzle-count 6 \
         --extruder-nozzle-volume-type "Standard,Standard,Standard,Standard,Standard,Standard"
     expect_refusal "refuse-h3c-no-ams" "$WORKDIR/two.3mf" "$H3C" "the settings state no AMS on this printer" \
-        "${H2[@]}" --filament-map 1,2
+        "${H2[@]}" --ams-nozzle-idx=-1 --filament-map 1,2
     expect_refusal "refuse-h3c-group" "$WORKDIR/two.3mf" "$H3C" "has one extruder with a nozzle rack" \
         "${H2[@]}" --ams-nozzle-idx 0 --filament-map 3,1
 fi
