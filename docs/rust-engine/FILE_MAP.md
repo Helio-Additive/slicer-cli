@@ -45,8 +45,8 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 3776 (42%) |
-| estimate: faithful | 3168 (84% of matched) |
-| estimate: partial | 383 (10% of matched) |
+| estimate: faithful | 3169 (84% of matched) |
+| estimate: partial | 382 (10% of matched) |
 | estimate: divergent | 200 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
 | missing in the paired Rust file | 4615 |
@@ -61,7 +61,7 @@ By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 175 | 6851 | 2921 | 2440 | 304 | 163 | 14 | 3930 |
+| 1 | 180 | 175 | 6851 | 2921 | 2441 | 303 | 163 | 14 | 3930 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 66 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -141,7 +141,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 6 | 4 | 1 | 0 | 3 | 2 |
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
 | 1 | `GCode/ToolOrderUtils` | `gcode/tool_order_utils.rs` | 32 | 26 | 1 | 0 | 0 | 5 | 3 |
-| 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 2 | 1 | 1 | 0 | 12 | 2 |
+| 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 3 | 0 | 1 | 0 | 12 | 2 |
 | 1 | `Polyline` | `geometry/polyline.rs` | 52 | 29 | 3 | 1 | 0 | 19 | 2 |
 | 1 | `Arachne/WallToolPaths` | `arachne/wall_tool_paths.rs` | 16 | 8 | 3 | 1 | 0 | 4 | 1 |
 | 1 | `Circle` | `circle.rs` | 27 | 24 | 0 | 0 | 0 | 3 | 2 |
@@ -5453,12 +5453,11 @@ Rust only:
 
 ### `Geometry/MedialAxis` (.cpp+.hpp) and `geometry/medial_axis.rs`
 
-Tier 1. C++ functions 16 (plus 2 constructors, 0 destructors, 1 operators), Rust functions 37. Matched 4: faithful 2, partial 1, divergent 1, stub 0.
+Tier 1. C++ functions 16 (plus 2 constructors, 0 destructors, 1 operators), Rust functions 37. Matched 4: faithful 3, partial 0, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - divergent: `MedialAxis::edge_data` :34 and `MedialAxis::edge_data` :1100 (20%, 0.41x)
-- partial: `MedialAxis::build` :449 and `MedialAxis::build` :1105 (59%, 1.03x)
 
 Missing in the Rust file:
 
@@ -5505,11 +5504,11 @@ Rust only:
 - `MedialAxisThickPolyline::clear` :1051 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
 - `point_from_doubles` :1068
 - `MedialAxis::new` :1089
-- `MedialAxis::retrieve_segment` :1236
-- `MedialAxis::retrieve_endpoint` :1243
-- `MedialAxis::distance_to` :1260 — C++ has it in `Arrange`, `Line`, `MultiPoint`
-- `MedialAxis::orientation` :1286 — C++ has it in `Line`
-- `MedialAxis::norm` :1300 — C++ has it in `Arrange`
+- `MedialAxis::retrieve_segment` :1242
+- `MedialAxis::retrieve_endpoint` :1249
+- `MedialAxis::distance_to` :1266 — C++ has it in `Arrange`, `Line`, `MultiPoint`
+- `MedialAxis::orientation` :1292 — C++ has it in `Line`
+- `MedialAxis::norm` :1306 — C++ has it in `Arrange`
 
 ### `Geometry/Voronoi` (.cpp+.hpp) and `geometry/voronoi.rs`
 

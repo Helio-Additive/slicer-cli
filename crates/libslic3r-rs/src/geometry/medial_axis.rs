@@ -1103,18 +1103,24 @@ impl MedialAxis {
 
     /// MedialAxis.cpp:449-519 `MedialAxis::build(ThickPolylines* polylines)`.
     pub fn build(&mut self, polylines: &mut Vec<MedialAxisThickPolyline>) {
-        // MedialAxis.cpp:451.
-        // FIDELITY-NOTE: the C++ calls `Geometry::VoronoiDiagram::construct_voronoi`
-        // (Voronoi.cpp:25-60), which runs boost's builder and then, with
-        // `try_to_repair_if_needed` at its default, looks for a degenerated diagram and
-        // rebuilds it from rotated input. The medial-axis shim calls
-        // `boost::polygon::construct_voronoi` alone (medial_axis_shim.cpp:323). The shim is
-        // followed. boost's `insert_segment` takes `int32` coordinates
-        // (voronoi_builder.hpp), so the `coord_t` ones are converted as C++ converts them.
-        let segments: Vec<[i32; 4]> =
-            self.m_lines.iter().map(|l| [l.a.x as i32, l.a.y as i32, l.b.x as i32, l.b.y as i32]).collect();
+        // MedialAxis.cpp:451 `m_vd.construct_voronoi(m_lines.begin(), m_lines.end())`: `m_vd` is
+        // a `Geometry::VoronoiDiagram` (MedialAxis.hpp:24-25), whose `construct_voronoi`
+        // (Voronoi.cpp:25-60) runs boost's builder and then, with `try_to_repair_if_needed`
+        // at its default, looks for a degenerated diagram and rebuilds it from rotated input.
+        // `MEDIAL_AXIS_VD_REPAIR=0` calls boost's builder alone, as the medial-axis shim did
+        // (medial_axis_shim.cpp:323; the engine's behaviour until R901). boost's
+        // `insert_segment` takes `int32` coordinates (voronoi_builder.hpp), so the `coord_t`
+        // ones are converted as C++ converts them.
         self.m_vd.clear();
-        construct_voronoi(&segments, &mut self.m_vd);
+        if crate::faithful_gate("MEDIAL_AXIS_VD_REPAIR") {
+            let mut vd = crate::geometry::voronoi_diagram::boost_polygon::VoronoiDiagram::new();
+            vd.construct_voronoi(&self.m_lines, true);
+            self.m_vd = vd.diagram().clone();
+        } else {
+            let segments: Vec<[i32; 4]> =
+                self.m_lines.iter().map(|l| [l.a.x as i32, l.a.y as i32, l.b.x as i32, l.b.y as i32]).collect();
+            construct_voronoi(&segments, &mut self.m_vd);
+        }
         // MedialAxis.cpp:452.
         voronoi::annotate_inside_outside(&mut self.m_vd, &self.m_lines);
 

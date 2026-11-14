@@ -11,13 +11,13 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**36.0% of the named C++ functions are ported or verified (3311 of 9204); 24.8% by size of body.**
+**36.0% of the named C++ functions are ported or verified (3312 of 9204); 24.9% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
 | not started `[ ]` | 3140 | 34.1% | 46.9% |
-| partial `[~]` | 2753 | 29.9% | 28.2% |
-| ported `[x]` | 3172 | 34.5% | 22.8% |
+| partial `[~]` | 2752 | 29.9% | 28.2% |
+| ported `[x]` | 3173 | 34.5% | 22.8% |
 | verified `[v]` | 139 | 1.5% | 2.0% |
 
 | Files (C++ units) | Count |
@@ -215,7 +215,7 @@ the end; the goal is none.
 | `Geometry/Circle` | 1 | `geometry/circle.rs` | partial | 24 | 0 | 6 | 18 | 0 |
 | `Geometry/ConvexHull` | 1 | `geometry/convex_hull.rs` | partial | 21 | 2 | 11 | 8 | 0 |
 | `Geometry/Curves` | 1 | `geometry/curves.rs` | ported | 7 | 0 | 0 | 7 | 0 |
-| `Geometry/MedialAxis` | 1 | `geometry/medial_axis.rs` | partial | 16 | 2 | 12 | 2 | 0 |
+| `Geometry/MedialAxis` | 1 | `geometry/medial_axis.rs` | partial | 16 | 2 | 11 | 3 | 0 |
 | `Geometry/Voronoi` | 1 | `geometry/voronoi.rs` | partial | 19 | 0 | 19 | 0 | 0 |
 | `Geometry/VoronoiOffset` | 1 | `geometry/voronoi_offset.rs` | partial | 39 | 5 | 11 | 23 | 0 |
 | `Geometry/VoronoiUtils` | 1 | `geometry/voronoi_utils.rs` | partial | 13 | 3 | 5 | 5 | 0 |
@@ -7289,10 +7289,10 @@ Rust file: `geometry/medial_axis.rs`. Status: **partial**. Not listed: 2 constru
 **class `MedialAxis`**
 
 - [~] `edge_data` (line 34) → `geometry/medial_axis.rs:1100` — divergent
-- [~] `build` (line 449) → `geometry/medial_axis.rs:1105` — partial
+- [x] `build` (line 449) → `geometry/medial_axis.rs:1105`
 - [~] `build` (line 534) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [x] `process_edge_neighbors` (line 543) → `geometry/medial_axis.rs:1184`
-- [x] `validate_edge` (line 588) → `geometry/medial_axis.rs:1307`
+- [x] `process_edge_neighbors` (line 543) → `geometry/medial_axis.rs:1190`
+- [x] `validate_edge` (line 588) → `geometry/medial_axis.rs:1313`
 
 **class `voronoi_visual_utils`**
 
