@@ -20,9 +20,8 @@
 //!
 //! Not ported: `ClipperD`, `PolyPathD`, `ReuseableDataContainer64`, the `PathsD` overloads
 //! of clipper.h and the templates of clipper.core.h that serve them, clipper.rectclip.cpp,
-//! clipper.minkowski.h. Nothing the engine calls reaches them. The engine's callers
-//! (`crate::clipper2_utils`, `crate::clipper2_z`, two functions of `crate::clipper_utils`)
-//! come here behind the gate `CLIPPER2_RUST`.
+//! clipper.minkowski.h. Nothing the engine calls reaches them. The engine's callers are
+//! `crate::clipper2_utils` and `crate::clipper2_z`.
 
 #[path = "build_xy.rs"]
 mod clipper2_build;

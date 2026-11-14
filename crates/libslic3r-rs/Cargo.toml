@@ -26,17 +26,6 @@ path = "src/bin/generate-test-meshes.rs"
 nalgebra = "0.32"
 geo = "0.27"
 geo-clipper = "0.8"
-clipper2 = "0.5"
-# Raw Clipper2 FFI (already linked transitively via `clipper2`). Exposes the
-# native PolyTree64 / ClipperOffset / Clipper64::Execute(closed, open) APIs that
-# the safe `clipper2` wrapper hides, which Clipper2Utils.cpp depends on for
-# byte-exact PolyTreeToExPolygons and open-subject (solution_open) recovery.
-clipper2c-sys = "0.1.6"
-# Vendored Clipper2 (v1.5.2, USINGZ) via a C shim — the Z-callback intersection
-# engine for the faithful RegionExpansion `wave_seeds` (cz2_intersect_open_z) +
-# Z-preserving open-path offset (cz2_offset_z). ClipperLib_Z (clipper-z-sys) does
-# the propagation; Clipper2-Z does the seed intersection. (R131+ classification port.)
-clipper2-z-sys = { path = "../clipper2-z-sys" }
 # Eigen FFI shim for the bit-exact slice-time vertex transform (R86): calls the
 # real Eigen so the f32 matmul matches C++ exactly (sidesteps the pure-rust
 # Eigen-reproduction 1-ULP wall, R85).
@@ -99,6 +88,9 @@ eigen-transform-sys = { path = "../eigen-transform-sys" }
 # ClipperLib, ClipperLib_Z, the medial axis over boost Voronoi and the elephant-foot solver as
 # C++: out of the engine since R903, the reference of the *_native_parity tests.
 clipper-z-sys = { path = "../clipper-z-sys" }
+# Clipper2 as C++ (the engine's pin, with and without USINGZ): out of the engine, which runs
+# on the port (src/clipper2) since R905; the reference of the clipper2_*_native_parity tests.
+clipper2-z-sys = { path = "../clipper2-z-sys" }
 criterion = "0.5"
 approx = "0.5"
 tempfile = "3.8"

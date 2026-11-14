@@ -172,37 +172,6 @@ pub fn get_lowest_closed_path_idx(paths: &Paths64) -> Option<usize> {
     result
 }
 
-/// clipper.offset.cpp of 1.5.4, :36-58, and what `Group::Group` (:148-155) makes of it
-/// (not the pin; taken under the test probe only, see `version_154_probe`)
-/// C++: void GetLowestClosedPathInfo(const Paths64& paths, std::optional<size_t>& idx, bool& is_neg_area)
-/// C++: is_reversed = lowest_path_idx.has_value() && is_neg_area;
-/// `is_neg_area` is not initialised in the C++; it is read only where `idx` has a value,
-/// and then it has been set.
-fn get_lowest_closed_path_info_v154(paths: &Paths64) -> (Option<usize>, bool) {
-    let mut idx: Option<usize> = None;
-    let mut is_neg_area = false;
-    let mut bot_pt = Point64::new(i64::MAX, i64::MIN);
-    for (i, path) in paths.iter().enumerate() {
-        let mut a = MAX_DBL;
-        for pt in path {
-            if (pt.y < bot_pt.y) || ((pt.y == bot_pt.y) && (pt.x >= bot_pt.x)) {
-                continue;
-            }
-            if a == MAX_DBL {
-                a = area(path);
-                if a == 0.0 {
-                    break; // invalid closed path, so break from inner loop
-                }
-                is_neg_area = a < 0.0;
-            }
-            idx = Some(i);
-            bot_pt.x = pt.x;
-            bot_pt.y = pt.y;
-        }
-    }
-    (idx, idx.is_some() && is_neg_area)
-}
-
 /// clipper.offset.cpp:59-67
 /// C++: inline double Hypot(double x, double y)
 /// C++: return std::sqrt(x * x + y * y);
@@ -330,9 +299,7 @@ impl Group {
 
         let lowest_path_idx;
         let is_reversed;
-        if end_type == EndType::Polygon && v154(V154_LOWEST_CLOSED_PATH) {
-            (lowest_path_idx, is_reversed) = get_lowest_closed_path_info_v154(&paths_in);
-        } else if end_type == EndType::Polygon {
+        if end_type == EndType::Polygon {
             lowest_path_idx = get_lowest_closed_path_idx(&paths_in);
             // the lowermost path must be an outer path, so if its orientation is negative,
             // then flag the whole group is 'reversed' (will negate delta etc.)
@@ -1037,11 +1004,6 @@ impl ClipperOffset {
         //clean up self-intersections ...
         let mut c = Clipper64::new();
         c.set_preserve_collinear(false);
-        if v154(V154_OFFSET_PRESERVE_COLLINEAR) {
-            // clipper.offset.cpp of 1.5.4, :610 (under the test probe only, see
-            // `version_154_probe`): `c.PreserveCollinear(preserve_collinear_);`
-            c.set_preserve_collinear(self.preserve_collinear_);
-        }
         //the solution should retain the orientation of the input
         c.set_reverse_solution(self.reverse_solution_ != paths_reversed);
         if USINGZ {

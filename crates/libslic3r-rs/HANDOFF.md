@@ -9,7 +9,7 @@ are the exception). How to build, run and score it in this repository:
 
 ## Where things stand
 
-- **Parity (R905), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
+- **Parity (R906), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
   Benchy classic 187,306 lines in order (98.12%), Benchy arachne 240,533 (98.85%), Majora
   2,833,393 (98.70%), prime tower 99.6%. `docs/rust-engine/README.md` has what the numbers
   rest on and where each fixture stands; `docs/rust-engine/parity/rounds-R809-on.md` is the
@@ -121,8 +121,7 @@ the ten `tree_support_integration` failures pass.
   an engine bug, so do not turn debug assertions off for tests to hide it.
 
 **Other:** three doc tests do not compile (`gcode/gcode_template.rs`, two in `enum_bitmask.rs`),
-so a plain `cargo test` ends non-zero. `clipper2-z-sys`'s `version_links` expects Clipper2 1.5.4
-and the vendored source reports 1.5.2. Cancellation is not honoured by `Print::process`,
+so a plain `cargo test` ends non-zero. Cancellation is not honoured by `Print::process`,
 `PrintObject::ironing` and `generate_support_material`.
 
 ## Current track (config threading wired 2026-06-12)

@@ -1093,16 +1093,6 @@ impl ClipperBase {
     /// clipper.engine.cpp:496-559
     /// C++: static PointInPolygonResult PointInOpPolygon(const Point64& pt, OutPt* op)
     fn point_in_op_polygon(&self, pt: &Point64, mut op: usize) -> PointInPolygonResult {
-        // `CrossProduct(op2->prev->pt, op2->pt, pt)`, the pin's. (Under the test probe of
-        // 1.5.4, see `version_154_probe`: `CrossProductSign`.)
-        let as_154 = v154(V154_POINT_IN_OP_POLYGON);
-        let side = |a: &Point64, b: &Point64, c: &Point64| -> f64 {
-            if as_154 {
-                cross_product_sign_v154(a, b, c) as f64
-            } else {
-                cross_product(a, b, c)
-            }
-        };
         let p = &self.outpt_pool_;
         if op == p[op].next || p[op].prev == p[op].next {
             return PointInPolygonResult::IsOutside;
@@ -1164,7 +1154,7 @@ impl ClipperBase {
             } else if pt.x > p[prev].pt.x && pt.x > p[op2].pt.x {
                 val = 1 - val; // toggle val
             } else {
-                let d = side(&p[prev].pt, &p[op2].pt, pt);
+                let d = cross_product(&p[prev].pt, &p[op2].pt, pt);
                 if d == 0.0 {
                     return PointInPolygonResult::IsOn;
                 }
@@ -1177,7 +1167,7 @@ impl ClipperBase {
         }
 
         if is_above != starting_above {
-            let d = side(&p[p[op2].prev].pt, &p[op2].pt, pt);
+            let d = cross_product(&p[p[op2].prev].pt, &p[op2].pt, pt);
             if d == 0.0 {
                 return PointInPolygonResult::IsOn;
             }
@@ -1220,73 +1210,9 @@ impl ClipperBase {
         result
     }
 
-    /// clipper.engine.cpp of 1.5.4, :576-599 (not the pin; taken under the test probe only,
-    /// see `version_154_probe`)
-    /// C++: inline bool Path2ContainsPath1(OutPt* op1, OutPt* op2)
-    fn path2_contains_path1_v154(&mut self, op1: usize, op2: usize) -> bool {
-        // this function accommodates rounding errors that
-        // can cause path micro intersections
-        let mut pip = PointInPolygonResult::IsOn;
-        let mut op = op1;
-        loop {
-            match self.point_in_op_polygon(&self.outpt_pool_[op].pt, op2) {
-                PointInPolygonResult::IsOutside => {
-                    if pip == PointInPolygonResult::IsOutside {
-                        return false;
-                    }
-                    pip = PointInPolygonResult::IsOutside;
-                }
-                PointInPolygonResult::IsInside => {
-                    if pip == PointInPolygonResult::IsInside {
-                        return true;
-                    }
-                    pip = PointInPolygonResult::IsInside;
-                }
-                PointInPolygonResult::IsOn => {}
-            }
-            op = self.outpt_pool_[op].next;
-            if op == op1 {
-                break;
-            }
-        }
-        // result unclear, so try again using cleaned paths
-        // clipper.h of 1.5.4, :716-742
-        // C++: inline bool Path2ContainsPath1(const Path<T>& path1, const Path<T>& path2)
-        let (path1, path2) = (self.get_clean_path(op1), self.get_clean_path(op2)); // (#973)
-        // precondition: paths must not intersect, except for
-        // transient (and presumed 'micro') path intersections
-        let mut pip = PointInPolygonResult::IsOn;
-        for pt in &path1 {
-            match point_in_polygon(pt, &path2) {
-                PointInPolygonResult::IsOutside => {
-                    if pip == PointInPolygonResult::IsOutside {
-                        return false;
-                    }
-                    pip = PointInPolygonResult::IsOutside;
-                }
-                PointInPolygonResult::IsInside => {
-                    if pip == PointInPolygonResult::IsInside {
-                        return true;
-                    }
-                    pip = PointInPolygonResult::IsInside;
-                }
-                PointInPolygonResult::IsOn => {}
-            }
-        }
-        if pip != PointInPolygonResult::IsInside {
-            return false;
-        }
-        // result is likely true but check midpoint
-        let mp1 = get_bounds(&path1).mid_point();
-        point_in_polygon(&mp1, &path2) == PointInPolygonResult::IsInside
-    }
-
     /// clipper.engine.cpp:584-603
     /// C++: inline bool Path1InsidePath2(OutPt* op1, OutPt* op2)
     fn path1_inside_path2(&mut self, op1: usize, op2: usize) -> bool {
-        if v154(V154_PATH2_CONTAINS_PATH1) {
-            return self.path2_contains_path1_v154(op1, op2);
-        }
         // we need to make some accommodation for rounding errors
         // so we won't jump if the first vertex is found outside
         let mut outside_cnt: i32 = 0;
@@ -1790,22 +1716,12 @@ impl ClipperBase {
     fn is_valid_ael_order(&self, resident: usize, newcomer: usize) -> bool {
         let r = &self.active_pool_[resident];
         let n = &self.active_pool_[newcomer];
-        // `CrossProduct`, the pin's. (Under the test probe of 1.5.4, see
-        // `version_154_probe`: `CrossProductSign`.)
-        let as_154 = v154(V154_IS_VALID_AEL_ORDER);
-        let turn = |a: &Point64, b: &Point64, c: &Point64| -> f64 {
-            if as_154 {
-                cross_product_sign_v154(a, b, c) as f64
-            } else {
-                cross_product(a, b, c)
-            }
-        };
         if n.curr_x != r.curr_x {
             return n.curr_x > r.curr_x;
         }
 
         //get the turning direction  a1.top, a2.bot, a2.top
-        let d = turn(&r.top, &n.bot, &n.top);
+        let d = cross_product(&r.top, &n.bot, &n.top);
         if d != 0.0 {
             return d < 0.0;
         }
@@ -1814,9 +1730,9 @@ impl ClipperBase {
         //for starting open paths, place them according to
         //the direction they're about to turn
         if !self.is_maxima(resident) && (r.top.y > n.top.y) {
-            return turn(&n.bot, &r.top, &self.vertex_lists_[self.next_vertex(resident)].pt) <= 0.0;
+            return cross_product(&n.bot, &r.top, &self.vertex_lists_[self.next_vertex(resident)].pt) <= 0.0;
         } else if !self.is_maxima(newcomer) && (n.top.y > r.top.y) {
-            return turn(&n.bot, &n.top, &self.vertex_lists_[self.next_vertex(newcomer)].pt) >= 0.0;
+            return cross_product(&n.bot, &n.top, &self.vertex_lists_[self.next_vertex(newcomer)].pt) >= 0.0;
         }
 
         let y = n.bot.y;
@@ -1832,7 +1748,7 @@ impl ClipperBase {
             true
         } else {
             //compare turning direction of the alternate bound
-            (turn(
+            (cross_product(
                 &self.vertex_lists_[self.prev_prev_vertex(resident)].pt,
                 &n.bot,
                 &self.vertex_lists_[self.prev_prev_vertex(newcomer)].pt,
@@ -2354,57 +2270,9 @@ impl ClipperBase {
         }
     }
 
-    /// clipper.engine.cpp of 1.5.4, :1646-1681 (not the pin; taken under the test probe
-    /// only, see `version_154_probe`)
-    /// C++: void ClipperBase::FixSelfIntersects(OutRec* outrec)
-    fn fix_self_intersects_v154(&mut self, outrec: usize) {
-        let mut op2 = self.outrec_list_[outrec].pts;
-        if self.outpt_pool_[op2].prev == self.outpt_pool_[self.outpt_pool_[op2].next].next {
-            return; // because triangles can't self-intersect
-        }
-        loop {
-            let p = &self.outpt_pool_;
-            let (prev, next) = (p[op2].prev, p[op2].next);
-            let next_next = p[next].next;
-            let next_next_next = p[next_next].next;
-            if segments_intersect(&p[prev].pt, &p[op2].pt, &p[next].pt, &p[next_next].pt, false) {
-                if segments_intersect(&p[prev].pt, &p[op2].pt, &p[next_next].pt, &p[next_next_next].pt, false) {
-                    // adjacent intersections (ie a micro self-intersections)
-                    op2 = self.duplicate_op(op2, false);
-                    let q = &self.outpt_pool_;
-                    let pt = q[q[q[q[op2].next].next].next].pt;
-                    self.outpt_pool_[op2].pt = pt;
-                    op2 = self.outpt_pool_[op2].next;
-                } else {
-                    if op2 == self.outrec_list_[outrec].pts || next == self.outrec_list_[outrec].pts {
-                        self.outrec_list_[outrec].pts = self.outpt_pool_[self.outrec_list_[outrec].pts].prev;
-                    }
-                    self.do_split_op(outrec, op2);
-                    if self.outrec_list_[outrec].pts == NONE {
-                        break;
-                    }
-                    op2 = self.outrec_list_[outrec].pts;
-                    if self.outpt_pool_[op2].prev == self.outpt_pool_[self.outpt_pool_[op2].next].next {
-                        break; // again, because triangles can't self-intersect
-                    }
-                    continue;
-                }
-            } else {
-                op2 = next;
-            }
-
-            if op2 == self.outrec_list_[outrec].pts {
-                break;
-            }
-        }
-    }
-
     /// clipper.engine.cpp:1655-1677
     /// C++: void ClipperBase::FixSelfIntersects(OutRec* outrec)
     fn fix_self_intersects(&mut self, outrec: usize) {
-        if v154(V154_FIX_SELF_INTERSECTS) {
-            return self.fix_self_intersects_v154(outrec);
-        }
         let mut op2 = self.outrec_list_[outrec].pts;
         loop {
             let p = &self.outpt_pool_;
@@ -2832,7 +2700,6 @@ impl ClipperBase {
     /// clipper.engine.cpp:2109-2124
     /// C++: inline void ClipperBase::AdjustCurrXAndCopyToSEL(const int64_t top_y)
     fn adjust_curr_x_and_copy_to_sel(&mut self, top_y: i64) {
-        let as_154 = v154(V154_ADJUST_CURR_X);
         let mut e = self.actives_;
         self.sel_ = e;
         while e != NONE {
@@ -2841,10 +2708,7 @@ impl ClipperBase {
             self.active_pool_[e].prev_in_sel = prev;
             self.active_pool_[e].next_in_sel = next;
             self.active_pool_[e].jump = next;
-            // (Under the test probe of 1.5.4, see `version_154_probe`, every edge takes the
-            // other arm: "it is safe to ignore 'joined' edges here because if necessary
-            // they will be split in IntersectEdges()".)
-            if self.active_pool_[e].join_with == JoinWith::Left && !as_154 {
+            if self.active_pool_[e].join_with == JoinWith::Left {
                 self.active_pool_[e].curr_x = self.active_pool_[prev].curr_x; // also avoids complications
             } else {
                 self.active_pool_[e].curr_x = top_x(&self.active_pool_[e], top_y);
@@ -3025,12 +2889,7 @@ impl ClipperBase {
         }
         // Every element of fromOr->splits is appended to toOr->splits, and then
         // fromOr->splits is emptied (it stays allocated).
-        let mut moved = std::mem::take(self.outrec_list_[from_or].splits.as_mut().unwrap());
-        if v154(V154_MOVE_SPLITS) {
-            // clipper.engine.cpp of 1.5.4, :2274-2275 (under the test probe only, see
-            // `version_154_probe`): `if (toOr != *orIter) // #987`
-            moved.retain(|or| *or != to_or);
-        }
+        let moved = std::mem::take(self.outrec_list_[from_or].splits.as_mut().unwrap());
         self.outrec_list_[to_or].splits.get_or_insert_with(Vec::new).extend(moved);
     }
 
@@ -3786,9 +3645,6 @@ impl ClipperBase {
     /// tests reach it (rarely: a few times in a million cases, in `nearly_parallel` and
     /// `coincident_and_collinear`) and the results are equal there.
     fn check_split_owner(&mut self, outrec: usize, splits_of: usize) -> bool {
-        if v154(V154_CHECK_SPLIT_OWNER) {
-            return self.check_split_owner_v154(outrec, splits_of);
-        }
         let splits: OutRecList = self.outrec_list_[splits_of].splits.clone().unwrap();
         for &split in &splits {
             let split = self.get_real_out_rec(split);
@@ -3812,44 +3668,6 @@ impl ClipperBase {
             }
         }
         self.note_splits_changed(splits_of, &splits);
-        false
-    }
-
-    /// clipper.engine.cpp of 1.5.4, :2941-2964 (not the pin; taken under the test probe
-    /// only, see `version_154_probe`)
-    /// C++: bool ClipperBase::CheckSplitOwner(OutRec* outrec, OutRecList* splits)
-    /// The loop walks the elements the vector had when it started, as `check_split_owner`.
-    fn check_split_owner_v154(&mut self, outrec: usize, splits_of: usize) -> bool {
-        let splits: OutRecList = self.outrec_list_[splits_of].splits.clone().unwrap();
-        for &split in &splits {
-            if self.outrec_list_[split].pts == NONE && self.outrec_list_[split].splits.is_some() && self.check_split_owner_v154(outrec, split) {
-                return true; //#942
-            }
-            let split = self.get_real_out_rec(split);
-            if split == NONE || split == outrec || self.outrec_list_[split].recursive_split == outrec {
-                continue;
-            }
-            self.outrec_list_[split].recursive_split = outrec; // prevent infinite loops
-
-            if self.outrec_list_[split].splits.is_some() && self.check_split_owner_v154(outrec, split) {
-                return true;
-            }
-
-            if !self.check_bounds(split)
-                || !self.outrec_list_[split].bounds.contains(&self.outrec_list_[outrec].bounds)
-                || !self.path1_inside_path2(self.outrec_list_[outrec].pts, self.outrec_list_[split].pts)
-            {
-                continue;
-            }
-
-            if !self.is_valid_owner(outrec, split) {
-                // split is owned by outrec! (#957)
-                self.outrec_list_[split].owner = self.outrec_list_[outrec].owner;
-            }
-
-            self.outrec_list_[outrec].owner = split;
-            return true;
-        }
         false
     }
 

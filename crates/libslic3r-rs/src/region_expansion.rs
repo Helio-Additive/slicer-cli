@@ -414,7 +414,7 @@ struct RegionExpansion {
 /// - Subsequent clipping produces identical geometry
 ///
 // ============================================================================
-// FAITHFUL wave_seeds — Clipper2-Z backend (clipper2-z-sys), 1:1 port of
+// FAITHFUL wave_seeds — Clipper2-Z (crate::clipper2_z), 1:1 port of
 // RegionExpansion.cpp:108-389 (Z-path builders, merge_splits, wave_seeds).
 // Gated via propagate_waves(REGION_EXPANSION_FAITHFUL) below; the seed generation
 // is byte-faithful, and the wavefront propagation is the byte-faithful ClipperLib

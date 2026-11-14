@@ -45,10 +45,38 @@ is left on the fixtures' path (`GEOCALLS=1` lists them, README "Probes").
 
 ### `clipper2-z-sys` (Clipper2)
 
-| Shim function | Called from | Stands for |
+Out of the engine's dependencies since R906: a dev-dependency, the reference of the `clipper2_*_native_parity`
+tests (it builds the pin's Clipper2 sources for them). What its functions stood for, now in Rust:
+
+| Shim function | Was called from | Stands for |
 |-|-|-|
 | `cz2_offset_z`, `cz2_intersect_open_z` | `clipper2_z.rs` | Clipper2 with Z in RegionExpansion.cpp |
 | `cz2_pl_open` | `clipper2_utils.rs` | `intersection_pl_2`, `diff_pl_2` of Clipper2Utils.cpp |
+
+#### Clipper2 1.5.2 (the pin) and 1.5.4
+
+Until R905 `clipper2_utils.rs` reached Clipper2 through `clipper2c-sys`, which is 1.5.4; the engine pins 1.5.2 and
+the port (`clipper2/`) follows the pin only. What 1.5.4 does otherwise in the code the engine reaches, found in R905
+by making the port reproduce the 1.5.4 results exactly on 16,000 generated cases per function (the test and its
+probe are gone with the FFI arm; this list is what they established). A bump of the pin past 1.5.2 has to port these:
+
+| Function (1.5.4 lines) | What changed from 1.5.2 |
+|-|-|
+| `PointInOpPolygon`, clipper.engine.cpp:534-536, 544-546 | the side of the point is `CrossProductSign` (exact, 128 bit; new in clipper.core.h:753-793) where 1.5.2 has `CrossProduct` on doubles |
+| `IsValidAelOrder`, clipper.engine.cpp:1125-1153 | `CrossProductSign` where 1.5.2 has `CrossProduct` |
+| `Path2ContainsPath1`, clipper.engine.cpp:576-599 with clipper.h:716-742 | replaces `Path1InsidePath2` (1.5.2: clipper.engine.cpp:584-603): two consecutive points on the same side decide, then the cleaned paths are tried, then the midpoint of the bounds |
+| `FixSelfIntersects`, clipper.engine.cpp:1646-1681 | adjacent (micro) intersections are joined, not split off; a triangle ends the loop only before it and after a split |
+| `AdjustCurrXAndCopyToSEL`, clipper.engine.cpp:2112-2126 | a joined edge gets its own `TopX`, where 1.5.2 copies the `curr_x` of the edge it is joined with |
+| `MoveSplits`, clipper.engine.cpp:2269-2277 (#987) | an `OutRec` is not moved into its own splits |
+| `CheckSplitOwner`, clipper.engine.cpp:2941-2964 (#942) | a split without points that has splits of its own is searched first |
+| `CheckSplitOwner`, same lines (#957) | a containing split that `outrec` owns is taken as the owner after it is given `outrec`'s owner, where 1.5.2 skips it (`IsValidOwner` in the condition) |
+| `GetLowestClosedPathInfo`, clipper.offset.cpp:36-58, `Group::Group` :148-155 | replaces `GetLowestClosedPathIdx` (1.5.2: clipper.offset.cpp:40-57): a path without area is not the lowest path of a group, and the group's orientation comes from the same pass |
+| `ClipperOffset::ExecuteInternal`, clipper.offset.cpp:610 | the finishing union takes the offsetter's `preserve_collinear_`, where 1.5.2 gives it `false` |
+
+On 16,000 generated cases each, the 1.5.4 arm of `union_ex_2`, `offset_ex_2` and `offset2_ex_2` differed from the
+pin's result in 804, 3,763 and 5,428; for the two offsets part of that was the old arm's own sequence of calls
+(offset to paths and a second union for the tree; contours simplified as open paths), not the library. No fixture
+reaches those functions.
 
 ### `eigen-transform-sys` (Eigen, AABB tree)
 
@@ -75,24 +103,23 @@ reference). The medial axis runs on it since R898, Arachne's skeletal trapezoida
 since R901 (`ARACHNE_VORONOI_PORT`, `MMSEG_VORONOI_PORT`); the `boostvoronoi` crate is left for the gate-off arms
 and the older helpers.
 
-Since R904-R905 Clipper2 is ported as far as the engine reaches it (`clipper2/clipper_core.rs`, `clipper_engine.rs`,
-`clipper_offset.rs`, `clipper_h.rs`, both builds, equal to the pin's Clipper2 1.5.2), and the three doors run on the
-port under `CLIPPER2_RUST`: `clipper2_utils.rs` (was `clipper2c-sys`), `clipper2_z.rs` (was this crate) and two
-functions of `clipper_utils.rs` (was the `clipper2` crate). The FFI arms stay for one round. `clipper2c-sys` is
-Clipper2 1.5.4, ten behavioural changes away from the oracle's 1.5.2, so its arm of `union_ex_2`, `offset_ex_2` and
-`offset2_ex_2` was not the C++'s on some inputs. Not ported, not reached: clipper.rectclip.cpp, `ClipperD`,
-clipper.minkowski.h.
+Clipper2 is ported as far as the engine reaches it (R904-R905: `clipper2/clipper_core.rs`, `clipper_engine.rs`,
+`clipper_offset.rs`, `clipper_h.rs`, both builds, equal to the pin's Clipper2 1.5.2) and since R906 the engine
+calls nothing else for it. Not ported, not reached: clipper.rectclip.cpp, `ClipperD`, clipper.minkowski.h.
 
 ### C++ that comes in through published crates
 
-`cargo tree -e normal -p slicer-cli-rust` also lists two C++ libraries the engine does not build itself:
+`cargo tree -e normal -p slicer-cli-rust` lists one C++ library, the last C++ in the engine's tree (`clipper2c-sys`
+through the `clipper2` crate left in R906):
 
 | Crate | Through | What uses it |
 |-|-|-|
 | `clipper-sys` (Clipper 6) | `geo-clipper` | the helpers of `clipper_utils.rs` without `_clib` in the name; none on the fixtures' path since R856 (`GEOCALLS=1`) |
-| `clipper2c-sys` (Clipper2) | `clipper2` | `clipper2_utils.rs` |
 
-A port of `clipper.cpp` and of Clipper2 replaces these as well as `clipper-z-sys` and `clipper2-z-sys`.
+Sixteen functions of `clipper_utils.rs` call it (R906 survey): `union`, `xor`, the polyline offsets, `offset_polygon`,
+`offset_expolygon(s)`, `offset_polygons` and their round and miter variants, `intersection_base`, and the gate-off
+arms of `union_ex`, `intersection`, `difference`. All have a twin on the Rust ClipperLib (`*_clib`) or need a thin
+wrapper on it; the callers are supports, SLA, interlocking and some fill branches.
 
 ## 2. Child processes
 
@@ -139,6 +166,7 @@ more are missing from a paired Rust file and from every other. `crates/libslic3r
 |-|-|
 | R856 | every helper on the 1 um grid on the fixtures' path computes at coord_t |
 | R903 | `clipper-z-sys` is out of the engine's dependencies (a dev-dependency for the tests): ClipperLib, ClipperLib_Z, the medial axis over boost Voronoi and the elephant-foot solver all run in Rust |
+| R906 | `clipper2-z-sys`, `clipper2c-sys` and the `clipper2` crate are out of the engine's dependencies: Clipper2 runs in Rust (`clipper2/`, R904-R905) |
 | R898 | the medial axis (`annotate_inside_outside`, `MedialAxis`, `ExPolygon::medial_axis`) runs in Rust on the ported Voronoi builder (`MEDIAL_AXIS_RUST`): no call of `clipper-z-sys` is left on the default path |
 | R897 | boost::polygon's Voronoi builder is ported (`boost_polygon_voronoi.rs`), equal to boost on 110,546 diagrams; not yet called by the engine |
 | R896 | the elephant-foot solver runs in Rust (`EFC_SMOOTH_RUST`) |

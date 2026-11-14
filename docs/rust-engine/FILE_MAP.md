@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 58 (plus 22 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3776 (42%) |
-| estimate: faithful | 3170 (84% of matched) |
-| estimate: partial | 379 (10% of matched) |
-| estimate: divergent | 202 (5% of matched) |
+| matched to a Rust function in the paired file | 3775 (42%) |
+| estimate: faithful | 3172 (84% of matched) |
+| estimate: partial | 378 (10% of matched) |
+| estimate: divergent | 200 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
-| missing in the paired Rust file | 4615 |
-| of those, a function of that name exists in another Rust file | 1617 |
+| missing in the paired Rust file | 4616 |
+| of those, a function of that name exists in another Rust file | 1618 |
 | of the rest, another overload of the name is ported | 367 |
 | of the rest, under 25 tokens (accessors, one-liners) | 737 |
 | of the rest, 25 tokens or more | 1894 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4816 |
+| Rust functions with no C++ function of that name in the pair | 4779 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 175 | 6851 | 2921 | 2442 | 300 | 165 | 14 | 3930 |
+| 1 | 180 | 175 | 6851 | 2920 | 2444 | 299 | 163 | 14 | 3931 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 66 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -122,7 +122,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `ShortestPath` | `shortest_path.rs` | 37 | 22 | 2 | 0 | 0 | 13 | 6 |
 | 1 | `Algorithm/LineSegmentation/LineSegmentation` | `algorithm/line_segmentation/line_segmentation.rs` | 29 | 5 | 3 | 0 | 0 | 21 | 5 |
 | 1 | `AppConfig` | `app_config.rs` | 72 | 53 | 3 | 2 | 0 | 14 | 3 |
-| 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 7 | 1 | 3 | 0 | 3 | 2 |
 | 1 | `ElephantFootCompensation` | `elephant_foot_compensation.rs` | 10 | 5 | 0 | 0 | 0 | 5 | 5 |
 | 1 | `Geometry/VoronoiOffset` | `geometry/voronoi_offset.rs` | 39 | 23 | 2 | 0 | 0 | 14 | 5 |
 | 1 | `Geometry/VoronoiUtils` | `geometry/voronoi_utils.rs` | 13 | 5 | 2 | 2 | 0 | 4 | 3 |
@@ -139,6 +138,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Utils` | `utils.rs` | 36 | 14 | 4 | 2 | 0 | 16 | 2 |
 | 1 | `AABBTreeIndirect` | `aabb_tree_indirect.rs` | 41 | 25 | 1 | 2 | 0 | 13 | 1 |
 | 1 | `Arachne/SkeletalTrapezoidation` | `arachne/skeletal_trapezoidation.rs` | 41 | 33 | 0 | 2 | 0 | 6 | 1 |
+| 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 9 | 0 | 1 | 0 | 4 | 2 |
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
 | 1 | `GCode/ToolOrderUtils` | `gcode/tool_order_utils.rs` | 32 | 26 | 1 | 0 | 0 | 5 | 3 |
 | 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 3 | 0 | 1 | 0 | 12 | 2 |
@@ -209,12 +209,12 @@ their function names come from, when there is one.
 | `clipper2/build_xy.rs` | no C++ file of this name | 10 |  |
 | `clipper2/build_xyz.rs` | no C++ file of this name | 14 |  |
 | `clipper2/clipper2_z.rs` | no C++ file of this name | 0 |  |
-| `clipper2/clipper_core.rs` | no C++ file of this name | 59 |  |
-| `clipper2/clipper_engine.rs` | no C++ file of this name | 159 |  |
+| `clipper2/clipper_core.rs` | no C++ file of this name | 56 |  |
+| `clipper2/clipper_engine.rs` | no C++ file of this name | 156 |  |
 | `clipper2/clipper_h.rs` | no C++ file of this name | 26 |  |
-| `clipper2/clipper_offset.rs` | no C++ file of this name | 52 |  |
+| `clipper2/clipper_offset.rs` | no C++ file of this name | 51 |  |
 | `clipper2/mod.rs` | module | 0 |  |
-| `clipper2_z.rs` | no C++ file of this name | 13 |  |
+| `clipper2_z.rs` | no C++ file of this name | 4 |  |
 | `clipper_build_xy.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xyz.rs` | no C++ file of this name | 9 |  |
 | `clipper_lib_z.rs` | no C++ file of this name | 1 |  |
@@ -1481,71 +1481,46 @@ Rust only:
 
 ### `Clipper2Utils` (.cpp+.hpp) and `clipper2_utils.rs`
 
-Tier 1. C++ functions 14, Rust functions 59. Matched 11: faithful 7, partial 1, divergent 3, stub 0.
+Tier 1. C++ functions 14, Rust functions 35. Matched 10: faithful 9, partial 0, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `PolyTreeToExPolygons` :46 and `poly_tree_to_expolygons` :511 (40%, 0.24x)
-- divergent: `union_ex_2` :143 and `union_ex_2` :855 (9%, 0.14x)
-- divergent: `offset_ex_2` :174 and `offset_ex_2` :930 (17%, 0.18x)
-- divergent: `offset2_ex_2` :186 and `offset2_ex_2` :987 (18%, 0.11x)
+- divergent: `union_ex_2` :143 and `union_ex_2` :381 (18%, 0.14x)
 
 Missing in the Rust file:
 
 - `Slic3rPoints_to_Paths64` :24 (99 tokens)
+- `PolyTreeToExPolygons` :46 (338 tokens) — in `clipper_utils.rs`
 - `SimplifyPolyTree` :82 (48 tokens)
 - `union_ex_2` :158 (71 tokens, overload)
 
 Rust only:
 
-- `paths64_to_native` :86
-- `native_to_paths64` :108
-- `clipper2_rust_utils` :132
-- `paths64_to_c2` :137
-- `c2_to_paths64` :142
-- `path64_to_points_c2` :148
-- `paths64_to_polylines_c2` :158
-- `poly_tree_count_expolygons_c2` :168
-- `poly_tree_to_expolygons_recursive_c2` :180
-- `poly_tree_to_expolygons_c2` :197
-- `simplify_poly_tree_c2` :212
-- `union_ex_2_c2` :224
-- `fill_rule_c2` :237
-- `slic3r_polylines_to_paths64` :297
-- `slic3r_polygons_points_to_paths64` :309
-- `polynode_polygon` :411
-- `polynode_count` :427
-- `polynode_child` :433
-- `poly_tree_count_expolygons` :446
-- `poly_tree_to_expolygons_recursive` :473
-- `clipper64_union_tree_to_expolygons` :533
-- `clipper_offset_execute` :568
-- `offset_paths_to_expolygons` :598
-- `simplify_poly_tree_paths` :618
-- `intersection_pl_2_impl` :817
-- `diff_pl_2_impl` :831
-- `union_ex_2_impl` :861
-- `union_ex_2_expolygons` :893
-- `union_ex_2_expolygons_impl` :899
-- `offset_ex_2_impl` :936
-- `offset2_ex_2_impl` :993
-- `pt_to_d_2` :1074
-- `clipper64_union_paths` :1082
-- `clipper64_difference_tree_to_expolygons` :1124
-- `clipper64_difference_paths` :1173
-- `path64_to_polygon` :1217
-- `fix_after_outer_offset` :1225 — C++ has it in `ClipperUtils`
-- `fix_after_inner_offset` :1246 — C++ has it in `ClipperUtils`
-- `mittered_offset_path_scaled` :1295 — C++ has it in `ClipperUtils`
-- `normalize_pf` :1451
-- `variable_offset_inner` :1458 — C++ has it in `ClipperUtils`
-- `variable_offset_inner_impl` :1464
-- `variable_offset_outer` :1517 — C++ has it in `ClipperUtils`
-- `variable_offset_outer_impl` :1523
-- `variable_offset_outer_ex` :1576 — C++ has it in `ClipperUtils`
-- `variable_offset_outer_ex_impl` :1586
-- `variable_offset_inner_ex` :1647 — C++ has it in `ClipperUtils`
-- `variable_offset_inner_ex_impl` :1657
+- `paths64_to_c2` :43
+- `c2_to_paths64` :48
+- `path64_to_points_c2` :54
+- `paths64_to_polylines_c2` :64
+- `poly_tree_count_expolygons_c2` :74
+- `poly_tree_to_expolygons_recursive_c2` :86
+- `poly_tree_to_expolygons_c2` :103
+- `simplify_poly_tree_c2` :118
+- `union_ex_2_c2` :130
+- `slic3r_polylines_to_paths64` :190
+- `slic3r_polygons_points_to_paths64` :202
+- `union_ex_2_expolygons` :404
+- `pt_to_d_2` :510
+- `clipper64_union_paths` :518
+- `clipper64_difference_tree_to_expolygons` :531
+- `clipper64_difference_paths` :544
+- `path64_to_polygon` :556
+- `fix_after_outer_offset` :564 — C++ has it in `ClipperUtils`
+- `fix_after_inner_offset` :580 — C++ has it in `ClipperUtils`
+- `mittered_offset_path_scaled` :624 — C++ has it in `ClipperUtils`
+- `normalize_pf` :780
+- `variable_offset_inner` :787 — C++ has it in `ClipperUtils`
+- `variable_offset_outer` :838 — C++ has it in `ClipperUtils`
+- `variable_offset_outer_ex` :889 — C++ has it in `ClipperUtils`
+- `variable_offset_inner_ex` :947 — C++ has it in `ClipperUtils`
 
 ### `Clipper2ZUtils` (.hpp) and `clipper2_z_utils.rs`
 
@@ -1569,7 +1544,7 @@ Rust only:
 
 ### `ClipperUtils` (.cpp+.hpp) and `clipper_utils.rs`
 
-Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 166. Matched 35: faithful 29, partial 4, divergent 2, stub 0.
+Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 152. Matched 35: faithful 29, partial 4, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -1880,34 +1855,20 @@ Rust only:
 - `diff_segment_from_expolygons` :3946
 - `polygons_to_polylines` :4007
 - `expolygons_to_polylines` :4015
-- `point_to_clipper2` :4049
-- `clipper2_point_to_point` :4053
-- `polyline_to_clipper2_path` :4060
-- `polygon_to_clipper2_path` :4064
-- `clipper2_path_to_polyline` :4068
-- `expolygons_to_clipper2_paths` :4073
-- `polylines_to_clipper2_paths` :4084
-- `clipper2_paths_to_polylines` :4090
-- `union_safety_offset_ex_expolygons` :4158
-- `polygons_ops_clib` :4167
-- `mm_to_scaled_f32` :4173
-- `polygons_as_paths` :4179
-- `shrink_polygons_clib` :4185
-- `closing_polygons_clib` :4191
-- `opening_polygons_clib` :4198
-- `diff_polygons` :4208
-- `diff_ex_polygons_polygons` :4228
-- `intersection_ex_polygons_polygons` :4253
-- `intersection_ex_expolygons_polygons` :4275
-- `expand_polygons` :4296
-- `opening_polygons_2` :4314
-- `clip_clipper_polygons_with_subject_bbox_expolygons` :4335
-- `intersection_pl_2` :4352 — C++ has it in `Clipper2Utils`
-- `clipper2_rust_crate` :4360
-- `clipper2_crate_pl_open_rust` :4377
-- `intersection_pl_2_impl` :4415
-- `diff_pl_2` :4443 — C++ has it in `Clipper2Utils`
-- `diff_pl_2_impl` :4449
+- `union_safety_offset_ex_expolygons` :4076
+- `polygons_ops_clib` :4085
+- `mm_to_scaled_f32` :4091
+- `polygons_as_paths` :4097
+- `shrink_polygons_clib` :4103
+- `closing_polygons_clib` :4109
+- `opening_polygons_clib` :4116
+- `diff_polygons` :4126
+- `diff_ex_polygons_polygons` :4146
+- `intersection_ex_polygons_polygons` :4171
+- `intersection_ex_expolygons_polygons` :4193
+- `expand_polygons` :4214
+- `opening_polygons_2` :4232
+- `clip_clipper_polygons_with_subject_bbox_expolygons` :4253
 
 ### `ClipperZUtils` (.hpp) and `clipper_z_utils.rs`
 
@@ -12001,7 +11962,7 @@ Missing in the Rust file:
 - `QuantKMeans::replace_centers` :248 (96 tokens)
 - `QuantKMeans::repalce_centers_aplha` :258 (175 tokens)
 - `QuantKMeans::convert_color_space` :277 (85 tokens)
-- `QuantKMeans::flatten` :297 (105 tokens) — in `clipper2_z.rs`, `extrusion_entity_collection.rs`
+- `QuantKMeans::flatten` :297 (105 tokens) — in `extrusion_entity_collection.rs`
 - `QuantKMeans::flatten_alpha` :309 (207 tokens)
 - `QuantKMeans::flatten_vector` :328 (112 tokens)
 
