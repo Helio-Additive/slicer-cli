@@ -3034,6 +3034,7 @@ struct PlateOutcome {
     // (apply_explicit_nozzle_mapping); empty when nothing was derived.
     std::vector<int>                            derived_filament_map;
     std::string                                 derived_filament_map_mode;  // "Manual" or "Nozzle Manual"
+    std::map<std::string, std::vector<int>>     flag_plate_maps;   // filament_volume_map / filament_nozzle_map from the flags
     // The run steps (cli_run_steps.cpp): --repetitions copies, the objects
     // --skip-objects left out (plate_N.json skipped_objects), --no-check, and
     // a run of model actions only (no G-code).
@@ -4388,8 +4389,11 @@ static Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& co
         for (const std::vector<Vec2d>& points : extruder_areas->values) {
             BoundingBoxf boxf;
             for (const Vec2d& pt : points) boxf.merge(pt);
-            plate_bbox.min = plate_bbox.min.x() >= boxf.min.x() ? plate_bbox.min : boxf.min;
-            plate_bbox.max = plate_bbox.max.x() <= boxf.max.x() ? plate_bbox.max : boxf.max;
+            // The area every extruder reaches: the bounding box of the shared
+            // area, as PartPlate::get_build_volume takes it (get_shared_poly,
+            // PartPlate.cpp 3711-3733 at v02.09.01.70).
+            plate_bbox.min = plate_bbox.min.cwiseMax(boxf.min);
+            plate_bbox.max = plate_bbox.max.cwiseMin(boxf.max);
         }
 #endif
     return plate_bbox;
@@ -8054,6 +8058,12 @@ static FilamentMapFlag apply_filament_map_flag(const CliOptions& o, Slic3r::Dyna
     const slicer_cli::FilamentMapFlagStep step =
         slicer_cli::filament_map_flag_step(extra, config, project_filaments, !(o.slice_mode && o.slice_plate == 0));
     using Kind = slicer_cli::FilamentMapFlagStep::Kind;
+    // The exported plate states the volume and nozzle maps the flags gave (or
+    // the step filled), not the ones the plate was saved with.
+    if (step.kind != Kind::Refused && o.slice_mode && !o.export_3mf.empty())
+        for (const char* key : {"filament_volume_map", "filament_nozzle_map"})
+            if (const auto* map = extra.option<Slic3r::ConfigOptionInts>(key))
+                outcome.flag_plate_maps[key] = map->values;
     if (step.kind == Kind::NotGiven)
         return FilamentMapFlag::NotGiven;
     if (step.kind == Kind::Refused) {
@@ -8090,6 +8100,22 @@ static FilamentMapFlag apply_filament_map_flag(const CliOptions& o, Slic3r::Dyna
     return FilamentMapFlag::Applied;
 }
 #endif // ENGINE_SNAPMAKER
+
+#ifdef ENGINE_BAMBU
+/// The official check of a manual map against filament_printable
+/// (cli_nozzle_options.cpp), on the objects the model holds now: the caller
+/// scopes it to the plate and runs it after the object exclusions.
+static bool manual_map_extruders_fit(const Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model, int plate_id,
+                                     PlateOutcome& outcome) {
+    const std::string why =
+        slicer_cli::manual_map_extruder_refusal(config, arrange_plate_extruders(model, config, std::max(0, plate_id - 1)));
+    if (why.empty())
+        return true;
+    std::cerr << "Error: " << why << "\n";
+    set_outcome_failure(outcome, CLI_FILAMENTS_NOT_SUPPORTED_BY_EXTRUDER, why);
+    return false;
+}
+#endif
 
 static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
@@ -8128,6 +8154,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // move to the new bed and none of that plate's arrange results.
             carried.derived_filament_map.clear();
             carried.derived_filament_map_mode.clear();
+            carried.flag_plate_maps.clear();
         }
         outcome = carried;
         // The carry is the prepare call's outcome, with that plate's settings
@@ -10501,15 +10528,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #ifdef ENGINE_BAMBU
         // A manual map, the command line's or the plate's, that puts a filament
         // on an extruder it cannot print with (BambuStudio.cpp 7357-7400).
-        {
-            const std::string why =
-                slicer_cli::manual_map_extruder_refusal(config, arrange_plate_extruders(model, config, std::max(0, plate_id - 1)));
-            if (!why.empty()) {
-                std::cerr << "Error: " << why << "\n";
-                set_outcome_failure(outcome, CLI_FILAMENTS_NOT_SUPPORTED_BY_EXTRUDER, why);
-                return 1;
-            }
-        }
+        // A --slice run checks it after the plate's object exclusions
+        // (--skip-objects), with the bed checks below.
+        if (!o.slice_mode && !manual_map_extruders_fit(config, model, plate_id, outcome))
+            return 1;
 #endif
 #ifdef ENGINE_ORCA
         // A Bambu Studio project's own start G-code can carry the maker's
@@ -11249,6 +11271,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 PlateScope scope(model, run_plate);
                 if (!plate_object_steps(o, model, step_plate, outcome))
                     return 1;
+#ifdef ENGINE_BAMBU
+                if (!manual_map_extruders_fit(config, model, step_plate, outcome))
+                    return 1;
+#endif
                 if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced())) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
@@ -11473,7 +11499,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             {
                 // The filaments this plate's objects use, as the dialog lists
                 // them (FilamentGroupDialog.cpp 352-372).
-                const std::vector<int> plate_filaments = arrange_plate_extruders(model, config, std::max(0, plate_id - 1));
+                std::vector<int> plate_filaments;
+                {
+                    PlateScope scope(model, rs.plate(plate_id));
+                    plate_filaments = arrange_plate_extruders(model, config, std::max(0, plate_id - 1));
+                }
                 const std::string why = slicer_cli::sync_filament_volume_types(
                     config, plate_id, std::set<int>(plate_filaments.begin(), plate_filaments.end()),
                     extra.has("filament_volume_type"));
@@ -12472,6 +12502,8 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
             ConfigSubstitutionContext mode_subst(ForwardCompatibilitySubstitutionRule::Enable);
             pd->config.set_deserialize("filament_map_mode", out.derived_filament_map_mode, mode_subst);
         }
+        for (const auto& [key, values] : out.flag_plate_maps)
+            pd->config.option<ConfigOptionInts>(key, true)->values = values;
 #endif
     }
     // printer_model_id per plate after a printer change (BambuStudio.cpp 7524-7525).

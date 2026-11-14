@@ -12,7 +12,8 @@ permissions: {}
 
 jobs:
   sections:
-    if: ${{ !endsWith(github.actor, '[bot]') }}
+    # The PR's author decides, not who pushed last: a bot's push to a person's PR is still checked.
+    if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check the required sections
