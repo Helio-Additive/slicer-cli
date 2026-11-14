@@ -8076,9 +8076,21 @@ static FilamentMapFlag apply_filament_map_flag(const CliOptions& o, Slic3r::Dyna
     // 5499-5503), and a map saved with an automatic mode is regrouped on the
     // next slice.
     Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-    rs.base.set_deserialize("filament_map_mode", step.mode_name, subst);
+    // With the mode go the maps the slice runs with: the map as the step
+    // normalised it (a nozzle rack's grouping is extruder 1 for every
+    // filament) and the nozzle and volume maps it filled.
+    const auto state_maps = [&](Slic3r::DynamicPrintConfig& settings) {
+        settings.set_deserialize("filament_map_mode", step.mode_name, subst);
+        if (step.kind != Kind::Applied || !step.manual)
+            return;
+        settings.option<Slic3r::ConfigOptionInts>("filament_map", true)->values = step.map;
+        for (const char* key : {"filament_volume_map", "filament_nozzle_map"})
+            if (const Slic3r::ConfigOption* map = extra.option(key))
+                settings.set_key_value(key, map->clone());
+    };
+    state_maps(rs.base);
     if (project_settings)
-        project_settings->set_deserialize("filament_map_mode", step.mode_name, subst);
+        state_maps(*project_settings);
     // The exported project's plate states the mode, and in a manual mode the
     // map, the slice used (store_bbs_3mf writes a plate's mode and map,
     // bbs_3mf.cpp).

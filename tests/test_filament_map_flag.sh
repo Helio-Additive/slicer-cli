@@ -447,6 +447,20 @@ PY
         "${H2[@]}" --ams-nozzle-idx 0 --filament-map 1,2
     expect_header "h3c-fixed-then-ams" "filament_map = 1,1;;filament_nozzle_map = 1,0;;filament_map_mode = Manual" "1,0" \
         "${H2[@]}" --ams-nozzle-idx 0 --filament-map 2,1
+    # --export-settings states the maps the slice ran with: extruder 1 for
+    # both filaments and the nozzle of each, not the grouping as typed.
+    status=$(slice "h3c-settings" "$WORKDIR/two.3mf" "${H2[@]}" --ams-nozzle-idx 0 --filament-map 1,2 \
+        --export-settings "$WORKDIR/h3c-settings/settings.json")
+    if [ "$status" = 0 ] && got=$(python3 -c 'import json,sys
+s = json.load(open(sys.argv[1]))
+ints = lambda k: [int(v) for v in s[k]]
+assert s["filament_map_mode"] == "Manual", s["filament_map_mode"]
+assert ints("filament_map") == [1, 1], s["filament_map"]
+assert ints("filament_nozzle_map") == [0, 1], s["filament_nozzle_map"]' "$WORKDIR/h3c-settings/settings.json" 2>&1); then
+        pass "h3c-settings: --export-settings states the nozzle of each filament"
+    else
+        fail "h3c-settings" "exit $status ${got:-}"; tail -n 3 "$WORKDIR/h3c-settings/stderr"
+    fi
     expect_header "h3c-nozzle-manual" "filament_map_mode = Nozzle Manual;;filament_nozzle_map = 2,4" "2,4" \
         "${H2[@]}" --filament-map-mode "Nozzle Manual" --filament-map 1,1 --filament-volume-map 0,0 \
         --filament-nozzle-map 2,4 --extruder-nozzle-count 6 \
