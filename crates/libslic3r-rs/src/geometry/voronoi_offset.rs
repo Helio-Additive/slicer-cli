@@ -1397,3 +1397,372 @@ pub fn skeleton_edges_rough(diagram: &bv::Diagram, lines: &[Line], threshold_alp
 
     out
 }
+
+// ---------------------------------------------------------------------------
+// The same annotation over `boost_polygon_voronoi::VoronoiDiagram`, the port of
+// boost::polygon's own diagram (vertices, edges and cells in boost's container
+// order), which is what `Geometry::MedialAxis` walks. The functions above work
+// on the `boostvoronoi` crate's diagram and stay as they are.
+// ---------------------------------------------------------------------------
+pub mod boost_polygon {
+    use super::{CellCategory, EdgeCategory, VertexCategory};
+    use crate::boost_polygon_voronoi::{
+        ulp_comparison, UlpResult, VoronoiCell, VoronoiDiagram, SOURCE_CATEGORY_SEGMENT_START_POINT,
+    };
+    use crate::geometry::{Line, Point};
+
+    /// `using VD = Slic3r::Geometry::VoronoiDiagram` (VoronoiOffset.hpp:13).
+    pub type VD = VoronoiDiagram;
+
+    /// VoronoiOffset.hpp:16-17 `contour_point(const VD::cell_type &cell, const Line &line)`.
+    #[inline]
+    pub fn contour_point(cell: &VoronoiCell, line: &Line) -> Point {
+        if cell.source_category() == SOURCE_CATEGORY_SEGMENT_START_POINT {
+            line.a
+        } else {
+            line.b
+        }
+    }
+
+    /// VoronoiOffset.hpp:21-22 `contour_point(const VD::cell_type &cell, const Lines &lines)`.
+    #[inline]
+    pub fn contour_point_lines(cell: &VoronoiCell, lines: &[Line]) -> Point {
+        contour_point(cell, &lines[cell.source_index()])
+    }
+
+    /// VoronoiOffset.hpp:52-55 `vertex_category`. `vertex` is an index into `vd.vertices()`.
+    #[inline]
+    pub fn vertex_category(vd: &VD, vertex: usize) -> VertexCategory {
+        VertexCategory::from(vd.vertices()[vertex].color() as u8)
+    }
+
+    /// VoronoiOffset.hpp:57-60 `set_vertex_category`.
+    #[inline]
+    pub fn set_vertex_category(vd: &mut VD, vertex: usize, vc: VertexCategory) {
+        vd.set_vertex_color(vertex, u8::from(vc) as usize);
+    }
+
+    /// VoronoiOffset.hpp:73-76 `edge_category`. `edge` is an index into `vd.edges()`.
+    #[inline]
+    pub fn edge_category(vd: &VD, edge: usize) -> EdgeCategory {
+        EdgeCategory::from(vd.edges()[edge].color() as u8)
+    }
+
+    /// VoronoiOffset.hpp:78-81 `set_edge_category`.
+    #[inline]
+    pub fn set_edge_category(vd: &mut VD, edge: usize, ec: EdgeCategory) {
+        vd.set_edge_color(edge, u8::from(ec) as usize);
+    }
+
+    /// VoronoiOffset.hpp:89-92 `cell_category`. `cell` is an index into `vd.cells()`.
+    #[inline]
+    pub fn cell_category(vd: &VD, cell: usize) -> CellCategory {
+        CellCategory::from(vd.cells()[cell].color() as u8)
+    }
+
+    /// VoronoiOffset.hpp:94-97 `set_cell_category`.
+    #[inline]
+    pub fn set_cell_category(vd: &mut VD, cell: usize, cc: CellCategory) {
+        vd.set_cell_color(cell, u8::from(cc) as usize);
+    }
+
+    pub mod detail {
+        use super::*;
+
+        /// VoronoiOffset.cpp:204-226 `detail::vertex_equal_to_point`: boost's
+        /// `ulp_comparison<double>` with `vertex_equality_predicate_type::ULPS` (128,
+        /// voronoi_diagram.hpp:266-277) on each coordinate.
+        #[inline]
+        pub fn vertex_equal_to_point(vertex_x: f64, vertex_y: f64, ipt: Point) -> bool {
+            const ULPS: u32 = 128;
+            ulp_comparison(vertex_x, ipt.x as f64, ULPS) == UlpResult::Equal
+                && ulp_comparison(vertex_y, ipt.y as f64, ULPS) == UlpResult::Equal
+        }
+
+        /// VoronoiOffset.cpp:236-246 `detail::on_site(lines, cell, pt)`; `pt` is
+        /// `vertex_point(v)`, the vertex's doubles (VoronoiOffset.hpp:26-27).
+        #[inline]
+        pub fn on_site(lines: &[Line], cell: &VoronoiCell, pt_x: f64, pt_y: f64) -> bool {
+            let line = &lines[cell.source_index()];
+            let on_contour = |ipt: Point| vertex_equal_to_point(pt_x, pt_y, ipt);
+            if cell.contains_point() {
+                on_contour(contour_point(cell, line))
+            } else {
+                on_contour(line.a) || on_contour(line.b)
+            }
+        }
+    }
+
+    /// VoronoiOffset.cpp:640-648.
+    pub fn reset_inside_outside_annotations(vd: &mut VD) {
+        for v in 0..vd.num_vertices() {
+            set_vertex_category(vd, v, VertexCategory::Unknown);
+        }
+        for e in 0..vd.num_edges() {
+            set_edge_category(vd, e, EdgeCategory::Unknown);
+        }
+        for c in 0..vd.num_cells() {
+            set_cell_category(vd, c, CellCategory::Unknown);
+        }
+    }
+
+    /// VoronoiOffset.cpp:666-677, the lambda `annotate_vertex`.
+    #[inline]
+    fn annotate_vertex(vd: &mut VD, vertex: Option<usize>, new_vertex_category: VertexCategory) {
+        if let Some(vertex) = vertex {
+            set_vertex_category(vd, vertex, new_vertex_category);
+        }
+    }
+
+    /// VoronoiOffset.cpp:679-698, the lambda `annotate_edge`.
+    #[inline]
+    fn annotate_edge(vd: &mut VD, edge: usize, new_edge_category: EdgeCategory) {
+        set_edge_category(vd, edge, new_edge_category);
+    }
+
+    /// VoronoiOffset.cpp:700-724, the lambda `annotate_cell`.
+    fn annotate_cell(vd: &mut VD, cell: usize, mut new_cell_category: CellCategory) -> bool {
+        let cc = cell_category(vd, cell);
+        match cc {
+            CellCategory::Unknown => {}
+            CellCategory::Outside => {
+                if new_cell_category == CellCategory::Inside {
+                    new_cell_category = CellCategory::Boundary;
+                }
+            }
+            CellCategory::Inside => {
+                if new_cell_category == CellCategory::Outside {
+                    new_cell_category = CellCategory::Boundary;
+                }
+            }
+            CellCategory::Boundary => return false,
+        }
+        if cc != new_cell_category {
+            set_cell_category(vd, cell, new_cell_category);
+            return true;
+        }
+        false
+    }
+
+    /// VoronoiOffset.cpp:650-967 `annotate_inside_outside(VD &vd, const Lines &lines)`: every
+    /// vertex, half-edge and cell of the diagram of the closed contours `lines` gets its
+    /// category. The asserts and the debug output of the C++ are left out.
+    pub fn annotate_inside_outside(vd: &mut VD, lines: &[Line]) {
+        reset_inside_outside_annotations(vd);
+
+        let twin = |vd: &VD, e: usize| vd.edges()[e].twin().expect("voronoi edge without a twin");
+        let cell_of = |vd: &VD, e: usize| vd.edges()[e].cell().expect("voronoi edge without a cell");
+
+        // VoronoiOffset.cpp:726-742. Set a VertexCategory::OnContour to all Voronoi vertices
+        // lying on the input contour.
+        for edge in 0..vd.num_edges() {
+            if let Some(v) = vd.edges()[edge].vertex0() {
+                let (vx, vy) = (vd.vertices()[v].x(), vd.vertices()[v].y());
+                let on_contour = detail::on_site(lines, &vd.cells()[cell_of(vd, edge)], vx, vy);
+                if on_contour {
+                    annotate_vertex(vd, Some(v), VertexCategory::OnContour);
+                }
+            }
+        }
+
+        // VoronoiOffset.cpp:744-774. One side of a secondary edge is always on the source
+        // contour. Mark these vertices as OnContour.
+        for edge in 0..vd.num_edges() {
+            let e = vd.edges()[edge];
+            if e.is_secondary() && e.vertex0().is_some() {
+                let cell = &vd.cells()[cell_of(vd, edge)];
+                let pt_on_contour = if cell.contains_point() {
+                    contour_point_lines(cell, lines)
+                } else {
+                    contour_point_lines(&vd.cells()[cell_of(vd, twin(vd, edge))], lines)
+                };
+                match vd.vertex1(edge) {
+                    None => annotate_vertex(vd, e.vertex0(), VertexCategory::OnContour),
+                    Some(v1) => {
+                        let v0 = e.vertex0().unwrap();
+                        let (v0x, v0y) = (vd.vertices()[v0].x(), vd.vertices()[v0].y());
+                        if detail::vertex_equal_to_point(v0x, v0y, pt_on_contour) {
+                            annotate_vertex(vd, Some(v0), VertexCategory::OnContour);
+                        } else {
+                            annotate_vertex(vd, Some(v1), VertexCategory::OnContour);
+                        }
+                    }
+                }
+            }
+        }
+
+        // VoronoiOffset.cpp:778-872. Infinite edges point outside; the finite edges of a
+        // segment cell are classified by the side of the segment their end vertex is on.
+        for edge in 0..vd.num_edges() {
+            let e = vd.edges()[edge];
+            let edge_twin = twin(vd, edge);
+            let v1 = vd.vertex1(edge);
+            if v1.is_none() {
+                // VoronoiOffset.cpp:779-799. Infinite Voronoi edge separating two Point sites
+                // or a Point site and a Segment site.
+                let mut cell = cell_of(vd, edge);
+                let mut cell2 = cell_of(vd, edge_twin);
+                annotate_edge(vd, edge, EdgeCategory::PointsOutside);
+                annotate_edge(
+                    vd,
+                    edge_twin,
+                    if e.is_secondary() { EdgeCategory::PointsToContour } else { EdgeCategory::PointsOutside },
+                );
+                annotate_vertex(
+                    vd,
+                    e.vertex0(),
+                    if e.is_secondary() { VertexCategory::OnContour } else { VertexCategory::Outside },
+                );
+                if vd.cells()[cell].contains_segment() {
+                    std::mem::swap(&mut cell, &mut cell2);
+                }
+                annotate_cell(vd, cell, CellCategory::Outside);
+                let cc2 =
+                    if vd.cells()[cell2].contains_point() { CellCategory::Outside } else { CellCategory::Boundary };
+                annotate_cell(vd, cell2, cc2);
+            } else if e.vertex0().is_some() {
+                // VoronoiOffset.cpp:800-871.
+                let mut cell = cell_of(vd, edge);
+                let mut line: Option<Line> =
+                    if vd.cells()[cell].contains_segment() { Some(lines[vd.cells()[cell].source_index()]) } else { None };
+                if line.is_none() {
+                    cell = cell_of(vd, edge_twin);
+                    line = if vd.cells()[cell].contains_segment() {
+                        Some(lines[vd.cells()[cell].source_index()])
+                    } else {
+                        None
+                    };
+                }
+                if let Some(line) = line {
+                    let v1 = v1.unwrap();
+                    let cell2 = if cell == cell_of(vd, edge) { cell_of(vd, edge_twin) } else { cell_of(vd, edge) };
+                    let v0_category = vertex_category(vd, e.vertex0().unwrap());
+                    let v1_category = vertex_category(vd, v1);
+                    let on_contour =
+                        v0_category == VertexCategory::OnContour || v1_category == VertexCategory::OnContour;
+                    if on_contour && v1_category == VertexCategory::OnContour {
+                        // Skeleton edge (secondary Voronoi edge) pointing to the contour.
+                        annotate_edge(vd, edge, EdgeCategory::PointsToContour);
+                    } else {
+                        // VoronoiOffset.cpp:842-846:
+                        //   Vec2d l0(line->a.cast<double>());
+                        //   Vec2d lv((line->b - line->a).cast<double>());
+                        //   double side = cross2(Vec2d(v1->x(), v1->y()) - l0, lv);
+                        // cross2 (Point.hpp) is `v1.x() * v2.y() - v1.y() * v2.x()`, one scalar
+                        // expression: the compiler contracts it to fma(ax, by, -(ay * bx)), and
+                        // so does the shim's `cross2d`. Only the sign is used.
+                        let l0x = line.a.x as f64;
+                        let l0y = line.a.y as f64;
+                        let lvx = (line.b.x - line.a.x) as f64;
+                        let lvy = (line.b.y - line.a.y) as f64;
+                        let ax = vd.vertices()[v1].x() - l0x;
+                        let ay = vd.vertices()[v1].y() - l0y;
+                        let side = ax.mul_add(lvy, -(ay * lvx));
+                        let vc = if side > 0. { VertexCategory::Outside } else { VertexCategory::Inside };
+                        annotate_vertex(vd, Some(v1), vc);
+                        let ec = if vc == VertexCategory::Outside {
+                            EdgeCategory::PointsOutside
+                        } else {
+                            EdgeCategory::PointsInside
+                        };
+                        annotate_edge(vd, edge, ec);
+                        // Annotate the twin edge and its vertex. As the Voronoi edge may be
+                        // curved, the source vertex of this edge is not necessarily on the
+                        // same side of the segment.
+                        annotate_vertex(vd, e.vertex0(), if on_contour { VertexCategory::OnContour } else { vc });
+                        annotate_edge(vd, edge_twin, if on_contour { EdgeCategory::PointsToContour } else { ec });
+                        let cc_side =
+                            if vc == VertexCategory::Outside { CellCategory::Outside } else { CellCategory::Inside };
+                        annotate_cell(vd, cell, if on_contour { CellCategory::Boundary } else { cc_side });
+                        let cell2_boundary = on_contour && vd.cells()[cell2].contains_segment();
+                        annotate_cell(vd, cell2, if cell2_boundary { CellCategory::Boundary } else { cc_side });
+                    }
+                }
+            }
+        }
+
+        // VoronoiOffset.cpp:876-923. Now most Voronoi vertices, edges and cells are annotated,
+        // with the exception of some edges separating two Point sites, their cells and
+        // vertices. Perform one round of expansion marking Voronoi edges and cells next to
+        // boundary cells.
+        let mut cell_queue: Vec<usize> = Vec::new();
+        for edge in 0..vd.num_edges() {
+            if edge_category(vd, edge) == EdgeCategory::Unknown {
+                let e = vd.edges()[edge];
+                let edge_twin = twin(vd, edge);
+                let cell = cell_of(vd, edge);
+                let cell2 = cell_of(vd, edge_twin);
+                let cc = cell_category(vd, cell);
+                let cc2 = cell_category(vd, cell2);
+                let mut cc_new = cc;
+                if cc_new == CellCategory::Unknown {
+                    cc_new = cc2;
+                }
+                if cc_new == CellCategory::Unknown {
+                    // The C++ reads the category of `edge.vertex0()` here; such an edge is
+                    // finite (VoronoiOffset.cpp:880).
+                    let vc = vertex_category(vd, e.vertex0().expect("unknown edge without vertex0"));
+                    if vc != VertexCategory::Unknown {
+                        cc_new =
+                            if vc == VertexCategory::Outside { CellCategory::Outside } else { CellCategory::Inside };
+                    }
+                }
+                if cc_new != CellCategory::Unknown {
+                    let vc = if cc_new == CellCategory::Outside { VertexCategory::Outside } else { VertexCategory::Inside };
+                    annotate_vertex(vd, e.vertex0(), vc);
+                    annotate_vertex(vd, vd.vertex1(edge), vc);
+                    let ec_new = if cc_new == CellCategory::Outside {
+                        EdgeCategory::PointsOutside
+                    } else {
+                        EdgeCategory::PointsInside
+                    };
+                    annotate_edge(vd, edge, ec_new);
+                    annotate_edge(vd, edge_twin, ec_new);
+                    if cc != cc_new {
+                        annotate_cell(vd, cell, cc_new);
+                        cell_queue.push(cell);
+                    }
+                    if cc2 != cc_new {
+                        annotate_cell(vd, cell2, cc_new);
+                        cell_queue.push(cell2);
+                    }
+                }
+            }
+        }
+
+        // VoronoiOffset.cpp:927-962. Do a final seed fill over Voronoi cells and unmarked
+        // Voronoi edges.
+        while let Some(cell) = cell_queue.pop() {
+            // The C++ reads the category at `back()` before `pop_back()`.
+            let cc = cell_category(vd, cell);
+            let first_edge = vd.cells()[cell].incident_edge().expect("queued cell without an incident edge");
+            let mut edge = first_edge;
+            let ec_new =
+                if cc == CellCategory::Outside { EdgeCategory::PointsOutside } else { EdgeCategory::PointsInside };
+            loop {
+                let ec = edge_category(vd, edge);
+                if ec == EdgeCategory::Unknown {
+                    let edge_twin = twin(vd, edge);
+                    annotate_edge(vd, edge, ec_new);
+                    annotate_edge(vd, edge_twin, ec_new);
+                    let cell2 = cell_of(vd, edge_twin);
+                    let cc2 = cell_category(vd, cell2);
+                    if cc2 != cc {
+                        // FIDELITY-NOTE: VoronoiOffset.cpp:946 calls `annotate_cell(cell2, cc)`,
+                        // which merges (Outside met by Inside, or Inside met by Outside,
+                        // becomes Boundary; a Boundary cell stays). The medial-axis shim
+                        // (medial_axis_shim.cpp:296) calls `set_cell_category(cell2, cc)`: it
+                        // overwrites. The two agree where the C++ assert of line 944 holds
+                        // (`cc2 == Unknown || cc2 == cc`); the shim is followed.
+                        set_cell_category(vd, cell2, cc);
+                        cell_queue.push(cell2);
+                    }
+                }
+                edge = vd.edges()[edge].next().expect("voronoi edge without a next");
+                if edge == first_edge {
+                    break;
+                }
+            }
+        }
+    }
+}

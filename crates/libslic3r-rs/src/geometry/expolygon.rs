@@ -3,7 +3,7 @@
 //! This module provides the ExPolygon type representing a polygon with holes
 //! (exterior contour + interior hole contours), mirroring BambuStudio's ExPolygon class.
 
-use super::medial_axis::compute_medial_axis_thick;
+use super::medial_axis::{compute_medial_axis_thick, MedialAxis, MedialAxisThickPolyline};
 use super::thick_polyline::ThickPolylines;
 use super::{BoundingBox, Line, Point, Polygon, Polyline};
 use crate::{Coord, CoordF};
@@ -519,29 +519,217 @@ impl ExPolygon {
         scaled_max: f64,
         polylines: &mut ThickPolylines,
     ) {
-        let contour: Vec<(i64, i64)> = self.contour.points.iter().map(|p| (p.x, p.y)).collect();
-        let holes: Vec<Vec<(i64, i64)>> = self
-            .holes
-            .iter()
-            .map(|h| h.points.iter().map(|p| (p.x, p.y)).collect())
-            .collect();
-        for pl in clipper_z_sys::medial_axis_native(&contour, &holes, scaled_min, scaled_max) {
-            if pl.points.len() < 2 || pl.width.is_empty() {
-                continue;
+        // Widths arrive as the C++ `width` array (two per segment, scaled); the crate's
+        // ThickPolyline keeps one per point: the first of the array for point 0, then each
+        // segment's end width.
+        let mut push = |points: &[(i64, i64)], width: &[f64], endpoints: (bool, bool)| {
+            if points.len() < 2 || width.is_empty() {
+                return;
             }
-            let mut tp = super::thick_polyline::ThickPolyline::with_capacity(pl.points.len());
-            for (i, &(x, y)) in pl.points.iter().enumerate() {
-                let w = if i == 0 { pl.width[0] } else { pl.width[2 * i - 1] };
+            let mut tp = super::thick_polyline::ThickPolyline::with_capacity(points.len());
+            for (i, &(x, y)) in points.iter().enumerate() {
+                let w = if i == 0 { width[0] } else { width[2 * i - 1] };
                 tp.push(Point::new(x, y), w / crate::SCALING_FACTOR);
             }
-            tp.endpoints = [pl.endpoints.0, pl.endpoints.1];
-            tp.edge_widths = pl
-                .width
-                .iter()
-                .map(|w| w / crate::SCALING_FACTOR)
-                .collect();
+            tp.endpoints = [endpoints.0, endpoints.1];
+            tp.edge_widths = width.iter().map(|w| w / crate::SCALING_FACTOR).collect();
             polylines.push(tp);
+        };
+        if crate::faithful_gate("MEDIAL_AXIS_RUST") {
+            // ExPolygon.cpp:263-371 in Rust, over the Rust port of boost's Voronoi builder.
+            let mut pp: Vec<MedialAxisThickPolyline> = Vec::new();
+            self.medial_axis_thick_polylines(scaled_min, scaled_max, &mut pp);
+            for pl in &pp {
+                let points: Vec<(i64, i64)> = pl.points.iter().map(|p| (p.x, p.y)).collect();
+                push(&points, &pl.width, pl.endpoints);
+            }
+        } else {
+            // MEDIAL_AXIS_RUST=0: the C++ shim (crates/clipper-z-sys/shim/medial_axis_shim.cpp).
+            let contour: Vec<(i64, i64)> = self.contour.points.iter().map(|p| (p.x, p.y)).collect();
+            let holes: Vec<Vec<(i64, i64)>> = self
+                .holes
+                .iter()
+                .map(|h| h.points.iter().map(|p| (p.x, p.y)).collect())
+                .collect();
+            for pl in clipper_z_sys::medial_axis_native(&contour, &holes, scaled_min, scaled_max) {
+                push(&pl.points, &pl.width, pl.endpoints);
+            }
         }
+    }
+
+    /// ExPolygon.cpp:263-371 `ExPolygon::medial_axis(double min_width, double max_width,
+    /// ThickPolylines* polylines)`: the medial axis of `Geometry::MedialAxis`, its endpoints
+    /// extended to the contour, the polylines that are too short removed and the rest joined
+    /// where they meet. `min_width` and `max_width` are in scaled units, like the widths of
+    /// the result, which is appended to `polylines` in the C++ layout
+    /// ([`MedialAxisThickPolyline`]).
+    ///
+    /// The arithmetic follows crates/clipper-z-sys/shim/medial_axis_shim.cpp, the C++ this
+    /// replaces, where that differs from the engine's (see the FIDELITY-NOTEs).
+    pub fn medial_axis_thick_polylines(
+        &self,
+        min_width: f64,
+        max_width: f64,
+        polylines: &mut Vec<MedialAxisThickPolyline>,
+    ) {
+        // init helper object
+        let mut ma = MedialAxis::new(min_width, max_width, self);
+
+        // compute the Voronoi diagram and extract medial axis polylines
+        let mut pp: Vec<MedialAxisThickPolyline> = Vec::new();
+        ma.build(&mut pp);
+
+        // ExPolygon.cpp:279-283. Find the maximum width returned; we're going to use this for
+        // validating and filtering the output segments.
+        // `max_w = fmaxf(max_w, *std::max_element(...))`: fmaxf takes and returns float, so
+        // both operands are rounded to single precision and `max_w` holds a float's value.
+        let mut max_w: f64 = 0.;
+        for it in &pp {
+            // std::max_element: the first of the largest.
+            let mut m = it.width[0];
+            for &w in &it.width[1..] {
+                if m < w {
+                    m = w;
+                }
+            }
+            max_w = (max_w as f32).max(m as f32) as f64;
+        }
+
+        // ExPolygon.cpp:285-330. Loop through all returned polylines in order to extend their
+        // endpoints to the expolygon boundaries
+        let mut removed = false;
+        let mut i = 0usize;
+        while i < pp.len() {
+            let polyline = &mut pp[i];
+
+            // extend initial and final segments of each polyline if they're actual endpoints
+            // We assign new endpoints to temporary variables because in case of a single-line
+            // polyline, after we extend the start point it will be caught by the intersection()
+            // call, so we keep the inner point until we perform the second intersection() as well
+            let mut new_front = polyline.points[0];
+            let mut new_back = *polyline.points.last().unwrap();
+            if polyline.endpoints.0 && !self.ma_on_boundary(new_front, MA_SCALED_EPSILON) {
+                let mut p1x = polyline.points[0].x as f64;
+                let mut p1y = polyline.points[0].y as f64;
+                let mut p2x = polyline.points[1].x as f64;
+                let mut p2y = polyline.points[1].y as f64;
+                // prevent the line from touching on the other side, otherwise intersection()
+                // might return that solution
+                if polyline.points.len() == 2 {
+                    p2x = (p1x + p2x) * 0.5;
+                    p2y = (p1y + p2y) * 0.5;
+                }
+                // Extend the start of the segment: `p1 -= (p2 - p1).normalized() * max_width`.
+                let (nx, ny) = ma_normalized(p2x - p1x, p2y - p1y);
+                p1x = (-nx).mul_add(max_width, p1x);
+                p1y = (-ny).mul_add(max_width, p1y);
+                if ma_polygon_intersection(
+                    &self.contour.points,
+                    Point::new(p1x as Coord, p1y as Coord),
+                    Point::new(p2x as Coord, p2y as Coord),
+                    &mut new_front,
+                ) {
+                    count(&MA_FRONT_EXTENDED);
+                }
+            }
+            if polyline.endpoints.1 && !self.ma_on_boundary(new_back, MA_SCALED_EPSILON) {
+                let n = polyline.points.len();
+                let mut p1x = polyline.points[n - 2].x as f64;
+                let mut p1y = polyline.points[n - 2].y as f64;
+                let mut p2x = polyline.points[n - 1].x as f64;
+                let mut p2y = polyline.points[n - 1].y as f64;
+                // prevent the line from touching on the other side, otherwise intersection()
+                // might return that solution
+                if polyline.points.len() == 2 {
+                    p1x = (p1x + p2x) * 0.5;
+                    p1y = (p1y + p2y) * 0.5;
+                }
+                // Extend the end of the segment: `p2 += (p2 - p1).normalized() * max_width`.
+                let (nx, ny) = ma_normalized(p2x - p1x, p2y - p1y);
+                p2x = nx.mul_add(max_width, p2x);
+                p2y = ny.mul_add(max_width, p2y);
+                if ma_polygon_intersection(
+                    &self.contour.points,
+                    Point::new(p1x as Coord, p1y as Coord),
+                    Point::new(p2x as Coord, p2y as Coord),
+                    &mut new_back,
+                ) {
+                    count(&MA_BACK_EXTENDED);
+                }
+            }
+            polyline.points[0] = new_front;
+            *polyline.points.last_mut().unwrap() = new_back;
+
+            // remove too short polylines
+            // (we can't do this check before endpoints extension and clipping because we don't
+            // know how long will the endpoints be extended since it depends on polygon thickness
+            // which is variable - extension will be <= max_width/2 on each side)
+            if (polyline.endpoints.0 || polyline.endpoints.1) && ma_polyline_length(&polyline.points) < max_w * 2. {
+                pp.remove(i);
+                removed = true;
+                count(&MA_SHORT_REMOVED);
+                continue;
+            }
+            i += 1;
+        }
+
+        // ExPolygon.cpp:332-368. If we removed any short polylines we now try to connect
+        // consecutive polylines in order to allow loop detection. Note that this algorithm is
+        // greedier than MedialAxis::process_edge_neighbors() as it will connect random pairs of
+        // polylines even when more than two start from the same point.
+        if removed {
+            let mut i = 0usize;
+            while i < pp.len() {
+                if pp[i].endpoints.0 && pp[i].endpoints.1 {
+                    i += 1;
+                    continue; // optimization
+                }
+
+                // find another polyline starting here
+                let mut j = i + 1;
+                while j < pp.len() {
+                    let (head, tail) = pp.split_at_mut(j);
+                    let polyline = &mut head[i];
+                    let other = &mut tail[0];
+                    let polyline_first = polyline.points[0];
+                    let polyline_last = *polyline.points.last().unwrap();
+                    let other_first = other.points[0];
+                    let other_last = *other.points.last().unwrap();
+                    if polyline_last == other_last {
+                        other.reverse();
+                    } else if polyline_first == other_last {
+                        polyline.reverse();
+                        other.reverse();
+                    } else if polyline_first == other_first {
+                        polyline.reverse();
+                    } else if polyline_last != other_first {
+                        j += 1;
+                        continue;
+                    }
+
+                    polyline.points.extend_from_slice(&other.points[1..]);
+                    polyline.width.extend_from_slice(&other.width);
+                    polyline.endpoints.1 = other.endpoints.1;
+                    debug_assert!(polyline.width.len() == polyline.points.len() * 2 - 2);
+
+                    pp.remove(j);
+                    count(&MA_JOINED);
+                    j = i + 1; // restart search from i+1
+                }
+                i += 1;
+            }
+        }
+
+        polylines.append(&mut pp);
+    }
+
+    /// ExPolygon.cpp:121-129 `ExPolygon::on_boundary(point, eps)` as the medial-axis shim has
+    /// it (medial_axis_shim.cpp:588-595), over [`ma_polygon_on_boundary`].
+    fn ma_on_boundary(&self, point: Point, eps: f64) -> bool {
+        if ma_polygon_on_boundary(&self.contour.points, point, eps) {
+            return true;
+        }
+        self.holes.iter().any(|hole| ma_polygon_on_boundary(&hole.points, point, eps))
     }
 
     pub fn medial_axis(&self, min_width: f64, max_width: f64, polylines: &mut ThickPolylines) {
@@ -685,6 +873,189 @@ pub fn number_polygons(expolys: &[ExPolygon]) -> usize {
         n_polygons += expoly.holes.len() + 1;
     }
     n_polygons
+}
+
+// ---------------------------------------------------------------------------
+// What `ExPolygon::medial_axis_thick_polylines` calls, written as the medial-axis
+// shim writes it (crates/clipper-z-sys/shim/medial_axis_shim.cpp:484-581).
+//
+// FIDELITY-NOTE (all of the `ma_*` functions): the engine's C++ computes these with
+// Eigen vectors (`Vec2d` dot, `cross2`, `squaredNorm`, `norm`, `a + t * v`), which
+// the compiler does not contract. The shim spells the same steps as scalar
+// expressions, and the compiler contracts those: `a * b + c * d` to
+// `fma(a, b, c * d)`, `a * b - c * d` to `fma(a, b, -(c * d))`, `a + t * v` to
+// `fma(t, v, a)`. The shim is what the engine has been running, so its arithmetic
+// is followed, one `mul_add` per contracted expression.
+// ---------------------------------------------------------------------------
+
+/// SCALED_EPSILON (libslic3r.h): `scale_(EPSILON)`, 10 in the shim (`kMaScaledEpsilon`).
+const MA_SCALED_EPSILON: f64 = 10.0;
+/// EPSILON (libslic3r.h), `kMaEpsilon` in the shim.
+const MA_EPSILON: f64 = 1e-4;
+
+/// How often the post-processing of `ExPolygon::medial_axis_thick_polylines` took each
+/// of its branches, process-wide. For the tests, which assert that they were reached;
+/// nothing reads them to take a decision.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MedialAxisCounters {
+    /// ExPolygon.cpp:297-306: a first point moved to where the extended first segment
+    /// meets the contour.
+    pub front_extended: u64,
+    /// ExPolygon.cpp:307-316: the same for a last point.
+    pub back_extended: u64,
+    /// ExPolygon.cpp:324-330: polylines removed for being shorter than twice the largest width.
+    pub short_removed: u64,
+    /// ExPolygon.cpp:345-365: polylines appended to another after a removal.
+    pub joined: u64,
+}
+
+static MA_FRONT_EXTENDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static MA_BACK_EXTENDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static MA_SHORT_REMOVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static MA_JOINED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[inline]
+fn count(c: &std::sync::atomic::AtomicU64) {
+    c.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The counters since the process started.
+pub fn medial_axis_counters() -> MedialAxisCounters {
+    let g = |c: &std::sync::atomic::AtomicU64| c.load(std::sync::atomic::Ordering::Relaxed);
+    MedialAxisCounters {
+        front_extended: g(&MA_FRONT_EXTENDED),
+        back_extended: g(&MA_BACK_EXTENDED),
+        short_removed: g(&MA_SHORT_REMOVED),
+        joined: g(&MA_JOINED),
+    }
+}
+
+/// `(b - a).cast<double>().norm()`, the shim's `ma_seg_length` (medial_axis_shim.cpp:487-490).
+#[inline]
+fn ma_seg_length(a: Point, b: Point) -> f64 {
+    let dx = (b.x - a.x) as f64;
+    let dy = (b.y - a.y) as f64;
+    dx.mul_add(dx, dy * dy).sqrt()
+}
+
+/// `Polyline::length()` (Polyline.cpp), the shim's `ma_polyline_length`
+/// (medial_axis_shim.cpp:492-497).
+fn ma_polyline_length(points: &[Point]) -> f64 {
+    let mut len = 0.;
+    for i in 1..points.len() {
+        len += ma_seg_length(points[i - 1], points[i]);
+    }
+    len
+}
+
+/// Eigen's `normalized()` of `(vx, vy)`: `v / sqrt(squaredNorm)`, and `v` itself where the
+/// squared norm is not positive (medial_axis_shim.cpp:643-648).
+#[inline]
+fn ma_normalized(vx: f64, vy: f64) -> (f64, f64) {
+    let z = vx.mul_add(vx, vy * vy);
+    if z > 0. {
+        let n = z.sqrt();
+        (vx / n, vy / n)
+    } else {
+        (vx, vy)
+    }
+}
+
+/// Line.hpp:123-150 `line_alg::intersection(l1, l2, &intersection_pt)`, the shim's
+/// `ma_line_intersection` (medial_axis_shim.cpp:507-527). The result is
+/// `(l1.a + t1 * v1).cast<coord_t>()`: truncated.
+fn ma_line_intersection(l1a: Point, l1b: Point, l2a: Point, l2b: Point, out: &mut Point) -> bool {
+    let v1x = (l1b.x - l1a.x) as f64;
+    let v1y = (l1b.y - l1a.y) as f64;
+    let v2x = (l2b.x - l2a.x) as f64;
+    let v2y = (l2b.y - l2a.y) as f64;
+    let denom = v1x.mul_add(v2y, -(v1y * v2x));
+    if denom.abs() < MA_EPSILON {
+        // Lines are collinear.
+        return false;
+    }
+    let v12x = (l1a.x - l2a.x) as f64;
+    let v12y = (l1a.y - l2a.y) as f64;
+    let nume_a = v2x.mul_add(v12y, -(v2y * v12x));
+    let nume_b = v1x.mul_add(v12y, -(v1y * v12x));
+    let t1 = nume_a / denom;
+    let t2 = nume_b / denom;
+    if t1 >= 0. && t1 <= 1.0 && t2 >= 0. && t2 <= 1.0 {
+        // Get the intersection point.
+        out.x = t1.mul_add(v1x, l1a.x as f64) as Coord;
+        out.y = t1.mul_add(v1y, l1a.y as f64) as Coord;
+        return true;
+    }
+    false
+}
+
+/// Polygon.cpp:188-199 `Polygon::intersection(line, &intersection)`, the shim's
+/// `ma_polygon_intersection` (medial_axis_shim.cpp:531-543): the closing edge
+/// `(front, back)` first, then the consecutive edges; the first hit wins.
+fn ma_polygon_intersection(pts: &[Point], la: Point, lb: Point, out: &mut Point) -> bool {
+    if pts.len() < 2 {
+        return false;
+    }
+    if ma_line_intersection(pts[0], pts[pts.len() - 1], la, lb, out) {
+        return true;
+    }
+    for i in 1..pts.len() {
+        if ma_line_intersection(pts[i - 1], pts[i], la, lb, out) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Polygon.cpp:310-345 `Polygon::point_projection(point)`, the shim's `ma_point_projection`
+/// (medial_axis_shim.cpp:546-573). The foot of the perpendicular is `floor(v + 0.5)`.
+fn ma_point_projection(pts: &[Point], point: Point) -> Point {
+    let mut proj = point;
+    let mut dmin = f64::MAX;
+    for i in 0..pts.len() {
+        let pt0 = pts[i];
+        let pt1 = pts[if i + 1 == pts.len() { 0 } else { i + 1 }];
+        let mut d = ma_seg_length(pt0, point);
+        if d < dmin {
+            dmin = d;
+            proj = pt0;
+        }
+        d = ma_seg_length(pt1, point);
+        if d < dmin {
+            dmin = d;
+            proj = pt1;
+        }
+        let v1x = (pt1.x - pt0.x) as f64;
+        let v1y = (pt1.y - pt0.y) as f64;
+        let div = v1x.mul_add(v1x, v1y * v1y);
+        if div > 0. {
+            let v2x = (point.x - pt0.x) as f64;
+            let v2y = (point.y - pt0.y) as f64;
+            let t = v1x.mul_add(v2x, v1y * v2y) / div;
+            if t > 0. && t < 1. {
+                let foot = Point::new(
+                    (t.mul_add(v1x, pt0.x as f64) + 0.5).floor() as Coord,
+                    (t.mul_add(v1y, pt0.y as f64) + 0.5).floor() as Coord,
+                );
+                d = ma_seg_length(foot, point);
+                if d < dmin {
+                    dmin = d;
+                    proj = foot;
+                }
+            }
+        }
+    }
+    proj
+}
+
+/// Polygon.hpp:71-72 `Polygon::on_boundary(point, eps)`:
+/// `(point_projection(point) - point).cast<double>().squaredNorm() < eps * eps`
+/// (medial_axis_shim.cpp:576-581).
+fn ma_polygon_on_boundary(pts: &[Point], point: Point, eps: f64) -> bool {
+    let proj = ma_point_projection(pts, point);
+    let ex = (proj.x - point.x) as f64;
+    let ey = (proj.y - point.y) as f64;
+    ex.mul_add(ex, ey * ey) < eps * eps
 }
 
 /// Convert an ExPolygon to a collection of Lines (all edges)

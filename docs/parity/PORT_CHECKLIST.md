@@ -11,13 +11,13 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**35.9% of the named C++ functions are ported or verified (3302 of 9204); 25.0% by size of body.**
+**36.0% of the named C++ functions are ported or verified (3310 of 9204); 25.0% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3151 | 34.2% | 47.0% |
-| partial `[~]` | 2751 | 29.9% | 28.0% |
-| ported `[x]` | 3163 | 34.4% | 22.9% |
+| not started `[ ]` | 3150 | 34.2% | 47.0% |
+| partial `[~]` | 2744 | 29.8% | 28.0% |
+| ported `[x]` | 3171 | 34.5% | 23.0% |
 | verified `[v]` | 139 | 1.5% | 2.0% |
 
 | Files (C++ units) | Count |
@@ -215,9 +215,9 @@ the end; the goal is none.
 | `Geometry/Circle` | 1 | `geometry/circle.rs` | partial | 24 | 0 | 6 | 18 | 0 |
 | `Geometry/ConvexHull` | 1 | `geometry/convex_hull.rs` | partial | 21 | 2 | 11 | 8 | 0 |
 | `Geometry/Curves` | 1 | `geometry/curves.rs` | ported | 7 | 0 | 0 | 7 | 0 |
-| `Geometry/MedialAxis` | 1 | `geometry/medial_axis.rs` | partial | 16 | 3 | 13 | 0 | 0 |
+| `Geometry/MedialAxis` | 1 | `geometry/medial_axis.rs` | partial | 16 | 2 | 12 | 2 | 0 |
 | `Geometry/Voronoi` | 1 | `geometry/voronoi.rs` | partial | 19 | 8 | 11 | 0 | 0 |
-| `Geometry/VoronoiOffset` | 1 | `geometry/voronoi_offset.rs` | partial | 39 | 5 | 17 | 17 | 0 |
+| `Geometry/VoronoiOffset` | 1 | `geometry/voronoi_offset.rs` | partial | 39 | 5 | 11 | 23 | 0 |
 | `Geometry/VoronoiUtils` | 1 | `geometry/voronoi_utils.rs` | partial | 13 | 4 | 7 | 2 | 0 |
 | `Geometry/VoronoiUtilsCgal` | 1 | `geometry/voronoi_utils_cgal.rs` | partial | 11 | 3 | 2 | 6 | 0 |
 | `Geometry/VoronoiVisualUtils` | 1 | `geometry/voronoi_visual_utils.rs` | partial | 9 | 0 | 1 | 8 | 0 |
@@ -455,7 +455,7 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 - [x] `empty` (line 106) → `aabb_tree_indirect.rs:149`
 - [x] `left_child_idx` (line 109) → `aabb_tree_indirect.rs:156`
 - [x] `right_child_idx` (line 110) → `aabb_tree_indirect.rs:163`
-- [~] `build` (line 115) → `aabb_tree_lines.rs, boost_polygon_voronoi.rs, kd_tree_indirect.rs` — not in the paired file
+- [~] `build` (line 115) → `aabb_tree_lines.rs, boost_polygon_voronoi.rs, geometry/medial_axis.rs` — not in the paired file
 - [x] `build_recursive` (line 124) → `aabb_tree_indirect.rs:184`
 - [x] `partition_input` (line 157) → `aabb_tree_indirect.rs:240`
 
@@ -7288,11 +7288,11 @@ Rust file: `geometry/medial_axis.rs`. Status: **partial**. Not listed: 2 constru
 
 **class `MedialAxis`**
 
-- [ ] `edge_data` (line 34) → `geometry/medial_axis.rs`
-- [~] `build` (line 449) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `edge_data` (line 34) → `geometry/medial_axis.rs:1093` — divergent
+- [~] `build` (line 449) → `geometry/medial_axis.rs:1098` — partial
 - [~] `build` (line 534) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `process_edge_neighbors` (line 543) → `geometry/medial_axis.rs:556` — partial
-- [~] `validate_edge` (line 588) → `geometry/medial_axis.rs:452` — partial
+- [x] `process_edge_neighbors` (line 543) → `geometry/medial_axis.rs:1177`
+- [x] `validate_edge` (line 588) → `geometry/medial_axis.rs:1300`
 
 **class `voronoi_visual_utils`**
 
@@ -7344,24 +7344,24 @@ Rust file: `geometry/voronoi_offset.rs`. Status: **partial**.
 - [x] `vertex_point` (line 27) → `geometry/voronoi_offset.rs:57`
 - [x] `point_point_equal_distance_points` (line 68) → `geometry/voronoi_offset.rs:219`
 - [~] `vertex_category` (line 72) → `geometry/voronoi_annotation.rs` — not in the paired file
-- [~] `vertex_category` (line 74) → `geometry/voronoi_annotation.rs` — not in the paired file
+- [x] `vertex_category` (line 74) → `geometry/voronoi_offset.rs:1435`
 - [~] `set_vertex_category` (line 76) → `geometry/voronoi_annotation.rs` — not in the paired file
-- [~] `set_vertex_category` (line 78) → `geometry/voronoi_annotation.rs` — not in the paired file
+- [x] `set_vertex_category` (line 78) → `geometry/voronoi_offset.rs:1441`
 - [~] `edge_category` (line 81) → `geometry/voronoi_annotation.rs` — not in the paired file
-- [~] `edge_category` (line 83) → `geometry/voronoi_annotation.rs` — not in the paired file
+- [x] `edge_category` (line 83) → `geometry/voronoi_offset.rs:1447`
 - [~] `set_edge_category` (line 85) → `geometry/voronoi_annotation.rs` — not in the paired file
-- [~] `set_edge_category` (line 87) → `geometry/voronoi_annotation.rs` — not in the paired file
+- [x] `set_edge_category` (line 87) → `geometry/voronoi_offset.rs:1453`
 - [~] `cell_category` (line 90) → `geometry/voronoi_annotation.rs` — not in the paired file
-- [~] `cell_category` (line 92) → `geometry/voronoi_annotation.rs` — not in the paired file
+- [x] `cell_category` (line 92) → `geometry/voronoi_offset.rs:1459`
 - [~] `set_cell_category` (line 94) → `geometry/voronoi_annotation.rs` — not in the paired file
-- [~] `set_cell_category` (line 96) → `geometry/voronoi_annotation.rs` — not in the paired file
+- [x] `set_cell_category` (line 96) → `geometry/voronoi_offset.rs:1465`
 - [x] `edge_offset_no_intersection` (line 110) → `geometry/voronoi_offset.rs:65`
 - [x] `edge_offset_has_intersection` (line 112) → `geometry/voronoi_offset.rs:73`
 - [x] `line_point_equal_distance_points` (line 119) → `geometry/voronoi_offset.rs:283`
-- [~] `vertex_equal_to_point` (line 204) → `geometry/voronoi_annotation.rs, multi_material_segmentation.rs` — not in the paired file
+- [~] `vertex_equal_to_point` (line 204) → `geometry/voronoi_offset.rs:1476` — partial
 - [~] `vertex_equal_to_point` (line 225) → `geometry/voronoi_annotation.rs, multi_material_segmentation.rs` — not in the paired file
 - [x] `dist_to_site` (line 228) → `geometry/voronoi_offset.rs:425`
-- [x] `on_site` (line 236) → `geometry/voronoi_offset.rs:447`
+- [x] `on_site` (line 236) → `geometry/voronoi_offset.rs:1485`
 - [x] `point_point_dr_dl_thresholds` (line 257) → `geometry/voronoi_offset.rs:460`
 - [x] `point_segment_dr_dl_thresholds` (line 306) → `geometry/voronoi_offset.rs:498`
 - [x] `point_point_skeleton_thresholds` (line 362) → `geometry/voronoi_offset.rs:565`
@@ -7371,8 +7371,8 @@ Rust file: `geometry/voronoi_offset.rs`. Status: **partial**.
 - [ ] `verify_vertices_on_contour` (line 587) → `geometry/voronoi_offset.rs`
 - [ ] `verify_signed_distances` (line 600) → `geometry/voronoi_offset.rs`
 - [ ] `verify_offset_intersection_points` (line 621) → `geometry/voronoi_offset.rs`
-- [x] `reset_inside_outside_annotations` (line 640) → `geometry/voronoi_offset.rs:674`
-- [~] `annotate_inside_outside` (line 650) → `geometry/voronoi_annotation.rs` — not in the paired file
+- [x] `reset_inside_outside_annotations` (line 640) → `geometry/voronoi_offset.rs:1497`
+- [~] `annotate_inside_outside` (line 650) → `geometry/voronoi_offset.rs:1550` — partial
 - [x] `signed_vertex_distances` (line 969) → `geometry/voronoi_offset.rs:702`
 - [x] `edge_offset_contour_intersections` (line 1012) → `geometry/voronoi_offset.rs:791`
 - [~] `offset` (line 1329) → `bounding_box.rs, bridge_detector.rs` — not in the paired file
@@ -7761,7 +7761,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `get_b` (line 39) → `gcode_sender.rs` — not in the paired file
 - [~] `distance_to_squared` (line 43) → `geometry/line.rs:252` — divergent
 - [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs` — not in the paired file
-- [~] `distance_to` (line 80) → `arrange.rs, geometry/point.rs` — not in the paired file
+- [~] `distance_to` (line 80) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [x] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:285` — read against the C++ in R871 (the estimate says divergent)
 - [~] `distance_to_infinite_squared` (line 109) → `geometry/line.rs` — another overload of the name is ported
 - [~] `distance_to_infinite` (line 118) → `geometry/line.rs` — another overload of the name is ported
@@ -7791,13 +7791,13 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [x] `midpoint` (line 164) → `geometry/line.rs:592`
 - [~] `distance_to_squared` (line 167) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to_squared` (line 168) → `aabb_tree_lines.rs` — not in the paired file
-- [~] `distance_to` (line 169) → `arrange.rs, geometry/point.rs` — not in the paired file
+- [~] `distance_to` (line 169) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 170) → `geometry/line.rs` — another overload of the name is ported
 - [x] `atan2_` (line 176) → `geometry/line.rs:59`
 - [~] `vector` (line 179) → `geometry/line.rs` — another overload of the name is ported
 - [x] `normal` (line 180) → `geometry/line.rs:136` — read against the C++ in R872 (the estimate says divergent)
 - [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs` — not in the paired file
-- [~] `distance_to` (line 188) → `arrange.rs, geometry/point.rs` — not in the paired file
+- [~] `distance_to` (line 188) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 192) → `geometry/line.rs` — another overload of the name is ported
 - [x] `distance_to_infinite` (line 193) → `geometry/line.rs:304`
 
@@ -8696,7 +8696,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 - [ ] `mk_point` (line 43) → `multi_material_segmentation.rs`
 - [ ] `mk_point` (line 45) → `multi_material_segmentation.rs`
 - [ ] `mk_vec2` (line 47) → `multi_material_segmentation.rs`
-- [~] `vertex_equal_to_point` (line 49) → `geometry/voronoi_annotation.rs` — not in the paired file
+- [~] `vertex_equal_to_point` (line 49) → `geometry/voronoi_annotation.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:1845`
 - [~] `colored_points_to_polygon` (line 314) → `multi_material_segmentation.rs` — another overload of the name is ported
 - [x] `colored_points_to_polygon` (line 322) → `multi_material_segmentation.rs:532`
@@ -8892,7 +8892,7 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [x] `find_point` (line 58) → `multi_point.rs:183`
 - [~] `find_point` (line 66) → `geometry/polyline.rs` — not in the paired file
 - [~] `closest_point` (line 68) → `edge_grid.rs, geometry/aabb_tree.rs, geometry/expolygon.rs` — not in the paired file
-- [~] `distance_to` (line 71) → `arrange.rs, geometry/point.rs` — not in the paired file
+- [~] `distance_to` (line 71) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `clear` (line 81) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [~] `append` (line 82) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [x] `has_boundary_point` (line 83) → `multi_point.rs:224`
@@ -9100,7 +9100,7 @@ Rust file: none. Status: **not started**.
 - [ ] `user_unify_diameter` (line 727)
 - [ ] `extruder_count` (line 744)
 - [ ] `counts` (line 752)
-- [~] `count` (line 765) → `boost_polygon_voronoi.rs, triangle_mesh.rs` — a function of this name is in another Rust file
+- [~] `count` (line 765) → `boost_polygon_voronoi.rs, geometry/expolygon.rs, triangle_mesh.rs` — a function of this name is in another Rust file
 - [~] `volume_type` (line 778) → `build_volume.rs, extruder.rs` — a function of this name is in another Rust file
 - [ ] `refresh_mirror` (line 783)
 - [ ] `export_to` (line 785)
@@ -10653,7 +10653,7 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 - [ ] `get_range` (line 522) → `print_apply.rs`
 - [ ] `get_range` (line 526) → `print_apply.rs`
-- [~] `count` (line 530) → `boost_polygon_voronoi.rs, triangle_mesh.rs` — not in the paired file
+- [~] `count` (line 530) → `boost_polygon_voronoi.rs, geometry/expolygon.rs, triangle_mesh.rs` — not in the paired file
 - [~] `begin` (line 534) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 535) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `clear` (line 537) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file

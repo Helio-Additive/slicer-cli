@@ -61,7 +61,7 @@ pub use expolygon::{
     keep_largest_contour_only, number_polygons, overlaps_expoly, overlaps_expolygons,
     polygons_append, polygons_append_expoly, remove_same_neighbor, to_expolygons_simple, to_lines,
     to_lines_expoly, to_points, to_polygons, to_polygons_expoly, to_polylines, to_polylines_expoly,
-    translate_expolygons, ExPolygon, ExPolygons,
+    medial_axis_counters, translate_expolygons, ExPolygon, ExPolygons, MedialAxisCounters,
 };
 // Geometry.cpp / Geometry.hpp — Transformation family + transform helpers.
 // NOTE: `geometry::geometry::{Vec3d, Vec2d, Orientation}` are intentionally NOT
@@ -80,7 +80,7 @@ pub use geometry::{
 pub use line::{get_extents as get_extents_lines, Line, LineF, Lines};
 pub use medial_axis::{
     compute_medial_axis, compute_medial_axis_multi, compute_medial_axis_thick,
-    distance_to_boundary, MedialAxisConfig,
+    distance_to_boundary, MedialAxis, MedialAxisConfig, MedialAxisThickPolyline,
 };
 pub use point::{
     align_to_grid, align_to_grid_point, align_to_grid_point_base, collect_duplicates,

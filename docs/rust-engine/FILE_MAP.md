@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 51 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3763 (42%) |
-| estimate: faithful | 3159 (84% of matched) |
-| estimate: partial | 383 (10% of matched) |
-| estimate: divergent | 196 (5% of matched) |
+| matched to a Rust function in the paired file | 3773 (42%) |
+| estimate: faithful | 3167 (84% of matched) |
+| estimate: partial | 384 (10% of matched) |
+| estimate: divergent | 197 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
-| missing in the paired Rust file | 4628 |
-| of those, a function of that name exists in another Rust file | 1606 |
+| missing in the paired Rust file | 4618 |
+| of those, a function of that name exists in another Rust file | 1597 |
 | of the rest, another overload of the name is ported | 367 |
 | of the rest, under 25 tokens (accessors, one-liners) | 746 |
-| of the rest, 25 tokens or more | 1909 |
+| of the rest, 25 tokens or more | 1908 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4722 |
+| Rust functions with no C++ function of that name in the pair | 4740 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 175 | 6851 | 2908 | 2431 | 304 | 159 | 14 | 3943 |
+| 1 | 180 | 175 | 6851 | 2918 | 2439 | 305 | 160 | 14 | 3933 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 66 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -124,7 +124,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Algorithm/LineSegmentation/LineSegmentation` | `algorithm/line_segmentation/line_segmentation.rs` | 29 | 5 | 3 | 0 | 0 | 21 | 5 |
 | 1 | `AppConfig` | `app_config.rs` | 72 | 53 | 3 | 2 | 0 | 14 | 3 |
 | 1 | `ElephantFootCompensation` | `elephant_foot_compensation.rs` | 10 | 5 | 0 | 0 | 0 | 5 | 5 |
-| 1 | `Geometry/VoronoiOffset` | `geometry/voronoi_offset.rs` | 39 | 17 | 0 | 0 | 0 | 22 | 5 |
+| 1 | `Geometry/VoronoiOffset` | `geometry/voronoi_offset.rs` | 39 | 23 | 2 | 0 | 0 | 14 | 5 |
 | 1 | `Geometry/VoronoiUtils` | `geometry/voronoi_utils.rs` | 13 | 2 | 3 | 1 | 0 | 7 | 4 |
 | 1 | `MutablePriorityQueue` | `mutable_priority_queue.rs` | 37 | 20 | 4 | 5 | 0 | 8 | 0 |
 | 1 | `Point` | `geometry/point.rs` | 103 | 20 | 7 | 4 | 0 | 72 | 1 |
@@ -141,7 +141,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 6 | 4 | 1 | 0 | 3 | 2 |
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
 | 1 | `GCode/ToolOrderUtils` | `gcode/tool_order_utils.rs` | 32 | 26 | 1 | 0 | 0 | 5 | 3 |
-| 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 0 | 2 | 0 | 0 | 14 | 3 |
+| 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 2 | 1 | 1 | 0 | 12 | 2 |
 | 1 | `Polyline` | `geometry/polyline.rs` | 52 | 29 | 3 | 1 | 0 | 19 | 2 |
 | 1 | `Arachne/SkeletalTrapezoidation` | `arachne/skeletal_trapezoidation.rs` | 41 | 34 | 0 | 1 | 0 | 6 | 1 |
 | 1 | `Arachne/WallToolPaths` | `arachne/wall_tool_paths.rs` | 16 | 8 | 3 | 1 | 0 | 4 | 1 |
@@ -205,7 +205,7 @@ their function names come from, when there is one.
 | `arachne/utils/mod.rs` | module | 0 |  |
 | `bin/generate-test-meshes.rs` | no C++ file of this name | 9 | `TriangleMesh` |
 | `bin/slicer-cli.rs` | no C++ file of this name | 16 |  |
-| `boost_polygon_voronoi.rs` | no C++ file of this name | 284 |  |
+| `boost_polygon_voronoi.rs` | no C++ file of this name | 287 |  |
 | `clipper2_z.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xy.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xyz.rs` | no C++ file of this name | 9 |  |
@@ -279,7 +279,7 @@ port, the other has to be merged into it or renamed after what it really ports.
 |-|-|-|-|-|
 | `geometry/bounding_box.rs` | 104 | 30% | `BoundingBox` | `bounding_box.rs` |
 | `geometry/build_volume.rs` | 5 | 60% | `BuildVolume` | `build_volume.rs` |
-| `geometry/expolygon.rs` | 77 | 35% | `ExPolygon` | `ex_polygon.rs` |
+| `geometry/expolygon.rs` | 88 | 31% | `ExPolygon` | `ex_polygon.rs` |
 | `gcode/extruder.rs` | 28 | 86% | `Extruder` | `extruder.rs` |
 | `gcode/placeholder_parser.rs` | 2 | 50% | `PlaceholderParser` | `placeholder_parser.rs` |
 | `line_segmentation.rs` | 30 | 50% | `Algorithm/LineSegmentation/LineSegmentation` | `algorithm/line_segmentation/line_segmentation.rs` |
@@ -392,7 +392,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `Tree::Node::set` :68 (22 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
-- `Tree::build` :115 (25 tokens, overload) — in `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`, `kd_tree_indirect.rs`
+- `Tree::build` :115 (25 tokens, overload) — in `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`, `geometry/medial_axis.rs`
 - `BoundingBoxWrapper::idx` :230 (5 tokens) — in `aabb_tree_lines.rs`, `geometry/convex_hull.rs`, `support/tree_support_3d.rs`
 - `BoundingBoxWrapper::centroid` :232 (42 tokens) — in `aabb_tree_lines.rs`, `geometry/expolygon.rs`, `geometry/polygon.rs`
 - `intersect_triangle` :315 (218 tokens, overload)
@@ -5454,16 +5454,15 @@ Rust only:
 
 ### `Geometry/MedialAxis` (.cpp+.hpp) and `geometry/medial_axis.rs`
 
-Tier 1. C++ functions 16 (plus 2 constructors, 0 destructors, 1 operators), Rust functions 24. Matched 2: faithful 0, partial 2, divergent 0, stub 0.
+Tier 1. C++ functions 16 (plus 2 constructors, 0 destructors, 1 operators), Rust functions 37. Matched 4: faithful 2, partial 1, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `MedialAxis::process_edge_neighbors` :543 and `process_edge_neighbors` :556 (50%, 1.25x)
-- partial: `MedialAxis::validate_edge` :588 and `validate_edge` :452 (38%, 0.84x)
+- divergent: `MedialAxis::edge_data` :34 and `MedialAxis::edge_data` :1093 (20%, 0.41x)
+- partial: `MedialAxis::build` :449 and `MedialAxis::build` :1098 (59%, 1.03x)
 
 Missing in the Rust file:
 
-- `MedialAxis::edge_data` :34 (37 tokens)
 - `voronoi_visual_utils::discretize` :39 (456 tokens) — in `arachne/skeletal_trapezoidation.rs`, `geometry/voronoi_visual_utils.rs`
 - `voronoi_visual_utils::parabola_y` :129 (27 tokens) — in `geometry/voronoi_visual_utils.rs`
 - `voronoi_visual_utils::get_point_projection` :143 (117 tokens) — in `geometry/voronoi_visual_utils.rs`
@@ -5475,8 +5474,7 @@ Missing in the Rust file:
 - `dump_voronoi_to_svg` :291 (1027 tokens) — in `geometry/voronoi_visual_utils.rs`
 - `retrieve_cell_point` :389 (68 tokens)
 - `measure_edge_thickness` :396 (371 tokens)
-- `MedialAxis::build` :449 (622 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `MedialAxis::build` :534 (47 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `MedialAxis::build` :534 (47 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 
 Rust only:
 
@@ -5489,6 +5487,8 @@ Rust only:
 - `compute_medial_axis_thick` :164
 - `compute_medial_axis_multi` :424
 - `distance_to_boundary` :437
+- `validate_edge` :452
+- `process_edge_neighbors` :556
 - `postprocess_medial_axis` :646
 - `expolygon_lines` :808
 - `add_polygon_lines` :817
@@ -5502,6 +5502,15 @@ Rust only:
 - `contour_intersection` :945
 - `line_line_intersection` :969
 - `nearest_boundary_distance_lines` :999
+- `MedialAxisThickPolyline::reverse` :1038 — C++ has it in `Arachne/utils/ExtrusionLine`, `Circle`, `ExtrusionEntity`
+- `MedialAxisThickPolyline::clear` :1051 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `point_from_doubles` :1061
+- `MedialAxis::new` :1082
+- `MedialAxis::retrieve_segment` :1229
+- `MedialAxis::retrieve_endpoint` :1236
+- `MedialAxis::distance_to` :1253 — C++ has it in `Arrange`, `Line`, `MultiPoint`
+- `MedialAxis::orientation` :1279 — C++ has it in `Line`
+- `MedialAxis::norm` :1293 — C++ has it in `Arrange`
 
 ### `Geometry/Voronoi` (.cpp+.hpp) and `geometry/voronoi.rs`
 
@@ -5531,31 +5540,28 @@ Missing in the Rust file:
 
 ### `Geometry/VoronoiOffset` (.cpp+.hpp) and `geometry/voronoi_offset.rs`
 
-Tier 1. C++ functions 39, Rust functions 32. Matched 17: faithful 17, partial 0, divergent 0, stub 0.
+Tier 1. C++ functions 39, Rust functions 47. Matched 25: faithful 23, partial 2, divergent 0, stub 0.
+
+Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
+
+- partial: `vertex_equal_to_point` :204 and `vertex_equal_to_point` :1476 (43%, 0.27x)
+- partial: `annotate_inside_outside` :650 and `annotate_inside_outside` :1550 (56%, 0.65x)
 
 Missing in the Rust file:
 
 - `vertex_point` :26 (18 tokens, overload) — in `measure.rs`
-- `vertex_category` :72 (15 tokens) — in `geometry/voronoi_annotation.rs`
-- `vertex_category` :74 (15 tokens) — in `geometry/voronoi_annotation.rs`
-- `set_vertex_category` :76 (19 tokens) — in `geometry/voronoi_annotation.rs`
-- `set_vertex_category` :78 (19 tokens) — in `geometry/voronoi_annotation.rs`
-- `edge_category` :81 (15 tokens) — in `geometry/voronoi_annotation.rs`
-- `edge_category` :83 (15 tokens) — in `geometry/voronoi_annotation.rs`
-- `set_edge_category` :85 (19 tokens) — in `geometry/voronoi_annotation.rs`
-- `set_edge_category` :87 (19 tokens) — in `geometry/voronoi_annotation.rs`
-- `cell_category` :90 (15 tokens) — in `geometry/voronoi_annotation.rs`
-- `cell_category` :92 (15 tokens) — in `geometry/voronoi_annotation.rs`
-- `set_cell_category` :94 (19 tokens) — in `geometry/voronoi_annotation.rs`
-- `set_cell_category` :96 (19 tokens) — in `geometry/voronoi_annotation.rs`
-- `vertex_equal_to_point` :204 (153 tokens) — in `geometry/voronoi_annotation.rs`, `multi_material_segmentation.rs`
-- `vertex_equal_to_point` :225 (11 tokens) — in `geometry/voronoi_annotation.rs`, `multi_material_segmentation.rs`
+- `vertex_category` :72 (15 tokens, overload) — in `geometry/voronoi_annotation.rs`
+- `set_vertex_category` :76 (19 tokens, overload) — in `geometry/voronoi_annotation.rs`
+- `edge_category` :81 (15 tokens, overload) — in `geometry/voronoi_annotation.rs`
+- `set_edge_category` :85 (19 tokens, overload) — in `geometry/voronoi_annotation.rs`
+- `cell_category` :90 (15 tokens, overload) — in `geometry/voronoi_annotation.rs`
+- `set_cell_category` :94 (19 tokens, overload) — in `geometry/voronoi_annotation.rs`
+- `vertex_equal_to_point` :225 (11 tokens, overload) — in `geometry/voronoi_annotation.rs`, `multi_material_segmentation.rs`
 - `verify_twin_halfedges_successive` :447 (241 tokens)
 - `verify_inside_outside_annotations` :469 (656 tokens)
 - `verify_vertices_on_contour` :587 (107 tokens)
 - `verify_signed_distances` :600 (214 tokens)
 - `verify_offset_intersection_points` :621 (143 tokens)
-- `annotate_inside_outside` :650 (2607 tokens) — in `geometry/voronoi_annotation.rs`
 - `offset` :1329 (1755 tokens, overload) — in `bounding_box.rs`, `bridge_detector.rs`
 
 Rust only:
@@ -5573,8 +5579,15 @@ Rust only:
 - `ray_point_distance` :140 — C++ has it in `Geometry`
 - `vertex_equal_to_point_xy` :396
 - `ulp_eq` :403
+- `on_site` :447
+- `reset_inside_outside_annotations` :674
 - `CellIndex::pipe_source_index` :783
 - `offset_with_distances` :1128
+- `contour_point` :1419
+- `contour_point_lines` :1429
+- `annotate_vertex` :1511
+- `annotate_edge` :1519
+- `annotate_cell` :1524
 
 ### `Geometry/VoronoiUtils` (.cpp+.hpp) and `geometry/voronoi_utils.rs`
 
@@ -5927,7 +5940,7 @@ Missing in the Rust file:
 - `get_b` :39 (16 tokens) — in `gcode_sender.rs`
 - `Line::parallel_to` :68 (18 tokens, overload)
 - `distance_to_squared` :73 (30 tokens, overload) — in `aabb_tree_lines.rs`
-- `distance_to` :80 (15 tokens) — in `arrange.rs`, `geometry/point.rs`
+- `distance_to` :80 (15 tokens) — in `arrange.rs`, `geometry/medial_axis.rs`, `geometry/point.rs`
 - `Line::perpendicular_to` :93 (18 tokens, overload)
 - `Line::intersection` :105 (15 tokens, overload) — in `aabb_tree_lines.rs`, `clipper_utils.rs`, `enum_bitmask.rs`
 - `distance_to_infinite_squared` :109 (30 tokens, overload)
@@ -5938,11 +5951,11 @@ Missing in the Rust file:
 - `Line::length` :163 (20 tokens, overload) — in `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`, `fill/fill_rectilinear.rs`
 - `Line::distance_to_squared` :167 (16 tokens, overload) — in `aabb_tree_lines.rs`
 - `Line::distance_to_squared` :168 (15 tokens, overload) — in `aabb_tree_lines.rs`
-- `Line::distance_to` :169 (16 tokens) — in `arrange.rs`, `geometry/point.rs`
+- `Line::distance_to` :169 (16 tokens) — in `arrange.rs`, `geometry/medial_axis.rs`, `geometry/point.rs`
 - `Line::distance_to_infinite_squared` :170 (15 tokens, overload)
 - `Line::vector` :179 (11 tokens, overload)
 - `Line::distance_to_squared` :187 (25 tokens, overload) — in `aabb_tree_lines.rs`
-- `Line::distance_to` :188 (15 tokens) — in `arrange.rs`, `geometry/point.rs`
+- `Line::distance_to` :188 (15 tokens) — in `arrange.rs`, `geometry/medial_axis.rs`, `geometry/point.rs`
 - `Line::distance_to_infinite_squared` :192 (25 tokens, overload)
 - `Line3::length` :218 (24 tokens, overload) — in `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`, `fill/fill_rectilinear.rs`
 - `Line3::vector` :219 (11 tokens, overload)
@@ -6535,7 +6548,7 @@ Missing in the Rust file:
 - `mk_point` :43 (23 tokens)
 - `mk_point` :45 (33 tokens)
 - `mk_vec2` :47 (17 tokens)
-- `vertex_equal_to_point` :49 (80 tokens, overload) — in `geometry/voronoi_annotation.rs`
+- `vertex_equal_to_point` :49 (80 tokens, overload) — in `geometry/voronoi_annotation.rs`, `geometry/voronoi_offset.rs`
 - `MMU_Graph::Node::remove_edge` :82 (76 tokens, overload) — in `boost_polygon_voronoi.rs`, `clipper.rs`
 - `colored_points_to_polygon` :314 (43 tokens, overload)
 - `get_extents` :593 (52 tokens) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `fill/lightning/tree_node.rs`
@@ -6691,7 +6704,7 @@ Missing in the Rust file:
 - `MultiPoint::closest_point_index` :53 (119 tokens) — in `geometry/polygon.rs`
 - `MultiPoint::find_point` :66 (113 tokens, overload) — in `geometry/polyline.rs`
 - `MultiPoint::closest_point` :68 (26 tokens) — in `edge_grid.rs`, `geometry/aabb_tree.rs`, `geometry/expolygon.rs`
-- `MultiPoint::distance_to` :71 (31 tokens) — in `arrange.rs`, `geometry/point.rs`
+- `MultiPoint::distance_to` :71 (31 tokens) — in `arrange.rs`, `geometry/medial_axis.rs`, `geometry/point.rs`
 - `MultiPoint::clear` :81 (10 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
 - `MultiPoint::append` :82 (11 tokens) — in `ex_polygon_collection.rs`, `extrusion_entity.rs`, `fill/fill_cross_hatch.rs`
 - `MultiPoint::append` :83 (19 tokens) — in `ex_polygon_collection.rs`, `extrusion_entity.rs`, `fill/fill_cross_hatch.rs`
@@ -8077,7 +8090,7 @@ Missing in the Rust file:
 - `PrintObjectStatusDB::iterator_range::end` :519 (7 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PrintObjectStatusDB::get_range` :522 (17 tokens)
 - `PrintObjectStatusDB::get_range` :526 (15 tokens)
-- `PrintObjectStatusDB::count` :530 (17 tokens) — in `boost_polygon_voronoi.rs`, `triangle_mesh.rs`
+- `PrintObjectStatusDB::count` :530 (17 tokens) — in `boost_polygon_voronoi.rs`, `geometry/expolygon.rs`, `triangle_mesh.rs`
 - `PrintObjectStatusDB::begin` :534 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `PrintObjectStatusDB::end` :535 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PrintObjectStatusDB::clear` :537 (8 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`

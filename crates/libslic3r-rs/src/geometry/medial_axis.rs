@@ -1007,6 +1007,369 @@ fn nearest_boundary_distance_lines(point: Point, lines: &[Line]) -> CoordF {
 // Tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// class MedialAxis (Geometry/MedialAxis.hpp, Geometry/MedialAxis.cpp:445-690)
+// over `boost_polygon_voronoi::VoronoiDiagram`, the port of boost::polygon's
+// builder. This is what `ExPolygon::medial_axis` (ExPolygon.cpp:263-371) runs.
+// The functions above are an older port over the `boostvoronoi` crate; they
+// keep their callers.
+// ---------------------------------------------------------------------------
+
+use crate::boost_polygon_voronoi::{
+    construct_voronoi, VoronoiDiagram as VD, SOURCE_CATEGORY_SEGMENT_START_POINT,
+};
+use crate::geometry::voronoi_offset::boost_polygon as voronoi;
+use crate::geometry::voronoi_offset::VertexCategory;
+
+/// `ThickPolyline` as the C++ lays it out (Polyline.hpp:256-274): `width` holds two
+/// values per segment (`width.len() == 2 * points.len() - 2`), in the diagram's scaled
+/// units, and `endpoints` is the pair `(first, second)`. The crate's own
+/// [`ThickPolyline`] keeps one width per point, so the medial axis is built in this
+/// form and converted by its caller.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MedialAxisThickPolyline {
+    pub points: Vec<Point>,
+    pub width: Vec<f64>,
+    pub endpoints: (bool, bool),
+}
+
+impl MedialAxisThickPolyline {
+    /// Polyline.hpp:260-264 `ThickPolyline::reverse`.
+    pub fn reverse(&mut self) {
+        self.points.reverse();
+        self.width.reverse();
+        std::mem::swap(&mut self.endpoints.0, &mut self.endpoints.1);
+    }
+
+    /// Polyline.hpp:265-268 `ThickPolyline::clear`.
+    ///
+    /// FIDELITY-NOTE: the C++ clears the points and the widths and leaves `endpoints`
+    /// as it is, so in `MedialAxis::build` the `reverse_polyline.endpoints.second` set
+    /// for one seed edge is still set for every later seed edge of the same build.
+    /// The medial-axis shim's `MaThickPolyline::clear` (medial_axis_shim.cpp:313)
+    /// resets both flags as well. The shim is followed.
+    pub fn clear(&mut self) {
+        self.points.clear();
+        self.width.clear();
+        self.endpoints = (false, false);
+    }
+}
+
+/// `Point(double x, double y)` (Point.hpp:179): `coord_t(std::lrint(v))`, round to nearest,
+/// ties to even.
+#[inline]
+fn point_from_doubles(x: f64, y: f64) -> Point {
+    Point::new(x.round_ties_even() as Coord, y.round_ties_even() as Coord)
+}
+
+/// Geometry/MedialAxis.hpp:9-41 `class MedialAxis`.
+pub struct MedialAxis {
+    /// MedialAxis.hpp:17 `Lines m_lines`, `expolygon.lines()`.
+    m_lines: Vec<Line>,
+    /// MedialAxis.hpp:19-20, for filtering of the skeleton edges.
+    m_min_width: f64,
+    m_max_width: f64,
+    /// MedialAxis.hpp:24 the Voronoi diagram.
+    m_vd: VD,
+    /// MedialAxis.hpp:37 annotations of the VD skeleton edges, one per pair of twins.
+    m_edge_data: Vec<EdgeData>,
+}
+
+impl MedialAxis {
+    /// MedialAxis.cpp:445-447 `MedialAxis::MedialAxis(min_width, max_width, expolygon)`.
+    /// `m_lines` is `ExPolygon::lines()` (ExPolygon.cpp:433-441): the contour's lines, then
+    /// each hole's, a polygon of fewer than three points giving none (Polygon.hpp:199-209).
+    pub fn new(min_width: f64, max_width: f64, expolygon: &ExPolygon) -> Self {
+        let mut m_lines = crate::geometry::polygon::to_lines(&expolygon.contour);
+        for h in &expolygon.holes {
+            m_lines.extend(crate::geometry::polygon::to_lines(h));
+        }
+        MedialAxis { m_lines, m_min_width: min_width, m_max_width: max_width, m_vd: VD::new(), m_edge_data: Vec::new() }
+    }
+
+    /// MedialAxis.hpp:32-35 `edge_data(edge)`: the index of the `EdgeData` of the pair and
+    /// whether `edge` is the second of the pair ("reversed").
+    #[inline]
+    fn edge_data(&self, edge: usize) -> (usize, bool) {
+        (edge / 2, (edge & 1) != 0)
+    }
+
+    /// MedialAxis.cpp:449-519 `MedialAxis::build(ThickPolylines* polylines)`.
+    pub fn build(&mut self, polylines: &mut Vec<MedialAxisThickPolyline>) {
+        // MedialAxis.cpp:451.
+        // FIDELITY-NOTE: the C++ calls `Geometry::VoronoiDiagram::construct_voronoi`
+        // (Voronoi.cpp:25-60), which runs boost's builder and then, with
+        // `try_to_repair_if_needed` at its default, looks for a degenerated diagram and
+        // rebuilds it from rotated input. The medial-axis shim calls
+        // `boost::polygon::construct_voronoi` alone (medial_axis_shim.cpp:323). The shim is
+        // followed. boost's `insert_segment` takes `int32` coordinates
+        // (voronoi_builder.hpp), so the `coord_t` ones are converted as C++ converts them.
+        let segments: Vec<[i32; 4]> =
+            self.m_lines.iter().map(|l| [l.a.x as i32, l.a.y as i32, l.b.x as i32, l.b.y as i32]).collect();
+        self.m_vd.clear();
+        construct_voronoi(&segments, &mut self.m_vd);
+        // MedialAxis.cpp:452.
+        voronoi::annotate_inside_outside(&mut self.m_vd, &self.m_lines);
+
+        // MedialAxis.cpp:471-480. collect valid edges (i.e. prune those not belonging to MAT)
+        // note: this keeps twins, so it inserts twice the number of the valid edges
+        let num_edges = self.m_vd.num_edges();
+        self.m_edge_data.clear();
+        self.m_edge_data.resize(num_edges / 2, EdgeData::default());
+        let mut edge = 0;
+        while edge < num_edges {
+            if self.m_vd.edges()[edge].is_primary() && self.m_vd.is_finite(edge) && {
+                let v0 = self.m_vd.edges()[edge].vertex0().unwrap();
+                let v1 = self.m_vd.vertex1(edge).unwrap();
+                voronoi::vertex_category(&self.m_vd, v0) == VertexCategory::Inside
+                    || voronoi::vertex_category(&self.m_vd, v1) == VertexCategory::Inside
+            } && self.validate_edge(edge)
+            {
+                // Valid skeleton edge.
+                let ed = self.edge_data(edge).0;
+                self.m_edge_data[ed].active = true;
+            }
+            edge += 2;
+        }
+
+        // MedialAxis.cpp:482-518. iterate through the valid edges to build polylines
+        let mut reverse_polyline = MedialAxisThickPolyline::default();
+        let mut seed_edge = 0;
+        while seed_edge < num_edges {
+            let seed = self.edge_data(seed_edge).0;
+            if self.m_edge_data[seed].active {
+                // Mark this edge as visited.
+                self.m_edge_data[seed].active = false;
+
+                // Start a polyline.
+                let mut polyline = MedialAxisThickPolyline::default();
+                let v0 = self.m_vd.vertices()[self.m_vd.edges()[seed_edge].vertex0().unwrap()];
+                let v1 = self.m_vd.vertices()[self.m_vd.vertex1(seed_edge).unwrap()];
+                polyline.points.push(point_from_doubles(v0.x(), v0.y()));
+                polyline.points.push(point_from_doubles(v1.x(), v1.y()));
+                polyline.width.push(self.m_edge_data[seed].width_start);
+                polyline.width.push(self.m_edge_data[seed].width_end);
+                // Grow the polyline in a forward direction.
+                self.process_edge_neighbors(seed_edge, &mut polyline);
+
+                // Grow the polyline in a backward direction.
+                reverse_polyline.clear();
+                let seed_twin = self.m_vd.edges()[seed_edge].twin().unwrap();
+                self.process_edge_neighbors(seed_twin, &mut reverse_polyline);
+                polyline.points.splice(0..0, reverse_polyline.points.iter().rev().copied());
+                polyline.width.splice(0..0, reverse_polyline.width.iter().rev().copied());
+                polyline.endpoints.0 = reverse_polyline.endpoints.1;
+
+                // Prevent loop endpoints from being extended.
+                if polyline.points.first() == polyline.points.last() {
+                    polyline.endpoints.0 = false;
+                    polyline.endpoints.1 = false;
+                }
+
+                // Append polyline to result.
+                polylines.push(polyline);
+            }
+            seed_edge += 2;
+        }
+    }
+
+    /// MedialAxis.cpp:545-590 `MedialAxis::process_edge_neighbors(edge, polyline)`.
+    pub fn process_edge_neighbors(&mut self, mut edge: usize, polyline: &mut MedialAxisThickPolyline) {
+        loop {
+            // Since rot_next() works on the edge starting point but we want
+            // to find neighbors on the ending point, we just swap edge with
+            // its twin.
+            let twin = self.m_vd.edges()[edge].twin().unwrap();
+
+            // count neighbors for this edge
+            let mut num_neighbors = 0usize;
+            let mut first_neighbor: Option<usize> = None;
+            let mut neighbor = self.m_vd.rot_next(twin).unwrap();
+            while neighbor != twin {
+                if self.m_edge_data[self.edge_data(neighbor).0].active {
+                    if num_neighbors == 0 {
+                        first_neighbor = Some(neighbor);
+                    }
+                    num_neighbors += 1;
+                }
+                neighbor = self.m_vd.rot_next(neighbor).unwrap();
+            }
+
+            // if we have a single neighbor then we can continue recursively
+            if num_neighbors == 1 {
+                let first_neighbor = first_neighbor.unwrap();
+                let (neighbor_data, reversed) = self.edge_data(first_neighbor);
+                if self.m_edge_data[neighbor_data].active {
+                    self.m_edge_data[neighbor_data].active = false;
+                    let v1 = self.m_vd.vertices()[self.m_vd.vertex1(first_neighbor).unwrap()];
+                    polyline.points.push(point_from_doubles(v1.x(), v1.y()));
+                    if reversed {
+                        polyline.width.push(self.m_edge_data[neighbor_data].width_end);
+                        polyline.width.push(self.m_edge_data[neighbor_data].width_start);
+                    } else {
+                        polyline.width.push(self.m_edge_data[neighbor_data].width_start);
+                        polyline.width.push(self.m_edge_data[neighbor_data].width_end);
+                    }
+                    edge = first_neighbor;
+                    // Continue chaining.
+                    continue;
+                }
+            } else if num_neighbors == 0 {
+                polyline.endpoints.1 = true;
+            } else {
+                // T-shaped or star-shaped joint
+            }
+            // Stop chaining.
+            break;
+        }
+    }
+
+    /// MedialAxis.cpp:594, the lambda `retrieve_segment`: the input line of a cell.
+    #[inline]
+    pub fn retrieve_segment(&self, cell: usize) -> Line {
+        self.m_lines[self.m_vd.cells()[cell].source_index()]
+    }
+
+    /// MedialAxis.cpp:595-598, the lambda `retrieve_endpoint`: the end of the input line
+    /// that a point cell stands for.
+    #[inline]
+    pub fn retrieve_endpoint(&self, cell: usize) -> Point {
+        let line = self.retrieve_segment(cell);
+        if self.m_vd.cells()[cell].source_category() == SOURCE_CATEGORY_SEGMENT_START_POINT {
+            line.a
+        } else {
+            line.b
+        }
+    }
+
+    /// `Line::distance_to(const Point&)` (Line.hpp:79, 37-58 `line_alg::distance_to_squared`)
+    /// as the medial-axis shim writes it (medial_axis_shim.cpp:39-58).
+    ///
+    /// FIDELITY-NOTE: the C++ evaluates this with Eigen vectors (`squaredNorm`, `dot`,
+    /// `(t * v - va).squaredNorm()`), which the compiler does not contract. The shim spells
+    /// the same steps as scalar expressions, and every `a * b + c * d` of it is contracted
+    /// to `fma(a, b, c * d)` and `t * v - va` to `fma(t, v, -va)`. The shim is followed.
+    #[inline]
+    fn distance_to(line: &Line, p: Point) -> f64 {
+        let vx = (line.b.x - line.a.x) as f64;
+        let vy = (line.b.y - line.a.y) as f64;
+        let vax = (p.x - line.a.x) as f64;
+        let vay = (p.y - line.a.y) as f64;
+        let l2 = vx.mul_add(vx, vy * vy);
+        if l2 == 0.0 {
+            return vax.mul_add(vax, vay * vay).sqrt();
+        }
+        let t = vax.mul_add(vx, vay * vy) / l2;
+        if t <= 0.0 {
+            return vax.mul_add(vax, vay * vay).sqrt();
+        }
+        if t >= 1.0 {
+            let vbx = (p.x - line.b.x) as f64;
+            let vby = (p.y - line.b.y) as f64;
+            return vbx.mul_add(vbx, vby * vby).sqrt();
+        }
+        let ex = t.mul_add(vx, -vax);
+        let ey = t.mul_add(vy, -vay);
+        ex.mul_add(ex, ey * ey).sqrt()
+    }
+
+    /// `Line::orientation()` (Line.cpp): `atan2` of the direction, in `[0, 2 PI)`
+    /// (medial_axis_shim.cpp:60-64).
+    #[inline]
+    fn orientation(line: &Line) -> f64 {
+        let mut angle = ((line.b.y - line.a.y) as f64).atan2((line.b.x - line.a.x) as f64);
+        if angle < 0. {
+            angle += 2.0 * std::f64::consts::PI;
+        }
+        angle
+    }
+
+    /// `(a - b).cast<double>().norm()` of two points.
+    ///
+    /// FIDELITY-NOTE: Eigen's `norm()` is not contracted; the shim's `MaPoint::norm`
+    /// (medial_axis_shim.cpp:31) is `sqrt(x * x + y * y)` on scalars, contracted to
+    /// `sqrt(fma(x, x, y * y))`. The shim is followed.
+    #[inline]
+    fn norm(a: Point, b: Point) -> f64 {
+        let x = (a.x - b.x) as f64;
+        let y = (a.y - b.y) as f64;
+        x.mul_add(x, y * y).sqrt()
+    }
+
+    /// MedialAxis.cpp:592-688 `MedialAxis::validate_edge(edge)`.
+    pub fn validate_edge(&mut self, edge: usize) -> bool {
+        // MedialAxis.cpp:600-607: the overflow guard is inside `#ifndef CLIPPERLIB_INT32`, and
+        // clipper.hpp defines CLIPPERLIB_INT32, so the engine compiles it out.
+
+        // construct the line representing this edge of the Voronoi diagram
+        let v0 = self.m_vd.vertices()[self.m_vd.edges()[edge].vertex0().unwrap()];
+        let v1 = self.m_vd.vertices()[self.m_vd.vertex1(edge).unwrap()];
+        let line = Line::new(point_from_doubles(v0.x(), v0.y()), point_from_doubles(v1.x(), v1.y()));
+
+        // retrieve the original line segments which generated the edge we're checking
+        let cell_l = self.m_vd.edges()[edge].cell().unwrap();
+        let cell_r = self.m_vd.edges()[self.m_vd.edges()[edge].twin().unwrap()].cell().unwrap();
+        let segment_l = self.retrieve_segment(cell_l);
+        let segment_r = self.retrieve_segment(cell_r);
+        let l_contains_segment = self.m_vd.cells()[cell_l].contains_segment();
+        let r_contains_segment = self.m_vd.cells()[cell_r].contains_segment();
+
+        // MedialAxis.cpp:641-647. Thickness of the cross-section at both endpoints of the edge.
+        let mut w0 = if r_contains_segment {
+            Self::distance_to(&segment_r, line.a) * 2.
+        } else {
+            Self::norm(self.retrieve_endpoint(cell_r), line.a) * 2.
+        };
+        let mut w1 = if l_contains_segment {
+            Self::distance_to(&segment_l, line.b) * 2.
+        } else {
+            Self::norm(self.retrieve_endpoint(cell_l), line.b) * 2.
+        };
+
+        // SCALED_EPSILON = scale_(EPSILON) = 1e-4 / 1e-5 (libslic3r.h), 10 as the shim has it.
+        const SCALED_EPSILON: f64 = 10.0;
+        const PI: f64 = std::f64::consts::PI;
+
+        if l_contains_segment && r_contains_segment {
+            // calculate the relative angle between the two boundary segments
+            let mut angle = (Self::orientation(&segment_r) - Self::orientation(&segment_l)).abs();
+            if angle > PI {
+                angle = 2. * PI - angle;
+            }
+
+            // fabs(angle) ranges from 0 (collinear, same direction) to PI (collinear, opposite direction)
+            // we're interested only in segments close to the second case (facing segments)
+            // so we allow some tolerance.
+            if PI - angle > PI / 8. {
+                // angle is not narrow enough
+                // only apply this filter to segments that are not too short otherwise their
+                // angle could possibly be not meaningful
+                // `line.length()`: sqrt(dx * dx + dy * dy) on scalars in the shim, contracted.
+                let dx = (line.b.x - line.a.x) as f64;
+                let dy = (line.b.y - line.a.y) as f64;
+                let line_length = dx.mul_add(dx, dy * dy).sqrt();
+                if w0 < SCALED_EPSILON || w1 < SCALED_EPSILON || line_length >= self.m_min_width {
+                    return false;
+                }
+            }
+        } else if w0 < SCALED_EPSILON || w1 < SCALED_EPSILON {
+            return false;
+        }
+
+        if (w0 >= self.m_min_width || w1 >= self.m_min_width) && (w0 <= self.m_max_width || w1 <= self.m_max_width) {
+            let (ed, reversed) = self.edge_data(edge);
+            if reversed {
+                std::mem::swap(&mut w0, &mut w1);
+            }
+            self.m_edge_data[ed].width_start = w0;
+            self.m_edge_data[ed].width_end = w1;
+            return true;
+        }
+
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

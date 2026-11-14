@@ -3715,6 +3715,22 @@ impl VoronoiDiagram {
         self.vertices.len()
     }
 
+    /// voronoi_diagram.hpp:77-80 `voronoi_cell::color(color_type) const`: the member is
+    /// `mutable`, so the C++ colours a cell it only holds a const reference to.
+    pub fn set_cell_color(&mut self, cell: usize, color: usize) {
+        self.cells[cell].set_color(color);
+    }
+
+    /// voronoi_diagram.hpp:122-125 `voronoi_vertex::color(color_type) const`.
+    pub fn set_vertex_color(&mut self, vertex: usize, color: usize) {
+        self.vertices[vertex].set_color(color);
+    }
+
+    /// voronoi_diagram.hpp:237-240 `voronoi_edge::color(color_type) const`.
+    pub fn set_edge_color(&mut self, edge: usize, color: usize) {
+        self.edges[edge].set_color(color);
+    }
+
     /// voronoi_diagram.hpp:179-180 `voronoi_edge::vertex1`.
     pub fn vertex1(&self, edge: usize) -> Option<usize> {
         self.edges[self.edges[edge].twin.expect("voronoi_edge::vertex1: no twin")].vertex
