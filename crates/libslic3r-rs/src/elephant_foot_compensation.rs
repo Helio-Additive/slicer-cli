@@ -593,19 +593,6 @@ fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
     (1.0 - t).mul_add(a, t * b)
 }
 
-/// `smooth_compensation_banded` through the C++ of `clipper-z-sys`.
-fn smooth_compensation_banded_shim(contour: &Points, band: f32, compensation: &mut Vec<f32>, strength: f32, num_iterations: usize) {
-    let n = contour.len() as i32;
-    let mut xy: Vec<i32> = Vec::with_capacity(contour.len() * 2);
-    for p in contour {
-        xy.push(p.x as i32);
-        xy.push(p.y as i32);
-    }
-    unsafe {
-        clipper_z_sys::cz_smooth_compensation_banded(xy.as_ptr(), n, compensation.as_mut_ptr(), band, strength, num_iterations as i32);
-    }
-}
-
 // ElephantFootCompensation.cpp:465-532
 //
 // Float arithmetic as the arm64 build contracts it: a sum of two squares is
@@ -620,14 +607,8 @@ pub fn smooth_compensation_banded(
 ) {
     debug_assert_eq!(contour.len(), compensation.len());
     debug_assert!(contour.len() > 2);
-    // The body below is the port. `EFC_SMOOTH_RUST=0` runs the same function compiled as
-    // C++ in `clipper-z-sys` (`cz_smooth_compensation_banded`), which is what the engine
-    // ran from R324 to R895; `tests/smooth_compensation_banded_native_parity.rs` holds the
-    // two equal bit for bit.
-    if !crate::faithful_gate("EFC_SMOOTH_RUST") {
-        smooth_compensation_banded_shim(contour, band, compensation, strength, num_iterations);
-        return;
-    }
+    // `tests/smooth_compensation_banded_native_parity.rs` holds this equal, bit for bit, to
+    // the function compiled as C++ in `clipper-z-sys` (the engine's until R896).
     let mut out: Vec<f32> = compensation.clone();
     let dist_min2 = band * band;
     const USE_MIN: bool = false;

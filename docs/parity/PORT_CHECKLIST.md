@@ -28,7 +28,7 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 | every named function ported | 48 |
 | every named function verified | 2 |
 
-C++ still run through the FFI shim crates: 7 functions called from the engine (`clipper-z-sys` 2, `clipper2-z-sys` 5, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
+C++ still run through the FFI shim crates: 5 functions called from the engine (`clipper-z-sys` 0, `clipper2-z-sys` 5, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
 
 ## How to read it
@@ -2955,8 +2955,8 @@ Rust file: `elephant_foot_compensation.rs`. Status: **partial**. Not listed: 1 c
 - [x] `contour_distance2` (line 233) → `elephant_foot_compensation.rs:329`
 - [x] `resample_polygon` (line 418) → `elephant_foot_compensation.rs:548`
 - [ ] `smooth_compensation` (line 449) → `elephant_foot_compensation.rs`
-- [v] `smooth_compensation_banded` (line 465) → `elephant_foot_compensation.rs:614` — R896: tests/smooth_compensation_banded_native_parity.rs (40,000 contours, bit for bit against the function compiled as C++ in clipper-z-sys)
-- [x] `validate_expoly_orientation` (line 535) → `elephant_foot_compensation.rs:741`
+- [v] `smooth_compensation_banded` (line 465) → `elephant_foot_compensation.rs:601` — R896: tests/smooth_compensation_banded_native_parity.rs (40,000 contours, bit for bit against the function compiled as C++ in clipper-z-sys)
+- [x] `validate_expoly_orientation` (line 535) → `elephant_foot_compensation.rs:722`
 - [ ] `elephant_foot_compensation` (line 544) → `elephant_foot_compensation.rs`
 - [ ] `elephant_foot_compensation` (line 620) → `elephant_foot_compensation.rs`
 - [ ] `elephant_foot_compensation` (line 627) → `elephant_foot_compensation.rs`
@@ -13646,8 +13646,7 @@ stands for is in [`../rust-engine/parity/not-ported.md`](../rust-engine/parity/n
 
 | Shim crate | Function | Call sites |
 |-|-|-|
-| `clipper-z-sys` | `cz_smooth_compensation_banded` | 1 |
-| `clipper-z-sys` | `medial_axis_native` | 1 |
+| `clipper-z-sys` | none called by the engine | 0 |
 | `clipper2-z-sys` | `cz2_free_wave_clip` | 1 |
 | `clipper2-z-sys` | `cz2_free_zpaths` | 2 |
 | `clipper2-z-sys` | `cz2_intersect_open_z` | 1 |

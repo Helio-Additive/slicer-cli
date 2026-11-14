@@ -497,22 +497,11 @@ impl ExPolygon {
     /// ExPolygon.cpp:263-371
     /// C++: void ExPolygon::medial_axis(double min_width, double max_width, ThickPolylines* polylines) const
     ///
-    /// PARTIAL / DIVERGENT: this faithfully performs the `MedialAxis::build()`
-    /// step (ExPolygon.cpp:266-269 -> `compute_medial_axis_thick`) but OMITS the
-    /// ExPolygon-level post-processing of ExPolygon.cpp:281-368 (endpoint
-    /// extension to the contour, removal of too-short polylines, and greedy
-    /// reconnection of consecutive polylines). That post-processing manipulates
-    /// `ThickPolyline::width` under the C++ invariant
-    /// `width.size() == points.size()*2 - 2` (two widths per segment), whereas the
-    /// crate's `ThickPolyline::widths` stores ONE width per vertex
-    /// (`widths.len() == points.len()`). Faithfully porting the post-processing
-    /// therefore requires reworking the `ThickPolyline` representation (a
-    /// `Polyline.hpp` / `Geometry/MedialAxis.cpp` concern outside ExPolygon.cpp),
-    /// so it is intentionally left BLOCKED here. See PORT_LEDGER notes.
-    /// MEDIALAXIS_NATIVE route with params already in SCALED units — native
-    /// callers compute min/max as doubles from scaled coord_t values
-    /// (PerimeterGenerator.cpp:972/979, 1329-1330); passing mm through a
-    /// ×SCALING_FACTOR roundtrip would reintroduce ulp drift.
+    /// With the widths in SCALED units, as the C++ callers pass them: they compute min/max
+    /// as doubles from scaled coord_t values (PerimeterGenerator.cpp:972/979, 1329-1330),
+    /// and passing mm through a ×SCALING_FACTOR round trip would bring ulp drift. Runs
+    /// [`Self::medial_axis_thick_polylines`] (ExPolygon.cpp:263-371) and converts its
+    /// polylines to the crate's `ThickPolyline`.
     pub fn medial_axis_scaled(
         &self,
         scaled_min: f64,
@@ -535,25 +524,12 @@ impl ExPolygon {
             tp.edge_widths = width.iter().map(|w| w / crate::SCALING_FACTOR).collect();
             polylines.push(tp);
         };
-        if crate::faithful_gate("MEDIAL_AXIS_RUST") {
-            // ExPolygon.cpp:263-371 in Rust, over the Rust port of boost's Voronoi builder.
-            let mut pp: Vec<MedialAxisThickPolyline> = Vec::new();
-            self.medial_axis_thick_polylines(scaled_min, scaled_max, &mut pp);
-            for pl in &pp {
-                let points: Vec<(i64, i64)> = pl.points.iter().map(|p| (p.x, p.y)).collect();
-                push(&points, &pl.width, pl.endpoints);
-            }
-        } else {
-            // MEDIAL_AXIS_RUST=0: the C++ shim (crates/clipper-z-sys/shim/medial_axis_shim.cpp).
-            let contour: Vec<(i64, i64)> = self.contour.points.iter().map(|p| (p.x, p.y)).collect();
-            let holes: Vec<Vec<(i64, i64)>> = self
-                .holes
-                .iter()
-                .map(|h| h.points.iter().map(|p| (p.x, p.y)).collect())
-                .collect();
-            for pl in clipper_z_sys::medial_axis_native(&contour, &holes, scaled_min, scaled_max) {
-                push(&pl.points, &pl.width, pl.endpoints);
-            }
+        // ExPolygon.cpp:263-371 in Rust, over the Rust port of boost's Voronoi builder.
+        let mut pp: Vec<MedialAxisThickPolyline> = Vec::new();
+        self.medial_axis_thick_polylines(scaled_min, scaled_max, &mut pp);
+        for pl in &pp {
+            let points: Vec<(i64, i64)> = pl.points.iter().map(|p| (p.x, p.y)).collect();
+            push(&points, &pl.width, pl.endpoints);
         }
     }
 

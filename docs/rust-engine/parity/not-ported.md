@@ -20,8 +20,8 @@ since R892 it has no shim arm for them, and the shim keeps them as the reference
 ClipperLib_Z routines, `cz_clip_extrusion` and `cz_detect_floating`, run on the Rust Z build too (`clipper_lib_z.rs`);
 since R895 the engine has no shim arm for them either. Since R896 the elephant-foot solver
 (`cz_smooth_compensation_banded`) runs in Rust too (`EFC_SMOOTH_RUST`). Since R898 the medial axis (`medial_axis_native`, boost Voronoi)
-runs in Rust as well (`MEDIAL_AXIS_RUST`): with default gates the engine calls nothing of this crate, which stays as
-the gate-off arms and the reference of the tests. The table is what each routine stands for.
+runs in Rust as well (`MEDIAL_AXIS_RUST`): since R903 (gates `EFC_SMOOTH_RUST` and `MEDIAL_AXIS_RUST` retired) the engine does not
+depend on this crate: it is a dev-dependency, the reference of the `*_native_parity` tests. The table is what each routine stands for.
 
 The engine's own `clipper.cpp` is vendored and compiled; `libslic3r/clipper.cpp` has no Rust file.
 
@@ -130,6 +130,7 @@ more are missing from a paired Rust file and from every other. `crates/libslic3r
 | Round | Item |
 |-|-|
 | R856 | every helper on the 1 um grid on the fixtures' path computes at coord_t |
+| R903 | `clipper-z-sys` is out of the engine's dependencies (a dev-dependency for the tests): ClipperLib, ClipperLib_Z, the medial axis over boost Voronoi and the elephant-foot solver all run in Rust |
 | R898 | the medial axis (`annotate_inside_outside`, `MedialAxis`, `ExPolygon::medial_axis`) runs in Rust on the ported Voronoi builder (`MEDIAL_AXIS_RUST`): no call of `clipper-z-sys` is left on the default path |
 | R897 | boost::polygon's Voronoi builder is ported (`boost_polygon_voronoi.rs`), equal to boost on 110,546 diagrams; not yet called by the engine |
 | R896 | the elephant-foot solver runs in Rust (`EFC_SMOOTH_RUST`) |
