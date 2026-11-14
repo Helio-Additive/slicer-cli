@@ -364,6 +364,8 @@ with open(sys.argv[1], "w") as f:
     f.write("endsolid cube\n")
 PY
 EDGE_L="${L%%,*}"; EDGE_R="${R%%,*}"; [ "$ENGINE" = orcaslicer ] && { EDGE_L="1,1"; EDGE_R="2,2"; }
+expect_refusal "refuse-zero-in-auto-mode" "$WORKDIR/two.3mf" "$H2D" "values start at 1" "${D2[@]}" \
+    --filament-map-mode "Auto For Flush" --filament-map 0,1
 CODE=-66 expect_refusal "refuse-extruder-cannot-reach" "$WORKDIR/edge.stl" "$H2D" "cannot reach" --arrange 0 --filament-map "$EDGE_R"
 status=$(slice "extruder-reaches" "$WORKDIR/edge.stl" --arrange 0 --filament-map "$EDGE_L")
 [ "$status" = 0 ] && pass "extruder-reaches" || { fail "extruder-reaches" "exit $status"; tail -n 3 "$WORKDIR/extruder-reaches/stderr"; }

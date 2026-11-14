@@ -110,6 +110,11 @@ FilamentMapFlagStep filament_map_flag_step(Slic3r::DynamicPrintConfig& extra, Sl
 #endif
         if (step.manual)
             why = filament_map_flag_refusal(cli_map->values, config, project_filaments);
+        else if (std::any_of(cli_map->values.begin(), cli_map->values.end(), [](int extruder) { return extruder < 1; }))
+            // An automatic mode regroups over the map, and a value below 1
+            // names no extruder for it to start from (-1, the official
+            // placeholder, is already filled in above).
+            why = "--filament-map values start at 1 (1 = left, 2 = right); a value below 1 names no nozzle.";
         if (!why.empty())
             return refuse(why);
     }
@@ -179,7 +184,8 @@ std::string extruder_reach_refusal(const Slic3r::Model& model, const Slic3r::Dyn
         if (object_filaments.size() != 1)
             continue;   // only a single-colour object is checked
         for (const Slic3r::ModelInstance* inst : object->instances) {
-            if (inst->print_volume_state != Slic3r::ModelInstancePVS_Inside)
+            // An instance the run leaves out (--skip-objects) restricts nothing.
+            if (!inst->printable || inst->print_volume_state != Slic3r::ModelInstancePVS_Inside)
                 continue;
             const Slic3r::Transform3d& inst_matrix = inst->get_transformation().get_matrix();
             for (const Slic3r::ModelVolume* vol : object->volumes) {
