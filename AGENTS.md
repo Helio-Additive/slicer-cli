@@ -67,14 +67,17 @@ reason.
 
 Tests. The build-tree tests take the program the build produced; CI runs them on
 Linux and macOS, never on Windows, in steps `Run structured-diagnostics event
-tests`, `Run feature-exclusion regression tests`, `Test diagnostic transport`
-and `Run nozzle-map provenance regression tests (bambu)`:
+tests`, `Run feature-exclusion regression tests`, `Test diagnostic transport`,
+`Run nozzle-map provenance regression tests (bambu)`, `Run --filament-map tests`
+and `Run official command-line parity check`:
 
 ```sh
 bash tests/test_diagnostic_events.sh build/slicer_cli        # engine read from the binary
 bash tests/test_excluded_features.sh build/slicer_cli
 python3 tests/test_diagnostic_transport.py                   # no arguments; compiles its own probe
 bash tests/test_nozzle_map_provenance.sh build/slicer_cli    # Bambu build only
+bash tests/test_filament_map_flag.sh build/slicer_cli        # engine read from the binary
+python3 tests/test_official_cli_parity.py build/slicer_cli   # any build; reads references/
 ```
 
 The package tests take the packaged programs, from the `Package` job (macOS and
@@ -122,11 +125,24 @@ compiles about 1,500 engine files.
 - **New behaviour gets a new flag; an existing flag keeps its meaning.** What
   the program prints — messages, event kinds and tags, `result.json` keys,
   return codes — is read by other programs: add, never change.
+- **slicer-cli takes what the official programs take, and what their apps'
+  screens choose.** On an engine update, list every setting each official
+  command line reads from the flags (`m_extra_config`) and every choice the
+  app's screens offer in the area that changed, and port each one, for all
+  three engines. A setting an official command line handles may be refused as
+  a flag only with the repository owner's agreement, listed with its reason in
+  `tests/official-cli-refused-settings.json`;
+  `tests/test_official_cli_parity.py` fails on any other such refusal. "The
+  engine derives it" is not a reason.
 - **Refusals are clear sentences that say what to do**, and name the program
   that fits when the other engine does (`cli_flag_support.cpp`): a flag a
   program does not take is refused by name, before anything loads, and points
   at `slicer_cli`, `slicer_cli-orcaslicer` or `slicer_cli-snapmaker` as appropriate.
 - **A test proves its fix:** it fails before the change and passes after.
+- **A pull request says what it covers** (`.github/pull_request_template.md`):
+  the engine versions it was tested on, one line for each of the three engines
+  (changed, refused or not relevant, and why) and one for each system (tested
+  or not, and where). The `PR description` check fails when a section is missing.
 - **No machine-specific paths, hostnames or internal names** in code, docs or
   commits. This repository is public.
 - C++17, the engine's conventions. New command-line code goes in its own

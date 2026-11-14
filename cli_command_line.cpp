@@ -61,6 +61,7 @@ enum class Legacy {
     PrinterPreset, ProcessPreset, FilamentPreset, ListPresets, ListSettings, Printer,
     AllowSubstitution, EngineInfo, LayerHeight, SingleInstance, ListFlags,
     Simplify, SimplifyRatio, SimplifyTriangles, SimplifyObjects, SimplifyKeepPaint,
+    ProjectSettingsAsSaved,
 };
 
 struct LegacyFlag {
@@ -114,6 +115,7 @@ const std::vector<LegacyFlag>& legacy_flags() {
         {"simplify-triangles",        Legacy::SimplifyTriangles, true,  "N",       "Simplify: reduce each part to about N triangles"},
         {"simplify-objects",          Legacy::SimplifyObjects,   true,  "IDS",     "Simplify only these objects, by the ids --engine-info lists (what --skip-objects takes); default: every object"},
         {"simplify-keep-paint",       Legacy::SimplifyKeepPaint, false, "",        "Simplify: carry painted colours, supports and seams onto the reduced mesh (slicer_cli, slicer_cli-orcaslicer)"},
+        {"project-settings-as-saved", Legacy::ProjectSettingsAsSaved, false, "",   "Slice a Bambu Studio project with the values saved in the file, as the official command line does; default: values the maker did not change come from this engine's presets, as the desktop app loads it"},
 #ifdef ENGINE_SNAPMAKER
         // Snapmaker Orca's engine has no allow_mix_temp setting (PrintConfig.cpp
         // at bac6fd5), so this build takes the desktop's temperature rule as its
@@ -139,6 +141,15 @@ const std::map<std::string, std::string>& official_names() {
         for (const auto& kv : cfg.def()->options)
             for (const std::string& t : kv.second.cli_args(kv.first))
                 out[t] = kv.first;
+#ifdef ENGINE_SNAPMAKER
+        // The desktop's nozzle flow selector and its filament grouping dialog
+        // write these two settings, and the engine keeps them off its own
+        // command line (nocli, PrintConfig.cpp 4096-4122 at bac6fd5). Headless
+        // they are the only way to say which nozzles are high flow and which
+        // filaments use them (cli_snapmaker.cpp sync_filament_volume_types).
+        out["nozzle-volume-type"]   = "nozzle_volume_type";
+        out["filament-volume-type"] = "filament_volume_type";
+#endif
         return out;
     }();
     return names;
@@ -511,9 +522,16 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
             // "same as the project" marker, PrintConfig.cpp 437-445 at 5873b5f,
             // 467-475 at 31f6803) is not a value for the setting itself; the
             // slice crashes on it. Only the listed values are taken.
+            // filament_map_mode's "Auto For Quality" is a mode of its own
+            // that the engine's list leaves out at v02.09.01.70 (PrintConfig.cpp
+            // 918 against 3035-3039): Bambu Studio's "Quality Mode"
+            // (FilamentMapDialog.cpp 99, 111), checked against the printer when
+            // the plate is set up (cli_nozzle_options.cpp).
             if (def.type == Slic3r::coEnum && !def.enum_values.empty()) {
                 const std::string stored = cfg.option(opt_key)->serialize();
-                if (std::find(def.enum_values.begin(), def.enum_values.end(), stored) == def.enum_values.end()) {
+                const bool quality_mode = opt_key == "filament_map_mode" && stored == "Auto For Quality";
+                if (!quality_mode &&
+                    std::find(def.enum_values.begin(), def.enum_values.end(), stored) == def.enum_values.end()) {
                     refusal = refuse(bad_value_sentence(token, def, value));
                     return false;
                 }
@@ -662,6 +680,7 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
                 break;
             }
             case Legacy::SimplifyKeepPaint: o.simplify.keep_paint = true; break;
+            case Legacy::ProjectSettingsAsSaved: o.project_settings_as_saved = true; break;
             }
             continue;
         }
@@ -869,6 +888,26 @@ void print_help(std::ostream& out, const char* prog) {
         if (bed)
             out << "  --curr-bed-type values: " << join(bed->enum_values, ", ") << "\n";
     }
+#ifdef ENGINE_SNAPMAKER
+    out << "  --nozzle-volume-type standard|high_flow[,...]: the flow type of each extruder's nozzle, as the\n"
+        << "  desktop's nozzle selector sets it. --filament-volume-type standard|high_flow[,...]: with standard\n"
+        << "  and high-flow nozzles mixed, the nozzle type each filament prints with (the desktop's filament\n"
+        << "  grouping dialog). A filament that cannot print with a high-flow nozzle is refused.\n";
+#endif
+#ifndef ENGINE_SNAPMAKER
+    out << "  --filament-map 1[,2...]: printers with a left and a right extruder (H2D, H2C, X2D): the one\n"
+        << "  each filament prints with, one value per filament (1 = left, 2 = right); sets\n"
+        << "  filament_map_mode to Manual. result.json reports each plate's filament_maps either way.\n"
+        << "  --filament-map-mode, --nozzle-volume-type"
+#ifndef ENGINE_ORCA
+        << ", --filament-volume-map, --filament-nozzle-map and the\n"
+        << "  nozzle rack (--extruder-nozzle-count, --extruder-nozzle-volume-type, --extruder-nozzle-diameter,\n"
+        << "  --ams-nozzle-idx) are taken as the official command line takes them"
+#else
+        << " are taken as the official command line takes them"
+#endif
+        << "; docs/cli-reference.md,\n  \"Nozzles and filament grouping\".\n";
+#endif
     out << "\nPrint settings priorities:\n"
         << "\t1) setting values from the command line (highest priority)\n"
         << "\t2) setting values loaded with --load-settings and --load-filaments\n"

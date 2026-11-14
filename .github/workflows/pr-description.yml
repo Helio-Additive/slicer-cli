@@ -1,0 +1,29 @@
+name: PR description
+
+# A pull request states the engine versions it was tested on, what it does on
+# each of the three engines and where it was tested
+# (.github/pull_request_template.md). This check fails when a section is
+# missing; what the sections say is for the reviewer.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  sections:
+    if: ${{ !endsWith(github.actor, '[bot]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the required sections
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          missing=0
+          for section in "## Engine versions" "## Engines" "## Systems"; do
+            if ! printf '%s\n' "$BODY" | tr -d '\r' | grep -Fxq -- "$section"; then
+              echo "::error::The pull request description has no \"$section\" section (.github/pull_request_template.md)."
+              missing=1
+            fi
+          done
+          exit "$missing"

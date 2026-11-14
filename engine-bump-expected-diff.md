@@ -57,9 +57,11 @@ Not ported, on purpose:
 
 - The per-slot nozzle keys given as flags (`extruder_nozzle_count`,
   `extruder_nozzle_volume_type`, `extruder_nozzle_diameter`,
-  `extruder_nozzle_slot`, `ams_nozzle_idx`): the first two were already
-  refused as flags (the engine derives them); the other three are now
-  refused the same way (`BambuStudio.cpp 7104-7172`).
+  `extruder_nozzle_slot`, `ams_nozzle_idx`) were refused when the engine
+  moved to 2.9.1. That was a gap, not a decision that holds: they are taken
+  since the nozzle and filament grouping port (`cli_nozzle_options.cpp`,
+  `BambuStudio.cpp 7103-7172`), and `tests/test_official_cli_parity.py` now
+  fails on any such refusal.
 - The single-diameter plate refusal (-108) runs where slicer-cli checks a
   plate: before any plate is sliced for `--slice 0` (the pre-check pass
   visits every plate first), on the one plate for `--slice N`. The

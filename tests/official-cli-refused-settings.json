@@ -1,0 +1,6 @@
+{
+  "description": "Settings an official command line handles on its own (it reads them from the flags, m_extra_config) that a slicer-cli binary refuses as a flag. tests/test_official_cli_parity.py fails on any such refusal that is not listed here, and on a listed one that is no longer refused. An entry needs the repository owner's agreement and says why the setting is not taken.",
+  "bambustudio": {},
+  "orcaslicer": {},
+  "snapmaker": {}
+}

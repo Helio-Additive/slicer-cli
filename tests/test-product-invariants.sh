@@ -362,7 +362,13 @@ with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED
     for item in zin.infolist():
         data = zin.read(item.filename)
         if item.filename == "Metadata/project_settings.config":
-            d = json.loads(data); d["print_sequence"] = "by object"; data = json.dumps(d, indent=4).encode()
+            d = json.loads(data); d["print_sequence"] = "by object"
+            # The maker's own change: a Bambu Studio project keeps a value only
+            # when different_settings_to_system lists it.
+            diff = d.get("different_settings_to_system") or [""]
+            diff[0] = ";".join([k for k in diff[0].split(";") if k] + ["print_sequence"])
+            d["different_settings_to_system"] = diff
+            data = json.dumps(d, indent=4).encode()
         elif item.filename.startswith("Metadata/plate_") and item.filename.endswith((".gcode", ".md5")):
             continue
         zout.writestr(item, data)

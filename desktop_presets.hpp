@@ -136,4 +136,19 @@ std::string snapmaker_default_material(const Slic3r::PresetCollection& filaments
 bool preset_shipped_or_renamed(const Slic3r::PresetCollection& collection, const std::string& name);
 #endif
 
+#ifdef ENGINE_BAMBU
+/// Opening a Bambu Studio project, the two things the desktop keeps from the
+/// file before it loads the settings over this engine's presets: the presets
+/// saved inside the project go into `bundle` (Plater.cpp 11953-11958 at
+/// v02.09.01.70), so a process or filament the maker saved under a name of
+/// their own is found and loads over the system preset it inherits; and the
+/// file's own nozzle rack is returned (Plater.cpp 11979-11983), for
+/// NozzleInventory::open_project after the load (12160). The bundle gets
+/// copies of `presets`; the caller keeps its own.
+Slic3r::DynamicPrintConfig load_project_embedded_presets(Slic3r::PresetBundle& bundle,
+                                                         const std::vector<Slic3r::Preset*>& presets,
+                                                         const Slic3r::DynamicPrintConfig& file_config);
+#endif
+
+
 } // namespace slicer_cli

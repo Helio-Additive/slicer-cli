@@ -777,4 +777,27 @@ bool preset_shipped_or_renamed(const Slic3r::PresetCollection& collection, const
 }
 #endif
 
+#ifdef ENGINE_BAMBU
+Slic3r::DynamicPrintConfig load_project_embedded_presets(Slic3r::PresetBundle& bundle,
+                                                         const std::vector<Slic3r::Preset*>& presets,
+                                                         const Slic3r::DynamicPrintConfig& file_config) {
+    std::vector<Slic3r::Preset>  copies;
+    std::vector<Slic3r::Preset*> embedded;
+    copies.reserve(presets.size());
+    for (const Slic3r::Preset* p : presets)
+        if (p) copies.push_back(*p);
+    for (Slic3r::Preset& p : copies)
+        embedded.push_back(&p);
+    if (!embedded.empty())
+        bundle.load_project_embedded_presets(embedded, Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+    Slic3r::DynamicPrintConfig file_nozzle_keys;
+    for (const char* key : {"nozzle_volume_type", "extruder_nozzle_stats", "extruder_nozzle_stats_new",
+                            "extruder_nozzle_count", "extruder_nozzle_volume_type", "extruder_nozzle_diameter",
+                            "extruder_nozzle_slot"})
+        if (file_config.has(key))
+            file_nozzle_keys.apply_only(file_config, {key});
+    return file_nozzle_keys;
+}
+#endif
+
 } // namespace slicer_cli

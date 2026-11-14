@@ -5,17 +5,22 @@
 #ifdef ENGINE_SNAPMAKER
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iostream>
 #include <map>
 #include <set>
 #include <sstream>
 
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
 
+#include "libslic3r/AllowlistManager.hpp"
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/FilamentHotBedNozzleRules.hpp"
 #include "libslic3r/Preset.hpp"
@@ -701,13 +706,95 @@ void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model
     }
 }
 
+namespace {
+
+/// HighFlowCompat::check (references/SnapmakerOrca/src/slic3r/GUI/HighFlowCompat.cpp
+/// 11-108 at bac6fd5): whether a filament may go to a high-flow nozzle. The
+/// lists are the engine's own (resources profiles/Snapmaker/filament/
+/// filament_allow_list.json, section high_flow, through AllowlistManager).
+enum class HighFlowLevel { Compatible, NotRecommended, Unsupported };
+struct HighFlowResult { HighFlowLevel level = HighFlowLevel::Compatible; std::string material; };
+
+std::string high_flow_normalize(const std::string& value) {
+    std::string normalized = boost::algorithm::to_lower_copy(value);
+    boost::algorithm::trim(normalized);
+    std::string result;
+    bool previous_space = false;
+    for (const char ch : normalized) {
+        const bool is_space = std::isspace(static_cast<unsigned char>(ch)) != 0;
+        if (is_space && previous_space)
+            continue;
+        result.push_back(is_space ? ' ' : ch);
+        previous_space = is_space;
+    }
+    return result;
+}
+
+bool high_flow_material_token(const std::string& value, const std::string& token) {
+    size_t position = value.find(token);
+    while (position != std::string::npos) {
+        const size_t end = position + token.size();
+        const bool left_boundary = position == 0 || !std::isalnum(static_cast<unsigned char>(value[position - 1]));
+        const bool right_boundary = end == value.size() || !std::isalnum(static_cast<unsigned char>(value[end]));
+        if (left_boundary && right_boundary)
+            return true;
+        position = value.find(token, position + 1);
+    }
+    return false;
+}
+
+bool high_flow_listed(const std::string& name, const Slic3r::AllowlistManager::StringList& list) {
+    return std::any_of(list.begin(), list.end(), [&name](const std::string& entry) {
+        const std::string normalized_entry = high_flow_normalize(entry);
+        return !normalized_entry.empty() && name.find(normalized_entry) != std::string::npos;
+    });
+}
+
+std::string high_flow_display_name(const std::string& preset_name) {
+    static const std::string vendor_prefix = "snapmaker ";
+    std::string display_name = preset_name;
+    if (high_flow_normalize(preset_name).compare(0, vendor_prefix.size(), vendor_prefix) == 0) {
+        const size_t display_start = preset_name.find_first_not_of(' ', vendor_prefix.size());
+        if (display_start != std::string::npos)
+            display_name = preset_name.substr(display_start);
+    }
+    const size_t variant_suffix = display_name.find(" @");
+    if (variant_suffix != std::string::npos)
+        display_name.erase(variant_suffix);
+    return display_name;
+}
+
+HighFlowResult high_flow_compat(const std::string& filament_type, const std::string& preset_name) {
+    const std::string type = high_flow_normalize(filament_type);
+    const std::string name = high_flow_normalize(preset_name);
+    Slic3r::AllowlistManager& manager = Slic3r::AllowlistManager::instance();
+    if (high_flow_listed(name, manager.get_list("high_flow", "unavailable_filaments")))
+        return {HighFlowLevel::Unsupported, high_flow_display_name(preset_name)};
+    if (high_flow_material_token(type, "cf") || high_flow_material_token(name, "cf") ||
+        high_flow_material_token(type, "gf") || high_flow_material_token(name, "gf"))
+        return {HighFlowLevel::NotRecommended, "CF/GF filaments"};
+    if (high_flow_listed(name, manager.get_list("high_flow", "not_recommended_filaments")))
+        return {HighFlowLevel::NotRecommended, high_flow_display_name(preset_name)};
+    return {};
+}
+
+} // namespace
+
 /// G: sync_filament_volume_types_for_slice
 /// (references/SnapmakerOrca/src/slic3r/GUI/FlowTypeHelper.cpp:187-208 at
-/// bac6fd5), called before every slice. The nozzles' flow types come from
-/// nozzle_volume_type and the printer's printer_flow_support; when they all
-/// agree every filament follows that type, and when they mix the desktop asks
-/// the user — headless the file's values are kept and a warning says so.
-void sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id) {
+/// bac6fd5), called before every slice, and the grouping dialog the desktop
+/// shows first when any nozzle is high flow (Plater.cpp 14574-14581;
+/// FilamentGroupDialog.cpp). The nozzles' flow types come from
+/// nozzle_volume_type and the printer's printer_flow_support. When they all
+/// agree every filament follows that type (the dialog's default with every
+/// nozzle high flow, FilamentGroupDialog.cpp 230-233). When they mix, the
+/// dialog asks which nozzle type each filament uses: headless that answer is
+/// filament_volume_type, from --filament-volume-type or the file. Either way
+/// the dialog does not let a slice start with a filament on a high-flow
+/// nozzle it cannot print with (update_warnings 424-470), and warns about
+/// the ones it does not recommend.
+std::string sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id,
+                                       const std::set<int>& used_filaments, bool mapping_given) {
     using namespace Slic3r;
     const auto* nozzle_types = config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type");
     std::vector<int> types;
@@ -729,26 +816,61 @@ void sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id
     std::vector<int> distinct = types;
     std::sort(distinct.begin(), distinct.end());
     distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
+    size_t filament_count = 1;
+    if (const auto* ftypes = config.option<ConfigOptionStrings>("filament_type"))
+        filament_count = std::max<size_t>(ftypes->values.size(), 1);
+    auto* flow_opt = config.option<ConfigOptionEnumsGeneric>("filament_volume_type", true);
     if (distinct.size() >= 2) {
-        emit({{"event","warning"}, {"tag","MixedNozzleFlowTypes"},
-                    {"plate_id", plate_id},
-                    {"message","The nozzles mix standard and high-flow types. The desktop asks which flow"
-                               " type the filaments should use; this run keeps the file's filament_volume_type"
-                               " values."}});
+        // The dialog's starting mapping: the stored one, Standard for a
+        // filament it does not cover (FilamentGroupDialog.cpp 230-231).
+        flow_opt->values.resize(filament_count, 0);
+        if (!mapping_given)
+            emit({{"event","warning"}, {"tag","MixedNozzleFlowTypes"},
+                        {"plate_id", plate_id},
+                        {"message","The nozzles mix standard and high-flow types. The desktop asks which flow"
+                                   " type the filaments should use; this run keeps the file's filament_volume_type"
+                                   " values."}});
     } else {
         // 1 (nvtBigTraffic in nozzle_volume_type) is the high-flow type.
         const int wanted = (!types.empty() && types.front() == 1 && supports_high_flow) ? 1 : 0;
-        auto* flow_opt = config.option<ConfigOptionEnumsGeneric>("filament_volume_type", true);
-        const bool uniform = !flow_opt->values.empty() &&
+        const bool uniform = flow_opt->values.size() == (size_t)filament_count &&
                              std::all_of(flow_opt->values.begin(), flow_opt->values.end(),
                                          [wanted](int v) { return v == wanted; });
-        if (!uniform) {
-            size_t filament_count = 1;
-            if (const auto* ftypes = config.option<ConfigOptionStrings>("filament_type"))
-                filament_count = std::max<size_t>(ftypes->values.size(), 1);
+        if (!uniform)
             flow_opt->values.assign(filament_count, wanted);
-        }
     }
+    // The dialog's check, when any nozzle is high flow: the filaments the
+    // plate uses that go to a high-flow nozzle.
+    if (std::find(types.begin(), types.end(), 1) == types.end())
+        return {};
+    const auto* ftypes = config.option<ConfigOptionStrings>("filament_type");
+    const auto* fnames = config.option<ConfigOptionStrings>("filament_settings_id");
+    std::vector<std::string> unsupported, not_recommended;
+    const auto add_once = [](std::vector<std::string>& list, const std::string& material) {
+        if (std::find(list.begin(), list.end(), material) == list.end())
+            list.push_back(material);
+    };
+    for (size_t i = 0; i < flow_opt->values.size(); ++i) {
+        if (flow_opt->values[i] != 1 || (!used_filaments.empty() && used_filaments.count(int(i) + 1) == 0))
+            continue;
+        const HighFlowResult result = high_flow_compat(ftypes && i < ftypes->values.size() ? ftypes->values[i] : "PLA",
+                                                       fnames && i < fnames->values.size() ? fnames->values[i] : "");
+        if (result.level == HighFlowLevel::Unsupported)
+            add_once(unsupported, result.material);
+        else if (result.level == HighFlowLevel::NotRecommended)
+            add_once(not_recommended, result.material);
+    }
+    const std::string diameter = config.has("printer_variant") ? config.opt_string("printer_variant") : std::string();
+    if (!not_recommended.empty())
+        emit({{"event","warning"}, {"tag","HighFlowNotRecommended"}, {"plate_id", plate_id},
+                    {"materials", not_recommended},
+                    {"message","Warning:" + diameter + "mm High Flow nozzles are not recommended for " +
+                               boost::algorithm::join(not_recommended, ", ")}});
+    if (!unsupported.empty())
+        return "These filaments cannot be printed with the " + diameter + "mm high flow nozzle: " +
+               boost::algorithm::join(unsupported, ", ") + ". Give --filament-volume-type with Standard for them and a "
+               "standard nozzle in --nozzle-volume-type, or another filament.";
+    return {};
 }
 
 /// H: the U1's bed types (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:3615,

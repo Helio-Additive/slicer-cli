@@ -106,6 +106,10 @@
         "max": {
           "type": "number"
         },
+        "refused_as_flag": {
+          "type": "string",
+          "description": "Present when this binary refuses the setting as a flag: the sentence the refusal gives. The setting still applies from a 3MF or a preset."
+        },
         "scope": {
           "enum": [
             "printer",

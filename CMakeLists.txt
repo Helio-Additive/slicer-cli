@@ -891,7 +891,7 @@ add_library(libslic3r ALIAS libslic3r_core)
 add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_plan.cpp
     cli_command_line.cpp cli_flag_support.cpp desktop_presets.cpp cli_model_load.cpp cli_run_steps.cpp cli_load_settings.cpp cli_repetitions.cpp cli_simplify.cpp cli_list_flags.cpp cli_engine_info.cpp
     cli_assemble.cpp cli_layer_ranges.cpp cli_pipe.cpp cli_failure_reason.cpp cli_snapmaker.cpp
-    cli_nozzle_diameter.cpp cli_gcode_timing.cpp)
+    cli_nozzle_diameter.cpp cli_gcode_timing.cpp cli_filament_map.cpp cli_nozzle_options.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 # Both engines build a program called slicer_cli; the package renames the
 # OrcaSlicer one to slicer_cli-orcaslicer. Give the Snapmaker build its own name

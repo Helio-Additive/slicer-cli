@@ -190,6 +190,7 @@ flag takes its value as the next word or after `=`.
 | `--printer-preset` | name | A printer system preset by name, every parent applied; on a project 3MF, the printer the project moves to | all binaries |
 | `--process-preset` | name | A process system preset by name (default: the printer's) | all binaries |
 | `--filament-preset` | name | A filament system preset by name; repeat for more filaments | all binaries |
+| `--filament-map` | "1[,2...]" | Printers with a left and a right extruder (H2D, H2D Pro, H2C, X2D): the one each filament prints with, one value per filament (1 = left, 2 = right); sets `filament_map_mode` to `Manual` (see "Every print setting") | slicer_cli and slicer_cli-orcaslicer |
 | `--machine` | file | A printer settings file (JSON) | all binaries |
 | `--process` | file | A process settings file (JSON) | all binaries |
 | `--filament` | file | A filament settings file (JSON) | all binaries |
@@ -207,7 +208,31 @@ flag takes its value as the next word or after `=`.
 | `--skip-modified-gcodes` | `=0` or `=1` | Keep the system presets' G-code where the project changed it | all binaries |
 | `--allow-newer-file` | `=0` or `=1` | Slice a 3MF saved by a newer app version | all binaries |
 | `--allow-substitution` | | With `--slice`: slice a 3MF whose values this engine has to substitute | all binaries |
+| `--project-settings-as-saved` | | Slice a Bambu Studio project with the values saved in the file | all binaries |
 | `--datadir` | folder | Accepted; no effect (slicer-cli keeps no settings between runs) | all binaries |
+
+**A Bambu Studio project loads the way the desktop app loads it.** A project
+file holds a full copy of its printer, process and filament settings from the
+day it was saved, and the list of the settings the maker changed
+(`different_settings_to_system`). The app keeps the changed ones and takes
+every other value from the preset it has today (`load_config_model`,
+`Plater.cpp` 12155 at v02.09.01.70, `load_external_preset` in `Preset.cpp`);
+the presets saved inside the project and the file's own nozzle rack are kept
+(`Plater.cpp` 11953-11958, 12160). All three programs do the same with the
+presets the package ships, and say so (event `config_normalized` /
+`ProjectRebasedOnSystemPresets`). So a project saved by an older version
+slices with today's start G-code, as it does in the app. A project whose
+printer or process preset the package does not ship keeps its saved values
+(`ProjectPresetRebaseSkipped`).
+
+`--project-settings-as-saved` turns this off: the run slices the values in
+the file, which is what the official command lines do. `slicer_cli-orcaslicer`
+and `slicer_cli-snapmaker` load only a Bambu Studio project this way; a
+project their own app saved is sliced as saved.
+
+The app can also download newer presets than the ones its installer ships,
+and slices with those. slicer-cli has the presets of its pinned engine
+version, so a setting Bambu changed after that version differs.
 
 Settings priority, highest first: setting flags on the command line, then
 `--load-settings` and `--load-filaments`, then the 3MF.
@@ -270,12 +295,106 @@ slicer_cli part.stl --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
 The values win over the presets' and the file's, for every plate. A value the
 setting does not take is refused before slicing (return code -2), naming the
 setting. `post_process` is refused: neither official command line runs
-post-processing scripts. The nozzle and filament mapping settings
-(`nozzle_volume_type`, `filament_map_mode`, `filament_map`,
-`filament_volume_map`, `filament_nozzle_map`, `extruder_nozzle_count`,
-`extruder_nozzle_volume_type`, `extruder_nozzle_diameter`,
-`extruder_nozzle_slot`, `ams_nozzle_idx`) are refused as flags; the engine
-sets them from the printer and the filaments.
+post-processing scripts. `--list-settings` marks every setting a binary
+refuses as a flag (`refused_as_flag`).
+
+Nozzles and filament grouping. Each binary takes the settings its official
+command line reads from the flags, and what its desktop app's own screens
+choose:
+
+| Setting | slicer_cli | slicer_cli-orcaslicer | slicer_cli-snapmaker |
+|-|-|-|-|
+| `--filament-map-mode` | `Auto For Flush`, `Auto For Match`, `Auto For Quality`, `Manual`, `Nozzle Manual` | `Auto For Flush`, `Auto For Match`, `Manual` | refused: the engine keeps no map on a plate |
+| `--filament-map` | the extruder of each filament (1 = left, 2 = right); on a printer with one extruder and a nozzle rack, Bambu Studio's grouping (1 = the nozzle the AMS feeds, 2 = the fixed nozzles) | the extruder of each filament, Bambu Lab printers with two extruders | refused |
+| `--nozzle-volume-type` | the flow type of each extruder (`Standard`, `High Flow`, ...) | the same | the flow type of each extruder's nozzle (`standard`, `high_flow`) |
+| `--filament-volume-map`, `--filament-nozzle-map` | the flow type and the rack nozzle of each filament | refused: the official command line does not read them | no such setting |
+| `--extruder-nozzle-count`, `--extruder-nozzle-volume-type`, `--extruder-nozzle-diameter`, `--extruder-nozzle-slot`, `--ams-nozzle-idx` | the nozzle rack: how many nozzles each extruder holds, each one's flow type and diameter, and the nozzle the AMS feeds | refused: the official command line does not read them | no such setting |
+| `--filament-volume-type` | no such setting | no such setting | with standard and high-flow nozzles mixed, the nozzle type of each filament |
+
+The mode and the map from the command line win over the plate's and the
+project's, as in the official command lines. `--filament-map` with no
+`--filament-map-mode` means `Manual`, so the engine keeps that grouping; with
+an automatic mode the engine groups the filaments itself, whatever the map
+says. `-1` in the map takes the first value given. The run says what it
+applied with a `config_normalized` event (`FilamentMapFromCommandLine`, or
+`FilamentMapModeFromCommandLine` for a mode alone). `--export-settings` and
+an exported 3MF state the mode with the map.
+
+`--filament-map` on a printer with a left and a right extruder (the H2D,
+H2D Pro, H2C and X2D in `slicer_cli`; the H2D, H2D Pro and X2D in
+`slicer_cli-orcaslicer`): one value per filament of the project, in filament
+order (`--filament-map 2,1`). Refused before slicing (return code -2): a
+count other than the project's filament count, an extruder the printer does
+not have, a one-nozzle printer, and in `slicer_cli-orcaslicer` any printer
+that is not a Bambu Lab one with two extruders, where every filament has its
+own extruder. On the H2C the right extruder changes between up to six
+nozzles; with `Manual` the engine picks among them. A model with no saved
+prime tower gets the tower inside the area both nozzles reach. In a manual
+mode `slicer_cli` refuses a filament the plate uses that cannot print with
+the extruder its map names (the filament's `filament_printable`; return code
+-68, as the official command line), whether the map comes from the flag or
+from the plate. An object placed where only one nozzle reaches is checked
+before slicing, in `slicer_cli` and `slicer_cli-orcaslicer`: a manual map
+that names the other extruder for its filament, or in an automatic mode a
+filament no single extruder can print, ends the run with return code -66 and
+a `plate_error` / `FilamentCannotMapToExtruder` event.
+
+A project and its plates remember whether the maker's printer had a filament
+switcher (`has_filament_switcher`) and the smart filament assignment that
+needs it (`enable_filament_dynamic_map`). As in the official command line,
+`slicer_cli` slices with both off unless a flag states them
+(`--enable-filament-dynamic-map=1`, `--has-filament-switcher=1`).
+
+`--filament-map` on a printer with one extruder and a nozzle rack (the H3C,
+`slicer_cli`): 1 puts a filament on the nozzle the AMS feeds, 2 on the fixed
+nozzles, where the engine picks the nozzle that fits. The settings must
+state an AMS: a project saved with one does, and `--ams-nozzle-idx N` names
+the rack nozzle it feeds (0 is the first; -1 is no AMS). Nothing is assumed:
+with no flag the run slices with what the file says, as Bambu Studio does
+with no printer connected (the official command line instead puts an AMS on
+every such plate, `BambuStudio.cpp` 7448-7455). State the AMS the person has.
+Without an AMS every nozzle is a fixed one, and a value of 1 is refused.
+
+`--filament-map-mode "Nozzle Manual"` (`slicer_cli`, printers with a nozzle
+rack) names the rack nozzle of each filament. As in the official command
+line it needs all of `--filament-map`, `--filament-volume-map`,
+`--filament-nozzle-map`, `--extruder-nozzle-count` and
+`--extruder-nozzle-volume-type`, and is refused on a printer with no rack:
+
+```sh
+slicer_cli two-colours.3mf --printer-preset "Bambu Lab H2C 0.4 nozzle" --slice 1 --outputdir out \
+    --filament-map-mode "Nozzle Manual" --filament-map 2,2 --filament-volume-map 0,0 \
+    --filament-nozzle-map 1,3 --extruder-nozzle-count 1,3 \
+    --extruder-nozzle-volume-type "Standard,Standard,Standard,Standard"
+```
+
+`--extruder-nozzle-count` with `--extruder-nozzle-volume-type` describes the
+rack in any mode: the count per extruder, then one flow type per nozzle, in
+order. `--extruder-nozzle-diameter` gives each nozzle's diameter (the
+printer's own when left out) and `--ams-nozzle-idx` the nozzle the AMS feeds
+(none when left out). `"Auto For Quality"` is Bambu Studio's Quality Mode:
+it is taken on a printer whose extruders differ in type (the X2D) and
+refused on any other. `--estimate-mode` slices with `Auto For Flush` and a
+full rack of Standard nozzles; another mode with it is refused.
+
+`slicer_cli-snapmaker`: `--nozzle-volume-type` sets each nozzle to
+`standard` or `high_flow`, as the desktop's nozzle selector does. When the
+nozzles are all one type every filament follows it. When they mix, the
+desktop asks which nozzle type each filament uses: `--filament-volume-type`
+is that answer, one value per filament; without it the file's values stand
+and a `MixedNozzleFlowTypes` warning says so. As in the desktop's dialog, a
+filament the plate uses that cannot print with a high-flow nozzle is refused
+(return code -2) and one that is not recommended gets a
+`HighFlowNotRecommended` warning; the lists are the engine's own
+(`filament_allow_list.json`).
+
+`result.json` reports what the slice used: `sliced_plates[].filament_maps`
+(the extruder of each filament, the plate's `Metadata/slice_info.config`
+`filament_maps`), `filament_nozzle_map` on a printer with a nozzle rack (the
+rack nozzle of each filament, 0-based, as the G-code states it) and
+`filament_map_mode`. Read the slice's choice there, not from the project's
+`filament_map`: in an automatic mode `project_settings.config` keeps the map
+it was saved with while the slice used another.
 
 Mixed nozzle diameters (`slicer_cli`, Bambu Studio 2.9.1): `filament_diameter_map`
 names the nozzle diameter each filament prints with, one entry per filament
@@ -321,7 +440,7 @@ These older shortcuts set one setting each and keep working:
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | all binaries |
 | `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | all binaries |
 | `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate. `slicer_cli` accepts it and does nothing with it: Bambu Studio 2.9.1 dropped the plate-level temperature-mix check, so there is nothing to lift; the `slicer_cli` run says so once with a `warning` / `AllowMixTempIgnored` event. `slicer_cli-snapmaker` applies it to its own pre-slice temperature check | all binaries |
-| `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19), or with a mixed filament (-25, Bambu Studio). On by default with `--slice` | all binaries |
+| `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19). On by default with `--slice` | all binaries |
 | `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | all binaries |
 | `--load-slicedata` | folder | Slice each plate from the slicing data saved in `<folder>/<plate>`; a plate without usable data is sliced normally | all binaries |
 | `--export-slicedata` | folder | Save each plate's slicing data in `<folder>/<plate>` | all binaries |
@@ -661,7 +780,10 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `sliced_plates[].filament_change_times` | Filament changes |
 | `sliced_plates[].feature_type_times` | Seconds per feature (walls, infill, ...) |
 | `sliced_plates[].objects[]` | `id`, `name`, `triangle_count`, `bbox` (`x`, `y`, `z`, `width`, `depth`, `height`). The box is in the project's scene, as the official result file states it: an object on plate 2 or later sits at that plate's place in the plate grid, not at the bed's origin |
-| `sliced_plates[].filaments[]` | `id`, `filament_id`, `total_used_g`, `main_used_g` |
+| `sliced_plates[].filaments[]` | `id`, `filament_id`, `total_used_g`, `main_used_g`; on a printer with more than one nozzle also `extruder`, the nozzle the filament printed with (1 = left, 2 = right) |
+| `sliced_plates[].filament_maps` | Printers with more than one nozzle (slicer_cli and slicer_cli-orcaslicer): the nozzle each of the project's filaments printed with, in filament order (1 = left, 2 = right), the plate's `slice_info.config` `filament_maps`. Set by `--filament-map`, else by the engine's own grouping |
+| `sliced_plates[].filament_nozzle_map` | Printers with a nozzle rack (slicer_cli): the rack nozzle each of the project's filaments printed with, in filament order, 0-based, as the G-code's `filament_nozzle_map` states it |
+| `sliced_plates[].filament_map_mode` | With `filament_maps` or `filament_nozzle_map`: the mode that chose it (`Manual` with `--filament-map`, `Auto For Flush` by default) |
 | `sliced_plates[].warning_message` | The last slicing warning |
 | `sliced_plates[].warnings` | Every slicing warning |
 | `sliced_plates[].gcode_file` | The plate's G-code file |
@@ -731,7 +853,7 @@ for -2):
 | -19 | The project names post-processing scripts |
 | -21 | Arrange failed |
 | -24 | The 3MF is from a newer app version |
-| -25 | Unsupported feature in the 3MF (mixed filament, slicer_cli) |
+| -25 | Unsupported feature in the 3MF (the official code; no slicer-cli check gives it since Bambu Studio 2.9.1 slices a mixed filament) |
 | -50 | A plate is empty, or an object is larger than the bed |
 | -51 | Invalid slicing settings |
 | -52 | An object is partly outside the bed |
@@ -784,6 +906,12 @@ them as they are.
   - Folgertech i3 0.6: its `printable_area` is not a rectangle
     (0x0, 20x0, 200x200, 0x200). No flag avoids it; without `--arrange 1` the
     part is refused as over the bed edge (-52).
+- **The prime volume of a Bambu project is kept as the file has it.** The
+  official Bambu Studio command line sets `filament_prime_volume` to 45 for
+  every filament of a Bambu project it slices without `--load-filaments`
+  (`BambuStudio.cpp` 7422-7431 at v02.09.01.70); the desktop app slices with
+  the file's value, and so does slicer-cli. For the official command line's
+  G-code, pass `--filament-prime-volume` with 45 for each filament.
 - **A deep prime tower can be refused -104 at the desktop's own tower spot.**
   On a plate with a fixed layout (`--load-assemble-list` with
   `need_arrange: false`) and two or more filaments, slicer_cli-orcaslicer puts
