@@ -16,14 +16,15 @@
 //! annotations are not stored on the Rust ModelVolume) and `slice_mesh_slabs` (not
 //! ported); those are documented as BLOCKED below and not faked.
 
-use boostvoronoi::diagram as bv_diagram;
 use boostvoronoi::prelude as bv;
 
 use crate::clipper_utils::{
     closing, difference, offset_expolygons, union_ex, union_polygons_ex, OffsetJoinType,
 };
 use crate::edge_grid::{Contour, EdgeGrid};
+use crate::boost_polygon_voronoi::{SOURCE_CATEGORY_SEGMENT_START_POINT, SOURCE_CATEGORY_SINGLE_POINT};
 use crate::geometry::voronoi_diagram::VoronoiDiagram;
+use crate::geometry::voronoi_utils::{VdColors, VoronoiSegment};
 use crate::geometry::{
     BoundingBox, BoundingBoxF, ExPolygon, ExPolygons, Line, LineF, Point, PointF, Polygon,
 };
@@ -109,6 +110,17 @@ fn cross2f(a: PointF, b: PointF) -> f64 {
 // MultiMaterialSegmentation.cpp:38-42 mk_point() from Voronoi vertices and
 // MultiMaterialSegmentation.cpp:46 mk_vec2() are implemented inline at call sites
 // against the boostvoronoi vertex coordinates (which are f64).
+
+// MultiMaterialSegmentation.hpp:37-46 — `boost::polygon::segment_traits<Slic3r::ColoredLine>`:
+// `get(line, dir)` is `dir.to_int() ? line.line.b : line.line.a`.
+impl VoronoiSegment for ColoredLine {
+    fn low(&self) -> Point {
+        self.line.a
+    }
+    fn high(&self) -> Point {
+        self.line.b
+    }
+}
 
 // ---------------------------------------------------------------------------
 // MMU_Graph
@@ -304,31 +316,23 @@ impl MmuGraph {
     // MultiMaterialSegmentation.cpp:186
     // (Only reachable from the BLOCKED build_graph VD path; kept for parity.)
     #[inline]
-    fn is_vertex_on_contour(&self, vertex_color: bv_diagram::ColorType) -> bool {
-        (vertex_color as usize) < self.all_border_points
+    fn is_vertex_on_contour(&self, vertex_color: usize) -> bool {
+        vertex_color < self.all_border_points
     }
 
     // MultiMaterialSegmentation.hpp:192 — is_edge_attach_to_contour.
     // `edge_iterator->vertex0/vertex1` colors carry the graph node index that
     // `append_voronoi_vertices` assigned; a "contour vertex" is any node index below
     // `all_border_points`. We take the two vertex colors directly instead of the edge
-    // iterator so the caller reads them once via the boostvoronoi color API.
+    // iterator so the caller reads them once from the diagram.
     #[inline]
-    fn is_edge_attach_to_contour(
-        &self,
-        v0_color: bv_diagram::ColorType,
-        v1_color: bv_diagram::ColorType,
-    ) -> bool {
+    fn is_edge_attach_to_contour(&self, v0_color: usize, v1_color: usize) -> bool {
         self.is_vertex_on_contour(v0_color) || self.is_vertex_on_contour(v1_color)
     }
 
     // MultiMaterialSegmentation.hpp:197 — is_edge_connecting_two_contour_vertices.
     #[inline]
-    fn is_edge_connecting_two_contour_vertices(
-        &self,
-        v0_color: bv_diagram::ColorType,
-        v1_color: bv_diagram::ColorType,
-    ) -> bool {
+    fn is_edge_connecting_two_contour_vertices(&self, v0_color: usize, v1_color: usize) -> bool {
         self.is_vertex_on_contour(v0_color) && self.is_vertex_on_contour(v1_color)
     }
 
@@ -343,14 +347,15 @@ impl MmuGraph {
     // MultiMaterialSegmentation.cpp:202-281 — append_voronoi_vertices.
     // All Voronoi vertices are post-processed to merge very close vertices to a single
     // node (which eliminates issues with intersecting edges). Voronoi vertices outside
-    // the bounding box of the input polygons are left unassigned (marked with the
-    // `VD_VERTEX_UNSET` sentinel = C++'s `vertex.color(-1)`).
+    // the bounding box of the input polygons are left unassigned (they keep C++'s
+    // `vertex.color(-1)`, `VdColors::color_unset()`).
     //
-    // C++ takes `const Geometry::VoronoiDiagram &vd`; the boostvoronoi crate stores the
-    // graph node index in the vertex `color` (via `vertex_set_color`), so we need `&mut`.
-    pub fn append_voronoi_vertices(
+    // C++ takes `const Geometry::VoronoiDiagram &vd` and stores the graph node index in
+    // the vertex's `color`, a `mutable` member; here the diagram is `&mut`. It is either of
+    // the crate's two diagrams (`VdColors`, geometry/voronoi_utils.rs).
+    pub fn append_voronoi_vertices<D: VdColors>(
         &mut self,
-        diagram: &mut bv::Diagram,
+        diagram: &mut D,
         color_poly_tmp: &[Polygon],
         mut bbox: BoundingBox,
     ) {
@@ -371,62 +376,42 @@ impl MmuGraph {
             }
         }
 
-        // MultiMaterialSegmentation.cpp:237 — iterate all Voronoi vertices. We collect the
-        // ids first so the mutable `vertex_set_color` below does not alias the read borrow.
-        let vertex_ids: Vec<bv::VertexIndex> =
-            diagram.vertices().iter().map(|v| v.get_id()).collect();
-
-        for vertex_id in vertex_ids {
+        // MultiMaterialSegmentation.cpp:237 — iterate all Voronoi vertices, in the
+        // diagram's container order.
+        for vertex_id in 0..diagram.num_vertices() {
             // MultiMaterialSegmentation.cpp:238-240.
-            let _ = diagram.vertex_set_color(vertex_id, VD_VERTEX_UNSET);
-            let (vx, vy) = match diagram.vertex(vertex_id) {
-                Ok(v) => (v.x(), v.y()),
-                Err(_) => continue,
-            };
+            diagram.set_vertex_color(vertex_id, D::color_unset());
+            let (vx, vy) = (diagram.vertex_x(vertex_id), diagram.vertex_y(vertex_id));
             let vertex_point_double = PointF::new(vx, vy);
             // mk_point(vertex) truncates toward zero (coord_t(vertex.x())).
             let vertex_point = vec2d_to_pt(vertex_point_double);
 
             // MultiMaterialSegmentation.cpp:242-243 — the two contour endpoints of the
             // cells incident to this vertex (via its incident edge and that edge's twin).
-            let incident_edge = match diagram.vertex_get_incident_edge(vertex_id) {
+            let incident_edge = match diagram.vertex_incident_edge(vertex_id) {
                 Some(e) => e,
                 None => continue,
             };
-            let inc_cell_src = match edge_cell_source_index(diagram, incident_edge) {
-                Some(s) => s,
-                None => continue,
-            };
-            let inc_twin = match diagram.edge_get_twin(incident_edge) {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            let inc_twin_cell_src = match edge_cell_source_index(diagram, inc_twin) {
-                Some(s) => s,
-                None => continue,
-            };
+            let inc_cell_src = edge_cell_source_index(diagram, incident_edge);
+            let inc_twin = diagram.edge_twin(incident_edge);
+            let inc_twin_cell_src = edge_cell_source_index(diagram, inc_twin);
             let first_point_double = self.nodes[self.get_border_arc(inc_cell_src).from_idx].point;
             let second_point_double =
                 self.nodes[self.get_border_arc(inc_twin_cell_src).from_idx].point;
 
             // MultiMaterialSegmentation.cpp:245-252.
             if vertex_equal_to_point(vx, vy, first_point_double) {
-                let _ = diagram
-                    .vertex_set_color(vertex_id, self.get_border_arc(inc_cell_src).from_idx as u32);
+                diagram.set_vertex_color(vertex_id, self.get_border_arc(inc_cell_src).from_idx);
             } else if vertex_equal_to_point(vx, vy, second_point_double) {
-                let _ = diagram.vertex_set_color(
-                    vertex_id,
-                    self.get_border_arc(inc_twin_cell_src).from_idx as u32,
-                );
+                diagram.set_vertex_color(vertex_id, self.get_border_arc(inc_twin_cell_src).from_idx);
             } else if bbox.contains_point(&vertex_point) {
                 // MultiMaterialSegmentation.cpp:254-255 — snap to a contour point.
                 let (contour_pt, c_dist_sqr) = closest_contour_point.find(vertex_point);
                 if let Some(contour_pt) = contour_pt {
                     if c_dist_sqr < sqr_f64(3.0 * SCALED_EPSILON) {
-                        let _ = diagram.vertex_set_color(
+                        diagram.set_vertex_color(
                             vertex_id,
-                            self.get_global_index(contour_pt.contour_idx, contour_pt.point_idx)
-                                as u32,
+                            self.get_global_index(contour_pt.contour_idx, contour_pt.point_idx),
                         );
                         continue;
                     }
@@ -438,7 +423,7 @@ impl MmuGraph {
                 if voronoi_pt.is_none() || v_dist_sqr >= sqr_f64(SCALED_EPSILON / 10.0) {
                     let new_idx = self.nodes_count();
                     closest_voronoi_point.insert(CPoint::new(vertex_point_double, new_idx));
-                    let _ = diagram.vertex_set_color(vertex_id, new_idx as u32);
+                    diagram.set_vertex_color(vertex_id, new_idx);
                     self.nodes.push(Node {
                         point: vertex_point_double,
                         arc_idxs: Vec::new(),
@@ -460,11 +445,11 @@ impl MmuGraph {
                     }
 
                     if merge_to_point != -1 {
-                        let _ = diagram.vertex_set_color(vertex_id, merge_to_point as u32);
+                        diagram.set_vertex_color(vertex_id, merge_to_point as usize);
                     } else {
                         let new_idx = self.nodes_count();
                         closest_voronoi_point.insert(CPoint::new(vertex_point_double, new_idx));
-                        let _ = diagram.vertex_set_color(vertex_id, new_idx as u32);
+                        diagram.set_vertex_color(vertex_id, new_idx);
                         self.nodes.push(Node {
                             point: vertex_point_double,
                             arc_idxs: Vec::new(),
@@ -1668,32 +1653,25 @@ fn has_same_color(cl1: &ColoredLine, cl2: &ColoredLine) -> bool {
 // build_graph and its Voronoi helpers (MultiMaterialSegmentation.cpp:1650-1885)
 // ---------------------------------------------------------------------------
 //
-// LANDED: `build_graph` and its callees (`append_voronoi_vertices`,
-// `clip_finite_voronoi_edge`, `Voronoi::Internal::clip_infinite_edge`,
-// `mark_processed`, `is_edge_attach_to_contour` /
-// `is_edge_connecting_two_contour_vertices`) are now ported 1:1 against the
-// boostvoronoi 0.12 `Diagram` API. C++ stores the graph node index in each Voronoi
-// vertex's `color()` and a processed flag in each edge's `color()`; the crate's
-// `vertex_set_color` / `edge_set_color` mirror both (the crate reserves the low 5
-// color bits, so `(size_t)-1` round-trips to `VD_VERTEX_UNSET` below — still `>=
-// nodes_count()`, preserving every "unassigned vertex" test).
+// `build_graph` and its callees (`append_voronoi_vertices`, `clip_finite_voronoi_edge`,
+// `Voronoi::Internal::clip_infinite_edge`, `mark_processed`, `is_edge_attach_to_contour` /
+// `is_edge_connecting_two_contour_vertices`) are written over `VdColors`
+// (geometry/voronoi_utils.rs), the part of boost's diagram interface they use, so they run
+// on either of the crate's two diagrams. C++ stores the graph node index in each Voronoi
+// vertex's `color()` and a processed flag in each edge's `color()`; so does this.
 //
-// DEVIATION (VD construction): C++ calls `Voronoi::VD::construct_voronoi(..., true, ...)`,
-// where the `true` requests `detect_known_issues` + `try_to_repair_degenerated_voronoi_diagram`
-// (rotate-and-retry around Boost degeneracies). The boostvoronoi crate exposes no such
-// repair, so we build the raw diagram directly — the same cross-cutting Voronoi
-// primitive substitution documented in `geometry::medial_axis`. If the raw build fails,
-// we return the contour-only graph rather than panicking.
+// The diagram (MultiMaterialSegmentation.cpp:1768-1769): C++ calls
+// `Voronoi::VD::construct_voronoi(colored_lines.begin(), colored_lines.end(), true, ...)`,
+// boost's builder followed by `detect_known_issues` and, on an issue, the repair by
+// rotation (Voronoi.cpp:20-75). With `MMSEG_VORONOI_PORT` (on unless `=0`) that is what
+// runs, on the port of boost::polygon's builder
+// (`geometry::voronoi_diagram::boost_polygon::VoronoiDiagram`). With `=0` the diagram is
+// the `boostvoronoi` crate's, built without detection or repair, as it was until R900; if
+// that build fails, the contour-only graph is returned.
 //
-// NOTE: still only reachable from the BLOCKED entry points
-// (`multi_material_segmentation_by_painting`), which remain gated on ModelVolume facet
-// annotations and `slice_mesh_slabs`.
-
-// C++ `vertex.color(-1)` sentinel for "this Voronoi vertex was not assigned a graph
-// node". The crate keeps custom color in the upper 27 bits, so `(size_t)-1` stored via
-// `vertex_set_color` reads back as `(1<<27)-1`; every real node index is far below this,
-// so the `color >= nodes_count()` / `is_vertex_on_contour` tests behave exactly as C++.
-const VD_VERTEX_UNSET: bv::ColorType = (1u32 << 27) - 1;
+// C++ `vertex.color(-1)` marks "this Voronoi vertex was not assigned a graph node". What
+// `color()` then returns is `VdColors::color_unset()`: far above every node index, so the
+// `color >= nodes_count()` / `is_vertex_on_contour` tests behave as in C++.
 
 // MultiMaterialSegmentation.cpp:208-224 — the `CPoint` value stored in
 // `ClosestPointInRadiusLookup`. `point` is the grid key (mk_point-rounded), `point_double`
@@ -1866,85 +1844,64 @@ fn ulp_eq(a: f64, b: f64, ulps: i64) -> bool {
     (a_bits - b_bits).abs() <= ulps
 }
 
-// The source (input-segment) index of the cell an edge belongs to. Because build_graph
-// constructs the Voronoi diagram from exactly the flat `to_lines(color_poly)` segment
-// list, this index maps 1:1 onto `lines_colored` and the graph's border arcs.
+// `edge->cell()->source_index()`: the source (input-segment) index of the cell an edge
+// belongs to. Because build_graph constructs the Voronoi diagram from exactly the flat
+// `to_lines(color_poly)` segment list, this index maps 1:1 onto `lines_colored` and the
+// graph's border arcs.
 #[inline]
-fn edge_cell_source_index(diagram: &bv::Diagram, edge_id: bv::EdgeIndex) -> Option<usize> {
-    let cell_id = diagram.edge_get_cell(edge_id).ok()?;
-    Some(diagram.cell(cell_id).ok()?.source_index().usize())
-}
-
-// Read a Voronoi vertex's exact (scaled-double) coordinates.
-#[inline]
-fn vd_vertex_xy(diagram: &bv::Diagram, vertex_id: bv::VertexIndex) -> Option<(f64, f64)> {
-    diagram.vertex(vertex_id).ok().map(|v| (v.x(), v.y()))
+fn edge_cell_source_index<D: VdColors>(diagram: &D, edge_id: usize) -> usize {
+    diagram.cell_source_index(diagram.edge_cell(edge_id))
 }
 
 // VoronoiVisualUtils.hpp:233-241 — Voronoi::Internal::retrieve_point. For our segment-only
-// input a point cell is a segment endpoint, so SegmentStart → low (a), SegmentEnd → high
-// (b); SinglePoint falls back to the point list (unused here, kept for fidelity).
+// input a point cell is a segment endpoint, so SEGMENT_START_POINT → low (a), anything
+// else → high (b); SINGLE_POINT falls back to the point list (unused here, kept for fidelity).
 #[inline]
 fn retrieve_point_vd(
     points: &[Point],
     segments: &[(PointF, PointF)],
     src_index: usize,
-    src_cat: bv::SourceCategory,
+    src_cat: usize,
 ) -> PointF {
-    match src_cat {
-        bv::SourceCategory::SinglePoint => {
-            PointF::new(points[src_index].x as f64, points[src_index].y as f64)
-        }
-        bv::SourceCategory::SegmentStart => segments[src_index].0,
-        _ => segments[src_index].1,
+    if src_cat == SOURCE_CATEGORY_SINGLE_POINT {
+        PointF::new(points[src_index].x as f64, points[src_index].y as f64)
+    } else if src_cat == SOURCE_CATEGORY_SEGMENT_START_POINT {
+        segments[src_index].0
+    } else {
+        segments[src_index].1
     }
 }
 
 // VoronoiVisualUtils.hpp:243-279 — Voronoi::Internal::clip_infinite_edge. Returns the two
 // clipped sample points of an infinite edge (empty on the degenerate two-segment case).
-fn clip_infinite_edge(
-    diagram: &bv::Diagram,
+//
+// `contract`: the two coordinates of the far point are each one source expression,
+// `vertex->x() + direction.x() * koef`, which the reference build (Apple clang arm64,
+// -ffp-contract=on) fuses. The walk over the `boostvoronoi` crate's diagram never fused
+// them and keeps that (`false`), so that its output stays what it was.
+fn clip_infinite_edge<D: VdColors>(
+    diagram: &D,
     points: &[Point],
     segments: &[(PointF, PointF)],
-    edge_id: bv::EdgeIndex,
+    edge_id: usize,
     bbox_max_size: f64,
+    contract: bool,
 ) -> Vec<PointF> {
     // VoronoiVisualUtils.hpp:245-246 — assert is_infinite() and exactly one null vertex.
-    let v0 = diagram.edge_get_vertex0(edge_id).ok().flatten();
-    let v1 = diagram.edge_get_vertex1(edge_id).ok().flatten();
+    let v0 = diagram.edge_vertex0(edge_id);
+    let v1 = diagram.edge_vertex1(edge_id);
 
-    let cell1_id = match diagram.edge_get_cell(edge_id) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let twin_id = match diagram.edge_get_twin(edge_id) {
-        Ok(t) => t,
-        Err(_) => return Vec::new(),
-    };
-    let cell2_id = match diagram.edge_get_cell(twin_id) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-
-    // Extract the cell fields we need (owned) so no diagram borrow is held across the math.
-    let (c1_point, c1_seg, c1_src, c1_cat) = match diagram.cell(cell1_id) {
-        Ok(c) => (
-            c.contains_point(),
-            c.contains_segment(),
-            c.source_index().usize(),
-            c.source_category(),
-        ),
-        Err(_) => return Vec::new(),
-    };
-    let (c2_point, c2_seg, c2_src, c2_cat) = match diagram.cell(cell2_id) {
-        Ok(c) => (
-            c.contains_point(),
-            c.contains_segment(),
-            c.source_index().usize(),
-            c.source_category(),
-        ),
-        Err(_) => return Vec::new(),
-    };
+    // VoronoiVisualUtils.hpp:248-249
+    let cell1 = diagram.edge_cell(edge_id);
+    let cell2 = diagram.edge_cell(diagram.edge_twin(edge_id));
+    let (c1_point, c1_seg, c1_src, c1_cat) = (
+        diagram.cell_contains_point(cell1),
+        diagram.cell_contains_segment(cell1),
+        diagram.cell_source_index(cell1),
+        diagram.cell_source_category(cell1),
+    );
+    let (c2_point, c2_src, c2_cat) =
+        (diagram.cell_contains_point(cell2), diagram.cell_source_index(cell2), diagram.cell_source_category(cell2));
 
     // VoronoiVisualUtils.hpp:251-255 — infinite edges cannot separate two segment cells.
     if !c1_point && !c2_point {
@@ -1970,25 +1927,30 @@ fn clip_infinite_edge(
         // direction.x = high(seg).y - low(seg).y; direction.y = low(seg).x - high(seg).x.
         PointF::new(seg.1.y - seg.0.y, seg.0.x - seg.1.x)
     };
-    let _ = c2_seg;
 
     // VoronoiVisualUtils.hpp:271-278 — extend the finite endpoint along `direction`.
     let koef = bbox_max_size / direction.x.abs().max(direction.y.abs());
+    let far = |vx: f64, vy: f64| -> PointF {
+        if contract {
+            PointF::new(direction.x.mul_add(koef, vx), direction.y.mul_add(koef, vy))
+        } else {
+            PointF::new(vx + direction.x * koef, vy + direction.y * koef)
+        }
+    };
     let mut clipped: Vec<PointF> = Vec::new();
     if v0.is_none() {
-        let (vx, vy) = match v1.and_then(|vid| vd_vertex_xy(diagram, vid)) {
-            Some(xy) => xy,
+        let v1 = match v1 {
+            Some(v) => v,
             None => return Vec::new(),
         };
-        clipped.push(PointF::new(vx + direction.x * koef, vy + direction.y * koef));
+        let (vx, vy) = (diagram.vertex_x(v1), diagram.vertex_y(v1));
+        clipped.push(far(vx, vy));
         clipped.push(PointF::new(vx, vy));
     } else {
-        let (vx, vy) = match v0.and_then(|vid| vd_vertex_xy(diagram, vid)) {
-            Some(xy) => xy,
-            None => return Vec::new(),
-        };
+        let v0 = v0.unwrap();
+        let (vx, vy) = (diagram.vertex_x(v0), diagram.vertex_y(v0));
         clipped.push(PointF::new(vx, vy));
-        clipped.push(PointF::new(vx + direction.x * koef, vy + direction.y * koef));
+        clipped.push(far(vx, vy));
     }
     clipped
 }
@@ -2015,11 +1977,10 @@ fn clip_finite_voronoi_edge(v0: PointF, v1: PointF, bbox: &BoundingBoxF) -> Line
 // MultiMaterialSegmentation.cpp:1638-1643 — mark_processed: set the processed flag on the
 // half-edge AND its twin (C++ `edge->color(true)`).
 #[inline]
-fn mark_processed(diagram: &mut bv::Diagram, edge_id: bv::EdgeIndex) {
-    let _ = diagram.edge_set_color(edge_id, 1);
-    if let Ok(twin) = diagram.edge_get_twin(edge_id) {
-        let _ = diagram.edge_set_color(twin, 1);
-    }
+fn mark_processed<D: VdColors>(diagram: &mut D, edge_id: usize) {
+    diagram.set_edge_color(edge_id, 1);
+    let twin = diagram.edge_twin(edge_id);
+    diagram.set_edge_color(twin, 1);
 }
 
 // MultiMaterialSegmentation.cpp:1711-1717 — get_prev_contour_line lambda.
@@ -2056,13 +2017,13 @@ fn next_contour_line(
 // `vertex_color` is the resolved graph node index of vertex0 or vertex1 (C++ selects it
 // via the `Vertex` enum). `edge_line`/`contour_line` are captured from the caller.
 #[allow(clippy::too_many_arguments)]
-fn append_edge_if_intersects_with_contour(
+fn append_edge_if_intersects_with_contour<D: VdColors>(
     graph: &mut MmuGraph,
-    diagram: &mut bv::Diagram,
+    diagram: &mut D,
     lines_colored: &[ColoredLine],
     edge_line: &Line,
     contour_line: &Line,
-    edge_id: bv::EdgeIndex,
+    edge_id: usize,
     cell_src: usize,
     twin_cell_src: usize,
     vertex_color: usize,
@@ -2126,57 +2087,106 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
         force_edge_adding[poly_idx] = force_edge;
     }
 
-    // MultiMaterialSegmentation.cpp:1695-1699 — construct the Voronoi diagram from the flat
-    // colored-line segment list (order == to_lines_colored, so cell source_index maps to it).
+    // MultiMaterialSegmentation.cpp:1765-1766 — the flat colored-line segment list (the
+    // diagram is built from a copy of it, so cell source_index maps to it).
     let mut lines_colored = to_lines_colored(color_poly);
-    let bv_segments: Vec<bv::Line<i64>> = lines_colored
-        .iter()
-        .map(|cl| {
-            bv::Line::new(
-                bv::Point {
-                    x: cl.line.a.x,
-                    y: cl.line.a.y,
-                },
-                bv::Point {
-                    x: cl.line.b.x,
-                    y: cl.line.b.y,
-                },
-            )
-        })
-        .collect();
-    let diagram_opt = bv::Builder::<i64>::default()
-        .with_segments(bv_segments.iter())
-        .and_then(|b| b.build())
-        .ok();
+    let colored_lines = lines_colored.clone();
 
-    // MultiMaterialSegmentation.cpp:1700-1707 — seed the graph with one node per contour
+    // MultiMaterialSegmentation.cpp:1770-1778 — seed the graph with one node per contour
     // point, then add the border arcs and per-line polygon indices.
     let mut graph = MmuGraph::default();
-    graph.nodes.reserve(
-        points.len() + diagram_opt.as_ref().map(|d| d.vertices().len()).unwrap_or(0),
-    );
-    for point in &points {
-        graph.nodes.push(Node {
-            point: PointF::new(point.x as f64, point.y as f64),
-            arc_idxs: Vec::new(),
-        });
-    }
-    graph.add_contours(color_poly);
-    init_polygon_indices(&graph, color_poly, &mut lines_colored);
-    debug_assert!(graph.nodes.len() == lines_colored.len());
-
-    // If the raw Voronoi build failed (see DEVIATION above), return the contour graph.
-    let mut diagram = match diagram_opt {
-        Some(d) => d,
-        None => {
-            graph.remove_nodes_with_one_arc();
-            return graph;
+    let seed = |graph: &mut MmuGraph, lines_colored: &mut ColoredLines, num_vertices: usize| {
+        graph.nodes.reserve(points.len() + num_vertices);
+        for point in &points {
+            graph.nodes.push(Node {
+                point: PointF::new(point.x as f64, point.y as f64),
+                arc_idxs: Vec::new(),
+            });
         }
+        graph.add_contours(color_poly);
+        init_polygon_indices(graph, color_poly, lines_colored);
+        debug_assert!(graph.nodes.len() == lines_colored.len());
     };
 
+    // MultiMaterialSegmentation.cpp:1768-1769 Voronoi::VD vd;
+    // vd.construct_voronoi(colored_lines.begin(), colored_lines.end(), true, throw_on_cancel);
+    if crate::faithful_gate("MMSEG_VORONOI_PORT") {
+        let mut vd = crate::geometry::voronoi_diagram::boost_polygon::VoronoiDiagram::new();
+        vd.construct_voronoi(&colored_lines, true);
+        seed(&mut graph, &mut lines_colored, vd.diagram().num_vertices());
+        build_graph_from_voronoi_diagram(
+            vd.diagram_mut(),
+            &mut graph,
+            color_poly,
+            &color_poly_tmp,
+            &points,
+            &lines,
+            &lines_colored,
+            &mut force_edge_adding,
+            true,
+        );
+    } else {
+        // MMSEG_VORONOI_PORT=0, the engine's output until R900: the `boostvoronoi` crate's
+        // diagram, built from the segments without detection or repair.
+        let bv_segments: Vec<bv::Line<i64>> = colored_lines
+            .iter()
+            .map(|cl| {
+                bv::Line::new(
+                    bv::Point {
+                        x: cl.line.a.x,
+                        y: cl.line.a.y,
+                    },
+                    bv::Point {
+                        x: cl.line.b.x,
+                        y: cl.line.b.y,
+                    },
+                )
+            })
+            .collect();
+        let diagram_opt = bv::Builder::<i64>::default()
+            .with_segments(bv_segments.iter())
+            .and_then(|b| b.build())
+            .ok();
+        seed(&mut graph, &mut lines_colored, diagram_opt.as_ref().map(|d| d.vertices().len()).unwrap_or(0));
+        // If the raw Voronoi build failed, the contour graph is what is left.
+        if let Some(mut diagram) = diagram_opt {
+            build_graph_from_voronoi_diagram(
+                &mut diagram,
+                &mut graph,
+                color_poly,
+                &color_poly_tmp,
+                &points,
+                &lines,
+                &lines_colored,
+                &mut force_edge_adding,
+                false,
+            );
+        }
+    }
+
+    // MultiMaterialSegmentation.cpp:1954-1955.
+    graph.remove_nodes_with_one_arc();
+    graph
+}
+
+// MultiMaterialSegmentation.cpp:1779-1952 — what `build_graph` does with the diagram: the
+// Voronoi vertices become graph nodes and the Voronoi edges graph arcs. A function of its
+// own so that it is written once for both diagrams. `contract` is `clip_infinite_edge`'s.
+#[allow(clippy::too_many_arguments)]
+fn build_graph_from_voronoi_diagram<D: VdColors>(
+    diagram: &mut D,
+    graph: &mut MmuGraph,
+    color_poly: &[Vec<ColoredLine>],
+    color_poly_tmp: &[Polygon],
+    points: &[Point],
+    lines: &[Line],
+    lines_colored: &[ColoredLine],
+    force_edge_adding: &mut [bool],
+    contract: bool,
+) {
     // MultiMaterialSegmentation.cpp:1708-1709 — append the interior Voronoi vertices.
-    let bbox = polygons_extents(&color_poly_tmp);
-    graph.append_voronoi_vertices(&mut diagram, &color_poly_tmp, bbox);
+    let bbox = polygons_extents(color_poly_tmp);
+    graph.append_voronoi_vertices(diagram, color_poly_tmp, bbox);
 
     // MultiMaterialSegmentation.cpp:1726-1733 — the clip bbox (bbox grown by scale_(10)),
     // the max bbox dimension, and the double-typed input segments for clip_infinite_edge.
@@ -2197,38 +2207,27 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
         })
         .collect();
 
-    let num_edges = diagram.edges().len();
+    let num_edges = diagram.num_edges();
 
-    // MultiMaterialSegmentation.cpp:1735-1866 — first edge pass (special cases first).
-    for edge_idx in 0..num_edges {
-        let edge_id = diagram.edge_index_unchecked(edge_idx);
-        let cell_src = match edge_cell_source_index(&diagram, edge_id) {
-            Some(s) => s,
-            None => continue,
-        };
-        let twin_edge_id = match diagram.edge_get_twin(edge_id) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        let twin_cell_src = match edge_cell_source_index(&diagram, twin_edge_id) {
-            Some(s) => s,
-            None => continue,
-        };
+    // MultiMaterialSegmentation.cpp:1805-1936 — first edge pass (special cases first).
+    for edge_id in 0..num_edges {
+        let cell_src = edge_cell_source_index(diagram, edge_id);
+        let twin_cell_src = edge_cell_source_index(diagram, diagram.edge_twin(edge_id));
 
-        // MultiMaterialSegmentation.cpp:1737 — skip the second half-edge and processed edges.
-        let processed = diagram.edge_get_color(edge_id).unwrap_or(0) != 0;
+        // MultiMaterialSegmentation.cpp:1807 — skip the second half-edge and processed edges.
+        let processed = diagram.edge_color(edge_id) != 0;
         if cell_src > twin_cell_src || processed {
             continue;
         }
 
-        let v0_id = diagram.edge_get_vertex0(edge_id).ok().flatten();
-        let v1_id = diagram.edge_get_vertex1(edge_id).ok().flatten();
+        let v0_id = diagram.edge_vertex0(edge_id);
+        let v1_id = diagram.edge_vertex1(edge_id);
         // An edge is finite iff both endpoints exist.
         let is_finite = v0_id.is_some() && v1_id.is_some();
 
         if !is_finite && (v0_id.is_some() || v1_id.is_some()) {
             // MultiMaterialSegmentation.cpp:1739-1761 — infinite edge through a contour point.
-            let samples = clip_infinite_edge(&diagram, &points, &segments, edge_id, bbox_dim_max);
+            let samples = clip_infinite_edge(diagram, points, &segments, edge_id, bbox_dim_max, contract);
             if samples.is_empty() {
                 continue;
             }
@@ -2238,12 +2237,11 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
             if line_intersection_with_epsilon(&contour_line.line, &edge_line, &mut contour_intersection)
             {
                 let graph_arc = graph.get_border_arc(cell_src);
-                let from_idx = (if v1_id.is_some() {
-                    v1_id.and_then(|vid| diagram.vertex_get_color(vid))
-                } else {
-                    v0_id.and_then(|vid| diagram.vertex_get_color(vid))
-                })
-                .unwrap_or(VD_VERTEX_UNSET) as usize;
+                let from_idx = match (v1_id, v0_id) {
+                    (Some(v1), _) => diagram.vertex_color(v1),
+                    (None, Some(v0)) => diagram.vertex_color(v0),
+                    (None, None) => D::color_unset(),
+                };
                 let to_idx = if pt_to_vec2d(contour_line.line.a - contour_intersection).length_squared()
                     < pt_to_vec2d(contour_line.line.b - contour_intersection).length_squared()
                 {
@@ -2256,16 +2254,16 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
                     && to_idx < graph.nodes_count()
                 {
                     graph.append_edge_default(from_idx, to_idx);
-                    mark_processed(&mut diagram, edge_id);
+                    mark_processed(diagram, edge_id);
                 }
             }
         } else if is_finite {
             let v0_id = v0_id.unwrap();
             let v1_id = v1_id.unwrap();
-            let v0_color = diagram.vertex_get_color(v0_id).unwrap_or(VD_VERTEX_UNSET);
-            let v1_color = diagram.vertex_get_color(v1_id).unwrap_or(VD_VERTEX_UNSET);
-            let v0_idx = v0_color as usize;
-            let v1_idx = v1_color as usize;
+            let v0_color = diagram.vertex_color(v0_id);
+            let v1_color = diagram.vertex_color(v1_id);
+            let v0_idx = v0_color;
+            let v1_idx = v1_color;
 
             // MultiMaterialSegmentation.cpp:1763-1764 — both on contour, or a merged
             // duplicate vertex (same color): skip.
@@ -2276,20 +2274,14 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
             }
 
             // MultiMaterialSegmentation.cpp:1766-1770.
-            let (v0x, v0y) = match vd_vertex_xy(&diagram, v0_id) {
-                Some(xy) => xy,
-                None => continue,
-            };
-            let (v1x, v1y) = match vd_vertex_xy(&diagram, v1_id) {
-                Some(xy) => xy,
-                None => continue,
-            };
+            let (v0x, v0y) = (diagram.vertex_x(v0_id), diagram.vertex_y(v0_id));
+            let (v1x, v1y) = (diagram.vertex_x(v1_id), diagram.vertex_y(v1_id));
             let edge_line =
                 clip_finite_voronoi_edge(PointF::new(v0x, v0y), PointF::new(v1x, v1y), &bbox_clip);
             let contour_line = lines_colored[cell_src].line;
             let colored_line = lines_colored[cell_src];
-            let contour_line_prev = prev_contour_line(&lines_colored, color_poly, &graph, cell_src);
-            let contour_line_next = next_contour_line(&lines_colored, color_poly, &graph, cell_src);
+            let contour_line_prev = prev_contour_line(lines_colored, color_poly, graph, cell_src);
+            let contour_line_next = next_contour_line(lines_colored, color_poly, graph, cell_src);
             let poly_idx = colored_line.poly_idx as usize;
             let nodes_count = graph.nodes_count();
 
@@ -2298,9 +2290,9 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
                 // (non-contour) vertex; add an edge where the ray meets a contour line.
                 if v0_idx < nodes_count && !graph.is_vertex_on_contour(v0_color) {
                     append_edge_if_intersects_with_contour(
-                        &mut graph,
-                        &mut diagram,
-                        &lines_colored,
+                        graph,
+                        diagram,
+                        lines_colored,
                         &edge_line,
                         &contour_line,
                         edge_id,
@@ -2311,9 +2303,9 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
                 }
                 if v1_idx < nodes_count && !graph.is_vertex_on_contour(v1_color) {
                     append_edge_if_intersects_with_contour(
-                        &mut graph,
-                        &mut diagram,
-                        &lines_colored,
+                        graph,
+                        diagram,
+                        lines_colored,
                         &edge_line,
                         &contour_line,
                         edge_id,
@@ -2324,7 +2316,7 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
                 }
             } else if graph.is_edge_attach_to_contour(v0_color, v1_color) {
                 // MultiMaterialSegmentation.cpp:1795-1831.
-                mark_processed(&mut diagram, edge_id);
+                mark_processed(diagram, edge_id);
                 if graph.is_edge_connecting_two_contour_vertices(v0_color, v1_color) {
                     continue;
                 }
@@ -2370,7 +2362,7 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
                 // the contour line at the intersection and connect the visible side(s).
                 let mut intersection = Point::default();
                 if line_intersection_with_epsilon(&contour_line, &edge_line, &mut intersection) {
-                    mark_processed(&mut diagram, edge_id);
+                    mark_processed(diagram, edge_id);
                     let real_v0 = vec2d_to_pt(graph.nodes[v0_idx].point);
                     let real_v1 = vec2d_to_pt(graph.nodes[v1_idx].point);
 
@@ -2410,46 +2402,30 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
 
     // MultiMaterialSegmentation.cpp:1868-1881 — second pass: all remaining finite interior
     // edges, then mark every edge processed.
-    for edge_idx in 0..num_edges {
-        let edge_id = diagram.edge_index_unchecked(edge_idx);
-        let cell_src = match edge_cell_source_index(&diagram, edge_id) {
-            Some(s) => s,
-            None => continue,
-        };
-        let twin_edge_id = match diagram.edge_get_twin(edge_id) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        let twin_cell_src = match edge_cell_source_index(&diagram, twin_edge_id) {
-            Some(s) => s,
-            None => continue,
-        };
-        let processed = diagram.edge_get_color(edge_id).unwrap_or(0) != 0;
+    for edge_id in 0..num_edges {
+        let cell_src = edge_cell_source_index(diagram, edge_id);
+        let twin_cell_src = edge_cell_source_index(diagram, diagram.edge_twin(edge_id));
+        let processed = diagram.edge_color(edge_id) != 0;
         if cell_src > twin_cell_src || processed {
             continue;
         }
 
-        let v0_id = diagram.edge_get_vertex0(edge_id).ok().flatten();
-        let v1_id = diagram.edge_get_vertex1(edge_id).ok().flatten();
+        let v0_id = diagram.edge_vertex0(edge_id);
+        let v1_id = diagram.edge_vertex1(edge_id);
         let is_finite = v0_id.is_some() && v1_id.is_some();
         if is_finite {
-            let v0_color = diagram.vertex_get_color(v0_id.unwrap()).unwrap_or(VD_VERTEX_UNSET);
-            let v1_color = diagram.vertex_get_color(v1_id.unwrap()).unwrap_or(VD_VERTEX_UNSET);
-            if (v0_color as usize) < graph.nodes_count() && (v1_color as usize) < graph.nodes_count()
-            {
+            let v0_color = diagram.vertex_color(v0_id.unwrap());
+            let v1_color = diagram.vertex_color(v1_id.unwrap());
+            if v0_color < graph.nodes_count() && v1_color < graph.nodes_count() {
                 // Skip edges between two merged-to-same vertices.
                 if v0_color == v1_color {
                     continue;
                 }
-                graph.append_edge_default(v0_color as usize, v1_color as usize);
+                graph.append_edge_default(v0_color, v1_color);
             }
         }
-        mark_processed(&mut diagram, edge_id);
+        mark_processed(diagram, edge_id);
     }
-
-    // MultiMaterialSegmentation.cpp:1883-1884.
-    graph.remove_nodes_with_one_arc();
-    graph
 }
 
 // Extents of a set of polygons (mirrors `get_extents(const Polygons &)` over the contour

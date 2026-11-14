@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 51 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 3773 (42%) |
-| estimate: faithful | 3167 (84% of matched) |
-| estimate: partial | 384 (10% of matched) |
-| estimate: divergent | 197 (5% of matched) |
+| matched to a Rust function in the paired file | 3776 (42%) |
+| estimate: faithful | 3168 (84% of matched) |
+| estimate: partial | 383 (10% of matched) |
+| estimate: divergent | 200 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
-| missing in the paired Rust file | 4618 |
-| of those, a function of that name exists in another Rust file | 1597 |
+| missing in the paired Rust file | 4615 |
+| of those, a function of that name exists in another Rust file | 1604 |
 | of the rest, another overload of the name is ported | 367 |
-| of the rest, under 25 tokens (accessors, one-liners) | 746 |
-| of the rest, 25 tokens or more | 1908 |
+| of the rest, under 25 tokens (accessors, one-liners) | 743 |
+| of the rest, 25 tokens or more | 1901 |
 | in a C++ unit with no Rust file | 661 |
-| Rust functions with no C++ function of that name in the pair | 4740 |
+| Rust functions with no C++ function of that name in the pair | 4792 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 175 | 6851 | 2918 | 2439 | 305 | 160 | 14 | 3933 |
+| 1 | 180 | 175 | 6851 | 2921 | 2440 | 304 | 163 | 14 | 3930 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
 | 3 | 92 | 66 | 1374 | 462 | 387 | 40 | 30 | 5 | 912 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -92,9 +92,9 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Arrange` | `arrange.rs` | 44 | 5 | 1 | 0 | 0 | 38 | 21 |
 | 1 | `PrintObjectSlice` | `print_object_slice.rs` | 24 | 1 | 2 | 0 | 0 | 21 | 20 |
 | 1 | `TriangleMesh` | `triangle_mesh.rs` | 136 | 62 | 1 | 4 | 0 | 69 | 16 |
+| 1 | `MultiMaterialSegmentation` | `multi_material_segmentation.rs` | 74 | 39 | 4 | 3 | 0 | 28 | 16 |
 | 1 | `PlaceholderParser` | `placeholder_parser.rs` | 85 | 31 | 9 | 3 | 0 | 42 | 16 |
 | 1 | `Calib` | `calib.rs` | 51 | 12 | 2 | 3 | 3 | 31 | 12 |
-| 1 | `MultiMaterialSegmentation` | `multi_material_segmentation.rs` | 74 | 40 | 4 | 2 | 0 | 28 | 16 |
 | 1 | `EdgeGrid` | `edge_grid.rs` | 47 | 11 | 2 | 2 | 0 | 32 | 15 |
 | 1 | `GCode/AvoidCrossingPerimeters` | `gcode/avoid_crossing_perimeters.rs` | 59 | 31 | 3 | 0 | 0 | 25 | 17 |
 | 1 | `GCode/TimelapsePosPicker` | `gcode/timelapse_pos_picker.rs` | 20 | 1 | 0 | 0 | 0 | 19 | 17 |
@@ -116,7 +116,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Fill/FillAdaptive` | `fill/fill_adaptive.rs` | 32 | 16 | 1 | 2 | 0 | 13 | 4 |
 | 1 | `GCode/SeamPlacer` | `gcode/seam_placer.rs` | 45 | 32 | 7 | 1 | 0 | 5 | 5 |
 | 1 | `GCodeWriter` | `g_code_writer.rs` | 84 | 64 | 5 | 3 | 0 | 12 | 3 |
-| 1 | `Geometry/Voronoi` | `geometry/voronoi.rs` | 19 | 0 | 0 | 0 | 0 | 19 | 6 |
 | 1 | `ModelArrange` | `model_arrange.rs` | 14 | 2 | 1 | 0 | 0 | 11 | 6 |
 | 1 | `Orient` | `orient.rs` | 22 | 7 | 2 | 0 | 0 | 13 | 6 |
 | 1 | `SVG` | `svg.rs` | 64 | 17 | 4 | 0 | 0 | 43 | 6 |
@@ -125,7 +124,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `AppConfig` | `app_config.rs` | 72 | 53 | 3 | 2 | 0 | 14 | 3 |
 | 1 | `ElephantFootCompensation` | `elephant_foot_compensation.rs` | 10 | 5 | 0 | 0 | 0 | 5 | 5 |
 | 1 | `Geometry/VoronoiOffset` | `geometry/voronoi_offset.rs` | 39 | 23 | 2 | 0 | 0 | 14 | 5 |
-| 1 | `Geometry/VoronoiUtils` | `geometry/voronoi_utils.rs` | 13 | 2 | 3 | 1 | 0 | 7 | 4 |
+| 1 | `Geometry/VoronoiUtils` | `geometry/voronoi_utils.rs` | 13 | 5 | 2 | 2 | 0 | 4 | 3 |
 | 1 | `MutablePriorityQueue` | `mutable_priority_queue.rs` | 37 | 20 | 4 | 5 | 0 | 8 | 0 |
 | 1 | `Point` | `geometry/point.rs` | 103 | 20 | 7 | 4 | 0 | 72 | 1 |
 | 1 | `PrintBase` | `print_base.rs` | 77 | 17 | 1 | 0 | 0 | 59 | 5 |
@@ -138,12 +137,12 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Thread` | `thread.rs` | 24 | 6 | 1 | 1 | 0 | 16 | 3 |
 | 1 | `Utils` | `utils.rs` | 36 | 14 | 4 | 2 | 0 | 16 | 2 |
 | 1 | `AABBTreeIndirect` | `aabb_tree_indirect.rs` | 41 | 25 | 1 | 2 | 0 | 13 | 1 |
+| 1 | `Arachne/SkeletalTrapezoidation` | `arachne/skeletal_trapezoidation.rs` | 41 | 33 | 0 | 2 | 0 | 6 | 1 |
 | 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 6 | 4 | 1 | 0 | 3 | 2 |
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
 | 1 | `GCode/ToolOrderUtils` | `gcode/tool_order_utils.rs` | 32 | 26 | 1 | 0 | 0 | 5 | 3 |
 | 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 2 | 1 | 1 | 0 | 12 | 2 |
 | 1 | `Polyline` | `geometry/polyline.rs` | 52 | 29 | 3 | 1 | 0 | 19 | 2 |
-| 1 | `Arachne/SkeletalTrapezoidation` | `arachne/skeletal_trapezoidation.rs` | 41 | 34 | 0 | 1 | 0 | 6 | 1 |
 | 1 | `Arachne/WallToolPaths` | `arachne/wall_tool_paths.rs` | 16 | 8 | 3 | 1 | 0 | 4 | 1 |
 | 1 | `Circle` | `circle.rs` | 27 | 24 | 0 | 0 | 0 | 3 | 2 |
 | 1 | `CustomGCode` | `custom_g_code.rs` | 6 | 4 | 0 | 0 | 0 | 2 | 2 |
@@ -153,6 +152,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/PostProcessor` | `gcode/post_processor.rs` | 7 | 0 | 3 | 0 | 0 | 4 | 2 |
 | 1 | `PrintRegion` | `print_region.rs` | 6 | 2 | 1 | 2 | 0 | 1 | 0 |
 | 1 | `SurfaceMesh` | `surface_mesh.rs` | 22 | 18 | 0 | 0 | 0 | 4 | 2 |
+| 1 | `Tesselate` | `tesselate.rs` | 18 | 10 | 1 | 0 | 0 | 7 | 2 |
 
 ## C++ units with no Rust file
 
@@ -205,7 +205,7 @@ their function names come from, when there is one.
 | `arachne/utils/mod.rs` | module | 0 |  |
 | `bin/generate-test-meshes.rs` | no C++ file of this name | 9 | `TriangleMesh` |
 | `bin/slicer-cli.rs` | no C++ file of this name | 16 |  |
-| `boost_polygon_voronoi.rs` | no C++ file of this name | 287 |  |
+| `boost_polygon_voronoi.rs` | no C++ file of this name | 288 |  |
 | `clipper2_z.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xy.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xyz.rs` | no C++ file of this name | 9 |  |
@@ -238,7 +238,7 @@ their function names come from, when there is one.
 | `geometry/thick_polyline.rs` | no C++ file of this name | 36 |  |
 | `geometry/transform.rs` | no C++ file of this name | 42 |  |
 | `geometry/voronoi_annotation.rs` | no C++ file of this name | 23 | `Geometry/VoronoiOffset`, `Arachne/utils/PolygonsSegmentIndex` |
-| `geometry/voronoi_diagram.rs` | no C++ file of this name | 13 | `Geometry/Voronoi` |
+| `geometry/voronoi_diagram.rs` | no C++ file of this name | 32 | `Geometry/Voronoi` |
 | `interlocking/mod.rs` | module | 0 |  |
 | `lib.rs` | module | 10 | `BoundingBox`, `Point` |
 | `main.rs` | module | 1 |  |
@@ -695,11 +695,12 @@ Rust only:
 
 ### `Arachne/SkeletalTrapezoidation` (.cpp+.hpp) and `arachne/skeletal_trapezoidation.rs`
 
-Tier 1. C++ functions 41 (plus 2 constructors, 0 destructors, 0 operators), Rust functions 77. Matched 35: faithful 34, partial 0, divergent 1, stub 0.
+Tier 1. C++ functions 41 (plus 2 constructors, 0 destructors, 0 operators), Rust functions 75. Matched 35: faithful 33, partial 0, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `SkeletalTrapezoidation::discretize` :218 and `SkeletalTrapezoidation::discretize` :403 (11%, 0.21x)
+- divergent: `SkeletalTrapezoidation::discretize` :218 and `SkeletalTrapezoidation::discretize` :408 (4%, 0.16x)
+- divergent: `SkeletalTrapezoidation::constructFromPolygons` :391 and `SkeletalTrapezoidation::construct_from_polygons` :665 (1%, 0.02x)
 
 Missing in the Rust file:
 
@@ -712,48 +713,46 @@ Missing in the Rust file:
 
 Rust only:
 
-- `scaled_c` :65
-- `TransitionMidRef::new` :95
-- `SkeletalTrapezoidation::new` :144
-- `SkeletalTrapezoidation::make_node` :199
-- `SkeletalTrapezoidation::discretize_inner` :423
-- `SkeletalTrapezoidation::filter_central_rec` :1239
-- `SkeletalTrapezoidation::filter_noncentral_regions_rec` :1400
-- `SkeletalTrapezoidation::propagate_beadings_downward_edge` :3245
-- `SkeletalTrapezoidation::interpolate4` :3358
-- `SkeletalTrapezoidation::interpolate2` :3420
-- `SkeletalTrapezoidation::quadstart_dense_new` :4054
-- `source_segment` :4535
-- `source_point` :4549
-- `source_point_index` :4577
-- `SegmentCellRangeBv::is_valid` :4615 — C++ has it in `AABBMesh`, `AABBTreeIndirect`, `Circle`
-- `compute_segment_cell_range` :4624 — C++ has it in `Geometry/VoronoiUtils`
-- `beadprobe` :4707
-- `beadpair` :4808
-- `junctionprobe` :4925
-- `cjprobe` :4989
-- `propprobe` :5022
-- `graphprobe` :5056
-- `SkeletalTrapezoidation::awst_on_inner` :5085
-- `SkeletalTrapezoidation::tbarach_dump` :5089
-- `SkeletalTrapezoidation::central_census` :5120
-- `centralprobe` :5157
-- `iscprobe` :5213
-- `geomprobe` :5257
-- `SkeletalTrapezoidation::transition_census` :5310
-- `transprobe` :5328
-- `gnbprobe` :5360
-- `propclass_tick` :5404
-- `interp_delta_counts` :5441
-- `propclass_interp_delta` :5453
-- `upprobe_tick` :5475
-- `tiedens_tick` :5511
-- `dnprobe_tick` :5530
-- `census_tick` :5564
-- `gbuild_disc` :5606
-- `gbuild_tick` :5615
-- `conv_cell` :5655
-- `conv_stage` :5666
+- `scaled_c` :67
+- `TransitionMidRef::new` :97
+- `SkeletalTrapezoidation::new` :150
+- `SkeletalTrapezoidation::make_node` :204
+- `SkeletalTrapezoidation::discretize_inner` :427
+- `SkeletalTrapezoidation::construct_from_polygons_with` :677
+- `SkeletalTrapezoidation::construct_from_voronoi_diagram` :790
+- `SkeletalTrapezoidation::filter_central_rec` :1263
+- `SkeletalTrapezoidation::filter_noncentral_regions_rec` :1424
+- `SkeletalTrapezoidation::propagate_beadings_downward_edge` :3269
+- `SkeletalTrapezoidation::interpolate4` :3382
+- `SkeletalTrapezoidation::interpolate2` :3444
+- `SkeletalTrapezoidation::quadstart_dense_new` :4078
+- `get_source_point_index` :4559 — C++ has it in `Geometry/VoronoiUtils`
+- `beadprobe` :4592
+- `beadpair` :4693
+- `junctionprobe` :4810
+- `cjprobe` :4874
+- `propprobe` :4907
+- `graphprobe` :4941
+- `SkeletalTrapezoidation::awst_on_inner` :4970
+- `SkeletalTrapezoidation::tbarach_dump` :4974
+- `SkeletalTrapezoidation::central_census` :5005
+- `centralprobe` :5042
+- `iscprobe` :5098
+- `geomprobe` :5142
+- `SkeletalTrapezoidation::transition_census` :5195
+- `transprobe` :5213
+- `gnbprobe` :5245
+- `propclass_tick` :5289
+- `interp_delta_counts` :5326
+- `propclass_interp_delta` :5338
+- `upprobe_tick` :5360
+- `tiedens_tick` :5396
+- `dnprobe_tick` :5415
+- `census_tick` :5449
+- `gbuild_disc` :5491
+- `gbuild_tick` :5500
+- `conv_cell` :5540
+- `conv_stage` :5551
 
 ### `Arachne/SkeletalTrapezoidationEdge` (.hpp) and `arachne/skeletal_trapezoidation_edge.rs`
 
@@ -4973,7 +4972,7 @@ Missing in the Rust file:
 - `WipeTower::capped_wall_grid_width` :692 (18 tokens)
 - `WipeTowerWriter::y_shift` :778 (5 tokens)
 - `WipeTower::is_first_layer` :810 (8 tokens)
-- `WipeTowerWriter::point_rotated` :819 (10 tokens)
+- `WipeTowerWriter::point_rotated` :819 (10 tokens) — in `geometry/voronoi_diagram.rs`
 - `WipeTower::calc_tower_feedrate` :829 (76 tokens, overload)
 - `WipeTower::keeps_outer_walls_unshrunk` :852 (5 tokens)
 - `WipeTowerWriter::spiral_flat_ironing` :1441 (151 tokens)
@@ -5519,24 +5518,24 @@ Tier 1. C++ functions 19 (plus 1 constructors, 0 destructors, 0 operators), Rust
 Missing in the Rust file:
 
 - `VoronoiDiagram::construct_voronoi` :21 (300 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_diagram.rs`
-- `VoronoiDiagram::get_issue_type` :63 (5 tokens)
-- `VoronoiDiagram::get_state` :65 (5 tokens) — in `triangle_selector.rs`
+- `VoronoiDiagram::get_issue_type` :63 (5 tokens) — in `geometry/voronoi_diagram.rs`
+- `VoronoiDiagram::get_state` :65 (5 tokens) — in `geometry/voronoi_diagram.rs`, `triangle_selector.rs`
 - `VoronoiDiagram::is_valid` :67 (9 tokens) — in `aabb_mesh.rs`, `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `VoronoiDiagram::clear` :71 (51 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
-- `VoronoiDiagram::num_vertices` :77 (17 tokens) — in `boost_polygon_voronoi.rs`
-- `VoronoiDiagram::num_edges` :79 (17 tokens) — in `boost_polygon_voronoi.rs`
-- `VoronoiDiagram::num_cells` :81 (17 tokens) — in `arachne/utils/sparse_grid.rs`, `boost_polygon_voronoi.rs`
-- `VoronoiDiagram::copy_to_local` :86 (522 tokens)
+- `VoronoiDiagram::num_vertices` :77 (17 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_utils.rs`
+- `VoronoiDiagram::num_edges` :79 (17 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_utils.rs`
+- `VoronoiDiagram::num_cells` :81 (17 tokens) — in `arachne/utils/sparse_grid.rs`, `boost_polygon_voronoi.rs`, `geometry/voronoi_utils.rs`
+- `VoronoiDiagram::copy_to_local` :86 (522 tokens) — in `geometry/voronoi_diagram.rs`
 - `VoronoiDiagram::construct_voronoi` :92 (28 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_diagram.rs`
 - `VoronoiDiagram::construct_voronoi` :104 (32 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_diagram.rs`
-- `VoronoiDiagram::detect_known_issues` :155 (48 tokens)
-- `VoronoiDiagram::detect_known_voronoi_cell_issues` :176 (290 tokens)
+- `VoronoiDiagram::detect_known_issues` :155 (48 tokens) — in `geometry/voronoi_diagram.rs`
+- `VoronoiDiagram::detect_known_voronoi_cell_issues` :176 (290 tokens) — in `geometry/voronoi_diagram.rs`
 - `segment_traits<Slic3r::Geometry::VoronoiDiagram::Segment>::get` :196 (17 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
 - `VoronoiDiagram::has_finite_edge_with_non_finite_vertex` :222 (98 tokens) — in `geometry/voronoi_diagram.rs`
-- `VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram` :235 (77 tokens)
-- `encode_input_segment_endpoint` :256 (23 tokens)
-- `decode_input_segment_endpoint` :262 (92 tokens)
-- `VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram_by_rotation` :279 (510 tokens)
+- `VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram` :235 (77 tokens) — in `geometry/voronoi_diagram.rs`
+- `encode_input_segment_endpoint` :256 (23 tokens) — in `geometry/voronoi_diagram.rs`
+- `decode_input_segment_endpoint` :262 (92 tokens) — in `geometry/voronoi_diagram.rs`
+- `VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram_by_rotation` :279 (510 tokens) — in `geometry/voronoi_diagram.rs`
 
 ### `Geometry/VoronoiOffset` (.cpp+.hpp) and `geometry/voronoi_offset.rs`
 
@@ -5591,30 +5590,79 @@ Rust only:
 
 ### `Geometry/VoronoiUtils` (.cpp+.hpp) and `geometry/voronoi_utils.rs`
 
-Tier 1. C++ functions 13 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 9. Matched 6: faithful 2, partial 3, divergent 1, stub 0.
+Tier 1. C++ functions 13 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 64. Matched 9: faithful 5, partial 2, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `VoronoiUtils::discretize_parabola` :104 and `discretize_parabola` :128 (72%, 1.05x)
-- divergent: `VoronoiUtils::to_point` :255 and `VoronoiUtils::to_point` :71 (20%, 0.52x)
-- partial: `VoronoiUtils::is_finite` :265 and `VoronoiUtils::is_finite` :82 (50%, 0.52x)
-- partial: `VoronoiUtils::make_rotated_vertex` :270 and `VoronoiUtils::make_rotated_vertex` :92 (64%, 0.46x)
+- divergent: `VoronoiUtils::get_source_segment` :36 and `get_source_segment` :590 (25%, 0.76x)
+- partial: `VoronoiUtils::discretize_parabola` :104 and `discretize_parabola` :127 (72%, 1.05x)
+- divergent: `VoronoiUtils::to_point` :255 and `VoronoiUtils::to_point` :66 (20%, 0.52x)
+- partial: `VoronoiUtils::is_finite` :265 and `VoronoiUtils::is_finite` :77 (50%, 0.52x)
 
 Missing in the Rust file:
 
-- `VoronoiUtils::get_source_segment` :36 (63 tokens) — in `geometry/voronoi_utils_cgal.rs`
-- `VoronoiUtils::get_source_point` :52 (217 tokens) — in `geometry/voronoi_utils_cgal.rs`
-- `VoronoiUtils::get_source_point_index` :79 (176 tokens)
+- `VoronoiUtils::get_source_point_index` :79 (176 tokens) — in `arachne/skeletal_trapezoidation.rs`
 - `VoronoiUtils::is_in_range` :99 (35 tokens)
 - `VoronoiUtils::is_in_range` :104 (34 tokens)
 - `VoronoiUtils::is_in_range` :109 (50 tokens)
-- `VoronoiUtils::compute_segment_cell_range` :200 (306 tokens) — in `arachne/skeletal_trapezoidation.rs`
 
 Rust only:
 
-- `SegmentCellRange::new` :44
-- `make_rotated_vertex` :114
-- `is_finite` :121
+- `SegmentCellRange::new` :39
+- `make_rotated_vertex` :113
+- `is_finite` :120
+- `Diagram::num_cells` :372 — C++ has it in `Geometry/Voronoi`
+- `Diagram::num_edges` :375 — C++ has it in `Geometry/Voronoi`
+- `Diagram::num_vertices` :378 — C++ has it in `Geometry/Voronoi`
+- `Diagram::cell_incident_edge` :381
+- `Diagram::cell_contains_point` :384
+- `Diagram::cell_contains_segment` :387
+- `Diagram::cell_source_index` :390
+- `Diagram::cell_source_category` :393
+- `Diagram::edge_cell` :403
+- `Diagram::edge_twin` :406
+- `Diagram::edge_next` :409
+- `Diagram::edge_vertex0` :412
+- `Diagram::edge_vertex1` :415
+- `Diagram::edge_is_finite` :418
+- `Diagram::edge_is_infinite` :421
+- `Diagram::edge_is_secondary` :424
+- `Diagram::vertex_x` :427
+- `Diagram::vertex_y` :430
+- `VoronoiDiagram::num_cells` :437 — C++ has it in `Geometry/Voronoi`
+- `VoronoiDiagram::num_edges` :440 — C++ has it in `Geometry/Voronoi`
+- `VoronoiDiagram::num_vertices` :443 — C++ has it in `Geometry/Voronoi`
+- `VoronoiDiagram::cell_incident_edge` :446
+- `VoronoiDiagram::cell_contains_point` :449
+- `VoronoiDiagram::cell_contains_segment` :452
+- `VoronoiDiagram::cell_source_index` :455
+- `VoronoiDiagram::cell_source_category` :458
+- `VoronoiDiagram::edge_cell` :461
+- `VoronoiDiagram::edge_twin` :464
+- `VoronoiDiagram::edge_next` :467
+- `VoronoiDiagram::edge_vertex0` :470
+- `VoronoiDiagram::edge_vertex1` :473
+- `VoronoiDiagram::edge_is_finite` :476
+- `VoronoiDiagram::edge_is_infinite` :479
+- `VoronoiDiagram::edge_is_secondary` :482
+- `VoronoiDiagram::vertex_x` :485
+- `VoronoiDiagram::vertex_y` :488
+- `Diagram::color_unset` :516
+- `Diagram::vertex_incident_edge` :519
+- `Diagram::vertex_color` :522
+- `Diagram::set_vertex_color` :525
+- `Diagram::edge_color` :529
+- `Diagram::set_edge_color` :532
+- `VoronoiDiagram::color_unset` :540
+- `VoronoiDiagram::vertex_incident_edge` :543
+- `VoronoiDiagram::vertex_color` :546
+- `VoronoiDiagram::set_vertex_color` :549
+- `VoronoiDiagram::edge_color` :552
+- `VoronoiDiagram::set_edge_color` :555
+- `Line::low` :572
+- `Line::high` :575
+- `PolygonsSegmentIndex::low` :581
+- `PolygonsSegmentIndex::high` :584
 
 ### `Geometry/VoronoiUtilsCgal` (.cpp+.hpp) and `geometry/voronoi_utils_cgal.rs`
 
@@ -6529,16 +6577,17 @@ Rust only:
 
 ### `MultiMaterialSegmentation` (.cpp+.hpp) and `multi_material_segmentation.rs`
 
-Tier 1. C++ functions 74 (plus 1 constructors, 0 destructors, 3 operators), Rust functions 93. Matched 46: faithful 40, partial 4, divergent 2, stub 0.
+Tier 1. C++ functions 74 (plus 1 constructors, 0 destructors, 3 operators), Rust functions 95. Matched 46: faithful 39, partial 4, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `MMU_Graph::remove_edge` :102 and `MmuGraph::remove_edge` :181 (50%, 0.71x)
-- divergent: `MMU_Graph::is_edge_attach_to_contour` :193 and `MmuGraph::is_edge_attach_to_contour` :317 (25%, 0.6x)
-- divergent: `MMU_Graph::is_edge_connecting_two_contour_vertices` :198 and `MmuGraph::is_edge_connecting_two_contour_vertices` :327 (25%, 0.6x)
-- partial: `is_point_closer_to_beginning_of_line` :1716 and `is_point_closer_to_beginning_of_line` :1657 (50%, 0.71x)
-- partial: `clip_finite_voronoi_edge` :1721 and `clip_finite_voronoi_edge` :1999 (38%, 0.78x)
-- partial: `merge_segmented_layers` :2039 and `merge_segmented_layers` :3226 (50%, 0.99x)
+- partial: `MMU_Graph::remove_edge` :102 and `MmuGraph::remove_edge` :193 (50%, 0.71x)
+- divergent: `MMU_Graph::is_edge_attach_to_contour` :193 and `MmuGraph::is_edge_attach_to_contour` :329 (25%, 0.6x)
+- divergent: `MMU_Graph::is_edge_connecting_two_contour_vertices` :198 and `MmuGraph::is_edge_connecting_two_contour_vertices` :335 (25%, 0.6x)
+- partial: `is_point_closer_to_beginning_of_line` :1716 and `is_point_closer_to_beginning_of_line` :1642 (50%, 0.71x)
+- partial: `clip_finite_voronoi_edge` :1721 and `clip_finite_voronoi_edge` :1961 (38%, 0.78x)
+- divergent: `build_graph` :1741 and `build_graph` :2055 (23%, 0.27x)
+- partial: `merge_segmented_layers` :2039 and `merge_segmented_layers` :3202 (50%, 0.99x)
 
 Missing in the Rust file:
 
@@ -6573,53 +6622,55 @@ Missing in the Rust file:
 
 Rust only:
 
-- `pt_to_vec2d` :46
-- `vec2d_to_pt` :52
-- `scale_` :59 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `ColoredLine::new` :79
-- `cross2f` :105
-- `Arc::eq` :136
-- `MmuGraph::node_remove_edge` :168
-- `MmuGraph::append_edge_default` :339
-- `colored_points_to_polygon_one` :522
-- `is_equal_eps` :814
-- `is_less_eps` :823
-- `line_distance_to_squared` :878
-- `PaintedLineVisitor::new` :923
-- `PaintedLineVisitor::visit` :939 — C++ has it in `KDTreeIndirect`, `MeshSplitImpl`
-- `cos_threshold2` :1009
-- `append_threshold` :1014
-- `append_threshold2` :1019
-- `get_extents_colored` :1024
-- `to_lines_colored` :1037
-- `CPoint::with_contour` :1713
-- `CPoint::new` :1724
-- `CPointLookup::new` :1747
-- `CPointLookup::insert` :1780 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
-- `CPointLookup::find` :1786 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
-- `CPointLookup::find_all` :1816 — C++ has it in `Point`
-- `ulp_eq` :1851
-- `edge_cell_source_index` :1873
-- `vd_vertex_xy` :1880
-- `retrieve_point_vd` :1888
-- `clip_infinite_edge` :1905 — C++ has it in `Geometry/MedialAxis`, `Geometry/VoronoiVisualUtils`
-- `prev_contour_line` :2027
-- `next_contour_line` :2042
-- `append_edge_if_intersects_with_contour` :2059
-- `polygons_extents` :2457
-- `tb_scaled_f32` :2716
-- `tb_mm` :2723
-- `tb_union_ex` :2729
-- `tb_opening_ex` :2738
-- `tb_is_volume_sinking` :2751
-- `mmu_segmentation_top_and_bottom_layers_tier1` :2781
-- `upper_bound_f64` :3316
-- `expolygons_to_edge_grid_contours` :3333
-- `multi_material_segmentation_by_painting_tier1` :3410
-- `sqr_f64` :4208
-- `perp` :4214 — C++ has it in `Point`
-- `next_idx_modulo` :4220 — C++ has it in `Utils`
-- `_parity_anchors` :4232
+- `pt_to_vec2d` :47
+- `vec2d_to_pt` :53
+- `scale_` :60 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `ColoredLine::new` :80
+- `cross2f` :106
+- `ColoredLine::low` :117
+- `ColoredLine::high` :120
+- `Arc::eq` :148
+- `MmuGraph::node_remove_edge` :180
+- `MmuGraph::append_edge_default` :343
+- `colored_points_to_polygon_one` :507
+- `is_equal_eps` :799
+- `is_less_eps` :808
+- `line_distance_to_squared` :863
+- `PaintedLineVisitor::new` :908
+- `PaintedLineVisitor::visit` :924 — C++ has it in `KDTreeIndirect`, `MeshSplitImpl`
+- `cos_threshold2` :994
+- `append_threshold` :999
+- `append_threshold2` :1004
+- `get_extents_colored` :1009
+- `to_lines_colored` :1022
+- `CPoint::with_contour` :1691
+- `CPoint::new` :1702
+- `CPointLookup::new` :1725
+- `CPointLookup::insert` :1758 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
+- `CPointLookup::find` :1764 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
+- `CPointLookup::find_all` :1794 — C++ has it in `Point`
+- `ulp_eq` :1829
+- `edge_cell_source_index` :1852
+- `retrieve_point_vd` :1860
+- `clip_infinite_edge` :1882 — C++ has it in `Geometry/MedialAxis`, `Geometry/VoronoiVisualUtils`
+- `prev_contour_line` :1988
+- `next_contour_line` :2003
+- `append_edge_if_intersects_with_contour` :2020
+- `build_graph_from_voronoi_diagram` :2176
+- `polygons_extents` :2433
+- `tb_scaled_f32` :2692
+- `tb_mm` :2699
+- `tb_union_ex` :2705
+- `tb_opening_ex` :2714
+- `tb_is_volume_sinking` :2727
+- `mmu_segmentation_top_and_bottom_layers_tier1` :2757
+- `upper_bound_f64` :3292
+- `expolygons_to_edge_grid_contours` :3309
+- `multi_material_segmentation_by_painting_tier1` :3386
+- `sqr_f64` :4184
+- `perp` :4190 — C++ has it in `Point`
+- `next_idx_modulo` :4196 — C++ has it in `Utils`
+- `_parity_anchors` :4208
 
 ### `MultiNozzleUtils` (.cpp+.hpp) and `multi_nozzle_utils.rs`
 

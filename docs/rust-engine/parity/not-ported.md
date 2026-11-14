@@ -71,8 +71,9 @@ Voronoi diagram behind the medial axis is compiled inside `clipper-z-sys`.
 
 Since R897 the builder itself is ported: `boost_polygon_voronoi.rs` equals boost's diagram in every vertex bit,
 link and flag on 110,546 inputs (`tests/boost_polygon_voronoi_native_parity.rs`, for which this crate is the
-reference). Nothing in the engine calls it yet; the medial axis is to move onto it next, then the users of the
-`boostvoronoi` crate (Arachne's skeletal trapezoidation, the multi-material segmentation).
+reference). The medial axis runs on it since R898, Arachne's skeletal trapezoidation and the multi-material segmentation
+since R901 (`ARACHNE_VORONOI_PORT`, `MMSEG_VORONOI_PORT`); the `boostvoronoi` crate is left for the gate-off arms
+and the older helpers.
 
 ### C++ that comes in through published crates
 

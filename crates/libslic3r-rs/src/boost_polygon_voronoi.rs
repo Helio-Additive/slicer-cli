@@ -3731,6 +3731,15 @@ impl VoronoiDiagram {
         self.edges[edge].set_color(color);
     }
 
+    /// `vertex = other` for a `voronoi_vertex<double>` that carries the incident edge and
+    /// the colour of the vertex it replaces: the coordinates change, the rest stays. This
+    /// is what `Geometry::VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram_by_rotation`
+    /// (Voronoi.cpp:331-345) does to every vertex of its local copy of the diagram.
+    pub fn set_vertex_coordinates(&mut self, vertex: usize, x: f64, y: f64) {
+        self.vertices[vertex].x = x;
+        self.vertices[vertex].y = y;
+    }
+
     /// voronoi_diagram.hpp:179-180 `voronoi_edge::vertex1`.
     pub fn vertex1(&self, edge: usize) -> Option<usize> {
         self.edges[self.edges[edge].twin.expect("voronoi_edge::vertex1: no twin")].vertex

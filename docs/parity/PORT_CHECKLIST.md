@@ -11,13 +11,13 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**36.0% of the named C++ functions are ported or verified (3310 of 9204); 25.0% by size of body.**
+**36.0% of the named C++ functions are ported or verified (3311 of 9204); 24.8% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3150 | 34.2% | 47.0% |
-| partial `[~]` | 2744 | 29.8% | 28.0% |
-| ported `[x]` | 3171 | 34.5% | 23.0% |
+| not started `[ ]` | 3140 | 34.1% | 46.9% |
+| partial `[~]` | 2753 | 29.9% | 28.2% |
+| ported `[x]` | 3172 | 34.5% | 22.8% |
 | verified `[v]` | 139 | 1.5% | 2.0% |
 
 | Files (C++ units) | Count |
@@ -69,7 +69,7 @@ the end; the goal is none.
 | `Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy` | 1 | `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs` | partial | 6 | 0 | 1 | 5 | 0 |
 | `Arachne/BeadingStrategy/RedistributeBeadingStrategy` | 1 | `arachne/beading_strategy/redistribute_beading_strategy.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `Arachne/BeadingStrategy/WideningBeadingStrategy` | 1 | `arachne/beading_strategy/widening_beading_strategy.rs` | ported | 8 | 0 | 0 | 8 | 0 |
-| `Arachne/SkeletalTrapezoidation` | 1 | `arachne/skeletal_trapezoidation.rs` | partial | 41 | 1 | 6 | 34 | 0 |
+| `Arachne/SkeletalTrapezoidation` | 1 | `arachne/skeletal_trapezoidation.rs` | partial | 41 | 1 | 7 | 33 | 0 |
 | `Arachne/SkeletalTrapezoidationEdge` | 1 | `arachne/skeletal_trapezoidation_edge.rs` | ported | 14 | 0 | 0 | 14 | 0 |
 | `Arachne/SkeletalTrapezoidationGraph` | 1 | `arachne/skeletal_trapezoidation_graph.rs` | ported | 12 | 0 | 0 | 12 | 0 |
 | `Arachne/SkeletalTrapezoidationJoint` | 1 | `arachne/skeletal_trapezoidation_joint.rs` | ported | 3 | 0 | 0 | 3 | 0 |
@@ -206,7 +206,7 @@ the end; the goal is none.
 | `GCode/TimelapsePosPicker` | 1 | `gcode/timelapse_pos_picker.rs` | partial | 20 | 17 | 2 | 1 | 0 |
 | `GCode/ToolOrdering` | 1 | `gcode/tool_ordering.rs` | partial | 85 | 46 | 25 | 14 | 0 |
 | `GCode/ToolOrderUtils` | 1 | `gcode/tool_order_utils.rs` | partial | 32 | 3 | 3 | 26 | 0 |
-| `GCode/WipeTower` | 1 | `gcode/wipe_tower.rs` | partial | 218 | 123 | 40 | 55 | 0 |
+| `GCode/WipeTower` | 1 | `gcode/wipe_tower.rs` | partial | 218 | 122 | 41 | 55 | 0 |
 | `GCodeReader` | 1 | `g_code_reader.rs` | partial | 71 | 0 | 8 | 63 | 0 |
 | `GCodeSender` | 3 | `gcode_sender.rs` | partial | 24 | 0 | 13 | 11 | 0 |
 | `GCodeWriter` | 1 | `g_code_writer.rs` | partial | 84 | 4 | 16 | 64 | 0 |
@@ -216,9 +216,9 @@ the end; the goal is none.
 | `Geometry/ConvexHull` | 1 | `geometry/convex_hull.rs` | partial | 21 | 2 | 11 | 8 | 0 |
 | `Geometry/Curves` | 1 | `geometry/curves.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `Geometry/MedialAxis` | 1 | `geometry/medial_axis.rs` | partial | 16 | 2 | 12 | 2 | 0 |
-| `Geometry/Voronoi` | 1 | `geometry/voronoi.rs` | partial | 19 | 8 | 11 | 0 | 0 |
+| `Geometry/Voronoi` | 1 | `geometry/voronoi.rs` | partial | 19 | 0 | 19 | 0 | 0 |
 | `Geometry/VoronoiOffset` | 1 | `geometry/voronoi_offset.rs` | partial | 39 | 5 | 11 | 23 | 0 |
-| `Geometry/VoronoiUtils` | 1 | `geometry/voronoi_utils.rs` | partial | 13 | 4 | 7 | 2 | 0 |
+| `Geometry/VoronoiUtils` | 1 | `geometry/voronoi_utils.rs` | partial | 13 | 3 | 5 | 5 | 0 |
 | `Geometry/VoronoiUtilsCgal` | 1 | `geometry/voronoi_utils_cgal.rs` | partial | 11 | 3 | 2 | 6 | 0 |
 | `Geometry/VoronoiVisualUtils` | 1 | `geometry/voronoi_visual_utils.rs` | partial | 9 | 0 | 1 | 8 | 0 |
 | `I18N` | 1 | `i18n.rs` | partial | 6 | 2 | 2 | 2 | 0 |
@@ -252,7 +252,7 @@ the end; the goal is none.
 | `Model` | 1 | `model.rs` | partial | 374 | 251 | 115 | 8 | 0 |
 | `ModelArrange` | 1 | `model_arrange.rs` | partial | 14 | 9 | 3 | 2 | 0 |
 | `MTUtils` | 1 | `mt_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
-| `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 13 | 39 | 1 |
+| `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 14 | 38 | 1 |
 | `MultiNozzleUtils` | 1 | `multi_nozzle_utils.rs` | partial | 59 | 9 | 11 | 39 | 0 |
 | `MultiPoint` | 1 | `multi_point.rs` | partial | 52 | 0 | 38 | 13 | 1 |
 | `MutablePolygon` | 1 | `mutable_polygon.rs` | partial | 47 | 0 | 20 | 27 | 0 |
@@ -776,49 +776,49 @@ Rust file: `arachne/skeletal_trapezoidation.rs`. Status: **partial**. Not listed
 **free functions**
 
 - [ ] `export_graph_to_svg` (line 28) → `arachne/skeletal_trapezoidation.rs`
-- [x] `normal` (line 1310) → `arachne/skeletal_trapezoidation.rs:4515`
+- [x] `normal` (line 1310) → `arachne/skeletal_trapezoidation.rs:4539`
 
 **class `SkeletalTrapezoidation`**
 
-- [x] `transferEdge` (line 107) → `arachne/skeletal_trapezoidation.rs:221`
-- [~] `discretize` (line 218) → `arachne/skeletal_trapezoidation.rs:403` — divergent
-- [x] `computePointCellRange` (line 330) → `arachne/skeletal_trapezoidation.rs:586`
-- [x] `constructFromPolygons` (line 391) → `arachne/skeletal_trapezoidation.rs:668`
-- [x] `separatePointyQuadEndNodes` (line 510) → `arachne/skeletal_trapezoidation.rs:932`
-- [x] `generateToolpaths` (line 545) → `arachne/skeletal_trapezoidation.rs:993`
-- [x] `updateIsCentral` (line 603) → `arachne/skeletal_trapezoidation.rs:1147`
-- [x] `filterCentral` (line 653) → `arachne/skeletal_trapezoidation.rs:1212`
+- [x] `transferEdge` (line 107) → `arachne/skeletal_trapezoidation.rs:226`
+- [~] `discretize` (line 218) → `arachne/skeletal_trapezoidation.rs:408` — divergent
+- [x] `computePointCellRange` (line 330) → `arachne/skeletal_trapezoidation.rs:585`
+- [~] `constructFromPolygons` (line 391) → `arachne/skeletal_trapezoidation.rs:665` — divergent
+- [x] `separatePointyQuadEndNodes` (line 510) → `arachne/skeletal_trapezoidation.rs:956`
+- [x] `generateToolpaths` (line 545) → `arachne/skeletal_trapezoidation.rs:1017`
+- [x] `updateIsCentral` (line 603) → `arachne/skeletal_trapezoidation.rs:1171`
+- [x] `filterCentral` (line 653) → `arachne/skeletal_trapezoidation.rs:1236`
 - [~] `filterCentral` (line 664) → `arachne/skeletal_trapezoidation.rs` — another overload of the name is ported
-- [x] `filterOuterCentral` (line 690) → `arachne/skeletal_trapezoidation.rs:1286`
-- [x] `updateBeadCount` (line 702) → `arachne/skeletal_trapezoidation.rs:1303`
-- [x] `filterNoncentralRegions` (line 733) → `arachne/skeletal_trapezoidation.rs:1366`
+- [x] `filterOuterCentral` (line 690) → `arachne/skeletal_trapezoidation.rs:1310`
+- [x] `updateBeadCount` (line 702) → `arachne/skeletal_trapezoidation.rs:1327`
+- [x] `filterNoncentralRegions` (line 733) → `arachne/skeletal_trapezoidation.rs:1390`
 - [~] `filterNoncentralRegions` (line 751) → `arachne/skeletal_trapezoidation.rs` — another overload of the name is ported
-- [x] `generateTransitioningRibs` (line 795) → `arachne/skeletal_trapezoidation.rs:1484`
-- [x] `generateTransitionMids` (line 833) → `arachne/skeletal_trapezoidation.rs:1527`
-- [x] `filterTransitionMids` (line 913) → `arachne/skeletal_trapezoidation.rs:1677`
-- [x] `dissolveNearbyTransitions` (line 982) → `arachne/skeletal_trapezoidation.rs:1833`
-- [x] `dissolveBeadCountRegion` (line 1042) → `arachne/skeletal_trapezoidation.rs:1977`
-- [x] `filterEndOfCentralTransition` (line 1059) → `arachne/skeletal_trapezoidation.rs:2015`
-- [x] `generateAllTransitionEnds` (line 1089) → `arachne/skeletal_trapezoidation.rs:2075`
-- [x] `generateTransitionEnds` (line 1109) → `arachne/skeletal_trapezoidation.rs:2129`
-- [x] `generateTransitionEnd` (line 1146) → `arachne/skeletal_trapezoidation.rs:2207`
-- [x] `isGoingDown` (line 1252) → `arachne/skeletal_trapezoidation.rs:2393`
-- [x] `applyTransitions` (line 1318) → `arachne/skeletal_trapezoidation.rs:2497`
-- [x] `isEndOfCentral` (line 1384) → `arachne/skeletal_trapezoidation.rs:2628`
-- [x] `generateExtraRibs` (line 1405) → `arachne/skeletal_trapezoidation.rs:4400`
-- [x] `generateSegments` (line 1477) → `arachne/skeletal_trapezoidation.rs:2669`
-- [x] `getQuadMaxRedgeTo` (line 1583) → `arachne/skeletal_trapezoidation.rs:3047`
-- [x] `propagateBeadingsUpward` (line 1608) → `arachne/skeletal_trapezoidation.rs:3093`
-- [x] `propagateBeadingsDownward` (line 1637) → `arachne/skeletal_trapezoidation.rs:3201`
+- [x] `generateTransitioningRibs` (line 795) → `arachne/skeletal_trapezoidation.rs:1508`
+- [x] `generateTransitionMids` (line 833) → `arachne/skeletal_trapezoidation.rs:1551`
+- [x] `filterTransitionMids` (line 913) → `arachne/skeletal_trapezoidation.rs:1701`
+- [x] `dissolveNearbyTransitions` (line 982) → `arachne/skeletal_trapezoidation.rs:1857`
+- [x] `dissolveBeadCountRegion` (line 1042) → `arachne/skeletal_trapezoidation.rs:2001`
+- [x] `filterEndOfCentralTransition` (line 1059) → `arachne/skeletal_trapezoidation.rs:2039`
+- [x] `generateAllTransitionEnds` (line 1089) → `arachne/skeletal_trapezoidation.rs:2099`
+- [x] `generateTransitionEnds` (line 1109) → `arachne/skeletal_trapezoidation.rs:2153`
+- [x] `generateTransitionEnd` (line 1146) → `arachne/skeletal_trapezoidation.rs:2231`
+- [x] `isGoingDown` (line 1252) → `arachne/skeletal_trapezoidation.rs:2417`
+- [x] `applyTransitions` (line 1318) → `arachne/skeletal_trapezoidation.rs:2521`
+- [x] `isEndOfCentral` (line 1384) → `arachne/skeletal_trapezoidation.rs:2652`
+- [x] `generateExtraRibs` (line 1405) → `arachne/skeletal_trapezoidation.rs:4424`
+- [x] `generateSegments` (line 1477) → `arachne/skeletal_trapezoidation.rs:2693`
+- [x] `getQuadMaxRedgeTo` (line 1583) → `arachne/skeletal_trapezoidation.rs:3071`
+- [x] `propagateBeadingsUpward` (line 1608) → `arachne/skeletal_trapezoidation.rs:3117`
+- [x] `propagateBeadingsDownward` (line 1637) → `arachne/skeletal_trapezoidation.rs:3225`
 - [~] `propagateBeadingsDownward` (line 1660) → `arachne/skeletal_trapezoidation.rs` — another overload of the name is ported
 - [~] `interpolate` (line 1709) → `extrusion_entity.rs, geometry/bicubic.rs` — not in the paired file
 - [~] `interpolate` (line 1752) → `extrusion_entity.rs, geometry/bicubic.rs` — not in the paired file
-- [x] `generateJunctions` (line 1773) → `arachne/skeletal_trapezoidation.rs:3460`
-- [x] `getOrCreateBeading` (line 1852) → `arachne/skeletal_trapezoidation.rs:3664`
-- [x] `getNearestBeading` (line 1894) → `arachne/skeletal_trapezoidation.rs:3757`
-- [x] `addToolpathSegment` (line 1935) → `arachne/skeletal_trapezoidation.rs:3849`
-- [x] `connectJunctions` (line 1982) → `arachne/skeletal_trapezoidation.rs:4061`
-- [x] `generateLocalMaximaSingleBeads` (line 2102) → `arachne/skeletal_trapezoidation.rs:4325`
+- [x] `generateJunctions` (line 1773) → `arachne/skeletal_trapezoidation.rs:3484`
+- [x] `getOrCreateBeading` (line 1852) → `arachne/skeletal_trapezoidation.rs:3688`
+- [x] `getNearestBeading` (line 1894) → `arachne/skeletal_trapezoidation.rs:3781`
+- [x] `addToolpathSegment` (line 1935) → `arachne/skeletal_trapezoidation.rs:3873`
+- [x] `connectJunctions` (line 1982) → `arachne/skeletal_trapezoidation.rs:4085`
+- [x] `generateLocalMaximaSingleBeads` (line 2102) → `arachne/skeletal_trapezoidation.rs:4349`
 
 ### `Arachne/SkeletalTrapezoidationEdge` (.hpp)
 
@@ -6778,7 +6778,7 @@ Rust file: `gcode/wipe_tower.rs`. Status: **partial**. Not listed: 8 constructor
 - [x] `y` (line 814) → `gcode/wipe_tower.rs:1509`
 - [x] `start_pos_rotated` (line 816) → `gcode/wipe_tower.rs:1520`
 - [x] `pos_rotated` (line 817) → `gcode/wipe_tower.rs:1526`
-- [ ] `point_rotated` (line 819) → `gcode/wipe_tower.rs`
+- [~] `point_rotated` (line 819) → `geometry/voronoi_diagram.rs` — not in the paired file
 - [x] `elapsed_time` (line 820) → `gcode/wipe_tower.rs:1531`
 - [x] `get_and_reset_used_filament_length` (line 821) → `gcode/wipe_tower.rs:1536`
 - [x] `generate_path` (line 1380) → `gcode/wipe_tower.rs:1902`
@@ -7307,27 +7307,27 @@ Rust file: `geometry/voronoi.rs`. Status: **partial**. Not listed: 1 constructor
 
 **free functions**
 
-- [ ] `encode_input_segment_endpoint` (line 256) → `geometry/voronoi.rs`
-- [ ] `decode_input_segment_endpoint` (line 262) → `geometry/voronoi.rs`
+- [~] `encode_input_segment_endpoint` (line 256) → `geometry/voronoi_diagram.rs` — not in the paired file
+- [~] `decode_input_segment_endpoint` (line 262) → `geometry/voronoi_diagram.rs` — not in the paired file
 
 **class `VoronoiDiagram`**
 
 - [~] `construct_voronoi` (line 21) → `boost_polygon_voronoi.rs, geometry/voronoi_diagram.rs` — not in the paired file
-- [ ] `get_issue_type` (line 63) → `geometry/voronoi.rs`
-- [~] `get_state` (line 65) → `triangle_selector.rs` — not in the paired file
+- [~] `get_issue_type` (line 63) → `geometry/voronoi_diagram.rs` — not in the paired file
+- [~] `get_state` (line 65) → `geometry/voronoi_diagram.rs, triangle_selector.rs` — not in the paired file
 - [~] `is_valid` (line 67) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `clear` (line 71) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `num_vertices` (line 77) → `boost_polygon_voronoi.rs` — not in the paired file
-- [~] `num_edges` (line 79) → `boost_polygon_voronoi.rs` — not in the paired file
-- [~] `num_cells` (line 81) → `arachne/utils/sparse_grid.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `copy_to_local` (line 86) → `geometry/voronoi.rs`
+- [~] `num_vertices` (line 77) → `boost_polygon_voronoi.rs, geometry/voronoi_utils.rs` — not in the paired file
+- [~] `num_edges` (line 79) → `boost_polygon_voronoi.rs, geometry/voronoi_utils.rs` — not in the paired file
+- [~] `num_cells` (line 81) → `arachne/utils/sparse_grid.rs, boost_polygon_voronoi.rs, geometry/voronoi_utils.rs` — not in the paired file
+- [~] `copy_to_local` (line 86) → `geometry/voronoi_diagram.rs` — not in the paired file
 - [~] `construct_voronoi` (line 92) → `boost_polygon_voronoi.rs, geometry/voronoi_diagram.rs` — not in the paired file
 - [~] `construct_voronoi` (line 104) → `boost_polygon_voronoi.rs, geometry/voronoi_diagram.rs` — not in the paired file
-- [ ] `detect_known_issues` (line 155) → `geometry/voronoi.rs`
-- [ ] `detect_known_voronoi_cell_issues` (line 176) → `geometry/voronoi.rs`
+- [~] `detect_known_issues` (line 155) → `geometry/voronoi_diagram.rs` — not in the paired file
+- [~] `detect_known_voronoi_cell_issues` (line 176) → `geometry/voronoi_diagram.rs` — not in the paired file
 - [~] `has_finite_edge_with_non_finite_vertex` (line 222) → `geometry/voronoi_diagram.rs` — not in the paired file
-- [ ] `try_to_repair_degenerated_voronoi_diagram` (line 235) → `geometry/voronoi.rs`
-- [ ] `try_to_repair_degenerated_voronoi_diagram_by_rotation` (line 279) → `geometry/voronoi.rs`
+- [~] `try_to_repair_degenerated_voronoi_diagram` (line 235) → `geometry/voronoi_diagram.rs` — not in the paired file
+- [~] `try_to_repair_degenerated_voronoi_diagram_by_rotation` (line 279) → `geometry/voronoi_diagram.rs` — not in the paired file
 
 **class `segment_traits<Slic3r::Geometry::VoronoiDiagram::Segment>`**
 
@@ -7385,22 +7385,22 @@ Rust file: `geometry/voronoi_utils.rs`. Status: **partial**. Not listed: 1 const
 
 **class `SegmentCellRange`**
 
-- [x] `is_valid` (line 24) → `geometry/voronoi_utils.rs:54`
+- [x] `is_valid` (line 24) → `geometry/voronoi_utils.rs:49`
 
 **class `VoronoiUtils`**
 
-- [~] `get_source_segment` (line 36) → `geometry/voronoi_utils_cgal.rs` — not in the paired file
-- [~] `get_source_point` (line 52) → `geometry/voronoi_utils_cgal.rs` — not in the paired file
-- [ ] `get_source_point_index` (line 79) → `geometry/voronoi_utils.rs`
+- [~] `get_source_segment` (line 36) → `geometry/voronoi_utils.rs:590` — divergent
+- [x] `get_source_point` (line 52) → `geometry/voronoi_utils.rs:601`
+- [~] `get_source_point_index` (line 79) → `arachne/skeletal_trapezoidation.rs` — not in the paired file
 - [ ] `is_in_range` (line 99) → `geometry/voronoi_utils.rs`
-- [~] `discretize_parabola` (line 104) → `geometry/voronoi_utils.rs:128` — partial
+- [~] `discretize_parabola` (line 104) → `geometry/voronoi_utils.rs:127` — partial
 - [ ] `is_in_range` (line 104) → `geometry/voronoi_utils.rs`
 - [ ] `is_in_range` (line 109) → `geometry/voronoi_utils.rs`
-- [~] `compute_segment_cell_range` (line 200) → `arachne/skeletal_trapezoidation.rs` — not in the paired file
-- [x] `to_point` (line 249) → `geometry/voronoi_utils.rs:107`
-- [~] `to_point` (line 255) → `geometry/voronoi_utils.rs:71` — divergent
-- [~] `is_finite` (line 265) → `geometry/voronoi_utils.rs:82` — partial
-- [~] `make_rotated_vertex` (line 270) → `geometry/voronoi_utils.rs:92` — partial
+- [x] `compute_segment_cell_range` (line 200) → `geometry/voronoi_utils.rs:625`
+- [x] `to_point` (line 249) → `geometry/voronoi_utils.rs:106`
+- [~] `to_point` (line 255) → `geometry/voronoi_utils.rs:66` — divergent
+- [~] `is_finite` (line 265) → `geometry/voronoi_utils.rs:77` — partial
+- [x] `make_rotated_vertex` (line 270) → `geometry/voronoi_utils.rs:87`
 
 ### `Geometry/VoronoiUtilsCgal` (.cpp+.hpp)
 
@@ -8697,74 +8697,74 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 - [ ] `mk_point` (line 45) → `multi_material_segmentation.rs`
 - [ ] `mk_vec2` (line 47) → `multi_material_segmentation.rs`
 - [~] `vertex_equal_to_point` (line 49) → `geometry/voronoi_annotation.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:1845`
+- [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:1823`
 - [~] `colored_points_to_polygon` (line 314) → `multi_material_segmentation.rs` — another overload of the name is ported
-- [x] `colored_points_to_polygon` (line 322) → `multi_material_segmentation.rs:532`
-- [x] `get_all_next_arcs` (line 330) → `multi_material_segmentation.rs:542`
-- [x] `get_next_arc` (line 351) → `multi_material_segmentation.rs:577`
-- [x] `is_profile_self_interaction` (line 391) → `multi_material_segmentation.rs:640`
-- [x] `to_polygon` (line 403) → `multi_material_segmentation.rs:658`
-- [x] `extract_colored_segments` (line 414) → `multi_material_segmentation.rs:699`
-- [x] `is_equal` (line 485) → `multi_material_segmentation.rs:810`
-- [x] `is_less` (line 489) → `multi_material_segmentation.rs:819`
-- [v] `project_line_on_line` (line 494) → `multi_material_segmentation.rs:829` — R873: tests/project_line_on_line_native_parity.rs: 900,000 line pairs at three magnitudes equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced
+- [x] `colored_points_to_polygon` (line 322) → `multi_material_segmentation.rs:517`
+- [x] `get_all_next_arcs` (line 330) → `multi_material_segmentation.rs:527`
+- [x] `get_next_arc` (line 351) → `multi_material_segmentation.rs:562`
+- [x] `is_profile_self_interaction` (line 391) → `multi_material_segmentation.rs:625`
+- [x] `to_polygon` (line 403) → `multi_material_segmentation.rs:643`
+- [x] `extract_colored_segments` (line 414) → `multi_material_segmentation.rs:684`
+- [x] `is_equal` (line 485) → `multi_material_segmentation.rs:795`
+- [x] `is_less` (line 489) → `multi_material_segmentation.rs:804`
+- [v] `project_line_on_line` (line 494) → `multi_material_segmentation.rs:814` — R873: tests/project_line_on_line_native_parity.rs: 900,000 line pairs at three magnitudes equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced
 - [~] `get_extents` (line 593) → `ex_polygon.rs, ex_polygon_collection.rs, fill/lightning/tree_node.rs` — not in the paired file
 - [~] `to_lines` (line 605) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [x] `get_segments` (line 617) → `multi_material_segmentation.rs:1050`
-- [x] `filter_painted_lines` (line 642) → `multi_material_segmentation.rs:1085`
-- [x] `post_process_painted_lines` (line 689) → `multi_material_segmentation.rs:1159`
-- [x] `are_lines_connected` (line 722) → `multi_material_segmentation.rs:1227`
-- [x] `colorize_line` (line 731) → `multi_material_segmentation.rs:1237`
-- [x] `filter_colorized_polygon` (line 808) → `multi_material_segmentation.rs:1345`
-- [x] `colorize_contour` (line 897) → `multi_material_segmentation.rs:1485`
-- [x] `colorize_contours` (line 937) → `multi_material_segmentation.rs:1554`
-- [x] `points_inside` (line 961) → `multi_material_segmentation.rs:1599`
+- [x] `get_segments` (line 617) → `multi_material_segmentation.rs:1035`
+- [x] `filter_painted_lines` (line 642) → `multi_material_segmentation.rs:1070`
+- [x] `post_process_painted_lines` (line 689) → `multi_material_segmentation.rs:1144`
+- [x] `are_lines_connected` (line 722) → `multi_material_segmentation.rs:1212`
+- [x] `colorize_line` (line 731) → `multi_material_segmentation.rs:1222`
+- [x] `filter_colorized_polygon` (line 808) → `multi_material_segmentation.rs:1330`
+- [x] `colorize_contour` (line 897) → `multi_material_segmentation.rs:1470`
+- [x] `colorize_contours` (line 937) → `multi_material_segmentation.rs:1539`
+- [x] `points_inside` (line 961) → `multi_material_segmentation.rs:1584`
 - [ ] `export_graph_to_svg` (line 984) → `multi_material_segmentation.rs`
 - [ ] `non_deleted_edge_count` (line 1016) → `multi_material_segmentation.rs`
 - [ ] `can_vertex_be_deleted` (line 1027) → `multi_material_segmentation.rs`
 - [ ] `delete_vertex_deep` (line 1034) → `multi_material_segmentation.rs`
-- [x] `mk_point_vec2d` (line 1054) → `multi_material_segmentation.rs:99`
+- [x] `mk_point_vec2d` (line 1054) → `multi_material_segmentation.rs:100`
 - [ ] `mk_vector_vec2d` (line 1059) → `multi_material_segmentation.rs`
 - [ ] `mk_flipped_vector_vec2d` (line 1064) → `multi_material_segmentation.rs`
 - [ ] `edge_length` (line 1069) → `multi_material_segmentation.rs`
 - [ ] `calc_total_edge_length` (line 1077) → `multi_material_segmentation.rs`
 - [ ] `remove_multiple_edges_in_vertex` (line 1118) → `multi_material_segmentation.rs`
 - [~] `extract_colored_segments` (line 1151) → `multi_material_segmentation.rs` — another overload of the name is ported
-- [x] `cut_segmented_layers` (line 1285) → `multi_material_segmentation.rs:2596`
+- [x] `cut_segmented_layers` (line 1285) → `multi_material_segmentation.rs:2572`
 - [ ] `is_volume_sinking` (line 1311) → `multi_material_segmentation.rs`
 - [ ] `effective_color_penetration_layers` (line 1328) → `multi_material_segmentation.rs`
 - [ ] `mmu_segmentation_top_and_bottom_layers` (line 1356) → `multi_material_segmentation.rs`
-- [x] `init_polygon_indices` (line 1688) → `multi_material_segmentation.rs:1621`
-- [x] `line_intersection_with_epsilon` (line 1703) → `multi_material_segmentation.rs:1640`
-- [x] `mark_processed` (line 1710) → `multi_material_segmentation.rs:2018`
-- [~] `is_point_closer_to_beginning_of_line` (line 1716) → `multi_material_segmentation.rs:1657` — partial
-- [~] `clip_finite_voronoi_edge` (line 1721) → `multi_material_segmentation.rs:1999` — partial
-- [x] `has_same_color` (line 1739) → `multi_material_segmentation.rs:1663`
-- [x] `build_graph` (line 1741) → `multi_material_segmentation.rs:2094`
-- [x] `get_all_segments` (line 1958) → `multi_material_segmentation.rs:2468`
-- [x] `compute_edge_length` (line 1968) → `multi_material_segmentation.rs:2478`
-- [x] `remove_multiple_edges_in_vertices` (line 2008) → `multi_material_segmentation.rs:2535`
-- [~] `merge_segmented_layers` (line 2039) → `multi_material_segmentation.rs:3226` — partial
+- [x] `init_polygon_indices` (line 1688) → `multi_material_segmentation.rs:1606`
+- [x] `line_intersection_with_epsilon` (line 1703) → `multi_material_segmentation.rs:1625`
+- [x] `mark_processed` (line 1710) → `multi_material_segmentation.rs:1980`
+- [~] `is_point_closer_to_beginning_of_line` (line 1716) → `multi_material_segmentation.rs:1642` — partial
+- [~] `clip_finite_voronoi_edge` (line 1721) → `multi_material_segmentation.rs:1961` — partial
+- [x] `has_same_color` (line 1739) → `multi_material_segmentation.rs:1648`
+- [~] `build_graph` (line 1741) → `multi_material_segmentation.rs:2055` — divergent
+- [x] `get_all_segments` (line 1958) → `multi_material_segmentation.rs:2444`
+- [x] `compute_edge_length` (line 1968) → `multi_material_segmentation.rs:2454`
+- [x] `remove_multiple_edges_in_vertices` (line 2008) → `multi_material_segmentation.rs:2511`
+- [~] `merge_segmented_layers` (line 2039) → `multi_material_segmentation.rs:3202` — partial
 - [ ] `export_regions_to_svg` (line 2083) → `multi_material_segmentation.rs`
 - [ ] `export_processed_input_expolygons_to_svg` (line 2103) → `multi_material_segmentation.rs`
 - [ ] `export_painted_lines_to_svg` (line 2120) → `multi_material_segmentation.rs`
 - [ ] `export_colorized_polygons_to_svg` (line 2138) → `multi_material_segmentation.rs`
-- [x] `has_layer_only_one_color` (line 2153) → `multi_material_segmentation.rs:2572`
+- [x] `has_layer_only_one_color` (line 2153) → `multi_material_segmentation.rs:2548`
 
 **class `MMU_Graph`**
 
-- [~] `remove_edge` (line 102) → `multi_material_segmentation.rs:181` — partial
-- [x] `get_global_index` (line 108) → `multi_material_segmentation.rs:188`
-- [x] `append_edge` (line 110) → `multi_material_segmentation.rs:193`
-- [x] `get_border_arc` (line 131) → `multi_material_segmentation.rs:235`
-- [x] `nodes_count` (line 137) → `multi_material_segmentation.rs:242`
-- [x] `remove_nodes_with_one_arc` (line 139) → `multi_material_segmentation.rs:247`
-- [x] `add_contours` (line 162) → `multi_material_segmentation.rs:274`
-- [x] `is_vertex_on_contour` (line 187) → `multi_material_segmentation.rs:307`
-- [~] `is_edge_attach_to_contour` (line 193) → `multi_material_segmentation.rs:317` — divergent
-- [~] `is_edge_connecting_two_contour_vertices` (line 198) → `multi_material_segmentation.rs:327` — divergent
-- [x] `append_voronoi_vertices` (line 205) → `multi_material_segmentation.rs:351`
-- [x] `garbage_collect` (line 284) → `multi_material_segmentation.rs:479`
+- [~] `remove_edge` (line 102) → `multi_material_segmentation.rs:193` — partial
+- [x] `get_global_index` (line 108) → `multi_material_segmentation.rs:200`
+- [x] `append_edge` (line 110) → `multi_material_segmentation.rs:205`
+- [x] `get_border_arc` (line 131) → `multi_material_segmentation.rs:247`
+- [x] `nodes_count` (line 137) → `multi_material_segmentation.rs:254`
+- [x] `remove_nodes_with_one_arc` (line 139) → `multi_material_segmentation.rs:259`
+- [x] `add_contours` (line 162) → `multi_material_segmentation.rs:286`
+- [x] `is_vertex_on_contour` (line 187) → `multi_material_segmentation.rs:319`
+- [~] `is_edge_attach_to_contour` (line 193) → `multi_material_segmentation.rs:329` — divergent
+- [~] `is_edge_connecting_two_contour_vertices` (line 198) → `multi_material_segmentation.rs:335` — divergent
+- [x] `append_voronoi_vertices` (line 205) → `multi_material_segmentation.rs:356`
+- [x] `garbage_collect` (line 284) → `multi_material_segmentation.rs:464`
 
 **class `MMU_Graph::Node`**
 
@@ -8772,7 +8772,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **class `PaintedLineVisitor`**
 
-- [x] `reset` (line 532) → `multi_material_segmentation.rs:934`
+- [x] `reset` (line 532) → `multi_material_segmentation.rs:919`
 
 **class `segment_traits<Slic3r::ColoredLine>`**
 
