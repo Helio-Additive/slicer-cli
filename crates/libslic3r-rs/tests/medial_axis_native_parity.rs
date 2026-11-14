@@ -538,8 +538,17 @@ fn report(log: &mut Option<std::fs::File>, line: String) {
     }
 }
 
+/// The shim resets the endpoint flags in `clear()` where the engine's C++ does not
+/// (Polyline.hpp:265-268; `MEDIAL_AXIS_CLEAR_CPP`, on by default since R900). The comparison
+/// with the shim is made with that one gate off: everything else is the default path. Set
+/// before the first gate is read (the crate snapshots the environment once).
+fn shim_behaviour() {
+    std::env::set_var("MEDIAL_AXIS_CLEAR_CPP", "0");
+}
+
 #[test]
 fn generated_expolygons_against_the_shim() {
+    shim_behaviour();
     let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let per_category: u64 =
         std::env::var("MEDIAL_AXIS_PARITY_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(7_000);
@@ -611,6 +620,7 @@ fn generated_expolygons_against_the_shim() {
 /// opened again by half the minimum width.
 #[test]
 fn benchy_thin_regions_against_the_shim() {
+    shim_behaviour();
     let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let stl = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/rust-engine/fixtures/3DBenchy.stl");
     let mesh = slicer::stl::read_stl_file(&stl).expect("fixture STL");
