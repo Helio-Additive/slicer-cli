@@ -140,6 +140,7 @@ pub mod clipper;
 #[path = "clipper_build_xy.rs"]
 mod clipperlib_build;
 pub mod clipper_lib_z;
+pub mod clipper2;
 pub mod clipper2_utils;
 pub mod clipper2_z;
 pub mod clipper2_z_utils;

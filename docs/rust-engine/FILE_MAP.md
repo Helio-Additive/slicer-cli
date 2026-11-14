@@ -41,7 +41,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 6 |
 | C++ units with no Rust file | 31 |
-| Rust files with no C++ file of that name | 51 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
+| Rust files with no C++ file of that name | 56 (plus 22 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 3776 (42%) |
@@ -50,10 +50,10 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | estimate: divergent | 200 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
 | missing in the paired Rust file | 4615 |
-| of those, a function of that name exists in another Rust file | 1604 |
+| of those, a function of that name exists in another Rust file | 1609 |
 | of the rest, another overload of the name is ported | 367 |
-| of the rest, under 25 tokens (accessors, one-liners) | 743 |
-| of the rest, 25 tokens or more | 1901 |
+| of the rest, under 25 tokens (accessors, one-liners) | 741 |
+| of the rest, 25 tokens or more | 1898 |
 | in a C++ unit with no Rust file | 661 |
 | Rust functions with no C++ function of that name in the pair | 4791 |
 
@@ -73,7 +73,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 
 | Tier | C++ unit | Rust file | C++ fns | faithful | partial | divergent | stub | missing | missing, real |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | `Model` | `model.rs` | 374 | 8 | 3 | 0 | 0 | 363 | 172 |
+| 1 | `Model` | `model.rs` | 374 | 8 | 3 | 0 | 0 | 363 | 170 |
 | 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 3 | 0 | 0 | 0 | 138 | 118 |
 | 1 | `PrintConfig` | `print_config.rs` | 137 | 8 | 0 | 2 | 0 | 127 | 101 |
 | 1 | `Print` | `print.rs` | 236 | 5 | 1 | 6 | 1 | 223 | 93 |
@@ -91,9 +91,9 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `PrintApply` | `print_apply.rs` | 44 | 3 | 1 | 0 | 0 | 40 | 22 |
 | 1 | `Arrange` | `arrange.rs` | 44 | 5 | 1 | 0 | 0 | 38 | 21 |
 | 1 | `PrintObjectSlice` | `print_object_slice.rs` | 24 | 1 | 2 | 0 | 0 | 21 | 20 |
-| 1 | `TriangleMesh` | `triangle_mesh.rs` | 136 | 62 | 1 | 4 | 0 | 69 | 16 |
 | 1 | `MultiMaterialSegmentation` | `multi_material_segmentation.rs` | 74 | 39 | 4 | 3 | 0 | 28 | 16 |
 | 1 | `PlaceholderParser` | `placeholder_parser.rs` | 85 | 31 | 9 | 3 | 0 | 42 | 16 |
+| 1 | `TriangleMesh` | `triangle_mesh.rs` | 136 | 62 | 1 | 4 | 0 | 69 | 15 |
 | 1 | `Calib` | `calib.rs` | 51 | 12 | 2 | 3 | 3 | 31 | 12 |
 | 1 | `EdgeGrid` | `edge_grid.rs` | 47 | 11 | 2 | 2 | 0 | 32 | 15 |
 | 1 | `GCode/AvoidCrossingPerimeters` | `gcode/avoid_crossing_perimeters.rs` | 59 | 31 | 3 | 0 | 0 | 25 | 17 |
@@ -206,6 +206,12 @@ their function names come from, when there is one.
 | `bin/generate-test-meshes.rs` | no C++ file of this name | 9 | `TriangleMesh` |
 | `bin/slicer-cli.rs` | no C++ file of this name | 16 |  |
 | `boost_polygon_voronoi.rs` | no C++ file of this name | 288 |  |
+| `clipper2/build_xy.rs` | no C++ file of this name | 7 |  |
+| `clipper2/build_xyz.rs` | no C++ file of this name | 11 |  |
+| `clipper2/clipper2_z.rs` | no C++ file of this name | 0 |  |
+| `clipper2/clipper_core.rs` | no C++ file of this name | 45 |  |
+| `clipper2/clipper_engine.rs` | no C++ file of this name | 156 |  |
+| `clipper2/mod.rs` | module | 0 |  |
 | `clipper2_z.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xy.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xyz.rs` | no C++ file of this name | 9 |  |
@@ -308,6 +314,7 @@ port, the other has to be merged into it or renamed after what it really ports.
 | `Support` | `support` | same words |
 | `TextureToColor` |  | no Rust directory |
 | | `bin` | no C++ directory |
+| | `clipper2` | no C++ directory |
 | | `debug` | no C++ directory |
 | | `sla/agg` | no C++ directory |
 
@@ -1006,8 +1013,8 @@ Missing in the Rust file:
 - `PolylineStitcher::canReverse` :17 (5 tokens) — in `extrusion_entity.rs`
 - `PolylineStitcher::canConnect` :22 (11 tokens) — in `fill/fill_line.rs`
 - `PolylineStitcher::canConnect` :27 (5 tokens) — in `fill/fill_line.rs`
-- `PolylineStitcher::isOdd` :32 (7 tokens)
-- `PolylineStitcher::isOdd` :37 (5 tokens)
+- `PolylineStitcher::isOdd` :32 (7 tokens) — in `clipper2/clipper_engine.rs`
+- `PolylineStitcher::isOdd` :37 (5 tokens) — in `clipper2/clipper_engine.rs`
 - `PolylineStitcher::stitch` :53 (971 tokens)
 
 Rust only:
@@ -1180,16 +1187,16 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `BoundingBox::rotated` :46 (98 tokens, overload) — in `geometry/expolygon.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
-- `BoundingBoxBase::contains` :50 (51 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
-- `BoundingBoxBase::contains` :54 (17 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
+- `BoundingBoxBase::contains` :50 (51 tokens) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
+- `BoundingBoxBase::contains` :54 (17 tokens) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
 - `BoundingBoxBase::merge` :73 (57 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `BoundingBoxBase::construct` :89 (136 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
 - `BoundingBoxBase::merge` :89 (12 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `BoundingBoxBase::merge` :97 (108 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `BoundingBox3Base::merge` :137 (57 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
-- `BoundingBox3Base::contains` :150 (37 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
+- `BoundingBox3Base::contains` :150 (37 tokens) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
 - `BoundingBox3Base::merge` :152 (12 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
-- `BoundingBox3Base::contains` :154 (17 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
+- `BoundingBox3Base::contains` :154 (17 tokens) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
 - `BoundingBox3Base::merge` :159 (122 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `BoundingBox::rotate` :206 (16 tokens, overload) — in `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`, `gcode/wipe_tower.rs`
 - `empty` :249 (36 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
@@ -2005,7 +2012,7 @@ Missing in the Rust file:
 - `ConfigOption::apply_override` :296 (22 tokens)
 - `ConfigOptionDef::create_default_option` :309 (140 tokens)
 - `ConfigOptionSingle::set` :315 (59 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
-- `ConfigDef::add` :333 (53 tokens) — in `boost_polygon_voronoi.rs`, `color.rs`, `extrusion_simulator.rs`
+- `ConfigDef::add` :333 (53 tokens) — in `boost_polygon_voronoi.rs`, `clipper2/clipper_core.rs`, `color.rs`
 - `ConfigOptionSingle::hash` :335 (17 tokens) — in `arachne/utils/polygons_point_index.rs`, `perimeter_generator.rs`, `region_expansion.rs`
 - `ConfigOptionSingle::serialize` :339 (9 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigDef::add_nullable` :344 (24 tokens)
@@ -2473,10 +2480,10 @@ Missing in the Rust file:
 - `ExPolygon::area` :52 (34 tokens) — in `arachne/utils/extrusion_line.rs`, `arrange.rs`, `bounding_box.rs`
 - `ExPolygon::is_valid` :60 (82 tokens) — in `aabb_mesh.rs`, `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `ExPolygon::medial_axis` :75 (20 tokens) — in `geometry/expolygon.rs`
-- `ExPolygon::contains` :76 (19 tokens, overload) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
-- `ExPolygon::contains` :81 (52 tokens, overload) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
+- `ExPolygon::contains` :76 (19 tokens, overload) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
+- `ExPolygon::contains` :81 (52 tokens, overload) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
 - `ExPolygon::num_contours` :82 (13 tokens) — in `geometry/expolygon.rs`
-- `ExPolygon::contains` :92 (98 tokens, overload) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
+- `ExPolygon::contains` :92 (98 tokens, overload) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
 - `count_points` :93 (54 tokens) — in `geometry/expolygon.rs`, `geometry/polygon.rs`
 - `count_points` :104 (39 tokens) — in `geometry/expolygon.rs`, `geometry/polygon.rs`
 - `number_polygons` :114 (31 tokens) — in `geometry/expolygon.rs`, `surface.rs`
@@ -3561,7 +3568,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `Node::addChild` :34 (25 tokens, overload) — in `clipper.rs`
+- `Node::addChild` :34 (25 tokens, overload) — in `clipper.rs`, `clipper2/clipper_engine.rs`
 - `Node::straighten` :230 (21 tokens, overload)
 - `Node::draw_tree` :250 (39 tokens)
 - `get_extents` :295 (27 tokens, overload) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `gcode/avoid_crossing_perimeters.rs`
@@ -3929,7 +3936,7 @@ Missing in the Rust file:
 - `GCode::LayerToPrint::layer` :261 (23 tokens) — in `debug/compare.rs`
 - `GCode::LayerToPrint::object` :272 (25 tokens) — in `layer.rs`
 - `GCode::LayerToPrint::print_z` :276 (51 tokens)
-- `GCode::GCodeOutputStream::is_open` :300 (5 tokens) — in `clipper.rs`, `edge_grid.rs`
+- `GCode::GCodeOutputStream::is_open` :300 (5 tokens) — in `clipper.rs`, `clipper2/clipper_engine.rs`, `edge_grid.rs`
 - `GCode::GCodeOutputStream::write` :311 (13 tokens) — in `zipper.rs`
 - `OozePrevention::pre_toolchange` :332 (149 tokens)
 - `OozePrevention::post_toolchange` :362 (55 tokens)
@@ -5301,7 +5308,7 @@ Missing in the Rust file:
 - `rad2deg_dir` :52 (43 tokens) — in `geometry/mod.rs`
 - `linint` :72 (23 tokens) — in `geometry/mod.rs`
 - `arrange` :90 (482 tokens, overload)
-- `segments_intersect` :117 (422 tokens) — in `geometry/mod.rs`
+- `segments_intersect` :117 (422 tokens) — in `clipper2/clipper_core.rs`, `geometry/mod.rs`
 - `foot_pt` :169 (45 tokens) — in `geometry/polyline.rs`
 - `foot_pt` :177 (46 tokens) — in `geometry/polyline.rs`
 - `ray_point_distance_squared` :182 (20 tokens)
@@ -5378,8 +5385,8 @@ Tier 1. C++ functions 24 (plus 9 constructors, 0 destructors, 1 operators), Rust
 Missing in the Rust file:
 
 - `circle_center_taubin_newton` :11 (90 tokens, overload)
-- `CircleSq::contains` :52 (21 tokens, overload) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
-- `Circle::contains` :82 (28 tokens, overload) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
+- `CircleSq::contains` :52 (21 tokens, overload) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
+- `Circle::contains` :82 (28 tokens, overload) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
 - `circle_center_taubin_newton` :97 (20 tokens, overload)
 - `circle_center_taubin_newton` :101 (20 tokens, overload)
 - `smallest_enclosing_circle_welzl` :142 (21 tokens, overload)
@@ -5739,7 +5746,7 @@ Missing in the Rust file:
 - `Int128::lo` :141 (5 tokens, overload)
 - `Int128::hi` :142 (5 tokens, overload)
 - `Int128::sign` :143 (27 tokens, overload) — in `geometry/voronoi_utils_cgal.rs`, `support/tree_support.rs`
-- `Int128::multiply` :192 (228 tokens, overload) — in `sla/agg/color_gray.rs`
+- `Int128::multiply` :192 (228 tokens, overload) — in `clipper2/clipper_core.rs`, `sla/agg/color_gray.rs`
 - `Int128::sign_determinant_2x2` :242 (27 tokens, overload)
 
 Rust only:
@@ -6402,7 +6409,7 @@ Missing in the Rust file:
 - `reset_instance_transformation` :2447 (414 tokens)
 - `ModelObject::cut` :2509 (647 tokens) — in `cut_utils.rs`
 - `ModelObject::segment` :2616 (564 tokens) — in `edge_grid.rs`
-- `ModelObject::split` :2720 (753 tokens)
+- `ModelObject::split` :2720 (753 tokens) — in `clipper2/clipper_engine.rs`
 - `ModelObject::merge` :2840 (77 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `ModelObject::merge_volumes` :2860 (494 tokens)
 - `ModelObject::bake_xy_rotation_into_meshes` :2943 (552 tokens)
@@ -6439,7 +6446,7 @@ Missing in the Rust file:
 - `ModelVolume::set_assemble_from_transform` :3640 (13 tokens)
 - `ModelVolume::set_assemble_offset` :3646 (13 tokens)
 - `ModelVolume::get_repaired_errors_count` :3652 (40 tokens)
-- `ModelVolume::split` :3702 (1058 tokens)
+- `ModelVolume::split` :3702 (1058 tokens) — in `clipper2/clipper_engine.rs`
 - `ModelVolume::translate` :3832 (11 tokens) — in `bounding_box.rs`, `emboss.rs`, `ex_polygon_collection.rs`
 - `ModelVolume::scale` :3837 (14 tokens) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `extrusion_simulator.rs`
 - `ModelObject::scale_to_fit` :3842 (71 tokens)
@@ -6801,7 +6808,7 @@ Missing in the Rust file:
 - `MutablePolygon::iterator::next` :50 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `boost_polygon_voronoi.rs`
 - `MutablePolygon::iterator::size` :55 (18 tokens, overload) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `MutablePolygon::assign` :138 (35 tokens, overload) — in `extrusion_entity_collection.rs`, `object_id.rs`
-- `MutablePolygon::polygon` :149 (78 tokens, overload) — in `bounding_box.rs`, `build_volume.rs`, `extrusion_entity.rs`
+- `MutablePolygon::polygon` :149 (78 tokens, overload) — in `bounding_box.rs`, `build_volume.rs`, `clipper2/clipper_engine.rs`
 - `MutablePolygon::begin` :174 (9 tokens, overload) — in `boost_polygon_voronoi.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
 - `MutablePolygon::end` :178 (9 tokens, overload) — in `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`, `triangle_mesh.rs`
 - `MutablePolygon::remove` :182 (25 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `extrusion_entity_collection.rs`, `fill/fill_adaptive.rs`
@@ -7360,8 +7367,8 @@ Missing in the Rust file:
 - `remove_same_neighbor` :508 (86 tokens, overload) — in `geometry/expolygon.rs`, `geometry/polyline.rs`
 - `remove_sticks` :566 (119 tokens, overload)
 - `remove_collinear` :652 (15 tokens, overload)
-- `contains` :708 (36 tokens, overload) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
-- `contains` :717 (55 tokens, overload) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
+- `contains` :708 (36 tokens, overload) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
+- `contains` :717 (55 tokens, overload) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
 
 Rust only:
 
@@ -7885,7 +7892,7 @@ Missing in the Rust file:
 - `PrintObject::support_layers` :418 (9 tokens)
 - `PrintObject::trafo_centered` :421 (50 tokens)
 - `PrintObject::bounding_box` :442 (46 tokens) — in `build_volume.rs`, `geometry/expolygon.rs`, `geometry/polygon.rs`
-- `PrintObject::height` :445 (9 tokens) — in `arrange.rs`, `flow.rs`, `gcode/wipe_tower.rs`
+- `PrintObject::height` :445 (9 tokens) — in `arrange.rs`, `clipper2/clipper_core.rs`, `flow.rs`
 - `PrintObject::max_z` :446 (5 tokens)
 - `Print::set_calib_params` :449 (6 tokens)
 - `Print::set_nozzle_loaded_filament_info` :454 (6 tokens)
@@ -8133,13 +8140,13 @@ Missing in the Rust file:
 - `LayerRanges::begin` :401 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `LayerRanges::end` :402 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `LayerRanges::size` :403 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `ModelObjectStatusDB::add` :447 (38 tokens) — in `boost_polygon_voronoi.rs`, `color.rs`, `extrusion_simulator.rs`
+- `ModelObjectStatusDB::add` :447 (38 tokens) — in `boost_polygon_voronoi.rs`, `clipper2/clipper_core.rs`, `color.rs`
 - `ModelObjectStatusDB::add_if_new` :452 (52 tokens)
 - `PrintObjectStatusDB::iterator_range::begin` :518 (7 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `PrintObjectStatusDB::iterator_range::end` :519 (7 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PrintObjectStatusDB::get_range` :522 (17 tokens)
 - `PrintObjectStatusDB::get_range` :526 (15 tokens)
-- `PrintObjectStatusDB::count` :530 (17 tokens) — in `boost_polygon_voronoi.rs`, `geometry/expolygon.rs`, `triangle_mesh.rs`
+- `PrintObjectStatusDB::count` :530 (17 tokens) — in `boost_polygon_voronoi.rs`, `clipper2/clipper_engine.rs`, `geometry/expolygon.rs`
 - `PrintObjectStatusDB::begin` :534 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `PrintObjectStatusDB::end` :535 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PrintObjectStatusDB::clear` :537 (8 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
@@ -9373,7 +9380,7 @@ Missing in the Rust file:
 - `TriangleMesh::align_to_origin` :401 (31 tokens)
 - `TriangleMesh::rotate` :406 (70 tokens) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`
 - `TriangleMesh::is_splittable` :419 (10 tokens)
-- `TriangleMesh::split` :424 (104 tokens)
+- `TriangleMesh::split` :424 (104 tokens) — in `clipper2/clipper_engine.rs`
 - `TriangleMesh::split_and_save_relationship` :443 (142 tokens)
 - `TriangleMesh::horizontal_projection` :475 (26 tokens)
 - `TriangleMesh::convex_hull` :481 (88 tokens) — in `build_volume.rs`, `ex_polygon_collection.rs`
@@ -9895,11 +9902,11 @@ Missing in the Rust file:
 - `lower_bound_by_predicate` :220 (85 tokens) — in `fill/fill_base.rs`
 - `binary_find` :242 (35 tokens)
 - `binary_find_by_predicate` :254 (28 tokens)
-- `contains` :264 (28 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
-- `contains` :266 (28 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
+- `contains` :264 (28 tokens) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
+- `contains` :266 (28 tokens) — in `aabb_tree_lines.rs`, `clipper2/clipper_core.rs`, `csg_mesh/model_to_csg_mesh.rs`
 - `one_of` :269 (10 tokens)
 - `one_of` :271 (10 tokens)
-- `sqr` :275 (7 tokens) — in `build_volume.rs`, `extrusion_simulator.rs`, `fill/fill_adaptive.rs`
+- `sqr` :275 (7 tokens) — in `build_volume.rs`, `clipper2/clipper_core.rs`, `extrusion_simulator.rs`
 - `lerp` :281 (45 tokens) — in `extrusion_entity.rs`, `filament_mixer_model.rs`, `fill/fill_base.rs`
 - `is_approx` :288 (23 tokens) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/point.rs`
 - `is_approx` :294 (45 tokens) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/point.rs`
@@ -10333,8 +10340,8 @@ Missing in the Rust file:
 - `new_contact_layer` :1783 (535 tokens)
 - `fill_contact_layer` :1887 (1025 tokens)
 - `OverhangCluster::insert` :2099 (111 tokens) — in `arachne/utils/extrusion_line.rs`, `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`
-- `OverhangCluster::height` :2113 (9 tokens) — in `arrange.rs`, `flow.rs`, `gcode/wipe_tower.rs`
-- `OverhangCluster::intersects` :2117 (47 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
+- `OverhangCluster::height` :2113 (9 tokens) — in `arrange.rs`, `clipper2/clipper_core.rs`, `flow.rs`
+- `OverhangCluster::intersects` :2117 (47 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
 - `add_overhang` :2135 (95 tokens)
 - `PrintObjectSupportMaterial::top_contact_layers` :2155 (1659 tokens)
 - `detect_bottom_contacts` :2433 (806 tokens)
@@ -11542,14 +11549,14 @@ Tier 3. C++ functions 11, Rust functions 16. Matched 3: faithful 3, partial 0, d
 
 Missing in the Rust file:
 
-- `Frustum::Plane::intersects` :40 (221 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
-- `Frustum::Plane::intersects` :75 (38 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
-- `Frustum::Plane::intersects` :83 (59 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
-- `Frustum::Plane::intersects` :96 (85 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
-- `Frustum::intersects` :112 (41 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
-- `Frustum::intersects` :124 (33 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
-- `Frustum::intersects` :131 (35 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
-- `Frustum::intersects` :141 (37 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `geometry/bounding_box.rs`
+- `Frustum::Plane::intersects` :40 (221 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
+- `Frustum::Plane::intersects` :75 (38 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
+- `Frustum::Plane::intersects` :83 (59 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
+- `Frustum::Plane::intersects` :96 (85 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
+- `Frustum::intersects` :112 (41 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
+- `Frustum::intersects` :124 (33 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
+- `Frustum::intersects` :131 (35 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
+- `Frustum::intersects` :141 (37 tokens) — in `aabb_tree_lines.rs`, `bounding_box.rs`, `clipper2/clipper_core.rs`
 
 Rust only:
 
@@ -13222,7 +13229,7 @@ Missing in the Rust file:
 - `SLAPrintObject::SliceRecord::set_model_slice_idx` :150 (11 tokens)
 - `SLAPrintObject::SliceRecord::get_slice_idx` :159 (11 tokens)
 - `sla_instances` :159 (128 tokens)
-- `SLAPrintObject::level` :166 (46 tokens) — in `zipper.rs`
+- `SLAPrintObject::level` :166 (46 tokens) — in `clipper2/clipper_engine.rs`, `zipper.rs`
 - `SLAPrintObject::create_slice_record` :173 (52 tokens)
 - `SLAPrint::print_object_ids` :177 (46 tokens)
 - `SLAPrint::apply` :187 (2358 tokens) — in `format/sl1.rs`, `geometry/point.rs`, `geometry/transform.rs`
@@ -13241,8 +13248,8 @@ Missing in the Rust file:
 - `SLAPrint::get_object` :469 (59 tokens) — in `model.rs`
 - `SLAPrint::PrintLayer::transformed_slices` :505 (14 tokens)
 - `SLAPrint::set_task` :510 (514 tokens)
-- `SLAPrint::PrintLayer::add` :521 (9 tokens) — in `boost_polygon_voronoi.rs`, `color.rs`, `extrusion_simulator.rs`
-- `SLAPrint::PrintLayer::level` :523 (5 tokens) — in `zipper.rs`
+- `SLAPrint::PrintLayer::add` :521 (9 tokens) — in `boost_polygon_voronoi.rs`, `clipper2/clipper_core.rs`, `color.rs`
+- `SLAPrint::PrintLayer::level` :523 (5 tokens) — in `clipper2/clipper_engine.rs`, `zipper.rs`
 - `SLAPrint::PrintLayer::slices` :525 (5 tokens)
 - `SLAPrint::StatusReporter::status` :574 (5 tokens) — in `debug/validation.rs`
 - `SLAPrint::finalize` :598 (54 tokens) — in `cut_utils.rs`, `fill/fill_base.rs`, `gcode/g_code_processor.rs`
@@ -13314,7 +13321,7 @@ Missing in the Rust file:
 - `SLAPrint::Steps::label` :1099 (8 tokens, overload) — in `preset.rs`
 - `SLAPrint::Steps::progressrange` :1109 (10 tokens)
 - `SLAPrint::Steps::progressrange` :1114 (16 tokens)
-- `SLAPrint::Steps::execute` :1119 (86 tokens, overload) — in `clipper.rs`, `clipper_utils.rs`, `marching_squares.rs`
+- `SLAPrint::Steps::execute` :1119 (86 tokens, overload) — in `clipper.rs`, `clipper2/clipper_engine.rs`, `clipper_utils.rs`
 
 Rust only:
 

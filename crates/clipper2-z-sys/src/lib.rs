@@ -1,6 +1,6 @@
 //! Raw FFI bindings to the Clipper2-Z C-ABI shim (`clipper2_z_shim.h`).
 //!
-//! The shim wraps the vendored Clipper2 v1.5.4 built with `-DUSINGZ`, namespace-
+//! The shim wraps the vendored Clipper2 v1.5.2 built with `-DUSINGZ`, namespace-
 //! isolated as `Clipper2ZSys` so it never collides with `clipper2c-sys`'s non-Z
 //! `Clipper2Lib` (ODR safety; see `build.rs`).
 //!
@@ -34,7 +34,7 @@ pub struct Cz2WaveClip {
 }
 
 extern "C" {
-    /// Vendored Clipper2 version ("1.5.4"); proves the USINGZ TU links.
+    /// Vendored Clipper2 version ("1.5.2"); proves the USINGZ TU links.
     pub fn cz2_version() -> *const c_char;
 
     /// ClipperOffset (JoinType::Square, EndType::Polygon) of a single closed
@@ -67,6 +67,57 @@ extern "C" {
     pub fn cz2_free_wave_clip(wc: Cz2WaveClip);
 }
 
+/// The solution of one `Clipper64::Execute` of the reference (`clipper2_ref_shim.h`).
+#[repr(C)]
+pub struct Cz2RefResult {
+    pub coords: *mut i64,
+    pub path_lens: *mut i32,
+    pub tree_parent: *mut i32,
+    pub tree_is_hole: *mut i32,
+    pub num_closed: i32,
+    pub num_open: i32,
+    pub total_points: i32,
+    pub succeeded: i32,
+    pub cb_calls: u64,
+    pub cb_hash: u64,
+}
+
+// Test-only reference exports (`shim/clipper2_ref_shim.cpp`): `Clipper64::Execute` and helpers
+// of clipper.core.h of the Clipper2 the engine pins (`references/BambuStudio/src/clipper2`,
+// see build.rs), built with `USINGZ` (`cz2_ref_z_*`) and without (`cz2_ref_xy_*`). Nothing in
+// the engine calls them.
+extern "C" {
+    pub fn cz2_ref_z_execute(
+        subj_xyz: *const i64, subj_lens: *const i32, subj_num: i32,
+        open_xyz: *const i64, open_lens: *const i32, open_num: i32,
+        clip_xyz: *const i64, clip_lens: *const i32, clip_num: i32,
+        clip_type: i32, fill_rule: i32, preserve_collinear: i32, reverse_solution: i32,
+        use_tree: i32, add_order: i32, z_callback: i32, default_z: i64,
+    ) -> Cz2RefResult;
+    pub fn cz2_ref_z_free(r: Cz2RefResult);
+    pub fn cz2_ref_z_point_in_polygon(x: i64, y: i64, xyz: *const i64, n: i32) -> i32;
+    pub fn cz2_ref_z_area(xyz: *const i64, n: i32) -> f64;
+    /// `p`: 12 values, `out_i`: 9, `out_d`: 4, `out_b`: 6 (see clipper2_ref_shim.cpp).
+    pub fn cz2_ref_z_core(p: *const i64, out_i: *mut i64, out_d: *mut f64, out_b: *mut i32);
+    pub fn cz2_ref_z_from_pin() -> i32;
+    pub fn cz2_ref_z_version() -> *const c_char;
+
+    pub fn cz2_ref_xy_execute(
+        subj_xyz: *const i64, subj_lens: *const i32, subj_num: i32,
+        open_xyz: *const i64, open_lens: *const i32, open_num: i32,
+        clip_xyz: *const i64, clip_lens: *const i32, clip_num: i32,
+        clip_type: i32, fill_rule: i32, preserve_collinear: i32, reverse_solution: i32,
+        use_tree: i32, add_order: i32, z_callback: i32, default_z: i64,
+    ) -> Cz2RefResult;
+    pub fn cz2_ref_xy_free(r: Cz2RefResult);
+    pub fn cz2_ref_xy_point_in_polygon(x: i64, y: i64, xyz: *const i64, n: i32) -> i32;
+    pub fn cz2_ref_xy_area(xyz: *const i64, n: i32) -> f64;
+    /// `p`: 12 values, `out_i`: 9, `out_d`: 4, `out_b`: 6 (see clipper2_ref_shim.cpp).
+    pub fn cz2_ref_xy_core(p: *const i64, out_i: *mut i64, out_d: *mut f64, out_b: *mut i32);
+    pub fn cz2_ref_xy_from_pin() -> i32;
+    pub fn cz2_ref_xy_version() -> *const c_char;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,7 +127,7 @@ mod tests {
     fn version_links() {
         // Proves the vendored Clipper2 compiles with USINGZ, links, is callable.
         let v = unsafe { CStr::from_ptr(cz2_version()) };
-        assert_eq!(v.to_str().unwrap(), "1.5.4");
+        assert_eq!(v.to_str().unwrap(), "1.5.2");
     }
 
     #[test]

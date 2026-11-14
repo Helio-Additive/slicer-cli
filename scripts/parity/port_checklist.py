@@ -118,6 +118,13 @@ def rows_of_unpaired(units, name, rust_index):
 # files, and the Rust file that ports it. ClipperLib is what `clipper-z-sys` wraps.
 EXTRA_UNITS = [
     ("clipper/clipper", ["clipper/clipper.cpp", "clipper/clipper.hpp"], "clipper.rs"),
+    ("clipper2/clipper.core", ["clipper2/Clipper2Lib/include/clipper2/clipper.core.h"], "clipper2/clipper_core.rs"),
+    ("clipper2/clipper.engine", ["clipper2/Clipper2Lib/src/clipper.engine.cpp",
+                                 "clipper2/Clipper2Lib/include/clipper2/clipper.engine.h"], "clipper2/clipper_engine.rs"),
+    ("clipper2/clipper.offset", ["clipper2/Clipper2Lib/src/clipper.offset.cpp",
+                                 "clipper2/Clipper2Lib/include/clipper2/clipper.offset.h"], "clipper2/clipper_offset.rs"),
+    ("clipper2/clipper.rectclip", ["clipper2/Clipper2Lib/src/clipper.rectclip.cpp",
+                                   "clipper2/Clipper2Lib/include/clipper2/clipper.rectclip.h"], "clipper2/clipper_rectclip.rs"),
 ]
 
 

@@ -75,6 +75,12 @@ reference). The medial axis runs on it since R898, Arachne's skeletal trapezoida
 since R901 (`ARACHNE_VORONOI_PORT`, `MMSEG_VORONOI_PORT`); the `boostvoronoi` crate is left for the gate-off arms
 and the older helpers.
 
+Since R904 the core of Clipper2 is ported (`clipper2/clipper_core.rs`, `clipper2/clipper_engine.rs`, both builds,
+equal to the pin's Clipper2 1.5.2 on 111,888 `Execute` cases per build); the engine does not call it yet.
+clipper.offset.cpp and the swap of the callers (`clipper2_utils.rs`, `clipper2_z.rs`, the `clipper2` crate in
+`clipper_utils.rs`) are next. The vendored copy of this crate is 1.5.2 like the pin; the published
+`clipper2c-sys` is 1.5.4.
+
 ### C++ that comes in through published crates
 
 `cargo tree -e normal -p slicer-cli-rust` also lists two C++ libraries the engine does not build itself:
