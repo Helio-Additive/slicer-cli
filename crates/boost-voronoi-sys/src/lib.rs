@@ -126,6 +126,68 @@ pub fn construct_segments(segments: &[[i32; 4]]) -> Diagram {
     out
 }
 
+// ---------------------------------------------------------------------------
+// Test-only exports (`shim/boost_voronoi_test_exports.cpp`): single predicates
+// and functors of `detail/voronoi_predicates.hpp`, for comparing a port with
+// them one call at a time. Nothing in the engine calls these.
+// ---------------------------------------------------------------------------
+
+/// A `site_event<int32>`: `[x0, y0, x1, y1, sorted_index, is_inverse]`, the points as the
+/// site holds them (`point0`, `point1`).
+pub type TestSite = [i32; 6];
+
+extern "C" {
+    fn bv_test_circle_formation(s1: *const i32, s2: *const i32, s3: *const i32, out: *mut c_double) -> i32;
+    fn bv_test_lazy_circle(kind: i32, index: i32, s1: *const i32, s2: *const i32, s3: *const i32, out: *mut c_double);
+    fn bv_test_mp_circle(kind: i32, index: i32, s1: *const i32, s2: *const i32, s3: *const i32, out: *mut c_double);
+    fn bv_test_distance(left: *const i32, right: *const i32, px: i32, py: i32, reverse: i32, out: *mut c_double) -> i32;
+    fn bv_test_node_comparison(l1: *const i32, r1: *const i32, l2: *const i32, r2: *const i32) -> i32;
+    fn bv_test_event_comparison(s1: *const i32, s2: *const i32) -> i32;
+}
+
+/// `circle_formation_predicate::operator()`: whether the three sites form a circle event, and
+/// its `[x, y, lower_x]` (zeros where nothing was computed).
+pub fn test_circle_formation(s1: &TestSite, s2: &TestSite, s3: &TestSite) -> (bool, [f64; 3]) {
+    let mut out = [0.0f64; 3];
+    let r = unsafe { bv_test_circle_formation(s1.as_ptr(), s2.as_ptr(), s3.as_ptr(), out.as_mut_ptr()) };
+    (r != 0, out)
+}
+
+/// `lazy_circle_formation_functor`: `kind` 0 = ppp, 1 = pps, 2 = pss, 3 = sss; `index` is the
+/// `segment_index` of pps and the `point_index` of pss. Returns `[x, y, lower_x]`.
+pub fn test_lazy_circle(kind: i32, index: i32, s1: &TestSite, s2: &TestSite, s3: &TestSite) -> [f64; 3] {
+    let mut out = [0.0f64; 3];
+    unsafe { bv_test_lazy_circle(kind, index, s1.as_ptr(), s2.as_ptr(), s3.as_ptr(), out.as_mut_ptr()) };
+    out
+}
+
+/// `mp_circle_formation_functor` with every coordinate recomputed; arguments as [`test_lazy_circle`].
+pub fn test_mp_circle(kind: i32, index: i32, s1: &TestSite, s2: &TestSite, s3: &TestSite) -> [f64; 3] {
+    let mut out = [0.0f64; 3];
+    unsafe { bv_test_mp_circle(kind, index, s1.as_ptr(), s2.as_ptr(), s3.as_ptr(), out.as_mut_ptr()) };
+    out
+}
+
+/// `distance_predicate`: `(operator()(left, right, point), fast_ps(left, right, point, reverse)
+/// as -1 / 0 / 1 when left is a point and right a segment, find_distance_to_point_arc(left,
+/// point), find_distance_to_segment_arc(right, point))`.
+pub fn test_distance(left: &TestSite, right: &TestSite, point: [i32; 2], reverse: bool) -> (bool, Option<i32>, f64, f64) {
+    let mut out = [0.0f64; 2];
+    let r = unsafe { bv_test_distance(left.as_ptr(), right.as_ptr(), point[0], point[1], reverse as i32, out.as_mut_ptr()) };
+    let fast = r >> 1;
+    (r & 1 != 0, if fast == 0 { None } else { Some(fast - 2) }, out[0], out[1])
+}
+
+/// `node_comparison_predicate` on the beach line nodes `(l1, r1)` and `(l2, r2)`.
+pub fn test_node_comparison(l1: &TestSite, r1: &TestSite, l2: &TestSite, r2: &TestSite) -> bool {
+    unsafe { bv_test_node_comparison(l1.as_ptr(), r1.as_ptr(), l2.as_ptr(), r2.as_ptr()) != 0 }
+}
+
+/// `event_comparison_predicate` on two sites.
+pub fn test_event_comparison(s1: &TestSite, s2: &TestSite) -> bool {
+    unsafe { bv_test_event_comparison(s1.as_ptr(), s2.as_ptr()) != 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

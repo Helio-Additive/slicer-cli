@@ -41,7 +41,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 6 |
 | C++ units with no Rust file | 31 |
-| Rust files with no C++ file of that name | 50 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
+| Rust files with no C++ file of that name | 51 (plus 21 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 3763 (42%) |
@@ -50,9 +50,9 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | estimate: divergent | 196 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
 | missing in the paired Rust file | 4628 |
-| of those, a function of that name exists in another Rust file | 1604 |
+| of those, a function of that name exists in another Rust file | 1606 |
 | of the rest, another overload of the name is ported | 367 |
-| of the rest, under 25 tokens (accessors, one-liners) | 748 |
+| of the rest, under 25 tokens (accessors, one-liners) | 746 |
 | of the rest, 25 tokens or more | 1909 |
 | in a C++ unit with no Rust file | 661 |
 | Rust functions with no C++ function of that name in the pair | 4722 |
@@ -205,6 +205,7 @@ their function names come from, when there is one.
 | `arachne/utils/mod.rs` | module | 0 |  |
 | `bin/generate-test-meshes.rs` | no C++ file of this name | 9 | `TriangleMesh` |
 | `bin/slicer-cli.rs` | no C++ file of this name | 16 |  |
+| `boost_polygon_voronoi.rs` | no C++ file of this name | 284 |  |
 | `clipper2_z.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xy.rs` | no C++ file of this name | 6 |  |
 | `clipper_build_xyz.rs` | no C++ file of this name | 9 |  |
@@ -391,7 +392,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `Tree::Node::set` :68 (22 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
-- `Tree::build` :115 (25 tokens, overload) — in `aabb_tree_lines.rs`, `kd_tree_indirect.rs`, `region_expansion.rs`
+- `Tree::build` :115 (25 tokens, overload) — in `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`, `kd_tree_indirect.rs`
 - `BoundingBoxWrapper::idx` :230 (5 tokens) — in `aabb_tree_lines.rs`, `geometry/convex_hull.rs`, `support/tree_support_3d.rs`
 - `BoundingBoxWrapper::centroid` :232 (42 tokens) — in `aabb_tree_lines.rs`, `geometry/expolygon.rs`, `geometry/polygon.rs`
 - `intersect_triangle` :315 (218 tokens, overload)
@@ -879,17 +880,17 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `ExtrusionLine::empty` :62 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
-- `ExtrusionLine::begin` :94 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `ExtrusionLine::empty` :62 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `ExtrusionLine::begin` :94 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `ExtrusionLine::end` :95 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `ExtrusionLine::rbegin` :96 (9 tokens)
 - `ExtrusionLine::rend` :97 (9 tokens)
 - `ExtrusionLine::front` :98 (9 tokens, overload) — in `gcode/tool_ordering.rs`
 - `ExtrusionLine::back` :99 (9 tokens, overload) — in `gcode/tool_ordering.rs`
-- `ExtrusionLine::begin` :102 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `ExtrusionLine::begin` :102 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `ExtrusionLine::end` :103 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `ExtrusionLine::emplace_back` :107 (10 tokens)
-- `ExtrusionLine::insert` :112 (14 tokens, overload) — in `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`, `fill/fill_adaptive.rs`
+- `ExtrusionLine::insert` :112 (14 tokens, overload) — in `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`, `boost_polygon_voronoi.rs`
 - `to_thick_polyline` :221 (192 tokens, overload)
 - `get_extents` :253 (28 tokens) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `fill/lightning/tree_node.rs`
 - `get_extents` :261 (27 tokens) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `fill/lightning/tree_node.rs`
@@ -1033,9 +1034,9 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `SparseGrid::begin` :46 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `SparseGrid::begin` :46 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `SparseGrid::end` :47 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `SparseGrid::begin` :48 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `SparseGrid::begin` :48 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `SparseGrid::end` :49 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 
 Rust only:
@@ -1183,7 +1184,7 @@ Missing in the Rust file:
 - `BoundingBoxBase::contains` :50 (51 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
 - `BoundingBoxBase::contains` :54 (17 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
 - `BoundingBoxBase::merge` :73 (57 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
-- `BoundingBoxBase::construct` :89 (136 tokens) — in `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
+- `BoundingBoxBase::construct` :89 (136 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
 - `BoundingBoxBase::merge` :89 (12 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `BoundingBoxBase::merge` :97 (108 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `BoundingBox3Base::merge` :137 (57 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
@@ -1192,8 +1193,8 @@ Missing in the Rust file:
 - `BoundingBox3Base::contains` :154 (17 tokens) — in `aabb_tree_lines.rs`, `csg_mesh/model_to_csg_mesh.rs`, `enum_bitmask.rs`
 - `BoundingBox3Base::merge` :159 (122 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `BoundingBox::rotate` :206 (16 tokens, overload) — in `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`, `gcode/wipe_tower.rs`
-- `empty` :249 (36 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
-- `empty` :255 (50 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `empty` :249 (36 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `empty` :255 (50 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `scaled` :260 (19 tokens, overload) — in `fill/fill_adaptive.rs`, `fill/fill_plane_path.rs`, `geometry/bounding_box.rs`
 - `scaled` :261 (19 tokens, overload) — in `fill/fill_adaptive.rs`, `fill/fill_plane_path.rs`, `geometry/bounding_box.rs`
 - `unscaled` :262 (19 tokens) — in `lib.rs`
@@ -1558,54 +1559,54 @@ Missing in the Rust file:
 - `EmptyPathsProvider::cend` :74 (7 tokens) — in `mutable_polygon.rs`
 - `EmptyPathsProvider::end` :75 (7 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `EmptyPathsProvider::cbegin` :76 (7 tokens) — in `mutable_polygon.rs`
-- `EmptyPathsProvider::begin` :77 (7 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
-- `EmptyPathsProvider::size` :78 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `EmptyPathsProvider::begin` :77 (7 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
+- `EmptyPathsProvider::size` :78 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `SinglePathProvider::cbegin` :99 (8 tokens) — in `mutable_polygon.rs`
-- `SinglePathProvider::begin` :100 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `SinglePathProvider::begin` :100 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `SinglePathProvider::cend` :101 (8 tokens) — in `mutable_polygon.rs`
 - `SinglePathProvider::end` :102 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `SinglePathProvider::size` :103 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `SinglePathProvider::size` :103 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clip_clipper_polygon_with_subject_bbox` :120 (13 tokens, overload)
 - `clip_clipper_polygon_with_subject_bbox` :121 (11 tokens, overload)
 - `clip_clipper_polygon_with_subject_bbox_templ` :123 (22 tokens)
 - `PathsProvider::cbegin` :127 (12 tokens) — in `mutable_polygon.rs`
-- `PathsProvider::begin` :128 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `PathsProvider::begin` :128 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `PathsProvider::cend` :129 (12 tokens) — in `mutable_polygon.rs`
 - `clip_clipper_polygon_with_subject_bbox` :130 (10 tokens, overload)
 - `PathsProvider::end` :130 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `clip_clipper_polygon_with_subject_bbox` :131 (10 tokens, overload)
-- `PathsProvider::size` :131 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `PathsProvider::size` :131 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clip_clipper_polygon_with_subject_bbox` :133 (15 tokens, overload)
 - `clip_clipper_polygons_with_subject_bbox` :144 (86 tokens) — in `fill/fill_floating_concentric.rs`
 - `clip_clipper_polygons_with_subject_bbox` :152 (106 tokens) — in `fill/fill_floating_concentric.rs`
 - `MultiPointsProvider::cbegin` :154 (12 tokens) — in `mutable_polygon.rs`
-- `MultiPointsProvider::begin` :155 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `MultiPointsProvider::begin` :155 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `MultiPointsProvider::cend` :156 (12 tokens) — in `mutable_polygon.rs`
 - `MultiPointsProvider::end` :157 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `MultiPointsProvider::size` :158 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `MultiPointsProvider::size` :158 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clip_clipper_polygons_with_subject_bbox` :161 (110 tokens) — in `fill/fill_floating_concentric.rs`
 - `ExPolygonProvider::cbegin` :183 (10 tokens) — in `mutable_polygon.rs`
-- `ExPolygonProvider::begin` :184 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `ExPolygonProvider::begin` :184 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `ExPolygonProvider::cend` :185 (18 tokens) — in `mutable_polygon.rs`
 - `ExPolygonProvider::end` :186 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `ExPolygonProvider::size` :187 (13 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `ExPolygonProvider::size` :187 (13 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `ExPolygonsProvider::cbegin` :223 (12 tokens) — in `mutable_polygon.rs`
-- `ExPolygonsProvider::begin` :224 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `ExPolygonsProvider::begin` :224 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `ExPolygonsProvider::cend` :225 (12 tokens) — in `mutable_polygon.rs`
 - `ExPolygonsProvider::end` :226 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `ExPolygonsProvider::size` :227 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `ExPolygonsProvider::size` :227 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `has_duplicate_points` :233 (133 tokens) — in `ex_polygon.rs`, `geometry/point.rs`, `geometry/polygon.rs`
 - `has_duplicate_points` :250 (113 tokens) — in `ex_polygon.rs`, `geometry/point.rs`, `geometry/polygon.rs`
 - `SurfacesProvider::cbegin` :264 (12 tokens) — in `mutable_polygon.rs`
-- `SurfacesProvider::begin` :265 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `SurfacesProvider::begin` :265 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `SurfacesProvider::cend` :266 (12 tokens) — in `mutable_polygon.rs`
 - `SurfacesProvider::end` :267 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `SurfacesProvider::size` :268 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `SurfacesProvider::size` :268 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `SurfacesPtrProvider::cbegin` :305 (12 tokens) — in `mutable_polygon.rs`
-- `SurfacesPtrProvider::begin` :306 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `SurfacesPtrProvider::begin` :306 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `SurfacesPtrProvider::cend` :307 (12 tokens) — in `mutable_polygon.rs`
 - `SurfacesPtrProvider::end` :308 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `SurfacesPtrProvider::size` :309 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `SurfacesPtrProvider::size` :309 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clipper_do` :325 (87 tokens, overload)
 - `ClipperPaths_to_Slic3rExPolygons` :354 (26 tokens)
 - `offset_ex` :358 (26 tokens) — in `bridge_detector.rs`, `emboss.rs`, `support/tree_model_volumes.rs`
@@ -1991,7 +1992,7 @@ Missing in the Rust file:
 - `FloatOrPercent::get_abs_value` :38 (21 tokens, overload)
 - `FloatOrPercent::serialize` :42 (16 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigOptionDef::cli_args` :252 (101 tokens)
-- `ConfigSubstitutionContext::empty` :258 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `ConfigSubstitutionContext::empty` :258 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ConfigOptionDef::create_empty_option` :272 (271 tokens)
 - `ConfigOption::getInt` :276 (10 tokens)
 - `ConfigOption::getFloat` :277 (10 tokens)
@@ -2005,7 +2006,7 @@ Missing in the Rust file:
 - `ConfigOption::apply_override` :296 (22 tokens)
 - `ConfigOptionDef::create_default_option` :309 (140 tokens)
 - `ConfigOptionSingle::set` :315 (59 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
-- `ConfigDef::add` :333 (53 tokens) — in `color.rs`, `extrusion_simulator.rs`, `g_code.rs`
+- `ConfigDef::add` :333 (53 tokens) — in `boost_polygon_voronoi.rs`, `color.rs`, `extrusion_simulator.rs`
 - `ConfigOptionSingle::hash` :335 (17 tokens) — in `arachne/utils/polygons_point_index.rs`, `perimeter_generator.rs`, `region_expansion.rs`
 - `ConfigOptionSingle::serialize` :339 (9 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigDef::add_nullable` :344 (24 tokens)
@@ -2037,8 +2038,8 @@ Missing in the Rust file:
 - `ConfigOptionVector::resize` :692 (243 tokens) — in `extrusion_simulator.rs`
 - `ConfigBase::get_abs_value_at` :721 (195 tokens)
 - `ConfigOptionVector::clear` :725 (10 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
-- `ConfigOptionVector::size` :726 (11 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
-- `ConfigOptionVector::empty` :727 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `ConfigOptionVector::size` :726 (11 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
+- `ConfigOptionVector::empty` :727 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ConfigOptionVector::hash` :740 (41 tokens) — in `arachne/utils/polygons_point_index.rs`, `perimeter_generator.rs`, `region_expansion.rs`
 - `ConfigBase::get_abs_value` :749 (275 tokens, overload)
 - `ConfigOptionVector::overriden_by` :751 (150 tokens)
@@ -2096,7 +2097,7 @@ Missing in the Rust file:
 - `ConfigOptionString::static_type` :1131 (5 tokens)
 - `ConfigOptionString::type` :1132 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`
 - `ConfigOptionString::clone` :1133 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `marching_squares.rs`
-- `ConfigOptionString::empty` :1137 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `ConfigOptionString::empty` :1137 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ConfigOptionString::serialize` :1139 (10 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigOptionString::deserialize` :1144 (17 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `ConfigOptionString::serialize` :1152 (20 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
@@ -2282,13 +2283,13 @@ Missing in the Rust file:
 - `ConfigBase::set` :2609 (18 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `ConfigBase::set_deserialize_strict` :2617 (23 tokens)
 - `ConfigBase::set_deserialize_strict` :2634 (19 tokens)
-- `DynamicConfig::swap` :2745 (15 tokens) — in `clonable_ptr.rs`, `extrusion_entity_collection.rs`
+- `DynamicConfig::swap` :2745 (15 tokens) — in `boost_polygon_voronoi.rs`, `clonable_ptr.rs`, `extrusion_entity_collection.rs`
 - `DynamicConfig::clear` :2750 (10 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
-- `DynamicConfig::erase` :2755 (41 tokens) — in `app_config.rs`, `geometry/point.rs`, `triangle_mesh_slicer.rs`
+- `DynamicConfig::erase` :2755 (41 tokens) — in `app_config.rs`, `boost_polygon_voronoi.rs`, `geometry/point.rs`
 - `DynamicConfig::def` :2769 (5 tokens)
 - `DynamicConfig::opt` :2770 (19 tokens)
 - `DynamicConfig::opt` :2772 (18 tokens)
-- `DynamicConfig::empty` :2780 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `DynamicConfig::empty` :2780 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `DynamicConfig::set_key_value` :2785 (58 tokens)
 - `DynamicConfig::opt_int` :2818 (20 tokens)
 - `DynamicConfig::opt_int` :2820 (23 tokens)
@@ -2299,7 +2300,7 @@ Missing in the Rust file:
 - `DynamicConfig::opt_bool_nullable` :2835 (23 tokens)
 - `DynamicConfig::cbegin` :2841 (9 tokens) — in `mutable_polygon.rs`
 - `DynamicConfig::cend` :2842 (9 tokens) — in `mutable_polygon.rs`
-- `DynamicConfig::size` :2843 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `DynamicConfig::size` :2843 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `DynamicConfig::serialize` :2849 (7 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 
 Rust only:
@@ -2349,7 +2350,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `Contour::begin` :22 (5 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `Contour::begin` :22 (5 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `Contour::end` :23 (5 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `Contour::open` :24 (5 tokens) — in `svg.rs`
 - `Contour::closed` :25 (6 tokens)
@@ -2360,7 +2361,7 @@ Missing in the Rust file:
 - `Contour::get_segment` :66 (31 tokens)
 - `Contour::get_segments` :72 (98 tokens) — in `multi_material_segmentation.rs`
 - `EdgeGrid::Grid::create` :77 (210 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
-- `Contour::size` :84 (7 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `Contour::size` :84 (7 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `EdgeGrid::Grid::create` :104 (127 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
 - `Grid::create` :111 (13 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
 - `EdgeGrid::Grid::create` :117 (158 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
@@ -2470,7 +2471,7 @@ Missing in the Rust file:
 - `ExPolygon::rotate` :38 (24 tokens) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`
 - `ExPolygon::translate` :41 (20 tokens) — in `bounding_box.rs`, `emboss.rs`, `ex_polygon_collection.rs`
 - `ExPolygon::rotate` :45 (28 tokens) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`
-- `ExPolygon::empty` :46 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `ExPolygon::empty` :46 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ExPolygon::area` :52 (34 tokens) — in `arachne/utils/extrusion_line.rs`, `arrange.rs`, `bounding_box.rs`
 - `ExPolygon::is_valid` :60 (82 tokens) — in `aabb_mesh.rs`, `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `ExPolygon::medial_axis` :75 (20 tokens) — in `geometry/expolygon.rs`
@@ -2523,13 +2524,13 @@ Missing in the Rust file:
 - `polygon_traits<Slic3r::ExPolygon>::begin_points` :505 (13 tokens)
 - `get_extents_rotated` :506 (12 tokens, overload) — in `bridge_detector.rs`, `geometry/polygon.rs`, `internal_bridge_detector.rs`
 - `polygon_traits<Slic3r::ExPolygon>::end_points` :510 (13 tokens)
-- `polygon_traits<Slic3r::ExPolygon>::size` :515 (13 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `polygon_traits<Slic3r::ExPolygon>::size` :515 (13 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `polygon_traits<Slic3r::ExPolygon>::winding` :520 (5 tokens)
 - `has_duplicate_points` :531 (172 tokens, overload) — in `geometry/point.rs`, `geometry/polygon.rs`, `multi_point.rs`
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::begin_holes` :545 (11 tokens)
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::end_holes` :548 (11 tokens)
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::size_holes` :551 (14 tokens)
-- `polygon_set_traits<Slic3r::ExPolygons>::begin` :576 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `polygon_set_traits<Slic3r::ExPolygons>::begin` :576 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `polygon_set_traits<Slic3r::ExPolygons>::end` :580 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `remove_same_neighbor` :582 (112 tokens) — in `geometry/expolygon.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
 - `polygon_set_traits<Slic3r::ExPolygons>::clean` :585 (5 tokens)
@@ -2816,7 +2817,7 @@ Missing in the Rust file:
 - `ExtrusionEntityCollection::can_reverse` :63 (15 tokens) — in `extrusion_entity.rs`
 - `ExtrusionEntityCollection::reverse` :67 (48 tokens) — in `arachne/utils/extrusion_line.rs`, `circle.rs`, `extrusion_entity.rs`
 - `ExtrusionEntityCollection::set_reverse` :70 (6 tokens) — in `extrusion_entity.rs`
-- `ExtrusionEntityCollection::empty` :71 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `ExtrusionEntityCollection::empty` :71 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ExtrusionEntityCollection::append` :74 (15 tokens) — in `ex_polygon_collection.rs`, `extrusion_entity.rs`, `fill/fill_cross_hatch.rs`
 - `ExtrusionEntityCollection::append` :75 (15 tokens) — in `ex_polygon_collection.rs`, `extrusion_entity.rs`, `fill/fill_cross_hatch.rs`
 - `ExtrusionEntityCollection::append` :76 (45 tokens) — in `ex_polygon_collection.rs`, `extrusion_entity.rs`, `fill/fill_cross_hatch.rs`
@@ -3691,8 +3692,8 @@ Missing in the Rust file:
 - `MaterialColorResources::merge` :971 (50 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
 - `MaterialColorResources::resolve` :978 (469 tokens)
 - `MaterialColorResources::parse_numbers` :1038 (80 tokens)
-- `_BBS_3MF_Importer::Geometry::empty` :1111 (15 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
-- `_BBS_3MF_Importer::Geometry::swap` :1114 (90 tokens) — in `clonable_ptr.rs`, `extrusion_entity_collection.rs`
+- `_BBS_3MF_Importer::Geometry::empty` :1111 (15 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `_BBS_3MF_Importer::Geometry::swap` :1114 (90 tokens) — in `boost_polygon_voronoi.rs`, `clonable_ptr.rs`, `extrusion_entity_collection.rs`
 - `_BBS_3MF_Importer::Geometry::reset` :1125 (50 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `_BBS_3MF_Importer::CurrentObject::reset` :1157 (46 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `_BBS_3MF_Importer::ObjectImporter::_destroy_object_xml_parser` :1310 (19 tokens)
@@ -4334,7 +4335,7 @@ Missing in the Rust file:
 - `GCodeProcessor::SeamsDetector::activate` :1050 (24 tokens)
 - `GCodeProcessor::SeamsDetector::get_first_vertex` :1058 (5 tokens)
 - `GCodeProcessor::SeamsDetector::set_first_vertex` :1059 (6 tokens)
-- `GCodeProcessor::SeamsDetector::is_active` :1061 (5 tokens) — in `triangle_selector.rs`
+- `GCodeProcessor::SeamsDetector::is_active` :1061 (5 tokens) — in `boost_polygon_voronoi.rs`, `triangle_selector.rs`
 - `GCodeProcessor::SeamsDetector::has_first_vertex` :1062 (9 tokens)
 - `GCodeProcessor::OptionsZCorrector::set` :1077 (26 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `GCodeProcessor::OptionsZCorrector::update` :1082 (105 tokens) — in `fill/lightning/distance_field.rs`, `gcode/pressure_equalizer.rs`, `mutable_priority_queue.rs`
@@ -4773,9 +4774,9 @@ Missing in the Rust file:
 - `LayerTools::mixed_group_by_slot` :260 (26 tokens)
 - `LayerTools::is_mixed_slot` :267 (10 tokens)
 - `ToolOrdering::handle_dontcare_extruder` :294 (499 tokens)
-- `ToolOrdering::begin` :347 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `ToolOrdering::begin` :347 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `ToolOrdering::end` :348 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `ToolOrdering::empty` :349 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `ToolOrdering::empty` :349 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ToolOrdering::handle_dontcare_extruder` :383 (380 tokens)
 - `ToolOrdering::set_nozzle_status` :420 (10 tokens) — in `multi_nozzle_utils.rs`
 - `ToolOrdering::sort_and_build_data` :447 (166 tokens)
@@ -5474,8 +5475,8 @@ Missing in the Rust file:
 - `dump_voronoi_to_svg` :291 (1027 tokens) — in `geometry/voronoi_visual_utils.rs`
 - `retrieve_cell_point` :389 (68 tokens)
 - `measure_edge_thickness` :396 (371 tokens)
-- `MedialAxis::build` :449 (622 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `kd_tree_indirect.rs`
-- `MedialAxis::build` :534 (47 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `kd_tree_indirect.rs`
+- `MedialAxis::build` :449 (622 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `MedialAxis::build` :534 (47 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 
 Rust only:
 
@@ -5508,17 +5509,17 @@ Tier 1. C++ functions 19 (plus 1 constructors, 0 destructors, 0 operators), Rust
 
 Missing in the Rust file:
 
-- `VoronoiDiagram::construct_voronoi` :21 (300 tokens) — in `geometry/voronoi_diagram.rs`
+- `VoronoiDiagram::construct_voronoi` :21 (300 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_diagram.rs`
 - `VoronoiDiagram::get_issue_type` :63 (5 tokens)
 - `VoronoiDiagram::get_state` :65 (5 tokens) — in `triangle_selector.rs`
 - `VoronoiDiagram::is_valid` :67 (9 tokens) — in `aabb_mesh.rs`, `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `VoronoiDiagram::clear` :71 (51 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
-- `VoronoiDiagram::num_vertices` :77 (17 tokens)
-- `VoronoiDiagram::num_edges` :79 (17 tokens)
-- `VoronoiDiagram::num_cells` :81 (17 tokens) — in `arachne/utils/sparse_grid.rs`
+- `VoronoiDiagram::num_vertices` :77 (17 tokens) — in `boost_polygon_voronoi.rs`
+- `VoronoiDiagram::num_edges` :79 (17 tokens) — in `boost_polygon_voronoi.rs`
+- `VoronoiDiagram::num_cells` :81 (17 tokens) — in `arachne/utils/sparse_grid.rs`, `boost_polygon_voronoi.rs`
 - `VoronoiDiagram::copy_to_local` :86 (522 tokens)
-- `VoronoiDiagram::construct_voronoi` :92 (28 tokens) — in `geometry/voronoi_diagram.rs`
-- `VoronoiDiagram::construct_voronoi` :104 (32 tokens) — in `geometry/voronoi_diagram.rs`
+- `VoronoiDiagram::construct_voronoi` :92 (28 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_diagram.rs`
+- `VoronoiDiagram::construct_voronoi` :104 (32 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_diagram.rs`
 - `VoronoiDiagram::detect_known_issues` :155 (48 tokens)
 - `VoronoiDiagram::detect_known_voronoi_cell_issues` :176 (290 tokens)
 - `segment_traits<Slic3r::Geometry::VoronoiDiagram::Segment>::get` :196 (17 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
@@ -5731,7 +5732,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `KDTreeIndirect::build` :49 (60 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `region_expansion.rs`
+- `KDTreeIndirect::build` :49 (60 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `find_closest_points` :255 (24 tokens, overload)
 - `find_closest_point` :274 (21 tokens, overload)
 - `find_nearby_points` :317 (23 tokens, overload)
@@ -6104,7 +6105,7 @@ Missing in the Rust file:
 - `LayerHeightProfile::assign` :208 (27 tokens) — in `extrusion_entity_collection.rs`, `mutable_polygon.rs`, `object_id.rs`
 - `LayerHeightProfile::assign` :209 (32 tokens) — in `extrusion_entity_collection.rs`, `mutable_polygon.rs`, `object_id.rs`
 - `LayerHeightProfile::get` :211 (5 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
-- `LayerHeightProfile::empty` :212 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `LayerHeightProfile::empty` :212 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `LayerHeightProfile::set` :213 (20 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `LayerHeightProfile::set` :214 (25 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `LayerHeightProfile::clear` :215 (14 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
@@ -6148,9 +6149,9 @@ Missing in the Rust file:
 - `FacetsAnnotation::assign` :785 (32 tokens) — in `extrusion_entity_collection.rs`, `mutable_polygon.rs`, `object_id.rs`
 - `Model::add_material` :787 (47 tokens)
 - `Model::add_material` :796 (53 tokens)
-- `FacetsAnnotation::empty` :800 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `FacetsAnnotation::empty` :800 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `Model::add_default_instances` :810 (31 tokens)
-- `FacetsAnnotation::reserve` :810 (11 tokens) — in `fill/fill_plane_path.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
+- `FacetsAnnotation::reserve` :810 (11 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_plane_path.rs`, `geometry/polygon.rs`
 - `FacetsAnnotation::shrink_to_fit` :814 (18 tokens)
 - `Model::bounding_box_in_assembly_view` :828 (43 tokens)
 - `FacetsAnnotation::serialize` :836 (17 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
@@ -6535,7 +6536,7 @@ Missing in the Rust file:
 - `mk_point` :45 (33 tokens)
 - `mk_vec2` :47 (17 tokens)
 - `vertex_equal_to_point` :49 (80 tokens, overload) — in `geometry/voronoi_annotation.rs`
-- `MMU_Graph::Node::remove_edge` :82 (76 tokens, overload) — in `clipper.rs`
+- `MMU_Graph::Node::remove_edge` :82 (76 tokens, overload) — in `boost_polygon_voronoi.rs`, `clipper.rs`
 - `colored_points_to_polygon` :314 (43 tokens, overload)
 - `get_extents` :593 (52 tokens) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `fill/lightning/tree_node.rs`
 - `to_lines` :605 (69 tokens) — in `geometry/expolygon.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
@@ -6683,8 +6684,8 @@ Missing in the Rust file:
 - `MultiPoint::rotate` :31 (17 tokens, overload) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`
 - `MultiPoint::reverse` :34 (23 tokens) — in `arachne/utils/extrusion_line.rs`, `circle.rs`, `extrusion_entity.rs`
 - `MultiPoint::rotate` :37 (102 tokens, overload) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`
-- `MultiPoint::size` :41 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
-- `MultiPoint::empty` :42 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `MultiPoint::size` :41 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
+- `MultiPoint::empty` :42 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `MultiPoint::is_valid` :44 (13 tokens) — in `aabb_mesh.rs`, `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `MultiPoint::length` :48 (53 tokens, overload) — in `extrusion_entity.rs`, `fill/fill_floating_concentric.rs`, `fill/fill_rectilinear.rs`
 - `MultiPoint::closest_point_index` :53 (119 tokens) — in `geometry/polygon.rs`
@@ -6697,8 +6698,8 @@ Missing in the Rust file:
 - `MultiPoint::append` :84 (21 tokens) — in `ex_polygon_collection.rs`, `extrusion_entity.rs`, `fill/fill_cross_hatch.rs`
 - `MultiPoint::append` :85 (61 tokens) — in `ex_polygon_collection.rs`, `extrusion_entity.rs`, `fill/fill_cross_hatch.rs`
 - `MultiPoint::remove_duplicate_points` :102 (101 tokens, overload) — in `geometry/simplify.rs`
-- `MultiPoint::begin` :103 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
-- `MultiPoint::begin` :104 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `MultiPoint::begin` :103 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
+- `MultiPoint::begin` :104 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `MultiPoint::end` :105 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `MultiPoint::end` :106 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `MultiPoint::cbegin` :107 (9 tokens) — in `mutable_polygon.rs`
@@ -6729,17 +6730,17 @@ Tier 1. C++ functions 47 (plus 7 constructors, 0 destructors, 12 operators), Rus
 Missing in the Rust file:
 
 - `remove_duplicates` :24 (90 tokens, overload) — in `orient.rs`
-- `MutablePolygon::const_iterator::prev` :27 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `surface_mesh.rs`
-- `MutablePolygon::const_iterator::next` :28 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `gcode/gcode_template.rs`
+- `MutablePolygon::const_iterator::prev` :27 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `boost_polygon_voronoi.rs`
+- `MutablePolygon::const_iterator::next` :28 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `boost_polygon_voronoi.rs`
 - `MutablePolygon::const_iterator::valid` :29 (7 tokens, overload) — in `build_volume.rs`, `fill/fill_base.rs`, `gcode/conflict_checker.rs`
-- `MutablePolygon::const_iterator::size` :33 (18 tokens, overload) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `MutablePolygon::const_iterator::size` :33 (18 tokens, overload) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `remove_duplicates` :40 (208 tokens, overload) — in `orient.rs`
-- `MutablePolygon::iterator::prev` :49 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `surface_mesh.rs`
-- `MutablePolygon::iterator::next` :50 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `gcode/gcode_template.rs`
-- `MutablePolygon::iterator::size` :55 (18 tokens, overload) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `MutablePolygon::iterator::prev` :49 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `boost_polygon_voronoi.rs`
+- `MutablePolygon::iterator::next` :50 (25 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`, `boost_polygon_voronoi.rs`
+- `MutablePolygon::iterator::size` :55 (18 tokens, overload) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `MutablePolygon::assign` :138 (35 tokens, overload) — in `extrusion_entity_collection.rs`, `object_id.rs`
 - `MutablePolygon::polygon` :149 (78 tokens, overload) — in `bounding_box.rs`, `build_volume.rs`, `extrusion_entity.rs`
-- `MutablePolygon::begin` :174 (9 tokens, overload) — in `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`, `triangle_mesh.rs`
+- `MutablePolygon::begin` :174 (9 tokens, overload) — in `boost_polygon_voronoi.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
 - `MutablePolygon::end` :178 (9 tokens, overload) — in `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`, `triangle_mesh.rs`
 - `MutablePolygon::remove` :182 (25 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `extrusion_entity_collection.rs`, `fill/fill_adaptive.rs`
 - `MutablePolygon::insert` :185 (27 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`
@@ -6805,14 +6806,14 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `MutablePriorityQueue::empty` :30 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
-- `MutablePriorityQueue::begin` :36 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `MutablePriorityQueue::empty` :30 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `MutablePriorityQueue::begin` :36 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `MutablePriorityQueue::end` :37 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `MutablePriorityQueue::cbegin` :38 (9 tokens) — in `mutable_polygon.rs`
 - `MutablePriorityQueue::cend` :39 (9 tokens) — in `mutable_polygon.rs`
-- `MutablePriorityQueue::push` :74 (36 tokens, overload) — in `channel.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
-- `MutableSkipHeapPriorityQueue::empty` :280 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
-- `MutableSkipHeapPriorityQueue::push` :326 (58 tokens, overload) — in `channel.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
+- `MutablePriorityQueue::push` :74 (36 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `geometry/polygon.rs`
+- `MutableSkipHeapPriorityQueue::empty` :280 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `MutableSkipHeapPriorityQueue::push` :326 (58 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `geometry/polygon.rs`
 
 Rust only:
 
@@ -7132,7 +7133,7 @@ Missing in the Rust file:
 - `apply` :603 (26 tokens, overload) — in `format/sl1.rs`, `geometry/transform.rs`, `model_arrange.rs`
 - `point_traits<Slic3r::Point>::get` :661 (22 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
 - `point_mutable_traits<Slic3r::Point>::set` :669 (17 tokens) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
-- `point_mutable_traits<Slic3r::Point>::construct` :672 (12 tokens) — in `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
+- `point_mutable_traits<Slic3r::Point>::construct` :672 (12 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
 - `serialize` :683 (17 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `serialize` :684 (23 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
 - `serialize` :687 (17 tokens) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
@@ -7143,9 +7144,9 @@ Missing in the Rust file:
 - `save` :693 (24 tokens) — in `app_config.rs`
 - `load` :695 (24 tokens) — in `app_config.rs`, `format/step.rs`, `gcode/wipe_tower.rs`
 - `save` :696 (24 tokens) — in `app_config.rs`
-- `begin` :702 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `begin` :702 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `end` :705 (13 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `begin` :708 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `begin` :708 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `end` :711 (13 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 
 Rust only:
@@ -7284,9 +7285,9 @@ Missing in the Rust file:
 - `to_polygons` :276 (39 tokens, overload) — in `bridge_detector.rs`, `clipper_utils.rs`, `ex_polygon_collection.rs`
 - `polygon_traits<Slic3r::Polygon>::begin_points` :323 (11 tokens)
 - `polygon_traits<Slic3r::Polygon>::end_points` :328 (11 tokens)
-- `polygon_traits<Slic3r::Polygon>::size` :333 (11 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `polygon_traits<Slic3r::Polygon>::size` :333 (11 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `polygon_traits<Slic3r::Polygon>::winding` :338 (5 tokens)
-- `polygon_set_traits<Slic3r::Polygons>::begin` :370 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `polygon_set_traits<Slic3r::Polygons>::begin` :370 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `polygon_set_traits<Slic3r::Polygons>::end` :374 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `polygon_set_traits<Slic3r::Polygons>::clean` :379 (5 tokens)
 - `polygon_set_traits<Slic3r::Polygons>::sorted` :380 (5 tokens) — in `sla/agg/rasterizer_cells_aa.rs`, `support/tree_model_volumes.rs`
@@ -7514,13 +7515,13 @@ Missing in the Rust file:
 - `Preset::get_printer_id` :374 (12 tokens)
 - `Preset::normalize` :463 (264 tokens) — in `bin/generate-test-meshes.rs`, `cut_surface.rs`, `geometry/point.rs`
 - `PresetCollection::lbegin` :467 (9 tokens)
-- `PresetCollection::begin` :471 (11 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
-- `PresetCollection::begin` :472 (11 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `PresetCollection::begin` :471 (11 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
+- `PresetCollection::begin` :472 (11 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `PresetCollection::cbegin` :473 (11 tokens) — in `mutable_polygon.rs`
 - `PresetCollection::end` :474 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PresetCollection::end` :475 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PresetCollection::cend` :476 (9 tokens) — in `mutable_polygon.rs`
-- `PresetCollection::erase` :479 (10 tokens) — in `app_config.rs`, `geometry/point.rs`, `triangle_mesh_slicer.rs`
+- `PresetCollection::erase` :479 (10 tokens) — in `app_config.rs`, `boost_polygon_voronoi.rs`, `geometry/point.rs`
 - `PresetCollection::set_sync_func` :481 (6 tokens)
 - `PresetCollection::lock` :483 (8 tokens) — in `execution/execution_seq.rs`, `mt_utils.rs`
 - `PresetCollection::unlock` :484 (8 tokens) — in `execution/execution_seq.rs`, `mt_utils.rs`
@@ -7539,7 +7540,7 @@ Missing in the Rust file:
 - `PresetCollection::first_compatible_idx` :661 (109 tokens)
 - `Preset::save` :662 (647 tokens) — in `app_config.rs`
 - `PresetCollection::first_compatible_idx` :687 (23 tokens)
-- `PresetCollection::size` :701 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `PresetCollection::size` :701 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `PresetCollection::has_defaults_only` :702 (11 tokens)
 - `PresetCollection::update_compatible` :706 (39 tokens)
 - `PresetCollection::update_compatible` :714 (28 tokens)
@@ -7574,13 +7575,13 @@ Missing in the Rust file:
 - `PhysicalPrinter::printer_technology` :954 (10 tokens)
 - `Preset::get_extruder_names_and_keysets` :957 (115 tokens)
 - `Preset::has_lidar` :982 (108 tokens)
-- `PhysicalPrinterCollection::begin` :985 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
-- `PhysicalPrinterCollection::begin` :986 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `PhysicalPrinterCollection::begin` :985 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
+- `PhysicalPrinterCollection::begin` :986 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `PhysicalPrinterCollection::cbegin` :987 (9 tokens) — in `mutable_polygon.rs`
 - `PhysicalPrinterCollection::end` :988 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PhysicalPrinterCollection::end` :989 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PhysicalPrinterCollection::cend` :990 (9 tokens) — in `mutable_polygon.rs`
-- `PhysicalPrinterCollection::empty` :992 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `PhysicalPrinterCollection::empty` :992 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `Preset::is_bbl_vendor_preset` :1003 (183 tokens)
 - `PhysicalPrinterCollection::get_selected_idx` :1029 (5 tokens)
 - `PhysicalPrinterCollection::get_selected_printer_name` :1031 (26 tokens)
@@ -7644,7 +7645,7 @@ Missing in the Rust file:
 - `ExtruderFullStat::set_extruder_stats` :132 (28 tokens)
 - `ExtruderFullStat::clear_extruder` :137 (21 tokens)
 - `ExtruderFullStat::clear` :141 (8 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
-- `ExtruderFullStat::empty` :142 (9 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `ExtruderFullStat::empty` :142 (9 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ExtruderNozzleStat::get_extruder_nozzle_count` :309 (123 tokens)
 - `ExtruderNozzleStat::on_printer_model_change_cli` :323 (87 tokens)
 - `ExtruderNozzleStat::on_volume_type_switch` :337 (60 tokens)
@@ -7805,12 +7806,12 @@ Missing in the Rust file:
 - `PrintRegion::set_config` :179 (14 tokens) — in `print_region.rs`
 - `PrintRegion::set_config` :180 (19 tokens) — in `print_region.rs`
 - `PrintRegion::config_apply_only` :181 (21 tokens)
-- `ConstVectorOfPtrsAdaptor::begin` :207 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `ConstVectorOfPtrsAdaptor::begin` :207 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `ConstVectorOfPtrsAdaptor::end` :208 (15 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `ConstVectorOfPtrsAdaptor::front` :209 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `gcode/tool_ordering.rs`
 - `ConstVectorOfPtrsAdaptor::back` :211 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `gcode/tool_ordering.rs`
-- `ConstVectorOfPtrsAdaptor::size` :212 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
-- `ConstVectorOfPtrsAdaptor::empty` :213 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `ConstVectorOfPtrsAdaptor::size` :212 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
+- `ConstVectorOfPtrsAdaptor::empty` :213 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ConstVectorOfPtrsAdaptor::at` :215 (10 tokens) — in `format/objparser.rs`, `g_code_reader.rs`, `model.rs`
 - `ConstVectorOfPtrsAdaptor::vector` :216 (25 tokens) — in `geometry/line.rs`
 - `PrintObjectRegions::LayerRangeRegions::has_volume` :335 (60 tokens)
@@ -7873,7 +7874,7 @@ Missing in the Rust file:
 - `PrintStatistics::clear` :842 (40 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
 - `StatisticsByExtruderCount::clear` :877 (20 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
 - `Print::technology` :910 (5 tokens)
-- `Print::empty` :918 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `Print::empty` :918 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `Print::is_step_done` :933 (10 tokens) — in `print_object.rs`
 - `Print::finished` :937 (10 tokens) — in `gcode/wipe_tower.rs`
 - `Print::has_auto_brim` :943 (41 tokens)
@@ -7914,7 +7915,7 @@ Missing in the Rust file:
 - `Print::get_config_index` :1360 (146 tokens)
 - `compacted_tower_half_clearance` :1369 (11 tokens)
 - `Print::get_config_index` :1385 (155 tokens)
-- `CompactedTowerZone::empty` :1387 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `CompactedTowerZone::empty` :1387 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `compacted_tower_body_tier` :1422 (12 tokens)
 - `Print::bounding_box` :1849 (68 tokens) — in `build_volume.rs`, `geometry/expolygon.rs`, `geometry/polygon.rs`
 - `Print::total_bounding_box` :1864 (205 tokens)
@@ -8067,17 +8068,17 @@ Missing in the Rust file:
 - `is_printable_filament_changed` :300 (406 tokens)
 - `LayerRanges::assign` :362 (223 tokens) — in `extrusion_entity_collection.rs`, `mutable_polygon.rs`, `object_id.rs`
 - `LayerRanges::config` :388 (101 tokens) — in `extruder.rs`, `gcode/cooling.rs`, `gcode/ironing.rs`
-- `LayerRanges::begin` :401 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `LayerRanges::begin` :401 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `LayerRanges::end` :402 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `LayerRanges::size` :403 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
-- `ModelObjectStatusDB::add` :447 (38 tokens) — in `color.rs`, `extrusion_simulator.rs`, `g_code.rs`
+- `LayerRanges::size` :403 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
+- `ModelObjectStatusDB::add` :447 (38 tokens) — in `boost_polygon_voronoi.rs`, `color.rs`, `extrusion_simulator.rs`
 - `ModelObjectStatusDB::add_if_new` :452 (52 tokens)
-- `PrintObjectStatusDB::iterator_range::begin` :518 (7 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `PrintObjectStatusDB::iterator_range::begin` :518 (7 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `PrintObjectStatusDB::iterator_range::end` :519 (7 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PrintObjectStatusDB::get_range` :522 (17 tokens)
 - `PrintObjectStatusDB::get_range` :526 (15 tokens)
-- `PrintObjectStatusDB::count` :530 (17 tokens) — in `triangle_mesh.rs`
-- `PrintObjectStatusDB::begin` :534 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `PrintObjectStatusDB::count` :530 (17 tokens) — in `boost_polygon_voronoi.rs`, `triangle_mesh.rs`
+- `PrintObjectStatusDB::begin` :534 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `PrintObjectStatusDB::end` :535 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `PrintObjectStatusDB::clear` :537 (8 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
 - `model_volume_solid_or_modifier` :545 (30 tokens)
@@ -8999,7 +9000,7 @@ Missing in the Rust file:
 
 - `get_extents` :12 (61 tokens, overload) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `fill/lightning/tree_node.rs`
 - `get_extents` :23 (63 tokens, overload) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `fill/lightning/tree_node.rs`
-- `Surface::empty` :103 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `Surface::empty` :103 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `to_polygons` :121 (10 tokens, overload) — in `bridge_detector.rs`, `clipper_utils.rs`, `ex_polygon_collection.rs`
 - `to_polygons` :126 (15 tokens, overload) — in `bridge_detector.rs`, `clipper_utils.rs`, `ex_polygon_collection.rs`
 - `to_polygons` :146 (147 tokens, overload) — in `bridge_detector.rs`, `clipper_utils.rs`, `ex_polygon_collection.rs`
@@ -9065,8 +9066,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `SurfaceCollection::empty` :49 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
-- `SurfaceCollection::size` :50 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
+- `SurfaceCollection::empty` :49 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `SurfaceCollection::size` :50 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `SurfaceCollection::set` :57 (8 tokens, overload) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `SurfaceCollection::set` :59 (15 tokens, overload) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
 - `SurfaceCollection::set` :60 (15 tokens, overload) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
@@ -9280,7 +9281,7 @@ Missing in the Rust file:
 - `TriangleMesh::mirror_y` :121 (9 tokens)
 - `TriangleMesh::mirror_z` :122 (9 tokens)
 - `TriangleMesh::facets_count` :149 (24 tokens)
-- `TriangleMesh::empty` :150 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `TriangleMesh::empty` :150 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `TriangleMesh::release_optional` :159 (5 tokens)
 - `TriangleMesh::restore_optional` :161 (2 tokens)
 - `TriangleMesh::set_init_shift` :165 (6 tokens)
@@ -9841,10 +9842,10 @@ Missing in the Rust file:
 - `is_approx` :288 (23 tokens) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/point.rs`
 - `is_approx` :294 (45 tokens) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/point.rs`
 - `reserve_vector` :338 (35 tokens)
-- `Range::begin` :358 (5 tokens) — in `mutable_polygon.rs`, `sla/agg/scanline_p.rs`, `support/tree_model_volumes.rs`
+- `Range::begin` :358 (5 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
 - `Range::end` :359 (5 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
-- `Range::size` :369 (12 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `bounding_box.rs`
-- `Range::empty` :370 (7 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `Range::size` :369 (12 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
+- `Range::empty` :370 (7 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `range` :373 (20 tokens)
 - `fast_round_up` :396 (22 tokens)
 
@@ -10175,7 +10176,7 @@ Missing in the Rust file:
 - `draw_perimeters` :528 (116 tokens)
 - `tree_supports_generate_paths` :546 (1649 tokens)
 - `fill_expolygons_with_sheath_generate_paths` :767 (257 tokens)
-- `SupportGeneratorLayerExtruded::empty` :827 (15 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `SupportGeneratorLayerExtruded::empty` :827 (15 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `SupportGeneratorLayerExtruded::set_polygons_to_extrude` :831 (36 tokens)
 - `SupportGeneratorLayerExtruded::could_merge` :840 (48 tokens)
 - `SupportGeneratorLayerExtruded::merge` :847 (230 tokens) — in `geometry/bounding_box.rs`, `shortest_path.rs`, `support/support_layer.rs`
@@ -10691,7 +10692,7 @@ Missing in the Rust file:
 
 - `normalize_nozzle_map_per_layer` :13 (371 tokens)
 - `ByObjectPrintData::collect_filament_data` :61 (147 tokens)
-- `ByObjectPrintData::build` :86 (694 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `kd_tree_indirect.rs`
+- `ByObjectPrintData::build` :86 (694 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 
 ### `CSGMesh/CSGMesh` (.hpp) and `csg_mesh/csg_mesh.rs`
 
@@ -10834,7 +10835,7 @@ Tier 3. C++ functions 7 (plus 4 constructors, 1 destructors, 1 operators), Rust 
 
 Missing in the Rust file:
 
-- `Channel::push` :50 (38 tokens, overload) — in `geometry/polygon.rs`, `geometry/polyline.rs`, `geometry/thick_polyline.rs`
+- `Channel::push` :50 (38 tokens, overload) — in `boost_polygon_voronoi.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
 
 Rust only:
 
@@ -10975,7 +10976,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `apply_tolerance` :19 (166 tokens)
-- `CutProgressRange::sub` :35 (34 tokens) — in `arachne/utils/extrusion_junction.rs`, `bin/generate-test-meshes.rs`, `extrusion_simulator.rs`
+- `CutProgressRange::sub` :35 (34 tokens) — in `arachne/utils/extrusion_junction.rs`, `bin/generate-test-meshes.rs`, `boost_polygon_voronoi.rs`
 - `CutProgressRange::report` :43 (21 tokens)
 - `CutProgressRange::canceled` :49 (9 tokens)
 - `add_cut_volume` :52 (224 tokens)
@@ -11188,7 +11189,7 @@ Tier 3. C++ functions 37, Rust functions 20. Matched 17: faithful 17, partial 0,
 
 Missing in the Rust file:
 
-- `GradientCurve::empty` :30 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `GradientCurve::empty` :30 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `blend_color_multi` :116 (382 tokens)
 - `parse_tangent_token` :185 (171 tokens)
 - `split_commas` :205 (87 tokens)
@@ -11797,7 +11798,7 @@ Missing in the Rust file:
 - `intersect` :455 (11 tokens)
 - `does_self_intersect` :460 (34 tokens)
 - `does_bound_a_volume` :469 (21 tokens)
-- `empty` :474 (11 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `empty` :474 (11 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `clone` :479 (12 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `marching_squares.rs`
 - `is_enabled` :488 (13 tokens) — in `gcode/ironing.rs`, `print_config.rs`
 - `make_boolean` :498 (49 tokens)
@@ -12795,8 +12796,8 @@ Tier 4. C++ functions 4, Rust functions 1. Matched 1: faithful 1, partial 0, div
 
 Missing in the Rust file:
 
-- `pos` :14 (15 tokens) — in `fill/fill_rectilinear.rs`, `gcode/wipe_tower.rs`, `triangulate_wall.rs`
-- `pos` :15 (15 tokens) — in `fill/fill_rectilinear.rs`, `gcode/wipe_tower.rs`, `triangulate_wall.rs`
+- `pos` :14 (15 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_rectilinear.rs`, `gcode/wipe_tower.rs`
+- `pos` :15 (15 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_rectilinear.rs`, `gcode/wipe_tower.rs`
 - `reproject_points_and_holes` :28 (82 tokens)
 
 ### `SLA/Rotfinder` (.cpp+.hpp) and `sla/rotfinder.rs`
@@ -13172,13 +13173,13 @@ Missing in the Rust file:
 - `SLAPrintStatistics::clear` :378 (36 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
 - `SLAArchive::draw_layers` :404 (95 tokens)
 - `SLAPrint::technology` :446 (5 tokens)
-- `SLAPrint::empty` :449 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `csg_mesh/voxelize_csg_mesh.rs`
+- `SLAPrint::empty` :449 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `SLAPrint::finished` :459 (19 tokens) — in `gcode/wipe_tower.rs`
 - `SLAPrint::get_print_object_by_model_object_id` :464 (63 tokens)
 - `SLAPrint::get_object` :469 (59 tokens) — in `model.rs`
 - `SLAPrint::PrintLayer::transformed_slices` :505 (14 tokens)
 - `SLAPrint::set_task` :510 (514 tokens)
-- `SLAPrint::PrintLayer::add` :521 (9 tokens) — in `color.rs`, `extrusion_simulator.rs`, `g_code.rs`
+- `SLAPrint::PrintLayer::add` :521 (9 tokens) — in `boost_polygon_voronoi.rs`, `color.rs`, `extrusion_simulator.rs`
 - `SLAPrint::PrintLayer::level` :523 (5 tokens) — in `zipper.rs`
 - `SLAPrint::PrintLayer::slices` :525 (5 tokens)
 - `SLAPrint::StatusReporter::status` :574 (5 tokens) — in `debug/validation.rs`

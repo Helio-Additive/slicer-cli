@@ -15,8 +15,8 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3153 | 34.3% | 47.0% |
-| partial `[~]` | 2749 | 29.9% | 28.0% |
+| not started `[ ]` | 3151 | 34.2% | 47.0% |
+| partial `[~]` | 2751 | 29.9% | 28.0% |
 | ported `[x]` | 3163 | 34.4% | 22.9% |
 | verified `[v]` | 139 | 1.5% | 2.0% |
 
@@ -216,7 +216,7 @@ the end; the goal is none.
 | `Geometry/ConvexHull` | 1 | `geometry/convex_hull.rs` | partial | 21 | 2 | 11 | 8 | 0 |
 | `Geometry/Curves` | 1 | `geometry/curves.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `Geometry/MedialAxis` | 1 | `geometry/medial_axis.rs` | partial | 16 | 3 | 13 | 0 | 0 |
-| `Geometry/Voronoi` | 1 | `geometry/voronoi.rs` | partial | 19 | 10 | 9 | 0 | 0 |
+| `Geometry/Voronoi` | 1 | `geometry/voronoi.rs` | partial | 19 | 8 | 11 | 0 | 0 |
 | `Geometry/VoronoiOffset` | 1 | `geometry/voronoi_offset.rs` | partial | 39 | 5 | 17 | 17 | 0 |
 | `Geometry/VoronoiUtils` | 1 | `geometry/voronoi_utils.rs` | partial | 13 | 4 | 7 | 2 | 0 |
 | `Geometry/VoronoiUtilsCgal` | 1 | `geometry/voronoi_utils_cgal.rs` | partial | 11 | 3 | 2 | 6 | 0 |
@@ -455,7 +455,7 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 - [x] `empty` (line 106) → `aabb_tree_indirect.rs:149`
 - [x] `left_child_idx` (line 109) → `aabb_tree_indirect.rs:156`
 - [x] `right_child_idx` (line 110) → `aabb_tree_indirect.rs:163`
-- [~] `build` (line 115) → `aabb_tree_lines.rs, kd_tree_indirect.rs, region_expansion.rs` — not in the paired file
+- [~] `build` (line 115) → `aabb_tree_lines.rs, boost_polygon_voronoi.rs, kd_tree_indirect.rs` — not in the paired file
 - [x] `build_recursive` (line 124) → `aabb_tree_indirect.rs:184`
 - [x] `partition_input` (line 157) → `aabb_tree_indirect.rs:240`
 
@@ -907,21 +907,21 @@ Rust file: `arachne/utils/extrusion_line.rs`. Status: **partial**. Not listed: 4
 - [~] `getMinimalWidth` (line 34) → `arachne/utils/extrusion_line.rs:188` — divergent
 - [~] `simplify` (line 43) → `arachne/utils/extrusion_line.rs:213` — partial
 - [x] `size` (line 57) → `arachne/utils/extrusion_line.rs:86`
-- [~] `empty` (line 62) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
-- [~] `begin` (line 94) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `empty` (line 62) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `begin` (line 94) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 95) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [ ] `rbegin` (line 96) → `arachne/utils/extrusion_line.rs`
 - [ ] `rend` (line 97) → `arachne/utils/extrusion_line.rs`
 - [~] `front` (line 98) → `gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 99) → `gcode/tool_ordering.rs` — not in the paired file
-- [~] `begin` (line 102) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 102) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 103) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [x] `front` (line 104) → `arachne/utils/extrusion_line.rs:100`
 - [x] `back` (line 105) → `arachne/utils/extrusion_line.rs:107`
 - [ ] `emplace_back` (line 107) → `arachne/utils/extrusion_line.rs`
 - [x] `remove` (line 108) → `arachne/utils/extrusion_line.rs:121`
 - [x] `insert` (line 109) → `arachne/utils/extrusion_line.rs:128`
-- [~] `insert` (line 112) → `arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `insert` (line 112) → `arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `clear` (line 117) → `arachne/utils/extrusion_line.rs:135`
 - [x] `reverse` (line 118) → `arachne/utils/extrusion_line.rs:142`
 - [x] `polylineLength` (line 124) → `arachne/utils/extrusion_line.rs:171`
@@ -1003,9 +1003,9 @@ Rust file: `arachne/utils/sparse_grid.rs`. Status: **partial**. Not listed: 1 co
 
 **class `SparseGrid`**
 
-- [~] `begin` (line 46) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 46) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 47) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `begin` (line 48) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 48) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 49) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `processFromCell` (line 105) → `arachne/utils/sparse_grid.rs:202` — partial
 - [x] `processNearby` (line 115) → `arachne/utils/sparse_grid.rs:175`
@@ -1184,8 +1184,8 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 
 **free functions**
 
-- [~] `empty` (line 249) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
-- [~] `empty` (line 255) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 249) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `empty` (line 255) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `scaled` (line 260) → `fill/fill_adaptive.rs, fill/fill_plane_path.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `scaled` (line 261) → `fill/fill_adaptive.rs, fill/fill_plane_path.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `unscaled` (line 262) → `lib.rs` — not in the paired file
@@ -1240,7 +1240,7 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [x] `overlap` (line 57) → `bounding_box.rs:1131`
 - [x] `scale` (line 63) → `bounding_box.rs:1041`
 - [~] `merge` (line 73) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
-- [~] `construct` (line 89) → `fill/fill_adaptive.rs, geometry/bounding_box.rs` — not in the paired file
+- [~] `construct` (line 89) → `boost_polygon_voronoi.rs, fill/fill_adaptive.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `merge` (line 89) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
 - [~] `merge` (line 97) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
 - [x] `size` (line 176) → `bounding_box.rs:1050`
@@ -1363,7 +1363,7 @@ Rust file: `by_object_print_data.rs`. Status: **partial**.
 **class `ByObjectPrintData`**
 
 - [ ] `collect_filament_data` (line 61) → `by_object_print_data.rs`
-- [~] `build` (line 86) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, kd_tree_indirect.rs` — not in the paired file
+- [~] `build` (line 86) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `clear` (line 210) → `by_object_print_data.rs:83`
 
 ### `Calib` (.cpp+.hpp)
@@ -1440,7 +1440,7 @@ Rust file: `channel.rs`. Status: **partial**. Not listed: 4 constructors, 1 dest
 **class `Channel`**
 
 - [x] `push` (line 41) → `channel.rs:54`
-- [~] `push` (line 50) → `geometry/polygon.rs, geometry/polyline.rs, geometry/thick_polyline.rs` — not in the paired file
+- [~] `push` (line 50) → `boost_polygon_voronoi.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [x] `pop` (line 59) → `channel.rs:70`
 - [x] `try_pop` (line 68) → `channel.rs:87`
 - [x] `size_hint` (line 81) → `channel.rs:106`
@@ -1909,64 +1909,64 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `cend` (line 74) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 75) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cbegin` (line 76) → `mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 77) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 78) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `begin` (line 77) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
+- [~] `size` (line 78) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExPolygonProvider`**
 
 - [~] `cbegin` (line 183) → `mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 184) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 184) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 185) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 186) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 187) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 187) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExPolygonsProvider`**
 
 - [~] `cbegin` (line 223) → `mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 224) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 224) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 225) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 226) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 227) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 227) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `MultiPointsProvider`**
 
 - [~] `cbegin` (line 154) → `mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 155) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 155) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 156) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 157) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 158) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 158) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `PathsProvider`**
 
 - [~] `cbegin` (line 127) → `mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 128) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 128) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 129) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 130) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 131) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 131) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SinglePathProvider`**
 
 - [~] `cbegin` (line 99) → `mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 100) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 100) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 101) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 102) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 103) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 103) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SurfacesProvider`**
 
 - [~] `cbegin` (line 264) → `mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 265) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 265) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 266) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 267) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 268) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 268) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SurfacesPtrProvider`**
 
 - [~] `cbegin` (line 305) → `mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 306) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 306) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 307) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 308) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 309) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 309) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 ### `ClipperZUtils` (.hpp)
 
@@ -2212,7 +2212,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 
 **class `ConfigDef`**
 
-- [~] `add` (line 333) → `color.rs, extrusion_simulator.rs, g_code.rs` — not in the paired file
+- [~] `add` (line 333) → `boost_polygon_voronoi.rs, color.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `add_nullable` (line 344) → `config.rs`
 - [~] `has` (line 2455) → `app_config.rs, enum_bitmask.rs, g_code_reader.rs` — not in the paired file
 - [~] `get` (line 2456) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
@@ -2487,7 +2487,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [ ] `static_type` (line 1131) → `config.rs`
 - [~] `type` (line 1132) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
 - [~] `clone` (line 1133) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `empty` (line 1137) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 1137) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `serialize` (line 1139) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 - [~] `deserialize` (line 1144) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 - [~] `serialize` (line 1152) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
@@ -2519,8 +2519,8 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [ ] `set_with_default` (line 662) → `config.rs`
 - [~] `resize` (line 692) → `extrusion_simulator.rs` — not in the paired file
 - [~] `clear` (line 725) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `size` (line 726) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
-- [~] `empty` (line 727) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `size` (line 726) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `empty` (line 727) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `hash` (line 740) → `arachne/utils/polygons_point_index.rs, perimeter_generator.rs, region_expansion.rs` — not in the paired file
 - [ ] `overriden_by` (line 751) → `config.rs`
 - [ ] `apply_override` (line 773) → `config.rs`
@@ -2532,7 +2532,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 
 **class `ConfigSubstitutionContext`**
 
-- [~] `empty` (line 258) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 258) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `DynamicConfig`**
 
@@ -2545,13 +2545,13 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [~] `diff` (line 1918) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
 - [~] `equal` (line 1932) → `placeholder_parser.rs` — not in the paired file
 - [ ] `opt_bool` (line 1967) → `config.rs`
-- [~] `swap` (line 2745) → `clonable_ptr.rs, extrusion_entity_collection.rs` — not in the paired file
+- [~] `swap` (line 2745) → `boost_polygon_voronoi.rs, clonable_ptr.rs, extrusion_entity_collection.rs` — not in the paired file
 - [~] `clear` (line 2750) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `erase` (line 2755) → `app_config.rs, geometry/point.rs, triangle_mesh_slicer.rs` — not in the paired file
+- [~] `erase` (line 2755) → `app_config.rs, boost_polygon_voronoi.rs, geometry/point.rs` — not in the paired file
 - [ ] `def` (line 2769) → `config.rs`
 - [ ] `opt` (line 2770) → `config.rs`
 - [ ] `opt` (line 2772) → `config.rs`
-- [~] `empty` (line 2780) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 2780) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `set_key_value` (line 2785) → `config.rs`
 - [ ] `opt_int` (line 2818) → `config.rs`
 - [ ] `opt_int` (line 2820) → `config.rs`
@@ -2562,7 +2562,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [ ] `opt_bool_nullable` (line 2835) → `config.rs`
 - [~] `cbegin` (line 2841) → `mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 2842) → `mutable_polygon.rs` — not in the paired file
-- [~] `size` (line 2843) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 2843) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `serialize` (line 2849) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `FloatOrPercent`**
@@ -2844,7 +2844,7 @@ Rust file: `cut_utils.rs`. Status: **partial**. Not listed: 2 constructors, 1 de
 
 **class `CutProgressRange`**
 
-- [~] `sub` (line 35) → `arachne/utils/extrusion_junction.rs, bin/generate-test-meshes.rs, extrusion_simulator.rs` — not in the paired file
+- [~] `sub` (line 35) → `arachne/utils/extrusion_junction.rs, bin/generate-test-meshes.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `report` (line 43) → `cut_utils.rs`
 - [ ] `canceled` (line 49) → `cut_utils.rs`
 - [ ] `map` (line 52) → `cut_utils.rs`
@@ -2886,7 +2886,7 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 
 **class `Contour`**
 
-- [~] `begin` (line 22) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 22) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 23) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `open` (line 24) → `svg.rs` — not in the paired file
 - [ ] `closed` (line 25) → `edge_grid.rs`
@@ -2895,7 +2895,7 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 - [x] `num_segments` (line 64) → `edge_grid.rs:98`
 - [ ] `get_segment` (line 66) → `edge_grid.rs`
 - [~] `get_segments` (line 72) → `multi_material_segmentation.rs` — not in the paired file
-- [~] `size` (line 84) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 84) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `EdgeGrid`**
 
@@ -3241,7 +3241,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `rotate` (line 38) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
 - [~] `translate` (line 41) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `rotate` (line 45) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
-- [~] `empty` (line 46) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 46) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `area` (line 52) → `arachne/utils/extrusion_line.rs, arrange.rs, bounding_box.rs` — not in the paired file
 - [~] `is_valid` (line 60) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [x] `douglas_peucker` (line 69) → `ex_polygon.rs:117`
@@ -3272,7 +3272,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `polygon_set_traits<Slic3r::ExPolygons>`**
 
-- [~] `begin` (line 576) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 576) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 580) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [ ] `clean` (line 585) → `ex_polygon.rs`
 - [~] `sorted` (line 586) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -3281,7 +3281,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 - [ ] `begin_points` (line 505) → `ex_polygon.rs`
 - [ ] `end_points` (line 510) → `ex_polygon.rs`
-- [~] `size` (line 515) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 515) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `winding` (line 520) → `ex_polygon.rs`
 
 **class `polygon_with_holes_traits<Slic3r::ExPolygon>`**
@@ -3549,7 +3549,7 @@ Rust file: `extrusion_entity_collection.rs`. Status: **partial**. Not listed: 4 
 - [~] `can_reverse` (line 63) → `extrusion_entity.rs` — not in the paired file
 - [~] `reverse` (line 67) → `arachne/utils/extrusion_line.rs, circle.rs, extrusion_entity.rs` — not in the paired file
 - [~] `set_reverse` (line 70) → `extrusion_entity.rs` — not in the paired file
-- [~] `empty` (line 71) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 71) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `append` (line 74) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [~] `append` (line 75) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [~] `append` (line 76) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
@@ -3765,7 +3765,7 @@ Rust file: `filament_mixer.rs`. Status: **partial**.
 
 **class `GradientCurve`**
 
-- [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 ### `FilamentMixerModel` (.hpp)
 
@@ -4059,10 +4059,10 @@ Rust file: none. Status: **not started**.
 **class `MedialChart`**
 
 - [~] `layer_count` (line 41) → `debug/compare.rs, support/tree_model_volumes.rs` — a function of this name is in another Rust file
-- [~] `empty` (line 42) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — a function of this name is in another Rust file
+- [~] `empty` (line 42) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
 - [~] `layer` (line 925) → `debug/compare.rs` — a function of this name is in another Rust file
 - [ ] `sheet_mesh` (line 935)
-- [~] `build` (line 942) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, kd_tree_indirect.rs` — a function of this name is in another Rust file
+- [~] `build` (line 942) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
 
 ### `Fill/FillCrossHatch` (.cpp+.hpp)
 
@@ -4809,7 +4809,7 @@ Rust file: none. Status: **not started**.
 
 **class `_3MF_Importer::Geometry`**
 
-- [~] `empty` (line 425) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — a function of this name is in another Rust file
+- [~] `empty` (line 425) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
 - [~] `reset` (line 427) → `app_config.rs, bounding_box.rs, clipper.rs` — a function of this name is in another Rust file
 
 **class `coordinate_policy_fixed`**
@@ -4939,7 +4939,7 @@ Rust file: none. Status: **not started**.
 
 **class `AssemblyStepsTreeData`**
 
-- [~] `empty` (line 338) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — a function of this name is in another Rust file
+- [~] `empty` (line 338) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
 - [~] `clear` (line 339) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — a function of this name is in another Rust file
 - [ ] `to_json_string` (line 1101)
 - [ ] `from_json_string` (line 1155)
@@ -4996,7 +4996,7 @@ Rust file: none. Status: **not started**.
 
 **class `AssemblyTreeData`**
 
-- [~] `empty` (line 27) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — a function of this name is in another Rust file
+- [~] `empty` (line 27) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
 - [~] `clear` (line 28) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — a function of this name is in another Rust file
 - [ ] `to_json_string` (line 39)
 - [ ] `from_json_string` (line 51)
@@ -5218,8 +5218,8 @@ Rust file: `format/bbs_3mf.rs`. Status: **partial**. Not listed: 16 constructors
 
 **class `_BBS_3MF_Importer::Geometry`**
 
-- [~] `empty` (line 1111) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
-- [~] `swap` (line 1114) → `clonable_ptr.rs, extrusion_entity_collection.rs` — not in the paired file
+- [~] `empty` (line 1111) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `swap` (line 1114) → `boost_polygon_voronoi.rs, clonable_ptr.rs, extrusion_entity_collection.rs` — not in the paired file
 - [~] `reset` (line 1125) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 
 **class `_BBS_3MF_Importer::ObjectImporter`**
@@ -6056,7 +6056,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [ ] `activate` (line 1050) → `gcode/g_code_processor.rs`
 - [ ] `get_first_vertex` (line 1058) → `gcode/g_code_processor.rs`
 - [ ] `set_first_vertex` (line 1059) → `gcode/g_code_processor.rs`
-- [~] `is_active` (line 1061) → `triangle_selector.rs` — not in the paired file
+- [~] `is_active` (line 1061) → `boost_polygon_voronoi.rs, triangle_selector.rs` — not in the paired file
 - [ ] `has_first_vertex` (line 1062) → `gcode/g_code_processor.rs`
 
 **class `GCodeProcessor::TimeBlock`**
@@ -6444,9 +6444,9 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [~] `clear` (line 305) → `gcode/tool_ordering.rs:478` — divergent
 - [x] `first_extruder` (line 320) → `gcode/tool_ordering.rs:1987`
 - [x] `last_extruder` (line 323) → `gcode/tool_ordering.rs:1992`
-- [~] `begin` (line 347) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 347) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 348) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `empty` (line 349) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 349) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `has_wipe_tower` (line 352) → `gcode/tool_ordering.rs:2022` — divergent
 - [x] `get_most_used_extruder` (line 358) → `gcode/tool_ordering.rs:2029`
 - [ ] `handle_dontcare_extruder` (line 383) → `gcode/tool_ordering.rs`
@@ -7289,8 +7289,8 @@ Rust file: `geometry/medial_axis.rs`. Status: **partial**. Not listed: 2 constru
 **class `MedialAxis`**
 
 - [ ] `edge_data` (line 34) → `geometry/medial_axis.rs`
-- [~] `build` (line 449) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, kd_tree_indirect.rs` — not in the paired file
-- [~] `build` (line 534) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, kd_tree_indirect.rs` — not in the paired file
+- [~] `build` (line 449) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `build` (line 534) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `process_edge_neighbors` (line 543) → `geometry/medial_axis.rs:556` — partial
 - [~] `validate_edge` (line 588) → `geometry/medial_axis.rs:452` — partial
 
@@ -7312,17 +7312,17 @@ Rust file: `geometry/voronoi.rs`. Status: **partial**. Not listed: 1 constructor
 
 **class `VoronoiDiagram`**
 
-- [~] `construct_voronoi` (line 21) → `geometry/voronoi_diagram.rs` — not in the paired file
+- [~] `construct_voronoi` (line 21) → `boost_polygon_voronoi.rs, geometry/voronoi_diagram.rs` — not in the paired file
 - [ ] `get_issue_type` (line 63) → `geometry/voronoi.rs`
 - [~] `get_state` (line 65) → `triangle_selector.rs` — not in the paired file
 - [~] `is_valid` (line 67) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `clear` (line 71) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [ ] `num_vertices` (line 77) → `geometry/voronoi.rs`
-- [ ] `num_edges` (line 79) → `geometry/voronoi.rs`
-- [~] `num_cells` (line 81) → `arachne/utils/sparse_grid.rs` — not in the paired file
+- [~] `num_vertices` (line 77) → `boost_polygon_voronoi.rs` — not in the paired file
+- [~] `num_edges` (line 79) → `boost_polygon_voronoi.rs` — not in the paired file
+- [~] `num_cells` (line 81) → `arachne/utils/sparse_grid.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `copy_to_local` (line 86) → `geometry/voronoi.rs`
-- [~] `construct_voronoi` (line 92) → `geometry/voronoi_diagram.rs` — not in the paired file
-- [~] `construct_voronoi` (line 104) → `geometry/voronoi_diagram.rs` — not in the paired file
+- [~] `construct_voronoi` (line 92) → `boost_polygon_voronoi.rs, geometry/voronoi_diagram.rs` — not in the paired file
+- [~] `construct_voronoi` (line 104) → `boost_polygon_voronoi.rs, geometry/voronoi_diagram.rs` — not in the paired file
 - [ ] `detect_known_issues` (line 155) → `geometry/voronoi.rs`
 - [ ] `detect_known_voronoi_cell_issues` (line 176) → `geometry/voronoi.rs`
 - [~] `has_finite_edge_with_non_finite_vertex` (line 222) → `geometry/voronoi_diagram.rs` — not in the paired file
@@ -7591,7 +7591,7 @@ Rust file: `kd_tree_indirect.rs`. Status: **partial**. Not listed: 4 constructor
 
 - [x] `clear` (line 38) → `kd_tree_indirect.rs:132`
 - [x] `build` (line 40) → `kd_tree_indirect.rs:138`
-- [~] `build` (line 49) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, region_expansion.rs` — not in the paired file
+- [~] `build` (line 49) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `descent_mask` (line 62) → `kd_tree_indirect.rs:344` — partial
 - [x] `visit` (line 74) → `kd_tree_indirect.rs:384`
 - [x] `build_recursive` (line 83) → `kd_tree_indirect.rs:176`
@@ -7745,10 +7745,10 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 
 **class `Range`**
 
-- [~] `begin` (line 358) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 358) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 359) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 369) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
-- [~] `empty` (line 370) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `size` (line 369) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `empty` (line 370) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 ### `Line` (.cpp+.hpp)
 
@@ -8072,7 +8072,7 @@ Rust file: `mesh_boolean.rs`. Status: **partial**. Not listed: 1 constructors, 2
 - [ ] `intersect` (line 455) → `mesh_boolean.rs`
 - [ ] `does_self_intersect` (line 460) → `mesh_boolean.rs`
 - [ ] `does_bound_a_volume` (line 469) → `mesh_boolean.rs`
-- [~] `empty` (line 474) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 474) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `clone` (line 479) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
 - [~] `is_enabled` (line 488) → `gcode/ironing.rs, print_config.rs` — not in the paired file
 - [ ] `make_boolean` (line 498) → `mesh_boolean.rs`
@@ -8251,8 +8251,8 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 - [~] `assign` (line 784) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
 - [~] `assign` (line 785) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
-- [~] `empty` (line 800) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
-- [~] `reserve` (line 810) → `fill/fill_plane_path.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
+- [~] `empty` (line 800) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `reserve` (line 810) → `boost_polygon_voronoi.rs, fill/fill_plane_path.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `shrink_to_fit` (line 814) → `model.rs`
 - [~] `serialize` (line 836) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 - [~] `get_facets` (line 4599) → `triangle_selector.rs` — not in the paired file
@@ -8278,7 +8278,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `assign` (line 208) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
 - [~] `assign` (line 209) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
 - [~] `get` (line 211) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
-- [~] `empty` (line 212) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 212) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `set` (line 213) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 214) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `clear` (line 215) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
@@ -8768,7 +8768,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **class `MMU_Graph::Node`**
 
-- [~] `remove_edge` (line 82) → `clipper.rs` — not in the paired file
+- [~] `remove_edge` (line 82) → `boost_polygon_voronoi.rs, clipper.rs` — not in the paired file
 
 **class `PaintedLineVisitor`**
 
@@ -8884,8 +8884,8 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `rotate` (line 31) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
 - [~] `reverse` (line 34) → `arachne/utils/extrusion_line.rs, circle.rs, extrusion_entity.rs` — not in the paired file
 - [~] `rotate` (line 37) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
-- [~] `size` (line 41) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
-- [~] `empty` (line 42) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `size` (line 41) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `empty` (line 42) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `is_valid` (line 44) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `length` (line 48) → `extrusion_entity.rs, fill/fill_floating_concentric.rs, fill/fill_rectilinear.rs` — not in the paired file
 - [~] `closest_point_index` (line 53) → `geometry/polygon.rs` — not in the paired file
@@ -8902,8 +8902,8 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [x] `bounding_box` (line 89) → `multi_point.rs:236`
 - [x] `has_duplicate_points` (line 94) → `multi_point.rs:246`
 - [~] `remove_duplicate_points` (line 102) → `geometry/simplify.rs` — not in the paired file
-- [~] `begin` (line 103) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `begin` (line 104) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 103) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
+- [~] `begin` (line 104) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 105) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `end` (line 106) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cbegin` (line 107) → `mutable_polygon.rs` — not in the paired file
@@ -8956,7 +8956,7 @@ Rust file: `mutable_polygon.rs`. Status: **partial**. Not listed: 7 constructors
 - [x] `clear` (line 170) → `mutable_polygon.rs:259`
 - [x] `begin` (line 172) → `mutable_polygon.rs:268`
 - [x] `cbegin` (line 173) → `mutable_polygon.rs:273`
-- [~] `begin` (line 174) → `sla/agg/scanline_p.rs, support/tree_model_volumes.rs, triangle_mesh.rs` — not in the paired file
+- [~] `begin` (line 174) → `boost_polygon_voronoi.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
 - [x] `end` (line 176) → `mutable_polygon.rs:279`
 - [x] `cend` (line 177) → `mutable_polygon.rs:290`
 - [~] `end` (line 178) → `sla/agg/gamma_functions.rs, support/tree_model_volumes.rs, triangle_mesh.rs` — not in the paired file
@@ -8968,17 +8968,17 @@ Rust file: `mutable_polygon.rs`. Status: **partial**. Not listed: 7 constructors
 
 **class `MutablePolygon::const_iterator`**
 
-- [~] `prev` (line 27) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, surface_mesh.rs` — not in the paired file
-- [~] `next` (line 28) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, gcode/gcode_template.rs` — not in the paired file
+- [~] `prev` (line 27) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `next` (line 28) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `valid` (line 29) → `build_volume.rs, fill/fill_base.rs, gcode/conflict_checker.rs` — not in the paired file
-- [~] `size` (line 33) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 33) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `MutablePolygon::iterator`**
 
-- [~] `prev` (line 49) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, surface_mesh.rs` — not in the paired file
-- [~] `next` (line 50) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, gcode/gcode_template.rs` — not in the paired file
+- [~] `prev` (line 49) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `next` (line 50) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `valid` (line 51) → `mutable_polygon.rs:178`
-- [~] `size` (line 55) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 55) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `insert` (line 57) → `mutable_polygon.rs:418`
 
 **class `MutablePolygon::range`**
@@ -9007,13 +9007,13 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [x] `reserve` (line 21) → `mutable_priority_queue.rs:133`
 - [x] `update` (line 27) → `mutable_priority_queue.rs:272`
 - [x] `size` (line 29) → `mutable_priority_queue.rs:284`
-- [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
-- [~] `begin` (line 36) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `begin` (line 36) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 37) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cbegin` (line 38) → `mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 39) → `mutable_polygon.rs` — not in the paired file
 - [~] `clear` (line 59) → `mutable_priority_queue.rs:111` — divergent
-- [~] `push` (line 74) → `channel.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
+- [~] `push` (line 74) → `boost_polygon_voronoi.rs, channel.rs, geometry/polygon.rs` — not in the paired file
 - [x] `push` (line 83) → `mutable_priority_queue.rs:140`
 - [~] `pop` (line 92) → `mutable_priority_queue.rs:749` — divergent
 - [~] `remove` (line 113) → `mutable_priority_queue.rs:226` — partial
@@ -9025,10 +9025,10 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [x] `reserve` (line 271) → `mutable_priority_queue.rs:715`
 - [x] `update` (line 277) → `mutable_priority_queue.rs:828`
 - [~] `size` (line 279) → `mutable_priority_queue.rs:840` — partial
-- [~] `empty` (line 280) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 280) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `pop_back` (line 287) → `mutable_priority_queue.rs:873` — divergent
 - [~] `clear` (line 310) → `mutable_priority_queue.rs:690` — divergent
-- [~] `push` (line 326) → `channel.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
+- [~] `push` (line 326) → `boost_polygon_voronoi.rs, channel.rs, geometry/polygon.rs` — not in the paired file
 - [x] `push` (line 337) → `mutable_priority_queue.rs:723`
 - [~] `pop` (line 348) → `mutable_priority_queue.rs:165` — divergent
 - [~] `remove` (line 370) → `mutable_priority_queue.rs:793` — partial
@@ -9100,7 +9100,7 @@ Rust file: none. Status: **not started**.
 - [ ] `user_unify_diameter` (line 727)
 - [ ] `extruder_count` (line 744)
 - [ ] `counts` (line 752)
-- [~] `count` (line 765) → `triangle_mesh.rs` — a function of this name is in another Rust file
+- [~] `count` (line 765) → `boost_polygon_voronoi.rs, triangle_mesh.rs` — a function of this name is in another Rust file
 - [~] `volume_type` (line 778) → `build_volume.rs, extruder.rs` — a function of this name is in another Rust file
 - [ ] `refresh_mirror` (line 783)
 - [ ] `export_to` (line 785)
@@ -9122,7 +9122,7 @@ Rust file: none. Status: **not started**.
 
 **class `NozzleSlot`**
 
-- [~] `empty` (line 57) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — a function of this name is in another Rust file
+- [~] `empty` (line 57) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
 
 **class `SelectedPrinter`**
 
@@ -9440,7 +9440,7 @@ Rust file: none. Status: **not started**.
 
 **class `PaintRegionSource`**
 
-- [~] `empty` (line 749) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — a function of this name is in another Rust file
+- [~] `empty` (line 749) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
 - [ ] `leaf_count` (line 750)
 - [ ] `finest_leaf_edge` (line 756)
 - [~] `coverage` (line 763) → `bridge_detector.rs` — a function of this name is in another Rust file
@@ -9770,9 +9770,9 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `save` (line 693) → `app_config.rs` — not in the paired file
 - [~] `load` (line 695) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
 - [~] `save` (line 696) → `app_config.rs` — not in the paired file
-- [~] `begin` (line 702) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 702) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 705) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `begin` (line 708) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 708) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 711) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 
 **class `ClosestPointInRadiusLookup`**
@@ -9812,7 +9812,7 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 **class `point_mutable_traits<Slic3r::Point>`**
 
 - [~] `set` (line 669) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `construct` (line 672) → `fill/fill_adaptive.rs, geometry/bounding_box.rs` — not in the paired file
+- [~] `construct` (line 672) → `boost_polygon_voronoi.rs, fill/fill_adaptive.rs, geometry/bounding_box.rs` — not in the paired file
 
 **class `point_traits<Slic3r::Point>`**
 
@@ -9911,7 +9911,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 
 **class `polygon_set_traits<Slic3r::Polygons>`**
 
-- [~] `begin` (line 370) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 370) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 374) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [ ] `clean` (line 379) → `geometry/polygon.rs`
 - [~] `sorted` (line 380) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -9920,7 +9920,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 
 - [ ] `begin_points` (line 323) → `geometry/polygon.rs`
 - [ ] `end_points` (line 328) → `geometry/polygon.rs`
-- [~] `size` (line 333) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 333) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `winding` (line 338) → `geometry/polygon.rs`
 
 ### `PolygonTrimmer` (.cpp+.hpp)
@@ -10031,13 +10031,13 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 
 **class `PhysicalPrinterCollection`**
 
-- [~] `begin` (line 985) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `begin` (line 986) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 985) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
+- [~] `begin` (line 986) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cbegin` (line 987) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 988) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `end` (line 989) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cend` (line 990) → `mutable_polygon.rs` — not in the paired file
-- [~] `empty` (line 992) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 992) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `get_selected_idx` (line 1029) → `preset.rs`
 - [ ] `get_selected_printer_name` (line 1031) → `preset.rs`
 - [ ] `get_selected_printer_config` (line 1033) → `preset.rs`
@@ -10084,13 +10084,13 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 **class `PresetCollection`**
 
 - [ ] `lbegin` (line 467) → `preset.rs`
-- [~] `begin` (line 471) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `begin` (line 472) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 471) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
+- [~] `begin` (line 472) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cbegin` (line 473) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 474) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `end` (line 475) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cend` (line 476) → `mutable_polygon.rs` — not in the paired file
-- [~] `erase` (line 479) → `app_config.rs, geometry/point.rs, triangle_mesh_slicer.rs` — not in the paired file
+- [~] `erase` (line 479) → `app_config.rs, boost_polygon_voronoi.rs, geometry/point.rs` — not in the paired file
 - [ ] `set_sync_func` (line 481) → `preset.rs`
 - [~] `lock` (line 483) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
 - [~] `unlock` (line 484) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
@@ -10104,7 +10104,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [ ] `find_preset` (line 654) → `preset.rs`
 - [ ] `first_compatible_idx` (line 661) → `preset.rs`
 - [ ] `first_compatible_idx` (line 687) → `preset.rs`
-- [~] `size` (line 701) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 701) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `has_defaults_only` (line 702) → `preset.rs`
 - [ ] `update_compatible` (line 706) → `preset.rs`
 - [ ] `update_compatible` (line 714) → `preset.rs`
@@ -10183,7 +10183,7 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [ ] `set_extruder_stats` (line 132) → `preset_bundle.rs`
 - [ ] `clear_extruder` (line 137) → `preset_bundle.rs`
 - [~] `clear` (line 141) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `empty` (line 142) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 142) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExtruderNozzleStat`**
 
@@ -10361,16 +10361,16 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `CompactedTowerZone`**
 
-- [~] `empty` (line 1387) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 1387) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ConstVectorOfPtrsAdaptor`**
 
-- [~] `begin` (line 207) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 207) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 208) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
-- [~] `size` (line 212) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
-- [~] `empty` (line 213) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `size` (line 212) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `empty` (line 213) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `at` (line 215) → `format/objparser.rs, g_code_reader.rs, model.rs` — not in the paired file
 - [~] `vector` (line 216) → `geometry/line.rs` — not in the paired file
 
@@ -10405,7 +10405,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `layers_sorted_for_object` (line 758) → `print.rs`
 - [ ] `sequential_print_clearance_valid` (line 777) → `print.rs`
 - [ ] `technology` (line 910) → `print.rs`
-- [~] `empty` (line 918) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 918) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `is_step_done` (line 933) → `print_object.rs` — not in the paired file
 - [~] `finished` (line 937) → `gcode/wipe_tower.rs` — not in the paired file
 - [ ] `has_auto_brim` (line 943) → `print.rs`
@@ -10636,13 +10636,13 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 - [~] `assign` (line 362) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
 - [~] `config` (line 388) → `extruder.rs, gcode/cooling.rs, gcode/ironing.rs` — not in the paired file
-- [~] `begin` (line 401) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 401) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 402) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `size` (line 403) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `size` (line 403) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ModelObjectStatusDB`**
 
-- [~] `add` (line 447) → `color.rs, extrusion_simulator.rs, g_code.rs` — not in the paired file
+- [~] `add` (line 447) → `boost_polygon_voronoi.rs, color.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `add_if_new` (line 452) → `print_apply.rs`
 
 **class `Print`**
@@ -10653,14 +10653,14 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 - [ ] `get_range` (line 522) → `print_apply.rs`
 - [ ] `get_range` (line 526) → `print_apply.rs`
-- [~] `count` (line 530) → `triangle_mesh.rs` — not in the paired file
-- [~] `begin` (line 534) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `count` (line 530) → `boost_polygon_voronoi.rs, triangle_mesh.rs` — not in the paired file
+- [~] `begin` (line 534) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 535) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `clear` (line 537) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 
 **class `PrintObjectStatusDB::iterator_range`**
 
-- [~] `begin` (line 518) → `mutable_polygon.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 518) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 519) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 
 ### `PrintBase` (.cpp+.hpp)
@@ -11628,8 +11628,8 @@ Rust file: `sla/reproject_points_on_mesh.rs`. Status: **partial**.
 
 **free functions**
 
-- [~] `pos` (line 14) → `fill/fill_rectilinear.rs, gcode/wipe_tower.rs, triangulate_wall.rs` — not in the paired file
-- [~] `pos` (line 15) → `fill/fill_rectilinear.rs, gcode/wipe_tower.rs, triangulate_wall.rs` — not in the paired file
+- [~] `pos` (line 14) → `boost_polygon_voronoi.rs, fill/fill_rectilinear.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `pos` (line 15) → `boost_polygon_voronoi.rs, fill/fill_rectilinear.rs, gcode/wipe_tower.rs` — not in the paired file
 - [x] `reproject_support_points` (line 18) → `sla/reproject_points_on_mesh.rs:53`
 - [ ] `reproject_points_and_holes` (line 28) → `sla/reproject_points_on_mesh.rs`
 
@@ -11912,7 +11912,7 @@ Rust file: `sla_print.rs`. Status: **partial**. Not listed: 7 constructors, 2 de
 - [ ] `print_object_ids` (line 177) → `sla_print.rs`
 - [~] `apply` (line 187) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
 - [ ] `technology` (line 446) → `sla_print.rs`
-- [~] `empty` (line 449) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 449) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `finished` (line 459) → `gcode/wipe_tower.rs` — not in the paired file
 - [ ] `get_print_object_by_model_object_id` (line 464) → `sla_print.rs`
 - [~] `get_object` (line 469) → `model.rs` — not in the paired file
@@ -11930,7 +11930,7 @@ Rust file: `sla_print.rs`. Status: **partial**. Not listed: 7 constructors, 2 de
 **class `SLAPrint::PrintLayer`**
 
 - [ ] `transformed_slices` (line 505) → `sla_print.rs`
-- [~] `add` (line 521) → `color.rs, extrusion_simulator.rs, g_code.rs` — not in the paired file
+- [~] `add` (line 521) → `boost_polygon_voronoi.rs, color.rs, extrusion_simulator.rs` — not in the paired file
 - [~] `level` (line 523) → `zipper.rs` — not in the paired file
 - [ ] `slices` (line 525) → `sla_print.rs`
 
@@ -12126,7 +12126,7 @@ Rust file: `support/support_common.rs`. Status: **partial**. Not listed: 1 const
 
 **class `SupportGeneratorLayerExtruded`**
 
-- [~] `empty` (line 827) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 827) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `set_polygons_to_extrude` (line 831) → `support/support_common.rs`
 - [ ] `could_merge` (line 840) → `support/support_common.rs`
 - [~] `merge` (line 847) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
@@ -12583,7 +12583,7 @@ Rust file: `surface.rs`. Status: **partial**. Not listed: 7 constructors.
 **class `Surface`**
 
 - [x] `area` (line 102) → `surface.rs:298`
-- [~] `empty` (line 103) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 103) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `clear` (line 104) → `surface.rs:785`
 - [x] `is_top` (line 107) → `surface.rs:304`
 - [x] `is_bottom` (line 108) → `surface.rs:114`
@@ -12609,8 +12609,8 @@ Rust file: `surface_collection.rs`. Status: **partial**. Not listed: 2 construct
 - [x] `change_to_new_type` (line 42) → `surface_collection.rs:497`
 - [x] `filter_by_type` (line 45) → `surface_collection.rs:236`
 - [x] `clear` (line 48) → `surface_collection.rs:74`
-- [~] `empty` (line 49) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
-- [~] `size` (line 50) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, bounding_box.rs` — not in the paired file
+- [~] `empty` (line 49) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `size` (line 50) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `has` (line 51) → `surface_collection.rs:509`
 - [x] `filter_by_types` (line 54) → `surface_collection.rs:252`
 - [~] `set` (line 57) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
@@ -13121,7 +13121,7 @@ Rust file: `triangle_mesh.rs`. Status: **partial**. Not listed: 6 constructors, 
 - [x] `size` (line 141) → `triangle_mesh.rs:2452`
 - [x] `center` (line 143) → `triangle_mesh.rs:2447`
 - [ ] `facets_count` (line 149) → `triangle_mesh.rs`
-- [~] `empty` (line 150) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, csg_mesh/voxelize_csg_mesh.rs` — not in the paired file
+- [~] `empty` (line 150) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `release_optional` (line 159) → `triangle_mesh.rs`
 - [ ] `restore_optional` (line 161) → `triangle_mesh.rs`
 - [ ] `set_init_shift` (line 165) → `triangle_mesh.rs`

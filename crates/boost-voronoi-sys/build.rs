@@ -58,11 +58,14 @@ fn boost_include_dir() -> PathBuf {
 fn main() {
     let boost = boost_include_dir();
     println!("cargo:rerun-if-changed=shim/boost_voronoi_shim.cpp");
+    println!("cargo:rerun-if-changed=shim/boost_voronoi_test_exports.cpp");
     println!("cargo:rerun-if-env-changed=BOOST_INCLUDE_DIR");
     let mut build = cc::Build::new();
     build
         .cpp(true)
         .file("shim/boost_voronoi_shim.cpp")
+        // Test-only exports of single predicates (not called by the engine).
+        .file("shim/boost_voronoi_test_exports.cpp")
         .include(&boost)
         .flag_if_supported("-std=c++17")
         // Match the native -O3 -DNDEBUG codegen regardless of cargo profile.

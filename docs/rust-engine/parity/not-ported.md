@@ -67,6 +67,11 @@ functions below are the C++ reference of the `*_native_parity` tests. The table 
 Not a dependency of the engine since R884 (a dev-dependency: `examples/voronoi_ab.rs` uses it). The boost
 Voronoi diagram behind the medial axis is compiled inside `clipper-z-sys`.
 
+Since R897 the builder itself is ported: `boost_polygon_voronoi.rs` equals boost's diagram in every vertex bit,
+link and flag on 110,546 inputs (`tests/boost_polygon_voronoi_native_parity.rs`, for which this crate is the
+reference). Nothing in the engine calls it yet; the medial axis is to move onto it next, then the users of the
+`boostvoronoi` crate (Arachne's skeletal trapezoidation, the multi-material segmentation).
+
 ### C++ that comes in through published crates
 
 `cargo tree -e normal -p slicer-cli-rust` also lists two C++ libraries the engine does not build itself:
@@ -122,6 +127,8 @@ more are missing from a paired Rust file and from every other. `crates/libslic3r
 | Round | Item |
 |-|-|
 | R856 | every helper on the 1 um grid on the fixtures' path computes at coord_t |
+| R897 | boost::polygon's Voronoi builder is ported (`boost_polygon_voronoi.rs`), equal to boost on 110,546 diagrams; not yet called by the engine |
+| R896 | the elephant-foot solver runs in Rust (`EFC_SMOOTH_RUST`) |
 | R893 | `ClipperLib_Z` (the XYZ build) is ported as a second compilation of `clipper.rs`, and `clip_extrusion` / `detect_floating` run on it (gate `CLIPPER_Z_RUST`, retired in R895) |
 | R889-R891 | ClipperLib is ported (`clipper.rs`: the sweep, PolyTree, ClipperOffset, equal to the library on 320,000 cases) and the engine's 2D polygon operations run on it: 19 of the 23 `clipper-z-sys` functions are out of the engine (gate retired in R892) |
 | R884 | `boost-voronoi-sys` removed from the engine's dependencies (a dev-dependency for one example) |
