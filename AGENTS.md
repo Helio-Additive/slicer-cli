@@ -125,6 +125,18 @@ compiles about 1,500 engine files.
 - **New behaviour gets a new flag; an existing flag keeps its meaning.** What
   the program prints — messages, event kinds and tags, `result.json` keys,
   return codes — is read by other programs: add, never change.
+- **A change to what an existing call does is allowed when it is right, and
+  it does not go alone.** A defect is fixed without a flag. When a fix, or a
+  decision of the owner, changes the result of a call that worked before, the
+  PR says so under "Changed on purpose", gives the flag that brings the old
+  result back when there is one, and states that the programs that call
+  slicer-cli get their own PRs for it before they use the release that
+  carries the change.
+- **A Bambu Studio project loads the way the Bambu Studio app loads it.** The
+  app keeps the settings the maker changed and takes every other value from
+  the preset it has today; slicing the file's saved copy as it stands was a
+  defect of `slicer_cli` (the other two programs already loaded such projects
+  the app's way). `--project-settings-as-saved` slices the saved copy.
 - **slicer-cli takes what the official programs take, and what their apps'
   screens choose.** On an engine update, list every setting each official
   command line reads from the flags (`m_extra_config`) and every choice the

@@ -343,5 +343,26 @@ PY
     fi
 fi
 
+# An automatic mode given on the command line stops the derivation: the same
+# call with --filament-map-mode "Auto For Flush" exports no Manual plate.
+set +e
+auto_output=$("$BINARY" --verbose "$WORKDIR/mapless-ok.3mf" --config "$WORKDIR/cross-map.json" \
+    --filament-map-mode "Auto For Flush" \
+    --slice 1 --outputdir "$WORKDIR/export-auto" --export-3mf routed.3mf 2>&1)
+auto_status=$?
+set -e
+if [ "$auto_status" -eq 0 ] && ! grep -q "Nozzle-map derivation: filament_map=" <<<"$auto_output" &&
+    python3 - "$WORKDIR/export-auto/routed.3mf" <<'PY'
+import sys, zipfile
+model = zipfile.ZipFile(sys.argv[1]).read("Metadata/model_settings.config").decode()
+plate = model[model.index("<plate>"):model.index("</plate>")]
+assert 'key="filament_map_mode" value="Manual"' not in plate, plate[:400]
+assert 'key="filament_map_mode" value="Nozzle Manual"' not in plate, plate[:400]
+PY
+then PASS=$((PASS + 1)); echo "PASS [export-automatic-mode-not-derived]"
+else FAIL=$((FAIL + 1)); echo "FAIL [export-automatic-mode-not-derived] exit=$auto_status"
+    echo "  output: $(tail -5 <<<"$auto_output")"
+fi
+
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

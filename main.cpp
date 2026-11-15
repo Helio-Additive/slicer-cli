@@ -10369,8 +10369,16 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // The selected plate already expresses physical routing when it carries
         // a diverse map. Do not re-derive that routing from the general
         // filament_nozzle_map fallback, which is for an otherwise-auto mapping.
+        // Nor when the command line names an automatic mode: the engine
+        // groups the filaments itself, and a manual map derived here would
+        // be the one an exported project states.
+        bool cli_automatic_mode = false;
+        if (cli_mode_given)
+            if (const auto* mode = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode"))
+                cli_automatic_mode = mode->value != Slic3r::FilamentMapMode::fmmManual &&
+                                     mode->value != Slic3r::FilamentMapMode::fmmNozzleManual;
         bool nozzle_mapping_derived =
-            explicit_plate_mapping_applied ? false : apply_explicit_nozzle_mapping(
+            (explicit_plate_mapping_applied || cli_automatic_mode) ? false : apply_explicit_nozzle_mapping(
                 config, explicit_config_supplied_nozzle_map, verbose);
 
         // The derived routing is the plate's (filament_map + its mode); every
