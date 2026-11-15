@@ -424,7 +424,7 @@ pub fn use_bridge_flow(pattern: InfillPattern) -> bool {
 // comparator equivalence `!(a<b) && !(b<a)` over Flow::operator<, which
 // compares mm3_per_mm() (Flow.hpp:88-90) — mirrored by the crate's
 // `Flow::partial_cmp`.
-fn append_flow_param(flow_params: &mut Vec<(Flow, Vec<ExPolygon>)>, flow: Flow, exp: &ExPolygon) {
+pub(crate) fn append_flow_param(flow_params: &mut Vec<(Flow, Vec<ExPolygon>)>, flow: Flow, exp: &ExPolygon) {
     use std::cmp::Ordering;
     let lt = |a: &Flow, b: &Flow| a.partial_cmp(b) == Some(Ordering::Less);
     // Fill.cpp:176-180
@@ -448,7 +448,7 @@ fn append_flow_param(flow_params: &mut Vec<(Flow, Vec<ExPolygon>)>, flow: Flow, 
 //
 // Same Vec-as-std::map modeling as `append_flow_param`, keyed by f32 with
 // the float's own `<` (exact comparison, as in C++).
-fn append_density_param(
+pub(crate) fn append_density_param(
     density_params: &mut Vec<(f32, Vec<ExPolygon>)>,
     density: f32,
     exp: &ExPolygon,

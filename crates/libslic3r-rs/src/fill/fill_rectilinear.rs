@@ -515,9 +515,33 @@ impl ExPolygonWithOffset {
         // variants grid the raster clip boundary to 1um — the last gridder in the
         // top-fill chain (line endpoints clip against these contours). Gated.
         let f1 = crate::faithful_gate("TOPFILL_FAITHFUL");
+        // RECT_OFFSET_FAITHFUL (on unless =0) — FillRectilinear.cpp:453-459, 481-483.
+        // The two offsets are `coord_t` parameters, so the `float(scale_(..))` the
+        // callers pass is truncated to an integer; then
+        //     polygons_outer = aoffset1 == 0 ? to_polygons(polygons_src)
+        //         : offset(polygons_src, float(aoffset1), jtMiter, miterLimit);
+        //     if (aoffset2 < 0)
+        //         polygons_inner = shrink(polygons_outer, float(aoffset1 - aoffset2), jtMiter, miterLimit);
+        // `offset(const ExPolygon&)` is the raw `expolygon_offset` paths
+        // (ClipperUtils.cpp:559-560), no union after it, and `shrink(const Polygons&)`
+        // is `offset(polygons, -delta)` (ClipperUtils.hpp:388-389): `shrink_paths`
+        // over those very paths (ClipperUtils.cpp:381-397, 413-414). =0 rebuilds
+        // expolygons with a union after each step and offsets them one by one.
+        let rof = crate::faithful_gate("RECT_OFFSET_FAITHFUL");
+        let (aoffset1, aoffset2) = if rof {
+            ((aoffset1 as Coord) as CoordF, (aoffset2 as Coord) as CoordF)
+        } else {
+            (aoffset1, aoffset2)
+        };
         let aoffset1_mm = aoffset1 / crate::SCALING_FACTOR;
         let polygons_outer = if aoffset1 == 0.0 {
             expolygon_to_polygons(&src)
+        } else if rof {
+            crate::clipper_utils::offset_expolygons_clib_raw_scaled(
+                std::slice::from_ref(&src),
+                (aoffset1 as f32) as f64,
+                OffsetJoinType::Miter,
+            )
         } else if f1 {
             let result = crate::clipper_utils::offset_expolygons_clib(
                 &[src.clone()],
@@ -536,7 +560,13 @@ impl ExPolygonWithOffset {
         // negative than aoffset1), so we offset polygons_outer inward by (aoffset1 - aoffset2).
         let mut polygons_inner = if aoffset2 < 0.0 {
             let shrink_amount = (aoffset1 - aoffset2) / crate::SCALING_FACTOR;
-            if f1 {
+            if rof {
+                crate::clipper_utils::offset_polygons_clib(
+                    &polygons_outer,
+                    -(((aoffset1 - aoffset2) as f32) as f64),
+                    OffsetJoinType::Miter,
+                )
+            } else if f1 {
                 // polygons_outer is a FLAT orientation-tagged set (contours CCW +
                 // holes CW); rebuild proper nested ExPolygons full-res first so the
                 // clib shrink offsets holes the right way (native shrink() feeds the
@@ -720,6 +750,42 @@ impl Default for FillRectilinearParams {
             consistent_pattern: false,
         }
     }
+}
+
+/// What `FillRectilinear::fill_surface_by_lines` reads of the filler and of
+/// `FillParams` for the patterns that are laid consistently between layers
+/// (FillZigZag, FillCrossZag, FillLockedZag: FillRectilinear.hpp:160-187), next
+/// to [`FillRectilinearParams`]. The default is what every other filler has.
+#[derive(Debug, Clone, Default)]
+pub struct FillRectilinearZag {
+    /// `Fill::bounding_box` (FillBase.hpp:137), the bounding box of the object
+    /// (Fill.cpp:699 `f->set_bounding_box(bbox)`), which
+    /// `extended_object_bounding_box()` grows (FillRectilinear.cpp:2815-2823).
+    /// Read only where `FillRectilinearParams::consistent_pattern` is set.
+    pub object_bounding_box: Option<BoundingBox>,
+    /// `FillParams::horiz_move` (FillBase.hpp:96), scaled: the shift of the
+    /// vertical lines of a cross zag from layer to layer (Fill.cpp:817-821).
+    pub horiz_move: f32,
+    /// `FillParams::symmetric_y_axis` (FillBase.hpp:98) where
+    /// `FillParams::symmetric_infill_y_axis` is set (Fill.cpp:823-826, 838-841).
+    pub symmetric_y_axis: Option<Coord>,
+}
+
+/// FillRectilinear.cpp:2815-2823 — `BoundingBox FillRectilinear::extended_object_bounding_box() const`:
+/// the bounding box of the whole object that covers any rotation of every layer.
+pub fn extended_object_bounding_box(bounding_box: &BoundingBox) -> BoundingBox {
+    // FillRectilinear.cpp:2816-2818
+    let mut out = *bounding_box;
+    out.merge_point(Point::new(out.min.y, out.min.x));
+    out.merge_point(Point::new(out.max.y, out.max.x));
+    // FillRectilinear.cpp:2820-2822 — `return out.scaled(sqrt(2.));`.
+    // `BoundingBoxBase<Point>::scale` is `min *= factor; max *= factor`
+    // (BoundingBox.cpp:63-68) and `Point::operator*=(const double&)` truncates
+    // each product to `coord_t` (Point.hpp:199).
+    let factor = 2.0f64.sqrt();
+    out.min = Point::new((out.min.x as f64 * factor) as Coord, (out.min.y as f64 * factor) as Coord);
+    out.max = Point::new((out.max.x as f64 * factor) as Coord, (out.max.y as f64 * factor) as Coord);
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -2190,6 +2256,27 @@ pub fn fill_surface_by_lines(
     overlap: CoordF,
     params: &FillRectilinearParams,
 ) -> Vec<Polyline> {
+    fill_surface_by_lines_zag(
+        expolygon,
+        spacing,
+        angle,
+        overlap,
+        params,
+        &FillRectilinearZag::default(),
+    )
+}
+
+/// [`fill_surface_by_lines`] with the members the zig zag fillers add
+/// (FillRectilinear.cpp:2825-2990 read with `has_consistent_pattern()`,
+/// `params.horiz_move` and `params.symmetric_infill_y_axis`).
+pub fn fill_surface_by_lines_zag(
+    expolygon: &ExPolygon,
+    spacing: CoordF,
+    angle: f64,
+    overlap: CoordF,
+    params: &FillRectilinearParams,
+    zag: &FillRectilinearZag,
+) -> Vec<Polyline> {
     let mut polylines_out = Vec::new();
 
     const INFILL_OVERLAP_OVER_SPACING: f64 = 0.45;
@@ -2201,12 +2288,26 @@ pub fn fill_surface_by_lines(
     // mult/round domain drifts the raster clip boundary sub-unit (the Top
     // endpoint last-digit class, R299/R300).
     let tf = crate::faithful_gate("TOPFILL_FAITHFUL") && std::env::var("RASTER_QUANT").is_ok();
-    let line_spacing = if tf {
+    // RECT_OFFSET_FAITHFUL (on unless =0) — FillRectilinear.cpp:2842-2849:
+    //     coord_t line_spacing = coord_t(scale_(this->spacing) / params.density);
+    //     float(scale_(this->overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * this->spacing)),
+    //     float(scale_(this->overlap - 0.5f * this->spacing))
+    // `scale_` divides by 0.00001 and nothing rounds: the two offsets go through
+    // `float` into `coord_t` parameters (FillRectilinear.cpp:456-459), which
+    // truncates them. INFILL_OVERLAP_OVER_SPACING is the float 0.45f.
+    let rof = crate::faithful_gate("RECT_OFFSET_FAITHFUL");
+    let line_spacing = if tf || rof {
         ((spacing / 0.00001) / params.density) as Coord
     } else {
         (spacing * crate::SCALING_FACTOR / params.density) as Coord
     };
-    let (aoffset1, aoffset2): (CoordF, CoordF) = if tf {
+    let (aoffset1, aoffset2): (CoordF, CoordF) = if rof {
+        let c = 0.5 - (0.45f32 as f64);
+        (
+            ((((-c).mul_add(spacing, overlap) / 0.00001) as f32) as Coord) as CoordF,
+            ((((-0.5f64).mul_add(spacing, overlap) / 0.00001) as f32) as Coord) as CoordF,
+        )
+    } else if tf {
         let c = 0.5 - (0.45f32 as f64);
         (
             (((overlap - c * spacing) / 0.00001) as f32) as f64,
@@ -2228,11 +2329,20 @@ pub fn fill_surface_by_lines(
 
     // Bounding box for vertical line placement
     let bbox_src = poly_with_offset.bounding_box_src();
-    let mut bbox = bbox_src;
+    // FillRectilinear.cpp:2856-2859 — for infill that needs to be consistent
+    // between layers (like Zig Zag), the bounding box of the whole object is
+    // used to match vertical lines between layers:
+    //     BoundingBox bounding_box = this->has_consistent_pattern() ?
+    //         this->extended_object_bounding_box() : bounding_box_src;
+    let mut bbox = match (params.consistent_pattern, zag.object_bounding_box.as_ref()) {
+        (true, Some(object_bbox)) => extended_object_bounding_box(object_bbox),
+        _ => bbox_src,
+    };
 
     // Adjust spacing for solid fill
     let line_spacing = if params.full_infill && !params.dont_adjust {
-        let ls = adjust_solid_spacing(bbox.width(), line_spacing);
+        // FillRectilinear.cpp:2863 — `bounding_box_src.size().x()`.
+        let ls = adjust_solid_spacing(bbox_src.width(), line_spacing);
         ADJUSTED_SPACING_MM.with(|c| c.set(Some(ls as f64 / crate::SCALING_FACTOR)));
         ls
     } else {
@@ -2255,11 +2365,13 @@ pub fn fill_surface_by_lines(
     }
 
     // Number of vertical lines
-    let n_vlines = ((bbox.max.x - bbox.min.x + line_spacing - 1) / line_spacing).max(0) as usize;
+    let mut n_vlines = ((bbox.max.x - bbox.min.x + line_spacing - 1) / line_spacing).max(0) as usize;
     let mut x0 = bbox.min.x;
     if params.full_infill {
         x0 += (line_spacing + SCALED_EPSILON) / 2;
     }
+    // RECT_HORIZ_MOVE (on unless =0) — FillRectilinear.cpp:2885-2891.
+    rect_horiz_move(zag.horiz_move, line_spacing, &mut x0, &mut n_vlines);
 
     if n_vlines == 0 {
         return polylines_out;
@@ -2313,12 +2425,43 @@ pub fn fill_surface_by_lines(
         // collapse distinct scaled points). FillRectilinear.cpp:2971-2974
         polyline.rotate(angle);
         crate::multi_point::remove_duplicate_points(polyline.points_mut());
+        // FillRectilinear.cpp:2977-2980 — get origin direction infill:
+        //     if (params.symmetric_infill_y_axis)
+        //         it->symmetric_y(params.symmetric_y_axis);
+        if let Some(symmetric_y_axis) = zag.symmetric_y_axis {
+            crate::multi_point::symmetric_y(polyline.points_mut(), symmetric_y_axis);
+        }
     }
 
     // Filter out degenerate polylines
     polylines_out.retain(|p| p.points().len() >= 2);
 
     polylines_out
+}
+
+/// FillRectilinear.cpp:2885-2891 — the shift of the first vertical line:
+///     int gap_line = params.horiz_move / line_spacing;
+///     if (gap_line % 2 == 0) {
+///         x0 += params.horiz_move - gap_line * line_spacing;
+///     } else {
+///         x0 += params.horiz_move - (gap_line - 1) * line_spacing;
+///         n_vlines += 1;
+///     }
+/// `horiz_move` is a float and `line_spacing` and `x0` are `coord_t`: the
+/// quotient is taken in float and truncated, and `x0 +=` adds in float, so `x0`
+/// goes through a float also where `horiz_move` is 0. RECT_HORIZ_MOVE=0 leaves
+/// `x0` and `n_vlines` as they are.
+fn rect_horiz_move(horiz_move: f32, line_spacing: Coord, x0: &mut Coord, n_vlines: &mut usize) {
+    if !crate::faithful_gate("RECT_HORIZ_MOVE") {
+        return;
+    }
+    let gap_line = (horiz_move / line_spacing as f32) as i32;
+    if gap_line % 2 == 0 {
+        *x0 = (*x0 as f32 + (horiz_move - (gap_line as i64 * line_spacing) as f32)) as Coord;
+    } else {
+        *x0 = (*x0 as f32 + (horiz_move - ((gap_line - 1) as i64 * line_spacing) as f32)) as Coord;
+        *n_vlines += 1;
+    }
 }
 
 /// Adjust line spacing for solid infill to fill the bounding box exactly.
@@ -2412,12 +2555,34 @@ pub fn generate_fill_rectilinear(
         // RECT_ANGLE_F32=0 sums the angle in double.
         let half_pi = std::f64::consts::FRAC_PI_2 as f32;
         let mut out_angle: f32 = (std::f64::consts::PI * config.angle / 180.0) as f32;
+        // Fill.cpp:704-709 — the zig zag turns from layer pair to layer pair:
+        //     if (surface_fill.params.pattern == ipZigZag) {
+        //         if (f->layer_id % 2 == 0)
+        //             f->angle -= surface_fill.params.infill_rotate_step * (f->layer_id / 2);
+        //         else
+        //             f->angle += surface_fill.params.infill_rotate_step * (f->layer_id / 2);
+        //     }
+        // in float, the product and the sum in one expression.
+        if let Some(infill_rotate_step) = config.zigzag_rotate_step {
+            let half_layers = (layer_index / 2) as f32;
+            out_angle = if layer_index % 2 == 0 {
+                (-infill_rotate_step).mul_add(half_layers, out_angle)
+            } else {
+                infill_rotate_step.mul_add(half_layers, out_angle)
+            };
+        }
         if crate::faithful_gate("FILL_BRIDGE_ANGLE") && used_bridge {
             out_angle = config.bridge_angle as f32;
         } else {
             out_angle += if layer_index & 1 == 1 { half_pi } else { 0.0f32 };
         }
         out_angle += half_pi;
+        // FillRectilinear.cpp:2837-2838:
+        //     if (params.locked_zag)
+        //         rotate_vector.first += float(M_PI/2.);
+        if config.locked_zag {
+            out_angle += half_pi;
+        }
         out_angle as f64
     } else if crate::faithful_gate("FILL_BRIDGE_ANGLE") && used_bridge {
         config.bridge_angle + std::f64::consts::FRAC_PI_2
@@ -2460,16 +2625,24 @@ pub fn generate_fill_rectilinear(
         dont_adjust: config.dont_adjust,
         monotonic: false,
         link_max_length: config.link_max_length,
-        consistent_pattern: false,
+        // FillRectilinear.hpp:165,174,187 — `has_consistent_pattern()` of
+        // FillZigZag, FillCrossZag and FillLockedZag.
+        consistent_pattern: config.consistent_pattern,
+    };
+    let zag = FillRectilinearZag {
+        object_bounding_box: config.object_bounding_box,
+        horiz_move: config.horiz_move,
+        symmetric_y_axis: config.symmetric_y_axis,
     };
 
     for expoly in fill_area {
-        let polylines = fill_surface_by_lines(
+        let polylines = fill_surface_by_lines_zag(
             expoly,
             config.extrusion_width,
             angle_rad,
             config.overlap,
             &params,
+            &zag,
         );
 
         for polyline in polylines {
@@ -2500,6 +2673,167 @@ pub fn generate_fill_rectilinear(
     }
 
     paths
+}
+
+/// `pattern->fill_surface(&surface, params)` of FillLockedZag's two nested
+/// fillers (FillRectilinear.cpp:3936-3937, 3961-3962): a filler made by
+/// `Fill::new_from_type` for the skin or the skeleton pattern, with the locked
+/// zag's own members (`copy_fill_data`, FillBase.hpp:176-188) and its params
+/// with another density. `None` for a pattern this entry cannot lay.
+// FIDELITY-NOTE: `Fill::new_from_type` takes any infill pattern; the fillers
+// this function stands for are FillRectilinear, FillZigZag and FillCrossZag
+// (FillBase.cpp:41, 62-63), the ones `generate_fill_rectilinear` lays. With
+// `params.conformal` set the skin goes through FillConformal
+// (FillRectilinear.cpp:3077-3081), which is not taken here.
+fn locked_zag_pattern_fill(
+    pattern: crate::print_config::InfillPattern,
+    config: &InfillConfig,
+    layer_index: usize,
+    density: f32,
+    locked_zag: bool,
+    expolygons: &[ExPolygon],
+    out: &mut Vec<Polyline>,
+) -> Option<()> {
+    use crate::print_config::InfillPattern as P;
+    let consistent_pattern = match pattern {
+        P::Rectilinear => false,
+        // FillRectilinear.hpp:165, 174 — `has_consistent_pattern()`.
+        P::ZigZag | P::CrossZag => true,
+        _ => return None,
+    };
+    let mut cfg = config.clone();
+    cfg.pattern = super::InfillPattern::Rectilinear;
+    cfg.density = density as f64;
+    cfg.consistent_pattern = consistent_pattern;
+    // FillRectilinear.cpp:3903-3904, 3948-3949:
+    //     if (this->skeleton_pattern != ipCrossZag) params.horiz_move = 0;
+    if pattern != P::CrossZag {
+        cfg.horiz_move = 0.0;
+    }
+    cfg.locked_zag = locked_zag;
+    cfg.zigzag_rotate_step = None;
+    // for (ExPolygon &exp : exps) { surface.expolygon = exp;
+    //     Polylines lines = pattern->fill_surface(&surface, params); ... }
+    for exp in expolygons {
+        for path in generate_fill_rectilinear(std::slice::from_ref(exp), &cfg, layer_index, false) {
+            match path {
+                InfillPath::Line(pl) => out.push(pl),
+                InfillPath::Loop(poly) => out.push(poly.split_at_first_point()),
+            }
+        }
+    }
+    Some(())
+}
+
+/// FillRectilinear.cpp:3969-4004 — `void FillLockedZag::fill_surface_locked_zag(
+/// const Surface *surface, const FillParams &params,
+/// std::vector<std::pair<Polylines, Flow>> &multi_width_polyline)`, with
+/// `get_skin_and_skeleton_area` (3875-3892), `generate_skeleton_pattern`
+/// (3894-3940) and `generate_skin_pattern` (3942-3967).
+///
+/// `config` carries the locked zag filler's members and its FillParams
+/// (`horiz_move`, the symmetric axis, the object's bounding box); `expolygon` is
+/// `surface->expolygon`. `None` where a nested pattern cannot be laid.
+pub fn fill_surface_locked_zag(
+    lock_param: &super::LockRegionParam,
+    skin_pattern: crate::print_config::InfillPattern,
+    skeleton_pattern: crate::print_config::InfillPattern,
+    expolygon: &ExPolygon,
+    config: &InfillConfig,
+    layer_index: usize,
+) -> Option<Vec<(Vec<Polyline>, crate::flow::Flow)>> {
+    use crate::clipper_utils::{
+        difference_clib, intersection_clib, intersection_pl, offset_expolygons_clib_scaled,
+        union_ex_clib, union_safety_offset_ex_expolygons,
+    };
+    let surface_expolygon = std::slice::from_ref(expolygon);
+
+    // FillRectilinear.cpp:3875-3892 — get_skin_and_skeleton_area.
+    let mut skin_areas = intersection_clib(surface_expolygon, &lock_param.outlook);
+    let left = difference_clib(surface_expolygon, &lock_param.outlook);
+    let mut skeleton_areas: Vec<ExPolygon> = Vec::new();
+    // skin and skeleton areas are separated by skin_depths_params
+    for (skin_depth, regions) in &lock_param.skin_depths_params {
+        let exps = offset_expolygons_clib_scaled(&left, -(*skin_depth as f64), OffsetJoinType::Miter);
+        let depth_region = union_safety_offset_ex_expolygons(regions);
+        let res = intersection_clib(&exps, &depth_region);
+        skeleton_areas.extend(res);
+    }
+    skeleton_areas = union_safety_offset_ex_expolygons(&skeleton_areas);
+    // skin = union_ex(skin, diff_ex(surface.expolygon, skeleton));
+    skin_areas.extend(difference_clib(surface_expolygon, &skeleton_areas));
+    let skin_areas = union_ex_clib(&crate::geometry::to_polygons(&skin_areas), 1);
+
+    let mut multi_width_polyline: Vec<(Vec<Polyline>, crate::flow::Flow)> = Vec::new();
+    // FillRectilinear.cpp:3982-3992 — generate_for_different_flow.
+    let mut generate_for_different_flow =
+        |flow_params: &[(crate::flow::Flow, Vec<ExPolygon>)], polylines: &[Polyline]| {
+            for (flow, regions) in flow_params {
+                let region_exp = union_safety_offset_ex_expolygons(regions);
+                let polys = intersection_pl(polylines, &region_exp);
+                multi_width_polyline.push((polys, flow.clone()));
+            }
+        };
+
+    // FillRectilinear.cpp:3894-3940 — generate_skeleton_pattern. `params` keeps
+    // `locked_zag`; `params.conformal = false`.
+    let mut skeleton_lines: Vec<Polyline> = Vec::new();
+    {
+        // union exps (3906-3912)
+        let locked_depths: Vec<(f32, Vec<ExPolygon>)> = lock_param
+            .locked_depths_params
+            .iter()
+            .map(|(depth, regions)| (*depth, union_safety_offset_ex_expolygons(regions)))
+            .collect();
+        for (density, regions) in &lock_param.skeleton_density_params {
+            // remove extra areas
+            let exps = intersection_clib(&union_safety_offset_ex_expolygons(regions), &skeleton_areas);
+            // add offset
+            let mut exps_offset: Vec<ExPolygon> = Vec::new();
+            for (lock_depth, depth_regions) in &locked_depths {
+                // get diff depths areas
+                let res = intersection_clib(&exps, depth_regions);
+                let res_offset =
+                    offset_expolygons_clib_scaled(&res, *lock_depth as f64, OffsetJoinType::Miter);
+                // remove extra areas
+                let res_offset = intersection_clib(&res_offset, surface_expolygon);
+                exps_offset.extend(res_offset);
+            }
+            let exps_offset = union_safety_offset_ex_expolygons(&exps_offset);
+            locked_zag_pattern_fill(
+                skeleton_pattern,
+                config,
+                layer_index,
+                *density,
+                true,
+                &exps_offset,
+                &mut skeleton_lines,
+            )?;
+        }
+    }
+    // set skeleton flow
+    generate_for_different_flow(&lock_param.skeleton_flow_params, &skeleton_lines);
+
+    // FillRectilinear.cpp:3942-3967 — generate_skin_pattern:
+    // `params.locked_zag = false`.
+    let mut skin_lines: Vec<Polyline> = Vec::new();
+    for (density, regions) in &lock_param.skin_density_params {
+        let region_exp = union_safety_offset_ex_expolygons(regions);
+        let exps = intersection_clib(&region_exp, &skin_areas);
+        let exps = union_safety_offset_ex_expolygons(&exps);
+        locked_zag_pattern_fill(
+            skin_pattern,
+            config,
+            layer_index,
+            *density,
+            false,
+            &exps,
+            &mut skin_lines,
+        )?;
+    }
+    generate_for_different_flow(&lock_param.skin_flow_params, &skin_lines);
+
+    Some(multi_width_polyline)
 }
 
 /// Faithful FillGrid raster for the emitter-pair path: emit BOTH sweep
@@ -4586,12 +4920,26 @@ pub fn fill_surface_by_lines_monotonic(
 
     // R301 (TOPFILL_FAITHFUL): native domains — see fill_surface_by_lines.
     let tf = crate::faithful_gate("TOPFILL_FAITHFUL") && std::env::var("RASTER_QUANT").is_ok();
-    let line_spacing = if tf {
+    // RECT_OFFSET_FAITHFUL (on unless =0) — FillRectilinear.cpp:2842-2849:
+    //     coord_t line_spacing = coord_t(scale_(this->spacing) / params.density);
+    //     float(scale_(this->overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * this->spacing)),
+    //     float(scale_(this->overlap - 0.5f * this->spacing))
+    // `scale_` divides by 0.00001 and nothing rounds: the two offsets go through
+    // `float` into `coord_t` parameters (FillRectilinear.cpp:456-459), which
+    // truncates them. INFILL_OVERLAP_OVER_SPACING is the float 0.45f.
+    let rof = crate::faithful_gate("RECT_OFFSET_FAITHFUL");
+    let line_spacing = if tf || rof {
         ((spacing / 0.00001) / params.density) as Coord
     } else {
         (spacing * crate::SCALING_FACTOR / params.density) as Coord
     };
-    let (aoffset1, aoffset2): (CoordF, CoordF) = if tf {
+    let (aoffset1, aoffset2): (CoordF, CoordF) = if rof {
+        let c = 0.5 - (0.45f32 as f64);
+        (
+            ((((-c).mul_add(spacing, overlap) / 0.00001) as f32) as Coord) as CoordF,
+            ((((-0.5f64).mul_add(spacing, overlap) / 0.00001) as f32) as Coord) as CoordF,
+        )
+    } else if tf {
         let c = 0.5 - (0.45f32 as f64);
         (
             (((overlap - c * spacing) / 0.00001) as f32) as f64,
@@ -4637,12 +4985,15 @@ pub fn fill_surface_by_lines_monotonic(
         return polylines_out;
     }
 
-    let n_vlines =
+    let mut n_vlines =
         ((bbox_src.max.x - bbox_src.min.x + line_spacing - 1) / line_spacing).max(0) as usize;
     let mut x0 = bbox_src.min.x;
     if params.full_infill {
         x0 += (line_spacing + SCALED_EPSILON) / 2;
     }
+    // RECT_HORIZ_MOVE (on unless =0) — FillRectilinear.cpp:2885-2891; the
+    // monotonic fillers leave `params.horiz_move` at 0.
+    rect_horiz_move(0.0, line_spacing, &mut x0, &mut n_vlines);
 
     if n_vlines == 0 {
         return polylines_out;

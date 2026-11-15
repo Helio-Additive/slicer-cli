@@ -1863,8 +1863,15 @@ impl PrintObject {
             .as_ref()
             .map(|regions| regions.all_regions.clone())
             .unwrap_or_default();
+        // Print.hpp:442 — `bounding_box()`, which Layer::make_fills hands its
+        // fillers (Fill.cpp:599, 699).
+        let object_bounding_box = self
+            .mesh
+            .as_ref()
+            .and_then(crate::layer::print_object_bounding_box);
         for layer in &mut self.layers {
             layer.wire_config_hierarchy(&object_config, &print_config, &all_regions);
+            layer.object_bounding_box = object_bounding_box;
         }
         for layer in &mut self.support_layers {
             layer.wire_config_hierarchy(&object_config, &print_config, &all_regions);

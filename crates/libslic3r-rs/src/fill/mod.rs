@@ -150,6 +150,24 @@ pub struct InfillConfig {
     /// (FillRectilinear.cpp:3247): top-surface MonotonicLine keeps the nominal
     /// flow spacing and takes the align_to_grid branch.
     pub dont_adjust: bool,
+    /// `has_consistent_pattern()` of the filler (FillRectilinear.hpp:165,174,187:
+    /// FillZigZag, FillCrossZag, FillLockedZag): the vertical lines are laid over
+    /// the bounding box of the whole object and traversed in one direction.
+    pub consistent_pattern: bool,
+    /// `Fill::bounding_box` (Fill.cpp:699 `f->set_bounding_box(bbox)`, the
+    /// object's `bounding_box()`), carried for the consistent patterns.
+    pub object_bounding_box: Option<crate::geometry::BoundingBox>,
+    /// `FillParams::horiz_move` (Fill.cpp:817-821), scaled.
+    pub horiz_move: f32,
+    /// `SurfaceFillParams::infill_rotate_step` of an ipZigZag surface, in radians
+    /// (Fill.cpp:259-260, 704-709).
+    pub zigzag_rotate_step: Option<f32>,
+    /// `FillParams::symmetric_y_axis` where `symmetric_infill_y_axis` is set
+    /// (Fill.cpp:823-826, 838-841).
+    pub symmetric_y_axis: Option<Coord>,
+    /// `FillParams::locked_zag` (FillBase.hpp:99; Fill.cpp:812-813): the lines
+    /// are turned by a further quarter (FillRectilinear.cpp:2837-2838).
+    pub locked_zag: bool,
 }
 
 impl Default for InfillConfig {
@@ -166,6 +184,12 @@ impl Default for InfillConfig {
             connect_infill: true,
             link_max_length: 0,
             dont_adjust: false,
+            consistent_pattern: false,
+            object_bounding_box: None,
+            horiz_move: 0.0,
+            zigzag_rotate_step: None,
+            symmetric_y_axis: None,
+            locked_zag: false,
         }
     }
 }
@@ -337,6 +361,12 @@ pub struct SurfaceFillParams {
     /// Fill.cpp:31
     /// C++: InfillPattern skeleton_pattern
     pub skeleton_pattern: InfillPattern,
+
+    /// Fill.cpp:239 — `params.pattern = region_config.sparse_infill_pattern.value`
+    /// where the surface keeps it, that is where it is not solid (Fill.cpp:264-282
+    /// replace the pattern of a solid surface). `pattern` above cannot tell
+    /// ipZigZag, ipCrossZag and ipLockedZag from ipRectilinear.
+    pub sparse_pattern: Option<crate::print_config::InfillPattern>,
 
     /// Fill.cpp:35
     /// C++: coordf_t spacing
@@ -618,7 +648,7 @@ pub static GFPROF_ISNARROW_CALLS: std::sync::atomic::AtomicUsize = std::sync::at
 pub fn group_fills(
     layer: &crate::layer::Layer,
     lower_internal_areas: &[ExPolygon],
-    _lock_param: &mut LockRegionParam,
+    lock_param: &mut LockRegionParam,
 ) -> Result<Vec<SurfaceFill>> {
     // TOPDBG (diagnostics only, env-gated): Top state at the entry of the
     // make_fills surface grouping (last stop before extrusion emission).
@@ -973,9 +1003,50 @@ pub fn group_fills(
                 conformal_stagger = crate::print_config::ConformalStagger::None;
             }
 
+            // Fill.cpp:256-262:
+            //     if (params.pattern == ipCrossZag || params.pattern == ipLockedZag) {
+            //         params.infill_shift_step       = scale_(region_config.infill_shift_step);
+            //         params.symmetric_infill_y_axis = region_config.symmetric_infill_y_axis;
+            //     } else if (params.pattern == ipZigZag) {
+            //         params.infill_rotate_step      = region_config.infill_rotate_step * M_PI / 360;
+            //         params.symmetric_infill_y_axis = region_config.symmetric_infill_y_axis;
+            //     }
+            // `params.pattern` is still the sparse infill pattern there, and the
+            // three members are floats and a bool. FILL_CROSSZAG_SHIFT=0,
+            // FILL_ZIGZAG_ROTATE=0 and FILL_ZAG_SYMMETRIC=0 leave each at its default.
+            let mut infill_shift_step = 0.0f32;
+            let mut infill_rotate_step = 0.0f32;
+            let mut symmetric_infill_y_axis = false;
+            match region_config.fill_pattern {
+                crate::print_config::InfillPattern::CrossZag
+                | crate::print_config::InfillPattern::LockedZag => {
+                    if crate::faithful_gate("FILL_CROSSZAG_SHIFT") {
+                        infill_shift_step = (region_config.infill_shift_step / 0.00001) as f32;
+                    }
+                    if crate::faithful_gate("FILL_ZAG_SYMMETRIC") {
+                        symmetric_infill_y_axis = region_config.symmetric_infill_y_axis;
+                    }
+                }
+                crate::print_config::InfillPattern::ZigZag => {
+                    if crate::faithful_gate("FILL_ZIGZAG_ROTATE") {
+                        infill_rotate_step = (region_config.infill_rotate_step
+                            * std::f64::consts::PI
+                            / 360.0) as f32;
+                    }
+                    if crate::faithful_gate("FILL_ZAG_SYMMETRIC") {
+                        symmetric_infill_y_axis = region_config.symmetric_infill_y_axis;
+                    }
+                }
+                _ => {}
+            }
             let params = SurfaceFillParams {
                 extruder: extruder as u32,
                 pattern,
+                sparse_pattern: if surface.is_solid() {
+                    None
+                } else {
+                    Some(region_config.fill_pattern)
+                },
                 skin_pattern: region_config.top_fill_pattern.into(),
                 skeleton_pattern: region_config.solid_fill_pattern.into(),
                 spacing,
@@ -1011,9 +1082,9 @@ pub fn group_fills(
                 sparse_infill_speed: region_config.infill_speed as f32,
                 top_surface_speed: region_config.top_solid_infill_speed as f32,
                 solid_infill_speed: region_config.solid_infill_speed as f32,
-                infill_shift_step: 0.0,
-                infill_rotate_step: 0.0,
-                symmetric_infill_y_axis: false,
+                infill_shift_step,
+                infill_rotate_step,
+                symmetric_infill_y_axis,
                 lattice_angle_1: 0.0,
                 lattice_angle_2: 0.0,
                 // Fill.cpp:240
@@ -1039,6 +1110,72 @@ pub fn group_fills(
             //      region_to_surface_params[region_id][...] = &(*it_params);
             // The `idx` field is excluded from SurfaceFillParams ordering, so the set
             // dedups on the geometric/extrusion params only — matching C++.
+            // Fill.cpp:371-402 — get locked region param:
+            //     if (params.pattern == ipLockedZag) { ... }
+            // the skin and the skeleton flow (the surface's own on a bridge), and
+            // the skin density, skin depth, lock depth and skeleton density, each
+            // with the surface's expolygon. FILL_LOCKED_ZAG=0 collects nothing.
+            if params.sparse_pattern == Some(crate::print_config::InfillPattern::LockedZag)
+                && crate::faithful_gate("FILL_LOCKED_ZAG")
+            {
+                let nozzle_diameter = layer.object().print().config().nozzle_diameter;
+                // Fill.cpp:377-380, 384-387 — Flow::new_from_config_width(extrusion_role,
+                // skin_infill_line_width / skeleton_infill_line_width, ..,
+                // float((surface.thickness == -1) ? layer.height : surface.thickness), ..)
+                let skin_flow = if params.bridge {
+                    params.flow.clone()
+                } else {
+                    Flow::new_from_config_width(
+                        flow_role,
+                        region_config.skin_infill_line_width,
+                        nozzle_diameter,
+                        layer_height,
+                    )?
+                };
+                // Fill.cpp:382
+                fill::append_flow_param(&mut lock_param.skin_flow_params, skin_flow, &surface.expolygon);
+                let skeleton_flow = if params.bridge {
+                    params.flow.clone()
+                } else {
+                    Flow::new_from_config_width(
+                        flow_role,
+                        region_config.skeleton_infill_line_width,
+                        nozzle_diameter,
+                        layer_height,
+                    )?
+                };
+                // Fill.cpp:389
+                fill::append_flow_param(
+                    &mut lock_param.skeleton_flow_params,
+                    skeleton_flow,
+                    &surface.expolygon,
+                );
+                // Fill.cpp:392-396 — `float(0.01 * skin_infill_density)`; the depths
+                // are `scale_(..)` doubles narrowed to the map's float key.
+                let skin_density = (0.01 * region_config.skin_infill_density) as f32;
+                fill::append_density_param(
+                    &mut lock_param.skin_density_params,
+                    skin_density,
+                    &surface.expolygon,
+                );
+                fill::append_density_param(
+                    &mut lock_param.skin_depths_params,
+                    (region_config.skin_infill_depth / 0.00001) as f32,
+                    &surface.expolygon,
+                );
+                fill::append_density_param(
+                    &mut lock_param.locked_depths_params,
+                    (region_config.infill_lock_depth / 0.00001) as f32,
+                    &surface.expolygon,
+                );
+                // Fill.cpp:400-401
+                let skeleton_density = (0.01 * region_config.skeleton_infill_density) as f32;
+                fill::append_density_param(
+                    &mut lock_param.skeleton_density_params,
+                    skeleton_density,
+                    &surface.expolygon,
+                );
+            }
             set_surface_params.insert(params.clone());
             region_to_surface_params[region_id][surface_idx] = Some(params);
         }
@@ -1674,6 +1811,10 @@ pub struct FillParams {
     /// Move infill to get the cross zag pattern (scaled).
     /// FillBase.hpp:96 — `float horiz_move{0.0}`.
     pub horiz_move: f32,
+    /// FillBase.hpp:97 — `bool symmetric_infill_y_axis{false}`.
+    pub symmetric_infill_y_axis: bool,
+    /// FillBase.hpp:98 — `coord_t symmetric_y_axis{0}`.
+    pub symmetric_y_axis: Coord,
     /// FillBase.hpp:100 — `bool conformal{false}`.
     pub conformal: bool,
     /// FillBase.hpp:101 — `ConformalStagger conformal_stagger{ConformalStagger::None}`.
@@ -1715,6 +1856,8 @@ impl FillParams {
             dont_sort: false,
             pattern: crate::print_config::InfillPattern::Rectilinear,
             horiz_move: 0.0,
+            symmetric_infill_y_axis: false,
+            symmetric_y_axis: 0,
             conformal: false,
             conformal_stagger: crate::print_config::ConformalStagger::None,
             conformal_link_keep_layers: 1,

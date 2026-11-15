@@ -74,10 +74,9 @@ pub fn fillprof_report() {
 /// 62-63). `conformal_infill` is only set for surfaces that are not solid
 /// (Fill.cpp:240), whose pattern is the region's sparse infill pattern
 /// (Fill.cpp:239), `config_pattern` here.
-// FIDELITY-NOTE: blocked on FillLockedZag::fill_surface_locked_zag
-// (FillRectilinear.cpp:3969): the skin pattern of ipLockedZag also goes through
-// FillRectilinear::fill_surface with `conformal` set (FillRectilinear.cpp:3941-3967);
-// this driver has no skin / skeleton split, so a locked-zag region keeps its lines.
+// FIDELITY-NOTE: the skin pattern of ipLockedZag also goes through
+// FillRectilinear::fill_surface with `conformal` set (FillRectilinear.cpp:3942-3967);
+// `fill_surface_locked_zag` of this crate lays the skin as lines.
 #[allow(clippy::too_many_arguments)]
 fn conformal_fill_surface(
     config_pattern: crate::print_config::InfillPattern,
@@ -91,6 +90,7 @@ fn conformal_fill_surface(
     link_max_length: crate::Coord,
     resolution: f64,
     using_internal_flow: Option<bool>,
+    zag: &ZagFill,
 ) -> Option<Vec<crate::geometry::Polyline>> {
     if !params.conformal_infill {
         return None;
@@ -115,6 +115,16 @@ fn conformal_fill_surface(
     // f->angle is in radians (Fill.cpp:253, deg2rad of infill_direction);
     // SurfaceFillParams::angle of this crate is in degrees.
     f.angle = (std::f64::consts::PI * params.angle as f64 / 180.0) as f32;
+    // Fill.cpp:704-709 — `f->angle -=` / `+= infill_rotate_step * (f->layer_id / 2)`
+    // for ipZigZag, in make_fills only.
+    if let Some(infill_rotate_step) = zag.zigzag_rotate_step {
+        let half_layers = (layer_id / 2) as f32;
+        f.angle = if layer_id % 2 == 0 {
+            (-infill_rotate_step).mul_add(half_layers, f.angle)
+        } else {
+            infill_rotate_step.mul_add(half_layers, f.angle)
+        };
+    }
     // Fill.cpp:787-789
     f.link_max_length = link_max_length;
     f.loop_clipping = crate::scale(params.flow.nozzle_diameter() * 0.15);
@@ -147,10 +157,15 @@ fn conformal_fill_surface(
     fp.conformal_pole = params.conformal_pole;
     fp.conformal_ray_count = params.conformal_ray_count;
     fp.conformal_hub_radius = params.conformal_hub_radius;
-    // FIDELITY-NOTE: Fill.cpp:815-822 sets `params.horiz_move` for ipCrossZag from
-    // `infill_shift_step`; the drivers of this crate do not carry it
-    // (SurfaceFillParams::infill_shift_step is 0), so the radial fan of a cross-zag
-    // region is not shifted from layer to layer.
+    // Fill.cpp:817-821 — `params.horiz_move` of an ipCrossZag surface, in
+    // make_fills only (0 with FILL_ZAG_CONSISTENT=0 or FILL_CROSSZAG_SHIFT=0).
+    fp.horiz_move = zag.horiz_move;
+    // Fill.cpp:823, 826, 838-840 — params.symmetric_infill_y_axis and
+    // params.symmetric_y_axis; the caller has mirrored `expoly` (Fill.cpp:841).
+    if let Some(symmetric_y_axis) = zag.symmetric_y_axis {
+        fp.symmetric_infill_y_axis = true;
+        fp.symmetric_y_axis = symmetric_y_axis;
+    }
     // Fill.cpp:845 — surface_fill.surface.expolygon = std::move(expoly);
     let mut conformal_surface = surface.clone();
     conformal_surface.expolygon = expoly.clone();
@@ -171,6 +186,124 @@ fn fill_params_density(density: f32) -> f64 {
         ((0.01f64 * density as f64) as f32) as f64
     } else {
         (0.01 * density) as f64
+    }
+}
+
+/// Print.hpp:442 — `PrintObject::bounding_box()`:
+///     BoundingBox(Point(- m_size.x() / 2, - m_size.y() / 2), Point(m_size.x() / 2, m_size.y() / 2))
+/// with PrintObject.cpp:96 `m_size = (bbox.size() * (1. / SCALING_FACTOR)).cast<coord_t>()`,
+/// `bbox` the object's raw bounding box (PrintObject.cpp:82). It is what
+/// Fill.cpp:599, 699 hand the filler (`f->set_bounding_box(bbox)`).
+// FIDELITY-NOTE: PrintObject.cpp:85-91 turns the raw bounding box by the
+// difference of the Z rotations of the first model instance and this print
+// instance; the mesh this crate's PrintObject holds is taken as it is.
+pub(crate) fn print_object_bounding_box(
+    mesh: &crate::triangle_mesh::TriangleMesh,
+) -> Option<crate::geometry::BoundingBox> {
+    let bbox = mesh.compute_bounding_box();
+    let inv_scaling_factor = 1.0f64 / 0.00001f64;
+    let size_x = ((bbox.max.x as f64 - bbox.min.x as f64) * inv_scaling_factor) as crate::Coord;
+    let size_y = ((bbox.max.y as f64 - bbox.min.y as f64) * inv_scaling_factor) as crate::Coord;
+    let mut out = crate::geometry::BoundingBox::empty();
+    out.merge_point(crate::geometry::Point::new(-size_x / 2, -size_y / 2));
+    out.merge_point(crate::geometry::Point::new(size_x / 2, size_y / 2));
+    Some(out)
+}
+
+/// The members `Layer::make_fills` gives a FillZigZag, FillCrossZag or
+/// FillLockedZag and its `FillParams` beyond those of a FillRectilinear
+/// (Fill.cpp:699, 704-709, 817-826, 838-841).
+#[derive(Clone, Default)]
+struct ZagFill {
+    /// FillRectilinear.hpp:165,174,187 — `has_consistent_pattern()`.
+    consistent_pattern: bool,
+    /// Fill.cpp:699 — `f->set_bounding_box(bbox)`.
+    object_bounding_box: Option<crate::geometry::BoundingBox>,
+    /// Fill.cpp:817-821 — `params.horiz_move`.
+    horiz_move: f32,
+    /// Fill.cpp:704-709 — the step `f->angle` turns by, for ipZigZag.
+    zigzag_rotate_step: Option<f32>,
+    /// Fill.cpp:838-840 — `params.symmetric_y_axis`, where
+    /// `params.symmetric_infill_y_axis` is set.
+    symmetric_y_axis: Option<crate::Coord>,
+    /// Fill.cpp:812-815 — the surface's pattern is ipLockedZag
+    /// (`params.locked_zag = true`, the lock region param and the skin and
+    /// skeleton patterns handed to the filler).
+    locked_zag: bool,
+}
+
+/// `in_make_fills`: `Layer::make_fills` (Fill.cpp:698-846) sets all of them;
+/// `Layer::generate_sparse_infill_polylines_for_anchoring` (Fill.cpp:911-971)
+/// makes the same filler and sets its bounding box only.
+///
+/// FILL_ZAG_CONSISTENT=0 fills ipZigZag and ipCrossZag as a FillRectilinear, and
+/// FILL_LOCKED_ZAG=0 ipLockedZag.
+// FIDELITY-NOTE: in `generate_sparse_infill_polylines_for_anchoring`
+// (Fill.cpp:969-971) an ipLockedZag filler runs `FillRectilinear::fill_surface`
+// with `params.locked_zag` unset and no lock region param: the lines of a
+// FillRectilinear with `has_consistent_pattern()`. Only the consistent pattern
+// is taken there.
+fn zag_fill(
+    params: &crate::fill::SurfaceFillParams,
+    object_bounding_box: Option<crate::geometry::BoundingBox>,
+    layer_id: usize,
+    in_make_fills: bool,
+) -> ZagFill {
+    use crate::print_config::InfillPattern as P;
+    let pattern = match params.sparse_pattern {
+        Some(p @ (P::ZigZag | P::CrossZag))
+            if crate::faithful_gate("FILL_ZAG_CONSISTENT") => p,
+        Some(p @ P::LockedZag) if crate::faithful_gate("FILL_LOCKED_ZAG") => p,
+        _ => return ZagFill::default(),
+    };
+    let mut out = ZagFill {
+        consistent_pattern: true,
+        object_bounding_box,
+        ..ZagFill::default()
+    };
+    if !in_make_fills {
+        return out;
+    }
+    out.locked_zag = pattern == P::LockedZag;
+    let half_layers = (layer_id / 2) as f32;
+    if pattern == P::ZigZag {
+        // Fill.cpp:704-709; the sum is taken where the angle is.
+        out.zigzag_rotate_step = Some(params.infill_rotate_step);
+    } else {
+        // Fill.cpp:817-821:
+        //     if (f->layer_id % 2 == 0)
+        //         params.horiz_move -= surface_fill.params.infill_shift_step * (f->layer_id / 2);
+        //     else
+        //         params.horiz_move += surface_fill.params.infill_shift_step * (f->layer_id / 2);
+        out.horiz_move = if layer_id % 2 == 0 {
+            (-params.infill_shift_step).mul_add(half_layers, 0.0f32)
+        } else {
+            params.infill_shift_step.mul_add(half_layers, 0.0f32)
+        };
+    }
+    // Fill.cpp:823, 826 — params.symmetric_infill_y_axis; Fill.cpp:838-840:
+    //     params.symmetric_y_axis = f->extended_object_bounding_box().center().x();
+    if params.symmetric_infill_y_axis {
+        if let Some(object_bbox) = out.object_bounding_box.as_ref() {
+            out.symmetric_y_axis = Some(
+                crate::fill::fill_rectilinear::extended_object_bounding_box(object_bbox)
+                    .center()
+                    .x,
+            );
+        }
+    }
+    out
+}
+
+/// ExPolygon.cpp:151-156 — `ExPolygon::symmetric_y`, MultiPoint.cpp:472-477.
+fn expolygon_symmetric_y(expoly: &mut crate::geometry::ExPolygon, x_axis: crate::Coord) {
+    for pt in expoly.contour.points.iter_mut() {
+        pt.x = 2 * x_axis - pt.x;
+    }
+    for hole in expoly.holes.iter_mut() {
+        for pt in hole.points.iter_mut() {
+            pt.x = 2 * x_axis - pt.x;
+        }
     }
 }
 
@@ -1629,6 +1762,11 @@ pub struct Layer {
     /// generate_support_material).
     pub(crate) object_config: Option<Arc<crate::print_config::PrintObjectConfig>>,
 
+    /// `object()->bounding_box()` (Print.hpp:442), which Fill.cpp:599, 699 hand
+    /// the filler. Stamped by PrintObject::wire_layer_hierarchy with
+    /// [`print_object_bounding_box`]; None until wired.
+    pub(crate) object_bounding_box: Option<crate::geometry::BoundingBox>,
+
     /// Snapshot of the owning Print's config, shared via Arc.
     /// C++: `object()->print()->config()` (PrintBase.hpp:632 + Print.hpp:885).
     /// Stamped at sync points; None until wired.
@@ -1666,6 +1804,7 @@ impl Layer {
             regions: Vec::new(),
             support_fills: None,
             object_config: None,
+            object_bounding_box: None,
             print_config: None,
         }
     }
@@ -2639,6 +2778,12 @@ impl Layer {
         //      set_outlook_range(lock_param);
         //      std::vector<SurfaceFill> surface_fills = group_fills(*this, lock_param);
         let mut lock_param = crate::fill::LockRegionParam::default();
+        // Fill.cpp:661-676, 687 — `set_outlook_range(lock_param)`; it reads only
+        // regions whose sparse infill pattern is ipLockedZag. FILL_LOCKED_ZAG=0
+        // leaves it out.
+        if crate::faithful_gate("FILL_LOCKED_ZAG") {
+            self.set_outlook_range(&mut lock_param);
+        }
         let __gf_t = if crate::probe_enabled("FILLPROF") { Some(std::time::Instant::now()) } else { None };
         let surface_fills = crate::fill::group_fills(self, lower_internal_areas, &mut lock_param)?;
         // `PP=1`: the surface fills in the order make_fills walks them, `PPG ...`.
@@ -2977,6 +3122,7 @@ impl Layer {
             // (FillRectilinear.cpp:2847). region_config.infill_overlap flows only
             // into `no_extrusion_overlap` (Fill.cpp:713), NOT this geometric offset.
             let infill_overlap = 0.0; // C++ Fill::overlap=0 for the main filler (FillBase.hpp:183, Fill.cpp:995/1007); infill_overlap flows only into no_extrusion_overlap (Fill.cpp:713), NOT this raster offset. rust's prior spacing*0.15 over-extended every infill line.
+            let zag = zag_fill(&surface_fill.params, self.object_bounding_box, fill_layer_id, true);
             let infill_config = InfillConfig {
                 pattern: fill_pattern,
                 line_spacing: surface_fill.params.spacing,
@@ -2993,6 +3139,12 @@ impl Layer {
                 connect_infill: !dont_connect,
                 link_max_length,
                 dont_adjust: false,
+                consistent_pattern: zag.consistent_pattern,
+                object_bounding_box: zag.object_bounding_box,
+                horiz_move: zag.horiz_move,
+                zigzag_rotate_step: zag.zigzag_rotate_step,
+                symmetric_y_axis: zag.symmetric_y_axis,
+                locked_zag: false,
             };
 
             // Fill.cpp:735-747
@@ -3084,6 +3236,66 @@ impl Layer {
                     continue;
                 }
 
+                // Fill.cpp:838-841:
+                //     if (params.symmetric_infill_y_axis) {
+                //         params.symmetric_y_axis = f->extended_object_bounding_box().center().x();
+                //         expoly.symmetric_y(params.symmetric_y_axis);
+                //     }
+                let mut expoly = expoly;
+                if let Some(symmetric_y_axis) = zag.symmetric_y_axis {
+                    expolygon_symmetric_y(&mut expoly, symmetric_y_axis);
+                }
+
+                // FillRectilinear.cpp:4007-4050 — `FillLockedZag::fill_surface_extrusion`:
+                // the skin and the skeleton lines, each clipped to the regions of
+                // its flows, in one collection that is sorted
+                // (`eec->no_sort = this->no_sort()`, false).
+                if zag.locked_zag {
+                    let region_config = self.regions[region_id].region().config();
+                    let locked = crate::fill::fill_rectilinear::fill_surface_locked_zag(
+                        &lock_param,
+                        region_config.locked_skin_infill_pattern,
+                        region_config.locked_skeleton_infill_pattern,
+                        &expoly,
+                        &infill_config,
+                        fill_layer_id,
+                    );
+                    if let Some(multi_width_polyline) = locked {
+                        let mut collection = ExtrusionEntityCollection::new();
+                        for (polylines, flow) in multi_width_polyline {
+                            // calculate actual flow from spacing (which might have
+                            // been adjusted by the infill pattern generator)
+                            let mut flow_mm3_per_mm = flow.mm3_per_mm()?;
+                            let mut flow_width = flow.width();
+                            if !_using_internal_flow {
+                                // FillRectilinear.cpp:4033-4035 — `this->spacing` is
+                                // the locked zag's own, which no nested filler adjusts.
+                                if let Ok(new_flow) = flow.with_spacing(surface_fill.params.spacing) {
+                                    flow_mm3_per_mm = new_flow.mm3_per_mm()?;
+                                    flow_width = new_flow.width();
+                                }
+                            }
+                            extrusion_entities_append_paths(
+                                &mut collection.entities,
+                                polylines,
+                                surface_fill.params.extrusion_role,
+                                flow_mm3_per_mm,
+                                flow_width as f32,
+                                flow.height() as f32,
+                            );
+                        }
+                        // FillRectilinear.cpp:4018-4021 — the collection is pushed
+                        // where `multi_width_polyline` is not empty, with or
+                        // without paths.
+                        self.regions[region_id].fills.entities.push(
+                            crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(
+                                collection,
+                            )),
+                        );
+                        continue;
+                    }
+                }
+
                 // Save contour for connect_infill boundary before expoly may be moved
                 let boundary_contour = expoly.contour.clone();
                 let expoly_for_connect = expoly.clone();
@@ -3116,11 +3328,10 @@ impl Layer {
                 // (FillBase.cpp:41-42, 62-63). `conformal_infill` is only set for
                 // surfaces that are not solid (Fill.cpp:240), whose pattern is the
                 // region's sparse infill pattern (Fill.cpp:239).
-                // FIDELITY-NOTE: blocked on FillLockedZag::fill_surface_locked_zag
-                // (FillRectilinear.cpp:3969): the skin pattern of ipLockedZag also goes
-                // through FillRectilinear::fill_surface with `conformal` set
-                // (FillRectilinear.cpp:3941-3967); this driver has no skin / skeleton
-                // split, so a locked-zag region keeps its lines.
+                // FIDELITY-NOTE: the skin pattern of ipLockedZag also goes through
+                // FillRectilinear::fill_surface with `conformal` set
+                // (FillRectilinear.cpp:3942-3967); `fill_surface_locked_zag` of this
+                // crate lays the skin as lines.
                 let mut conformal_polylines: Option<Vec<crate::geometry::Polyline>> =
                     conformal_fill_surface(
                         self.regions[region_id].region().config().fill_pattern,
@@ -3134,6 +3345,7 @@ impl Layer {
                         link_max_length,
                         resolution,
                         Some(_using_internal_flow),
+                        &zag,
                     );
 
                 let generated = match fill_pattern {
@@ -3199,12 +3411,24 @@ impl Layer {
                         pair_boundary = boundary;
                         raw.into_iter().map(InfillPath::Line).collect()
                     }
-                    InfillPattern::Rectilinear | InfillPattern::Grid => generate_fill_rectilinear(
-                        &[expoly],
-                        &infill_config,
-                        self.id as usize,
-                        is_grid,
-                    ),
+                    InfillPattern::Rectilinear | InfillPattern::Grid => {
+                        // FillRectilinear.cpp:3074-3092 — `FillRectilinear::fill_surface`
+                        // returns what `fill_surface_by_lines` laid: the lines are
+                        // already linked along the contours
+                        // (connect_segment_intersections_by_contours /
+                        // traverse_graph_generate_polylines, FillRectilinear.cpp:2905,
+                        // 2948), and `Fill::connect_infill` (FillBase.cpp:1501) is not
+                        // run on them. RECT_FILL_NO_RECONNECT=0 runs it again.
+                        if crate::faithful_gate("RECT_FILL_NO_RECONNECT") {
+                            fss_connected = true;
+                        }
+                        generate_fill_rectilinear(
+                            &[expoly],
+                            &infill_config,
+                            self.id as usize,
+                            is_grid,
+                        )
+                    }
                     // Monotonic top/bottom/solid surfaces: FillMonotonic /
                     // FillMonotonicLine (FillRectilinear.hpp:47-62; their
                     // fill_surface, FillRectilinear.cpp:3090-3109). Both set
@@ -4009,6 +4233,7 @@ impl Layer {
             // (anchor_length_max < 0.05 disables connection; FillBase.hpp).
             let dont_connect = surface_fill.params.anchor_length_max < 0.05;
             let infill_overlap = 0.0; // C++ Fill::overlap=0 for the main filler (FillBase.hpp:183, Fill.cpp:995/1007); infill_overlap flows only into no_extrusion_overlap (Fill.cpp:713), NOT this raster offset. rust's prior spacing*0.15 over-extended every infill line.
+            let zag = zag_fill(&surface_fill.params, self.object_bounding_box, self.id(), false);
             let infill_config = InfillConfig {
                 pattern: fill_pattern,
                 line_spacing: surface_fill.params.spacing,
@@ -4025,6 +4250,12 @@ impl Layer {
                 connect_infill: !dont_connect,
                 link_max_length,
                 dont_adjust: false,
+                consistent_pattern: zag.consistent_pattern,
+                object_bounding_box: zag.object_bounding_box,
+                horiz_move: zag.horiz_move,
+                zigzag_rotate_step: zag.zigzag_rotate_step,
+                symmetric_y_axis: zag.symmetric_y_axis,
+                locked_zag: false,
             };
 
             // Fill.cpp:862-871
@@ -4134,18 +4365,32 @@ impl Layer {
                     link_max_length,
                     self.object().print().config().resolution,
                     None,
+                    &zag,
                 ) {
                     sparse_infill_polylines.extend(conformal_out);
                     continue;
                 }
 
+                let mut rect_connected = false;
                 let generated = match fill_pattern {
-                    InfillPattern::Rectilinear | InfillPattern::Grid => generate_fill_rectilinear(
-                        &[expoly],
-                        &infill_config,
-                        self.id as usize,
-                        is_grid,
-                    ),
+                    InfillPattern::Rectilinear | InfillPattern::Grid => {
+                        // FillRectilinear.cpp:3074-3092 — `FillRectilinear::fill_surface`
+                        // returns what `fill_surface_by_lines` laid: the lines are
+                        // already linked along the contours
+                        // (connect_segment_intersections_by_contours /
+                        // traverse_graph_generate_polylines, FillRectilinear.cpp:2905,
+                        // 2948), and `Fill::connect_infill` (FillBase.cpp:1501) is not
+                        // run on them. RECT_FILL_NO_RECONNECT=0 runs it again.
+                        if crate::faithful_gate("RECT_FILL_NO_RECONNECT") {
+                            rect_connected = true;
+                        }
+                        generate_fill_rectilinear(
+                            &[expoly],
+                            &infill_config,
+                            self.id as usize,
+                            is_grid,
+                        )
+                    }
                     InfillPattern::Gyroid => {
                         use crate::fill::fill_gyroid::{generate_gyroid_infill, GyroidConfig};
                         use crate::geometry::BoundingBox;
@@ -4237,7 +4482,7 @@ impl Layer {
                 }
 
                 // C++: Fill::connect_infill() inside fill_surface joins lines.
-                if infill_config.connect_infill {
+                if infill_config.connect_infill && !rect_connected {
                     let boundary = vec![boundary_contour.clone()];
                     let fill_params = crate::fill::FillParams::new();
                     let mut connected = Vec::new();

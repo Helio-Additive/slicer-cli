@@ -132,39 +132,11 @@ fn parse_hex(hex: &str, r: &mut u8, g: &mut u8, b: &mut u8) -> bool {
     if hex.len() < 7 || hex.as_bytes()[0] != b'#' {
         return false;
     }
-    // Mirror std::sscanf("#%02x%02x%02x"): parse exactly two hex digits each
-    // for r, g, b directly after the '#'.
-    let bytes = hex.as_bytes();
-    let hexval = |c: u8| -> Option<u32> {
-        match c {
-            b'0'..=b'9' => Some((c - b'0') as u32),
-            b'a'..=b'f' => Some((c - b'a' + 10) as u32),
-            b'A'..=b'F' => Some((c - b'A' + 10) as u32),
-            _ => None,
-        }
+    // std::sscanf(hex.c_str(), "#%02x%02x%02x", &rv, &gv, &bv) != 3: the scanner is the one of
+    // ColorDecomposeRecipe.cpp:326, which reads a color the same way.
+    let Some([rv, gv, bv]) = crate::color_decompose_recipe::sscanf_hex_rgb(hex) else {
+        return false;
     };
-    let mut vals = [0u32; 3];
-    let mut pos = 1usize; // skip '#'
-    for v in vals.iter_mut() {
-        // %02x reads up to two hex digits; sscanf requires at least one.
-        let d0 = match bytes.get(pos).copied().and_then(hexval) {
-            Some(d) => d,
-            None => return false,
-        };
-        pos += 1;
-        match bytes.get(pos).copied().and_then(hexval) {
-            Some(d1) => {
-                *v = d0 * 16 + d1;
-                pos += 1;
-            }
-            None => {
-                *v = d0;
-            }
-        }
-    }
-    let rv = vals[0];
-    let gv = vals[1];
-    let bv = vals[2];
     *r = rv as u8;
     *g = gv as u8;
     *b = bv as u8;
@@ -188,6 +160,65 @@ pub fn blend_color(hex_a: &str, hex_b: &str, ratio_b: f32) -> String {
     filament_mixer_lerp(r1, g1, b1, r2, g2, b2, ratio_b, &mut mr, &mut mg, &mut mb);
 
     format!("#{:02X}{:02X}{:02X}", mr, mg, mb)
+}
+
+// FilamentMixer.cpp:116-162
+pub fn blend_color_multi(hex_colors: &[String], weights: &[i32]) -> String {
+    if hex_colors.len() >= 2 && hex_colors.len() == weights.len() {
+        let measured = crate::color_decompose_recipe::lookup_measured_blend_color(hex_colors, weights);
+        if !measured.is_empty() {
+            return measured;
+        }
+    }
+
+    if hex_colors.is_empty() {
+        return "#000000".to_string();
+    }
+    if hex_colors.len() == 1 {
+        let mut cr: u8 = 128;
+        let mut cg: u8 = 128;
+        let mut cb: u8 = 128;
+        parse_hex(&hex_colors[0], &mut cr, &mut cg, &mut cb);
+        return format!("#{:02X}{:02X}{:02X}", cr, cg, cb);
+    }
+
+    debug_assert!(hex_colors.len() == weights.len());
+
+    let mut r: u8 = 128;
+    let mut g: u8 = 128;
+    let mut b: u8 = 128;
+    let mut accumulated: i32 = 0;
+
+    let mut i = 0usize;
+    while i < hex_colors.len() && i < weights.len() {
+        if weights[i] <= 0 {
+            i += 1;
+            continue;
+        }
+        let mut cr: u8 = 128;
+        let mut cg: u8 = 128;
+        let mut cb: u8 = 128;
+        parse_hex(&hex_colors[i], &mut cr, &mut cg, &mut cb);
+        if accumulated == 0 {
+            r = cr;
+            g = cg;
+            b = cb;
+            accumulated = weights[i];
+        } else {
+            let new_total = accumulated.wrapping_add(weights[i]);
+            let t = weights[i] as f32 / new_total as f32;
+            let (r1, g1, b1) = (r, g, b);
+            filament_mixer_lerp(r1, g1, b1, cr, cg, cb, t, &mut r, &mut g, &mut b);
+            accumulated = new_total;
+        }
+        i += 1;
+    }
+
+    if accumulated == 0 {
+        return "#000000".to_string();
+    }
+
+    format!("#{:02X}{:02X}{:02X}", r, g, b)
 }
 
 // Mirror std::getline(ss, token, ',') tokenization: split on ',', producing

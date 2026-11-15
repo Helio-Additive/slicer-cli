@@ -804,7 +804,8 @@ pub fn lerp(
     for c in 0..3usize {
         let mut sum: f64 = detail::INTERCEPT[c];
         for i in 0..detail::N_FEATURES as usize {
-            sum += features[i] * detail::COEF[i][c];
+            // One fused operation in the reference build (clang, -ffp-contract=on).
+            sum = features[i].mul_add(detail::COEF[i][c], sum);
         }
         // Clamp to [0, 255] and truncate (matches numpy astype(int) behavior)
         let mut val: i32 = sum as i32;

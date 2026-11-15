@@ -8,25 +8,35 @@
 //! AES-256-CBC log-file encryption.
 //!
 //! PORTING NOTES / BLOCKED SYMBOLS (status: partial):
-//! The runtime sink machinery is built on three hard native dependencies that
-//! the parity port forbids adding (none are wasm-safe and none touch the
+//! Upstream's encrypted-file path is built on two hard native dependencies that
+//! the parity port forbids adding (neither is wasm-safe and neither touches the
 //! G-code path):
-//!   * boost.log `text_file_backend` (base class of `LogSinkBackend`, the
-//!     `record_view` argument, file rotation, file-name patterns).
 //!   * OpenSSL `AES_cbc_encrypt` / `AES_set_*_key` (`<openssl/aes.h>`) used by
 //!     `consume` and `DecodeAES256LogFile` via `BBL_Encrypt::AES256CBC_*`.
 //!   * libcurl through `Slic3r::Http` (cloud key fetch in `get_aes_256_cbc`).
-//! Consequently the following members are NOT ported and are documented inline
-//! at their original line refs:
-//!   * `LogSinkBackend::LogSinkBackend` (ctor) — sets boost.log backend options.
-//!   * `LogSinkBackend::consume` — encrypts and forwards to text_file_backend.
-//!   * `LogSinkBackend::try_record_new_log_file` — boost.log + nlohmann::json header.
-//!   * `LogSinkBackend::update_enc_option` — calls boost.log `rotate_file`.
-//!   * `LogSinkBackend::update_log_enc_key` — depends on boost.log file state.
+//! Consequently the following members of upstream's file are NOT ported and are
+//! documented inline at their original line refs (`slicer_cli` does not compile
+//! them either, see THE FILE SINK below):
+//!   * the encrypting branch of `LogSinkBackend::consume`.
+//!   * `LogSinkBackend::try_record_new_log_file` — the header of an encrypted file.
+//!   * `LogSinkBackend::update_log_enc_key` — the key of an encrypted file.
 //!   * `LogSinkBackend::get_aes_256_cbc` cloud branch — `Slic3r::Http`.
 //!   * `LogSinkBackend::DecodeAES256LogFile` — OpenSSL AES decrypt.
 //!   * `s_generate_uuid` — boost::uuids.
 //! Everything tractable WITHOUT those backends is ported faithfully below.
+//!
+//! THE FILE SINK (`slicer_cli`'s `LogSink.cpp`): the Bambu Studio build of this repository compiles
+//! the override-layer copy of this unit (`libslic3r/bambustudio/libslic3r/LogSink.cpp`), which is
+//! upstream's without the encrypted-file path: every record is written as plain text. Its members
+//! are ported from that file and cite it as `LogSink.cpp (override)`: `current_pid`,
+//! `is_consuming_on_this_thread`, the constructor (`new`), `update_enc_option`, `consume` and
+//! `LogSinkUtil::get_log_filename_format`, with `LogSink` (LogSink.hpp:79) as the front end.
+//!
+//! FIDELITY-NOTE: `text_file_backend` of Boost.Log is the base class in C++. `TextFileBackend`
+//! below is the part of it this unit uses, over std: the `%N` file counter of the name pattern,
+//! the rotation size, append mode, and `consume` / `rotate_file` / `flush` in Boost.Log's order
+//! (`text_file_backend.cpp`). It has no file collector, no target file name and no time-based
+//! rotation, which the unit never sets.
 
 // LogSink.cpp:14 : #include <openssl/aes.h>
 // AES_BLOCK_SIZE is defined by OpenSSL as 16. Mirror the constant so the
@@ -116,8 +126,11 @@ const DEFAULT_KEY_TIME_US_1: i64 = 202510221215;
 /// NOTE: The boost.log `text_file_backend` base class is a native dependency
 /// that cannot be ported (see module docs). Only the pure encryption-info
 /// state and the pure-logic methods are mirrored here.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct LogSinkBackend {
+    /// The `boost::log::sinks::text_file_backend` base class (LogSink.hpp:18).
+    pub m_text_file_backend: TextFileBackend,
+
     // LogSink.hpp:20 : std::mutex m_log_mutex; (provided by parking_lot in
     // the runtime backend; the pure-logic methods ported here are &self).
 
@@ -322,6 +335,469 @@ impl LogSinkUtil {
     }
 }
 
+
+// ===========================================================================
+// The file sink: LogSink.cpp of the override layer, over `TextFileBackend`.
+// ===========================================================================
+
+thread_local! {
+    /// LogSink.cpp (override):30-31 — true while this thread is inside `LogSinkBackend::consume()`.
+    static T_CONSUMING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// LogSink.cpp (override):33-42 — marks the current thread as consuming for the lifetime of the
+/// scope, also when it exits by a panic.
+struct ConsumingScope;
+
+impl ConsumingScope {
+    fn new() -> ConsumingScope {
+        T_CONSUMING.with(|t| t.set(true));
+        ConsumingScope
+    }
+}
+
+impl Drop for ConsumingScope {
+    fn drop(&mut self) {
+        T_CONSUMING.with(|t| t.set(false));
+    }
+}
+
+/// LogSink.cpp (override):44-51
+fn current_pid() -> u32 {
+    std::process::id()
+}
+
+impl LogSinkBackend {
+    /// LogSink.cpp (override):54-57 — whether this thread is writing a record to the log file right
+    /// now. Anything this thread logs meanwhile is dropped, since logging from inside the sink would
+    /// deadlock.
+    pub fn is_consuming_on_this_thread() -> bool {
+        T_CONSUMING.with(|t| t.get())
+    }
+
+    /// LogSink.cpp (override):59-66 `LogSinkBackend::LogSinkBackend`
+    pub fn new(base_path: &str, options: &LogEncOptions) -> LogSinkBackend {
+        let mut backend = LogSinkBackend { m_log_enc_options: options.clone(), ..Default::default() };
+        backend.m_text_file_backend.set_file_name_pattern(base_path);
+        backend.m_text_file_backend.set_rotation_size(100 * 1024 * 1024);
+        // set_auto_newline_mode(disabled_auto_newline): newline need to be added before encryption;
+        // `TextFileBackend` never adds one.
+        // set_open_mode(std::ios::binary | std::ios::app)
+        backend.m_text_file_backend.set_open_mode_app(true);
+        backend
+    }
+
+    /// LogSink.cpp (override):77-98
+    ///
+    /// `m_log_mutex` is the mutex the caller holds the backend in.
+    pub fn update_enc_option(&mut self, base_path: &str, options: &LogEncOptions) -> bool {
+        if self.m_log_enc_options.enc_type == options.enc_type
+            && self.m_log_enc_options.enc_key_host_env == options.enc_key_host_env
+            && self.m_log_enc_options.enc_key_url == options.enc_key_url
+        {
+            return false;
+        }
+
+        self.m_log_enc_options = options.clone();
+        self.reset_enc_key_info();
+
+        self.m_text_file_backend.set_file_name_pattern(base_path);
+        self.m_text_file_backend.rotate_file();
+
+        true
+    }
+
+    /// LogSink.cpp (override):100-110
+    ///
+    /// `rec` is not read: the text file backend writes the formatted message only.
+    pub fn consume(&mut self, _rec: &crate::log::LogRecord, formatted_message: &str) {
+        let _consuming = ConsumingScope::new();
+
+        if formatted_message.is_empty() {
+            return;
+        }
+
+        // Headless: no encryption key source, so every record is written as plain text.
+        let mut message = String::with_capacity(formatted_message.len() + S_MESSAGE_NEWLINE.len());
+        message.push_str(formatted_message);
+        message.push_str(S_MESSAGE_NEWLINE);
+        if let Err(error) = self.m_text_file_backend.consume(&message) {
+            // Boost.Log's core swallows what a sink throws unless an exception handler is set.
+            let _ = error;
+        }
+    }
+
+    /// `text_file_backend::flush`, reached through `LogSink::flush` (Log.cpp:186).
+    pub fn flush(&mut self) {
+        self.m_text_file_backend.flush();
+    }
+}
+
+impl LogSinkUtil {
+    /// LogSink.cpp (override):112-149
+    ///
+    /// rules: `studio_%a_%b_%d_%H_%M_%S_<pid>[_enc][_cn].log.%N`
+    pub fn get_log_filename_format(log_dir: &str, enc_opts: &LogEncOptions) -> String {
+        let now_time = chrono::Local::now();
+        let mut buf = now_time.format("studio_%a_%b_%d_%H_%M_%S_").to_string();
+        buf.push_str(&current_pid().to_string());
+        if enc_opts.enc_type == LogEncType::LogEncNone {
+            buf.push_str(".log.%N");
+        } else {
+            // default to us
+            buf.push_str("_enc");
+            if enc_opts.enc_key_host_env == "cn" {
+                buf.push_str("_cn");
+            } else if enc_opts.enc_key_host_env == "dc" {
+                buf.push_str("_dc"); // dc means the user doesn't set the region
+            } else {
+                // no suffix for "us" region
+            }
+
+            buf.push_str(".log.%N");
+        }
+
+        let log_folder = std::path::PathBuf::from(log_dir);
+        if !log_folder.exists() {
+            if let Err(e) = std::fs::create_dir_all(&log_folder) {
+                println!("get_log_filename_format, error: {}", e);
+                return buf;
+            }
+        }
+        let base_path = log_folder.join(&buf).to_string_lossy().into_owned();
+        // make_preferred()
+        #[cfg(windows)]
+        let base_path = base_path.replace('/', "\\");
+        base_path
+    }
+}
+
+/// LogSink.hpp:79 `typedef boost::log::sinks::synchronous_sink<LogSinkBackend> LogSink` — the front
+/// end: it serialises the calls into the backend, which the mutex does here.
+#[derive(Debug)]
+pub struct LogSink {
+    m_backend: std::sync::Arc<Mutex<LogSinkBackend>>,
+}
+
+impl LogSink {
+    /// `boost::make_shared<LogSink>(g_log_sink_backend)` (Log.cpp:144)
+    pub fn new(backend: std::sync::Arc<Mutex<LogSinkBackend>>) -> LogSink {
+        LogSink { m_backend: backend }
+    }
+
+    /// `synchronous_sink::consume`: the formatted record goes to the backend.
+    pub fn consume(&self, rec: &crate::log::LogRecord, formatted_message: &str) {
+        self.m_backend.lock().unwrap_or_else(|p| p.into_inner()).consume(rec, formatted_message);
+    }
+
+    /// `synchronous_sink::flush`
+    pub fn flush(&self) {
+        self.m_backend.lock().unwrap_or_else(|p| p.into_inner()).flush();
+    }
+}
+
+/// The part of Boost.Log's `sinks::text_file_backend` that `LogSinkBackend` uses (see the module
+/// notes); the members carry the names of `text_file_backend::implementation`.
+#[derive(Debug)]
+pub struct TextFileBackend {
+    /// The directory of the file name pattern, made absolute.
+    m_storage_dir: std::path::PathBuf,
+    /// The file name of the pattern, without its counter placeholder.
+    m_file_name_pattern: String,
+    /// Where the counter goes in `m_file_name_pattern`, if the pattern has a counter placeholder.
+    m_file_counter_position: Option<usize>,
+    /// The width the counter is zero-padded to.
+    m_file_counter_width: usize,
+    m_file_counter: u32,
+    /// `std::ios_base::app` of the open mode; without it a file is truncated when opened.
+    m_file_open_mode_app: bool,
+    m_file: Option<std::fs::File>,
+    /// The stream state: false after a failed write.
+    m_file_good: bool,
+    m_file_name: std::path::PathBuf,
+    m_characters_written: u64,
+    m_file_rotation_size: u64,
+    /// `m_file_counter` is set to the last used counter value.
+    m_file_counter_is_last_used: bool,
+    m_is_first_file: bool,
+}
+
+impl Default for TextFileBackend {
+    /// `text_file_backend::implementation::implementation` with the defaults of
+    /// `text_file_backend::construct`: no rotation by size, the file truncated when opened.
+    fn default() -> Self {
+        let mut backend = TextFileBackend {
+            m_storage_dir: std::path::PathBuf::new(),
+            m_file_name_pattern: String::new(),
+            m_file_counter_position: None,
+            m_file_counter_width: 0,
+            m_file_counter: 0,
+            m_file_open_mode_app: false,
+            m_file: None,
+            m_file_good: true,
+            m_file_name: std::path::PathBuf::new(),
+            m_characters_written: 0,
+            m_file_rotation_size: u64::MAX,
+            m_file_counter_is_last_used: false,
+            m_is_first_file: true,
+        };
+        // `set_file_name_pattern_internal` with an empty pattern: "%5N.log".
+        backend.set_file_name_pattern("");
+        backend
+    }
+}
+
+impl TextFileBackend {
+    /// `parse_counter_placeholder` (text_file_backend.cpp): the format placeholder of the file
+    /// counter, after its `%`: an optional filler, a width, an optional precision, then `N`.
+    /// Gives the position after the placeholder and the width.
+    fn parse_counter_placeholder(pattern: &[u8], mut it: usize) -> Option<(usize, usize)> {
+        let end = pattern.len();
+        let mut width = 0usize;
+        if it == end {
+            return None;
+        }
+
+        let mut c = pattern[it];
+        if c == b'0' || c == b' ' || c == b'+' || c == b'-' {
+            // Skip filler and alignment specification
+            it += 1;
+            if it == end {
+                return None;
+            }
+            c = pattern[it];
+        }
+
+        if c.is_ascii_digit() {
+            // Parse width
+            let mut value = 0usize;
+            while it != end && pattern[it].is_ascii_digit() {
+                value = value.checked_mul(10)?.checked_add((pattern[it] - b'0') as usize)?;
+                it += 1;
+            }
+            width = value;
+            if it == end {
+                return None;
+            }
+            c = pattern[it];
+        }
+
+        if c == b'.' {
+            // Skip precision
+            it += 1;
+            while it != end && pattern[it].is_ascii_digit() {
+                it += 1;
+            }
+            if it == end {
+                return None;
+            }
+            c = pattern[it];
+        }
+
+        if c == b'N' {
+            it += 1;
+            return Some((it, width));
+        }
+
+        None
+    }
+
+    /// `text_file_backend::set_file_name_pattern` with `parse_file_name_pattern`: the storage
+    /// directory, and the first counter placeholder of the file name.
+    ///
+    /// FIDELITY-NOTE: Boost.Log also formats date and time placeholders of the pattern when a file
+    /// is opened. The patterns of this unit have none (`get_log_filename_format` has already
+    /// written the time into the name), so any other `%` sequence stays in the name as it is.
+    pub fn set_file_name_pattern(&mut self, pattern: &str) {
+        let pattern = if !pattern.is_empty() { pattern } else { "%5N.log" };
+        let path = std::path::Path::new(pattern);
+        let mut name_pattern: Vec<u8> =
+            path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default().into_bytes();
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+        self.m_storage_dir = std::path::absolute(parent).unwrap_or_else(|_| parent.to_path_buf());
+
+        // Let's try to find the file counter placeholder
+        self.m_file_counter_position = None;
+        self.m_file_counter_width = 0;
+        let mut it = 0usize;
+        loop {
+            match name_pattern[it..].iter().position(|&c| c == b'%') {
+                Some(offset) => it += offset,
+                None => break,
+            }
+            let placeholder_begin = it;
+            it += 1;
+            if it == name_pattern.len() {
+                break;
+            }
+            if name_pattern[it] == b'%' {
+                // An escaped percent detected
+                it += 1;
+                if it == name_pattern.len() {
+                    break;
+                }
+                continue;
+            }
+
+            if let Some((placeholder_end, width)) = Self::parse_counter_placeholder(&name_pattern, it) {
+                // We've found the file counter placeholder in the pattern
+                self.m_file_counter_position = Some(placeholder_begin);
+                self.m_file_counter_width = width;
+                name_pattern.drain(placeholder_begin..placeholder_end);
+                break;
+            }
+            if it == name_pattern.len() {
+                break;
+            }
+        }
+        self.m_file_name_pattern = String::from_utf8_lossy(&name_pattern).into_owned();
+    }
+
+    /// `file_counter_formatter::operator()`: the file name of a counter value, the counter
+    /// zero-padded to its width.
+    fn file_name_generator(&self, counter: u32) -> String {
+        let mut file_name = self.m_file_name_pattern.clone();
+        if let Some(position) = self.m_file_counter_position {
+            file_name.insert_str(position, &format!("{:0width$}", counter, width = self.m_file_counter_width));
+        }
+        file_name
+    }
+
+    /// `text_file_backend::set_rotation_size`
+    pub fn set_rotation_size(&mut self, size: u64) {
+        self.m_file_rotation_size = size;
+    }
+
+    /// `text_file_backend::set_open_mode`, for the one flag that matters here: `std::ios_base::app`.
+    pub fn set_open_mode_app(&mut self, app: bool) {
+        self.m_file_open_mode_app = app;
+    }
+
+    /// The name of the file being written, empty while none is open.
+    pub fn get_current_file_name(&self) -> &std::path::Path {
+        &self.m_file_name
+    }
+
+    /// `text_file_backend::consume`: rotate if the message would pass the rotation size, open the
+    /// next file if none is open, write the message.
+    pub fn consume(&mut self, formatted_message: &str) -> std::io::Result<()> {
+        let message_size = formatted_message.len() as u64;
+        let mut prev_file_name = std::path::PathBuf::new();
+        let mut use_prev_file_name = false;
+        if !self.m_file_good {
+            // The file stream is not operational. One possible reason is that there is no more free space
+            // on the file system. In this case it is possible that this log record will fail to be written as well,
+            // leaving the newly created file empty. Eventually this results in lots of empty log files.
+            // We should take precautions to avoid this.
+            prev_file_name = self.m_file_name.clone();
+            self.close_file();
+
+            match std::fs::metadata(&prev_file_name) {
+                Ok(metadata) if metadata.len() != 0 => {}
+                _ => {
+                    // To reuse the empty file avoid re-generating the new file name later
+                    use_prev_file_name = true;
+                }
+            }
+        } else if self.m_file.is_some()
+            && self.m_characters_written.saturating_add(message_size) >= self.m_file_rotation_size
+        {
+            self.rotate_file();
+        }
+
+        let last_file_counter = self.m_file_counter.wrapping_sub(1);
+        while self.m_file.is_none() {
+            let new_file_name;
+            if !use_prev_file_name {
+                let mut file_counter = self.m_file_counter;
+                if self.m_file_counter_is_last_used {
+                    // If the sink backend is configured to append to a previously written file, don't
+                    // increment the file counter and try to open the existing file.
+                    let mut increment_file_counter = true;
+                    if self.m_is_first_file && self.m_file_open_mode_app {
+                        let last_file_name = self.m_storage_dir.join(self.file_name_generator(file_counter));
+                        increment_file_counter = !last_file_name.is_file();
+                    }
+
+                    if increment_file_counter {
+                        file_counter = file_counter.wrapping_add(1);
+                        self.m_file_counter = file_counter;
+                    }
+                } else {
+                    self.m_file_counter_is_last_used = true;
+                }
+
+                new_file_name = self.m_storage_dir.join(self.file_name_generator(file_counter));
+            } else {
+                new_file_name = std::mem::take(&mut prev_file_name);
+                use_prev_file_name = false;
+            }
+
+            if let Some(parent) = new_file_name.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let mut options = std::fs::OpenOptions::new();
+            if self.m_file_open_mode_app {
+                options.append(true).create(true);
+            } else {
+                options.write(true).create(true).truncate(true);
+            }
+            let file = options.open(&new_file_name)?;
+            // Check the file size, as the file may have been written before.
+            // Only do this check if we haven't exhausted the file counter to avoid looping indefinitely.
+            self.m_characters_written = file.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+            self.m_file = Some(file);
+            self.m_file_good = true;
+            self.m_file_name = new_file_name;
+            self.m_is_first_file = false;
+
+            if self.m_characters_written > 0
+                && self.m_characters_written.saturating_add(message_size) >= self.m_file_rotation_size
+                && self.m_file_counter != last_file_counter
+            {
+                self.rotate_file();
+                continue;
+            }
+
+            break;
+        }
+
+        use std::io::Write;
+        let file = self.m_file.as_mut().expect("the loop above leaves a file open");
+        // FIDELITY-NOTE: C++ writes through a buffered `std::ofstream` that static destruction
+        // flushes at exit. A static is not dropped in Rust, so the record goes to the file at once
+        // and nothing is lost if `flush_logs()` is never called; the file content is the same.
+        if let Err(error) = file.write_all(formatted_message.as_bytes()) {
+            self.m_file_good = false;
+            return Err(error);
+        }
+        self.m_characters_written += message_size;
+        Ok(())
+    }
+
+    /// `text_file_backend::flush`
+    pub fn flush(&mut self) {
+        use std::io::Write;
+        if let Some(file) = self.m_file.as_mut() {
+            let _ = file.flush();
+        }
+    }
+
+    /// `text_file_backend::close_file`
+    fn close_file(&mut self) {
+        self.m_file = None;
+        self.m_file_good = true;
+        self.m_characters_written = 0;
+        self.m_file_name = std::path::PathBuf::new();
+    }
+
+    /// `text_file_backend::rotate_file`: close the file; the next record opens the next one.
+    pub fn rotate_file(&mut self) {
+        self.close_file();
+    }
+}
+
 // ===========================================================================
 // Local mirrors of not-yet-ported Utils.cpp globals used by this file.
 // ===========================================================================
@@ -468,5 +944,75 @@ mod tests {
         assert!(s.contains("_enc"));
         assert!(!s.contains("_enc_cn"));
         assert!(!s.contains("_enc_dc"));
+    }
+
+    // text_file_backend.cpp `parse_file_name_pattern` / `file_counter_formatter`
+    #[test]
+    fn test_file_name_pattern_counter() {
+        let mut backend = TextFileBackend::default();
+        assert_eq!(backend.file_name_generator(7), "00007.log");
+        backend.set_file_name_pattern("dir/studio_x.log.%N");
+        assert_eq!(backend.file_name_generator(0), "studio_x.log.0");
+        assert_eq!(backend.file_name_generator(12), "studio_x.log.12");
+        backend.set_file_name_pattern("a_%3N_b");
+        assert_eq!(backend.file_name_generator(4), "a_004_b");
+        // no counter placeholder: every file has the same name
+        backend.set_file_name_pattern("plain.log");
+        assert_eq!(backend.file_name_generator(3), "plain.log");
+        // an escaped percent is not a placeholder; `%Nx` after it is the counter
+        backend.set_file_name_pattern("p%%q%N");
+        assert_eq!(backend.file_name_generator(1), "p%%q1");
+    }
+
+    // text_file_backend.cpp `consume` / `rotate_file`: a file is closed when the next message
+    // would reach the rotation size, and the next file takes the next counter.
+    #[test]
+    fn test_rotation_by_size() {
+        let dir = std::env::temp_dir().join(format!("slicer_log_sink_rotation_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut backend = TextFileBackend::default();
+        backend.set_file_name_pattern(dir.join("r.log.%N").to_str().unwrap());
+        backend.set_rotation_size(10);
+        backend.set_open_mode_app(true);
+        for message in ["aaaa\n", "bbbb\n", "cccc\n", "dddddddddddd\n", "e\n"] {
+            backend.consume(message).unwrap();
+        }
+        backend.flush();
+        let read = |n: u32| std::fs::read_to_string(dir.join(format!("r.log.{n}"))).unwrap_or_default();
+        // 5 + 5 reaches 10, so the second message opens the second file
+        assert_eq!(read(0), "aaaa\n");
+        assert_eq!(read(1), "bbbb\n");
+        assert_eq!(read(2), "cccc\n");
+        // a message larger than the limit still gets a file of its own
+        assert_eq!(read(3), "dddddddddddd\n");
+        assert_eq!(read(4), "e\n");
+        assert_eq!(backend.get_current_file_name(), dir.join("r.log.4"));
+
+        // A new backend in append mode writes on in the first file while it has room, then goes on
+        // with the next counter.
+        let mut again = TextFileBackend::default();
+        again.set_file_name_pattern(dir.join("r.log.%N").to_str().unwrap());
+        again.set_rotation_size(10);
+        again.set_open_mode_app(true);
+        again.consume("zz\n").unwrap();
+        again.consume("yyyyyy\n").unwrap();
+        assert_eq!(read(0), "aaaa\nzz\n");
+        assert_eq!(read(1), "bbbb\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // LogSink.cpp (override):77-98
+    #[test]
+    fn test_update_enc_option_changes() {
+        let none = LogEncOptions { enc_type: LogEncType::LogEncNone, enc_key_url: String::new(), enc_key_host_env: String::new() };
+        let mut backend = LogSinkBackend::new("unused/x.log.%N", &none);
+        backend.m_log_enc_key = "k".to_string();
+        assert!(!backend.update_enc_option("unused/x.log.%N", &none));
+        assert_eq!(backend.m_log_enc_key, "k");
+        let cn = LogEncOptions { enc_type: LogEncType::LogEncAes256Cbc, enc_key_url: String::new(), enc_key_host_env: "cn".to_string() };
+        assert!(backend.update_enc_option("unused/x_enc_cn.log.%N", &cn));
+        assert!(backend.m_log_enc_key.is_empty());
+        assert_eq!(backend.m_log_enc_options, cn);
+        assert!(!LogSinkBackend::is_consuming_on_this_thread());
     }
 }

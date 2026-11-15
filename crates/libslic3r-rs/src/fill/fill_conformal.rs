@@ -35,7 +35,7 @@ use std::f64::consts::PI;
 use super::fill_base::Fill;
 use super::fill_conformal_chart::{extract_generator, LayerGenerator};
 use super::fill_radial_zig_zag;
-use super::fill_rectilinear::{fill_surface_by_lines, FillRectilinearParams};
+use super::fill_rectilinear::FillRectilinearParams;
 use super::FillParams;
 use crate::clipper_utils::{
     diff_pl_clib, intersection_clib, intersection_pl_clib, offset_expolygons_clib_scaled, OffsetJoinType,
@@ -735,7 +735,23 @@ fn fill_hub_rectilinear(src: &Fill, surface: &Surface, params: &FillParams, hub:
         dont_adjust: p.dont_adjust,
         consistent_pattern: false,
     };
-    let raw = fill_surface_by_lines(&s.expolygon, rect.spacing, angle as f64, rect.overlap, &rparams);
+    // `p` is a copy of the caller's params, so `fill_surface_by_lines` reads its
+    // `horiz_move` (FillRectilinear.cpp:2885-2891) and mirrors the lines where
+    // `symmetric_infill_y_axis` is set (FillRectilinear.cpp:2977-2980). `rect` is
+    // a FillRectilinear: `has_consistent_pattern()` is false.
+    let zag = super::fill_rectilinear::FillRectilinearZag {
+        object_bounding_box: None,
+        horiz_move: p.horiz_move,
+        symmetric_y_axis: if p.symmetric_infill_y_axis { Some(p.symmetric_y_axis) } else { None },
+    };
+    let raw = super::fill_rectilinear::fill_surface_by_lines_zag(
+        &s.expolygon,
+        rect.spacing,
+        angle as f64,
+        rect.overlap,
+        &rparams,
+        &zag,
+    );
     // dont_connect still chain_polylines, which strings endpoints around circle B.
     // FillConformal.cpp:508-524
     let mut out: Vec<Polyline> = Vec::with_capacity(raw.len());

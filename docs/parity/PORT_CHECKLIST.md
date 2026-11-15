@@ -11,22 +11,22 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**39.1% of the named C++ functions are ported or verified (3743 of 9574); 27.8% by size of body.**
+**40.8% of the named C++ functions are ported or verified (3908 of 9574); 29.2% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 3008 | 31.4% | 44.2% |
-| partial `[~]` | 2823 | 29.5% | 28.0% |
-| ported `[x]` | 3320 | 34.7% | 24.0% |
-| verified `[v]` | 423 | 4.4% | 3.8% |
+| not started `[ ]` | 2843 | 29.7% | 42.7% |
+| partial `[~]` | 2823 | 29.5% | 28.1% |
+| ported `[x]` | 3326 | 34.7% | 24.0% |
+| verified `[v]` | 582 | 6.1% | 5.2% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
-| no Rust file of that name | 28 |
+| no Rust file of that name | 17 |
 | partial | 239 |
-| every named function ported | 48 |
-| every named function verified | 2 |
+| every named function ported | 50 |
+| every named function verified | 11 |
 
 C++ still run through the FFI shim crates: 0 functions called from the engine (`clipper-z-sys` 0, `clipper2-z-sys` 0, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
@@ -59,7 +59,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `AABBMesh` | 1 | `aabb_mesh.rs` | partial | 20 | 2 | 9 | 9 | 0 |
 | `AABBTreeIndirect` | 1 | `aabb_tree_indirect.rs` | partial | 41 | 5 | 11 | 25 | 0 |
 | `AABBTreeLines` | 1 | `aabb_tree_lines.rs` | partial | 13 | 0 | 1 | 12 | 0 |
-| `AdaptiveLayerMerge` | 3 | none | not started | 16 | 15 | 1 | 0 | 0 |
+| `AdaptiveLayerMerge` | 3 | `adaptive_layer_merge.rs` | ported | 16 | 0 | 0 | 6 | 10 |
 | `Algorithm/LineSegmentation/LineSegmentation` | 1 | `algorithm/line_segmentation/line_segmentation.rs` | partial | 29 | 7 | 17 | 5 | 0 |
 | `AnyPtr` | 3 | `any_ptr.rs` | partial | 6 | 0 | 2 | 4 | 0 |
 | `AppConfig` | 1 | `app_config.rs` | partial | 72 | 4 | 15 | 53 | 0 |
@@ -112,11 +112,11 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `clipper2/clipper.rectclip` | 1 | `clipper2/clipper_rectclip.rs` | partial | 31 | 0 | 1 | 0 | 30 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 3 | 9 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
-| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 37 | 161 | 29 | 0 |
+| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 35 | 163 | 29 | 0 |
 | `ClipperZUtils` | 1 | `clipper_z_utils.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `clonable_ptr` | 1 | `clonable_ptr.rs` | partial | 7 | 3 | 1 | 3 | 0 |
 | `Color` | 1 | `color.rs` | partial | 97 | 10 | 15 | 72 | 0 |
-| `ColorDecomposeRecipe` | 1 | none | not started | 18 | 17 | 1 | 0 | 0 |
+| `ColorDecomposeRecipe` | 1 | `color_decompose_recipe.rs` | verified | 18 | 0 | 0 | 0 | 18 |
 | `CommonDefs` | 3 | `common_defs.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `Config` | 1 | `config.rs` | partial | 327 | 150 | 165 | 12 | 0 |
 | `CSGMesh/CSGMesh` | 3 | `csg_mesh/csg_mesh.rs` | ported | 4 | 0 | 0 | 4 | 0 |
@@ -131,7 +131,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `CutSurface` | 3 | `cut_surface.rs` | partial | 92 | 78 | 7 | 7 | 0 |
 | `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 15 | 3 | 1 | 0 |
 | `Debounce` | 3 | none | not started | 1 | 1 | 0 | 0 | 0 |
-| `Desensitize` | 3 | none | not started | 9 | 9 | 0 | 0 | 0 |
+| `Desensitize` | 3 | `desensitize.rs` | verified | 9 | 0 | 0 | 0 | 9 |
 | `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 12 | 24 | 11 | 0 |
 | `ElephantFootCompensation` | 1 | `elephant_foot_compensation.rs` | partial | 10 | 5 | 0 | 4 | 1 |
 | `Emboss` | 3 | `emboss.rs` | partial | 91 | 40 | 13 | 38 | 0 |
@@ -152,7 +152,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `FaceDetector` | 3 | `face_detector.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `FilamentGroup` | 1 | `filament_group.rs` | partial | 49 | 23 | 4 | 22 | 0 |
 | `FilamentGroupUtils` | 1 | `filament_group_utils.rs` | partial | 17 | 4 | 2 | 11 | 0 |
-| `FilamentMixer` | 3 | `filament_mixer.rs` | partial | 37 | 19 | 1 | 17 | 0 |
+| `FilamentMixer` | 3 | `filament_mixer.rs` | partial | 37 | 18 | 1 | 18 | 0 |
 | `FilamentMixerModel` | 3 | `filament_mixer_model.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `FileParserError` | 1 | `file_parser_error.rs` | partial | 4 | 0 | 1 | 3 | 0 |
 | `Fill/Fill` | 1 | `fill/fill.rs` | partial | 7 | 1 | 3 | 3 | 0 |
@@ -182,21 +182,21 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `format` | 1 | none | not started | 4 | 2 | 2 | 0 | 0 |
 | `Format/3mf` | 3 | none | not started | 111 | 4 | 107 | 0 | 0 |
 | `Format/AMF` | 3 | `format/amf.rs` | partial | 16 | 0 | 10 | 6 | 0 |
-| `Format/AssemblyStepsJson` | 3 | none | not started | 82 | 49 | 33 | 0 | 0 |
+| `Format/AssemblyStepsJson` | 3 | none | not started | 82 | 48 | 34 | 0 | 0 |
 | `Format/AssemblyTreeJson` | 3 | none | not started | 6 | 4 | 2 | 0 | 0 |
 | `Format/AssimpImport` | 3 | none | not started | 16 | 16 | 0 | 0 | 0 |
-| `Format/bbs_3mf` | 1 | `format/bbs_3mf.rs` | partial | 205 | 109 | 77 | 19 | 0 |
+| `Format/bbs_3mf` | 1 | `format/bbs_3mf.rs` | partial | 205 | 108 | 78 | 19 | 0 |
 | `Format/ModelIO` | 3 | `format/model_io.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `Format/OBJ` | 3 | `format/obj.rs` | partial | 6 | 1 | 3 | 2 | 0 |
 | `Format/objparser` | 3 | `format/objparser.rs` | partial | 25 | 12 | 4 | 9 | 0 |
-| `Format/ResourcePathUtils` | 3 | none | not started | 12 | 12 | 0 | 0 | 0 |
+| `Format/ResourcePathUtils` | 3 | `format/resource_path_utils.rs` | verified | 12 | 0 | 0 | 0 | 12 |
 | `Format/SL1` | 3 | `format/sl1.rs` | partial | 24 | 11 | 4 | 9 | 0 |
 | `Format/STEP` | 3 | `format/step.rs` | partial | 21 | 9 | 7 | 5 | 0 |
 | `Format/STL` | 1 | `stl.rs` | partial | 4 | 0 | 3 | 1 | 0 |
 | `Format/svg` | 3 | `format/svg.rs` | partial | 8 | 0 | 2 | 6 | 0 |
 | `Frustum` | 3 | `frustum.rs` | partial | 11 | 0 | 8 | 3 | 0 |
 | `FuzzySkin` | 2 | `fuzzy_skin.rs` | partial | 10 | 2 | 2 | 6 | 0 |
-| `GCode` | 1 | `g_code.rs` | partial | 152 | 103 | 35 | 14 | 0 |
+| `GCode` | 1 | `g_code.rs` | partial | 152 | 102 | 36 | 14 | 0 |
 | `GCode/AvoidCrossingPerimeters` | 1 | `gcode/avoid_crossing_perimeters.rs` | partial | 59 | 18 | 10 | 31 | 0 |
 | `GCode/BedExcludeChecker` | 1 | `gcode/bed_exclude_checker.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `GCode/ConflictChecker` | 1 | `gcode/conflict_checker.rs` | partial | 19 | 0 | 3 | 16 | 0 |
@@ -242,17 +242,17 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `libslic3r` | 1 | `libslic3r.rs` | partial | 28 | 12 | 15 | 1 | 0 |
 | `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 27 | 23 | 0 |
 | `LocalesUtils` | 1 | `locales_utils.rs` | partial | 3 | 0 | 3 | 0 | 0 |
-| `Log` | 3 | none | not started | 21 | 13 | 8 | 0 | 0 |
-| `LogKeys` | 3 | none | not started | 0 | 0 | 0 | 0 | 0 |
-| `LogSink` | 3 | `log_sink.rs` | partial | 6 | 5 | 0 | 1 | 0 |
+| `Log` | 3 | `log.rs` | verified | 21 | 0 | 0 | 0 | 21 |
+| `LogKeys` | 3 | `log_keys.rs` | ported | 0 | 0 | 0 | 0 | 0 |
+| `LogSink` | 3 | `log_sink.rs` | verified | 6 | 0 | 0 | 0 | 6 |
 | `MacUtils` | 3 | `mac_utils.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `MarchingSquares` | 3 | `marching_squares.rs` | partial | 29 | 1 | 3 | 25 | 0 |
 | `Measure` | 3 | `measure.rs` | partial | 41 | 0 | 9 | 32 | 0 |
 | `MeasureUtils` | 3 | `measure_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `MeshBoolean` | 3 | `mesh_boolean.rs` | partial | 54 | 37 | 13 | 4 | 0 |
 | `MeshBooleanOpenMeshCraft` | 3 | none | not started | 6 | 6 | 0 | 0 | 0 |
-| `MeshDiagnostics` | 3 | none | not started | 11 | 11 | 0 | 0 | 0 |
-| `MeshRaycast` | 3 | none | not started | 1 | 1 | 0 | 0 | 0 |
+| `MeshDiagnostics` | 3 | `mesh_diagnostics.rs` | verified | 11 | 0 | 0 | 0 | 11 |
+| `MeshRaycast` | 3 | `mesh_raycast.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `MeshSplitImpl` | 3 | `mesh_split_impl.rs` | partial | 11 | 0 | 1 | 10 | 0 |
 | `MinAreaBoundingBox` | 1 | `min_area_bounding_box.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `MinimumSpanningTree` | 3 | `minimum_spanning_tree.rs` | ported | 6 | 0 | 0 | 6 | 0 |
@@ -266,7 +266,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `MutablePolygon` | 1 | `mutable_polygon.rs` | partial | 47 | 0 | 20 | 27 | 0 |
 | `MutablePriorityQueue` | 1 | `mutable_priority_queue.rs` | partial | 37 | 0 | 17 | 20 | 0 |
 | `NormalUtils` | 3 | `normal_utils.rs` | ported | 7 | 0 | 0 | 7 | 0 |
-| `NozzleInventory` | 3 | none | not started | 49 | 45 | 4 | 0 | 0 |
+| `NozzleInventory` | 3 | `nozzle_inventory.rs` | partial | 49 | 1 | 0 | 0 | 48 |
 | `NSVGUtils` | 3 | `nsvg_utils.rs` | partial | 16 | 8 | 3 | 5 | 0 |
 | `ObjColorUtils` | 3 | `obj_color_utils.rs` | partial | 24 | 19 | 5 | 0 | 0 |
 | `ObjectID` | 3 | `object_id.rs` | partial | 31 | 1 | 4 | 26 | 0 |
@@ -289,12 +289,12 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `PolygonTrimmer` | 1 | `polygon_trimmer.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Polyline` | 1 | `geometry/polyline.rs` | partial | 52 | 2 | 21 | 29 | 0 |
 | `Preset` | 1 | `preset.rs` | partial | 108 | 72 | 24 | 12 | 0 |
-| `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 133 | 5 | 3 | 0 |
+| `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 128 | 10 | 3 | 0 |
 | `PrincipalComponents2D` | 1 | `principal_components2_d.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `Print` | 1 | `print.rs` | partial | 236 | 162 | 69 | 5 | 0 |
 | `PrintApply` | 1 | `print_apply.rs` | partial | 44 | 27 | 14 | 3 | 0 |
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 40 | 20 | 17 | 0 |
-| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 115 | 14 | 8 | 0 |
+| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 110 | 19 | 8 | 0 |
 | `PrintObject` | 1 | `print_object.rs` | partial | 82 | 52 | 24 | 6 | 0 |
 | `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 20 | 3 | 1 | 0 |
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
@@ -339,8 +339,8 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 49 | 10 | 13 | 0 |
 | `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 44 | 15 | 17 | 0 |
 | `Support/TreeSupportCommon` | 2 | `support/tree_support_common.rs` | partial | 15 | 3 | 1 | 11 | 0 |
-| `SupportMergePlan` | 3 | none | not started | 14 | 13 | 1 | 0 | 0 |
-| `SupportRecommendedParams` | 3 | none | not started | 9 | 8 | 1 | 0 | 0 |
+| `SupportMergePlan` | 3 | `support_merge_plan.rs` | verified | 14 | 0 | 0 | 0 | 14 |
+| `SupportRecommendedParams` | 3 | `support_recommended_params.rs` | verified | 9 | 0 | 0 | 0 | 9 |
 | `Surface` | 1 | `surface.rs` | partial | 39 | 0 | 20 | 19 | 0 |
 | `SurfaceCollection` | 1 | `surface_collection.rs` | partial | 35 | 0 | 19 | 16 | 0 |
 | `SurfaceMesh` | 1 | `surface_mesh.rs` | partial | 22 | 2 | 2 | 18 | 0 |
@@ -368,7 +368,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `TryCatchSignal` | 3 | `try_catch_signal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `TryCatchSignalSEH` | 3 | `try_catch_signal_seh.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Utils` | 1 | `utils.rs` | partial | 36 | 5 | 17 | 14 | 0 |
-| `utils` | 1 | `utils.rs` | partial | 66 | 15 | 28 | 23 | 0 |
+| `utils` | 1 | `utils.rs` | partial | 66 | 14 | 29 | 23 | 0 |
 | `VariableWidth` | 1 | `variable_width.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `VectorFormatter` | 3 | `vector_formatter.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `Win10ModelRepair` | 3 | none | not started | 0 | 0 | 0 | 0 | 0 |
@@ -444,7 +444,7 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 
 **class `BoundingBoxWrapper`**
 
-- [~] `idx` (line 230) → `aabb_tree_lines.rs, geometry/convex_hull.rs, support/tree_support_3d.rs` — not in the paired file
+- [~] `idx` (line 230) → `aabb_tree_lines.rs, geometry/convex_hull.rs, mesh_raycast.rs` — not in the paired file
 - [~] `centroid` (line 232) → `aabb_tree_lines.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 
 **class `IndexedTriangleSetDistancer`**
@@ -506,32 +506,32 @@ Rust file: `aabb_tree_lines.rs`. Status: **partial**. Not listed: 2 constructors
 
 ### `AdaptiveLayerMerge` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `adaptive_layer_merge.rs`. Status: **ported**.
 
 **free functions**
 
-- [ ] `adaptive_layer_height_range` (line 24)
-- [ ] `support_top_z_for_nozzle` (line 29)
-- [ ] `adaptive_printable_pieces` (line 39)
-- [ ] `adaptive_printable_core` (line 50)
-- [ ] `adaptive_suppressed_orphan_area` (line 66)
-- [ ] `has_multiple_used_nozzle_diameters` (line 90)
-- [ ] `adaptive_layer_band_size` (line 105)
-- [ ] `cover_span_with_bands` (line 127)
-- [ ] `cover_span_from_base` (line 178)
-- [ ] `build_adaptive_layer_bands` (line 229)
-- [ ] `pull_adaptive_band_top_to_material` (line 286)
-- [ ] `split_adaptive_layer_span` (line 321)
+- [v] `adaptive_layer_height_range` (line 24) → `adaptive_layer_merge.rs:118` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
+- [v] `support_top_z_for_nozzle` (line 29) → `adaptive_layer_merge.rs:126` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
+- [x] `adaptive_printable_pieces` (line 39) → `adaptive_layer_merge.rs:142`
+- [x] `adaptive_printable_core` (line 50) → `adaptive_layer_merge.rs:158`
+- [x] `adaptive_suppressed_orphan_area` (line 66) → `adaptive_layer_merge.rs:210`
+- [v] `has_multiple_used_nozzle_diameters` (line 90) → `adaptive_layer_merge.rs:259` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
+- [v] `adaptive_layer_band_size` (line 105) → `adaptive_layer_merge.rs:282` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
+- [v] `cover_span_with_bands` (line 127) → `adaptive_layer_merge.rs:312` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
+- [v] `cover_span_from_base` (line 178) → `adaptive_layer_merge.rs:375` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
+- [v] `build_adaptive_layer_bands` (line 229) → `adaptive_layer_merge.rs:444` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
+- [v] `pull_adaptive_band_top_to_material` (line 286) → `adaptive_layer_merge.rs:509` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
+- [v] `split_adaptive_layer_span` (line 321) → `adaptive_layer_merge.rs:551` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
 
 **class `AdaptiveLayerHeightRange`**
 
-- [~] `contains` (line 14) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — a function of this name is in another Rust file
+- [v] `contains` (line 14) → `adaptive_layer_merge.rs:38` — R908: tests/adaptive_layer_merge_native_parity.rs: 3,089 cases generated by the pin's AdaptiveLayerMerge.cpp built standalone (tests/data/adaptive_layer_merge/gen.cpp), equal by bits
 
 **class `AdaptiveMergePatch`**
 
-- [ ] `set_area` (line 44)
-- [ ] `set_suppressed_area` (line 54)
-- [ ] `has_suppressed_area` (line 59)
+- [x] `set_area` (line 44) → `adaptive_layer_merge.rs:74`
+- [x] `set_suppressed_area` (line 54) → `adaptive_layer_merge.rs:91`
+- [x] `has_suppressed_area` (line 59) → `adaptive_layer_merge.rs:96`
 
 ### `Algorithm/LineSegmentation/LineSegmentation` (.cpp+.hpp)
 
@@ -1225,9 +1225,9 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [x] `translate` (line 143) → `bounding_box.rs:1071`
 - [x] `inflated` (line 145) → `bounding_box.rs:1099`
 - [x] `volume` (line 148) → `bounding_box.rs:816`
-- [~] `contains` (line 150) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 150) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [~] `merge` (line 152) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
-- [~] `contains` (line 154) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 154) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [x] `intersects` (line 158) → `bounding_box.rs:1390`
 - [~] `merge` (line 159) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
 - [x] `size` (line 185) → `bounding_box.rs:1288`
@@ -1243,8 +1243,8 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [x] `translate` (line 45) → `bounding_box.rs:1307`
 - [~] `translate` (line 46) → `bounding_box.rs:730` — partial
 - [x] `inflated` (line 48) → `bounding_box.rs:776`
-- [~] `contains` (line 50) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
-- [~] `contains` (line 54) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 50) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 54) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [x] `overlap` (line 57) → `bounding_box.rs:1131`
 - [x] `scale` (line 63) → `bounding_box.rs:1041`
 - [~] `merge` (line 73) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
@@ -2211,8 +2211,8 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `expand` (line 383) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `expand_ex` (line 385) → `clipper_utils.rs`
 - [x] `shrink` (line 388) → `clipper_utils.rs:832`
-- [ ] `shrink_ex` (line 390) → `clipper_utils.rs`
-- [ ] `shrink_ex` (line 392) → `clipper_utils.rs`
+- [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs` — not in the paired file
+- [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs` — not in the paired file
 - [x] `offset_paths` (line 400) → `clipper_utils.rs:1621`
 - [x] `closing` (line 407) → `clipper_utils.rs:1115`
 - [ ] `closing_ex` (line 410) → `clipper_utils.rs`
@@ -2227,7 +2227,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [ ] `contour_to_polygons` (line 423) → `clipper_utils.rs`
 - [x] `opening` (line 424) → `clipper_utils.rs:934`
 - [~] `opening` (line 426) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `opening_ex` (line 428) → `clipper_utils.rs` — another overload of the name is ported
+- [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 429) → `clipper_utils.rs`
 - [x] `opening_ex` (line 430) → `clipper_utils.rs:949`
 - [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1667`
@@ -2576,28 +2576,28 @@ Rust file: `color.rs`. Status: **partial**. Not listed: 5 constructors, 14 opera
 
 ### `ColorDecomposeRecipe` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `color_decompose_recipe.rs`. Status: **verified**.
 
 **free functions**
 
-- [~] `srgb_to_linear` (line 35) → `filament_mixer.rs, sla/agg/gamma_functions.rs` — a function of this name is in another Rust file
-- [ ] `xyz_to_lab_component` (line 41)
-- [ ] `rgb_to_lab` (line 48)
-- [ ] `lab_to_srgb_hex` (line 65)
-- [ ] `delta_e76` (line 101)
-- [ ] `material_matches` (line 108)
-- [ ] `material_family` (line 115)
-- [ ] `ratio_grid` (line 121)
-- [ ] `parse_mode` (line 138)
-- [ ] `load_standard_entries` (line 147)
-- [ ] `canonicalize_blend_components` (line 212)
-- [ ] `evaluate_candidate` (line 274)
-- [ ] `color_decompose_material_family_matches` (line 307)
-- [ ] `color_decompose_rgb_to_hex` (line 314)
-- [ ] `color_decompose_hex_to_rgb` (line 321)
-- [ ] `recommend_from_physical_filaments` (line 332)
-- [ ] `lookup_standard_recipe` (line 427)
-- [ ] `lookup_measured_blend_color` (line 471)
+- [v] `srgb_to_linear` (line 35) → `color_decompose_recipe.rs:119` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `xyz_to_lab_component` (line 41) → `color_decompose_recipe.rs:129` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `rgb_to_lab` (line 48) → `color_decompose_recipe.rs:140` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `lab_to_srgb_hex` (line 65) → `color_decompose_recipe.rs:157` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `delta_e76` (line 101) → `color_decompose_recipe.rs:201` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `material_matches` (line 108) → `color_decompose_recipe.rs:210` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `material_family` (line 115) → `color_decompose_recipe.rs:218` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `ratio_grid` (line 121) → `color_decompose_recipe.rs:226` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `parse_mode` (line 138) → `color_decompose_recipe.rs:252` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `load_standard_entries` (line 147) → `color_decompose_recipe.rs:301` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `canonicalize_blend_components` (line 212) → `color_decompose_recipe.rs:380` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `evaluate_candidate` (line 274) → `color_decompose_recipe.rs:446` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `color_decompose_material_family_matches` (line 307) → `color_decompose_recipe.rs:487` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `color_decompose_rgb_to_hex` (line 314) → `color_decompose_recipe.rs:495` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table (the body reads as partial to the estimate)
+- [v] `color_decompose_hex_to_rgb` (line 321) → `color_decompose_recipe.rs:606` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `recommend_from_physical_filaments` (line 332) → `color_decompose_recipe.rs:618` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `lookup_standard_recipe` (line 427) → `color_decompose_recipe.rs:750` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
+- [v] `lookup_measured_blend_color` (line 471) → `color_decompose_recipe.rs:944` — R908: tests/color_decompose_recipe_native_parity.rs: 3,983 calls, exact text, against the pin's ColorDecomposeRecipe.cpp compiled unchanged over the pin's table
 
 ### `CommonDefs` (.hpp)
 
@@ -2976,7 +2976,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [ ] `set_to_index` (line 602) → `config.rs`
 - [ ] `set_with_nil` (line 626) → `config.rs`
 - [ ] `set_with_default` (line 662) → `config.rs`
-- [~] `resize` (line 692) → `extrusion_simulator.rs` — not in the paired file
+- [~] `resize` (line 692) → `extrusion_simulator.rs, nozzle_inventory.rs` — not in the paired file
 - [~] `clear` (line 725) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [~] `size` (line 726) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 727) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
@@ -3318,22 +3318,22 @@ Rust file: none. Status: **not started**.
 
 ### `Desensitize` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `desensitize.rs`. Status: **verified**.
 
 **free functions**
 
-- [ ] `channel_name` (line 80)
-- [ ] `dump_for_log` (line 107)
+- [v] `channel_name` (line 80) → `desensitize.rs:124` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1
+- [v] `dump_for_log` (line 107) → `desensitize.rs:155` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1
 
 **class `Desensitize`**
 
-- [ ] `dev_id` (line 18)
-- [ ] `dev_ip` (line 31)
-- [ ] `dev_name` (line 52)
-- [ ] `json_log` (line 113)
-- [ ] `user_id` (line 254)
-- [ ] `mask_all` (line 267)
-- [ ] `mask_by_key` (line 295)
+- [v] `dev_id` (line 18) → `desensitize.rs:348` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1 (the body reads as divergent to the estimate)
+- [v] `dev_ip` (line 31) → `desensitize.rs:353` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1 (the body reads as divergent to the estimate)
+- [v] `dev_name` (line 52) → `desensitize.rs:358` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1 (the body reads as divergent to the estimate)
+- [v] `json_log` (line 113) → `desensitize.rs:263` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1 (the body reads as divergent to the estimate)
+- [v] `user_id` (line 254) → `desensitize.rs:363` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1 (the body reads as divergent to the estimate)
+- [v] `mask_all` (line 267) → `desensitize.rs:368` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1
+- [v] `mask_by_key` (line 295) → `desensitize.rs:373` — R908: tests/desensitize_native_parity.rs: 300 mask cases, 138 by key, 190 JSON documents and 1,400 doubles through nlohmann's dump, against the pin's source built with BBL_RELEASE_TO_PUBLIC=1 (the body reads as partial to the estimate)
 
 ### `EdgeGrid` (.cpp+.hpp)
 
@@ -3677,8 +3677,8 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [x] `get_expolygons_area` (line 455) → `ex_polygon.rs:563`
 - [~] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:572` — partial
 - [x] `expolygons_match` (line 480) → `ex_polygon.rs:612`
-- [~] `area` (line 487) → `arachne/utils/extrusion_line.rs, arrange.rs, bounding_box.rs` — not in the paired file
-- [~] `area` (line 488) → `arachne/utils/extrusion_line.rs, arrange.rs, bounding_box.rs` — not in the paired file
+- [~] `area` (line 487) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
+- [~] `area` (line 488) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `get_extents` (line 490) → `ex_polygon_collection.rs, fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [x] `get_extents` (line 495) → `ex_polygon.rs:642`
 - [~] `get_extents_rotated` (line 506) → `bridge_detector.rs, geometry/polygon.rs, internal_bridge_detector.rs` — not in the paired file
@@ -3701,14 +3701,14 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `translate` (line 41) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `rotate` (line 45) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
 - [~] `empty` (line 46) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `area` (line 52) → `arachne/utils/extrusion_line.rs, arrange.rs, bounding_box.rs` — not in the paired file
+- [~] `area` (line 52) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `is_valid` (line 60) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [x] `douglas_peucker` (line 69) → `ex_polygon.rs:117`
 - [~] `medial_axis` (line 75) → `geometry/expolygon.rs` — not in the paired file
-- [~] `contains` (line 76) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
-- [~] `contains` (line 81) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 76) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 81) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [~] `num_contours` (line 82) → `geometry/expolygon.rs` — not in the paired file
-- [~] `contains` (line 92) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 92) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [x] `contains` (line 109) → `ex_polygon.rs:175`
 - [x] `on_boundary` (line 121) → `ex_polygon.rs:200`
 - [x] `point_projection` (line 132) → `ex_polygon.rs:223`
@@ -4194,21 +4194,21 @@ Rust file: `filament_mixer.rs`. Status: **partial**.
 - [x] `filament_mixer_lerp_float` (line 58) → `filament_mixer.rs:66`
 - [x] `filament_mixer_lerp_linear_float` (line 72) → `filament_mixer.rs:99`
 - [x] `parse_hex` (line 92) → `filament_mixer.rs:131`
-- [x] `blend_color` (line 101) → `filament_mixer.rs:175`
-- [ ] `blend_color_multi` (line 116) → `filament_mixer.rs`
-- [x] `parse_mixed_components` (line 164) → `filament_mixer.rs:204`
+- [x] `blend_color` (line 101) → `filament_mixer.rs:147`
+- [x] `blend_color_multi` (line 116) → `filament_mixer.rs:166`
+- [x] `parse_mixed_components` (line 164) → `filament_mixer.rs:235`
 - [ ] `parse_tangent_token` (line 185) → `filament_mixer.rs`
 - [ ] `split_commas` (line 205) → `filament_mixer.rs`
 - [ ] `compute_pchip_default_tangents` (line 225) → `filament_mixer.rs`
 - [ ] `parse_gradient_curve` (line 262) → `filament_mixer.rs`
 - [ ] `serialize_gradient_curve` (line 317) → `filament_mixer.rs`
 - [ ] `sample_gradient_curve` (line 350) → `filament_mixer.rs`
-- [x] `parse_mixed_ratios` (line 397) → `filament_mixer.rs:223`
-- [x] `has_any_mixed_filament` (line 426) → `filament_mixer.rs:255`
-- [x] `check_mixed_filament_integrity` (line 433) → `filament_mixer.rs:265`
-- [x] `expand_mixed_filaments` (line 460) → `filament_mixer.rs:295`
-- [x] `remap_mixed_components_on_delete` (line 480) → `filament_mixer.rs:322`
-- [x] `check_mixed_filament_type_consistency` (line 504) → `filament_mixer.rs:354`
+- [x] `parse_mixed_ratios` (line 397) → `filament_mixer.rs:254`
+- [x] `has_any_mixed_filament` (line 426) → `filament_mixer.rs:286`
+- [x] `check_mixed_filament_integrity` (line 433) → `filament_mixer.rs:296`
+- [x] `expand_mixed_filaments` (line 460) → `filament_mixer.rs:326`
+- [x] `remap_mixed_components_on_delete` (line 480) → `filament_mixer.rs:353`
+- [x] `check_mixed_filament_type_consistency` (line 504) → `filament_mixer.rs:385`
 - [ ] `check_mixed_filament_diameter_consistency` (line 535) → `filament_mixer.rs`
 - [ ] `expand_mixed_slots_in_unprintables` (line 562) → `filament_mixer.rs`
 - [ ] `sanitize_mixed_gradient_curve_array` (line 583) → `filament_mixer.rs`
@@ -4485,7 +4485,7 @@ Rust file: `fill/fill_conformal.rs`. Status: **partial**.
 - [x] `is_blob_island` (line 460) → `fill/fill_conformal.rs:661`
 - [x] `hub_line_width_mm` (line 475) → `fill/fill_conformal.rs:678`
 - [~] `fill_hub_rectilinear` (line 485) → `fill/fill_conformal.rs:691` — partial
-- [x] `fill_surface` (line 527) → `fill/fill_conformal.rs:764`
+- [x] `fill_surface` (line 527) → `fill/fill_conformal.rs:780`
 
 ### `Fill/FillConformalChart` (.cpp+.hpp)
 
@@ -4778,32 +4778,32 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 
 **free functions**
 
-- [~] `segment_length` (line 47) → `fill/fill_rectilinear.rs:848` — partial
-- [x] `polygon_segment_append` (line 84) → `fill/fill_rectilinear.rs:884`
-- [x] `polygon_segment_append_reversed` (line 103) → `fill/fill_rectilinear.rs:898`
-- [x] `adjust_sort_for_segment_intersections` (line 370) → `fill/fill_rectilinear.rs:1154`
-- [x] `phony_outer_intersection` (line 430) → `fill/fill_rectilinear.rs:2985`
+- [~] `segment_length` (line 47) → `fill/fill_rectilinear.rs:914` — partial
+- [x] `polygon_segment_append` (line 84) → `fill/fill_rectilinear.rs:950`
+- [x] `polygon_segment_append_reversed` (line 103) → `fill/fill_rectilinear.rs:964`
+- [x] `adjust_sort_for_segment_intersections` (line 370) → `fill/fill_rectilinear.rs:1220`
+- [x] `phony_outer_intersection` (line 430) → `fill/fill_rectilinear.rs:3319`
 - [ ] `distance_of_segmens` (line 555) → `fill/fill_rectilinear.rs`
-- [~] `intersection_on_prev_next_vertical_line_valid` (line 566) → `fill/fill_rectilinear.rs:1618` — partial
-- [x] `intersection_on_prev_vertical_line_valid` (line 609) → `fill/fill_rectilinear.rs:1599`
-- [x] `intersection_on_next_vertical_line_valid` (line 617) → `fill/fill_rectilinear.rs:1608`
-- [x] `measure_perimeter_horizontal_segment_length` (line 626) → `fill/fill_rectilinear.rs:1529`
-- [x] `emit_perimeter_prev_next_segment` (line 655) → `fill/fill_rectilinear.rs:1722`
-- [x] `measure_perimeter_segment_on_vertical_line_length` (line 694) → `fill/fill_rectilinear.rs:1567`
-- [x] `emit_perimeter_segment_on_vertical_line` (line 719) → `fill/fill_rectilinear.rs:1772`
-- [x] `slice_region_by_vertical_lines` (line 822) → `fill/fill_rectilinear.rs:928`
+- [~] `intersection_on_prev_next_vertical_line_valid` (line 566) → `fill/fill_rectilinear.rs:1684` — partial
+- [x] `intersection_on_prev_vertical_line_valid` (line 609) → `fill/fill_rectilinear.rs:1665`
+- [x] `intersection_on_next_vertical_line_valid` (line 617) → `fill/fill_rectilinear.rs:1674`
+- [x] `measure_perimeter_horizontal_segment_length` (line 626) → `fill/fill_rectilinear.rs:1595`
+- [x] `emit_perimeter_prev_next_segment` (line 655) → `fill/fill_rectilinear.rs:1788`
+- [x] `measure_perimeter_segment_on_vertical_line_length` (line 694) → `fill/fill_rectilinear.rs:1633`
+- [x] `emit_perimeter_segment_on_vertical_line` (line 719) → `fill/fill_rectilinear.rs:1838`
+- [x] `slice_region_by_vertical_lines` (line 822) → `fill/fill_rectilinear.rs:994`
 - [ ] `validate_segment_intersection_connectivity` (line 1066) → `fill/fill_rectilinear.rs`
-- [x] `connect_segment_intersections_by_contours` (line 1122) → `fill/fill_rectilinear.rs:1271`
-- [x] `pinch_contours_insert_phony_outer_intersections` (line 1288) → `fill/fill_rectilinear.rs:3009`
-- [~] `traverse_graph_generate_polylines` (line 1426) → `fill/fill_rectilinear.rs:1806` — divergent
+- [x] `connect_segment_intersections_by_contours` (line 1122) → `fill/fill_rectilinear.rs:1337`
+- [x] `pinch_contours_insert_phony_outer_intersections` (line 1288) → `fill/fill_rectilinear.rs:3343`
+- [~] `traverse_graph_generate_polylines` (line 1426) → `fill/fill_rectilinear.rs:1872` — divergent
 
 **class `ExPolygonWithOffset`**
 
-- [x] `is_contour_outer` (line 515) → `fill/fill_rectilinear.rs:638`
-- [x] `is_contour_inner` (line 517) → `fill/fill_rectilinear.rs:642`
-- [x] `is_contour_ccw` (line 525) → `fill/fill_rectilinear.rs:654`
-- [x] `bounding_box_src` (line 527) → `fill/fill_rectilinear.rs:670`
-- [x] `bounding_box_outer` (line 529) → `fill/fill_rectilinear.rs:662`
+- [x] `is_contour_outer` (line 515) → `fill/fill_rectilinear.rs:668`
+- [x] `is_contour_inner` (line 517) → `fill/fill_rectilinear.rs:672`
+- [x] `is_contour_ccw` (line 525) → `fill/fill_rectilinear.rs:684`
+- [x] `bounding_box_src` (line 527) → `fill/fill_rectilinear.rs:700`
+- [x] `bounding_box_outer` (line 529) → `fill/fill_rectilinear.rs:692`
 - [ ] `bounding_box_inner` (line 531) → `fill/fill_rectilinear.rs`
 - [~] `export_to_svg` (line 535) → `surface.rs, surface_collection.rs` — not in the paired file
 
@@ -5321,7 +5321,7 @@ Rust file: none. Status: **not started**.
 - [ ] `json_get_size_t` (line 33)
 - [~] `json_get_bool` (line 44) → `gcode/thumbnail_data.rs` — a function of this name is in another Rust file
 - [ ] `json_get_assembly_step_kind` (line 56)
-- [ ] `json_get_double` (line 72)
+- [~] `json_get_double` (line 72) → `color_decompose_recipe.rs` — a function of this name is in another Rust file
 - [ ] `json_get_vec2d` (line 80)
 - [ ] `color_to_json` (line 89)
 - [ ] `bound_volumes_to_json` (line 94)
@@ -5523,7 +5523,7 @@ Rust file: `format/bbs_3mf.rs`. Status: **partial**. Not listed: 16 constructors
 - [~] `start_element` (line 933) → `format/amf.rs` — not in the paired file
 - [~] `end_element` (line 963) → `format/amf.rs` — not in the paired file
 - [~] `merge` (line 971) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
-- [ ] `resolve` (line 978) → `format/bbs_3mf.rs`
+- [~] `resolve` (line 978) → `nozzle_inventory.rs` — not in the paired file
 - [ ] `parse_numbers` (line 1038) → `format/bbs_3mf.rs`
 
 **class `PlateData`**
@@ -5775,22 +5775,22 @@ Rust file: `format/objparser.rs`. Status: **partial**. Not listed: 5 operators.
 
 ### `Format/ResourcePathUtils` (.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `format/resource_path_utils.rs`. Status: **verified**.
 
 **free functions**
 
-- [ ] `ascii_lower_copy` (line 16)
-- [ ] `portable_path_copy` (line 25)
-- [ ] `hex_digit_value` (line 32)
-- [ ] `percent_decode_copy` (line 43)
-- [ ] `strip_file_uri_prefix_copy` (line 62)
-- [ ] `file_uri_has_remote_authority` (line 80)
-- [ ] `looks_like_windows_absolute_path` (line 95)
-- [ ] `filename_from_portable_path` (line 104)
-- [ ] `find_child_case_insensitive` (line 110)
-- [ ] `resolve_existing_path_case_insensitive` (line 138)
-- [ ] `resolve_existing_relative_path_case_insensitive` (line 183)
-- [ ] `resolve_external_resource_path` (line 203)
+- [v] `ascii_lower_copy` (line 16) → `format/resource_path_utils.rs:158` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem (the body reads as divergent to the estimate)
+- [v] `portable_path_copy` (line 25) → `format/resource_path_utils.rs:174` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem (the body reads as partial to the estimate)
+- [v] `hex_digit_value` (line 32) → `format/resource_path_utils.rs:179` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem
+- [v] `percent_decode_copy` (line 43) → `format/resource_path_utils.rs:197` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem
+- [v] `strip_file_uri_prefix_copy` (line 62) → `format/resource_path_utils.rs:218` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem (the body reads as partial to the estimate)
+- [v] `file_uri_has_remote_authority` (line 80) → `format/resource_path_utils.rs:241` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem
+- [v] `looks_like_windows_absolute_path` (line 95) → `format/resource_path_utils.rs:266` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem (the body reads as divergent to the estimate)
+- [v] `filename_from_portable_path` (line 104) → `format/resource_path_utils.rs:271` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem
+- [v] `find_child_case_insensitive` (line 110) → `format/resource_path_utils.rs:321` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem (the body reads as divergent to the estimate)
+- [v] `resolve_existing_path_case_insensitive` (line 138) → `format/resource_path_utils.rs:391` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem (the body reads as divergent to the estimate)
+- [v] `resolve_existing_relative_path_case_insensitive` (line 183) → `format/resource_path_utils.rs:403` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem (the body reads as partial to the estimate)
+- [v] `resolve_external_resource_path` (line 203) → `format/resource_path_utils.rs:419` — R908: tests/resource_path_utils_native_parity.rs: 2,374 cases (strings, path decomposition, a recreated file tree) against the pin's header built with Boost.Filesystem
 
 ### `Format/SL1` (.cpp+.hpp)
 
@@ -6064,12 +6064,12 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 **class `GCode::GCodeOutputStream`**
 
 - [~] `is_open` (line 300) → `clipper.rs, clipper2/clipper_engine.rs, edge_grid.rs` — not in the paired file
-- [~] `write` (line 311) → `zipper.rs` — not in the paired file
+- [~] `write` (line 311) → `log.rs, nozzle_inventory.rs, zipper.rs` — not in the paired file
 - [ ] `is_error` (line 7082) → `g_code.rs`
 - [ ] `get_last_error` (line 7087) → `g_code.rs`
-- [ ] `flush` (line 7092) → `g_code.rs`
+- [~] `flush` (line 7092) → `log_sink.rs` — not in the paired file
 - [~] `close` (line 7098) → `svg.rs` — not in the paired file
-- [~] `write` (line 7106) → `zipper.rs` — not in the paired file
+- [~] `write` (line 7106) → `log.rs, nozzle_inventory.rs, zipper.rs` — not in the paired file
 - [ ] `writeln` (line 7119) → `g_code.rs`
 - [ ] `write_format` (line 7125) → `g_code.rs`
 
@@ -6570,7 +6570,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `GCodeProcessorResult`**
 
-- [~] `lock` (line 383) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
+- [~] `lock` (line 383) → `execution/execution_seq.rs, log.rs, mt_utils.rs` — not in the paired file
 - [~] `unlock` (line 384) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
 - [~] `reset` (line 1537) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [~] `reset` (line 1571) → `gcode/g_code_processor.rs:2318` — partial
@@ -7667,7 +7667,7 @@ Rust file: `geometry/circle.rs`. Status: **partial**. Not listed: 9 constructors
 - [x] `invalid` (line 79) → `geometry/circle.rs:183`
 - [x] `valid` (line 80) → `geometry/circle.rs:189`
 - [x] `contains` (line 81) → `geometry/circle.rs:195`
-- [~] `contains` (line 82) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 82) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [x] `inflated` (line 85) → `geometry/circle.rs:211`
 - [x] `make_invalid` (line 87) → `geometry/circle.rs:221`
 
@@ -7676,7 +7676,7 @@ Rust file: `geometry/circle.rs`. Status: **partial**. Not listed: 9 constructors
 - [x] `invalid` (line 49) → `geometry/circle.rs:101`
 - [x] `valid` (line 50) → `geometry/circle.rs:107`
 - [x] `contains` (line 51) → `geometry/circle.rs:113`
-- [~] `contains` (line 52) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 52) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [x] `inflated` (line 54) → `geometry/circle.rs:128`
 - [x] `make_invalid` (line 57) → `geometry/circle.rs:139`
 
@@ -8063,7 +8063,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **free functions**
 
-- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2192`
+- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2331`
 - [ ] `zs_from_layers` (line 411) → `layer.rs`
 - [ ] `get_node_continuity_rang_limit` (line 458) → `layer.rs`
 - [~] `get_extents` (line 750) → `ex_polygon.rs, ex_polygon_collection.rs, fill/fill_conformal.rs` — not in the paired file
@@ -8076,34 +8076,34 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **class `Layer`**
 
-- [x] `empty` (line 25) → `layer.rs:1782`
-- [x] `add_region` (line 34) → `layer.rs:1776`
-- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2346` — divergent
-- [x] `make_slices` (line 47) → `layer.rs:2099`
-- [~] `backup_untyped_slices` (line 84) → `layer.rs:2202` — partial
-- [~] `restore_untyped_slices` (line 104) → `layer.rs:2241` — partial
-- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2270`
-- [x] `merged` (line 150) → `layer.rs:2297`
-- [x] `id` (line 158) → `layer.rs:1675`
-- [x] `set_id` (line 159) → `layer.rs:1681`
+- [x] `empty` (line 25) → `layer.rs:1921`
+- [x] `add_region` (line 34) → `layer.rs:1915`
+- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2485` — divergent
+- [x] `make_slices` (line 47) → `layer.rs:2238`
+- [~] `backup_untyped_slices` (line 84) → `layer.rs:2341` — partial
+- [~] `restore_untyped_slices` (line 104) → `layer.rs:2380` — partial
+- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2409`
+- [x] `merged` (line 150) → `layer.rs:2436`
+- [x] `id` (line 158) → `layer.rs:1814`
+- [x] `set_id` (line 159) → `layer.rs:1820`
 - [~] `object` (line 160) → `layer.rs` — another overload of the name is ported
-- [x] `object` (line 161) → `layer.rs:1698`
-- [x] `bottom_z` (line 169) → `layer.rs:1740`
-- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:1812` — partial
-- [x] `region_count` (line 193) → `layer.rs:1746`
+- [x] `object` (line 161) → `layer.rs:1837`
+- [x] `bottom_z` (line 169) → `layer.rs:1879`
+- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:1951` — partial
+- [x] `region_count` (line 193) → `layer.rs:1885`
 - [~] `get_region` (line 194) → `app_config.rs` — not in the paired file
-- [x] `get_region` (line 195) → `layer.rs:1752`
-- [~] `make_perimeters` (line 203) → `layer.rs:1895` — divergent
+- [x] `get_region` (line 195) → `layer.rs:1891`
+- [~] `make_perimeters` (line 203) → `layer.rs:2034` — divergent
 - [ ] `any_internal_region_slice_contains` (line 210) → `layer.rs`
 - [ ] `any_bottom_region_slice_contains` (line 214) → `layer.rs`
-- [x] `make_fills` (line 223) → `layer.rs:2608`
+- [x] `make_fills` (line 223) → `layer.rs:2747`
 - [~] `has_extrusions` (line 239) → `layer.rs` — another overload of the name is ported
 - [ ] `effective_print_height` (line 242) → `layer.rs`
 - [ ] `is_adaptive_merged_out` (line 256) → `layer.rs`
 - [ ] `simplify_wall_extrusion_path` (line 266) → `layer.rs`
 - [ ] `simplify_infill_extrusion_path` (line 267) → `layer.rs`
 - [~] `idx_higher_or_equal` (line 278) → `support/support_common.rs` — not in the paired file
-- [x] `calculate_perimeter_continuity` (line 469) → `layer.rs:2372`
+- [x] `calculate_perimeter_continuity` (line 469) → `layer.rs:2511`
 - [ ] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs`
 - [ ] `export_region_slices_to_svg` (line 576) → `layer.rs`
 - [ ] `export_region_slices_to_svg_debug` (line 596) → `layer.rs`
@@ -8113,7 +8113,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [ ] `simplify_support_multi_path` (line 653) → `layer.rs`
 - [ ] `simplify_support_loop` (line 670) → `layer.rs`
 - [ ] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs`
-- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2547` — partial
+- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2686` — partial
 - [~] `get_filament_config_idx` (line 739) → `extruder.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 744) → `extruder.rs` — not in the paired file
 
@@ -8121,7 +8121,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 - [~] `layer` (line 39) → `debug/compare.rs, fill/fill_conformal_chart.rs` — not in the paired file
 - [~] `layer` (line 40) → `debug/compare.rs, fill/fill_conformal_chart.rs` — not in the paired file
-- [x] `has_extrusions` (line 132) → `layer.rs:1464`
+- [x] `has_extrusions` (line 132) → `layer.rs:1597`
 - [~] `simplify_infill_extrusion_entity` (line 134) → `layer_region.rs` — not in the paired file
 - [~] `simplify_wall_extrusion_entity` (line 135) → `layer_region.rs` — not in the paired file
 
@@ -8190,8 +8190,8 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 - [~] `lower_bound_by_predicate` (line 220) → `fill/fill_base.rs` — not in the paired file
 - [ ] `binary_find` (line 242) → `libslic3r.rs`
 - [ ] `binary_find_by_predicate` (line 254) → `libslic3r.rs`
-- [~] `contains` (line 264) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
-- [~] `contains` (line 266) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 264) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 266) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [ ] `one_of` (line 269) → `libslic3r.rs`
 - [ ] `one_of` (line 271) → `libslic3r.rs`
 - [~] `sqr` (line 275) → `build_volume.rs, clipper2/clipper_core.rs, extrusion_simulator.rs` — not in the paired file
@@ -8302,56 +8302,56 @@ Rust file: `locales_utils.rs`. Status: **partial**. Not listed: 1 constructors, 
 
 ### `Log` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `log.rs`. Status: **verified**. Not listed: 2 constructors, 1 destructors.
 
 **free functions**
 
-- [~] `level_to_boost` (line 46) → `utils.rs` — a function of this name is in another Rust file
-- [~] `set_logging_level` (line 64) → `utils.rs` — a function of this name is in another Rust file
-- [~] `level_string_to_boost` (line 69) → `utils.rs` — a function of this name is in another Rust file
-- [~] `get_string_logging_level` (line 79) → `utils.rs` — a function of this name is in another Rust file
-- [ ] `is_char_number` (line 83)
-- [~] `get_logging_level` (line 92) → `utils.rs` — a function of this name is in another Rust file
-- [ ] `write_value` (line 117)
-- [ ] `is_log_trivial_valid` (line 128)
-- [~] `set_log_path_and_level` (line 138) → `utils.rs` — a function of this name is in another Rust file
-- [~] `update_log_sink` (line 161) → `utils.rs` — a function of this name is in another Rust file
-- [ ] `current_exception_message` (line 169)
-- [~] `flush_logs` (line 183) → `utils.rs` — a function of this name is in another Rust file
-- [ ] `file_basename` (line 197)
-- [ ] `KV` (line 204)
-- [ ] `masked` (line 207)
-- [ ] `quoted_if_needed` (line 214)
-- [ ] `format_kv` (line 237)
-- [ ] `write_json` (line 246)
-- [ ] `write_failed` (line 256)
-- [ ] `kv_failed` (line 264)
-- [ ] `log_enabled` (line 273)
+- [v] `level_to_boost` (line 46) → `log.rs:77` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `set_logging_level` (line 64) → `log.rs:96` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `level_string_to_boost` (line 69) → `log.rs:101` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `get_string_logging_level` (line 79) → `log.rs:113` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `is_char_number` (line 83) → `log.rs:325` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log (the body reads as divergent to the estimate)
+- [v] `get_logging_level` (line 92) → `log.rs:126` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `write_value` (line 117) → `log.rs:363` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log (the body reads as divergent to the estimate)
+- [v] `is_log_trivial_valid` (line 128) → `log.rs:158` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `set_log_path_and_level` (line 138) → `log.rs:165` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log (the body reads as partial to the estimate)
+- [v] `update_log_sink` (line 161) → `log.rs:185` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `current_exception_message` (line 169) → `log.rs:200` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log (the body reads as partial to the estimate)
+- [v] `flush_logs` (line 183) → `log.rs:215` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `file_basename` (line 197) → `log.rs:459` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `KV` (line 204) → `log.rs:602` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `masked` (line 207) → `log.rs:470` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `quoted_if_needed` (line 214) → `log.rs:476` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log (the body reads as partial to the estimate)
+- [v] `format_kv` (line 237) → `log.rs:498` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `write_json` (line 246) → `log.rs:507` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `write_failed` (line 256) → `log.rs:516` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
+- [v] `kv_failed` (line 264) → `log.rs:521` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log (the body reads as partial to the estimate)
+- [v] `log_enabled` (line 273) → `log.rs:526` — R908: tests/log_native_parity.rs: 702 KV calls, the level functions, 40 default-sink lines and 370 records through set_log_path_and_level / update_log_sink (6 files, 302 lines) against the pin's Log.cpp and the override LogSink.cpp linked to Boost.Log
 
 ### `LogKeys` (.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `log_keys.rs`. Status: **ported**.
 
 No named function with a body.
 
 ### `LogSink` (.cpp+.hpp)
 
-Rust file: `log_sink.rs`. Status: **partial**. Not listed: 2 constructors, 1 destructors.
+Rust file: `log_sink.rs`. Status: **verified**. Not listed: 2 constructors, 1 destructors.
 
 **free functions**
 
-- [ ] `current_pid` (line 44) → `log_sink.rs`
+- [v] `current_pid` (line 44) → `log_sink.rs:366` — R908: tests/log_native_parity.rs: 370 records through the file sink, same 6 file names and 302 lines as the override-layer LogSink.cpp linked to Boost.Log (the body reads as divergent to the estimate)
 
 **class `LogSinkBackend`**
 
-- [ ] `is_consuming_on_this_thread` (line 54) → `log_sink.rs`
-- [x] `reset_enc_key_info` (line 68) → `log_sink.rs:148`
-- [ ] `update_enc_option` (line 77) → `log_sink.rs`
-- [ ] `consume` (line 100) → `log_sink.rs`
+- [v] `is_consuming_on_this_thread` (line 54) → `log_sink.rs:374` — R908: tests/log_native_parity.rs: 370 records through the file sink, same 6 file names and 302 lines as the override-layer LogSink.cpp linked to Boost.Log
+- [v] `reset_enc_key_info` (line 68) → `log_sink.rs:161` — R908: tests/log_native_parity.rs: 370 records through the file sink, same 6 file names and 302 lines as the override-layer LogSink.cpp linked to Boost.Log
+- [v] `update_enc_option` (line 77) → `log_sink.rs:393` — R908: tests/log_native_parity.rs: 370 records through the file sink, same 6 file names and 302 lines as the override-layer LogSink.cpp linked to Boost.Log
+- [v] `consume` (line 100) → `log_sink.rs:413` — R908: tests/log_native_parity.rs: 370 records through the file sink, same 6 file names and 302 lines as the override-layer LogSink.cpp linked to Boost.Log
 
 **class `LogSinkUtil`**
 
-- [ ] `get_log_filename_format` (line 114) → `log_sink.rs`
+- [v] `get_log_filename_format` (line 114) → `log_sink.rs:440` — R908: tests/log_native_parity.rs: 370 records through the file sink, same 6 file names and 302 lines as the override-layer LogSink.cpp linked to Boost.Log (the body reads as partial to the estimate)
 
 ### `MacUtils` (.hpp)
 
@@ -8481,7 +8481,7 @@ Rust file: `measure_utils.rs`. Status: **partial**. Not listed: 2 constructors, 
 **class `RootsPolynomial`**
 
 - [x] `Find` (line 192) → `measure_utils.rs:273`
-- [~] `Find` (line 230) → `geometry/point.rs, multi_material_segmentation.rs, triangle_mesh_slicer.rs` — not in the paired file
+- [~] `Find` (line 230) → `desensitize.rs, geometry/point.rs, multi_material_segmentation.rs` — not in the paired file
 - [x] `FindRecursive` (line 278) → `measure_utils.rs:388`
 - [x] `Evaluate` (line 341) → `measure_utils.rs:506`
 
@@ -8564,29 +8564,29 @@ Rust file: none. Status: **not started**.
 
 ### `MeshDiagnostics` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `mesh_diagnostics.rs`. Status: **verified**.
 
 **free functions**
 
-- [ ] `fan_root` (line 33)
-- [ ] `fan_union` (line 48)
-- [ ] `face_vertices_valid` (line 56)
-- [ ] `hit_on_edge_or_vertex` (line 75)
-- [ ] `detect_visible_backfaces` (line 88)
-- [ ] `log_reversed_face_decision` (line 269)
-- [ ] `detect_reversed_faces_impl` (line 294)
-- [ ] `its_detect_reversed_faces` (line 316)
-- [ ] `its_quick_diagnostics` (line 321)
-- [ ] `its_mesh_diagnostics` (line 328)
-- [ ] `its_edge_diagnostics` (line 457)
+- [v] `fan_root` (line 33) → `mesh_diagnostics.rs:40` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `fan_union` (line 48) → `mesh_diagnostics.rs:56` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `face_vertices_valid` (line 56) → `mesh_diagnostics.rs:65` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `hit_on_edge_or_vertex` (line 75) → `mesh_diagnostics.rs:105` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `detect_visible_backfaces` (line 88) → `mesh_diagnostics.rs:160` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `log_reversed_face_decision` (line 269) → `mesh_diagnostics.rs:365` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `detect_reversed_faces_impl` (line 294) → `mesh_diagnostics.rs:390` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `its_detect_reversed_faces` (line 316) → `mesh_diagnostics.rs:417` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `its_quick_diagnostics` (line 321) → `mesh_diagnostics.rs:427` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `its_mesh_diagnostics` (line 328) → `mesh_diagnostics.rs:443` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
+- [v] `its_edge_diagnostics` (line 457) → `mesh_diagnostics.rs:600` — R908: tests/mesh_diagnostics_native_parity.rs: 510 meshes through its_edge_diagnostics, its_quick_diagnostics and its_mesh_diagnostics against the pin's source built standalone, equal
 
 ### `MeshRaycast` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `mesh_raycast.rs`. Status: **verified**. Not listed: 1 constructors.
 
 **class `TriangleRaycaster`**
 
-- [ ] `all_hits` (line 40)
+- [v] `all_hits` (line 40) → `mesh_raycast.rs:150` — R908: tests/mesh_diagnostics_native_parity.rs: all_hits on 456 rays (481 hits, t/u/v by bits) against the pin's source
 
 ### `MeshSplitImpl` (.hpp)
 
@@ -8708,8 +8708,8 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 **class `FacetsAnnotation`**
 
-- [~] `assign` (line 784) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
-- [~] `assign` (line 785) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
+- [~] `assign` (line 784) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
+- [~] `assign` (line 785) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
 - [~] `empty` (line 800) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `reserve` (line 810) → `boost_polygon_voronoi.rs, fill/fill_plane_path.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `shrink_to_fit` (line 814) → `model.rs`
@@ -8734,8 +8734,8 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 **class `LayerHeightProfile`**
 
-- [~] `assign` (line 208) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
-- [~] `assign` (line 209) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
+- [~] `assign` (line 208) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
+- [~] `assign` (line 209) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
 - [~] `get` (line 211) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
 - [~] `empty` (line 212) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `set` (line 213) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
@@ -9404,7 +9404,7 @@ Rust file: `mutable_polygon.rs`. Status: **partial**. Not listed: 7 constructors
 
 **class `MutablePolygon`**
 
-- [~] `assign` (line 138) → `extrusion_entity_collection.rs, object_id.rs` — not in the paired file
+- [~] `assign` (line 138) → `extrusion_entity_collection.rs, nozzle_inventory.rs, object_id.rs` — not in the paired file
 - [x] `assign` (line 145) → `mutable_polygon.rs:210`
 - [~] `polygon` (line 149) → `bounding_box.rs, build_volume.rs, clipper2/clipper_engine.rs` — not in the paired file
 - [x] `polygon` (line 160) → `mutable_polygon.rs:231`
@@ -9521,71 +9521,71 @@ Rust file: `normal_utils.rs`. Status: **ported**.
 
 ### `NozzleInventory` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `nozzle_inventory.rs`. Status: **partial**. Not listed: 1 constructors.
 
 **free functions**
 
-- [ ] `source_name` (line 55)
-- [ ] `installed_count` (line 61)
-- [ ] `holds_selected_diameter` (line 69)
-- [ ] `fit_slot_count` (line 81)
-- [ ] `uniform_slots` (line 90)
-- [ ] `slots_text` (line 99)
-- [ ] `layer_text` (line 116)
-- [ ] `read_selected_printer` (line 128)
-- [ ] `read_per_slot_keys` (line 161)
-- [ ] `valid_legacy_counts` (line 192)
-- [ ] `read_legacy_counts` (line 206)
-- [ ] `read_volume_types` (line 231)
-- [ ] `drop_unmade_volume_types` (line 256)
-- [ ] `encode_history` (line 278)
-- [ ] `parse_volume_type` (line 299)
-- [ ] `decode_history` (line 314)
-- [ ] `encode_slot_history` (line 356)
-- [ ] `decode_slot_history` (line 380)
-- [ ] `count_slots` (line 418)
-- [ ] `summary_volume_type` (line 436)
+- [v] `source_name` (line 55) → `nozzle_inventory.rs:223` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `installed_count` (line 61) → `nozzle_inventory.rs:229` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `holds_selected_diameter` (line 69) → `nozzle_inventory.rs:235` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `fit_slot_count` (line 81) → `nozzle_inventory.rs:246` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `uniform_slots` (line 90) → `nozzle_inventory.rs:252` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `slots_text` (line 99) → `nozzle_inventory.rs:261` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `layer_text` (line 116) → `nozzle_inventory.rs:279` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `read_selected_printer` (line 128) → `nozzle_inventory.rs:293` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `read_per_slot_keys` (line 161) → `nozzle_inventory.rs:333` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `valid_legacy_counts` (line 192) → `nozzle_inventory.rs:373` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers (the body reads as partial to the estimate)
+- [v] `read_legacy_counts` (line 206) → `nozzle_inventory.rs:389` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `read_volume_types` (line 231) → `nozzle_inventory.rs:422` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `drop_unmade_volume_types` (line 256) → `nozzle_inventory.rs:446` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `encode_history` (line 278) → `nozzle_inventory.rs:471` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `parse_volume_type` (line 299) → `nozzle_inventory.rs:492` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `decode_history` (line 314) → `nozzle_inventory.rs:509` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `encode_slot_history` (line 356) → `nozzle_inventory.rs:544` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `decode_slot_history` (line 380) → `nozzle_inventory.rs:567` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `count_slots` (line 418) → `nozzle_inventory.rs:607` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `summary_volume_type` (line 436) → `nozzle_inventory.rs:629` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
 
 **class `NozzleInventory`**
 
-- [ ] `set_history` (line 640)
-- [ ] `select_printer` (line 642)
-- [ ] `open_project` (line 648)
-- [ ] `close_project` (line 665)
-- [ ] `sync_machine` (line 671)
-- [ ] `user_set_slots` (line 677)
-- [ ] `user_set_counts` (line 689)
-- [ ] `user_set_volume_type` (line 718)
-- [ ] `user_unify_diameter` (line 727)
-- [ ] `extruder_count` (line 744)
-- [ ] `counts` (line 752)
-- [~] `count` (line 765) → `boost_polygon_voronoi.rs, clipper2/clipper_engine.rs, geometry/expolygon.rs` — a function of this name is in another Rust file
-- [~] `volume_type` (line 778) → `build_volume.rs, extruder.rs` — a function of this name is in another Rust file
-- [ ] `refresh_mirror` (line 783)
-- [ ] `export_to` (line 785)
+- [v] `set_history` (line 640) → `nozzle_inventory.rs:928` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `select_printer` (line 642) → `nozzle_inventory.rs:939` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `open_project` (line 648) → `nozzle_inventory.rs:952` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `close_project` (line 665) → `nozzle_inventory.rs:976` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `sync_machine` (line 671) → `nozzle_inventory.rs:989` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `user_set_slots` (line 677) → `nozzle_inventory.rs:997` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `user_set_counts` (line 689) → `nozzle_inventory.rs:1017` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `user_set_volume_type` (line 718) → `nozzle_inventory.rs:1069` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `user_unify_diameter` (line 727) → `nozzle_inventory.rs:1094` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `extruder_count` (line 744) → `nozzle_inventory.rs:1116` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `counts` (line 752) → `nozzle_inventory.rs:1135` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `count` (line 765) → `nozzle_inventory.rs:1151` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `volume_type` (line 778) → `nozzle_inventory.rs:1168` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `refresh_mirror` (line 783) → `nozzle_inventory.rs:1176` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `export_to` (line 785) → `nozzle_inventory.rs:1196` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
 
 **class `NozzleInventory::Impl`**
 
-- [ ] `Impl` (line 456)
-- [ ] `top_layer` (line 461)
-- [ ] `model_history` (line 478)
-- [ ] `history_types` (line 491)
-- [ ] `history_slots` (line 505)
-- [ ] `resolve` (line 521)
-- [ ] `save_history` (line 550)
-- [~] `write` (line 570) → `zipper.rs` — a function of this name is in another Rust file
-- [ ] `commit` (line 589)
-- [ ] `describe` (line 600)
-- [ ] `multi_diameter` (line 617)
-- [ ] `valid_extruder` (line 619)
+- [ ] `Impl` (line 456) → `nozzle_inventory.rs`
+- [v] `top_layer` (line 461) → `nozzle_inventory.rs:679` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `model_history` (line 478) → `nozzle_inventory.rs:698` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `history_types` (line 491) → `nozzle_inventory.rs:714` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `history_slots` (line 505) → `nozzle_inventory.rs:728` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `resolve` (line 521) → `nozzle_inventory.rs:751` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `save_history` (line 550) → `nozzle_inventory.rs:779` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `write` (line 570) → `nozzle_inventory.rs:805` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `commit` (line 589) → `nozzle_inventory.rs:834` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `describe` (line 600) → `nozzle_inventory.rs:842` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `multi_diameter` (line 617) → `nozzle_inventory.rs:869` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
+- [v] `valid_extruder` (line 619) → `nozzle_inventory.rs:874` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
 
 **class `NozzleSlot`**
 
-- [~] `empty` (line 57) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
+- [v] `empty` (line 57) → `nozzle_inventory.rs:162` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
 
 **class `SelectedPrinter`**
 
-- [ ] `extruder_count` (line 52)
+- [v] `extruder_count` (line 52) → `nozzle_inventory.rs:217` — R908: tests/nozzle_inventory_native_parity.rs: 255 cases, 2,224 operations, state hashed after every operation, against the pin's NozzleInventory.cpp compiled unchanged over stand-in headers
 
 ### `NSVGUtils` (.cpp+.hpp)
 
@@ -10288,7 +10288,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [~] `has_duplicate_points` (line 116) → `ex_polygon.rs, geometry/point.rs, multi_point.rs` — not in the paired file
 - [x] `total_length` (line 123) → `geometry/polygon.rs:1701`
 - [x] `area` (line 130) → `geometry/polygon.rs:1712`
-- [~] `area` (line 132) → `arachne/utils/extrusion_line.rs, arrange.rs, bounding_box.rs` — not in the paired file
+- [~] `area` (line 132) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `polygons_append` (line 151) → `geometry/polygon.rs:1729` — partial
 - [~] `polygons_append` (line 153) → `bridge_detector.rs, geometry/expolygon.rs, surface.rs` — not in the paired file
 - [x] `polygons_rotate` (line 165) → `geometry/polygon.rs:1734`
@@ -10325,8 +10325,8 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [x] `polygons_simplify` (line 658) → `geometry/polygon.rs:1559`
 - [~] `polygons_match` (line 681) → `geometry/polygon.rs:1590` — partial
 - [x] `overlaps` (line 699) → `geometry/polygon.rs:1624`
-- [~] `contains` (line 708) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
-- [~] `contains` (line 717) → `aabb_tree_lines.rs, clipper2/clipper_core.rs, csg_mesh/model_to_csg_mesh.rs` — not in the paired file
+- [~] `contains` (line 708) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 717) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
 - [x] `make_circle` (line 729) → `geometry/polygon.rs:1666`
 - [x] `make_circle_num_segments` (line 736) → `geometry/polygon.rs:1676`
 
@@ -10337,7 +10337,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [x] `split_at_vertex` (line 27) → `geometry/polygon.rs:223`
 - [x] `new_scale` (line 30) → `geometry/polygon.rs:50`
 - [x] `split_at_index` (line 38) → `geometry/polygon.rs:256`
-- [~] `area` (line 49) → `arachne/utils/extrusion_line.rs, arrange.rs, bounding_box.rs` — not in the paired file
+- [~] `area` (line 49) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [x] `split_at_first_point` (line 52) → `geometry/polygon.rs:276`
 - [x] `equally_spaced_points` (line 53) → `geometry/polygon.rs:282`
 - [x] `is_valid` (line 61) → `geometry/polygon.rs:796`
@@ -10517,7 +10517,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [ ] `get_printer_id` (line 374) → `preset.rs`
 - [x] `update_suffix_modified` (line 449) → `preset.rs:446`
 - [x] `remove_suffix_modified` (line 455) → `preset.rs:454`
-- [~] `normalize` (line 463) → `bin/generate-test-meshes.rs, cut_surface.rs, geometry/point.rs` — not in the paired file
+- [~] `normalize` (line 463) → `bin/generate-test-meshes.rs, cut_surface.rs, desensitize.rs` — not in the paired file
 - [ ] `remove_invalid_keys` (line 507) → `preset.rs`
 - [x] `get_type_string` (line 523) → `preset.rs:310`
 - [x] `get_iot_type_string` (line 541) → `preset.rs:322`
@@ -10551,7 +10551,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [~] `cend` (line 476) → `mutable_polygon.rs` — not in the paired file
 - [~] `erase` (line 479) → `app_config.rs, boost_polygon_voronoi.rs, geometry/point.rs` — not in the paired file
 - [ ] `set_sync_func` (line 481) → `preset.rs`
-- [~] `lock` (line 483) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
+- [~] `lock` (line 483) → `execution/execution_seq.rs, log.rs, mt_utils.rs` — not in the paired file
 - [~] `unlock` (line 484) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
 - [~] `type` (line 488) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
 - [ ] `is_default_suppressed` (line 582) → `preset.rs`
@@ -10603,11 +10603,11 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 **free functions**
 
 - [ ] `copy_dir` (line 515) → `preset_bundle.rs`
-- [ ] `GetNozzleVolumeTypeStr` (line 1778) → `preset_bundle.rs`
+- [~] `GetNozzleVolumeTypeStr` (line 1778) → `nozzle_inventory.rs` — not in the paired file
 - [ ] `count_default_nozzle_volume_types` (line 1791) → `preset_bundle.rs`
 - [ ] `build_extruder_full_stat_from_nozzle_stat` (line 1799) → `preset_bundle.rs`
-- [ ] `per_slot_nozzle_options_consistent` (line 1822) → `preset_bundle.rs`
-- [ ] `sync_per_slot_nozzle_options_from_full_stat` (line 1845) → `preset_bundle.rs`
+- [~] `per_slot_nozzle_options_consistent` (line 1822) → `nozzle_inventory.rs` — not in the paired file
+- [~] `sync_per_slot_nozzle_options_from_full_stat` (line 1845) → `nozzle_inventory.rs` — not in the paired file
 - [ ] `smallest_installed_diameters` (line 1883) → `preset_bundle.rs`
 - [ ] `remove_ini_suffix` (line 1941) → `preset_bundle.rs`
 - [ ] `apply_synced_tray_side_effects` (line 2768) → `preset_bundle.rs`
@@ -10638,15 +10638,15 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [~] `get_extruder_count` (line 120) → `multi_nozzle_utils.rs` — not in the paired file
 - [ ] `get_extruder_nozzle_count` (line 121) → `preset_bundle.rs`
 - [ ] `get_extruder_stats` (line 126) → `preset_bundle.rs`
-- [~] `resize` (line 131) → `extrusion_simulator.rs` — not in the paired file
-- [ ] `set_extruder_stats` (line 132) → `preset_bundle.rs`
+- [~] `resize` (line 131) → `extrusion_simulator.rs, nozzle_inventory.rs` — not in the paired file
+- [~] `set_extruder_stats` (line 132) → `nozzle_inventory.rs` — not in the paired file
 - [ ] `clear_extruder` (line 137) → `preset_bundle.rs`
 - [~] `clear` (line 141) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [~] `empty` (line 142) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExtruderNozzleStat`**
 
-- [ ] `get_raw_stat` (line 106) → `preset_bundle.rs`
+- [~] `get_raw_stat` (line 106) → `nozzle_inventory.rs` — not in the paired file
 - [ ] `set_raw_stat` (line 107) → `preset_bundle.rs`
 - [ ] `get_extruder_nozzle_count` (line 309) → `preset_bundle.rs`
 - [ ] `on_printer_model_change_cli` (line 323) → `preset_bundle.rs`
@@ -11093,7 +11093,7 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **class `LayerRanges`**
 
-- [~] `assign` (line 362) → `extrusion_entity_collection.rs, mutable_polygon.rs, object_id.rs` — not in the paired file
+- [~] `assign` (line 362) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
 - [~] `config` (line 388) → `extruder.rs, gcode/cooling.rs, gcode/ironing.rs` — not in the paired file
 - [~] `begin` (line 401) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 402) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -11235,7 +11235,7 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [ ] `is_filament_extruder_override_key` (line 95) → `print_config.rs`
 - [~] `get_extruder_index` (line 111) → `extruder.rs` — not in the paired file
 - [ ] `has_authoritative_per_slot_nozzle_diameters` (line 120) → `print_config.rs`
-- [ ] `multi_nozzle_diameter_mode_enabled` (line 139) → `print_config.rs`
+- [~] `multi_nozzle_diameter_mode_enabled` (line 139) → `nozzle_inventory.rs` — not in the paired file
 - [ ] `printer_nozzle_diameter_mode_tag` (line 145) → `print_config.rs`
 - [ ] `multi_nozzle_value` (line 153) → `print_config.rs`
 - [ ] `multi_nozzle_retraction_length` (line 163) → `print_config.rs`
@@ -11277,7 +11277,7 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [ ] `get_extruder_supported_nozzle_volume_types` (line 973) → `print_config.rs`
 - [~] `get_config_index_base` (line 993) → `extruder.rs` — not in the paired file
 - [ ] `find_printer_variant_index` (line 1010) → `print_config.rs`
-- [~] `get_nozzle_volume_type_string` (line 1023) → `multi_nozzle_utils.rs` — not in the paired file
+- [~] `get_nozzle_volume_type_string` (line 1023) → `multi_nozzle_utils.rs, nozzle_inventory.rs` — not in the paired file
 - [ ] `get_ams_type_name` (line 1032) → `print_config.rs`
 - [ ] `get_ams_type_display_name` (line 1042) → `print_config.rs`
 - [ ] `get_ams_load_time_key` (line 1065) → `print_config.rs`
@@ -11289,13 +11289,13 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [ ] `sync_nozzle_volume_type_to_extruder_count` (line 1126) → `print_config.rs`
 - [x] `get_extruder_ams_count` (line 1154) → `print_config.rs:6719`
 - [ ] `get_effective_ams_nozzle_idx` (line 1176) → `print_config.rs`
-- [ ] `is_single_ext_multi_nozzle` (line 1199) → `print_config.rs`
+- [~] `is_single_ext_multi_nozzle` (line 1199) → `nozzle_inventory.rs` — not in the paired file
 - [x] `get_extruder_nozzle_stats` (line 1212) → `print_config.rs:6756`
 - [x] `save_extruder_ams_count_to_string` (line 1247) → `print_config.rs:6793`
-- [ ] `nozzle_volume_type_from_string` (line 1264) → `print_config.rs`
-- [ ] `default_nozzle_volume_slots` (line 1275) → `print_config.rs`
+- [~] `nozzle_volume_type_from_string` (line 1264) → `nozzle_inventory.rs` — not in the paired file
+- [~] `default_nozzle_volume_slots` (line 1275) → `nozzle_inventory.rs` — not in the paired file
 - [ ] `get_extruder_default_nozzle_volume_type` (line 1315) → `print_config.rs`
-- [ ] `get_default_nozzle_volume_type` (line 1323) → `print_config.rs`
+- [~] `get_default_nozzle_volume_type` (line 1323) → `nozzle_inventory.rs` — not in the paired file
 - [x] `convert_to_nvt_type` (line 1329) → `print_config.rs:6820`
 - [ ] `is_nozzle_printable_for_filament` (line 1354) → `print_config.rs`
 - [x] `save_extruder_nozzle_stats_to_string` (line 1443) → `print_config.rs:6858`
@@ -11418,25 +11418,25 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 **class `PrintObject`**
 
 - [ ] `set_instances` (line 110) → `print_object.rs`
-- [~] `all_regions` (line 132) → `print_object.rs:5473` — divergent
-- [~] `merge_layer_node` (line 141) → `print_object.rs:5489` — partial
+- [~] `all_regions` (line 132) → `print_object.rs:5480` — divergent
+- [~] `merge_layer_node` (line 141) → `print_object.rs:5496` — partial
 - [ ] `detect_extruder_geometric_unprintables` (line 202) → `print_object.rs`
 - [ ] `calc_estimated_filament_print_time` (line 328) → `print_object.rs`
-- [~] `make_perimeters` (line 470) → `print_object.rs:1891` — divergent
-- [~] `prepare_infill` (line 902) → `print_object.rs:2166` — divergent
-- [~] `infill` (line 1154) → `print_object.rs:4588` — partial
-- [~] `ironing` (line 1249) → `print_object.rs:5368` — divergent
-- [~] `clear_overhangs_for_lift` (line 1270) → `print_object.rs:5186` — partial
-- [~] `detect_overhangs_for_lift` (line 1282) → `print_object.rs:5205` — divergent
+- [~] `make_perimeters` (line 470) → `print_object.rs:1898` — divergent
+- [~] `prepare_infill` (line 902) → `print_object.rs:2173` — divergent
+- [~] `infill` (line 1154) → `print_object.rs:4595` — partial
+- [~] `ironing` (line 1249) → `print_object.rs:5375` — divergent
+- [~] `clear_overhangs_for_lift` (line 1270) → `print_object.rs:5193` — partial
+- [~] `detect_overhangs_for_lift` (line 1282) → `print_object.rs:5212` — divergent
 - [~] `generate_support_material` (line 1330) → `print_object.rs` — another overload of the name is ported
-- [~] `simplify_extrusion_path` (line 1374) → `print_object.rs:5163` — divergent
+- [~] `simplify_extrusion_path` (line 1374) → `print_object.rs:5170` — divergent
 - [ ] `prepare_adaptive_infill_data` (line 1430) → `print_object.rs`
 - [ ] `prepare_lightning_infill_data` (line 1467) → `print_object.rs`
-- [~] `clear_layers` (line 1479) → `print_object.rs:5626` — divergent
-- [x] `add_layer` (line 1488) → `print_object.rs:5636`
-- [x] `get_support_layer_at_printz` (line 1494) → `print_object.rs:5649`
+- [~] `clear_layers` (line 1479) → `print_object.rs:5633` — divergent
+- [x] `add_layer` (line 1488) → `print_object.rs:5643`
+- [x] `get_support_layer_at_printz` (line 1494) → `print_object.rs:5656`
 - [~] `get_support_layer_at_printz` (line 1501) → `print_object.rs` — another overload of the name is ported
-- [x] `clear_support_layers` (line 1506) → `print_object.rs:5669`
+- [x] `clear_support_layers` (line 1506) → `print_object.rs:5676`
 - [ ] `alloc_tree_support_preview_cache` (line 1520) → `print_object.rs`
 - [ ] `add_tree_support_layer` (line 1530) → `print_object.rs`
 - [ ] `add_support_layer` (line 1536) → `print_object.rs`
@@ -11445,8 +11445,8 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [ ] `invalidate_step` (line 1879) → `print_object.rs`
 - [~] `invalidate_all_steps` (line 1916) → `print_object.rs:509` — divergent
 - [ ] `reset_slice_surfaces` (line 1925) → `print_object.rs`
-- [~] `detect_surfaces_type` (line 1951) → `print_object.rs:3980` — partial
-- [~] `process_external_surfaces` (line 2167) → `print_object.rs:6981` — divergent
+- [~] `detect_surfaces_type` (line 1951) → `print_object.rs:3987` — partial
+- [~] `process_external_surfaces` (line 2167) → `print_object.rs:6988` — divergent
 - [ ] `discover_shell_for_perimeters` (line 2698) → `print_object.rs`
 - [ ] `object_config_from_model_object` (line 3627) → `print_object.rs`
 - [ ] `generate_support_preview` (line 3826) → `print_object.rs`
@@ -11458,12 +11458,12 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [ ] `get_certain_layers` (line 3970) → `print_object.rs`
 - [ ] `get_instances_shift_without_plate_offset` (line 3985) → `print_object.rs`
 - [ ] `clip_fill_surfaces` (line 4003) → `print_object.rs`
-- [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6477` — partial
+- [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6484` — partial
 - [ ] `compute_adaptive_merge_groups` (line 4312) → `print_object.rs`
 - [ ] `combine_adaptive_infill` (line 5035) → `print_object.rs`
 - [ ] `combine_infill` (line 5724) → `print_object.rs`
-- [~] `discover_sub_top_surfaces` (line 5839) → `print_object.rs:2376` — partial
-- [~] `_generate_support_material` (line 5920) → `print_object.rs:5274` — divergent
+- [~] `discover_sub_top_surfaces` (line 5839) → `print_object.rs:2383` — partial
+- [~] `_generate_support_material` (line 5920) → `print_object.rs:5281` — divergent
 - [ ] `collected_support_areas` (line 5960) → `print_object.rs`
 - [ ] `warn_uncovered_overhangs` (line 6040) → `print_object.rs`
 - [ ] `remove_bridges_from_contacts` (line 6361) → `print_object.rs`
@@ -11471,11 +11471,11 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [ ] `project_and_append_custom_facets` (line 6726) → `print_object.rs`
 - [~] `get_layer_at_printz` (line 6768) → `print_object.rs` — another overload of the name is ported
 - [~] `get_layer_at_printz` (line 6775) → `print_object.rs` — another overload of the name is ported
-- [x] `get_layer_at_printz` (line 6780) → `print_object.rs:5684`
+- [x] `get_layer_at_printz` (line 6780) → `print_object.rs:5691`
 - [~] `get_layer_at_printz` (line 6788) → `print_object.rs` — another overload of the name is ported
-- [x] `get_first_layer_bellow_printz` (line 6790) → `print_object.rs:5701`
-- [~] `get_layer_idx_get_printz` (line 6796) → `print_object.rs:5725` — partial
-- [x] `get_layer_at_bottomz` (line 6802) → `print_object.rs:5743`
+- [x] `get_first_layer_bellow_printz` (line 6790) → `print_object.rs:5708`
+- [~] `get_layer_idx_get_printz` (line 6796) → `print_object.rs:5732` — partial
+- [x] `get_layer_at_bottomz` (line 6802) → `print_object.rs:5750`
 - [~] `get_layer_at_bottomz` (line 6814) → `print_object.rs` — another overload of the name is ported
 
 ### `PrintObjectSlice` (.cpp)
@@ -12456,7 +12456,7 @@ Rust file: `sla_print_steps.rs`. Status: **partial**. Not listed: 2 constructors
 - [ ] `to_chars` (line 155) → `sla_print_steps.rs`
 - [~] `hash` (line 174) → `arachne/utils/polygons_point_index.rs, perimeter_generator.rs, region_expansion.rs` — not in the paired file
 - [ ] `facekey` (line 185) → `sla_print_steps.rs`
-- [~] `find` (line 210) → `geometry/point.rs, measure_utils.rs, multi_material_segmentation.rs` — not in the paired file
+- [~] `find` (line 210) → `desensitize.rs, geometry/point.rs, measure_utils.rs` — not in the paired file
 
 **class `SLAPrint::Steps`**
 
@@ -12961,49 +12961,49 @@ Rust file: `support/tree_support_common.rs`. Status: **partial**. Not listed: 4 
 
 ### `SupportMergePlan` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `support_merge_plan.rs`. Status: **verified**.
 
 **free functions**
 
-- [ ] `candidates_in_span` (line 15)
-- [ ] `expand_slabs` (line 190)
-- [ ] `make_support_merge_plan` (line 254)
+- [v] `candidates_in_span` (line 15) → `support_merge_plan.rs:118` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `expand_slabs` (line 190) → `support_merge_plan.rs:344` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `make_support_merge_plan` (line 254) → `support_merge_plan.rs:481` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
 
 **class `SupportMergePlan`**
 
-- [ ] `candidates_in_span` (line 42)
-- [ ] `candidates_for_slab` (line 47)
-- [ ] `coarsest_for_slab` (line 59)
-- [ ] `finest_interface_for_slab` (line 69)
-- [ ] `max_interface_height` (line 86)
-- [ ] `max_height_for_slab` (line 101)
-- [ ] `base_height_at` (line 109)
-- [ ] `fixed_band_height_at` (line 121)
-- [ ] `coarsest_band_containing` (line 142)
-- [ ] `slab_for_layer` (line 177)
+- [v] `candidates_in_span` (line 42) → `support_merge_plan.rs:149` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `candidates_for_slab` (line 47) → `support_merge_plan.rs:157` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `coarsest_for_slab` (line 59) → `support_merge_plan.rs:171` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `finest_interface_for_slab` (line 69) → `support_merge_plan.rs:186` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `max_interface_height` (line 86) → `support_merge_plan.rs:207` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `max_height_for_slab` (line 101) → `support_merge_plan.rs:224` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `base_height_at` (line 109) → `support_merge_plan.rs:235` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `fixed_band_height_at` (line 121) → `support_merge_plan.rs:251` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `coarsest_band_containing` (line 142) → `support_merge_plan.rs:279` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
+- [v] `slab_for_layer` (line 177) → `support_merge_plan.rs:317` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
 
 **class `SupportMergePlan::Candidate`**
 
-- [~] `valid` (line 43) → `build_volume.rs, fill/fill_base.rs, gcode/conflict_checker.rs` — a function of this name is in another Rust file
+- [v] `valid` (line 43) → `support_merge_plan.rs:43` — R908: tests/support_merge_plan_native_parity.rs: 52 plans built by the pin's make_support_merge_plan and 1,040 queries over all ten query methods (tests/data/support_merge_plan/gen.cpp), equal
 
 ### `SupportRecommendedParams` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `support_recommended_params.rs`. Status: **verified**.
 
 **free functions**
 
-- [ ] `support_recommended_material_name` (line 16)
-- [ ] `support_recommended_params_key` (line 30)
-- [ ] `support_recommended_params_path` (line 35)
-- [ ] `load_support_recommended_params_map` (line 40)
-- [ ] `load_support_recommended_params` (line 181)
-- [ ] `find_support_recommended_params` (line 186)
-- [ ] `evaluate_support_material_combination` (line 232)
+- [v] `support_recommended_material_name` (line 16) → `support_recommended_params.rs:144` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost (the body reads as partial to the estimate)
+- [v] `support_recommended_params_key` (line 30) → `support_recommended_params.rs:162` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost
+- [v] `support_recommended_params_path` (line 35) → `support_recommended_params.rs:173` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost (the body reads as partial to the estimate)
+- [v] `load_support_recommended_params_map` (line 40) → `support_recommended_params.rs:288` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost
+- [v] `load_support_recommended_params` (line 181) → `support_recommended_params.rs:444` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost
+- [v] `find_support_recommended_params` (line 186) → `support_recommended_params.rs:449` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost
+- [v] `evaluate_support_material_combination` (line 232) → `support_recommended_params.rs:506` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost
 
 **class `FilamentCombinationParams`**
 
-- [ ] `hasRecommendedParams` (line 17)
-- [~] `get` (line 23) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — a function of this name is in another Rust file
+- [v] `hasRecommendedParams` (line 17) → `support_recommended_params.rs:77` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost
+- [v] `get` (line 23) → `support_recommended_params.rs:82` — R908: tests/support_recommended_params_native_parity.rs: the loaded table of a crafted JSON and of the pin's own, 300 material names and 3,000 evaluate_support_material_combination cases against the pin's source built with nlohmann and Boost
 
 ### `Surface` (.cpp+.hpp)
 
@@ -13317,7 +13317,7 @@ Rust file: none. Status: **not started**.
 
 - [ ] `average_edge_length_impl` (line 62)
 - [ ] `convert_rgb_uint_to_rgb_double` (line 85)
-- [~] `normalize` (line 89) → `bin/generate-test-meshes.rs, cut_surface.rs, geometry/point.rs` — a function of this name is in another Rust file
+- [~] `normalize` (line 89) → `bin/generate-test-meshes.rs, cut_surface.rs, desensitize.rs` — a function of this name is in another Rust file
 - [ ] `get_angle_between_vectors` (line 96)
 - [ ] `calc_face_normals` (line 109)
 - [ ] `check_and_repair_self_intersect` (line 126)
@@ -14010,7 +14010,7 @@ Rust file: `utils.rs`. Status: **partial**. Not listed: 2 constructors, 2 destru
 - [~] `is_gallery_file` (line 906) → `utils.rs` — another overload of the name is ported
 - [x] `is_gallery_file` (line 911) → `utils.rs:1323`
 - [x] `is_shapes_dir` (line 916) → `utils.rs:1329`
-- [ ] `is_separator` (line 925) → `utils.rs`
+- [~] `is_separator` (line 925) → `format/resource_path_utils.rs` — not in the paired file
 - [ ] `is_utf8_continuation` (line 982) → `utils.rs`
 - [ ] `mask_bytes` (line 985) → `utils.rs`
 - [ ] `file_name_part` (line 997) → `utils.rs`

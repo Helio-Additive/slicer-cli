@@ -1,0 +1,223 @@
+{
+    "description": "Test table for support_recommended_params_native_parity: every branch of the loader and of the lookup. Each entry that is kept carries a numeric 'id'.",
+    "combinations": [
+        17,
+        "a string",
+        null,
+        [1, 2],
+        {},
+        { "model_material": "PLA", "support_material_list": ["PETG"], "printer_models": ["P1"] },
+        { "model_material": "PLA", "support_material_list": ["PETG"], "printer_models": ["P1"], "recommended_params": {} },
+        { "model_material": "PLA", "support_material_list": ["PETG"], "printer_models": ["P1"], "recommended_params": [1] },
+        { "model_material": "PLA", "support_material_list": ["PETG"], "printer_models": [], "recommended_params": { "id": 900 } },
+        { "model_material": "PLA", "support_material_list": [], "printer_models": ["P1"], "recommended_params": { "id": 901 } },
+        { "model_material": "", "support_material_list": ["PETG"], "printer_models": ["P1"], "recommended_params": { "id": 902 } },
+        { "model_material": 5, "support_material_list": ["PETG"], "printer_models": ["P1"], "recommended_params": { "id": 903 } },
+        { "model_material": "PLA", "support_material_list": "PETG", "printer_models": ["P1"], "recommended_params": { "id": 904 } },
+        { "model_material": "PLA", "support_material_list": [1, null, {}], "printer_models": ["P1"], "recommended_params": { "id": 905 } },
+        { "model_material": "PLA", "support_material_list": ["PETG"], "printer_models": [7, true], "recommended_params": { "id": 906 } },
+        { "model_material": "PLA", "support_material_list": ["PETG"], "printer_models": ["P1"], "recommended_params": { "only_null": null, "only_object": { "a": 1 }, "empty_array": [], "unparsed": ["x", null, [1], {}, true] } },
+
+        {
+            "model_material": "PLA",
+            "support_material_list": ["PETG", 3, "PETG-CF", null],
+            "printer_models": ["P1", false, "P2"],
+            "priority": 1,
+            "recommended_params": {
+                "id": 1,
+                "support_top_z_distance": 0.0,
+                "support_bottom_z_distance": 0.2,
+                "a_bool": true,
+                "a_false": false,
+                "a_string": "tree(auto)",
+                "an_empty_string": "",
+                "an_integer": 35,
+                "a_negative_integer": -7,
+                "a_big_unsigned": 18446744073709551615,
+                "a_min_signed": -9223372036854775808,
+                "beyond_unsigned": 18446744073709551616,
+                "a_float": 5.25,
+                "a_small_float": 1e-7,
+                "minus_zero_float": -0.0,
+                "minus_zero_integer": -0,
+                "minus_zero_exponent": -0e0,
+                "minus_zero_in_a_string": "-0, \"-0\" -0 \\",
+                "minus_zeros": [-0, -0.0, -0,-0],
+                "an_exponent": 12e2,
+                "an_array": [1, 2.5, -3, "4.5", " 5.5abc", "abc", "", "1e400", "-1e400", "1e-400", "0x1p-2", "inf", "-infinity", "-.5e1", "+3", "1e5x", "  \t 7", ".", "-", "0x", "1e", "1e-310", "0e-999", "0.000"],
+                "array_of_strings_that_fail": ["a", "b"],
+                "nested": [[1], 2],
+                "a_null": null,
+                "an_object": { "x": 1 },
+                "dup": 1,
+                "dup": "last wins"
+            }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "type",
+            "support_material_list": ["PETG"],
+            "support_material_type": "type",
+            "printer_models": ["P1"],
+            "priority": 1,
+            "recommended_params": { "id": 2, "support_top_z_distance": 0.1 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "name",
+            "support_material_list": ["PETG"],
+            "support_material_type": "type",
+            "printer_models": ["P1"],
+            "priority": 1,
+            "recommended_params": { "id": 3, "support_top_z_distance": 0.00005, "support_bottom_z_distance": -0.00005 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "name",
+            "support_material_list": ["PETG"],
+            "support_material_type": "name",
+            "printer_models": ["P1", "P3"],
+            "priority": 1,
+            "recommended_params": { "id": 4, "support_top_z_distance": "0", "support_bottom_z_distance": true, "x": 1 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "type",
+            "support_material_list": ["PETG"],
+            "support_material_type": "name",
+            "printer_models": ["P1"],
+            "priority": 1,
+            "recommended_params": { "id": 5, "support_top_z_distance": [0.0], "support_bottom_z_distance": 1 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": 3,
+            "support_material_list": ["PETG"],
+            "support_material_type": null,
+            "printer_models": ["P3"],
+            "priority": 5,
+            "recommended_params": { "id": 6, "support_top_z_distance": 0.0001, "support_bottom_z_distance": 0.00009999 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "name",
+            "support_material_list": ["PETG"],
+            "support_material_type": "type",
+            "printer_models": ["P3"],
+            "priority": 5,
+            "recommended_params": { "id": 7, "support_bottom_z_distance": 0 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "other",
+            "support_material_list": ["PETG"],
+            "support_material_type": "type",
+            "printer_models": ["P3"],
+            "priority": 99,
+            "recommended_params": { "id": 8 }
+        },
+        {
+            "model_material": "ABS",
+            "support_material_list": ["PLA"],
+            "printer_models": ["P1"],
+            "priority": 2.0,
+            "recommended_params": { "id": 9 }
+        },
+        {
+            "model_material": "ABS",
+            "support_material_list": ["PLA"],
+            "printer_models": ["P1"],
+            "priority": "7",
+            "recommended_params": { "id": 10 }
+        },
+        {
+            "model_material": "ABS",
+            "support_material_list": ["PLA"],
+            "printer_models": ["P1"],
+            "priority": -3,
+            "recommended_params": { "id": 11 }
+        },
+        {
+            "model_material": "ABS",
+            "support_material_list": ["PVA"],
+            "printer_models": ["P1", "P2"],
+            "priority": 4294967298,
+            "recommended_params": { "id": 12 }
+        },
+        {
+            "model_material": "ABS",
+            "support_material_list": ["PVA"],
+            "printer_models": ["P1"],
+            "priority": 18446744073709551615,
+            "recommended_params": { "id": 13 }
+        },
+        {
+            "model_material": "ABS",
+            "support_material_list": ["PVA"],
+            "printer_models": ["P1"],
+            "priority": 1,
+            "recommended_params": { "id": 14, "support_top_z_distance": -0 }
+        },
+        {
+            "model_material": "Generic PLA",
+            "model_material_type": "name",
+            "support_material_list": ["Support W", "Support W"],
+            "support_material_type": "name",
+            "printer_models": ["P1", "P1"],
+            "priority": 3,
+            "recommended_params": { "id": 15, "support_top_z_distance": 0 }
+        },
+        {
+            "model_material": "Generic PLA",
+            "model_material_type": "name",
+            "support_material_list": ["PVA"],
+            "support_material_type": "type",
+            "printer_models": ["P1"],
+            "priority": 3,
+            "recommended_params": { "id": 16, "support_bottom_z_distance": 0.3 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "type",
+            "support_material_list": ["Support W"],
+            "support_material_type": "name",
+            "printer_models": ["P1"],
+            "priority": 3,
+            "recommended_params": { "id": 17 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "type",
+            "support_material_list": ["PVA"],
+            "support_material_type": "type",
+            "printer_models": ["P1"],
+            "priority": 3,
+            "recommended_params": { "id": 18 }
+        },
+        {
+            "model_material": "PLA",
+            "model_material_type": "type",
+            "support_material_list": ["PVA"],
+            "support_material_type": "type",
+            "printer_models": ["P1"],
+            "priority": 3,
+            "recommended_params": { "id": 19, "support_top_z_distance": 0.25 }
+        },
+        {
+            "model_material": "TPU",
+            "support_material_list": ["PLA", "Matériau|x", "中文"],
+            "printer_models": ["P|1", "Imprimante é"],
+            "priority": -0,
+            "recommended_params": { "id": 20, "clé": "valeur éè 😀", "tab\there": "a\nb\u0000c" }
+        },
+        {
+            "support_material_list": ["PLA"],
+            "printer_models": ["P1"],
+            "model_material": "PETG",
+            "priority": 2,
+            "recommended_params": { "id": 21, "support_top_z_distance": 0.3 },
+            "priority": 4
+        }
+    ]
+}
+trailing text after the value is not read

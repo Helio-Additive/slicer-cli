@@ -10,6 +10,7 @@ pub mod bbs_3mf;
 pub mod model_io;
 pub mod obj;
 pub mod objparser;
+pub mod resource_path_utils;
 pub mod sl1;
 /// 1:1 port of `libslic3r/format.hpp` (the `Slic3r::format(...)` boost::format
 /// wrapper). Lives here because `src/format.rs` would collide with this
