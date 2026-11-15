@@ -6545,19 +6545,26 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
 
 /// True when the engine's own writer can give this option's default. An enum
 /// default is written through the key map the *option* carries, and the engines
-/// build some of them from a bare value (an initializer list), leaving that map
-/// null while their writer walks it without a check
+/// build some of them from a bare value (an initializer list), which leaves
+/// that map unset while their writer walks it without a check
 /// (ConfigOptionEnumsGenericTempl::serialize_single_value): such a default has
-/// no name to report.
-static bool default_is_writable(const Slic3r::ConfigOption* option) {
+/// no name to report. Unset is not always null: the Bambu and Snapmaker
+/// constructor initialises the member from itself (Config.hpp 2135 at
+/// v02.09.01.70; 1679 at bac6fd5), so the map is trusted only when it is the
+/// one the setting's own definition holds.
+static bool default_is_writable(const Slic3r::ConfigOptionDef& def) {
+    const Slic3r::ConfigOption* option = def.default_value.get();
     if (option == nullptr)
         return false;
+    const auto trusted = [&def](const Slic3r::t_config_enum_values* map) {
+        return map != nullptr && map == def.enum_keys_map;
+    };
     if (const auto* one = dynamic_cast<const Slic3r::ConfigOptionEnumGeneric*>(option))
-        return one->keys_map != nullptr;
+        return trusted(one->keys_map);
     if (const auto* many = dynamic_cast<const Slic3r::ConfigOptionEnumsGeneric*>(option))
-        return many->keys_map != nullptr;
+        return trusted(many->keys_map);
     if (const auto* nullable = dynamic_cast<const Slic3r::ConfigOptionEnumsGenericNullable*>(option))
-        return nullable->keys_map != nullptr;
+        return trusted(nullable->keys_map);
     return true;
 }
 
@@ -6641,7 +6648,7 @@ static int run_list_settings() {
         if (!def.sidetext.empty())   entry["unit"] = def.sidetext;
         // The default as the engine writes it, where the engine's own writer
         // can write it (see default_is_writable).
-        if (default_is_writable(def.default_value.get()))
+        if (default_is_writable(def))
             entry["default"] = def.default_value->serialize();
         // Only a real bound: the engines mark "none" with a sentinel
         // (min_default/max_default in BambuStudio, -/+FLT_MAX in OrcaSlicer).
