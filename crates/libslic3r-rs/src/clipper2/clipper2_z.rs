@@ -14,10 +14,16 @@ pub mod clipper_core;
 pub mod clipper_engine;
 #[path = "clipper_h.rs"]
 pub mod clipper_h;
+#[path = "clipper_minkowski.rs"]
+pub mod clipper_minkowski;
 #[path = "clipper_offset.rs"]
 pub mod clipper_offset;
+#[path = "clipper_rectclip.rs"]
+pub mod clipper_rectclip;
 
 pub use clipper_core::*;
 pub use clipper_engine::*;
 pub use clipper_h::*;
+pub use clipper_minkowski::*;
 pub use clipper_offset::*;
+pub use clipper_rectclip::*;

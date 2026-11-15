@@ -148,6 +148,13 @@ fn q32(v: f64) -> f64 {
 /// Flow implementation
 /// Flow.hpp:49-117
 impl Flow {
+    /// Flow.hpp:55 — `Flow() = default;`: every member zero (Flow.hpp:107-113),
+    /// not a bridge. The state of `FillParams::flow` when a caller leaves it
+    /// unset (Fill.cpp:939-958, the filler of the anchoring polylines).
+    pub fn default_constructed() -> Self {
+        Self { width: 0.0, height: 0.0, spacing: 0.0, nozzle_diameter: 0.0, bridge: false }
+    }
+
     /// Create a new Flow for non-bridge extrusion
     /// Flow.cpp:196-205
     pub fn new(width: f64, height: f64, nozzle_diameter: f64) -> FlowResult<Self> {

@@ -54,6 +54,114 @@ pub fn fillprof_report() {
     );
 }
 
+/// The conformal fill of one island, as `FillRectilinear::fill_surface` takes it
+/// (FillRectilinear.cpp:3075-3081):
+///     if (params.conformal) {
+///         Polylines conformal_out;
+///         if (FillConformal::fill_surface(*this, surface, params, conformal_out))
+///             return conformal_out;
+///     }
+/// with the filler's members and the FillParams set as `Layer::make_fills`
+/// (Fill.cpp:698-704, 787-811, 844-845) and
+/// `Layer::generate_sparse_infill_polylines_for_anchoring` (Fill.cpp:911-958,
+/// `using_internal_flow` = None there) set them. `None` when the surface is not
+/// conformal, its filler is not one that runs that method, or the fill declined
+/// (the caller then lays its lines).
+///
+/// The fillers that run `FillRectilinear::fill_surface` (it is virtual, and
+/// FillMonotonic, FillGrid, FillSupportBase ... override it) are FillRectilinear,
+/// FillAlignedRectilinear, FillZigZag and FillCrossZag (FillBase.cpp:41-42,
+/// 62-63). `conformal_infill` is only set for surfaces that are not solid
+/// (Fill.cpp:240), whose pattern is the region's sparse infill pattern
+/// (Fill.cpp:239), `config_pattern` here.
+// FIDELITY-NOTE: blocked on FillLockedZag::fill_surface_locked_zag
+// (FillRectilinear.cpp:3969): the skin pattern of ipLockedZag also goes through
+// FillRectilinear::fill_surface with `conformal` set (FillRectilinear.cpp:3941-3967);
+// this driver has no skin / skeleton split, so a locked-zag region keeps its lines.
+#[allow(clippy::too_many_arguments)]
+fn conformal_fill_surface(
+    config_pattern: crate::print_config::InfillPattern,
+    params: &crate::fill::SurfaceFillParams,
+    surface: &crate::surface::Surface,
+    expoly: &crate::geometry::ExPolygon,
+    region_id: usize,
+    layer_id: usize,
+    print_z: f64,
+    density: f64,
+    link_max_length: crate::Coord,
+    resolution: f64,
+    using_internal_flow: Option<bool>,
+) -> Option<Vec<crate::geometry::Polyline>> {
+    if !params.conformal_infill {
+        return None;
+    }
+    if !matches!(
+        config_pattern,
+        crate::print_config::InfillPattern::Rectilinear
+            | crate::print_config::InfillPattern::AlignedRectilinear
+            | crate::print_config::InfillPattern::ZigZag
+            | crate::print_config::InfillPattern::CrossZag
+    ) {
+        return None;
+    }
+    // Fill.cpp:698-704 — the filler's members.
+    let mut f = crate::fill::fill_base::Fill::new();
+    // f->set_bounding_box(bbox): the fill drivers of this crate do not carry the
+    // object's bounding box; the conformal fill reads it only in code that its
+    // entry does not call (FillConformal.cpp:42-48).
+    f.layer_id = layer_id;
+    f.lock_region_id = region_id;
+    f.z = print_z;
+    // f->angle is in radians (Fill.cpp:253, deg2rad of infill_direction);
+    // SurfaceFillParams::angle of this crate is in degrees.
+    f.angle = (std::f64::consts::PI * params.angle as f64 / 180.0) as f32;
+    // Fill.cpp:787-789
+    f.link_max_length = link_max_length;
+    f.loop_clipping = crate::scale(params.flow.nozzle_diameter() * 0.15);
+    // Fill.cpp:844 — f->spacing = surface_fill.params.spacing;
+    f.spacing = params.spacing;
+    // Fill.cpp:791-811 — the FillParams.
+    let mut fp = crate::fill::FillParams::new();
+    fp.density = density;
+    fp.multiline = params.multiline;
+    fp.pattern = config_pattern;
+    fp.dont_adjust = false;
+    fp.anchor_length = params.anchor_length as f64;
+    fp.anchor_length_max = params.anchor_length_max as f64;
+    fp.resolution = resolution;
+    if let Some(using_internal_flow) = using_internal_flow {
+        // Fill.cpp:802-804
+        fp.flow = params.flow.clone();
+        fp.extrusion_role = params.extrusion_role;
+        fp.using_internal_flow = using_internal_flow;
+    } else {
+        // Fill.cpp:939-958 leaves `params.flow` as constructed: `Flow()`, width 0,
+        // so the hub of the conformal fill takes the line spacing for its line
+        // width there (FillRadialZigZag.cpp:2076-2084).
+        fp.flow = crate::flow::Flow::default_constructed();
+    }
+    fp.conformal = params.conformal_infill;
+    fp.conformal_stagger = params.conformal_stagger;
+    fp.conformal_link_keep_layers = params.conformal_link_keep_layers;
+    fp.conformal_link_flip_layers = params.conformal_link_flip_layers;
+    fp.conformal_pole = params.conformal_pole;
+    fp.conformal_ray_count = params.conformal_ray_count;
+    fp.conformal_hub_radius = params.conformal_hub_radius;
+    // FIDELITY-NOTE: Fill.cpp:815-822 sets `params.horiz_move` for ipCrossZag from
+    // `infill_shift_step`; the drivers of this crate do not carry it
+    // (SurfaceFillParams::infill_shift_step is 0), so the radial fan of a cross-zag
+    // region is not shifted from layer to layer.
+    // Fill.cpp:845 — surface_fill.surface.expolygon = std::move(expoly);
+    let mut conformal_surface = surface.clone();
+    conformal_surface.expolygon = expoly.clone();
+    let mut conformal_out: Vec<crate::geometry::Polyline> = Vec::new();
+    if crate::fill::fill_conformal::fill_surface(&f, Some(&conformal_surface), &fp, &mut conformal_out) {
+        Some(conformal_out)
+    } else {
+        None
+    }
+}
+
 /// Fill.cpp:944 — `params.density = float(0.01 * surface_fill.params.density)`:
 /// the product is taken in double (0.01 is a double literal) and rounded to
 /// float once. FILL_DENSITY_DOUBLE=0 multiplies in float, which gives
@@ -2995,7 +3103,51 @@ impl Layer {
                 // legacy arm below generated and connected UNROTATED, which
                 // moved every boundary-anchor vertex (R789/R790).
                 let mut fss_connected = false;
+
+                // FillRectilinear.cpp:3075-3081 — `FillRectilinear::fill_surface`:
+                //     if (params.conformal) {
+                //         Polylines conformal_out;
+                //         if (FillConformal::fill_surface(*this, surface, params, conformal_out))
+                //             return conformal_out;
+                //     }
+                // The fillers that run that method (it is virtual, and FillMonotonic,
+                // FillGrid, FillSupportBase ... override it) are FillRectilinear,
+                // FillAlignedRectilinear, FillZigZag and FillCrossZag
+                // (FillBase.cpp:41-42, 62-63). `conformal_infill` is only set for
+                // surfaces that are not solid (Fill.cpp:240), whose pattern is the
+                // region's sparse infill pattern (Fill.cpp:239).
+                // FIDELITY-NOTE: blocked on FillLockedZag::fill_surface_locked_zag
+                // (FillRectilinear.cpp:3969): the skin pattern of ipLockedZag also goes
+                // through FillRectilinear::fill_surface with `conformal` set
+                // (FillRectilinear.cpp:3941-3967); this driver has no skin / skeleton
+                // split, so a locked-zag region keeps its lines.
+                let mut conformal_polylines: Option<Vec<crate::geometry::Polyline>> =
+                    conformal_fill_surface(
+                        self.regions[region_id].region().config().fill_pattern,
+                        &surface_fill.params,
+                        &surface_fill.surface,
+                        &expoly,
+                        region_id,
+                        fill_layer_id,
+                        self.print_z,
+                        density,
+                        link_max_length,
+                        resolution,
+                        Some(_using_internal_flow),
+                    );
+
                 let generated = match fill_pattern {
+                    // FillRectilinear.cpp:3080 — `return conformal_out;`: the paths
+                    // are final, nothing connects them again.
+                    _ if conformal_polylines.is_some() => {
+                        fss_connected = true;
+                        conformal_polylines
+                            .take()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(InfillPath::Line)
+                            .collect()
+                    }
                     InfillPattern::Gyroid if crate::faithful_gate("GYROID_FSS") => {
                         // R456: rust SurfaceFillParams.spacing carries the flow
                         // WIDTH here; native f->spacing receives the flow
@@ -3964,6 +4116,26 @@ impl Layer {
                         );
                         sparse_infill_polylines.extend(out);
                     }
+                    continue;
+                }
+
+                // Fill.cpp:911-971 — the same filler as make_fills, so
+                // FillRectilinear::fill_surface takes the conformal fill here too
+                // (FillRectilinear.cpp:3077-3081; Fill.cpp:915, 952-958).
+                if let Some(conformal_out) = conformal_fill_surface(
+                    self.regions[surface_fill.region_id].region().config().fill_pattern,
+                    &surface_fill.params,
+                    &surface_fill.surface,
+                    &expoly,
+                    surface_fill.region_id,
+                    self.id(),
+                    self.print_z,
+                    density,
+                    link_max_length,
+                    self.object().print().config().resolution,
+                    None,
+                ) {
+                    sparse_infill_polylines.extend(conformal_out);
                     continue;
                 }
 

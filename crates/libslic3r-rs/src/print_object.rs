@@ -4604,6 +4604,102 @@ impl PrintObject {
             // PrintObject.cpp:757
             // (Status callback handled by Print::process)
 
+            // PrintObject.cpp:1166-1223 — pin the radial scan count and the pole of
+            // every conformal region before the layers are filled in parallel.
+            // C++: bool   want_conformal = false;
+            //      double chart_spacing  = 0.4;
+            //      for (const PrintRegion &region : this->all_regions())
+            //          if (region.config().conformal_infill) { ...; break; }
+            let mut want_conformal = false;
+            let mut chart_spacing = 0.4_f64;
+            for region in self.all_regions() {
+                if region.config().conformal_infill {
+                    want_conformal = true;
+                    if region.config().sparse_infill_line_width > 0.0 {
+                        chart_spacing = region.config().sparse_infill_line_width;
+                    }
+                    break;
+                }
+            }
+
+            if want_conformal && !self.layers.is_empty() {
+                // PrintObject.cpp:1180-1186
+                let lid0 = self.layers[0].id();
+                let mut nlid = 0usize;
+                for layer in &self.layers {
+                    nlid = nlid.max(layer.id() - lid0 + 1);
+                }
+                let mut zs: Vec<f64> = vec![0.0; nlid];
+                for layer in &self.layers {
+                    zs[layer.id() - lid0] = layer.print_z;
+                }
+
+                // PrintObject.cpp:1188-1220
+                crate::fill::fill_radial_zig_zag::reset_n_lock();
+                let nreg = self.num_printing_regions();
+                for region_id in 0..nreg {
+                    let rcfg = match self.printing_region(region_id) {
+                        Some(r) => r.config().clone(),
+                        None => continue,
+                    };
+                    if !rcfg.conformal_infill {
+                        continue;
+                    }
+                    // `0.01 * rcfg.sparse_infill_density`: the option is a percentage
+                    // in the C++; this crate keeps the fraction, and group_fills
+                    // takes the percentage back the same way (fill/mod.rs).
+                    let density = (0.05_f64).max(0.01 * (rcfg.fill_density * 100.0));
+                    let mut line_w = chart_spacing;
+                    if rcfg.sparse_infill_line_width > 0.0 {
+                        line_w = rcfg.sparse_infill_line_width;
+                    }
+                    // FIDELITY-NOTE: blocked on conformal_modifier_islands
+                    // (PrintObject.cpp:1083-1154), which needs
+                    // PrintObject::firstLayerObjSlice() and the volume regions of
+                    // PrintObjectRegions::layer_ranges. It returns islands only for
+                    // conformal MODIFIER volumes (`is_modifier()` with a parent), so
+                    // for a region that is not a modifier its rows are all empty,
+                    // `n_cast` is 0 and the fill surfaces below are what is pinned,
+                    // as here. A conformal modifier is pinned from its fill surfaces
+                    // instead of from its uncarved islands.
+                    let mut islands_by_layer: Vec<Vec<crate::geometry::ExPolygon>> = vec![Vec::new(); nlid];
+                    let mut n_cast = 0usize;
+                    for row in &islands_by_layer {
+                        if !row.is_empty() {
+                            n_cast += 1;
+                        }
+                    }
+                    if n_cast < 3 {
+                        islands_by_layer = vec![Vec::new(); nlid];
+                        for layer in &self.layers {
+                            if region_id >= layer.regions().len() {
+                                continue;
+                            }
+                            let lr = &layer.regions()[region_id];
+                            if !lr.region().config().conformal_infill {
+                                continue;
+                            }
+                            let lid = layer.id() - lid0;
+                            for surface in &lr.fill_surfaces.surfaces {
+                                if surface.surface_type == crate::surface::SurfaceType::Internal {
+                                    islands_by_layer[lid].push(surface.expolygon.clone());
+                                }
+                            }
+                        }
+                    }
+                    crate::fill::fill_radial_zig_zag::pin_scan_counts(
+                        &islands_by_layer,
+                        line_w / density,
+                        &zs,
+                        region_id,
+                        rcfg.conformal_ray_count,
+                    );
+                }
+            } else {
+                // PrintObject.cpp:1222
+                crate::fill::fill_radial_zig_zag::reset_n_lock();
+            }
+
             // Adaptive fill octrees (currently None - TODO: implement adaptive fill)
             // PrintObject.cpp:763-770
             // Per-region configs are no longer threaded from here: group_fills
@@ -4844,6 +4940,8 @@ lines={} grown_polys={} grown_verts={}",
                     }
                     r
                 })?;
+            // PrintObject.cpp:1236
+            crate::fill::fill_radial_zig_zag::reset_n_lock();
 
             if flprof {
                 let report = |name: &str, m: std::sync::Mutex<Vec<(usize, f64)>>| {

@@ -63,6 +63,22 @@ typedef struct {
 CZ2_REF_DECLARE(cz2_ref_z_)
 CZ2_REF_DECLARE(cz2_ref_xy_)
 
+// The answer of `cz2_ref_*_ext` (clipper2_ref_ext_shim.cpp): a stream of int64 and one of
+// double, freed by `cz2_ref_*_ext_free`.
+typedef struct {
+    int64_t *ints;
+    double  *dbls;
+    int64_t  n_ints;
+    int64_t  n_dbls;
+} Cz2ExtResult;
+
+// One operation of clipper.rectclip.cpp, ClipperD, the PathsD interface of clipper.h,
+// clipper.minkowski.h or the templates of clipper.core.h. See clipper2_ref_ext_shim.cpp.
+Cz2ExtResult cz2_ref_z_ext(int32_t op, const int64_t *ints, const double *dbls);
+void cz2_ref_z_ext_free(Cz2ExtResult r);
+Cz2ExtResult cz2_ref_xy_ext(int32_t op, const int64_t *ints, const double *dbls);
+void cz2_ref_xy_ext_free(Cz2ExtResult r);
+
 #ifdef __cplusplus
 }
 #endif

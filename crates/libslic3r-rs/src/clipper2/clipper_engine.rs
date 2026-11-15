@@ -23,11 +23,12 @@
 //! hold `Clipper64::execute` bit-equal to the pinned C++ in both builds. `ClipperStats`
 //! exists for them.
 //!
-//! Not here: `ClipperD`, `PolyPathD`, `BuildPathD` (clipper.engine.h:397-468, :531-642,
+//! `ClipperD`, `PolyPathD` and `BuildPathD` (clipper.engine.h:397-468, :531-642,
 //! clipper.engine.cpp:3048-3152) and `ReuseableDataContainer64` (clipper.engine.h:182-192,
-//! clipper.engine.cpp:726-751, :850-862), which `Clipper64::Execute` does not run.
+//! clipper.engine.cpp:726-751, :850-862) are at the end of the file;
+//! `tests/clipper2_d_native_parity.rs` and its `_z` twin hold them equal to the library.
 
-use super::clipper2_build::{point_set_z, point_xyz, point_z};
+use super::clipper2_build::{bind_zcb_d, point_set_z, point_xyz, point_z, pointd_xyz, pointd_z};
 use super::clipper_core::*;
 use std::collections::BinaryHeap;
 
@@ -521,6 +522,133 @@ impl PolyPathArena {
     }
 }
 
+/// clipper.engine.cpp:608-616
+/// C++: void AddLocMin(LocalMinimaList& list, Vertex& vert, PathType polytype, bool is_open)
+/// `list` is a vector of pointers to `LocalMinima`: the objects are in `local_minima`, the
+/// pointers (indices) in `list`.
+fn add_loc_min(local_minima: &mut Vec<LocalMinima>, list: &mut Vec<usize>, vertex_lists: &mut [Vertex], vert: usize, polytype: PathType, is_open: bool) {
+    //make sure the vertex is added only once ...
+    if (VertexFlags::LOCAL_MIN & vertex_lists[vert].flags) != VertexFlags::EMPTY {
+        return;
+    }
+
+    vertex_lists[vert].flags = vertex_lists[vert].flags | VertexFlags::LOCAL_MIN;
+    local_minima.push(LocalMinima { vertex: vert, polytype, is_open });
+    list.push(local_minima.len() - 1);
+}
+
+/// clipper.engine.cpp:618-720
+/// C++: void AddPaths_(const Paths64& paths, PathType polytype, bool is_open, std::vector<Vertex*>& vertexLists, LocalMinimaList& locMinList)
+/// `new Vertex[total_vertex_count]` is `total_vertex_count` more elements of
+/// `vertex_lists`; `v`, `v0`, `curr_v` and `prev_v` are indices into it.
+fn add_paths_(paths: &Paths64, polytype: PathType, is_open: bool, vertex_lists: &mut Vec<Vertex>, local_minima: &mut Vec<LocalMinima>, loc_min_list: &mut Vec<usize>) {
+    let total_vertex_count: usize = paths.iter().map(|path| path.len()).sum();
+    if total_vertex_count == 0 {
+        return;
+    }
+
+    let vertices = vertex_lists.len();
+    vertex_lists.resize(vertices + total_vertex_count, Vertex::default());
+    let mut v = vertices;
+    for path in paths {
+        //for each path create a circular double linked list of vertices
+        let v0 = v;
+        let mut curr_v = v;
+        let mut prev_v = NONE;
+
+        if path.is_empty() {
+            continue;
+        }
+
+        vertex_lists[v].prev = NONE;
+        let mut cnt = 0;
+        for pt in path {
+            if prev_v != NONE {
+                if vertex_lists[prev_v].pt == *pt {
+                    continue; // ie skips duplicates
+                }
+                vertex_lists[prev_v].next = curr_v;
+            }
+            vertex_lists[curr_v].prev = prev_v;
+            vertex_lists[curr_v].pt = *pt;
+            vertex_lists[curr_v].flags = VertexFlags::EMPTY;
+            prev_v = curr_v;
+            curr_v += 1;
+            cnt += 1;
+        }
+        if prev_v == NONE || vertex_lists[prev_v].prev == NONE {
+            continue;
+        }
+        if !is_open && vertex_lists[prev_v].pt == vertex_lists[v0].pt {
+            prev_v = vertex_lists[prev_v].prev;
+        }
+        vertex_lists[prev_v].next = v0;
+        vertex_lists[v0].prev = prev_v;
+        v = curr_v; // ie get ready for next path
+        if cnt < 2 || (cnt == 2 && !is_open) {
+            continue;
+        }
+
+        //now find and assign local minima
+        let mut going_up;
+        if is_open {
+            curr_v = vertex_lists[v0].next;
+            while curr_v != v0 && vertex_lists[curr_v].pt.y == vertex_lists[v0].pt.y {
+                curr_v = vertex_lists[curr_v].next;
+            }
+            going_up = vertex_lists[curr_v].pt.y <= vertex_lists[v0].pt.y;
+            if going_up {
+                vertex_lists[v0].flags = VertexFlags::OPEN_START;
+                add_loc_min(local_minima, loc_min_list, vertex_lists, v0, polytype, true);
+            } else {
+                vertex_lists[v0].flags = VertexFlags::OPEN_START | VertexFlags::LOCAL_MAX;
+            }
+        } else {
+            // closed path
+            prev_v = vertex_lists[v0].prev;
+            while prev_v != v0 && vertex_lists[prev_v].pt.y == vertex_lists[v0].pt.y {
+                prev_v = vertex_lists[prev_v].prev;
+            }
+            if prev_v == v0 {
+                continue; // only open paths can be completely flat
+            }
+            going_up = vertex_lists[prev_v].pt.y > vertex_lists[v0].pt.y;
+        }
+
+        let going_up0 = going_up;
+        prev_v = v0;
+        curr_v = vertex_lists[v0].next;
+        while curr_v != v0 {
+            if vertex_lists[curr_v].pt.y > vertex_lists[prev_v].pt.y && going_up {
+                vertex_lists[prev_v].flags = vertex_lists[prev_v].flags | VertexFlags::LOCAL_MAX;
+                going_up = false;
+            } else if vertex_lists[curr_v].pt.y < vertex_lists[prev_v].pt.y && !going_up {
+                going_up = true;
+                add_loc_min(local_minima, loc_min_list, vertex_lists, prev_v, polytype, is_open);
+            }
+            prev_v = curr_v;
+            curr_v = vertex_lists[curr_v].next;
+        }
+
+        if is_open {
+            vertex_lists[prev_v].flags = vertex_lists[prev_v].flags | VertexFlags::OPEN_END;
+            if going_up {
+                vertex_lists[prev_v].flags = vertex_lists[prev_v].flags | VertexFlags::LOCAL_MAX;
+            } else {
+                add_loc_min(local_minima, loc_min_list, vertex_lists, prev_v, polytype, is_open);
+            }
+        } else if going_up != going_up0 {
+            if going_up0 {
+                add_loc_min(local_minima, loc_min_list, vertex_lists, prev_v, polytype, false);
+            } else {
+                vertex_lists[prev_v].flags = vertex_lists[prev_v].flags | VertexFlags::LOCAL_MAX;
+            }
+        }
+    } // end processing current path
+
+    // vertexLists.emplace_back(vertices);
+}
+
 /// clipper.engine.h:196-293
 /// C++: class ClipperBase
 #[derive(Debug)]
@@ -569,6 +697,10 @@ pub struct ClipperBase {
     outpt_pool_: Vec<OutPt>,
     /// See `ClipperStats`. Set to zero by `execute_internal`.
     pub stats: ClipperStats,
+    /// Where the vertices of the `ReuseableDataContainer64`s given to `AddReuseableData`
+    /// are in `vertex_lists_`: (the container's storage, its first vertex of the block, one
+    /// past its last, where the block starts in `vertex_lists_`). See `add_reuseable_data`.
+    reuseable_vertices_: Vec<(u64, usize, usize, usize)>,
 }
 
 impl Default for ClipperBase {
@@ -608,6 +740,7 @@ impl ClipperBase {
             active_pool_: Vec::new(),
             outpt_pool_: Vec::new(),
             stats: ClipperStats::default(),
+            reuseable_vertices_: Vec::new(),
         }
     }
 
@@ -1239,131 +1372,12 @@ impl ClipperBase {
         point_in_polygon(&mp, &path2) != PointInPolygonResult::IsOutside
     }
 
-    /// clipper.engine.cpp:608-616
-    /// C++: void AddLocMin(LocalMinimaList& list, Vertex& vert, PathType polytype, bool is_open)
-    /// (`ClipperBase::AddLocMin`, clipper.engine.cpp:906-913, is the same on `minima_list_`
-    /// and has no caller.)
+    /// clipper.engine.cpp:906-913
+    /// C++: void ClipperBase::AddLocMin(Vertex &vert, PathType polytype, bool is_open)
+    /// The same as the free `AddLocMin` on `minima_list_`; it has no caller.
+    #[allow(dead_code)]
     fn add_loc_min(&mut self, vert: usize, polytype: PathType, is_open: bool) {
-        //make sure the vertex is added only once ...
-        if (VertexFlags::LOCAL_MIN & self.vertex_lists_[vert].flags) != VertexFlags::EMPTY {
-            return;
-        }
-
-        self.vertex_lists_[vert].flags = self.vertex_lists_[vert].flags | VertexFlags::LOCAL_MIN;
-        self.local_minima_.push(LocalMinima { vertex: vert, polytype, is_open });
-        self.minima_list_.push(self.local_minima_.len() - 1);
-    }
-
-    /// clipper.engine.cpp:618-720
-    /// C++: void AddPaths_(const Paths64& paths, PathType polytype, bool is_open, std::vector<Vertex*>& vertexLists, LocalMinimaList& locMinList)
-    /// `new Vertex[total_vertex_count]` is `total_vertex_count` more elements of
-    /// `vertex_lists_`; `v`, `v0`, `curr_v` and `prev_v` are indices into it.
-    fn add_paths_(&mut self, paths: &Paths64, polytype: PathType, is_open: bool) {
-        let total_vertex_count: usize = paths.iter().map(|path| path.len()).sum();
-        if total_vertex_count == 0 {
-            return;
-        }
-
-        let vertices = self.vertex_lists_.len();
-        self.vertex_lists_.resize(vertices + total_vertex_count, Vertex::default());
-        let mut v = vertices;
-        for path in paths {
-            //for each path create a circular double linked list of vertices
-            let v0 = v;
-            let mut curr_v = v;
-            let mut prev_v = NONE;
-
-            if path.is_empty() {
-                continue;
-            }
-
-            self.vertex_lists_[v].prev = NONE;
-            let mut cnt = 0;
-            for pt in path {
-                if prev_v != NONE {
-                    if self.vertex_lists_[prev_v].pt == *pt {
-                        continue; // ie skips duplicates
-                    }
-                    self.vertex_lists_[prev_v].next = curr_v;
-                }
-                self.vertex_lists_[curr_v].prev = prev_v;
-                self.vertex_lists_[curr_v].pt = *pt;
-                self.vertex_lists_[curr_v].flags = VertexFlags::EMPTY;
-                prev_v = curr_v;
-                curr_v += 1;
-                cnt += 1;
-            }
-            if prev_v == NONE || self.vertex_lists_[prev_v].prev == NONE {
-                continue;
-            }
-            if !is_open && self.vertex_lists_[prev_v].pt == self.vertex_lists_[v0].pt {
-                prev_v = self.vertex_lists_[prev_v].prev;
-            }
-            self.vertex_lists_[prev_v].next = v0;
-            self.vertex_lists_[v0].prev = prev_v;
-            v = curr_v; // ie get ready for next path
-            if cnt < 2 || (cnt == 2 && !is_open) {
-                continue;
-            }
-
-            //now find and assign local minima
-            let mut going_up;
-            if is_open {
-                curr_v = self.vertex_lists_[v0].next;
-                while curr_v != v0 && self.vertex_lists_[curr_v].pt.y == self.vertex_lists_[v0].pt.y {
-                    curr_v = self.vertex_lists_[curr_v].next;
-                }
-                going_up = self.vertex_lists_[curr_v].pt.y <= self.vertex_lists_[v0].pt.y;
-                if going_up {
-                    self.vertex_lists_[v0].flags = VertexFlags::OPEN_START;
-                    self.add_loc_min(v0, polytype, true);
-                } else {
-                    self.vertex_lists_[v0].flags = VertexFlags::OPEN_START | VertexFlags::LOCAL_MAX;
-                }
-            } else {
-                // closed path
-                prev_v = self.vertex_lists_[v0].prev;
-                while prev_v != v0 && self.vertex_lists_[prev_v].pt.y == self.vertex_lists_[v0].pt.y {
-                    prev_v = self.vertex_lists_[prev_v].prev;
-                }
-                if prev_v == v0 {
-                    continue; // only open paths can be completely flat
-                }
-                going_up = self.vertex_lists_[prev_v].pt.y > self.vertex_lists_[v0].pt.y;
-            }
-
-            let going_up0 = going_up;
-            prev_v = v0;
-            curr_v = self.vertex_lists_[v0].next;
-            while curr_v != v0 {
-                if self.vertex_lists_[curr_v].pt.y > self.vertex_lists_[prev_v].pt.y && going_up {
-                    self.vertex_lists_[prev_v].flags = self.vertex_lists_[prev_v].flags | VertexFlags::LOCAL_MAX;
-                    going_up = false;
-                } else if self.vertex_lists_[curr_v].pt.y < self.vertex_lists_[prev_v].pt.y && !going_up {
-                    going_up = true;
-                    self.add_loc_min(prev_v, polytype, is_open);
-                }
-                prev_v = curr_v;
-                curr_v = self.vertex_lists_[curr_v].next;
-            }
-
-            if is_open {
-                self.vertex_lists_[prev_v].flags = self.vertex_lists_[prev_v].flags | VertexFlags::OPEN_END;
-                if going_up {
-                    self.vertex_lists_[prev_v].flags = self.vertex_lists_[prev_v].flags | VertexFlags::LOCAL_MAX;
-                } else {
-                    self.add_loc_min(prev_v, polytype, is_open);
-                }
-            } else if going_up != going_up0 {
-                if going_up0 {
-                    self.add_loc_min(prev_v, polytype, false);
-                } else {
-                    self.vertex_lists_[prev_v].flags = self.vertex_lists_[prev_v].flags | VertexFlags::LOCAL_MAX;
-                }
-            }
-        } // end processing current path
-
-        // vertexLists.emplace_back(vertices);
+        add_loc_min(&mut self.local_minima_, &mut self.minima_list_, &mut self.vertex_lists_, vert, polytype, is_open);
     }
 
     // ---------------------------------------------------------------------------------
@@ -1485,7 +1499,48 @@ impl ClipperBase {
             self.has_open_paths_ = true;
         }
         self.minima_list_sorted_ = false;
-        self.add_paths_(paths, polytype, is_open);
+        add_paths_(paths, polytype, is_open, &mut self.vertex_lists_, &mut self.local_minima_, &mut self.minima_list_);
+    }
+
+    /// clipper.engine.cpp:850-862
+    /// C++: void ClipperBase::AddReuseableData(const ReuseableDataContainer64& reuseable_data)
+    ///
+    /// FIDELITY-NOTE: in the C++ the new `LocalMinima` point at the vertices the container
+    /// owns ("reuseable_data will continue to own the vertices and remains responsible for
+    /// their clean up"), and the clipper only reads them. A vertex here is an index into the
+    /// clipper's own `vertex_lists_`, so the container's vertices are copied into it, once
+    /// per container (`reuseable_vertices_`): the minima of a container given a second time
+    /// are at the same vertices again, as in the C++ (where the sweep then has every edge
+    /// twice on the same vertices and does not end; the parity test gives a container to a
+    /// clipper once). What differs is what the C++ leaves undefined: a container cleared or
+    /// destroyed before `Execute` leaves the C++ clipper with dangling pointers, and this
+    /// one with its copy.
+    pub fn add_reuseable_data(&mut self, reuseable_data: &ReuseableDataContainer64) {
+        // nb: reuseable_data will continue to own the vertices
+        // and remains responsible for their clean up.
+        self.succeeded_ = false;
+        self.minima_list_sorted_ = false;
+        let id = reuseable_data.id_;
+        let copied = self.reuseable_vertices_.iter().filter(|b| b.0 == id).map(|b| b.2).max().unwrap_or(0);
+        let total = reuseable_data.vertex_lists_.len();
+        if copied < total {
+            let dst = self.vertex_lists_.len();
+            let shift = |v: usize| if v == NONE { NONE } else { v - copied + dst };
+            for v in &reuseable_data.vertex_lists_[copied..] {
+                self.vertex_lists_.push(Vertex { pt: v.pt, next: shift(v.next), prev: shift(v.prev), flags: v.flags });
+            }
+            self.reuseable_vertices_.push((id, copied, total, dst));
+        }
+        for &i in &reuseable_data.minima_list_ {
+            let lm = reuseable_data.local_minima_[i];
+            let block = self.reuseable_vertices_.iter().find(|b| b.0 == id && b.1 <= lm.vertex && lm.vertex < b.2).unwrap();
+            let vertex = lm.vertex - block.1 + block.3;
+            self.local_minima_.push(LocalMinima { vertex, polytype: lm.polytype, is_open: lm.is_open });
+            self.minima_list_.push(self.local_minima_.len() - 1);
+            if lm.is_open {
+                self.has_open_paths_ = true;
+            }
+        }
     }
 
     /// clipper.engine.cpp:864-867
@@ -1536,6 +1591,7 @@ impl ClipperBase {
         self.minima_list_.clear();
         self.local_minima_.clear();
         self.vertex_lists_.clear();
+        self.reuseable_vertices_.clear();
     }
 
     /// clipper.engine.cpp:915-988
@@ -3881,5 +3937,505 @@ impl Clipper64 {
             }
         }
         tree.fill(0, polytree);
+    }
+}
+
+/// clipper.engine.cpp:162-167
+/// C++: inline void SwapActives(Active*& e1, Active*& e2)
+/// (`insert_local_minima_into_ael` swaps its two indices in place.)
+#[allow(dead_code)]
+#[inline]
+fn swap_actives(e1: &mut usize, e2: &mut usize) {
+    let e = *e1;
+    *e1 = *e2;
+    *e2 = e;
+}
+
+impl PolyPath64 {
+    /// clipper.engine.h:333-341 `PolyPath::Clipper2LibArea` with `T = int64_t`
+    /// C++: static double Clipper2LibArea(const Path<T> &poly)
+    pub fn clipper2_lib_area(poly: &Path64) -> f64 {
+        area(poly)
+    }
+}
+
+// ReuseableDataContainer64 ------------------------------------------------
+
+/// The next `ReuseableDataContainer64::id_`.
+static REUSEABLE_DATA_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// clipper.engine.h:182-192
+/// C++: class ReuseableDataContainer64
+/// As in `ClipperBase`: `vertex_lists_` is the arrays `AddPaths_` allocates one after the
+/// other, `local_minima_` the `LocalMinima` objects and `minima_list_` the pointers to them.
+/// `id_` names the vertex storage: `Clear` frees it in the C++, and takes a new name here,
+/// so that a clipper that copied the old vertices (`ClipperBase::add_reuseable_data`) does
+/// not take the new ones for them.
+#[derive(Debug)]
+pub struct ReuseableDataContainer64 {
+    minima_list_: Vec<usize>,
+    local_minima_: Vec<LocalMinima>,
+    vertex_lists_: Vec<Vertex>,
+    id_: u64,
+}
+
+impl Default for ReuseableDataContainer64 {
+    fn default() -> Self {
+        ReuseableDataContainer64::new()
+    }
+}
+
+impl ReuseableDataContainer64 {
+    pub fn new() -> Self {
+        ReuseableDataContainer64 {
+            minima_list_: Vec::new(),
+            local_minima_: Vec::new(),
+            vertex_lists_: Vec::new(),
+            id_: REUSEABLE_DATA_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        }
+    }
+
+    /// clipper.engine.cpp:726-733
+    /// C++: void ReuseableDataContainer64::AddLocMin(Vertex& vert, PathType polytype, bool is_open)
+    /// The same as the free `AddLocMin` on `minima_list_`; it has no caller.
+    #[allow(dead_code)]
+    fn add_loc_min(&mut self, vert: usize, polytype: PathType, is_open: bool) {
+        add_loc_min(&mut self.local_minima_, &mut self.minima_list_, &mut self.vertex_lists_, vert, polytype, is_open);
+    }
+
+    /// clipper.engine.cpp:735-739
+    /// C++: void ReuseableDataContainer64::AddPaths(const Paths64& paths, PathType polytype, bool is_open)
+    pub fn add_paths(&mut self, paths: &Paths64, polytype: PathType, is_open: bool) {
+        add_paths_(paths, polytype, is_open, &mut self.vertex_lists_, &mut self.local_minima_, &mut self.minima_list_);
+    }
+
+    /// clipper.engine.cpp:746-751
+    /// C++: void ReuseableDataContainer64::Clear()
+    pub fn clear(&mut self) {
+        self.minima_list_.clear();
+        self.local_minima_.clear();
+        self.vertex_lists_.clear();
+        self.id_ = REUSEABLE_DATA_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+// PolyPathD ---------------------------------------------------------------
+
+/// clipper.engine.h:397-468
+/// C++: class PolyPathD : public PolyPath
+/// As `PolyPath64`: a node owns its children and holds its level.
+///
+/// FIDELITY-NOTE: `PolyPath::Parent()` (clipper.engine.h:325) is not here, nor on
+/// `PolyPath64`: a node owned by its parent's vector cannot hold a reference to that parent.
+/// What the library itself reads through the pointer, `Level()` and `IsHole()`, is kept.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PolyPathD {
+    level_: u32,
+    childs_: Vec<PolyPathD>,
+    scale_: f64,
+    polygon_: PathD,
+}
+
+/// clipper.engine.h:76 `using PolyTreeD = PolyPathD;`
+pub type PolyTreeD = PolyPathD;
+
+impl Default for PolyPathD {
+    fn default() -> Self {
+        PolyPathD::new()
+    }
+}
+
+impl PolyPathD {
+    /// clipper.engine.h:403-406
+    /// C++: explicit PolyPathD(PolyPathD* parent = nullptr) : PolyPath(parent) { scale_ = parent ? parent->scale_ : 1.0; }
+    pub fn new() -> Self {
+        PolyPathD { level_: 0, childs_: Vec::new(), scale_: 1.0, polygon_: PathD::new() }
+    }
+
+    /// clipper.engine.h:312-318
+    /// C++: unsigned Level() const
+    pub fn level(&self) -> u32 {
+        self.level_
+    }
+
+    /// clipper.engine.h:327-332
+    /// C++: bool IsHole() const
+    pub fn is_hole(&self) -> bool {
+        let lvl = self.level();
+        //Even levels except level 0
+        lvl != 0 && (lvl & 1) == 0
+    }
+
+    /// clipper.engine.h:333-341 `PolyPath::Clipper2LibArea` with `T = double`
+    /// C++: static double Clipper2LibArea(const Path<T> &poly)
+    pub fn clipper2_lib_area(poly: &PathD) -> f64 {
+        area_d(poly)
+    }
+
+    /// clipper.engine.h:425-428 `operator []` and :430-433
+    /// C++: PolyPathD* Child(size_t index) const
+    pub fn child(&self, index: usize) -> &PolyPathD {
+        &self.childs_[index]
+    }
+
+    /// clipper.engine.h:425-433: `operator []` and `Child` are const and return a pointer
+    /// to a node that is not: the child, to change.
+    pub fn child_mut(&mut self, index: usize) -> &mut PolyPathD {
+        &mut self.childs_[index]
+    }
+
+    /// clipper.engine.h:435-436 `begin()` and `end()`.
+    pub fn iter(&self) -> std::slice::Iter<'_, PolyPathD> {
+        self.childs_.iter()
+    }
+
+    /// clipper.engine.h:438
+    /// C++: void SetScale(double value) { scale_ = value; }
+    pub fn set_scale(&mut self, value: f64) {
+        self.scale_ = value;
+    }
+
+    /// clipper.engine.h:439
+    /// C++: double Scale() const { return scale_; }
+    pub fn scale(&self) -> f64 {
+        self.scale_
+    }
+
+    /// clipper.engine.h:441-444, with the constructor clipper.engine.h:408-413
+    /// C++: PolyPathD* AddChild(const Path64& path) override
+    /// C++: polygon_ = ScalePath<double, int64_t>(path, scale_, error_code);
+    /// `ScalePath` throws where the scale is zero; the child is then not added.
+    pub fn add_child(&mut self, path: &Path64) -> Result<&mut PolyPathD, Clipper2Exception> {
+        let scale_ = self.scale_;
+        let mut error_code = 0;
+        let polygon_ = scale_pathd_from_64_uniform(path, scale_, &mut error_code)?;
+        self.childs_.push(PolyPathD { level_: self.level_ + 1, childs_: Vec::new(), scale_, polygon_ });
+        Ok(self.childs_.last_mut().unwrap())
+    }
+
+    /// clipper.engine.h:446-449, with the constructor clipper.engine.h:415-419
+    /// C++: PolyPathD* AddChild(const PathD& path)
+    pub fn add_child_d(&mut self, path: &PathD) -> &mut PolyPathD {
+        self.childs_.push(PolyPathD { level_: self.level_ + 1, childs_: Vec::new(), scale_: self.scale_, polygon_: path.clone() });
+        self.childs_.last_mut().unwrap()
+    }
+
+    /// clipper.engine.h:451-454
+    /// C++: void Clear() override
+    pub fn clear(&mut self) {
+        self.childs_.clear();
+    }
+
+    /// clipper.engine.h:456-459
+    /// C++: size_t Count() const override
+    pub fn count(&self) -> usize {
+        self.childs_.len()
+    }
+
+    /// clipper.engine.h:461
+    /// C++: const PathD& Polygon() const { return polygon_; };
+    pub fn polygon(&self) -> &PathD {
+        &self.polygon_
+    }
+
+    /// clipper.engine.h:463-467
+    /// C++: double Area() const
+    pub fn area(&self) -> f64 {
+        let mut a = area_d(&self.polygon_);
+        for child in &self.childs_ {
+            a += child.area();
+        }
+        a
+    }
+}
+
+impl PolyPathArena {
+    /// As `fill`, into a `PolyPathD`: `PolyPathD::AddChild(const Path64&)` on every node in
+    /// the order `RecursiveCheckOwners` called it for that parent.
+    fn fill_d(&mut self, node: usize, out: &mut PolyPathD) -> Result<(), Clipper2Exception> {
+        let childs = std::mem::take(&mut self.childs[node]);
+        for c in childs {
+            let polygon = std::mem::take(&mut self.polygons[c]);
+            let child = out.add_child(&polygon)?;
+            self.fill_d(c, child)?;
+        }
+        Ok(())
+    }
+}
+
+/// `std::ilogb` of a finite double that is not zero: its binary exponent.
+fn ilogb(x: f64) -> i32 {
+    let bits = x.to_bits();
+    let e = ((bits >> 52) & 0x7ff) as i32;
+    if e == 0 {
+        // subnormal: the exponent of the highest set bit of the mantissa
+        let m = bits & ((1u64 << 52) - 1);
+        return -1074 + (63 - m.leading_zeros() as i32);
+    }
+    e - 1023
+}
+
+impl ClipperBase {
+    /// clipper.engine.cpp:3048-3089
+    /// C++: bool BuildPathD(OutPt* op, bool reverse, bool isOpen, PathD& path, double inv_scale)
+    /// (Unlike `BuildPath64`, the last test does not look at `isOpen`.)
+    fn build_path_d(&self, mut op: usize, reverse: bool, is_open: bool, path: &mut PathD, inv_scale: f64) -> bool {
+        let p = &self.outpt_pool_;
+        if op == NONE || p[op].next == op || (!is_open && p[op].next == p[op].prev) {
+            return false;
+        }
+
+        path.clear();
+        let mut last_pt;
+        let mut op2;
+        if reverse {
+            last_pt = p[op].pt;
+            op2 = p[op].prev;
+        } else {
+            op = p[op].next;
+            last_pt = p[op].pt;
+            op2 = p[op].next;
+        }
+        path.push(pointd_xyz(last_pt.x as f64 * inv_scale, last_pt.y as f64 * inv_scale, point_z(&last_pt)));
+
+        while op2 != op {
+            if p[op2].pt != last_pt {
+                last_pt = p[op2].pt;
+                path.push(pointd_xyz(last_pt.x as f64 * inv_scale, last_pt.y as f64 * inv_scale, point_z(&last_pt)));
+            }
+            if reverse {
+                op2 = p[op2].prev;
+            } else {
+                op2 = p[op2].next;
+            }
+        }
+        if path.len() == 3 && self.is_very_small_triangle(op2) {
+            return false;
+        }
+        true
+    }
+}
+
+/// clipper.engine.h:531-642
+/// C++: class ClipperD : public ClipperBase
+/// The base class is the member `base`, and `Deref` gives its public methods.
+#[derive(Debug)]
+pub struct ClipperD {
+    base: ClipperBase,
+    scale_: f64,
+    inv_scale_: f64,
+    /// `ZCallbackD zCallbackD_` (clipper.engine.h:535), a member under `USINGZ`.
+    z_callback_d_: ZCallbackD,
+}
+
+impl std::ops::Deref for ClipperD {
+    type Target = ClipperBase;
+    fn deref(&self) -> &ClipperBase {
+        &self.base
+    }
+}
+
+impl std::ops::DerefMut for ClipperD {
+    fn deref_mut(&mut self) -> &mut ClipperBase {
+        &mut self.base
+    }
+}
+
+impl ClipperD {
+    /// clipper.engine.h:540-548
+    /// C++: explicit ClipperD(int precision = 2) : ClipperBase()
+    /// `CheckPrecisionRange` throws for a precision outside -8..8: there is no clipper then.
+    pub fn new(mut precision: i32) -> Result<Self, Clipper2Exception> {
+        let mut base = ClipperBase::new();
+        check_precision_range(&mut precision, &mut base.error_code_)?;
+        // to optimize scaling / descaling precision
+        // set the scale to a power of double's radix (2) (#25)
+        // `std::pow(10, precision)` and `std::pow(radix, int)` are `pow(double, double)`.
+        let scale_ = 2.0f64.powf((ilogb(10.0f64.powf(precision as f64)) + 1) as f64);
+        let inv_scale_ = 1.0 / scale_;
+        Ok(ClipperD { base, scale_, inv_scale_, z_callback_d_: ZCallbackD::none() })
+    }
+
+    /// clipper.engine.h:551
+    /// C++: void SetZCallback(ZCallbackD cb) { zCallbackD_ = cb; };
+    /// (under `USINGZ`; in the build without it `ZCallbackD` holds nothing.)
+    pub fn set_z_callback(&mut self, cb: ZCallbackD) {
+        self.z_callback_d_ = cb;
+    }
+
+    /// clipper.engine.h:553-567 (under `USINGZ`)
+    /// C++: void ZCB(const Point64& e1bot, const Point64& e1top, const Point64& e2bot, const Point64& e2top, Point64& pt)
+    /// `this` is the two members the function reads, `zCallbackD_` and `invScale_`.
+    fn zcb(z_callback_d_: &ZCallbackD, inv_scale_: f64, e1bot: &Point64, e1top: &Point64, e2bot: &Point64, e2top: &Point64, pt: &mut Point64) {
+        // de-scale (x & y)
+        // temporarily convert integers to their initial float values
+        // this will slow clipping marginally but will make it much easier
+        // to understand the coordinates passed to the callback function
+        let mut tmp = pointd_from_point64(pt) * inv_scale_;
+        let e1b = pointd_from_point64(e1bot) * inv_scale_;
+        let e1t = pointd_from_point64(e1top) * inv_scale_;
+        let e2b = pointd_from_point64(e2bot) * inv_scale_;
+        let e2t = pointd_from_point64(e2top) * inv_scale_;
+        z_callback_d_.call(&e1b, &e1t, &e2b, &e2t, &mut tmp);
+        point_set_z(pt, pointd_z(&tmp)); // only update 'z'
+    }
+
+    /// clipper.engine.h:569-580 (under `USINGZ`)
+    /// C++: void CheckCallback()
+    fn check_callback(&mut self) {
+        if self.z_callback_d_.is_set() {
+            // if the user defined float point callback has been assigned
+            // then assign the proxy callback function
+            self.base.z_callback_ = bind_zcb_d(ClipperD::zcb, &self.z_callback_d_, self.inv_scale_);
+        } else {
+            self.base.z_callback_ = ZCallback64::none();
+        }
+    }
+
+    /// clipper.engine.h:584-587
+    /// C++: void AddSubject(const PathsD& subjects)
+    /// `ScalePaths` throws where the scaled bounds leave the coordinate range (after it set
+    /// `error_code_`); nothing is added then.
+    pub fn add_subject(&mut self, subjects: &PathsD) -> Result<(), Clipper2Exception> {
+        let scaled = scale_paths64_from_d_uniform(subjects, self.scale_, &mut self.base.error_code_)?;
+        self.base.add_paths(&scaled, PathType::Subject, false);
+        Ok(())
+    }
+
+    /// clipper.engine.h:589-592
+    /// C++: void AddOpenSubject(const PathsD& open_subjects)
+    pub fn add_open_subject(&mut self, open_subjects: &PathsD) -> Result<(), Clipper2Exception> {
+        let scaled = scale_paths64_from_d_uniform(open_subjects, self.scale_, &mut self.base.error_code_)?;
+        self.base.add_paths(&scaled, PathType::Subject, true);
+        Ok(())
+    }
+
+    /// clipper.engine.h:594-597
+    /// C++: void AddClip(const PathsD& clips)
+    pub fn add_clip(&mut self, clips: &PathsD) -> Result<(), Clipper2Exception> {
+        let scaled = scale_paths64_from_d_uniform(clips, self.scale_, &mut self.base.error_code_)?;
+        self.base.add_paths(&scaled, PathType::Clip, false);
+        Ok(())
+    }
+
+    /// clipper.engine.h:599-603
+    /// C++: bool Execute(ClipType clip_type, FillRule fill_rule, PathsD& closed_paths)
+    pub fn execute(&mut self, clip_type: ClipType, fill_rule: FillRule, closed_paths: &mut PathsD) -> bool {
+        let mut dummy = PathsD::new();
+        self.execute_open(clip_type, fill_rule, closed_paths, &mut dummy)
+    }
+
+    /// clipper.engine.h:605-617
+    /// C++: bool Execute(ClipType clip_type, FillRule fill_rule, PathsD& closed_paths, PathsD& open_paths)
+    /// (Unlike `Clipper64::Execute`, the solution is not cleared where `ExecuteInternal`
+    /// fails.)
+    pub fn execute_open(&mut self, clip_type: ClipType, fill_rule: FillRule, closed_paths: &mut PathsD, open_paths: &mut PathsD) -> bool {
+        if USINGZ {
+            self.check_callback();
+        }
+        if self.base.execute_internal(clip_type, fill_rule, false) {
+            self.build_paths_d(closed_paths, Some(open_paths));
+        }
+        self.base.clean_up();
+        self.base.succeeded_
+    }
+
+    /// clipper.engine.h:619-623
+    /// C++: bool Execute(ClipType clip_type, FillRule fill_rule, PolyTreeD& polytree)
+    pub fn execute_tree(&mut self, clip_type: ClipType, fill_rule: FillRule, polytree: &mut PolyTreeD) -> bool {
+        let mut dummy = PathsD::new();
+        self.execute_tree_open(clip_type, fill_rule, polytree, &mut dummy)
+    }
+
+    /// clipper.engine.h:625-640
+    /// C++: bool Execute(ClipType clip_type, FillRule fill_rule, PolyTreeD& polytree, PathsD& open_paths)
+    pub fn execute_tree_open(&mut self, clip_type: ClipType, fill_rule: FillRule, polytree: &mut PolyTreeD, open_paths: &mut PathsD) -> bool {
+        if USINGZ {
+            self.check_callback();
+        }
+        if self.base.execute_internal(clip_type, fill_rule, true) {
+            polytree.clear();
+            polytree.set_scale(self.inv_scale_);
+            open_paths.clear();
+            self.build_tree_d(polytree, open_paths);
+        }
+        self.base.clean_up();
+        self.base.succeeded_
+    }
+
+    /// clipper.engine.cpp:3091-3124
+    /// C++: void ClipperD::BuildPathsD(PathsD& solutionClosed, PathsD* solutionOpen)
+    fn build_paths_d(&mut self, solution_closed: &mut PathsD, mut solution_open: Option<&mut PathsD>) {
+        let inv_scale_ = self.inv_scale_;
+        let b = &mut self.base;
+        solution_closed.clear();
+        solution_closed.reserve(b.outrec_list_.len());
+        if let Some(open) = solution_open.as_deref_mut() {
+            open.clear();
+            open.reserve(b.outrec_list_.len());
+        }
+
+        // outrec_list_.size() is not static here because
+        // CleanCollinear below can indirectly add additional
+        // OutRec (via FixOutRecPts)
+        let mut i = 0;
+        while i < b.outrec_list_.len() {
+            let outrec = i;
+            i += 1;
+            if b.outrec_list_[outrec].pts == NONE {
+                continue;
+            }
+
+            let mut path = PathD::new();
+            if solution_open.is_some() && b.outrec_list_[outrec].is_open {
+                if b.build_path_d(b.outrec_list_[outrec].pts, b.reverse_solution_, true, &mut path, inv_scale_) {
+                    solution_open.as_deref_mut().unwrap().push(path);
+                }
+            } else {
+                b.clean_collinear(outrec);
+                //closed paths should always return a Positive orientation
+                if b.build_path_d(b.outrec_list_[outrec].pts, b.reverse_solution_, false, &mut path, inv_scale_) {
+                    solution_closed.push(path);
+                }
+            }
+        }
+    }
+
+    /// clipper.engine.cpp:3126-3152
+    /// C++: void ClipperD::BuildTreeD(PolyPathD& polytree, PathsD& open_paths)
+    fn build_tree_d(&mut self, polytree: &mut PolyPathD, open_paths: &mut PathsD) {
+        let inv_scale_ = self.inv_scale_;
+        let b = &mut self.base;
+        polytree.clear();
+        open_paths.clear();
+        if b.has_open_paths_ {
+            open_paths.reserve(b.outrec_list_.len());
+        }
+        let mut tree = PolyPathArena::new();
+
+        // outrec_list_.size() is not static here because
+        // BuildPathD below can indirectly add additional OutRec //#607
+        let mut i = 0;
+        while i < b.outrec_list_.len() {
+            let outrec = i;
+            i += 1;
+            if b.outrec_list_[outrec].pts == NONE {
+                continue;
+            }
+            if b.outrec_list_[outrec].is_open {
+                let mut path = PathD::new();
+                if b.build_path_d(b.outrec_list_[outrec].pts, b.reverse_solution_, true, &mut path, inv_scale_) {
+                    open_paths.push(path);
+                }
+                continue;
+            }
+
+            if b.check_bounds(outrec) {
+                b.recursive_check_owners(outrec, 0, &mut tree);
+            }
+        }
+        // `PolyPathD::AddChild(const Path64&)` scales by the scale of the tree, which
+        // `Execute` set to `invScale_`: not zero, so `ScalePath` does not throw.
+        tree.fill_d(0, polytree).expect("the scale of the tree is not zero");
     }
 }

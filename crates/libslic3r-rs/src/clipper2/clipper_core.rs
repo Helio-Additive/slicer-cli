@@ -8,17 +8,25 @@
 //! place is a `mul_add` here, and nothing else is: a product kept in a variable or returned
 //! by a function (`Sqr`) is rounded first, as in the C++.
 //!
-//! `PointD` and what clipper.offset.cpp takes of the templates on it are here: the
-//! conversions between `Point64` and `PointD`, `TranslatePoint`, `ReflectPoint`, the
-//! two-vector `CrossProduct` and `DotProduct`, `GetSegmentIntersectPt` on doubles. The
-//! templates that serve `ClipperD` and clipper.rectclip.cpp only (`ScalePath`,
-//! `ScalePaths`, `TransformPath`, `StripNearEqual`, `CheckPrecisionRange`, `ScaleRect`,
-//! `RectD`) are not ported: nothing the engine calls reaches them.
+//! The templates are written out for the types the library instantiates them with: a name
+//! without a suffix is the `int64_t` instance (`Point64`, `Path64`, `Rect64`), `_d` the
+//! `double` one (`PointD`, `PathD`, `RectD`); the two-type templates (`ScalePath`,
+//! `ScalePaths`, `TransformPath`, `ScaleRect`, `GetBounds<T, T2>`) name the result first:
+//! `scale_path64_from_d` is `ScalePath<int64_t, double>`.
+//!
+//! The reference is built with exceptions, so `DoError` throws: it is `do_error`, which
+//! returns `Err(Clipper2Exception)`, and every function that can reach it returns a
+//! `Result`. The statements the C++ has after a `DoError` for a build without exceptions
+//! are kept, and never run.
+//!
+//! Not here: the stream operators (`operator<<`), and `IsCollinear` with `T = double`, which
+//! passes doubles to `ProductsAreEqual(int64_t, ...)` (an implicit truncation; nothing in
+//! the library instantiates it).
 
 use std::cell::Cell;
 
 use super::clipper2_build::{point_xyz, point_z, pointd_xyz, pointd_z};
-pub use super::clipper2_build::{Point64, PointD, ZCallback64, USINGZ};
+pub use super::clipper2_build::{Point64, PointD, ZCallback64, ZCallbackD, USINGZ};
 
 // clipper.core.h:51-56 error codes (2^n)
 pub const PRECISION_ERROR_I: i32 = 1; // non-fatal
@@ -799,6 +807,1037 @@ pub fn point_in_polygon(pt: &Point64, polygon: &Path64) -> PointInPolygonResult 
             prev = curr - 1;
         }
         let d = cross_product(&polygon[prev], &polygon[curr], pt);
+        if d == 0.0 {
+            return PointInPolygonResult::IsOn;
+        }
+        if (d < 0.0) == is_above {
+            val = 1 - val;
+        }
+    }
+
+    if val == 0 {
+        PointInPolygonResult::IsOutside
+    } else {
+        PointInPolygonResult::IsInside
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// What follows serves `ClipperD`, the `PathsD` interface of clipper.h, clipper.rectclip.cpp
+// and clipper.minkowski.h. `tests/clipper2_d_native_parity.rs` and its `_z` twin hold it
+// equal to the library.
+// ---------------------------------------------------------------------------------------
+
+/// clipper.core.h:30-37
+/// C++: class Clipper2Exception : public std::exception
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Clipper2Exception {
+    m_descr: String,
+}
+
+impl Clipper2Exception {
+    /// clipper.core.h:32-33
+    /// C++: explicit Clipper2Exception(const char* description) : m_descr(description) {}
+    pub fn new(description: &str) -> Self {
+        Clipper2Exception { m_descr: description.to_string() }
+    }
+
+    /// clipper.core.h:34
+    /// C++: virtual const char* what() const noexcept override { return m_descr.c_str(); }
+    pub fn what(&self) -> &str {
+        &self.m_descr
+    }
+}
+
+impl std::fmt::Display for Clipper2Exception {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.m_descr)
+    }
+}
+
+impl std::error::Error for Clipper2Exception {}
+
+/// clipper.core.h:39-40
+pub const PRECISION_ERROR: &str = "Precision exceeds the permitted range";
+/// clipper.core.h:41-42
+pub const RANGE_ERROR: &str = "Values exceed permitted range";
+/// clipper.core.h:43-44
+pub const SCALE_ERROR: &str = "Invalid scale (either 0 or too large)";
+/// clipper.core.h:45-46
+pub const NON_PAIR_ERROR: &str = "There must be 2 values for each coordinate";
+/// clipper.core.h:47-48
+pub const UNDEFINED_ERROR: &str = "There is an undefined error in Clipper2";
+
+/// clipper.core.h:71
+/// C++: const double max_coord = static_cast<double>(MAX_COORD);
+pub const MAX_COORD_D: f64 = MAX_COORD as f64;
+/// clipper.core.h:72
+/// C++: const double min_coord = static_cast<double>(MIN_COORD);
+pub const MIN_COORD_D: f64 = MIN_COORD as f64;
+
+/// clipper.core.h:76-98
+/// C++: static void DoError([[maybe_unused]] int error_code)
+/// The arm with exceptions (the reference build has them): every call throws, which is the
+/// `Err` here.
+pub fn do_error(error_code: i32) -> Result<(), Clipper2Exception> {
+    match error_code {
+        PRECISION_ERROR_I => Err(Clipper2Exception::new(PRECISION_ERROR)),
+        SCALE_ERROR_I => Err(Clipper2Exception::new(SCALE_ERROR)),
+        NON_PAIR_ERROR_I => Err(Clipper2Exception::new(NON_PAIR_ERROR)),
+        UNDEFINED_ERROR_I => Err(Clipper2Exception::new(UNDEFINED_ERROR)),
+        RANGE_ERROR_I => Err(Clipper2Exception::new(RANGE_ERROR)),
+        // Should never happen, but adding this to stop a compiler warning
+        _ => Err(Clipper2Exception::new("Unknown error")),
+    }
+}
+
+impl Point64 {
+    /// clipper.core.h:126-142 / 180-194 `Init` with `T = T2 = int64_t`
+    /// C++: inline void Init(const T2 x_ = 0, const T2 y_ = 0, const z_type z_ = 0)
+    /// The `else` arm: the values as they are. (`z_` is a parameter under `USINGZ` only.)
+    pub fn init(&mut self, x_: i64, y_: i64, z_: i64) {
+        *self = point_xyz(x_, y_, z_);
+    }
+
+    /// clipper.core.h:126-142 / 180-194 `Init` with `T = int64_t`, `T2 = double`: the arm
+    /// that rounds. See `point64_from_doubles`.
+    pub fn init_d(&mut self, x_: f64, y_: f64, z_: i64) {
+        *self = point64_from_doubles(x_, y_, z_);
+    }
+
+    /// clipper.core.h:159-163 with `T = int64_t`, `T2 = double`, under `USINGZ`
+    /// C++: explicit Point(const Point<T2>& p, z_type z_) { Init(p.x, p.y, z_); }
+    pub fn from_pointd_z(p: &PointD, z_: i64) -> Point64 {
+        point64_from_doubles(p.x, p.y, z_)
+    }
+}
+
+/// clipper.core.h:165-168 / 204-207 with `T = int64_t`
+/// C++: Point operator * (const double scale) const { return Point(x * scale, y * scale, z); }
+/// The products are doubles and the constructor rounds them (`Init`, halves away from zero).
+impl std::ops::Mul<f64> for Point64 {
+    type Output = Point64;
+    fn mul(self, scale: f64) -> Point64 {
+        point64_from_doubles(self.x as f64 * scale, self.y as f64 * scale, point_z(&self))
+    }
+}
+
+impl PointD {
+    /// clipper.core.h:126-142 / 180-194 `Init` with `T = double`
+    /// C++: inline void Init(const T2 x_ = 0, const T2 y_ = 0, const z_type z_ = 0)
+    pub fn init(&mut self, x_: f64, y_: f64, z_: i64) {
+        *self = pointd_xyz(x_, y_, z_);
+    }
+
+    /// clipper.core.h:146-151 with `z_` given (under `USINGZ`; the z is dropped in the
+    /// other build).
+    #[inline]
+    pub fn new_xyz(x: f64, y: f64, z: i64) -> Self {
+        pointd_xyz(x, y, z)
+    }
+
+    /// `pt.z` under `USINGZ`, 0 in the other build.
+    #[inline]
+    pub fn z_or_zero(&self) -> i64 {
+        pointd_z(self)
+    }
+
+    /// clipper.core.h:159-163 with `T = double`, `T2 = int64_t`, under `USINGZ`
+    /// C++: explicit Point(const Point<T2>& p, z_type z_) { Init(p.x, p.y, z_); }
+    pub fn from_point64_z(p: &Point64, z_: i64) -> PointD {
+        pointd_xyz(p.x as f64, p.y as f64, z_)
+    }
+}
+
+/// clipper.core.h:165-168 / 204-207 with `T = double`
+/// C++: Point operator * (const double scale) const { return Point(x * scale, y * scale, z); }
+impl std::ops::Mul<f64> for PointD {
+    type Output = PointD;
+    fn mul(self, scale: f64) -> PointD {
+        pointd_xyz(self.x * scale, self.y * scale, pointd_z(&self))
+    }
+}
+
+/// clipper.core.h:226-229 with `T = double`
+/// C++: inline Point<T> operator-() const { return Point<T>(-x, -y); }
+impl std::ops::Neg for PointD {
+    type Output = PointD;
+    fn neg(self) -> PointD {
+        PointD::new(-self.x, -self.y)
+    }
+}
+
+/// clipper.core.h:231-234 with `T = double`
+/// C++: inline Point operator+(const Point& b) const { return Point(x + b.x, y + b.y); }
+impl std::ops::Add for PointD {
+    type Output = PointD;
+    fn add(self, b: PointD) -> PointD {
+        PointD::new(self.x + b.x, self.y + b.y)
+    }
+}
+
+/// clipper.core.h:236-239 with `T = double`
+/// C++: inline Point operator-(const Point& b) const { return Point(x - b.x, y - b.y); }
+impl std::ops::Sub for PointD {
+    type Output = PointD;
+    fn sub(self, b: PointD) -> PointD {
+        PointD::new(self.x - b.x, self.y - b.y)
+    }
+}
+
+/// clipper.core.h:257 `using PathsD = std::vector< PathD>;`
+pub type PathsD = Vec<PathD>;
+
+/// clipper.core.h:262-264
+/// C++: static const PointD InvalidPointD = PointD(max, max);
+pub fn invalid_point_d() -> PointD {
+    PointD::new(f64::MAX, f64::MAX)
+}
+
+/// clipper.core.h:266-273 with `T = double`
+/// C++: static inline Point<T> MidPoint(const Point<T>& p1, const Point<T>& p2)
+pub fn mid_point_d(p1: &PointD, p2: &PointD) -> PointD {
+    PointD::new((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
+}
+
+impl Rect64 {
+    /// clipper.core.h:352-357 with `T = int64_t`
+    /// C++: void Scale(double scale) { left *= scale; top *= scale; right *= scale; bottom *= scale; }
+    /// `left *= scale` on an `int64_t` is `left = (int64_t)((double)left * scale)`: the
+    /// product truncated toward zero.
+    ///
+    /// FIDELITY-NOTE: the conversion of a product outside the range of `int64_t` is
+    /// undefined in the C++; here it saturates, as the reference build does (see
+    /// `point64_from_doubles`).
+    pub fn scale(&mut self, scale: f64) {
+        self.left = (self.left as f64 * scale) as i64;
+        self.top = (self.top as f64 * scale) as i64;
+        self.right = (self.right as f64 * scale) as i64;
+        self.bottom = (self.bottom as f64 * scale) as i64;
+    }
+}
+
+/// clipper.core.h:283-392 `template <typename T> struct Rect` with `T = double`
+/// (`using RectD = Rect<double>`, clipper.core.h:281).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RectD {
+    pub left: f64,
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+}
+
+impl Default for RectD {
+    /// clipper.core.h:296-301 `Rect(bool is_valid = true)` with the default argument.
+    fn default() -> Self {
+        RectD::new_valid(true)
+    }
+}
+
+impl RectD {
+    /// clipper.core.h:290-294
+    /// C++: Rect(T l, T t, T r, T b)
+    pub const fn new(l: f64, t: f64, r: f64, b: f64) -> Self {
+        RectD { left: l, top: t, right: r, bottom: b }
+    }
+
+    /// clipper.core.h:296-307
+    /// C++: Rect(bool is_valid = true)
+    pub const fn new_valid(is_valid: bool) -> Self {
+        if is_valid {
+            RectD { left: 0.0, top: 0.0, right: 0.0, bottom: 0.0 }
+        } else {
+            RectD { left: f64::MAX, top: f64::MAX, right: f64::MIN, bottom: f64::MIN }
+        }
+    }
+
+    /// clipper.core.h:309-316
+    /// C++: static Rect<T> InvalidRect()
+    pub const fn invalid_rect() -> Self {
+        RectD { left: f64::MAX, top: f64::MAX, right: f64::MIN, bottom: f64::MIN }
+    }
+
+    /// clipper.core.h:318
+    /// C++: bool IsValid() const { return left != (std::numeric_limits<T>::max)(); }
+    pub fn is_valid(&self) -> bool {
+        self.left != f64::MAX
+    }
+
+    /// clipper.core.h:320
+    /// C++: T Width() const { return right - left; }
+    pub fn width(&self) -> f64 {
+        self.right - self.left
+    }
+
+    /// clipper.core.h:321
+    /// C++: T Height() const { return bottom - top; }
+    pub fn height(&self) -> f64 {
+        self.bottom - self.top
+    }
+
+    /// clipper.core.h:322
+    /// C++: void Width(T width) { right = left + width; }
+    pub fn set_width(&mut self, width: f64) {
+        self.right = self.left + width;
+    }
+
+    /// clipper.core.h:323
+    /// C++: void Height(T height) { bottom = top + height; }
+    pub fn set_height(&mut self, height: f64) {
+        self.bottom = self.top + height;
+    }
+
+    /// clipper.core.h:325-328
+    /// C++: Point<T> MidPoint() const
+    pub fn mid_point(&self) -> PointD {
+        PointD::new((self.left + self.right) / 2.0, (self.top + self.bottom) / 2.0)
+    }
+
+    /// clipper.core.h:330-339
+    /// C++: Path<T> AsPath() const
+    pub fn as_path(&self) -> PathD {
+        let mut result = PathD::with_capacity(4);
+        result.push(PointD::new(self.left, self.top));
+        result.push(PointD::new(self.right, self.top));
+        result.push(PointD::new(self.right, self.bottom));
+        result.push(PointD::new(self.left, self.bottom));
+        result
+    }
+
+    /// clipper.core.h:341-344
+    /// C++: bool Contains(const Point<T>& pt) const
+    pub fn contains_point(&self, pt: &PointD) -> bool {
+        pt.x > self.left && pt.x < self.right && pt.y > self.top && pt.y < self.bottom
+    }
+
+    /// clipper.core.h:346-350
+    /// C++: bool Contains(const Rect<T>& rec) const
+    pub fn contains(&self, rec: &RectD) -> bool {
+        rec.left >= self.left && rec.right <= self.right && rec.top >= self.top && rec.bottom <= self.bottom
+    }
+
+    /// clipper.core.h:352-357
+    /// C++: void Scale(double scale)
+    pub fn scale(&mut self, scale: f64) {
+        self.left *= scale;
+        self.top *= scale;
+        self.right *= scale;
+        self.bottom *= scale;
+    }
+
+    /// clipper.core.h:359
+    /// C++: bool IsEmpty() const { return bottom <= top || right <= left; };
+    pub fn is_empty(&self) -> bool {
+        self.bottom <= self.top || self.right <= self.left
+    }
+
+    /// clipper.core.h:361-365
+    /// C++: bool Intersects(const Rect<T>& rec) const
+    /// `std::max(a, b)` is `(a < b) ? b : a` and `std::min(a, b)` is `(b < a) ? b : a`,
+    /// which is what decides the answer where a member is a NaN.
+    pub fn intersects(&self, rec: &RectD) -> bool {
+        let max = |a: f64, b: f64| if a < b { b } else { a };
+        let min = |a: f64, b: f64| if b < a { b } else { a };
+        (max(self.left, rec.left) <= min(self.right, rec.right)) && (max(self.top, rec.top) <= min(self.bottom, rec.bottom))
+    }
+
+    /// clipper.core.h:372-379
+    /// C++: Rect<T>& operator+=(const Rect<T>& other)
+    pub fn add_assign(&mut self, other: &RectD) {
+        let max = |a: f64, b: f64| if a < b { b } else { a };
+        let min = |a: f64, b: f64| if b < a { b } else { a };
+        self.left = min(self.left, other.left);
+        self.top = min(self.top, other.top);
+        self.right = max(self.right, other.right);
+        self.bottom = max(self.bottom, other.bottom);
+    }
+
+    /// clipper.core.h:381-386
+    /// C++: Rect<T> operator+(const Rect<T>& other) const
+    pub fn add(&self, other: &RectD) -> RectD {
+        let mut result = *self;
+        result.add_assign(other);
+        result
+    }
+}
+
+/// clipper.core.h:394-415 with `T1 = int64_t`, `T2 = double`
+/// C++: inline Rect<T1> ScaleRect(const Rect<T2>& rect, double scale)
+/// The arm that rounds: `static_cast<T1>(std::round(rect.left * scale))`, halves away from
+/// zero. (Out of range: see `point64_from_doubles`.)
+pub fn scale_rect64_from_d(rect: &RectD, scale: f64) -> Rect64 {
+    Rect64::new(
+        (rect.left * scale).round() as i64,
+        (rect.top * scale).round() as i64,
+        (rect.right * scale).round() as i64,
+        (rect.bottom * scale).round() as i64,
+    )
+}
+
+/// clipper.core.h:394-415 with `T1 = double`, `T2 = int64_t`
+/// C++: inline Rect<T1> ScaleRect(const Rect<T2>& rect, double scale)
+/// The `else` arm: `static_cast<T1>(rect.left * scale)`.
+pub fn scale_rectd_from_64(rect: &Rect64, scale: f64) -> RectD {
+    RectD::new(rect.left as f64 * scale, rect.top as f64 * scale, rect.right as f64 * scale, rect.bottom as f64 * scale)
+}
+
+/// clipper.core.h:394-415 with `T1 = T2 = int64_t`
+/// The `else` arm (`T2` is integral): the product truncated toward zero, not rounded.
+pub fn scale_rect64_from_64(rect: &Rect64, scale: f64) -> Rect64 {
+    Rect64::new(
+        (rect.left as f64 * scale) as i64,
+        (rect.top as f64 * scale) as i64,
+        (rect.right as f64 * scale) as i64,
+        (rect.bottom as f64 * scale) as i64,
+    )
+}
+
+/// clipper.core.h:394-415 with `T1 = T2 = double`
+pub fn scale_rectd_from_d(rect: &RectD, scale: f64) -> RectD {
+    RectD::new(rect.left * scale, rect.top * scale, rect.right * scale, rect.bottom * scale)
+}
+
+/// clipper.core.h:418
+pub const INVALID_RECTD: RectD = RectD::invalid_rect();
+
+/// clipper.core.h:420-435 with `T = double`
+/// C++: Rect<T> GetBounds(const Path<T>& path)
+pub fn get_bounds_d(path: &PathD) -> RectD {
+    let mut xmin = f64::MAX;
+    let mut ymin = f64::MAX;
+    let mut xmax = f64::MIN;
+    let mut ymax = f64::MIN;
+    for p in path {
+        if p.x < xmin {
+            xmin = p.x;
+        }
+        if p.x > xmax {
+            xmax = p.x;
+        }
+        if p.y < ymin {
+            ymin = p.y;
+        }
+        if p.y > ymax {
+            ymax = p.y;
+        }
+    }
+    RectD::new(xmin, ymin, xmax, ymax)
+}
+
+/// clipper.core.h:437-453 with `T = double`, and clipper.core.h:472-488 with
+/// `T = T2 = double` (the casts are nothing)
+/// C++: Rect<T> GetBounds(const Paths<T>& paths)
+pub fn get_bounds_paths_d(paths: &PathsD) -> RectD {
+    let mut xmin = f64::MAX;
+    let mut ymin = f64::MAX;
+    let mut xmax = f64::MIN;
+    let mut ymax = f64::MIN;
+    for path in paths {
+        for p in path {
+            if p.x < xmin {
+                xmin = p.x;
+            }
+            if p.x > xmax {
+                xmax = p.x;
+            }
+            if p.y < ymin {
+                ymin = p.y;
+            }
+            if p.y > ymax {
+                ymax = p.y;
+            }
+        }
+    }
+    RectD::new(xmin, ymin, xmax, ymax)
+}
+
+/// clipper.core.h:455-470 with `T = double`, `T2 = int64_t`
+/// C++: Rect<T> GetBounds(const Path<T2>& path)
+/// `p.x < xmin` compares an `int64_t` with a double: the integer is converted.
+pub fn get_bounds_d_from_64(path: &Path64) -> RectD {
+    let mut xmin = f64::MAX;
+    let mut ymin = f64::MAX;
+    let mut xmax = f64::MIN;
+    let mut ymax = f64::MIN;
+    for p in path {
+        if (p.x as f64) < xmin {
+            xmin = p.x as f64;
+        }
+        if (p.x as f64) > xmax {
+            xmax = p.x as f64;
+        }
+        if (p.y as f64) < ymin {
+            ymin = p.y as f64;
+        }
+        if (p.y as f64) > ymax {
+            ymax = p.y as f64;
+        }
+    }
+    RectD::new(xmin, ymin, xmax, ymax)
+}
+
+/// clipper.core.h:472-488 with `T = double`, `T2 = int64_t`
+/// C++: Rect<T> GetBounds(const Paths<T2>& paths)
+pub fn get_bounds_paths_d_from_64(paths: &Paths64) -> RectD {
+    let mut xmin = f64::MAX;
+    let mut ymin = f64::MAX;
+    let mut xmax = f64::MIN;
+    let mut ymax = f64::MIN;
+    for path in paths {
+        for p in path {
+            if (p.x as f64) < xmin {
+                xmin = p.x as f64;
+            }
+            if (p.x as f64) > xmax {
+                xmax = p.x as f64;
+            }
+            if (p.y as f64) < ymin {
+                ymin = p.y as f64;
+            }
+            if (p.y as f64) > ymax {
+                ymax = p.y as f64;
+            }
+        }
+    }
+    RectD::new(xmin, ymin, xmax, ymax)
+}
+
+/// clipper.core.h:455-470 with `T = int64_t`, `T2 = double`
+/// C++: Rect<T> GetBounds(const Path<T2>& path)
+/// `p.x < xmin` compares a double with an `int64_t` (converted to double), and
+/// `static_cast<T>(p.x)` truncates toward zero (out of range: see `point64_from_doubles`).
+pub fn get_bounds_64_from_d(path: &PathD) -> Rect64 {
+    let mut xmin = i64::MAX;
+    let mut ymin = i64::MAX;
+    let mut xmax = i64::MIN;
+    let mut ymax = i64::MIN;
+    for p in path {
+        if p.x < xmin as f64 {
+            xmin = p.x as i64;
+        }
+        if p.x > xmax as f64 {
+            xmax = p.x as i64;
+        }
+        if p.y < ymin as f64 {
+            ymin = p.y as i64;
+        }
+        if p.y > ymax as f64 {
+            ymax = p.y as i64;
+        }
+    }
+    Rect64::new(xmin, ymin, xmax, ymax)
+}
+
+/// clipper.core.h:472-488 with `T = int64_t`, `T2 = double`
+/// C++: Rect<T> GetBounds(const Paths<T2>& paths)
+pub fn get_bounds_paths_64_from_d(paths: &PathsD) -> Rect64 {
+    let mut xmin = i64::MAX;
+    let mut ymin = i64::MAX;
+    let mut xmax = i64::MIN;
+    let mut ymax = i64::MIN;
+    for path in paths {
+        for p in path {
+            if p.x < xmin as f64 {
+                xmin = p.x as i64;
+            }
+            if p.x > xmax as f64 {
+                xmax = p.x as i64;
+            }
+            if p.y < ymin as f64 {
+                ymin = p.y as i64;
+            }
+            if p.y > ymax as f64 {
+                ymax = p.y as i64;
+            }
+        }
+    }
+    Rect64::new(xmin, ymin, xmax, ymax)
+}
+
+/// The four instances of clipper.core.h:512-544 `ScalePath<T1, T2>` and clipper.core.h:546-578
+/// `ScalePaths<T1, T2>`. `$make` is `Point<T1>(pt.x * scale_x, pt.y * scale_y, pt.z)` (the z
+/// under `USINGZ` only); `$bounds` is the range check of `ScalePaths`, which exists where
+/// `T1` is integral.
+macro_rules! scale_path_fns {
+    ($t1:ty, $t2:ty, $pt2:ty, $path:ident, $path_uniform:ident, $paths:ident, $paths_uniform:ident, $make:expr, $bounds:expr, $inst:literal) => {
+        #[doc = concat!("clipper.core.h:512-537 with ", $inst)]
+        /// C++: inline Path<T1> ScalePath(const Path<T2>& path, double scale_x, double scale_y, int& error_code)
+        pub fn $path(path: &Vec<$pt2>, mut scale_x: f64, mut scale_y: f64, error_code: &mut i32) -> Result<Vec<$t1>, Clipper2Exception> {
+            let mut result: Vec<$t1> = Vec::new();
+            if scale_x == 0.0 || scale_y == 0.0 {
+                *error_code |= SCALE_ERROR_I;
+                do_error(SCALE_ERROR_I)?;
+                // if no exception, treat as non-fatal error
+                if scale_x == 0.0 {
+                    scale_x = 1.0;
+                }
+                if scale_y == 0.0 {
+                    scale_y = 1.0;
+                }
+            }
+
+            result.reserve(path.len());
+            let make: fn(&$pt2, f64, f64) -> $t1 = $make;
+            for pt in path {
+                result.push(make(pt, scale_x, scale_y));
+            }
+            Ok(result)
+        }
+
+        #[doc = concat!("clipper.core.h:539-544 with ", $inst)]
+        /// C++: inline Path<T1> ScalePath(const Path<T2>& path, double scale, int& error_code)
+        pub fn $path_uniform(path: &Vec<$pt2>, scale: f64, error_code: &mut i32) -> Result<Vec<$t1>, Clipper2Exception> {
+            $path(path, scale, scale, error_code)
+        }
+
+        #[doc = concat!("clipper.core.h:546-571 with ", $inst)]
+        /// C++: inline Paths<T1> ScalePaths(const Paths<T2>& paths, double scale_x, double scale_y, int& error_code)
+        pub fn $paths(paths: &Vec<Vec<$pt2>>, scale_x: f64, scale_y: f64, error_code: &mut i32) -> Result<Vec<Vec<$t1>>, Clipper2Exception> {
+            let mut result: Vec<Vec<$t1>> = Vec::new();
+
+            // `if constexpr (std::is_integral_v<T1>)`
+            let bounds: Option<fn(&Vec<Vec<$pt2>>) -> RectD> = $bounds;
+            if let Some(get_bounds) = bounds {
+                let r = get_bounds(paths);
+                if (r.left * scale_x) < MIN_COORD_D
+                    || (r.right * scale_x) > MAX_COORD_D
+                    || (r.top * scale_y) < MIN_COORD_D
+                    || (r.bottom * scale_y) > MAX_COORD_D
+                {
+                    *error_code |= RANGE_ERROR_I;
+                    do_error(RANGE_ERROR_I)?;
+                    return Ok(result); // empty path
+                }
+            }
+
+            result.reserve(paths.len());
+            for path in paths {
+                result.push($path(path, scale_x, scale_y, error_code)?);
+            }
+            Ok(result)
+        }
+
+        #[doc = concat!("clipper.core.h:573-578 with ", $inst)]
+        /// C++: inline Paths<T1> ScalePaths(const Paths<T2>& paths, double scale, int& error_code)
+        pub fn $paths_uniform(paths: &Vec<Vec<$pt2>>, scale: f64, error_code: &mut i32) -> Result<Vec<Vec<$t1>>, Clipper2Exception> {
+            $paths(paths, scale, scale, error_code)
+        }
+    };
+}
+
+scale_path_fns!(
+    Point64, f64, PointD, scale_path64_from_d, scale_path64_from_d_uniform, scale_paths64_from_d, scale_paths64_from_d_uniform,
+    |pt, scale_x, scale_y| point64_from_doubles(pt.x * scale_x, pt.y * scale_y, pointd_z(pt)),
+    Some(get_bounds_paths_d),
+    "`T1 = int64_t`, `T2 = double`: the points are rounded, halves away from zero"
+);
+scale_path_fns!(
+    PointD, i64, Point64, scale_pathd_from_64, scale_pathd_from_64_uniform, scale_pathsd_from_64, scale_pathsd_from_64_uniform,
+    |pt, scale_x, scale_y| pointd_xyz(pt.x as f64 * scale_x, pt.y as f64 * scale_y, point_z(pt)),
+    None,
+    "`T1 = double`, `T2 = int64_t`"
+);
+scale_path_fns!(
+    Point64, i64, Point64, scale_path64_from_64, scale_path64_from_64_uniform, scale_paths64_from_64, scale_paths64_from_64_uniform,
+    |pt, scale_x, scale_y| point64_from_doubles(pt.x as f64 * scale_x, pt.y as f64 * scale_y, point_z(pt)),
+    Some(get_bounds_paths_d_from_64),
+    "`T1 = T2 = int64_t`: the products are doubles, rounded halves away from zero"
+);
+scale_path_fns!(
+    PointD, f64, PointD, scale_pathd_from_d, scale_pathd_from_d_uniform, scale_pathsd_from_d, scale_pathsd_from_d_uniform,
+    |pt, scale_x, scale_y| pointd_xyz(pt.x * scale_x, pt.y * scale_y, pointd_z(pt)),
+    None,
+    "`T1 = T2 = double`"
+);
+
+/// clipper.core.h:580-588 with `T1 = int64_t`, `T2 = double`
+/// C++: inline Path<T1> TransformPath(const Path<T2>& path)
+/// `Point<T1>(pt)`: rounded, with the z.
+pub fn transform_path64_from_d(path: &PathD) -> Path64 {
+    let mut result = Path64::with_capacity(path.len());
+    for pt in path {
+        result.push(point64_from_pointd(pt));
+    }
+    result
+}
+
+/// clipper.core.h:580-588 with `T1 = double`, `T2 = int64_t`
+/// C++: inline Path<T1> TransformPath(const Path<T2>& path)
+pub fn transform_pathd_from_64(path: &Path64) -> PathD {
+    let mut result = PathD::with_capacity(path.len());
+    for pt in path {
+        result.push(pointd_from_point64(pt));
+    }
+    result
+}
+
+/// clipper.core.h:590-597 with `T1 = int64_t`, `T2 = double`
+/// C++: inline Paths<T1> TransformPaths(const Paths<T2>& paths)
+pub fn transform_paths64_from_d(paths: &PathsD) -> Paths64 {
+    let mut result = Paths64::new();
+    for path in paths {
+        result.push(transform_path64_from_d(path));
+    }
+    result
+}
+
+/// clipper.core.h:590-597 with `T1 = double`, `T2 = int64_t`
+/// C++: inline Paths<T1> TransformPaths(const Paths<T2>& paths)
+pub fn transform_pathsd_from_64(paths: &Paths64) -> PathsD {
+    let mut result = PathsD::new();
+    for path in paths {
+        result.push(transform_pathd_from_64(path));
+    }
+    result
+}
+
+/// clipper.core.h:605-610 with `T = int64_t`
+/// C++: inline bool NearEqual(const Point<T>& p1, const Point<T>& p2, double max_dist_sqrd)
+/// `Sqr(p1.x - p2.x) + Sqr(p1.y - p2.y)`: the sum of the results of two calls.
+pub fn near_equal(p1: &Point64, p2: &Point64, max_dist_sqrd: f64) -> bool {
+    sqr((p1.x - p2.x) as f64) + sqr((p1.y - p2.y) as f64) < max_dist_sqrd
+}
+
+/// clipper.core.h:605-610 with `T = double`
+pub fn near_equal_d(p1: &PointD, p2: &PointD, max_dist_sqrd: f64) -> bool {
+    sqr(p1.x - p2.x) + sqr(p1.y - p2.y) < max_dist_sqrd
+}
+
+/// clipper.core.h:612-634 with `T = int64_t`
+/// C++: inline Path<T> StripNearEqual(const Path<T>& path, double max_dist_sqrd, bool is_closed_path)
+pub fn strip_near_equal(path: &Path64, max_dist_sqrd: f64, is_closed_path: bool) -> Path64 {
+    if path.is_empty() {
+        return Path64::new();
+    }
+    let mut result = Path64::with_capacity(path.len());
+    let first_pt = path[0];
+    let mut last_pt = first_pt;
+    result.push(first_pt);
+    for path_iter in &path[1..] {
+        if !near_equal(path_iter, &last_pt, max_dist_sqrd) {
+            last_pt = *path_iter;
+            result.push(last_pt);
+        }
+    }
+    if !is_closed_path {
+        return result;
+    }
+    while result.len() > 1 && near_equal(&result[result.len() - 1], &first_pt, max_dist_sqrd) {
+        result.pop();
+    }
+    result
+}
+
+/// clipper.core.h:612-634 with `T = double`
+/// C++: inline Path<T> StripNearEqual(const Path<T>& path, double max_dist_sqrd, bool is_closed_path)
+pub fn strip_near_equal_d(path: &PathD, max_dist_sqrd: f64, is_closed_path: bool) -> PathD {
+    if path.is_empty() {
+        return PathD::new();
+    }
+    let mut result = PathD::with_capacity(path.len());
+    let first_pt = path[0];
+    let mut last_pt = first_pt;
+    result.push(first_pt);
+    for path_iter in &path[1..] {
+        if !near_equal_d(path_iter, &last_pt, max_dist_sqrd) {
+            last_pt = *path_iter;
+            result.push(last_pt);
+        }
+    }
+    if !is_closed_path {
+        return result;
+    }
+    while result.len() > 1 && near_equal_d(&result[result.len() - 1], &first_pt, max_dist_sqrd) {
+        result.pop();
+    }
+    result
+}
+
+/// clipper.core.h:636-648 with `T = int64_t`
+/// C++: inline Paths<T> StripNearEqual(const Paths<T>& paths, double max_dist_sqrd, bool is_closed_path)
+pub fn strip_near_equal_paths(paths: &Paths64, max_dist_sqrd: f64, is_closed_path: bool) -> Paths64 {
+    let mut result = Paths64::with_capacity(paths.len());
+    for path in paths {
+        result.push(strip_near_equal(path, max_dist_sqrd, is_closed_path));
+    }
+    result
+}
+
+/// clipper.core.h:636-648 with `T = double`
+pub fn strip_near_equal_paths_d(paths: &PathsD, max_dist_sqrd: f64, is_closed_path: bool) -> PathsD {
+    let mut result = PathsD::with_capacity(paths.len());
+    for path in paths {
+        result.push(strip_near_equal_d(path, max_dist_sqrd, is_closed_path));
+    }
+    result
+}
+
+/// clipper.core.h:650-657 with `T = double`
+/// C++: inline void StripDuplicates( Path<T>& path, bool is_closed_path)
+pub fn strip_duplicates_d(path: &mut PathD, is_closed_path: bool) {
+    // std::unique keeps the first of each run of equal points.
+    path.dedup_by(|b, a| *a == *b);
+    if is_closed_path {
+        while path.len() > 1 && path[path.len() - 1] == path[0] {
+            path.pop();
+        }
+    }
+}
+
+/// clipper.core.h:659-667 with `T = double`
+/// C++: inline void StripDuplicates( Paths<T>& paths, bool is_closed_path)
+pub fn strip_duplicates_paths_d(paths: &mut PathsD, is_closed_path: bool) {
+    for path in paths.iter_mut() {
+        strip_duplicates_d(path, is_closed_path);
+    }
+}
+
+/// clipper.core.h:671-678
+/// C++: inline void CheckPrecisionRange(int& precision, int& error_code)
+pub fn check_precision_range(precision: &mut i32, error_code: &mut i32) -> Result<(), Clipper2Exception> {
+    if *precision >= -CLIPPER2_MAX_DEC_PRECISION && *precision <= CLIPPER2_MAX_DEC_PRECISION {
+        return Ok(());
+    }
+    *error_code |= PRECISION_ERROR_I; // non-fatal error
+    do_error(PRECISION_ERROR_I)?; // does nothing when exceptions are disabled
+    *precision = if *precision > 0 { CLIPPER2_MAX_DEC_PRECISION } else { -CLIPPER2_MAX_DEC_PRECISION };
+    Ok(())
+}
+
+/// clipper.core.h:680-684
+/// C++: inline void CheckPrecisionRange(int& precision)
+pub fn check_precision_range_1(precision: &mut i32) -> Result<(), Clipper2Exception> {
+    let mut error_code = 0;
+    check_precision_range(precision, &mut error_code)
+}
+
+/// clipper.core.h:755-759 with `T = double`
+/// C++: inline double CrossProduct(const Point<T>& pt1, const Point<T>& pt2, const Point<T>& pt3)
+/// `a * b - c * d`: fma(a, b, -(c * d)).
+#[inline]
+pub fn cross_product_d(pt1: &PointD, pt2: &PointD, pt3: &PointD) -> f64 {
+    (pt2.x - pt1.x).mul_add(pt3.y - pt2.y, -((pt2.y - pt1.y) * (pt3.x - pt2.x)))
+}
+
+/// clipper.core.h:761-765 with `T = int64_t`
+/// C++: return static_cast<double>(vec1.y * vec2.x) - static_cast<double>(vec2.y * vec1.x);
+/// The products are of integers (they wrap here where the C++ overflows), each converted:
+/// nothing to fuse.
+#[inline]
+pub fn cross_product_vec64(vec1: &Point64, vec2: &Point64) -> f64 {
+    vec1.y.wrapping_mul(vec2.x) as f64 - vec2.y.wrapping_mul(vec1.x) as f64
+}
+
+/// clipper.core.h:767-771 with `T = double`
+/// C++: inline double DotProduct(const Point<T>& pt1, const Point<T>& pt2, const Point<T>& pt3)
+/// `a * b + c * d`: fma(a, b, c * d).
+#[inline]
+pub fn dot_product_d(pt1: &PointD, pt2: &PointD, pt3: &PointD) -> f64 {
+    (pt2.x - pt1.x).mul_add(pt3.x - pt2.x, (pt2.y - pt1.y) * (pt3.y - pt2.y))
+}
+
+/// clipper.core.h:773-777 with `T = int64_t`
+/// C++: return static_cast<double>(vec1.x * vec2.x) + static_cast<double>(vec1.y * vec2.y);
+#[inline]
+pub fn dot_product_vec64(vec1: &Point64, vec2: &Point64) -> f64 {
+    vec1.x.wrapping_mul(vec2.x) as f64 + vec1.y.wrapping_mul(vec2.y) as f64
+}
+
+/// clipper.core.h:779-783 with `T = double`
+/// C++: inline double DistanceSqr(const Point<T> pt1, const Point<T> pt2)
+pub fn distance_sqr_d(pt1: PointD, pt2: PointD) -> f64 {
+    sqr(pt1.x - pt2.x) + sqr(pt1.y - pt2.y)
+}
+
+/// clipper.core.h:785-797 with `T = double`
+/// C++: inline double PerpendicDistFromLineSqrd(const Point<T>& pt, const Point<T>& line1, const Point<T>& line2)
+pub fn perpendic_dist_from_line_sqrd_d(pt: &PointD, line1: &PointD, line2: &PointD) -> f64 {
+    let a = pt.x - line1.x;
+    let b = pt.y - line1.y;
+    let c = line2.x - line1.x;
+    let d = line2.y - line1.y;
+    if c == 0.0 && d == 0.0 {
+        return 0.0;
+    }
+    // `Sqr(a * d - c * b) / (c * c + d * d)`: fma(a, d, -(c * b)) and fma(c, c, d * d).
+    sqr(a.mul_add(d, -(c * b))) / c.mul_add(c, d * d)
+}
+
+/// clipper.core.h:799-817 with `T = double`
+/// C++: inline double Area(const Path<T>& path)
+pub fn area_d(path: &PathD) -> f64 {
+    let cnt = path.len();
+    if cnt < 3 {
+        return 0.0;
+    }
+    let mut a = 0.0f64;
+    let mut it2 = cnt - 1;
+    let mut stop = it2;
+    if cnt & 1 == 0 {
+        stop += 1;
+    }
+    let mut it1 = 0usize;
+    while it1 != stop {
+        // `a += (y sum) * (x difference)`: fma(y sum, x difference, a).
+        a = (path[it2].y + path[it1].y).mul_add(path[it2].x - path[it1].x, a);
+        it2 = it1 + 1;
+        a = (path[it1].y + path[it2].y).mul_add(path[it1].x - path[it2].x, a);
+        it1 += 2;
+    }
+    if cnt & 1 != 0 {
+        a = (path[it2].y + path[it1].y).mul_add(path[it2].x - path[it1].x, a);
+    }
+    a * 0.5
+}
+
+/// clipper.core.h:819-829 with `T = double`
+/// C++: inline double Area(const Paths<T>& paths)
+pub fn area_paths_d(paths: &PathsD) -> f64 {
+    let mut a = 0.0;
+    for path in paths {
+        a += area_d(path);
+    }
+    a
+}
+
+/// clipper.core.h:831-839 with `T = double`
+/// C++: inline bool IsPositive(const Path<T>& poly)
+pub fn is_positive_d(poly: &PathD) -> bool {
+    area_d(poly) >= 0.0
+}
+
+/// clipper.core.h:920-928 with `T = int64_t`
+/// C++: inline Point<T> TranslatePoint(const Point<T>& pt, double dx, double dy)
+/// `Point<T>(pt.x + dx, pt.y + dy, pt.z)`: the sums are doubles, rounded by the constructor.
+#[inline]
+pub fn translate_point(pt: &Point64, dx: f64, dy: f64) -> Point64 {
+    point64_from_doubles(pt.x as f64 + dx, pt.y as f64 + dy, point_z(pt))
+}
+
+/// clipper.core.h:931-939 with `T = int64_t`
+/// C++: inline Point<T> ReflectPoint(const Point<T>& pt, const Point<T>& pivot)
+#[inline]
+pub fn reflect_point(pt: &Point64, pivot: &Point64) -> Point64 {
+    point_xyz(pivot.x + (pivot.x - pt.x), pivot.y + (pivot.y - pt.y), point_z(pt))
+}
+
+/// clipper.core.h:970-990 with `T = double`
+/// C++: inline Point<T> GetClosestPointOnSegment(const Point<T>& offPt, const Point<T>& seg1, const Point<T>& seg2)
+/// The `else` arm of the `if constexpr`: `seg1.x + static_cast<T>(q * dx)`, which with
+/// `T = double` is one expression, fma(q, dx, seg1.x). A new point: z = 0.
+pub fn get_closest_point_on_segment_d(off_pt: &PointD, seg1: &PointD, seg2: &PointD) -> PointD {
+    if seg1.x == seg2.x && seg1.y == seg2.y {
+        return *seg1;
+    }
+    let dx = seg2.x - seg1.x;
+    let dy = seg2.y - seg1.y;
+    let mut q = (off_pt.x - seg1.x).mul_add(dx, (off_pt.y - seg1.y) * dy) / (sqr(dx) + sqr(dy));
+    if q < 0.0 {
+        q = 0.0;
+    } else if q > 1.0 {
+        q = 1.0;
+    }
+    PointD::new(q.mul_add(dx, seg1.x), q.mul_add(dy, seg1.y))
+}
+
+/// clipper.core.h:994-1076 with `T = double`
+/// C++: inline PointInPolygonResult PointInPolygon(const Point<T>& pt, const Path<T>& polygon)
+/// As `point_in_polygon`, on doubles.
+pub fn point_in_polygon_d(pt: &PointD, polygon: &PathD) -> PointInPolygonResult {
+    if polygon.len() < 3 {
+        return PointInPolygonResult::IsOutside;
+    }
+
+    let mut val = 0;
+    let cbegin = 0usize;
+    let mut first = cbegin;
+    let mut curr;
+    let mut prev;
+    let mut cend = polygon.len();
+
+    while first != cend && polygon[first].y == pt.y {
+        first += 1;
+    }
+    if first == cend {
+        // not a proper polygon
+        return PointInPolygonResult::IsOutside;
+    }
+
+    let mut is_above = polygon[first].y < pt.y;
+    let starting_above = is_above;
+    curr = first + 1;
+    loop {
+        if curr == cend {
+            if cend == first || first == cbegin {
+                break;
+            }
+            cend = first;
+            curr = cbegin;
+        }
+
+        if is_above {
+            while curr != cend && polygon[curr].y < pt.y {
+                curr += 1;
+            }
+            if curr == cend {
+                continue;
+            }
+        } else {
+            while curr != cend && polygon[curr].y > pt.y {
+                curr += 1;
+            }
+            if curr == cend {
+                continue;
+            }
+        }
+
+        if curr == cbegin {
+            prev = polygon.len() - 1; //nb: NOT cend (since might equal first)
+        } else {
+            prev = curr - 1;
+        }
+
+        if polygon[curr].y == pt.y {
+            if polygon[curr].x == pt.x
+                || (polygon[curr].y == polygon[prev].y && ((pt.x < polygon[prev].x) != (pt.x < polygon[curr].x)))
+            {
+                return PointInPolygonResult::IsOn;
+            }
+            curr += 1;
+            if curr == first {
+                break;
+            }
+            continue;
+        }
+
+        if pt.x < polygon[curr].x && pt.x < polygon[prev].x {
+            // we're only interested in edges crossing on the left
+        } else if pt.x > polygon[prev].x && pt.x > polygon[curr].x {
+            val = 1 - val; // toggle val
+        } else {
+            let d = cross_product_d(&polygon[prev], &polygon[curr], pt);
+            if d == 0.0 {
+                return PointInPolygonResult::IsOn;
+            }
+            if (d < 0.0) == is_above {
+                val = 1 - val;
+            }
+        }
+        is_above = !is_above;
+        curr += 1;
+    }
+
+    if is_above != starting_above {
+        cend = polygon.len();
+        if curr == cend {
+            curr = cbegin;
+        }
+        if curr == cbegin {
+            prev = cend - 1;
+        } else {
+            prev = curr - 1;
+        }
+        let d = cross_product_d(&polygon[prev], &polygon[curr], pt);
         if d == 0.0 {
             return PointInPolygonResult::IsOn;
         }

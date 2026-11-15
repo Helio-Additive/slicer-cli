@@ -18,6 +18,7 @@ fn main() {
     println!("cargo:rerun-if-changed=shim/clipper2_z_shim.h");
     println!("cargo:rerun-if-changed=shim/clipper2_ref_shim.cpp");
     println!("cargo:rerun-if-changed=shim/clipper2_ref_shim.h");
+    println!("cargo:rerun-if-changed=shim/clipper2_ref_ext_shim.cpp");
     println!("cargo:rerun-if-changed=vendor/clipper2/clipper.core.h");
     println!("cargo:rerun-if-changed=vendor/clipper2/clipper.engine.h");
 
@@ -62,10 +63,17 @@ fn main() {
     let pin = std::path::Path::new("../../references/BambuStudio/src/clipper2/Clipper2Lib");
     let pin_engine = pin.join("src/clipper.engine.cpp");
     let pin_offset = pin.join("src/clipper.offset.cpp");
+    let pin_rectclip = pin.join("src/clipper.rectclip.cpp");
     let pin_include = pin.join("include");
-    let have_pin = pin_engine.is_file() && pin_offset.is_file() && pin_include.join("clipper2/clipper.engine.h").is_file();
+    let have_pin = pin_engine.is_file()
+        && pin_offset.is_file()
+        && pin_rectclip.is_file()
+        && pin_include.join("clipper2/clipper.engine.h").is_file();
     println!("cargo:rerun-if-changed={}", pin_engine.display());
     println!("cargo:rerun-if-changed={}", pin_offset.display());
+    println!("cargo:rerun-if-changed={}", pin_rectclip.display());
+    println!("cargo:rerun-if-changed={}", pin_include.join("clipper2/clipper.rectclip.h").display());
+    println!("cargo:rerun-if-changed={}", pin_include.join("clipper2/clipper.minkowski.h").display());
     println!("cargo:rerun-if-changed={}", pin_include.join("clipper2/clipper.offset.h").display());
     println!("cargo:rerun-if-changed={}", pin_include.join("clipper2/clipper.h").display());
     println!("cargo:rerun-if-changed={}", pin_include.join("clipper2/clipper.core.h").display());
@@ -86,6 +94,7 @@ fn main() {
             b.define("CZ2_REF_FROM_PIN", "1");
             b.file(&pin_engine);
             b.file(&pin_offset);
+            b.file(&pin_rectclip);
         } else {
             println!("cargo:warning=clipper2-z-sys: references/BambuStudio is not checked out; the test-only Clipper2 reference is built from the vendored copy");
             b.include("vendor");
@@ -93,8 +102,12 @@ fn main() {
             b.define("CZ2_REF_FROM_PIN", "0");
             b.file("vendor/clipper.engine.cpp");
             b.file("vendor/clipper.offset.cpp");
+            b.file("vendor/clipper.rectclip.cpp");
         }
         b.file("shim/clipper2_ref_shim.cpp");
+        // clipper.rectclip.cpp, ClipperD, the PathsD interface, clipper.minkowski.h:
+        // `cz2_ref_*_ext`, for `clipper2_rectclip*_native_parity` and `clipper2_d*_native_parity`.
+        b.file("shim/clipper2_ref_ext_shim.cpp");
         b.compile(lib);
     }
 }

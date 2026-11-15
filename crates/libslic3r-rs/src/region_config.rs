@@ -159,6 +159,41 @@ pub struct PrintRegionConfig {
     /// PrintConfig.cpp:3503)
     pub symmetric_infill_y_axis: bool,
 
+    /// Make sparse infill follow each layer's outline (radial zigzag).
+    /// C++ name: conformal_infill (ConfigOptionBool, default false,
+    /// PrintConfig.cpp:4514-4521; PrintConfig.hpp:1188)
+    pub conformal_infill: bool,
+
+    /// How neighbouring layers of the conformal infill are offset.
+    /// C++ name: conformal_stagger (ConfigOptionEnum<ConformalStagger>, default
+    /// None, PrintConfig.cpp:4523-4534; PrintConfig.hpp:1189)
+    pub conformal_stagger: crate::print_config::ConformalStagger,
+
+    /// Consecutive layers that keep the forward zigzag.
+    /// C++ name: conformal_link_keep_layers (ConfigOptionInt, default 1,
+    /// PrintConfig.cpp:4536-4546; PrintConfig.hpp:1190)
+    pub conformal_link_keep_layers: i32,
+
+    /// Consecutive layers that reverse the zigzag.
+    /// C++ name: conformal_link_flip_layers (ConfigOptionInt, default 0,
+    /// PrintConfig.cpp:4548-4558; PrintConfig.hpp:1191)
+    pub conformal_link_flip_layers: i32,
+
+    /// Where the radial centre comes from.
+    /// C++ name: conformal_pole (ConfigOptionEnum<ConformalPole>, default Layer,
+    /// PrintConfig.cpp:4560-4573; PrintConfig.hpp:1192)
+    pub conformal_pole: crate::print_config::ConformalPole,
+
+    /// Radial line count; 0 takes it from the sparse infill density.
+    /// C++ name: conformal_ray_count (ConfigOptionInt, default 0,
+    /// PrintConfig.cpp:4575-4583; PrintConfig.hpp:1193)
+    pub conformal_ray_count: i32,
+
+    /// Radius (mm) of the centre region filled with rectilinear infill; 0 = automatic.
+    /// C++ name: conformal_hub_radius (ConfigOptionFloat, default 0,
+    /// PrintConfig.cpp:4585-4594; PrintConfig.hpp:1194)
+    pub conformal_hub_radius: CoordF,
+
     /// First lattice angle (degrees) for the 2D-lattice infill.
     /// C++ name: sparse_infill_lattice_angle_1 (default -45,
     /// PrintConfig.cpp:3513)
@@ -694,6 +729,48 @@ impl PrintRegionConfig {
                 }
                 true
             }
+            "conformal_infill" => {
+                if let Some(v) = parse_bool(value) {
+                    self.conformal_infill = v;
+                }
+                true
+            }
+            "conformal_stagger" => {
+                if let Some(v) = crate::print_config::ConformalStagger::from_config_str(value) {
+                    self.conformal_stagger = v;
+                }
+                true
+            }
+            "conformal_link_keep_layers" => {
+                if let Ok(v) = value.trim().trim_matches('"').parse::<i32>() {
+                    self.conformal_link_keep_layers = v;
+                }
+                true
+            }
+            "conformal_link_flip_layers" => {
+                if let Ok(v) = value.trim().trim_matches('"').parse::<i32>() {
+                    self.conformal_link_flip_layers = v;
+                }
+                true
+            }
+            "conformal_pole" => {
+                if let Some(v) = crate::print_config::ConformalPole::from_config_str(value) {
+                    self.conformal_pole = v;
+                }
+                true
+            }
+            "conformal_ray_count" => {
+                if let Ok(v) = value.trim().trim_matches('"').parse::<i32>() {
+                    self.conformal_ray_count = v;
+                }
+                true
+            }
+            "conformal_hub_radius" => {
+                if let Some(v) = parse_f64(value) {
+                    self.conformal_hub_radius = v;
+                }
+                true
+            }
             "sparse_infill_lattice_angle_1" => {
                 if let Some(v) = parse_f64(value) {
                     self.sparse_infill_lattice_angle_1 = v;
@@ -1108,6 +1185,20 @@ impl Default for PrintRegionConfig {
             infill_rotate_step: 0.0,
             // C++ default: PrintConfig.cpp:3503 ConfigOptionBool(false)
             symmetric_infill_y_axis: false,
+            // C++ default: PrintConfig.cpp:4521 ConfigOptionBool(false)
+            conformal_infill: false,
+            // C++ default: PrintConfig.cpp:4534 ConformalStagger::None
+            conformal_stagger: crate::print_config::ConformalStagger::None,
+            // C++ default: PrintConfig.cpp:4546 ConfigOptionInt(1)
+            conformal_link_keep_layers: 1,
+            // C++ default: PrintConfig.cpp:4558 ConfigOptionInt(0)
+            conformal_link_flip_layers: 0,
+            // C++ default: PrintConfig.cpp:4573 ConformalPole::Layer
+            conformal_pole: crate::print_config::ConformalPole::Layer,
+            // C++ default: PrintConfig.cpp:4583 ConfigOptionInt(0)
+            conformal_ray_count: 0,
+            // C++ default: PrintConfig.cpp:4594 ConfigOptionFloat(0)
+            conformal_hub_radius: 0.0,
             // C++ default: PrintConfig.cpp:3513 ConfigOptionFloat(-45)
             sparse_infill_lattice_angle_1: -45.0,
             // C++ default: PrintConfig.cpp:3523 ConfigOptionFloat(45)

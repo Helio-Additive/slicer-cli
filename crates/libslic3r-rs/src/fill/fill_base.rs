@@ -3071,6 +3071,71 @@ fn take_next(
     }
 }
 
+/// The data members of `class Fill` (FillBase.hpp:114-141) that the conformal
+/// infill reads through its `const Fill &` (FillConformal.cpp, FillRadialZigZag.cpp)
+/// and copies into the rectilinear filler of the hub (FillConformal.cpp:488-497).
+/// The fillers of this crate keep their own copies of the members they use; this
+/// is the same record, for the code that takes the base class.
+#[derive(Debug, Clone)]
+pub struct Fill {
+    /// Index of the layer. FillBase.hpp:118 — `size_t layer_id;`
+    pub layer_id: usize,
+    /// Print-object region index; radial lock tables are keyed by this so a
+    /// conformal modifier does not share n / Axis with the parent remainder.
+    /// FillBase.hpp:121 — `size_t lock_region_id { 0 };`
+    pub lock_region_id: usize,
+    /// Z coordinate of the top print surface, in unscaled coordinates.
+    /// FillBase.hpp:123 — `coordf_t z;`
+    pub z: f64,
+    /// In unscaled coordinates. FillBase.hpp:125 — `coordf_t spacing;`
+    pub spacing: f64,
+    /// Infill / perimeter overlap, in unscaled coordinates.
+    /// FillBase.hpp:127 — `coordf_t overlap;`
+    pub overlap: f64,
+    /// In radians, ccw, 0 = East. FillBase.hpp:129 — `float angle;`
+    pub angle: f32,
+    /// In scaled coordinates. Maximum length of a perimeter segment connecting
+    /// two infill lines. FillBase.hpp:133 — `coord_t link_max_length;`
+    pub link_max_length: Coord,
+    /// In scaled coordinates. FillBase.hpp:135 — `coord_t loop_clipping;`
+    pub loop_clipping: Coord,
+    /// In scaled coordinates. Bounding box of the 2D projection of the object.
+    /// FillBase.hpp:137 — `BoundingBox bounding_box;`
+    pub bounding_box: BoundingBox,
+}
+
+impl Fill {
+    /// FillBase.hpp:186-198 — the constructor `Fill()`.
+    pub fn new() -> Self {
+        Self {
+            layer_id: usize::MAX, // size_t(-1)
+            lock_region_id: 0,
+            z: 0.0,
+            spacing: 0.0,
+            // Infill / perimeter overlap.
+            overlap: 0.0,
+            // Initial angle is undefined.
+            angle: f32::MAX,
+            link_max_length: 0,
+            loop_clipping: 0,
+            // The initial bounding box is empty, therefore undefined:
+            // `bounding_box(Point(0, 0), Point(-1, -1))`.
+            bounding_box: {
+                let mut bb = BoundingBox::new();
+                bb.min = Point::new(0, 0);
+                bb.max = Point::new(-1, -1);
+                bb
+            },
+        }
+    }
+}
+
+impl Default for Fill {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // Fill MultiLine
 // FillBase.cpp:2615-2675
 pub fn multiline_fill(polylines: &mut Vec<Polyline>, params: &FillParams, spacing: f32) {

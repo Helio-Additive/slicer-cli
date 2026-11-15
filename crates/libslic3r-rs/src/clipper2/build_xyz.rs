@@ -128,3 +128,55 @@ pub(crate) fn bind_zcb(
     let user = z_callback64.clone();
     ZCallback64::new(move |bot1, top1, bot2, top2, ip| zcb(&user, bot1, top1, bot2, top2, ip))
 }
+
+/// clipper.engine.h:171-172
+/// C++: typedef std::function<void(const PointD& e1bot, const PointD& e1top, const PointD& e2bot, const PointD& e2top, PointD& pt)> ZCallbackD;
+/// As `ZCallback64`: a shared pointer to the function, or `None`.
+#[derive(Clone, Default)]
+pub struct ZCallbackD(pub Option<std::rc::Rc<dyn Fn(&PointD, &PointD, &PointD, &PointD, &mut PointD)>>);
+
+impl std::fmt::Debug for ZCallbackD {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() { "ZCallbackD(set)" } else { "ZCallbackD(empty)" })
+    }
+}
+
+impl ZCallbackD {
+    /// A callback that holds `f`.
+    pub fn new(f: impl Fn(&PointD, &PointD, &PointD, &PointD, &mut PointD) + 'static) -> Self {
+        ZCallbackD(Some(std::rc::Rc::new(f)))
+    }
+
+    /// clipper.engine.h:535 `ZCallbackD zCallbackD_ = nullptr;`
+    #[inline(always)]
+    pub(crate) fn none() -> Self {
+        ZCallbackD(None)
+    }
+
+    /// `if (zCallbackD_)`
+    #[inline(always)]
+    pub(crate) fn is_set(&self) -> bool {
+        self.0.is_some()
+    }
+
+    /// `zCallbackD_(e1b, e1t, e2b, e2t, tmp)`
+    #[inline(always)]
+    pub(crate) fn call(&self, e1bot: &PointD, e1top: &PointD, e2bot: &PointD, e2top: &PointD, pt: &mut PointD) {
+        (self.0.as_ref().expect("the callback is called only when it is set"))(e1bot, e1top, e2bot, e2top, pt)
+    }
+}
+
+/// clipper.engine.h:569-580 `ClipperD::CheckCallback`
+/// C++: ClipperBase::zCallback_ = std::bind(&ClipperD::ZCB, this, _1, _2, _3, _4, _5);
+/// `ZCB` reads two members of `this`, `zCallbackD_` and `invScale_`: the callback made here
+/// holds a copy of each (`CheckCallback` runs at the start of every `Execute`, and neither
+/// member changes while the clipper runs).
+#[inline(always)]
+pub(crate) fn bind_zcb_d(
+    zcb: fn(&ZCallbackD, f64, &Point64, &Point64, &Point64, &Point64, &mut Point64),
+    z_callback_d: &ZCallbackD,
+    inv_scale: f64,
+) -> ZCallback64 {
+    let user = z_callback_d.clone();
+    ZCallback64::new(move |e1bot, e1top, e2bot, e2top, pt| zcb(&user, inv_scale, e1bot, e1top, e2bot, e2top, pt))
+}

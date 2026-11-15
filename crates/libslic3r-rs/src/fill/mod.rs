@@ -46,6 +46,8 @@ pub mod fill3_d_honeycomb;
 pub mod fill_adaptive;
 pub mod fill_concentric;
 pub mod fill_concentric_internal;
+pub mod fill_conformal;
+pub mod fill_conformal_chart;
 pub mod fill_cross_hatch;
 pub mod fill_floating_concentric;
 pub mod fill_gyroid;
@@ -53,6 +55,7 @@ pub mod fill_honeycomb;
 pub mod fill_lightning;
 pub mod fill_line;
 pub mod fill_plane_path;
+pub mod fill_radial_zig_zag;
 pub mod fill_rectilinear;
 
 // Lightning subdirectory (matches C++ Fill/Lightning/)
@@ -414,6 +417,34 @@ pub struct SurfaceFillParams {
     /// Fill.cpp:76
     /// C++: float lattice_angle_2
     pub lattice_angle_2: f32,
+
+    /// Fill.cpp:77
+    /// C++: bool conformal_infill = false
+    pub conformal_infill: bool,
+
+    /// Fill.cpp:78
+    /// C++: ConformalStagger conformal_stagger = ConformalStagger::None
+    pub conformal_stagger: crate::print_config::ConformalStagger,
+
+    /// Fill.cpp:79
+    /// C++: int conformal_link_keep_layers = 1
+    pub conformal_link_keep_layers: i32,
+
+    /// Fill.cpp:80
+    /// C++: int conformal_link_flip_layers = 0
+    pub conformal_link_flip_layers: i32,
+
+    /// Fill.cpp:81
+    /// C++: ConformalPole conformal_pole = ConformalPole::Layer
+    pub conformal_pole: crate::print_config::ConformalPole,
+
+    /// Fill.cpp:82
+    /// C++: int conformal_ray_count = 0
+    pub conformal_ray_count: i32,
+
+    /// Fill.cpp:83
+    /// C++: float conformal_hub_radius = 0.f
+    pub conformal_hub_radius: f32,
 }
 
 /// Fill.cpp:78-112
@@ -486,6 +517,29 @@ impl Ord for SurfaceFillParams {
         // ExtrusionRole comparison
         if self.extrusion_role != rhs.extrusion_role {
             return (self.extrusion_role as u32).cmp(&(rhs.extrusion_role as u32));
+        }
+
+        // Fill.cpp:120-126 — the conformal members, in the order of operator<.
+        // They are equal (the defaults) for every surface of a job that does not
+        // set `conformal_infill`, so the order of such a job is as it was.
+        if self.conformal_infill != rhs.conformal_infill {
+            return (self.conformal_infill as u32).cmp(&(rhs.conformal_infill as u32));
+        }
+        if self.conformal_stagger != rhs.conformal_stagger {
+            return (self.conformal_stagger as u32).cmp(&(rhs.conformal_stagger as u32));
+        }
+        return_compare_non_equal!(conformal_link_keep_layers);
+        return_compare_non_equal!(conformal_link_flip_layers);
+        if self.conformal_pole != rhs.conformal_pole {
+            return (self.conformal_pole as u32).cmp(&(rhs.conformal_pole as u32));
+        }
+        return_compare_non_equal!(conformal_ray_count);
+        if self.conformal_hub_radius != rhs.conformal_hub_radius {
+            return if self.conformal_hub_radius < rhs.conformal_hub_radius {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            };
         }
 
         Ordering::Equal
@@ -900,6 +954,25 @@ pub fn group_fills(
                 (anchor.min(anchor_max), anchor_max)
             };
 
+            // Fill.cpp:240-245
+            // C++: params.conformal_infill = region_config.conformal_infill && !surface.is_solid();
+            //      params.conformal_stagger = params.conformal_infill ? region_config.conformal_stagger.value : ConformalStagger::None;
+            //      if (params.conformal_stagger == ConformalStagger::HalfStep)
+            //          params.conformal_stagger = ConformalStagger::Alternate;
+            //      else if (params.conformal_stagger == ConformalStagger::Orthogonal)
+            //          params.conformal_stagger = ConformalStagger::None;
+            let conformal_infill = region_config.conformal_infill && !surface.is_solid();
+            let mut conformal_stagger = if conformal_infill {
+                region_config.conformal_stagger
+            } else {
+                crate::print_config::ConformalStagger::None
+            };
+            if conformal_stagger == crate::print_config::ConformalStagger::HalfStep {
+                conformal_stagger = crate::print_config::ConformalStagger::Alternate;
+            } else if conformal_stagger == crate::print_config::ConformalStagger::Orthogonal {
+                conformal_stagger = crate::print_config::ConformalStagger::None;
+            }
+
             let params = SurfaceFillParams {
                 extruder: extruder as u32,
                 pattern,
@@ -943,6 +1016,20 @@ pub fn group_fills(
                 symmetric_infill_y_axis: false,
                 lattice_angle_1: 0.0,
                 lattice_angle_2: 0.0,
+                // Fill.cpp:240
+                conformal_infill,
+                // Fill.cpp:241-245
+                conformal_stagger,
+                // Fill.cpp:246-250
+                conformal_link_keep_layers: if conformal_infill { region_config.conformal_link_keep_layers } else { 1 },
+                conformal_link_flip_layers: if conformal_infill { region_config.conformal_link_flip_layers } else { 0 },
+                conformal_pole: if conformal_infill {
+                    region_config.conformal_pole
+                } else {
+                    crate::print_config::ConformalPole::Layer
+                },
+                conformal_ray_count: if conformal_infill { region_config.conformal_ray_count } else { 0 },
+                conformal_hub_radius: if conformal_infill { region_config.conformal_hub_radius as f32 } else { 0.0 },
             };
 
             // Fill.cpp:318-325
@@ -1582,6 +1669,27 @@ pub struct FillParams {
     /// Do not sort the lines, just simply connect them.
     /// FillBase.hpp:93 — `bool dont_sort{ false }`.
     pub dont_sort: bool,
+    /// FillBase.hpp:84 — `InfillPattern pattern{ ipRectilinear }`.
+    pub pattern: crate::print_config::InfillPattern,
+    /// Move infill to get the cross zag pattern (scaled).
+    /// FillBase.hpp:96 — `float horiz_move{0.0}`.
+    pub horiz_move: f32,
+    /// FillBase.hpp:100 — `bool conformal{false}`.
+    pub conformal: bool,
+    /// FillBase.hpp:101 — `ConformalStagger conformal_stagger{ConformalStagger::None}`.
+    pub conformal_stagger: crate::print_config::ConformalStagger,
+    /// FillBase.hpp:102 — `int conformal_link_keep_layers{1}`.
+    pub conformal_link_keep_layers: i32,
+    /// FillBase.hpp:103 — `int conformal_link_flip_layers{0}`.
+    pub conformal_link_flip_layers: i32,
+    /// FillBase.hpp:104 — `ConformalPole conformal_pole{ConformalPole::Layer}`.
+    pub conformal_pole: crate::print_config::ConformalPole,
+    /// 0 = auto from density / locked n; >0 = force even ray count (>= 4).
+    /// FillBase.hpp:106 — `int conformal_ray_count{0}`.
+    pub conformal_ray_count: i32,
+    /// 0 = auto n*1.2*line_width/(2π); >0 = mm; <0 = disable hub clip.
+    /// FillBase.hpp:108 — `float conformal_hub_radius{0.f}`.
+    pub conformal_hub_radius: f32,
 }
 
 impl FillParams {
@@ -1605,6 +1713,15 @@ impl FillParams {
             dont_adjust: true,
             resolution: 0.0125,
             dont_sort: false,
+            pattern: crate::print_config::InfillPattern::Rectilinear,
+            horiz_move: 0.0,
+            conformal: false,
+            conformal_stagger: crate::print_config::ConformalStagger::None,
+            conformal_link_keep_layers: 1,
+            conformal_link_flip_layers: 0,
+            conformal_pole: crate::print_config::ConformalPole::Layer,
+            conformal_ray_count: 0,
+            conformal_hub_radius: 0.0,
         }
     }
 

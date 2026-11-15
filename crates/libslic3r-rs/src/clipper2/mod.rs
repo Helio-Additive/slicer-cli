@@ -18,10 +18,16 @@
 //! exports `cz2_ref_xy_*` and `cz2_ref_z_*` of `clipper2-z-sys`, compiled from the engine's
 //! pin.
 //!
-//! Not ported: `ClipperD`, `PolyPathD`, `ReuseableDataContainer64`, the `PathsD` overloads
-//! of clipper.h and the templates of clipper.core.h that serve them, clipper.rectclip.cpp,
-//! clipper.minkowski.h. Nothing the engine calls reaches them. The engine's callers are
-//! `crate::clipper2_utils` and `crate::clipper2_z`.
+//! `clipper_rectclip.rs` is `include/clipper2/clipper.rectclip.h` and
+//! `src/clipper.rectclip.cpp`, `clipper_minkowski.rs` is `include/clipper2/clipper.minkowski.h`.
+//! `clipper2_rectclip_native_parity`, `clipper2_d_native_parity` and their `_z` twins hold
+//! those, `ClipperD`, `ReuseableDataContainer64` and the `PathsD` interface equal to the same
+//! reference.
+//!
+//! Not ported: `include/clipper2/clipper.export.h` (a C interface for other languages; no
+//! file of the engine includes it and the engine's build does not compile it) and the
+//! stream operators. The engine's callers are `crate::clipper2_utils` and
+//! `crate::clipper2_z`; they reach `Clipper64`, `ClipperOffset` and clipper.h on `Path64`.
 
 #[path = "build_xy.rs"]
 mod clipper2_build;
@@ -29,11 +35,15 @@ mod clipper2_build;
 pub mod clipper_core;
 pub mod clipper_engine;
 pub mod clipper_h;
+pub mod clipper_minkowski;
 pub mod clipper_offset;
+pub mod clipper_rectclip;
 
 pub mod clipper2_z;
 
 pub use clipper_core::*;
 pub use clipper_engine::*;
 pub use clipper_h::*;
+pub use clipper_minkowski::*;
 pub use clipper_offset::*;
+pub use clipper_rectclip::*;

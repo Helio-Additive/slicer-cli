@@ -162,6 +162,28 @@ extern "C" {
     pub fn cz2_ref_xy_version() -> *const c_char;
 }
 
+/// The answer of `cz2_ref_*_ext`: a stream of `i64` and one of `f64`
+/// (shim/clipper2_ref_ext_shim.cpp), freed by `cz2_ref_*_ext_free`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Cz2ExtResult {
+    pub ints: *mut i64,
+    pub dbls: *mut f64,
+    pub n_ints: i64,
+    pub n_dbls: i64,
+}
+
+extern "C" {
+    /// One operation of clipper.rectclip.cpp, `ClipperD`, the `PathsD` interface of
+    /// clipper.h, clipper.minkowski.h or the templates of clipper.core.h, of the pin built
+    /// with `USINGZ`; see shim/clipper2_ref_ext_shim.cpp for the operations and encodings.
+    pub fn cz2_ref_z_ext(op: i32, ints: *const i64, dbls: *const f64) -> Cz2ExtResult;
+    pub fn cz2_ref_z_ext_free(r: Cz2ExtResult);
+    /// As `cz2_ref_z_ext`, of the pin built without `USINGZ`.
+    pub fn cz2_ref_xy_ext(op: i32, ints: *const i64, dbls: *const f64) -> Cz2ExtResult;
+    pub fn cz2_ref_xy_ext_free(r: Cz2ExtResult);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

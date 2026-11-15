@@ -4647,6 +4647,71 @@ pub enum GCodeFlavor {
     NoExtrusion,
 }
 
+/// How neighbouring layers of the conformal infill are offset.
+///
+/// Mirror of the C++ `enum class ConformalStagger` (PrintConfig.hpp:97-103), in its
+/// order: `None, HalfStep, Orthogonal, Alternate, Count`. Keys per
+/// `s_keys_map_ConformalStagger` (PrintConfig.cpp:631-636). The option
+/// `conformal_stagger` defaults to `None` (PrintConfig.cpp:4534).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ConformalStagger {
+    /// PrintConfig.hpp:98
+    #[default]
+    None,
+    /// PrintConfig.hpp:99
+    HalfStep,
+    /// PrintConfig.hpp:100
+    Orthogonal,
+    /// PrintConfig.hpp:101
+    Alternate,
+    /// PrintConfig.hpp:102
+    Count,
+}
+
+impl ConformalStagger {
+    /// `s_keys_map_ConformalStagger` (PrintConfig.cpp:631-636).
+    pub fn from_config_str(s: &str) -> Option<Self> {
+        match s.trim().trim_matches('"') {
+            "none" => Some(ConformalStagger::None),
+            "halfstep" => Some(ConformalStagger::HalfStep),
+            "orthogonal" => Some(ConformalStagger::Orthogonal),
+            "alternate" => Some(ConformalStagger::Alternate),
+            _ => None,
+        }
+    }
+}
+
+/// Where the radial centre of the conformal infill comes from.
+///
+/// Mirror of the C++ `enum class ConformalPole` (PrintConfig.hpp:105-110), in its
+/// order: `Layer, Axis, Bezier, Count`. Keys per `s_keys_map_ConformalPole`
+/// (PrintConfig.cpp:639-643). The option `conformal_pole` defaults to `Layer`
+/// (PrintConfig.cpp:4573).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ConformalPole {
+    /// PrintConfig.hpp:106
+    #[default]
+    Layer,
+    /// PrintConfig.hpp:107
+    Axis,
+    /// PrintConfig.hpp:108
+    Bezier,
+    /// PrintConfig.hpp:109
+    Count,
+}
+
+impl ConformalPole {
+    /// `s_keys_map_ConformalPole` (PrintConfig.cpp:639-643).
+    pub fn from_config_str(s: &str) -> Option<Self> {
+        match s.trim().trim_matches('"') {
+            "layer" => Some(ConformalPole::Layer),
+            "axis" => Some(ConformalPole::Axis),
+            "bezier" => Some(ConformalPole::Bezier),
+            _ => None,
+        }
+    }
+}
+
 /// Infill pattern type.
 ///
 /// Faithful mirror of the C++ `enum InfillPattern : int` (PrintConfig.hpp:76-81).

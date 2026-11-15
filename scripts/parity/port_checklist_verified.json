@@ -544,5 +544,110 @@
    "NegatePath",
    "NormalizeVector"
   ]
+ },
+ {
+  "unit": "clipper2/clipper.rectclip",
+  "round": "907",
+  "evidence": "tests/clipper2_rectclip_native_parity.rs and clipper2_rectclip_z_native_parity.rs: 176,000 cases per build (RectClip and RectClipLines on integer and double paths, GetSegmentIntersection, StartLocsAreClockwise), equal to Clipper2 built from the pin's sources",
+  "functions": [
+   "AddToEdge",
+   "AreOpposites",
+   "GetAdjacentLocation",
+   "GetEdgesForPt",
+   "GetIntersection",
+   "GetLocation",
+   "GetSegmentIntersection",
+   "HasHorzOverlap",
+   "HasVertOverlap",
+   "HeadingClockwise",
+   "IsClockwise",
+   "IsHeadingClockwise",
+   "IsHorizontal",
+   "Path1ContainsPath2",
+   "RectClip64::Add",
+   "RectClip64::AddCorner",
+   "RectClip64::CheckEdges",
+   "RectClip64::Execute",
+   "RectClip64::ExecuteInternal",
+   "RectClip64::GetNextLocation",
+   "RectClip64::GetPath",
+   "RectClip64::TidyEdges",
+   "RectClipLines64::Execute",
+   "RectClipLines64::ExecuteInternal",
+   "RectClipLines64::GetPath",
+   "SetNewOwner",
+   "StartLocsAreClockwise",
+   "UncoupleEdge",
+   "UnlinkOp",
+   "UnlinkOpBack"
+  ]
+ },
+ {
+  "unit": "clipper2/clipper.minkowski",
+  "round": "907",
+  "evidence": "tests/clipper2_d_native_parity.rs and clipper2_d_z_native_parity.rs: MinkowskiSum and MinkowskiDiff on Path64 and PathD among 32,500 helper cases per build, equal to Clipper2 built from the pin's sources",
+  "functions": [
+   "Minkowski",
+   "MinkowskiDiff",
+   "MinkowskiSum",
+   "Union"
+  ]
+ },
+ {
+  "unit": "clipper2/clipper",
+  "round": "907",
+  "evidence": "tests/clipper2_d_native_parity.rs, clipper2_rectclip_native_parity.rs and their Z twins: 80,000 cases on doubles and 176,000 rectangle clips per build, equal to Clipper2 built from the pin's sources",
+  "functions": [
+   "MakePath",
+   "MakePathD",
+   "MakePathGeneric",
+   "MakePathZ",
+   "MakePathZD",
+   "OutlinePolyPath",
+   "OutlinePolyPath64",
+   "OutlinePolyPathD",
+   "PolyPathToPathsD",
+   "PolyTreeToPathsD",
+   "RectClip",
+   "RectClipLines"
+  ]
+ },
+ {
+  "unit": "clipper2/clipper.core",
+  "round": "907",
+  "evidence": "tests/clipper2_d_native_parity.rs and clipper2_d_z_native_parity.rs: 80,000 cases per build over the double instances, scaling, RectD and the precision check, equal by bits to Clipper2 built from the pin's sources",
+  "functions": [
+   "CheckPrecisionRange",
+   "Clipper2Exception::what",
+   "DoError",
+   "NearEqual",
+   "Point::Init",
+   "Rect::Scale",
+   "ReflectPoint",
+   "ScalePath",
+   "ScalePaths",
+   "ScaleRect",
+   "StripNearEqual",
+   "TransformPath",
+   "TransformPaths",
+   "TranslatePoint"
+  ]
+ },
+ {
+  "unit": "clipper2/clipper.engine",
+  "round": "907",
+  "evidence": "tests/clipper2_d_native_parity.rs and clipper2_d_z_native_parity.rs: ClipperD, PolyPathD and ReuseableDataContainer64 on 34,000 cases per build, equal by bits to Clipper2 built from the pin's sources",
+  "functions": [
+   "BuildPathD",
+   "ClipperBase::AddReuseableData",
+   "ClipperD::BuildPathsD",
+   "ClipperD::BuildTreeD",
+   "ClipperD::CheckCallback",
+   "ClipperD::ZCB",
+   "PolyPath::Clipper2LibArea",
+   "PolyPathD::Scale",
+   "PolyPathD::SetScale",
+   "SwapActives"
+  ]
  }
 ]

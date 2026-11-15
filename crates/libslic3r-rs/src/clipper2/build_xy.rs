@@ -93,3 +93,38 @@ pub(crate) fn bind_zcb(
 ) -> ZCallback64 {
     ZCallback64
 }
+
+/// clipper.engine.h:171-172 `ZCallbackD` and clipper.engine.h:535 `zCallbackD_` exist under
+/// `USINGZ` only: this build's `ClipperD` holds nothing for it.
+#[derive(Debug, Clone, Default)]
+pub struct ZCallbackD;
+
+impl ZCallbackD {
+    /// clipper.engine.h:535 `ZCallbackD zCallbackD_ = nullptr;`
+    #[inline(always)]
+    pub(crate) fn none() -> Self {
+        ZCallbackD
+    }
+
+    /// `if (zCallbackD_)`
+    #[inline(always)]
+    pub(crate) fn is_set(&self) -> bool {
+        false
+    }
+
+    /// `zCallbackD_(e1b, e1t, e2b, e2t, tmp)`
+    #[inline(always)]
+    pub(crate) fn call(&self, _e1bot: &PointD, _e1top: &PointD, _e2bot: &PointD, _e2top: &PointD, _pt: &mut PointD) {}
+}
+
+/// clipper.engine.h:569-580 `ClipperD::CheckCallback`, under `USINGZ` only:
+/// C++: ClipperBase::zCallback_ = std::bind(&ClipperD::ZCB, this, _1, _2, _3, _4, _5);
+/// This build has no such member function: `ClipperD::Execute` sets no callback.
+#[inline(always)]
+pub(crate) fn bind_zcb_d(
+    _zcb: fn(&ZCallbackD, f64, &Point64, &Point64, &Point64, &Point64, &mut Point64),
+    _z_callback_d: &ZCallbackD,
+    _inv_scale: f64,
+) -> ZCallback64 {
+    ZCallback64
+}
