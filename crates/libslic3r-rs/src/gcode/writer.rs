@@ -260,6 +260,13 @@ pub struct GCodeWriter {
     /// Current extruder index.
     extruder_index: usize,
 
+    /// GCodeWriter.hpp:29 `bool multiple_extruders;` (`multiple_extruders(false)`, :32), set by
+    /// `set_extruders` (GCodeWriter.cpp:80-83).
+    pub multiple_extruders: bool,
+    /// The sorted ids `set_extruders` was given (the ids of `m_filament_extruders`,
+    /// GCodeWriter.cpp:71-78), or None while the export has not called it.
+    m_extruder_ids: Option<Vec<u32>>,
+
     /// Whether position is known.
     position_known: bool,
     /// GCodeWriter.hpp:164 `bool m_is_current_pos_clear = false;`
@@ -453,6 +460,9 @@ impl GCodeWriter {
 
     /// Create a new GCodeWriter with the given configuration.
     pub fn with_config(config: PrintConfig) -> Self {
+        // The export's writer is made at its start: the previous export's placeholder parser
+        // goes (GCode.cpp:2765 copies a fresh one for every export).
+        crate::g_code::reset_export_placeholders();
         /// Create extruder with relative E mode and filament flow ratio from config
         /// GCodeWriter.cpp:34-42
         /// Extruder.cpp:15-17
@@ -475,6 +485,8 @@ impl GCodeWriter {
             absolute_positioning: true,
             absolute_extrusion: !config.use_relative_e,
             extruder_index: 0,
+            multiple_extruders: false,
+            m_extruder_ids: None,
             position_known: false,
             // GCodeWriter.hpp:164 — defaults to FALSE, so the first lift of the
             // print is a normal lift, not a spiral.
@@ -3240,14 +3252,50 @@ impl GCodeWriter {
         new_extruder != self.extruder_index
     }
 
-    /// Check if this is a multi-extruder setup.
+    /// GCodeWriter.cpp:69-86 `void GCodeWriter::set_extruders(std::vector<unsigned int>
+    /// extruder_ids)`: the filaments the print uses, sorted; "we enable support for multiple
+    /// extruder if any extruder greater than 0 is used (even if prints only uses that one) since
+    /// we need to output Tx commands; first extruder has index 0".
     ///
-    /// C++ reference: GCodeWriter::multiple_extruders
-    /// GCodeWriter.hpp:50
+    /// FIDELITY-NOTE: this writer keeps one `Extruder` state rather than one per filament
+    /// (`m_filament_extruders`), so the ids are recorded, and `m_curr_extruder_id`, the
+    /// per-extruder pointers and `update_exclusive_nozzles` have nothing to reset here.
+    pub fn set_extruders(&mut self, extruder_ids: &[u32]) {
+        let mut extruder_ids = extruder_ids.to_vec();
+        extruder_ids.sort_unstable();
+        // GCodeWriter.cpp:83 `this->multiple_extruders = (*std::max_element(...)) > 0;`
+        self.multiple_extruders = extruder_ids.iter().max().copied().unwrap_or(0) > 0;
+        self.m_extruder_ids = Some(extruder_ids);
+    }
+
+    /// GCodeWriter.hpp `const std::vector<Extruder>& extruders() const`: the ids of the
+    /// filaments `set_extruders` installed (empty before it is called).
+    pub fn extruders(&self) -> &[u32] {
+        self.m_extruder_ids.as_deref().unwrap_or(&[])
+    }
+
+    /// Whether the export has called `set_extruders` (GCode.cpp:2817, 2851), so that
+    /// `multiple_extruders` says what the C++ member says.
+    pub fn extruders_set(&self) -> bool {
+        self.m_extruder_ids.is_some()
+    }
+
+    /// GCodeWriter.hpp:29 `multiple_extruders`.
+    ///
+    /// WRITER_MULTIPLE_EXTRUDERS (on): the member `set_extruders` sets. =0 is the earlier stub,
+    /// always false.
     pub fn has_multiple_extruders(&self) -> bool {
-        // For now, assume single extruder unless config indicates otherwise
-        // This would be set from PrintConfig in a full implementation
-        false
+        if crate::faithful_gate("WRITER_MULTIPLE_EXTRUDERS") {
+            self.multiple_extruders
+        } else {
+            false
+        }
+    }
+
+    /// `GCode::m_wipe.enable` as `GCode::set_extruders` sets it (GCode.cpp:6437-6443): wipe
+    /// paths are generated when any extruder of the print has `wipe` on.
+    pub fn set_wipe_enable(&mut self, enable: bool) {
+        self.wipe_enabled = enable;
     }
 
     /// Set the current extruder without emitting G-code.

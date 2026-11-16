@@ -191,6 +191,30 @@ pub struct Print {
     /// (region id, index in `fills.entities`) -> the tool that prints them
     /// (`WipingExtrusions::entity_map` after `Print::_make_wipe_tower`).
     pub wiping_layer_overrides: Vec<(f64, std::collections::HashMap<(usize, usize), usize>)>,
+
+    /// `m_wipe_tower_data` (Print.hpp:774-808) besides the tool changes and the
+    /// box: what `Print::_make_wipe_tower` keeps of the tower (Print.cpp:4359-4389).
+    /// Set by the C++ driver (WIPE_TOWER_CPP_DRIVER); `WipeTowerData::clear()`
+    /// values otherwise.
+    pub wipe_tower_depth: f32,
+    pub wipe_tower_brim_width: f32,
+    pub wipe_tower_rib_offset: crate::gcode::wipe_tower::Vec2f,
+    pub wipe_tower_final_purge: Option<crate::gcode::wipe_tower::ToolChangeResult>,
+    pub wipe_tower_used_filament: Vec<f32>,
+    pub wipe_tower_number_of_toolchanges: i32,
+    /// `wipe_tower_results` were made by `Print::_make_wipe_tower` (the C++
+    /// WipeTower) rather than the reduced driver.
+    pub wipe_tower_cpp_results: bool,
+
+    /// Print.hpp `DynamicPrintConfig m_full_print_config`: the full configuration
+    /// `Print::apply` keeps. This port is handed the resolved settings as
+    /// `raw_settings`; the configuration is made from them where it is read
+    /// (`Print::full_print_config_from_raw_settings`).
+    full_print_config: Option<crate::print_config::config_def::DynamicPrintConfig>,
+
+    /// Print.hpp `std::shared_ptr<MultiNozzleUtils::NozzleGroupResultBase>
+    /// m_nozzle_group_result` (the layered result, the only kind made here).
+    nozzle_group_result: Option<Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>,
 }
 
 impl Print {
@@ -415,6 +439,15 @@ impl Print {
             wipe_tower_bbx: None,
             optimized_layer_tools: Vec::new(),
             wiping_layer_overrides: Vec::new(),
+            wipe_tower_depth: 0.0,
+            wipe_tower_brim_width: 0.0,
+            wipe_tower_rib_offset: crate::gcode::wipe_tower::Vec2f::zero(),
+            wipe_tower_final_purge: None,
+            wipe_tower_used_filament: Vec::new(),
+            wipe_tower_number_of_toolchanges: -1,
+            wipe_tower_cpp_results: false,
+            full_print_config: None,
+            nozzle_group_result: None,
         }
     }
 
@@ -1282,6 +1315,7 @@ impl Print {
                     optimized_tools,
                     wiping_overrides,
                     if object_id_per_pass { Some(label_id) } else { None },
+                    self.wipe_tower_cpp_results,
                 );
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
@@ -2502,6 +2536,7 @@ impl Print {
         // Gated to multicolour with a prime tower enabled; single-material skips it.
         self.wipe_tower_results = Vec::new();
         self.wipe_tower_bbx = None;
+        self.wipe_tower_cpp_results = false;
         let num_filaments = self.config.num_filaments();
         let is_multicolour = self
             .objects
@@ -2603,6 +2638,8 @@ impl Print {
             };
             let mut prev_last: Option<usize> = None;
             let mut layer_seqs: Vec<(f32, f32, Vec<usize>)> = Vec::new();
+            // The print_z of each entry of layer_seqs, as the tool ordering keeps it.
+            let mut layer_print_z: Vec<f64> = Vec::new();
             // WIPE_INTO_INFILL (on): wipe into infill, the port of
             // WipingExtrusions::mark_wiping_extrusions and
             // ensure_perimeters_infills_order (ToolOrdering.cpp:3906-4117) as
@@ -2736,6 +2773,7 @@ impl Print {
                     prev_last = Some(last);
                 }
                 layer_seqs.push((layer.print_z as f32, layer.height as f32, emitted));
+                layer_print_z.push(layer.print_z);
             }
 
             // R439: reorder each layer's filament sequence for MINIMUM FLUSH —
@@ -2839,7 +2877,19 @@ impl Print {
                 || layer_seqs
                     .windows(2)
                     .any(|w| w[0].2.last() != w[1].2.first());
-            if has_changes {
+            // WIPE_TOWER_CPP_DRIVER (on): the tower as Print::_make_wipe_tower
+            // builds it (Print.cpp:4157-4400): the C++ WipeTower from the full
+            // configuration, set_extruder per filament, the nozzle group result,
+            // plan_toolchange per tower layer and tool change, generate_new.
+            // Taken where `_make_wipe_tower` takes it (one object without
+            // support layers, one extruder and one nozzle); =0, or elsewhere,
+            // the reduced driver below (`WipeTower::new` + `generate`).
+            let cpp_driver = crate::faithful_gate("WIPE_TOWER_CPP_DRIVER")
+                && self._make_wipe_tower(&layer_seqs, &layer_print_z, wipe_gate);
+            if cpp_driver {
+                self.optimized_layer_tools = optimized_layer_tools;
+            } else if has_changes {
+                let object = &self.objects[0];
                 let mut cfg = WipeTowerConfig::default();
                 cfg.pos_x = self.config.wipe_tower_x as f32;
                 cfg.pos_y = self.config.wipe_tower_y as f32;
@@ -3037,62 +3087,12 @@ impl Print {
                     // The view of this layer WipingExtrusions reads (Print.cpp:4308,
                     // :4329; ToolOrdering.cpp:3906-4117).
                     let wiping_objects: Vec<crate::gcode::tool_ordering::WipingObject> = if wipe_gate {
-                        use crate::gcode::tool_ordering::{WipingEntity, WipingObject, WipingRegion};
-                        let layer = object
-                            .layers()
-                            .iter()
-                            .find(|l| (l.print_z as f32 - *z).abs() < 1e-4);
-                        let regions = layer.map(|layer| {
-                            layer
-                                .regions()
-                                .iter()
-                                .enumerate()
-                                .map(|(region_id, r)| {
-                                    let tool = (r
-                                        .region
-                                        .as_ref()
-                                        .map(|pr| pr.config().wall_filament)
-                                        .unwrap_or(1)
-                                        .max(1)
-                                        - 1) as u32;
-                                    let entities = |ents: &[crate::extrusion_entity::ExtrusionEntityType]| {
-                                        ents.iter()
-                                            .enumerate()
-                                            .map(|(i, e)| {
-                                                let (role, total_volume) = fill_role_volume(e);
-                                                WipingEntity {
-                                                    id: ((region_id as u64) << 32) | i as u64,
-                                                    role,
-                                                    total_volume,
-                                                    extruder: tool,
-                                                }
-                                            })
-                                            .collect::<Vec<_>>()
-                                    };
-                                    WipingRegion {
-                                        wall_filament: tool,
-                                        sparse_infill_filament: tool,
-                                        fills: entities(&r.fills.entities),
-                                        // Perimeters are read only with flush_into_objects,
-                                        // which this arm does not take.
-                                        perimeters: Vec::new(),
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                        });
-                        vec![WipingObject {
-                            id: 0,
-                            num_of_copies: 1,
-                            flush_into_objects: self.config.flush_into_objects,
-                            flush_into_infill: self.config.flush_into_infill,
-                            // Support layers are not handed to the planner yet.
-                            flush_into_support: false,
-                            support_filament: 0,
-                            support_interface_filament: 0,
-                            support_interface_not_for_body: false,
-                            regions,
-                            support_layer: None,
-                        }]
+                        wiping_objects_for_layer(
+                            object,
+                            *z,
+                            self.config.flush_into_objects,
+                            self.config.flush_into_infill,
+                        )
                     } else {
                         Vec::new()
                     };
@@ -3167,19 +3167,7 @@ impl Print {
                     if wipe_gate {
                         // Print.cpp:4329
                         wiping_extrusions.ensure_perimeters_infills_order(&wiping_layer);
-                        let mut map = std::collections::HashMap::new();
-                        for o in &wiping_objects {
-                            for r in o.regions.iter().flatten() {
-                                for f in &r.fills {
-                                    if let Some(e) = wiping_extrusions.entity_override(f.id, o.id, 0) {
-                                        map.insert(
-                                            ((f.id >> 32) as usize, (f.id & 0xffff_ffff) as usize),
-                                            e as usize,
-                                        );
-                                    }
-                                }
-                            }
-                        }
+                        let map = wiping_overrides_of(&wiping_extrusions, &wiping_objects);
                         if !map.is_empty() {
                             wiping_layer_overrides.push((*z as f64, map));
                         }
@@ -4023,6 +4011,10 @@ fn emit_layer_by_island(
     wiping_overrides: Option<&std::collections::HashMap<(usize, usize), usize>>,
     // `Some(id)`: write `; OBJECT_ID: id` in every extruder pass (GCode.cpp:5843).
     object_id_per_pass: Option<usize>,
+    // The results come from the C++ driver (WIPE_TOWER_CPP_DRIVER): a result of
+    // the layer that is not a tool change is printed where GCode::process_layer
+    // asks for it, before the objects of the layer's last extruder.
+    wipe_tower_cpp_results: bool,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
     let zsmooth_gate = crate::faithful_gate("ZSMOOTH_FAITHFUL");
@@ -4428,6 +4420,30 @@ fn emit_layer_by_island(
     // tool change and objects.
     let mut out_wall_pending: Option<&crate::gcode::wipe_tower::ToolChangeResult> =
         wipe_tower_layer.and_then(|wt| wt.iter().find(|r| r.is_out_wall_only));
+    // GCode.cpp:5698-5726 — process_layer asks the tower for a result for every
+    // extruder of the layer, with `finish_layer` on the last one
+    // (`layer_tools.extruders.back()`), before that extruder's extrusions; and
+    // WipeTowerIntegration::tool_change (GCode.cpp:1514-1519) prints the next
+    // result when the extruder changes or the layer finishes. The results that
+    // are not tool changes are those of a layer without one (generate_new
+    // merges the finish into a tool change otherwise, WipeTower.cpp:8054-8070),
+    // so they print before the objects of the layer's last extruder.
+    let finish_tool: Option<usize> = if wipe_tower_cpp_results && multi_tool {
+        tool_order
+            .iter()
+            .copied()
+            .filter(|&tool| {
+                emit_order.iter().any(|&isl_idx| {
+                    islands[isl_idx].iter().enumerate().any(|(ri, b)| {
+                        region_tools.get(ri) == Some(&tool)
+                            && (!b.perims.is_empty() || !b.fills.is_empty() || !b.thins.is_empty())
+                    })
+                })
+            })
+            .last()
+    } else {
+        None
+    };
     for &tool in &tool_order {
         if multi_tool {
             // Skip the toolchange when this tool has no work on this layer.
@@ -4513,6 +4529,28 @@ fn emit_layer_by_island(
                 let _ = crate::gcode::exporter::set_extruder(tool, writer, 0.0, print_config);
             }
         }
+        if finish_tool == Some(tool) {
+            let off = crate::gcode::wipe_tower::Vec2f::new(
+                print_config.wipe_tower_x as f32,
+                print_config.wipe_tower_y as f32,
+            );
+            for fin in wipe_tower_layer
+                .into_iter()
+                .flatten()
+                .filter(|r| !r.is_tool_change && !r.is_out_wall_only)
+            {
+                crate::g_code::append_tcr(
+                    writer,
+                    fin,
+                    off,
+                    print_config,
+                    layer.print_z,
+                    *toolchange_count,
+                    total_tool_changes,
+                    is_first_layer,
+                );
+            }
+        }
         // This tool prints on this layer (multi-tool reaches here only after the
         // has_work gate); remember it for the next layer's boundary continuity.
         last_emitted_tool = Some(tool);
@@ -4596,7 +4634,8 @@ fn emit_layer_by_island(
     // WipeTowerIntegration::tool_change(.., finish_layer=true) (GCode.cpp:1216).
     // Now that the reserved depth matches C++ (~38mm, R423), the finish fill
     // lands within the bed (Y≤~237.8) instead of overflowing.
-    if multi_tool {
+    // With the C++ driver's results the finish printed with the last extruder.
+    if multi_tool && !wipe_tower_cpp_results {
         // R614: `.find()` emitted only the FIRST non-tool-change tcr of the layer.
         // Measured against C++: it writes 932 finish-layer tower blocks over 656
         // layers -- 1 on 386 layers, 2 on 264, 3 on 6 -- while we wrote exactly one
@@ -4646,6 +4685,1012 @@ fn emit_layer_by_island(
     }
 }
 
+// ============================================================================
+// Print::_make_wipe_tower on the C++ WipeTower (WIPE_TOWER_CPP_DRIVER)
+// ============================================================================
+
+/// The fields of `LayerTools` (ToolOrdering.hpp:170-222) that
+/// `Print::_make_wipe_tower` reads, for one layer of the tool ordering.
+#[derive(Debug, Clone)]
+struct WipeTowerLayerTools {
+    print_z: f64,
+    has_object: bool,
+    has_support: bool,
+    extruders: Vec<u32>,
+    has_wipe_tower: bool,
+    wipe_tower_partitions: usize,
+    wipe_tower_layer_height: f64,
+}
+
+/// What `ToolOrdering::fill_wipe_tower_partitions` (ToolOrdering.cpp:1208-1391)
+/// sets on the layers `ToolOrdering::sort_and_build_data` (:447-476) hands it:
+/// the partitions, `has_wipe_tower` and `wipe_tower_layer_height`. The layers
+/// here are the object's own. Two passes may insert a layer of their own (the
+/// raft gap, :1259-1277, and a gap taller than `max_layer_height` between two
+/// tower layers, :1349-1356); the export has no such layer to print, so `false`
+/// is returned where one of them would insert one.
+fn wipe_tower_layer_tools(
+    layer_tools: &mut [WipeTowerLayerTools],
+    enable_wrapping_detection: bool,
+    wrapping_detection_layers: i32,
+    timelapse_smooth: bool,
+    object_bottom_z: f64,
+    max_layer_height: f64,
+) -> bool {
+    const EPSILON: f64 = crate::libslic3r::EPSILON;
+    // :1210-1211
+    if layer_tools.is_empty() {
+        return true;
+    }
+    let len = layer_tools.len();
+    // :1213-1223 — the minimum number of tool changes per layer.
+    let mut last_extruder: Option<u32> = None;
+    for lt in layer_tools.iter_mut() {
+        lt.wipe_tower_partitions = lt.extruders.len();
+        if !lt.extruders.is_empty() {
+            if last_extruder.is_none() || last_extruder == Some(lt.extruders[0]) {
+                // The first extruder on this layer is equal to the current one, no need to do an initial tool change.
+                lt.wipe_tower_partitions -= 1;
+            }
+            last_extruder = lt.extruders.last().copied();
+        }
+    }
+    // :1225-1227 — propagate the partitions down to support the upper ones.
+    for i in (0..len - 1).rev() {
+        layer_tools[i].wipe_tower_partitions =
+            layer_tools[i + 1].wipe_tower_partitions.max(layer_tools[i].wipe_tower_partitions);
+    }
+    // :1230-1236 — `size_t i < int`: the int compares as unsigned.
+    let wrapping_layer_nums = wrapping_detection_layers as usize;
+    for i in 0..wrapping_layer_nums {
+        if i >= len {
+            break;
+        }
+        layer_tools[i].has_wipe_tower = enable_wrapping_detection;
+    }
+    // :1238-1244
+    for lt in layer_tools.iter_mut() {
+        let tower_needed = timelapse_smooth || lt.wipe_tower_partitions > 0;
+        lt.has_wipe_tower |= (lt.has_object || lt.has_support || lt.print_z < object_bottom_z + EPSILON) && tower_needed;
+    }
+    // :1246-1282 — the raft gap.
+    for i in 0..len - 1 {
+        if layer_tools[i].print_z < object_bottom_z + EPSILON && layer_tools[i + 1].print_z >= object_bottom_z + EPSILON {
+            // lt is the last raft layer. Find the 1st object layer.
+            let mut j = i + 1;
+            while j < len && !layer_tools[j].has_wipe_tower {
+                j += 1;
+            }
+            if j < len {
+                let gap = layer_tools[j].print_z - layer_tools[i].print_z;
+                if gap > max_layer_height + EPSILON {
+                    let lt_new_print_z = 0.5 * (layer_tools[i].print_z + layer_tools[j].print_z);
+                    j = i + 1;
+                    while j < len && layer_tools[j].print_z < lt_new_print_z - EPSILON {
+                        j += 1;
+                    }
+                    if (layer_tools[j].print_z - lt_new_print_z).abs() < EPSILON {
+                        layer_tools[j].has_wipe_tower = true;
+                    } else {
+                        // :1266-1276 inserts a tower-only layer.
+                        return false;
+                    }
+                }
+            }
+            break;
+        }
+    }
+    // :1302-1335 — vertical continuity: a layer between two tower layers is one.
+    let mut first_wt_idx: i64 = -1;
+    let mut last_wt_idx: i64 = -1;
+    for (i, lt) in layer_tools.iter().enumerate() {
+        if lt.has_wipe_tower {
+            if first_wt_idx < 0 {
+                first_wt_idx = i as i64;
+            }
+            last_wt_idx = i as i64;
+        }
+    }
+    let mut i = first_wt_idx + 1;
+    while i < last_wt_idx {
+        let iu = i as usize;
+        layer_tools[iu].has_wipe_tower = true;
+        if layer_tools[iu].extruders.is_empty() {
+            let mut seed_extruder = 0u32;
+            let mut found_seed = false;
+            for j in (0..iu).rev() {
+                if let Some(&e) = layer_tools[j].extruders.last() {
+                    seed_extruder = e;
+                    found_seed = true;
+                    break;
+                }
+            }
+            if !found_seed {
+                for j in iu + 1..len {
+                    if let Some(&e) = layer_tools[j].extruders.first() {
+                        seed_extruder = e;
+                        found_seed = true;
+                        break;
+                    }
+                }
+            }
+            if found_seed {
+                layer_tools[iu].extruders.push(seed_extruder);
+            }
+        }
+        i += 1;
+    }
+    // :1337-1358 — split a gap taller than max_layer_height between two tower layers.
+    for i in 0..len - 1 {
+        if !layer_tools[i].has_wipe_tower || !layer_tools[i + 1].has_wipe_tower {
+            continue;
+        }
+        let gap = layer_tools[i + 1].print_z - layer_tools[i].print_z;
+        if gap <= max_layer_height + EPSILON {
+            continue;
+        }
+        // :1349-1356 inserts a tower-only layer.
+        return false;
+    }
+    // :1364-1383 — a non-object layer that changes tools gets the tower too.
+    for i in 0..len - 1 {
+        if layer_tools[i].extruders.is_empty() || layer_tools[i + 1].extruders.is_empty() {
+            break;
+        }
+        if !layer_tools[i + 1].has_wipe_tower
+            && (layer_tools[i + 1].extruders[0] != *layer_tools[i].extruders.last().unwrap()
+                || layer_tools[i + 1].extruders.len() > 1)
+        {
+            layer_tools[i + 1].has_wipe_tower = true;
+        }
+        // We should also check that the next wipe tower layer is no further than max_layer_height:
+        let mut j = i + 1;
+        let mut last_wipe_tower_print_z = layer_tools[i + 1].print_z;
+        loop {
+            j += 1;
+            if !(j < len - 1 && !layer_tools[j].has_wipe_tower) {
+                break;
+            }
+            if layer_tools[j + 1].print_z - last_wipe_tower_print_z > max_layer_height + EPSILON {
+                if !enable_wrapping_detection {
+                    layer_tools[j].has_wipe_tower = true;
+                }
+                last_wipe_tower_print_z = layer_tools[j].print_z;
+            }
+        }
+    }
+    // :1385-1391 — the wipe_tower_layer_height values.
+    let mut wipe_tower_print_z_last = 0.0_f64;
+    for lt in layer_tools.iter_mut() {
+        if lt.has_wipe_tower {
+            lt.wipe_tower_layer_height = lt.print_z - wipe_tower_print_z_last;
+            wipe_tower_print_z_last = lt.print_z;
+        }
+    }
+    true
+}
+
+/// Print.cpp:4148-4155 `seed_emitted_tower_foundation`: a first tower layer
+/// without filaments gets the one its foundation is printed with
+/// (`ToolOrdering::seed_first_tower_layer`, ToolOrdering.cpp:1393-1399).
+fn seed_emitted_tower_foundation(
+    tool_changes: &[Vec<crate::gcode::wipe_tower::ToolChangeResult>],
+    layer_tools: &mut [WipeTowerLayerTools],
+    sparse_layers_skipped: bool,
+) {
+    if tool_changes.is_empty() || tool_changes[0].is_empty() {
+        return;
+    }
+    if sparse_layers_skipped && crate::gcode::wipe_tower::wipe_tower_layer_is_sparse(&tool_changes[0]) {
+        return;
+    }
+    // ToolOrdering.cpp:1393-1399
+    let filament = tool_changes[0][0].new_tool as u32;
+    if let Some(first) = layer_tools.iter_mut().find(|lt| lt.has_wipe_tower) {
+        if first.extruders.is_empty() {
+            first.extruders.push(filament);
+        }
+    }
+}
+
+/// PrintConfig.hpp:2176-2184 `get_flush_volumes_matrix(fv_matrix, extruder_id, nozzle_nums)`
+/// (a static function of the header: every translation unit has its own).
+fn get_flush_volumes_matrix<T: Clone>(fv_matrix: &[T], extruder_id: usize, nozzle_nums: usize) -> Vec<T> {
+    if extruder_id != usize::MAX && nozzle_nums != 1 {
+        let from = ((fv_matrix.len() / nozzle_nums * extruder_id) as f64 + crate::libslic3r::EPSILON) as usize;
+        let to = ((fv_matrix.len() / nozzle_nums * (extruder_id + 1)) as f64 + crate::libslic3r::EPSILON) as usize;
+        return fv_matrix[from..to].to_vec();
+    }
+    fv_matrix.to_vec()
+}
+
+/// ToolOrdering.cpp:1694-1707 `build_default_nozzle_list(print_config, extruder_nums)`.
+fn build_default_nozzle_list(
+    config: &crate::print_config::config_def::DynamicPrintConfig,
+    extruder_nums: usize,
+) -> Vec<crate::multi_nozzle_utils::NozzleInfo> {
+    use crate::gcode::wipe_tower::{cfg_floats, cfg_ints};
+    let nozzle_diameter = cfg_floats(config, "nozzle_diameter");
+    let nozzle_volume_type = cfg_ints(config, "nozzle_volume_type");
+    let mut nozzle_list = Vec::new();
+    for idx in 0..extruder_nums {
+        nozzle_list.push(crate::multi_nozzle_utils::NozzleInfo {
+            diameter: crate::utils::format_diameter_to_str_default(nozzle_diameter[idx]),
+            group_id: idx as i32,
+            extruder_id: idx as i32,
+            volume_type: crate::extruder::NozzleVolumeType::from_i32(nozzle_volume_type[idx]),
+        });
+    }
+    nozzle_list
+}
+
+/// The view of one layer that `WipingExtrusions` reads (Print.cpp:4308, 4329;
+/// ToolOrdering.cpp:3906-4117): the fills of each region of the object's layer
+/// at `z`, with the region's filament. Perimeters are read only with
+/// flush_into_objects, which the callers do not take.
+fn wiping_objects_for_layer(
+    object: &PrintObject,
+    z: f32,
+    flush_into_objects: bool,
+    flush_into_infill: bool,
+) -> Vec<crate::gcode::tool_ordering::WipingObject> {
+    use crate::gcode::tool_ordering::{WipingEntity, WipingObject, WipingRegion};
+    let layer = object.layers().iter().find(|l| (l.print_z as f32 - z).abs() < 1e-4);
+    let regions = layer.map(|layer| {
+        layer
+            .regions()
+            .iter()
+            .enumerate()
+            .map(|(region_id, r)| {
+                let tool = (r.region.as_ref().map(|pr| pr.config().wall_filament).unwrap_or(1).max(1) - 1) as u32;
+                let entities = |ents: &[crate::extrusion_entity::ExtrusionEntityType]| {
+                    ents.iter()
+                        .enumerate()
+                        .map(|(i, e)| {
+                            let (role, total_volume) = wiping_role_volume(e);
+                            WipingEntity { id: ((region_id as u64) << 32) | i as u64, role, total_volume, extruder: tool }
+                        })
+                        .collect::<Vec<_>>()
+                };
+                WipingRegion {
+                    wall_filament: tool,
+                    sparse_infill_filament: tool,
+                    fills: entities(&r.fills.entities),
+                    // Perimeters are read only with flush_into_objects,
+                    // which this arm does not take.
+                    perimeters: Vec::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+    });
+    vec![WipingObject {
+        id: 0,
+        num_of_copies: 1,
+        flush_into_objects,
+        flush_into_infill,
+        // Support layers are not handed to the planner yet.
+        flush_into_support: false,
+        support_filament: 0,
+        support_interface_filament: 0,
+        support_interface_not_for_body: false,
+        regions,
+        support_layer: None,
+    }]
+}
+
+/// The role and volume `WipingExtrusions::is_obj_overriddable` reads of an
+/// entity (ToolOrdering.cpp:3874-3883).
+fn wiping_role_volume(ent: &crate::extrusion_entity::ExtrusionEntityType) -> (crate::extrusion_entity::ExtrusionRole, f64) {
+    use crate::extrusion_entity::ExtrusionEntityType as T;
+    match ent {
+        T::Path(p) => (p.role, p.total_volume()),
+        T::MultiPath(m) => (m.role(), m.total_volume()),
+        T::Loop(l) => (l.role(), l.total_volume()),
+        T::Collection(c) => (c.role(), c.total_volume()),
+    }
+}
+
+/// The fills `WipingExtrusions` gave to another filament on a layer, keyed
+/// (region id, index in `fills.entities`) -> that filament.
+fn wiping_overrides_of(
+    wiping_extrusions: &crate::gcode::tool_ordering::WipingExtrusions,
+    wiping_objects: &[crate::gcode::tool_ordering::WipingObject],
+) -> std::collections::HashMap<(usize, usize), usize> {
+    let mut map = std::collections::HashMap::new();
+    for o in wiping_objects {
+        for r in o.regions.iter().flatten() {
+            for f in &r.fills {
+                if let Some(e) = wiping_extrusions.entity_override(f.id, o.id, 0) {
+                    map.insert(((f.id >> 32) as usize, (f.id & 0xffff_ffff) as usize), e as usize);
+                }
+            }
+        }
+    }
+    map
+}
+
+/// The text of a C++ result in the form `g_code::append_tcr` takes today, the
+/// reduced driver's: that function writes the analyzer header itself (the
+/// three lines the C++ `WipeTowerWriter` constructor opens the text with,
+/// WipeTower.cpp:698-720) and, around the one `[change_filament_gcode]`
+/// placeholder it substitutes, the filament end text, the filament start text
+/// and the `G4 S0` after it. The C++ text carries the header and the four lines
+/// of `toolchange_Change` (WipeTower.cpp:2692-2726):
+/// `[filament_end_gcode]`, `[change_filament_gcode]`, `[filament_start_gcode]`,
+/// `G4 S0`, which `WipeTowerIntegration::append_tcr` substitutes in place
+/// (GCode.cpp:936-1060). Until append_tcr does the same, the header that opens
+/// the text and those four lines are handed over as the reduced driver writes
+/// them; a header inside a merged result stays, as C++ prints it.
+fn tcr_gcode_for_append_tcr(gcode: &mut String) {
+    const PLACEHOLDERS: &str = "[filament_end_gcode]\n[change_filament_gcode]\n[filament_start_gcode]\nG4 S0\n";
+    let head = {
+        let mut lines = gcode.splitn(4, '\n');
+        match (lines.next(), lines.next(), lines.next(), lines.next()) {
+            (Some(l1), Some(l2), Some(l3), Some(_))
+                if l1.starts_with("; LAYER_HEIGHT: ")
+                    && l2 == "; FEATURE: Prime tower"
+                    && l3.starts_with("; LINE_WIDTH: ") =>
+            {
+                Some(l1.len() + l2.len() + l3.len() + 3)
+            }
+            _ => None,
+        }
+    };
+    if let Some(head) = head {
+        gcode.replace_range(..head, "");
+    }
+    if gcode.contains(PLACEHOLDERS) {
+        *gcode = gcode.replace(PLACEHOLDERS, "[change_filament_gcode]\n");
+    }
+}
+
+/// The full configuration made from resolved settings the way
+/// `ConfigBase::load_from_json` reads a settings file (Config.cpp:885-1243): a
+/// string value is deserialized as it is and an array is joined by
+/// `parse_str_arr` (Config.cpp:900-942): `;` with C-style escaping for a string
+/// vector, `#` for a points group, `,` otherwise. A key the configuration does
+/// not know is left out, as the loader leaves it. Every option the settings do
+/// not give keeps its default (`DynamicPrintConfig::full_print_config()`,
+/// PrintConfig.cpp:8667-8670), as the PrintConfig of the print does.
+fn full_print_config_from_settings(settings: &serde_json::Value) -> crate::print_config::config_def::DynamicPrintConfig {
+    use crate::config::{
+        ConfigBase, ConfigOptionResolver, ConfigOptionType, ConfigSubstitutionContext,
+        ForwardCompatibilitySubstitutionRule,
+    };
+    // Config.cpp:900-942
+    fn parse_str_arr(
+        value: &[serde_json::Value],
+        single_sep: char,
+        array_sep: char,
+        escape_string_style: bool,
+        value_str: &mut String,
+    ) -> bool {
+        let type_of = |v: &serde_json::Value| -> u8 {
+            match v {
+                serde_json::Value::Null => 0,
+                serde_json::Value::Bool(_) => 1,
+                serde_json::Value::Number(_) => 2,
+                serde_json::Value::String(_) => 3,
+                serde_json::Value::Array(_) => 4,
+                serde_json::Value::Object(_) => 5,
+            }
+        };
+        if let Some(first) = value.first() {
+            if value.iter().any(|v| type_of(v) != type_of(first)) {
+                return false;
+            }
+        }
+        let mut first = true;
+        for iter in value {
+            match iter {
+                serde_json::Value::Array(inner) => {
+                    if !first {
+                        value_str.push(array_sep);
+                    } else {
+                        first = false;
+                    }
+                    if !parse_str_arr(inner, single_sep, array_sep, escape_string_style, value_str) {
+                        return false;
+                    }
+                }
+                serde_json::Value::String(s) => {
+                    if !first {
+                        value_str.push(single_sep);
+                    } else {
+                        first = false;
+                    }
+                    if !escape_string_style {
+                        value_str.push_str(s);
+                    } else {
+                        value_str.push('"');
+                        value_str.push_str(&crate::config::escape_string_cstyle(s));
+                        value_str.push('"');
+                    }
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    // The options are made from their definitions (`DynamicConfig::optptr` with
+    // create, Config.cpp), the defaults are applied after.
+    let mut config = crate::print_config::config_def::DynamicPrintConfig::new();
+    let defaults = crate::print_config::config_def::DynamicPrintConfig::full_print_config();
+    let Some(map) = settings.as_object() else {
+        return defaults;
+    };
+    let def = config.def();
+    let mut ctxt = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::EnableSilent);
+    let mut entries: Vec<(&String, &serde_json::Value)> = map.iter().collect();
+    entries.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    for (key, value) in entries {
+        let value_str = match value {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(arr) => {
+                let (single_sep, escape) = match def.and_then(|d| d.get(key)).map(|o| o.r#type) {
+                    Some(ConfigOptionType::CoStrings) => (';', true),
+                    Some(ConfigOptionType::CoPointsGroups) => ('#', false),
+                    _ => (',', false),
+                };
+                let mut s = String::new();
+                if !parse_str_arr(arr, single_sep, '#', escape, &mut s) {
+                    continue;
+                }
+                s
+            }
+            _ => continue,
+        };
+        let _ = config.set_deserialize_nothrow(key, &value_str, &mut ctxt, false);
+    }
+    let missing: Vec<String> = defaults.keys().into_iter().filter(|k| !config.has(k)).collect();
+    let _ = config.apply_only(&defaults, &missing, true);
+    config
+}
+
+impl Print {
+    /// Print.hpp `const DynamicPrintConfig& full_print_config() const`. Made
+    /// from `raw_settings` the first time it is read (see the field).
+    fn full_print_config_from_raw_settings(&mut self) -> Option<&crate::print_config::config_def::DynamicPrintConfig> {
+        if self.full_print_config.is_none() {
+            let settings = self.raw_settings.as_ref()?;
+            self.full_print_config = Some(full_print_config_from_settings(settings));
+        }
+        self.full_print_config.as_ref()
+    }
+
+    /// Print.hpp:1083 `set_nozzle_group_result(result)`.
+    pub fn set_nozzle_group_result(&mut self, result: Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>) {
+        self.nozzle_group_result = Some(result);
+    }
+
+    /// Print.hpp:1085-1088 `get_layered_nozzle_group_result()`.
+    pub fn get_layered_nozzle_group_result(&self) -> Option<Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>> {
+        self.nozzle_group_result.clone()
+    }
+
+    /// Print.hpp:1171 `get_wipe_tower_depth()`.
+    pub fn get_wipe_tower_depth(&self) -> f32 {
+        self.wipe_tower_depth
+    }
+
+    /// Print.hpp:1172 `get_wipe_tower_bbx()`.
+    pub fn get_wipe_tower_bbx(&self) -> Option<((f64, f64), (f64, f64))> {
+        self.wipe_tower_bbx
+    }
+
+    /// Print.hpp:1173 `get_rib_offset()`.
+    pub fn get_rib_offset(&self) -> crate::gcode::wipe_tower::Vec2f {
+        self.wipe_tower_rib_offset
+    }
+
+    /// Print.cpp:3742-3745 `enable_timelapse_print()`: smooth timelapse
+    /// (`tlSmooth`, PrintConfig.hpp:216-219).
+    pub fn enable_timelapse_print(&self) -> bool {
+        self.config.timelapse_type == 1
+    }
+
+    /// Print.cpp:3597-3607 `get_extruder_shared_printable_polygon()`: the bed
+    /// every extruder reaches.
+    pub fn get_extruder_shared_printable_polygon(&self) -> Vec<crate::geometry::Polygon> {
+        let Some(config) = self.full_print_config.as_ref() else {
+            return Vec::new();
+        };
+        let printable_area = config
+            .opt::<crate::config::ConfigOptionPoints>("printable_area")
+            .map(|o| o.values.clone())
+            .unwrap_or_default();
+        if crate::gcode::wipe_tower::cfg_floats(config, "nozzle_diameter").len() < 2 {
+            return vec![crate::geometry::Polygon::new_scale(&printable_area)];
+        }
+        let extruder_printable_areas = config
+            .opt::<crate::config::ConfigOptionPointsGroups>("extruder_printable_area")
+            .map(|o| o.values.clone())
+            .unwrap_or_default();
+        let mut shared_printable_polys = vec![crate::geometry::Polygon::new_scale(&extruder_printable_areas[0])];
+        for area in extruder_printable_areas.iter().skip(1) {
+            let polys = vec![crate::geometry::Polygon::new_scale(area)];
+            shared_printable_polys = crate::clipper_utils::intersection_polygons_raw_clib(&shared_printable_polys, &polys);
+        }
+        shared_printable_polys
+    }
+
+    /// Print.cpp:4157-4400 `Print::_make_wipe_tower` on the C++ WipeTower: the
+    /// tower built from the full configuration (WipeTower.cpp:1879-2013),
+    /// `set_extruder` per filament (:2017-2170), the nozzle group result, one
+    /// `plan_toolchange` per tower layer and per tool change of the tool
+    /// ordering (:3119-3181), then `generate_new` (:7760-8110).
+    ///
+    /// The tool ordering is the one the export prints (`layer_seqs`, one entry
+    /// per object layer with work: (print_z, height, filaments)) with its print
+    /// z (`layer_print_z`); the `LayerTools` fields the function reads are made
+    /// from it by `wipe_tower_layer_tools`. The results are stored the way
+    /// `g_code::append_tcr` takes them: positions on the bed, the transform of
+    /// `WipeTowerIntegration::append_tcr` (GCode.cpp:762-777) applied.
+    ///
+    /// Taken for one object without support layers on a printer with one
+    /// extruder and one nozzle (no nozzle diameter mode, no dynamic grouping,
+    /// printed layer by layer): `false` otherwise, before a tower is built, and
+    /// the caller builds the tower with the reduced driver.
+    fn _make_wipe_tower(
+        &mut self,
+        layer_seqs: &[(f32, f32, Vec<usize>)],
+        layer_print_z: &[f64],
+        wipe_gate: bool,
+    ) -> bool {
+        use crate::gcode::wipe_tower::{
+            cfg_bools, cfg_enum, cfg_float, cfg_floats, cfg_get_filament_config_idx, cfg_ints, cfg_strings, get_at,
+            wipe_tower_sparse_layers_skipped, ToolChangeResult, Vec2f, WipeTower,
+        };
+
+        if self.objects.len() != 1 || !self.objects[0].support_layers.is_empty() || layer_seqs.len() != layer_print_z.len() {
+            return false;
+        }
+        let Some(config) = self.full_print_config_from_raw_settings().cloned() else {
+            return false;
+        };
+        let nozzle_diameter = cfg_floats(&config, "nozzle_diameter");
+        let has_multiple_nozzle = cfg_ints(&config, "extruder_max_nozzle_count").iter().any(|&v| v > 1);
+        let multi_diameter_mode = crate::print_config::config_def::multi_nozzle_diameter_mode_enabled(&config);
+        // PrintSequence::ByLayer = 0 (PrintConfig.hpp:150-153).
+        let sequential = cfg_enum(&config, "print_sequence") != 0;
+        if nozzle_diameter.len() != 1 || has_multiple_nozzle || multi_diameter_mode || sequential {
+            return false;
+        }
+
+        // :4159 — m_wipe_tower_data.clear() (Print.hpp:799-808).
+        self.wipe_tower_results = Vec::new();
+        self.wipe_tower_bbx = None;
+        self.wipe_tower_final_purge = None;
+        self.wipe_tower_used_filament = Vec::new();
+        self.wipe_tower_number_of_toolchanges = -1;
+        self.wipe_tower_depth = 0.0;
+        self.wipe_tower_brim_width = 0.0;
+
+        // :4162 — BBS
+        let number_of_extruders = cfg_strings(&config, "filament_colour").len();
+
+        // :4166-4167 — the tool ordering and its sort_and_build_data (ToolOrdering.cpp:447-476).
+        let object = &self.objects[0];
+        let mut layer_tools: Vec<WipeTowerLayerTools> = layer_seqs
+            .iter()
+            .zip(layer_print_z)
+            .map(|((_, _, tools), &print_z)| WipeTowerLayerTools {
+                print_z,
+                has_object: true,
+                has_support: false,
+                extruders: tools.iter().map(|&t| t as u32).collect(),
+                has_wipe_tower: false,
+                wipe_tower_partitions: 0,
+                wipe_tower_layer_height: 0.0,
+            })
+            .collect();
+        // ToolOrdering.cpp:457-469
+        let mut object_bottom_z = 0.0_f64;
+        for layer in object.layers() {
+            if layer.regions().iter().any(|r| r.has_extrusions()) {
+                object_bottom_z = layer.print_z - layer.height;
+                break;
+            }
+        }
+        // ToolOrdering.cpp:223-241 object_max_layer_height / calc_max_layer_height
+        // (no single-diameter layering nozzle here).
+        let max_layer_height = {
+            let max_object_layer_height = object.config().layer_height;
+            let config_max_layer_height = cfg_floats(&config, "max_layer_height");
+            let mut max_layer_height = f64::MAX;
+            for i in 0..nozzle_diameter.len() {
+                let mut mlh = config_max_layer_height[i];
+                if mlh == 0.0 {
+                    mlh = 0.75 * nozzle_diameter[i];
+                }
+                max_layer_height = max_layer_height.min(mlh);
+            }
+            max_layer_height.max(max_object_layer_height)
+        };
+        if !wipe_tower_layer_tools(
+            &mut layer_tools,
+            config.opt_bool("enable_wrapping_detection"),
+            config.opt_int("wrapping_detection_layers"),
+            cfg_enum(&config, "timelapse_type") == 1,
+            object_bottom_z,
+            max_layer_height,
+        ) {
+            return false;
+        }
+        // ToolOrdering.cpp:1402-1423 collect_extruder_statistics
+        let first_extruder: u32 = layer_tools.iter().find_map(|lt| lt.extruders.first().copied()).unwrap_or(u32::MAX);
+        let mut all_extruders: Vec<u32> = layer_tools.iter().flat_map(|lt| lt.extruders.iter().copied()).collect();
+        all_extruders.sort_unstable();
+        all_extruders.dedup();
+
+        // :4169-4171 — ToolOrdering.hpp:352 has_wipe_tower()
+        if !(!layer_tools.is_empty() && first_extruder != u32::MAX && layer_tools[0].has_wipe_tower) {
+            // Don't generate any wipe tower.
+            return true;
+        }
+
+        // :4173-4176
+        let foundation_required = !layer_tools.is_empty() && (layer_tools[0].has_object || layer_tools[0].has_support);
+        // :4178-4210 gives a support layer to a tower layer without object or
+        // support; every layer here is an object layer.
+
+        // The nozzle group result ToolOrdering::reorder_extruders_for_minimum_flush_volume
+        // stores (ToolOrdering.cpp:3537-3548, 3602-3603) from
+        // get_recommended_filament_maps (:2511-2685) on one extruder and one
+        // nozzle: the manual map, or every filament on the master extruder.
+        {
+            let layer_filaments: Vec<Vec<u32>> = layer_tools.iter().map(|lt| lt.extruders.clone()).collect();
+            let filament_nums = number_of_extruders;
+            let used_filaments = crate::filament_group::collect_sorted_used_filaments(&layer_filaments);
+            let nozzle_list = build_default_nozzle_list(&config, nozzle_diameter.len());
+            // FilamentMapMode::fmmManual = 2 (PrintConfig.hpp:392-399).
+            let filament_map = if cfg_enum(&config, "filament_map_mode") == 2 && !has_multiple_nozzle {
+                // :2556-2558; validate_manual_diameter_or_throw returns without a
+                // nozzle diameter mode (:2475-2476).
+                cfg_ints(&config, "filament_map").iter().map(|v| v - 1).collect::<Vec<i32>>()
+            } else {
+                // :2634-2635
+                let master_extruder_id = config.opt_int("master_extruder_id") - 1;
+                vec![master_extruder_id; filament_nums]
+            };
+            // :2681-2682 — `result_opt ? *result_opt : LayeredNozzleGroupResult()`; the
+            // empty result (no filament, no nozzle) cannot come out of a
+            // configuration with filaments and a nozzle.
+            let Some(group) =
+                crate::multi_nozzle_utils::LayeredNozzleGroupResult::create(&filament_map, &nozzle_list, &used_filaments)
+            else {
+                return false;
+            };
+            self.set_nozzle_group_result(Arc::new(group));
+        }
+
+        // :4213-4214
+        let group_result = self.get_layered_nozzle_group_result().expect("m_nozzle_group_result");
+        let object = &self.objects[0];
+        // :4215-4218 — Initialize the wipe tower.
+        let wipe_tower_height = if layer_tools.is_empty() { 0.0 } else { layer_tools.last().unwrap().print_z as f32 };
+        let mut wipe_tower = WipeTower::new_from_config(
+            &config,
+            0,
+            (0.0, 0.0, 0.0),
+            first_extruder as usize,
+            wipe_tower_height,
+            &all_extruders,
+        );
+        // :4219
+        wipe_tower.set_foundation_required(foundation_required);
+        // :4220 — m_default_region_config.initial_layer_flow_ratio
+        wipe_tower.set_first_layer_flow_ratio(cfg_float(&config, "initial_layer_flow_ratio") as f32);
+        // :4221 — Print.cpp:74-83 has_tpu_filament()
+        let filament_type = cfg_strings(&config, "filament_type");
+        wipe_tower.set_has_tpu_filament(all_extruders.iter().any(|&f| get_at(&filament_type, f as usize) == "TPU"));
+        // :4222 — uses_multiple_nozzle_diameters() (Print.cpp:606-608: false without the mode).
+        wipe_tower.set_multi_diameter_print(false);
+        // :4223
+        wipe_tower.set_tower_grid_reference_nozzle(crate::print_config::config_def::layer_grid_nozzle_diameter(&config) as f32);
+        // :4224
+        wipe_tower.set_tower_grid_layer_height(object.slicing_parameters().layer_height as f32);
+        // :4225
+        wipe_tower.set_per_nozzle_tower_params(multi_diameter_mode);
+        // :4226
+        wipe_tower.set_nozzle_group_result((*group_result).clone());
+        // :4227
+        wipe_tower.set_shared_print_bed(self.get_extruder_shared_printable_polygon());
+        // :4229-4230 — the extruder & material properties.
+        for i in 0..number_of_extruders {
+            wipe_tower.set_extruder_config(i, &config, cfg_get_filament_config_idx(&config, i as u32));
+        }
+        // :4231-4232 — m_single_diameter_layering_nozzle is 0 without the mode
+        // (Print.cpp:648-649).
+
+        let mut used_filament_ids: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
+        let mut wiping_layer_overrides: Vec<(f64, std::collections::HashMap<(usize, usize), usize>)> = Vec::new();
+        // :4241-4342
+        {
+            let nozzle_nums = nozzle_diameter.len();
+            let flush_volumes_matrix = cfg_floats(&config, "flush_volumes_matrix");
+            let mut multi_extruder_flush: Vec<Vec<Vec<f32>>> = Vec::new();
+            for nozzle_id in 0..nozzle_nums {
+                let flush_matrix: Vec<f32> = get_flush_volumes_matrix(&flush_volumes_matrix, nozzle_id, nozzle_nums)
+                    .iter()
+                    .map(|&v| v as f32)
+                    .collect();
+                let mut wipe_volumes: Vec<Vec<f32>> = Vec::new();
+                for i in 0..number_of_extruders {
+                    wipe_volumes.push(flush_matrix[i * number_of_extruders..(i + 1) * number_of_extruders].to_vec());
+                }
+                multi_extruder_flush.push(wipe_volumes);
+            }
+
+            let mut nozzle_recorder = crate::multi_nozzle_utils::NozzleStatusRecorder::new();
+            let mut layer_idx: i32 = -1;
+            let mut old_filament_id = first_extruder;
+            if let Some(first_nozzle_info) = group_result.get_nozzle_for_filament(old_filament_id as i32, layer_idx) {
+                nozzle_recorder.set_nozzle_status(first_nozzle_info.group_id, old_filament_id as i32, -1);
+            }
+            // PrimeVolumeMode (PrintConfig.hpp:333-337): pvmSaving = 1, pvmFast = 2.
+            let prime_volume_mode = cfg_enum(&config, "prime_volume_mode");
+            let flush_multiplier = cfg_floats(&config, "flush_multiplier");
+            let flush_multiplier_fast = cfg_floats(&config, "flush_multiplier_fast");
+            let filament_diameter = cfg_floats(&config, "filament_diameter");
+            let grab_length = cfg_floats(&config, "grab_length");
+            let filament_prime_volume = cfg_floats(&config, "filament_prime_volume");
+            let filament_prime_volume_nc = cfg_floats(&config, "filament_prime_volume_nc");
+            let filament_soluble_list = cfg_bools(&config, "filament_soluble");
+            let filament_is_support_list = cfg_bools(&config, "filament_is_support");
+            let wrapping_or_timelapse = config.opt_bool("enable_wrapping_detection") || self.enable_timelapse_print();
+
+            for li in 0..layer_tools.len() {
+                let layer_tools_cur = &layer_tools[li];
+                layer_idx += 1;
+
+                if !layer_tools_cur.has_wipe_tower {
+                    // This layer changes tools directly because it has no wipe-tower visit. Keep the planner's
+                    // loaded-filament and nozzle state aligned with the G-code writer before the next tower layer.
+                    for &filament_id in &layer_tools_cur.extruders {
+                        let Some(nozzle_info) = group_result.get_nozzle_for_filament(filament_id as i32, layer_idx) else {
+                            continue;
+                        };
+                        old_filament_id = filament_id;
+                        nozzle_recorder.set_nozzle_status(nozzle_info.group_id, filament_id as i32, -1);
+                    }
+                    continue;
+                }
+                let print_z = layer_tools_cur.print_z as f32;
+                let wipe_tower_layer_height = layer_tools_cur.wipe_tower_layer_height as f32;
+                wipe_tower.plan_toolchange(print_z, wipe_tower_layer_height, old_filament_id as usize, old_filament_id as usize, 0.0, 0.0, 0.0);
+
+                used_filament_ids.extend(layer_tools_cur.extruders.iter().map(|&e| e as i32));
+
+                // layer_tools.wiping_extrusions() (Print.cpp:4308, 4329).
+                let wiping_objects = if wipe_gate {
+                    wiping_objects_for_layer(object, print_z, self.config.flush_into_objects, self.config.flush_into_infill)
+                } else {
+                    Vec::new()
+                };
+                let filament_soluble = |f: u32| get_at(&filament_soluble_list, f as usize);
+                let filament_is_support = |f: u32| get_at(&filament_is_support_list, f as usize);
+                let wiping_layer = crate::gcode::tool_ordering::WipingLayer {
+                    objects: &wiping_objects,
+                    extruders: &layer_tools_cur.extruders,
+                    filament_soluble: &filament_soluble,
+                    filament_is_support: &filament_is_support,
+                    // The exporter prints walls first.
+                    is_infill_first: false,
+                };
+                let mut wiping_extrusions = crate::gcode::tool_ordering::WipingExtrusions::new();
+                // is_obj_overriddable_and_mark (ToolOrdering.hpp:60-65)
+                if wiping_objects.iter().any(|o| {
+                    o.regions.as_ref().is_some_and(|rs| {
+                        rs.iter().any(|r| r.fills.iter().any(|f| f.role == crate::extrusion_entity::ExtrusionRole::InternalInfill))
+                    })
+                }) {
+                    wiping_extrusions.mark_overridable();
+                }
+
+                for &filament_id in &layer_tools_cur.extruders {
+                    if filament_id == old_filament_id {
+                        continue;
+                    }
+
+                    let Some(nozzle_info) = group_result.get_nozzle_for_filament(filament_id as i32, layer_idx) else {
+                        // The filament may not be mapped to any nozzle on this layer.
+                        continue;
+                    };
+
+                    let extruder_id = nozzle_info.extruder_id as usize;
+                    let nozzle_id = nozzle_info.group_id;
+                    let prev_nozzle_filament = nozzle_recorder.get_filament_in_nozzle(nozzle_id);
+
+                    let mut volume_to_purge = 0.0_f32;
+
+                    if !nozzle_recorder.is_nozzle_empty(nozzle_id) && filament_id as i32 != prev_nozzle_filament {
+                        volume_to_purge =
+                            multi_extruder_flush[extruder_id][prev_nozzle_filament as usize][filament_id as usize];
+                        let multiplier = if prime_volume_mode == 2 {
+                            get_at(&flush_multiplier_fast, extruder_id) as f32
+                        } else {
+                            get_at(&flush_multiplier, extruder_id) as f32
+                        };
+                        volume_to_purge *= multiplier;
+                        if wipe_gate {
+                            volume_to_purge = wiping_extrusions.mark_wiping_extrusions(
+                                &wiping_layer,
+                                old_filament_id,
+                                filament_id,
+                                volume_to_purge,
+                            );
+                        }
+                    }
+
+                    // During the filament change, the extruder will extrude an extra length of grab_length for the
+                    // corresponding detection, so the purge can reduce this length.
+                    let filament_diam = get_at(&filament_diameter, filament_id as usize) as f32;
+                    let grab_purge_volume = (get_at(&grab_length, extruder_id)
+                        * ((std::f64::consts::PI / 4.0 * filament_diam as f64) * filament_diam as f64) as f32 as f64)
+                        as f32;
+                    let d = volume_to_purge - grab_purge_volume;
+                    volume_to_purge = if 0.0 < d { d } else { 0.0 };
+
+                    let mut wipe_volume_ec = filament_prime_volume[filament_id as usize] as f32;
+                    let mut wipe_volume_nc = filament_prime_volume_nc[filament_id as usize] as f32;
+                    // special primte volume settings for H2C
+                    if prime_volume_mode == 1 {
+                        wipe_volume_ec = 15.0;
+                        wipe_volume_nc = 15.0;
+                    }
+                    wipe_tower.plan_toolchange(
+                        print_z,
+                        wipe_tower_layer_height,
+                        old_filament_id as usize,
+                        filament_id as usize,
+                        wipe_volume_ec,
+                        wipe_volume_nc,
+                        volume_to_purge,
+                    );
+                    old_filament_id = filament_id;
+
+                    nozzle_recorder.set_nozzle_status(nozzle_id, filament_id as i32, -1);
+                }
+                if wipe_gate {
+                    wiping_extrusions.ensure_perimeters_infills_order(&wiping_layer);
+                    let map = wiping_overrides_of(&wiping_extrusions, &wiping_objects);
+                    if !map.is_empty() {
+                        wiping_layer_overrides.push((layer_seqs[li].0 as f64, map));
+                    }
+                }
+
+                // if enable timelapse, slice all layer
+                if wrapping_or_timelapse {
+                    if layer_tools_cur.wipe_tower_partitions == 0 {
+                        wipe_tower.set_last_layer_extruder_fill(false);
+                    }
+                    continue;
+                }
+
+                if li + 1 == layer_tools.len() || layer_tools[li + 1].wipe_tower_partitions == 0 {
+                    break;
+                }
+            }
+        }
+        // :4346
+        wipe_tower.set_used_filament_ids(used_filament_ids.into_iter().collect());
+
+        // :4348-4352
+        let categories: Vec<i32> = cfg_ints(&config, "filament_adhesiveness_category");
+        wipe_tower.set_filament_categories(categories);
+        // :4353-4354 — Generate the wipe tower layers.
+        let mut tool_changes: Vec<Vec<ToolChangeResult>> = Vec::with_capacity(layer_tools.len());
+        wipe_tower.generate_new(&mut tool_changes);
+        seed_emitted_tower_foundation(&tool_changes, &mut layer_tools, wipe_tower_sparse_layers_skipped(&config));
+        // :4355-4359 — a tower with no content at all leaves tool_changes empty.
+        if tool_changes.iter().all(|layer| layer.is_empty()) {
+            tool_changes.clear();
+        }
+        // :4360-4363
+        self.wipe_tower_depth = wipe_tower.get_depth();
+        self.wipe_tower_brim_width = wipe_tower.get_brim_width();
+        self.wipe_tower_bbx = Some(wipe_tower.get_bbx());
+        self.wipe_tower_rib_offset = wipe_tower.get_rib_offset();
+
+        // :4365-4385 — the final purge, at the sliced layer height (no
+        // single-diameter layering nozzle here).
+        let layer_height = object.config().layer_height;
+        let back = layer_tools.last().unwrap();
+        if back.wipe_tower_partitions > 0 {
+            // The wipe tower goes up to the last layer of the print.
+            if wipe_tower.layer_finished() {
+                // Lift Z to the next layer.
+                wipe_tower.set_layer((back.print_z + layer_height) as f32, layer_height as f32, 0, false, true);
+            }
+        } else {
+            // The wipe tower does not reach the last print layer, perform the pruge at the last print layer.
+            wipe_tower.set_layer(back.print_z as f32, layer_height as f32, 0, false, true);
+        }
+        self.wipe_tower_final_purge = Some(wipe_tower.tool_change(u32::MAX as usize, false, false));
+
+        // :4387-4388
+        self.wipe_tower_used_filament = wipe_tower.get_used_filament().to_vec();
+        self.wipe_tower_number_of_toolchanges = wipe_tower.get_number_of_toolchanges() as i32;
+        // :4389-4399 the preview mesh and the fake tower are not made here.
+
+        // WipeTowerIntegration::append_tcr (GCode.cpp:759-777): the results are in
+        // the tower's own frame; the export takes their positions on the bed,
+        // `Rotation2Df(alpha) * pt + m_wipe_tower_pos + m_rib_offset`, with
+        // m_wipe_tower_pos (GCode.hpp:81) the tower position of the plate.
+        let wipe_tower_pos = Vec2f::new(
+            get_at(&cfg_floats(&config, "wipe_tower_x"), 0) as f32,
+            get_at(&cfg_floats(&config, "wipe_tower_y"), 0) as f32,
+        );
+        let alpha = cfg_float(&config, "wipe_tower_rotation_angle") as f32 / 180.0 * std::f32::consts::PI;
+        let offset = wipe_tower_pos + self.wipe_tower_rib_offset;
+        // Rotation2D::toRotationMatrix (cos, -sin; sin, cos) times the point, a
+        // row being `m(i,0) * x + m(i,1) * y`, contracted.
+        let (sin_a, cos_a) = (alpha.sin(), alpha.cos());
+        let transform_wt_pt = |pt: Vec2f| -> Vec2f {
+            let out = Vec2f::new(cos_a.mul_add(pt.x, -sin_a * pt.y), sin_a.mul_add(pt.x, cos_a * pt.y));
+            out + offset
+        };
+        for layer in tool_changes.iter_mut() {
+            for tcr in layer.iter_mut() {
+                if tcr.priming {
+                    continue;
+                }
+                tcr.start_pos = transform_wt_pt(tcr.start_pos);
+                tcr.end_pos = transform_wt_pt(tcr.end_pos);
+                if tcr.is_tool_change {
+                    tcr.tool_change_start_pos = transform_wt_pt(tcr.tool_change_start_pos);
+                }
+                for p in tcr.wipe_path.iter_mut() {
+                    *p = transform_wt_pt(*p);
+                }
+                tcr_gcode_for_append_tcr(&mut tcr.gcode);
+            }
+        }
+        if crate::probe_enabled("WT_CPP_DRIVER_PROBE") {
+            let blocks: usize = tool_changes.iter().map(|l| l.len()).sum();
+            let changes: usize = tool_changes.iter().flatten().filter(|r| r.is_tool_change).count();
+            eprintln!(
+                "[WT_CPP_DRIVER] layers={} results={} tool_changes={} depth={} brim={} bbx={:?} toolchanges={}",
+                tool_changes.len(),
+                blocks,
+                changes,
+                self.wipe_tower_depth,
+                self.wipe_tower_brim_width,
+                self.wipe_tower_bbx,
+                self.wipe_tower_number_of_toolchanges
+            );
+            for (i, layer) in tool_changes.iter().enumerate() {
+                let line: Vec<String> = layer
+                    .iter()
+                    .map(|r| {
+                        format!(
+                            "{}{}{} {}->{} lines={}",
+                            if r.is_tool_change { "T" } else { "F" },
+                            if r.is_out_wall_only { "W" } else { "" },
+                            if r.is_finish_first { "f" } else { "" },
+                            r.initial_tool,
+                            r.new_tool,
+                            r.gcode.lines().count()
+                        )
+                    })
+                    .collect();
+                eprintln!(
+                    "[WT_CPP_DRIVER] layer {} z={} {:?}",
+                    i,
+                    layer.first().map_or(-1.0, |r| r.print_z),
+                    line
+                );
+            }
+        }
+        self.wipe_tower_results = tool_changes;
+        self.wipe_tower_cpp_results = true;
+        self.wiping_layer_overrides = wiping_layer_overrides;
+        true
+    }
+}
+
 impl Default for Print {
     fn default() -> Self {
         Self::new()
@@ -4661,6 +5706,68 @@ mod tests {
         let print = Print::new();
         assert_eq!(print.objects.len(), 0);
         assert!(!print.is_canceled());
+    }
+
+    fn wt_layer(print_z: f64, extruders: &[u32]) -> WipeTowerLayerTools {
+        WipeTowerLayerTools {
+            print_z,
+            has_object: true,
+            has_support: false,
+            extruders: extruders.to_vec(),
+            has_wipe_tower: false,
+            wipe_tower_partitions: 0,
+            wipe_tower_layer_height: 0.0,
+        }
+    }
+
+    /// ToolOrdering.cpp:1213-1244, 1364-1391: partitions counted per layer and
+    /// carried down, the tower on every layer that needs one, its layer heights.
+    #[test]
+    fn wipe_tower_layer_tools_follow_fill_wipe_tower_partitions() {
+        let mut lts = vec![
+            wt_layer(0.2, &[0]),
+            wt_layer(0.4, &[0, 1]),
+            wt_layer(0.6, &[1]),
+            wt_layer(0.8, &[1, 2]),
+            wt_layer(1.0, &[2]),
+        ];
+        assert!(wipe_tower_layer_tools(&mut lts, false, 20, false, 0.0, 0.28));
+        let partitions: Vec<usize> = lts.iter().map(|l| l.wipe_tower_partitions).collect();
+        assert_eq!(partitions, vec![1, 1, 1, 1, 0]);
+        let towers: Vec<bool> = lts.iter().map(|l| l.has_wipe_tower).collect();
+        assert_eq!(towers, vec![true, true, true, true, false]);
+        assert_eq!(lts[1].wipe_tower_layer_height, 0.4 - 0.2);
+        assert_eq!(lts[4].wipe_tower_layer_height, 0.0);
+        // Smooth timelapse needs the tower on every layer.
+        let mut lts = vec![wt_layer(0.2, &[0]), wt_layer(0.4, &[0]), wt_layer(0.6, &[0])];
+        assert!(wipe_tower_layer_tools(&mut lts, false, 20, true, 0.0, 0.28));
+        assert!(lts.iter().all(|l| l.has_wipe_tower && l.wipe_tower_partitions == 0));
+        // A gap taller than max_layer_height between two tower layers would get
+        // a layer of its own (:1349-1356), which the export does not have.
+        let mut lts = vec![wt_layer(0.2, &[0, 1]), wt_layer(0.6, &[1, 0])];
+        assert!(!wipe_tower_layer_tools(&mut lts, false, 20, false, 0.0, 0.28));
+    }
+
+    /// Config.cpp:885-1243 as far as values go: strings as they are, arrays
+    /// joined by parse_str_arr (string vectors quoted and `;`-separated).
+    #[test]
+    fn full_print_config_from_settings_reads_values_like_load_from_json() {
+        use crate::gcode::wipe_tower::{cfg_float, cfg_floats, cfg_strings};
+        let settings = serde_json::json!({
+            "filament_type": ["PLA", "TPU"],
+            "filament_colour": ["#3A3A3A", "#FFFF00"],
+            "wipe_tower_x": ["185.229"],
+            "prime_tower_width": "35",
+            "nozzle_volume_type": ["Standard"],
+            "not_an_option_at_all": "1",
+        });
+        let config = full_print_config_from_settings(&settings);
+        assert_eq!(cfg_strings(&config, "filament_type"), vec!["PLA".to_string(), "TPU".to_string()]);
+        assert_eq!(cfg_strings(&config, "filament_colour").len(), 2);
+        assert_eq!(cfg_floats(&config, "wipe_tower_x"), vec![185.229]);
+        assert_eq!(cfg_float(&config, "prime_tower_width"), 35.0);
+        // Not in the settings: the default.
+        assert_eq!(cfg_float(&config, "prime_tower_brim_width"), *crate::print_config::config_def::DynamicPrintConfig::full_print_config().opt_float("prime_tower_brim_width"));
     }
 
     #[test]

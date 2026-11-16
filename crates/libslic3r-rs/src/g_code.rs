@@ -691,7 +691,98 @@ pub(crate) fn append_tcr(
     // evaluated custom tool-change template (append_tcr, GCode.cpp:936-1058).
     // Only real tool changes carry one; the finish_layer tcr has no placeholder,
     // so the replace is a no-op there.
-    let block = if tcr.is_tool_change && !print_config.change_filament_gcode.is_empty() {
+    // PLACEHOLDER_PARSER_LIVE (on), with the export's placeholder parser set up
+    // ([`with_export_placeholders`]): the three templates of a tool change through
+    // `GCode::placeholder_parser_process`, in the C++'s order -- the old filament's end
+    // (GCode.cpp:837-846), `change_filament_gcode` with its override (991-1128), the placeholders of
+    // the new filament (1257-1267), the new filament's start (1271-1284) -- each text from the
+    // export's configuration and through `check_add_eol`. `layer_num` (`m_layer_index`) is not
+    // known here and is left out of the filament templates' overrides.
+    let pp_templates: Option<(Option<String>, Option<String>, Option<String>)> = if tcr.is_tool_change
+        && crate::faithful_gate("PLACEHOLDER_PARSER_LIVE")
+        && crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT")
+        && crate::faithful_gate("FILAMENT_START_END_GCODE")
+    {
+        let ctx = crate::gcode::change_filament::build_context(
+            print_config,
+            tcr.initial_tool.max(0) as usize,
+            tcr.new_tool.max(0) as usize,
+            tcr.print_z as f64,
+            max_layer_z,
+            toolchange_count,
+            tcr.purge_volume as f64,
+            first_layer,
+        );
+        let ((tx0, ty0), (tx1, ty1)) = writer.wipe_tower_bbx.unwrap_or(((0.0, 0.0), (0.0, 0.0)));
+        let nozzle_z = writer.z() as f32;
+        with_export_placeholders(|gp| {
+            let old_filament_id = tcr.initial_tool;
+            let new_filament_id = tcr.new_tool.max(0) as u32;
+            let filament_text = |gp: &GCodePlaceholders, key: &str, id: u32| -> String {
+                pp_get_at(&pp_strings(&gp.m_config, key), id as usize)
+            };
+            // GCode.cpp:826-847
+            let end = if old_filament_id >= 0 {
+                let filament_end_gcode = filament_text(gp, "filament_end_gcode", old_filament_id as u32);
+                if !filament_end_gcode.is_empty() {
+                    let config = filament_template_override(gp, old_filament_id as u32, false);
+                    let mut t =
+                        gp.placeholder_parser_process("filament_end_gcode", &filament_end_gcode, old_filament_id as u32, Some(&config));
+                    check_add_eol(&mut t);
+                    Some(t)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            // GCode.cpp:887, 990-1128
+            let change_filament_gcode = pp_string(&gp.m_config, "change_filament_gcode").unwrap_or_default();
+            let change = if !change_filament_gcode.is_empty() {
+                let inputs = ToolChangeTemplateInputs {
+                    ctx: &ctx,
+                    old_filament_id,
+                    new_filament_id,
+                    purge_volume: tcr.purge_volume,
+                    print_z: tcr.print_z,
+                    tool_change_start_pos: (tcr.tool_change_start_pos.x, tcr.tool_change_start_pos.y),
+                    nozzle_z,
+                    wipe_tower_box: ((tx0 as f32 + off.x, ty0 as f32 + off.y), (tx1 as f32 + off.x, ty1 as f32 + off.y)),
+                    wipe_tower_bbx_on_bed: ((tx0 + off.x as f64, ty0 + off.y as f64), (tx1 + off.x as f64, ty1 + off.y as f64)),
+                    is_contact: false,
+                    first_layer,
+                };
+                let config = change_filament_override(gp, &inputs);
+                let mut t = gp.placeholder_parser_process("change_filament_gcode", &change_filament_gcode, new_filament_id, Some(&config));
+                if crate::probe_enabled("PP_LIVE_TRACE") {
+                    eprintln!("PP_LIVE_TRACE change_filament_gcode {old_filament_id}->{new_filament_id} {} bytes", t.len());
+                }
+                check_add_eol(&mut t);
+                Some(format!("; FilamentChangeGCodeStart\n{t}; FilamentChangeGCodeEnd\n"))
+            } else {
+                None
+            };
+            // GCode.cpp:1255-1267
+            let new_extruder_id = gp.get_extruder_id(new_filament_id) as i32;
+            gp.set_current_filament(new_filament_id, -1, new_extruder_id);
+            // GCode.cpp:1269-1284
+            let filament_start_gcode = filament_text(gp, "filament_start_gcode", new_filament_id);
+            let start = if !filament_start_gcode.is_empty() {
+                let config = filament_template_override(gp, new_filament_id, true);
+                let mut t = gp.placeholder_parser_process("filament_start_gcode", &filament_start_gcode, new_filament_id, Some(&config));
+                check_add_eol(&mut t);
+                Some(t)
+            } else {
+                None
+            };
+            (end, change, start)
+        })
+    } else {
+        None
+    };
+    let block = if let Some((_, change, _)) = &pp_templates {
+        change.clone()
+    } else if tcr.is_tool_change && !print_config.change_filament_gcode.is_empty() {
         let ctx = crate::gcode::change_filament::build_context(
             print_config,
             tcr.initial_tool.max(0) as usize,
@@ -759,7 +850,9 @@ pub(crate) fn append_tcr(
             Some(out)
         }
     };
-    let filament_end_block = if crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT")
+    let filament_end_block = if let Some((end, _, _)) = &pp_templates {
+        end.clone().filter(|t| !t.is_empty())
+    } else if crate::faithful_gate("TOOLCHANGE_TEMPLATE_TEXT")
         && fil_gcode_faithful
         && tcr.is_tool_change
         && !print_config.filament_end_gcode.is_empty()
@@ -784,7 +877,10 @@ pub(crate) fn append_tcr(
     } else {
         eval_fil(&print_config.filament_end_gcode)
     };
-    let filament_start_block = eval_fil(&print_config.filament_start_gcode);
+    let filament_start_block = match &pp_templates {
+        Some((_, _, start)) => start.clone().filter(|t| !t.trim().is_empty()),
+        None => eval_fil(&print_config.filament_start_gcode),
+    };
     // Label tower extrusions like C++ does (`; FEATURE: Prime tower`). Without
     // this the tower's E is attributed to whichever feature preceded it, which
     // silently inflates that feature in per-feature parity comparisons.
@@ -1066,7 +1162,9 @@ pub(crate) fn append_tcr(
         writer.unretract();
         let wipe_next_and_unretract = writer.take_output_since(mark_c);
         // :1271-1285 — the filament-start template as parsed, check_add_eol.
-        let start_filament_gcode_str = if fil_gcode_faithful
+        let start_filament_gcode_str = if let Some((_, _, start)) = &pp_templates {
+            start.clone().unwrap_or_default()
+        } else if fil_gcode_faithful
             && !print_config.filament_start_gcode.is_empty()
         {
             let ctx = crate::gcode::change_filament::build_context(
@@ -4817,6 +4915,23 @@ pub fn wipe(
     Ok(())
 }
 
+/// GCode.cpp:6433-6444 `void GCode::set_extruders(const std::vector<unsigned int> &extruder_ids)`:
+/// the writer's extruders (`m_writer.set_extruders`, which sets `multiple_extruders`), and the
+/// wipe enabled when any of them has `wipe` on (`m_wipe.enable`). `wipe` is the per-filament
+/// `wipe` option (`m_config.wipe`).
+pub fn set_extruders(writer: &mut GCodeWriter, extruder_ids: &[u32], wipe: &[bool]) {
+    writer.set_extruders(extruder_ids);
+    // enable wipe path generation if any extruder has wipe enabled
+    let mut enable = false;
+    for &id in extruder_ids {
+        if pp_get_at(wipe, id as usize) {
+            enable = true;
+            break;
+        }
+    }
+    writer.set_wipe_enable(enable);
+}
+
 /// Change to a different extruder (tool change).
 ///
 /// C++ reference: GCode::set_extruder()
@@ -4868,17 +4983,49 @@ pub fn set_extruder(
     /// C++: return gcode;
     /// C++: }
     if !writer.has_multiple_extruders() {
-        if crate::opt_in_gate("SET_EXTRUDER_SINGLE_SILENT") {
+        // The silent arm applies where the C++ takes it, `!m_writer.multiple_extruders`
+        // (GCode.cpp:8627), once the export has told the writer the print's extruders
+        // (`set_extruders`, GCode.cpp:2851) and WRITER_MULTIPLE_EXTRUDERS is on. A writer that was
+        // never told keeps the T line of the arm below (the export in print.rs does not call
+        // `set_extruders` yet, and a multi-tool print without a wipe tower needs it);
+        // SET_EXTRUDER_SINGLE_SILENT=1 forces the silent arm.
+        let single_silent = crate::opt_in_gate("SET_EXTRUDER_SINGLE_SILENT")
+            || (crate::faithful_gate("WRITER_MULTIPLE_EXTRUDERS") && writer.extruders_set());
+        if single_silent {
             // GCode.cpp:8664 `gcode += m_writer.toolchange(new_filament_id,new_nozzle_id);`
             // and GCodeWriter.cpp:419-443: toolchange() switches the current
             // extruder and writes a command only `if (this->multiple_extruders)`,
             // so a single-extruder setup gets no T line (and no retraction:
-            // the retract is in the multi-extruder branch, GCode.cpp:8674). The
-            // filament_start_gcode of GCode.cpp:8642-8658 is not processed here.
-            // Opt-in until `GCodeWriter::multiple_extruders` is wired: the live
-            // writer's `has_multiple_extruders()` is still a stub returning false
-            // (gcode/writer.rs), so multi-tool prints without a wipe tower reach
-            // this branch and need the T line of the arm below.
+            // the retract is in the multi-extruder branch, GCode.cpp:8674).
+            // GCode.cpp:8628-8658 with PLACEHOLDER_PARSER_LIVE and the export's placeholder
+            // parser set up: the placeholders of the new filament, then its start G-code
+            // (through `check_add_eol`). FIDELITY-NOTE: `layer_num` (`m_layer_index`) is not
+            // known here and is left out of the override; the pressure advance of a non-BBL
+            // printer (:8660-8661) is not written.
+            if crate::faithful_gate("PLACEHOLDER_PARSER_LIVE") {
+                let new_filament_id = new_extruder_id as u32;
+                let gcode = with_export_placeholders(|gp| {
+                    let extruder_id = gp.get_extruder_id(new_filament_id) as i32;
+                    gp.set_current_filament(new_filament_id, -1, extruder_id);
+                    let mut gcode = String::new();
+                    let filament_start_gcode =
+                        pp_get_at(&pp_strings(&gp.m_config, "filament_start_gcode"), new_filament_id as usize);
+                    if !filament_start_gcode.is_empty() {
+                        let config = filament_template_override(gp, new_filament_id, false);
+                        gcode += &gp.placeholder_parser_process(
+                            "filament_start_gcode",
+                            &filament_start_gcode,
+                            new_filament_id,
+                            Some(&config),
+                        );
+                        check_add_eol(&mut gcode);
+                    }
+                    gcode
+                });
+                if let Some(gcode) = gcode.filter(|g| !g.is_empty()) {
+                    writer.write_raw_content(&gcode);
+                }
+            }
             writer.set_extruder(new_extruder_id);
             return Ok(());
         }
@@ -6570,6 +6717,30 @@ mod exporter_tests {
     }
 
     #[test]
+    fn test_set_extruder_after_set_extruders() {
+        // GCodeWriter.cpp:80-83: multiple_extruders when any id above 0 is used.
+        let config = PrintConfig::default();
+        let mut writer = GCodeWriter::new();
+        writer.set_extruders(&[0]);
+        assert!(writer.extruders_set());
+        assert!(!writer.multiple_extruders);
+        set_extruder(1, &mut writer, 0.2, &config).expect("set_extruder should succeed");
+        if crate::faithful_gate("WRITER_MULTIPLE_EXTRUDERS") {
+            // GCode.cpp:8627-8665: a single extruder switches without any G-code.
+            assert!(writer.get_gcode().content().is_empty(), "got {:?}", writer.get_gcode().content());
+        }
+        assert_eq!(writer.extruder(), 1);
+
+        let mut writer = GCodeWriter::new();
+        writer.set_extruders(&[1, 0]);
+        assert_eq!(writer.extruders(), &[0, 1]);
+        assert!(writer.multiple_extruders);
+        set_extruder(1, &mut writer, 0.2, &config).expect("set_extruder should succeed");
+        assert!(writer.get_gcode().content().contains("T1"), "got {:?}", writer.get_gcode().content());
+        assert_eq!(writer.extruder(), 1);
+    }
+
+    #[test]
     fn test_set_extruder_first_layer() {
         let mut writer = GCodeWriter::new();
         let config = PrintConfig::default();
@@ -7496,7 +7667,70 @@ impl GCodeHeader {
 
         // Machine start G-code — process template from settings if available
         s.push_str("; FEATURE: Custom\n");
-        if let Some(ref settings) = self.raw_settings {
+        let pp_live = crate::faithful_gate("PLACEHOLDER_PARSER_LIVE");
+        if let (true, Some(settings)) = (pp_live, self.raw_settings.as_ref()) {
+            // PLACEHOLDER_PARSER_LIVE (on): GCode.cpp:3184 `placeholder_parser_process(
+            // "machine_start_gcode", ..., initial_extruder_id)` over the export's parser, and
+            // `file.writeln(machine_start_gcode)` (:3205). `max_print_z` is the highest layer of
+            // the objects (:3026-3031), which the statistics carry.
+            if let Some(start_gcode) = settings.get("machine_start_gcode").and_then(|v| v.as_str()) {
+                let templ = config_string_value("machine_start_gcode", start_gcode);
+                let machine_start_gcode = export_placeholder_parser_process_at(
+                    "machine_start_gcode",
+                    &templ,
+                    settings,
+                    self.stats.max_z_height,
+                    None,
+                    None,
+                    true,
+                );
+                writeln_to(&mut s, &machine_start_gcode);
+            }
+            s.push_str("; MACHINE_START_GCODE_END\n");
+            // GCode.cpp:3214-3233: the start G-code of the first non-support filament, with the
+            // filament in the override and `layer_num` the export's `m_layer_index` (-1 before the
+            // first layer), through `file.writeln`.
+            let initial_non_support_extruder_id = 0usize;
+            let filament_start = match settings.get("filament_start_gcode") {
+                Some(serde_json::Value::Array(a)) => {
+                    a.get(initial_non_support_extruder_id).and_then(|x| x.as_str()).map(str::to_owned)
+                }
+                Some(serde_json::Value::String(t)) => Some(t.clone()),
+                _ => None,
+            };
+            if let Some(filament_start) = filament_start {
+                let mut config =
+                    export_template_override("filament_start_gcode", &serde_json::Value::Null, Some(initial_non_support_extruder_id as u32));
+                let extruder = match settings.get("filament_map") {
+                    Some(serde_json::Value::Array(a)) => a.first().and_then(injected_number),
+                    Some(v) => injected_number(v),
+                    None => None,
+                }
+                .map(|m| (m as i32 - 1).max(0))
+                .unwrap_or(0);
+                config.set_key_value("current_extruder_id", Box::new(crate::config::ConfigOptionInt::with_value(extruder)));
+                config.set_key_value("current_nozzle_id", Box::new(crate::config::ConfigOptionInt::with_value(extruder)));
+                config.set_key_value("layer_num", Box::new(crate::config::ConfigOptionInt::with_value(-1)));
+                let filament_start_gcode = export_placeholder_parser_process(
+                    "filament_start_gcode",
+                    &filament_start,
+                    settings,
+                    self.stats.max_z_height,
+                    Some(initial_non_support_extruder_id as u32),
+                    Some(&config),
+                );
+                writeln_to(&mut s, &filament_start_gcode);
+            }
+            if crate::faithful_gate("VT_HOTEND") {
+                s.push_str(";VT0 H-1\n");
+            } else {
+                s.push_str(";VT0\n");
+            }
+            s.push_str("G90\n");
+            s.push_str("G21\n");
+            s.push_str("M83 ; use relative distances for extrusion\n");
+            s.push_str("M981 S1 P20000 ;open spaghetti detector\n");
+        } else if let Some(ref settings) = self.raw_settings {
             if let Some(start_gcode) = settings.get("machine_start_gcode").and_then(|v| v.as_str())
             {
                 let processed = process_gcode_template(start_gcode, settings, &self.config);
@@ -7992,13 +8226,1771 @@ fn format_config_value(
     }
 }
 
+// =============================================================================
+// The placeholder parser of `GCode`
+//
+// GCode.hpp members `m_placeholder_parser`, `m_placeholder_parser_context`,
+// `m_placeholder_parser_failed_templates`, initialised by `_do_export`
+// (GCode.cpp:2765-3180), read by `placeholder_parser_process` (GCode.cpp:4110-4127)
+// and checked by `check_placeholder_parser_failed` (GCode.cpp:3765-3790).
+// Gate PLACEHOLDER_PARSER_LIVE (see `process_gcode_template`).
+// =============================================================================
+
+/// `#define NOZZLE_ID_FOR_GCODE(RESULT, ID) RESULT->is_support_dynamic_nozzle_map() ? ID : -1`
+/// (GCode.cpp:118).
+fn nozzle_id_for_gcode(result: &crate::multi_nozzle_utils::LayeredNozzleGroupResult, id: i32) -> i32 {
+    if result.is_support_dynamic_nozzle_map() {
+        id
+    } else {
+        -1
+    }
+}
+
+/// GCode.cpp:120-132 `static std::vector<double> get_nozzle_diameters_by_nozzle_id(const
+/// MultiNozzleUtils::NozzleGroupResultBase *group_result)`
+pub fn get_nozzle_diameters_by_nozzle_id(
+    group_result: Option<&crate::multi_nozzle_utils::LayeredNozzleGroupResult>,
+) -> Vec<f64> {
+    let mut diameters = Vec::new();
+    let Some(group_result) = group_result else {
+        return diameters;
+    };
+    let mut id = 0;
+    loop {
+        let Some(nozzle) = group_result.get_nozzle_from_id(id) else {
+            break;
+        };
+        diameters.push(crate::locales_utils::string_to_double_decimal_point(&nozzle.diameter).0);
+        id += 1;
+    }
+    diameters
+}
+
+/// GCode.cpp:134-158 `static std::vector<std::string> get_nozzle_volume_types_by_nozzle_id(const
+/// MultiNozzleUtils::NozzleGroupResultBase *group_result)`
+pub fn get_nozzle_volume_types_by_nozzle_id(
+    group_result: Option<&crate::multi_nozzle_utils::LayeredNozzleGroupResult>,
+) -> Vec<String> {
+    use crate::print_config::config_def::get_nozzle_volume_type_string;
+    use crate::print_config::enums::NozzleVolumeType;
+    let mut volume_types = Vec::new();
+    let Some(group_result) = group_result else {
+        return volume_types;
+    };
+    let mut max_nozzle_id = -1;
+    for filament_id in group_result.get_used_filaments() {
+        for nozzle in group_result.get_nozzles_for_filament(filament_id as i32) {
+            if nozzle.group_id > max_nozzle_id {
+                max_nozzle_id = nozzle.group_id;
+            }
+        }
+    }
+    if max_nozzle_id < 0 {
+        max_nozzle_id = 0;
+    }
+    volume_types.resize(
+        (max_nozzle_id + 1) as usize,
+        get_nozzle_volume_type_string(NozzleVolumeType::NvtStandard),
+    );
+    for id in 0..=max_nozzle_id {
+        if let Some(nozzle) = group_result.get_nozzle_from_id(id) {
+            volume_types[id as usize] = get_nozzle_volume_type_string(
+                NozzleVolumeType::from_i32(nozzle.volume_type as i32),
+            );
+        }
+    }
+    volume_types
+}
+
+/// PrintConfig.cpp:454-469 `float nozzle_diameter_for_filament(const PrintConfig &config, unsigned
+/// int filament_id)`, which `get_outer_wall_volumetric_speed` calls (the PrintConfig function is
+/// not ported in print_config.rs).
+fn nozzle_diameter_for_filament(config: &crate::config::DynamicConfig, filament_id: u32) -> f32 {
+    if filament_id != 0 {
+        let fil_idx = (filament_id - 1) as usize;
+        let selected = pp_strings(config, "filament_diameter_map");
+        if fil_idx < selected.len() && !selected[fil_idx].is_empty() && !selected[fil_idx].contains(';') {
+            let diameter = crate::locales_utils::string_to_double_decimal_point(&selected[fil_idx]).0;
+            if diameter > 0.0 {
+                return diameter as f32;
+            }
+        }
+    }
+    let nozzle_idx = if filament_id == 0 { 0 } else { (filament_id - 1) as usize };
+    pp_get_at(&pp_floats(config, "nozzle_diameter"), nozzle_idx) as f32
+}
+
+/// GCode.cpp:531-555 `static float get_outer_wall_volumetric_speed(const FullPrintConfig& config,
+/// const Print& print, int filament_id, int extruder_id, size_t filament_config_idx)`.
+///
+/// `print.default_region_config()` / `print.default_object_config()` are the full config's values
+/// of those keys (PrintApply.cpp applies the full config to the defaults).
+pub fn get_outer_wall_volumetric_speed(
+    config: &crate::config::DynamicConfig,
+    filament_id: i32,
+    extruder_id: i32,
+    filament_config_idx: usize,
+) -> f32 {
+    use crate::config::ConfigOptionFloat;
+    let filament_max_volumetric_speed =
+        pp_get_at(&pp_floats(config, "filament_max_volumetric_speed"), filament_config_idx) as f32;
+    let preset_nozzle_diameter = crate::print_config::config_def::primary_nozzle_diameter(config) as f32;
+    let nozzle_diameter = nozzle_diameter_for_filament(config, (filament_id + 1) as u32);
+    let multi = crate::print_config::config_def::multi_nozzle_diameter_mode_enabled(config);
+    let width_of = |key: &str| ConfigOptionFloat::with_value(pp_float(config, key).unwrap_or(0.0));
+    let mut outer_wall_line_width = crate::flow::Flow::extrusion_width_for_nozzle(
+        &width_of("outer_wall_line_width"),
+        preset_nozzle_diameter,
+        nozzle_diameter,
+        multi,
+    ) as f32;
+    if outer_wall_line_width == 0.0 {
+        let default_line_width = crate::flow::Flow::extrusion_width_for_nozzle(
+            &width_of("line_width"),
+            preset_nozzle_diameter,
+            nozzle_diameter,
+            multi,
+        ) as f32;
+        outer_wall_line_width = if default_line_width == 0.0 {
+            pp_get_at(&pp_floats(config, "filament_diameter"), filament_id.max(0) as usize) as f32
+        } else {
+            default_line_width
+        };
+    }
+    let layer_height = pp_float(config, "layer_height").unwrap_or(0.0);
+    let mm3_per_mm = crate::flow::Flow::new(outer_wall_line_width as f64, layer_height, nozzle_diameter as f64)
+        .and_then(|f| f.mm3_per_mm())
+        .unwrap_or(0.0);
+    let outer_wall_speed = pp_get_at(&pp_floats(config, "outer_wall_speed"), extruder_id.max(0) as usize) as f32;
+    let mut outer_wall_volumetric_speed = (outer_wall_speed as f64 * mm3_per_mm) as f32;
+    if outer_wall_volumetric_speed > filament_max_volumetric_speed {
+        outer_wall_volumetric_speed = filament_max_volumetric_speed;
+    }
+    outer_wall_volumetric_speed
+}
+
+/// `ConfigOptionVector<T>::get_at` (Config.hpp): the value at `i`, or the first one past the end.
+fn pp_get_at<T: Clone + Default>(values: &[T], i: usize) -> T {
+    if i < values.len() {
+        values[i].clone()
+    } else {
+        values.first().cloned().unwrap_or_default()
+    }
+}
+
+/// The values of a numeric vector option as doubles (floats, percents, ints, bools).
+fn pp_floats(config: &crate::config::DynamicConfig, key: &str) -> Vec<f64> {
+    use crate::config::ConfigOptionResolver;
+    let Some(any) = config.option(key).and_then(|o| o.vector_values_any()) else {
+        return Vec::new();
+    };
+    if let Some(v) = any.downcast_ref::<Vec<f64>>() {
+        v.clone()
+    } else if let Some(v) = any.downcast_ref::<Vec<i32>>() {
+        v.iter().map(|&x| x as f64).collect()
+    } else if let Some(v) = any.downcast_ref::<Vec<u8>>() {
+        v.iter().map(|&x| x as f64).collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// The values of a numeric vector option as ints.
+fn pp_ints(config: &crate::config::DynamicConfig, key: &str) -> Vec<i32> {
+    use crate::config::ConfigOptionResolver;
+    let Some(any) = config.option(key).and_then(|o| o.vector_values_any()) else {
+        return Vec::new();
+    };
+    if let Some(v) = any.downcast_ref::<Vec<i32>>() {
+        v.clone()
+    } else if let Some(v) = any.downcast_ref::<Vec<u8>>() {
+        v.iter().map(|&x| x as i32).collect()
+    } else if let Some(v) = any.downcast_ref::<Vec<f64>>() {
+        v.iter().map(|&x| x as i32).collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// The values of a string vector option.
+fn pp_strings(config: &crate::config::DynamicConfig, key: &str) -> Vec<String> {
+    use crate::config::ConfigOptionResolver;
+    config
+        .option(key)
+        .and_then(|o| o.vector_values_any())
+        .and_then(|a| a.downcast_ref::<Vec<String>>().cloned())
+        .unwrap_or_default()
+}
+
+/// `getFloat()` of a scalar option.
+fn pp_float(config: &crate::config::DynamicConfig, key: &str) -> Option<f64> {
+    use crate::config::ConfigOptionResolver;
+    config.option(key).and_then(|o| o.get_float().ok())
+}
+
+/// `getInt()` of a scalar option (enums included).
+fn pp_int(config: &crate::config::DynamicConfig, key: &str) -> Option<i32> {
+    use crate::config::ConfigOptionResolver;
+    config.option(key).and_then(|o| o.get_int().ok())
+}
+
+/// `getBool()` of a scalar option.
+fn pp_bool(config: &crate::config::DynamicConfig, key: &str) -> Option<bool> {
+    use crate::config::ConfigOptionResolver;
+    config.option(key).and_then(|o| o.get_bool().ok())
+}
+
+/// The value of a string option.
+fn pp_string(config: &crate::config::DynamicConfig, key: &str) -> Option<String> {
+    use crate::config::ConfigOptionResolver;
+    config
+        .option(key)
+        .and_then(|o| o.as_any().downcast_ref::<crate::config::ConfigOptionString>())
+        .map(|o| o.value.clone())
+}
+
+/// Config.cpp:900-942 `parse_str_arr` (BBS: we only support 2 depth array): a JSON array of a
+/// config file joined into the text `set_deserialize` takes (the function is private to the
+/// Config port).
+fn parse_str_arr(
+    value: &[serde_json::Value],
+    single_sep: char,
+    array_sep: char,
+    escape_string_style: bool,
+    value_str: &mut String,
+) -> bool {
+    fn type_name(v: &serde_json::Value) -> &'static str {
+        match v {
+            serde_json::Value::Null => "null",
+            serde_json::Value::Bool(_) => "boolean",
+            serde_json::Value::Number(_) => "number",
+            serde_json::Value::String(_) => "string",
+            serde_json::Value::Array(_) => "array",
+            serde_json::Value::Object(_) => "object",
+        }
+    }
+    // must have consistent type name
+    let mut consistent_type = "";
+    for iter in value {
+        if consistent_type.is_empty() {
+            consistent_type = type_name(iter);
+        } else if consistent_type != type_name(iter) {
+            return false;
+        }
+    }
+    let mut first = true;
+    for iter in value {
+        if let serde_json::Value::Array(inner) = iter {
+            if !first {
+                value_str.push(array_sep);
+            } else {
+                first = false;
+            }
+            if !parse_str_arr(inner, single_sep, array_sep, escape_string_style, value_str) {
+                return false;
+            }
+        } else if let serde_json::Value::String(s) = iter {
+            if !first {
+                value_str.push(single_sep);
+            } else {
+                first = false;
+            }
+            if !escape_string_style {
+                value_str.push_str(s);
+            } else {
+                value_str.push('"');
+                value_str.push_str(&crate::config::escape_string_cstyle(s));
+                value_str.push('"');
+            }
+        } else {
+            // should not happen
+            return false;
+        }
+    }
+    true
+}
+
+/// The full print configuration of a job given as the settings of a config file (the
+/// `project_settings.config` of a 3MF, or the resolved presets of a model file): the defaults of
+/// every option (`DynamicPrintConfig::new_from_defaults_keys(FullPrintConfig::defaults().keys())`)
+/// with the file read over them as `ConfigBase::load_from_json` reads one (Config.cpp:1080-1170):
+/// keys in order, the BBL meta keys skipped, a string through `set_deserialize`, an array joined
+/// by `parse_str_arr` with the separator of its option type.
+///
+/// FIDELITY-NOTE: unknown keys and values that do not deserialize are skipped rather than ending
+/// the load; numbers and booleans (which only the engine's own injected keys carry) are taken as
+/// their text. The C++ `Print::apply` then remaps per-variant values to the printer's extruders
+/// (`update_values_to_printer_extruders`); the settings the engine is handed are already in that
+/// shape for the jobs it slices.
+pub fn full_print_config_from_settings(
+    settings: &serde_json::Value,
+) -> crate::print_config::config_def::DynamicPrintConfig {
+    use crate::config::{
+        ConfigBase, ConfigOptionType, ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule,
+    };
+    use crate::print_config::config_def::DynamicPrintConfig;
+    let defaults = DynamicPrintConfig::full_print_config();
+    let keys = ConfigBase::keys(&defaults);
+    let mut cfg = match DynamicPrintConfig::new_from_defaults_keys(&keys) {
+        Ok(b) => *b,
+        Err(_) => defaults,
+    };
+    let Some(map) = settings.as_object() else {
+        return cfg;
+    };
+    const META: [&str; 12] = [
+        "version",
+        "is_custom_defined",
+        "name",
+        "url",
+        "type",
+        "setting_id",
+        "filament_id",
+        "from",
+        "description",
+        "instantiation",
+        "inherits",
+        "include",
+    ];
+    let mut ctxt = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::Enable);
+    let mut entries: Vec<(&String, &serde_json::Value)> = map.iter().collect();
+    entries.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    let def = cfg.def();
+    for (it_key, it_value) in entries {
+        if META.iter().any(|m| m.eq_ignore_ascii_case(it_key)) {
+            continue;
+        }
+        match it_value {
+            serde_json::Value::String(s) => {
+                let _ = cfg.set_deserialize(it_key, s, &mut ctxt, false);
+            }
+            serde_json::Value::Array(it_arr) => {
+                let mut opt_key = it_key.clone();
+                let mut value_str = String::new();
+                cfg.handle_legacy(&mut opt_key, &mut value_str);
+                if opt_key.is_empty() {
+                    continue;
+                }
+                let mut optdef = def.and_then(|d| d.get(&opt_key));
+                if optdef.is_none() {
+                    if let Some(d) = def {
+                        'aliases: for (opt_first, opt_second) in &d.options {
+                            for alias in &opt_second.aliases {
+                                if *alias == opt_key {
+                                    opt_key = opt_first.clone();
+                                    optdef = Some(opt_second);
+                                    break 'aliases;
+                                }
+                            }
+                        }
+                    }
+                }
+                let mut single_sep = ',';
+                let array_sep = '#';
+                let mut escape_string_type = false;
+                if let Some(optdef) = optdef {
+                    match optdef.r#type {
+                        ConfigOptionType::CoStrings => {
+                            escape_string_type = true;
+                            single_sep = ';';
+                        }
+                        ConfigOptionType::CoPointsGroups => single_sep = '#',
+                        _ => {}
+                    }
+                }
+                if parse_str_arr(it_arr, single_sep, array_sep, escape_string_type, &mut value_str) {
+                    let _ = cfg.set_deserialize(&opt_key, &value_str, &mut ctxt, false);
+                }
+            }
+            serde_json::Value::Number(n) => {
+                let _ = cfg.set_deserialize(it_key, &n.to_string(), &mut ctxt, false);
+            }
+            serde_json::Value::Bool(b) => {
+                let _ = cfg.set_deserialize(it_key, if *b { "1" } else { "0" }, &mut ctxt, false);
+            }
+            _ => {}
+        }
+    }
+    cfg
+}
+
+/// What `GCode::_do_export` reads from the `Print`, the tool ordering and the writer for the
+/// placeholders it sets (GCode.cpp:2768-3177).
+#[derive(Clone, Debug)]
+pub struct ExportPlaceholderInputs {
+    /// `initial_extruder_id` (GCode.cpp:2777, 2839).
+    pub initial_extruder_id: u32,
+    /// `initial_non_support_extruder_id` (GCode.cpp:2779, 2864-2865).
+    pub initial_non_support_extruder_id: u32,
+    /// `first_filaments` / `first_non_support_filaments` before
+    /// `match_physical_extruder_for_each_filament` (GCode.cpp:2783-2788, 2846): one per nozzle, -1
+    /// for a nozzle that prints nothing.
+    pub first_filaments: Vec<i32>,
+    pub first_non_support_filaments: Vec<i32>,
+    /// `m_writer.extruders()`: the ids `set_extruders(tool_ordering.all_extruders())` installed
+    /// (GCode.cpp:2851).
+    pub extruders: Vec<u32>,
+    /// `tool_ordering.cal_max_additional_fan` (GCode.cpp:2822).
+    pub max_additional_fan: f32,
+    /// `m_layer_count` (GCode.cpp:2948).
+    pub layer_count: u32,
+    /// `has_wipe_tower` (GCode.cpp:2826).
+    pub has_wipe_tower: bool,
+    /// `print.wipe_tower_data().number_of_toolchanges` (GCode.cpp:2956).
+    pub number_of_toolchanges: i32,
+    /// `m_writer.get_xy_offset()` (GCode.cpp:2957).
+    pub plate_offset: (f32, f32),
+    /// `print.first_layer_convex_hull()`, unscaled (GCode.cpp:2970-2972).
+    pub first_layer_convex_hull: Vec<(f64, f64)>,
+    /// `first_layer_projection(print)`: min and max (GCode.cpp:2974); None when nothing is
+    /// known about the first layer.
+    pub first_layer_bbox: Option<((f64, f64), (f64, f64))>,
+    /// `!intersection_pl(project_polys, {head_wrap_detect_zone}).empty()` (GCode.cpp:3000-3024).
+    pub in_head_wrap_detect_zone: bool,
+    /// The highest `print_z` of the objects (GCode.cpp:3027-3031).
+    pub max_print_z: f64,
+    /// `bbox_wo_wt.center()` (GCode.cpp:3034-3041).
+    pub first_layer_center_no_wipe_tower: (f64, f64),
+    /// `print.get_slice_used_filaments(false)` / `(true)` (GCode.cpp:3082, 3121).
+    pub used_filaments: Vec<u32>,
+    pub first_layer_filaments: Vec<u32>,
+    /// The wipe tower's `stop_pos` when there is one (GCode.cpp:3088-3104).
+    pub wipe_tower_stop_pos: Option<(f32, f32)>,
+    /// `hold_chamber_temp_for_flat_print`, `area_sum_temp * 1e-10` (GCode.cpp:3128-3177).
+    pub hold_chamber_temp_for_flat_print: bool,
+    pub first_layer_area_sum: f64,
+    /// `print.get_plate_name()` (GCode.cpp:3080).
+    pub plate_name: String,
+    /// `print.calib_params().mode == CalibMode::Calib_PA_Line` (GCode.cpp:2979, 3125).
+    pub calib_pa_line: bool,
+    /// `PrintBase::update_object_placeholders` (PrintBase.cpp:26-62): the printable objects and
+    /// instances, the scale of each, the first object's name or input file.
+    pub num_objects: i32,
+    pub num_instances: i32,
+    pub scale: Vec<String>,
+    pub input_file: String,
+    /// The print's layered nozzle group result (`m_print->get_layered_nozzle_group_result()`).
+    pub group_result: Option<crate::multi_nozzle_utils::LayeredNozzleGroupResult>,
+}
+
+impl ExportPlaceholderInputs {
+    /// The inputs of a single-filament print without objects: what `_do_export` falls back to
+    /// when nothing is printed (GCode.cpp:2859-2866).
+    pub fn new(num_nozzles: usize) -> Self {
+        ExportPlaceholderInputs {
+            initial_extruder_id: 0,
+            initial_non_support_extruder_id: 0,
+            first_filaments: vec![-1; num_nozzles.max(1)],
+            first_non_support_filaments: vec![-1; num_nozzles.max(1)],
+            extruders: vec![0],
+            max_additional_fan: 0.0,
+            layer_count: 0,
+            has_wipe_tower: false,
+            number_of_toolchanges: 0,
+            plate_offset: (0.0, 0.0),
+            first_layer_convex_hull: Vec::new(),
+            first_layer_bbox: None,
+            in_head_wrap_detect_zone: false,
+            max_print_z: 0.0,
+            first_layer_center_no_wipe_tower: (0.0, 0.0),
+            used_filaments: vec![0],
+            first_layer_filaments: vec![0],
+            wipe_tower_stop_pos: None,
+            hold_chamber_temp_for_flat_print: false,
+            first_layer_area_sum: 0.0,
+            plate_name: String::new(),
+            calib_pa_line: false,
+            num_objects: 0,
+            num_instances: 0,
+            scale: Vec::new(),
+            input_file: String::new(),
+            group_result: None,
+        }
+    }
+}
+
+/// The placeholder-parser members of `class GCode` (GCode.hpp): the parser, its context (the
+/// random generator of `random()`) and the first error of each template that failed.
+///
+/// FIDELITY-NOTE: `m_placeholder_parser = print.placeholder_parser()` (GCode.cpp:2765) copies the
+/// Print's parser, whose external configuration is a pointer to `m_full_print_config`
+/// (PrintBase.hpp:387). Here the full configuration is applied into the parser's own
+/// configuration (`PlaceholderParser::apply_config`) and a copy kept as `m_config`: a key resolves
+/// to the same option, a `set` shadows the full configuration's option as the C++ own
+/// configuration shadows the external one.
+pub struct GCodePlaceholders {
+    /// GCode.hpp `PlaceholderParser m_placeholder_parser;`
+    pub m_placeholder_parser: crate::placeholder_parser::PlaceholderParser<'static>,
+    /// GCode.hpp `PlaceholderParser::ContextData m_placeholder_parser_context;`
+    pub m_placeholder_parser_context: crate::placeholder_parser::ContextData,
+    /// GCode.hpp `std::map<std::string, std::string> m_placeholder_parser_failed_templates;`
+    pub m_placeholder_parser_failed_templates: std::collections::BTreeMap<String, String>,
+    /// GCode.hpp `FullPrintConfig m_config;` (`apply_print_config(print.config())`): the
+    /// configuration `_do_export` reads the values of its placeholders from.
+    pub m_config: crate::print_config::config_def::DynamicPrintConfig,
+}
+
+impl GCodePlaceholders {
+    /// `Print::m_placeholder_parser` as `Print::apply` leaves it (PrintApply.cpp:1655-1662):
+    /// cleared, the three preset aliases, the filament overrides (none: every filament option of
+    /// the job is in the full configuration already), over the full configuration; then
+    /// GCode.cpp:2765-2772: the copy, `update_timestamp()`, the random generator seeded from the
+    /// clock and `print.update_object_placeholders(..., ".gcode")`.
+    pub fn new(full_config: crate::print_config::config_def::DynamicPrintConfig, inputs: &ExportPlaceholderInputs) -> Self {
+        use crate::config::{ConfigOption, ConfigOptionResolver};
+        let mut pp = crate::placeholder_parser::PlaceholderParser::new(None);
+        // PrintApply.cpp:1655
+        pp.clear_config();
+        // PrintApply.cpp:1657-1659
+        for (alias, key) in [
+            ("print_preset", "print_settings_id"),
+            ("filament_preset", "filament_settings_id"),
+            ("printer_preset", "printer_settings_id"),
+        ] {
+            if let Some(opt) = full_config.option(key) {
+                pp.set(alias, ConfigOption::clone(opt));
+            }
+        }
+        // PrintBase.hpp:387 `m_placeholder_parser(&m_full_print_config)`: the external configuration.
+        let _ = pp.apply_config(&full_config);
+        // GCode.cpp:2766
+        pp.update_timestamp();
+        // GCode.cpp:2767 `std::mt19937(std::chrono::high_resolution_clock::now().time_since_epoch().count())`
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u32)
+            .unwrap_or(0);
+        let mut this = GCodePlaceholders {
+            m_placeholder_parser: pp,
+            m_placeholder_parser_context: crate::placeholder_parser::ContextData {
+                rng: crate::placeholder_parser::Mt19937::new(seed),
+            },
+            m_placeholder_parser_failed_templates: std::collections::BTreeMap::new(),
+            m_config: full_config,
+        };
+        // GCode.cpp:2768 `print.update_object_placeholders(m_placeholder_parser.config_writable(), ".gcode")`
+        this.update_object_placeholders(inputs, ".gcode");
+        this
+    }
+
+    /// PrintBase.cpp:26-62 `void PrintBase::update_object_placeholders(DynamicConfig &config, const
+    /// std::string &default_ext) const`, on the parser's configuration.
+    fn update_object_placeholders(&mut self, inputs: &ExportPlaceholderInputs, default_ext: &str) {
+        use crate::config::{ConfigOptionInt, ConfigOptionString, ConfigOptionStrings};
+        let config = self.m_placeholder_parser.config_writable();
+        config.set_key_value("num_objects", Box::new(ConfigOptionInt::with_value(inputs.num_objects)));
+        config.set_key_value("num_instances", Box::new(ConfigOptionInt::with_value(inputs.num_instances)));
+        config.set_key_value("scale", Box::new(ConfigOptionStrings::from_values(inputs.scale.clone())));
+        if !inputs.input_file.is_empty() {
+            // get basename with and without suffix
+            let input_filename = std::path::Path::new(&inputs.input_file)
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let input_filename_base = match input_filename.rfind('.') {
+                Some(p) => input_filename[..p].to_string(),
+                None => input_filename.clone(),
+            };
+            config.set_key_value(
+                "input_filename",
+                Box::new(ConfigOptionString::with_value(format!("{input_filename_base}{default_ext}"))),
+            );
+            config.set_key_value("input_filename_base", Box::new(ConfigOptionString::with_value(input_filename_base)));
+        }
+    }
+
+    /// GCode.cpp:3793-3800 `size_t GCode::get_extruder_id(unsigned int filament_id) const`: the
+    /// extruder of a filament by `filament_map` (1-based).
+    pub fn get_extruder_id(&self, filament_id: u32) -> usize {
+        let filament_map = pp_ints(&self.m_config, "filament_map");
+        if (filament_id as usize) < filament_map.len() {
+            return (filament_map[filament_id as usize] - 1).max(0) as usize;
+        }
+        0
+    }
+
+    /// GCode.cpp:3802-3808 `size_t GCode::get_filament_config_index(int filament_id) const`.
+    ///
+    /// FIDELITY-NOTE: `m_print->get_filament_config_indx(filament_id, m_cur_layer_idx)` maps a
+    /// filament to its variant's index in the per-variant vectors; the full configuration of the
+    /// jobs the engine slices holds one value per filament, so the index is the filament's.
+    pub fn get_filament_config_index(&self, filament_id: i32) -> usize {
+        filament_id.max(0) as usize
+    }
+
+    /// GCode.cpp:3810-3816 `size_t GCode::get_nozzle_config_index(int filament_id) const` (see
+    /// `get_filament_config_index`).
+    pub fn get_nozzle_config_index(&self, filament_id: i32) -> usize {
+        filament_id.max(0) as usize
+    }
+
+    /// GCode.cpp:4173-4178 `int GCode::get_bed_temperature(const int extruder_id, const bool
+    /// is_first_layer, const BedType bed_type) const`
+    pub fn get_bed_temperature(&self, extruder_id: i32, is_first_layer: bool, bed_type: crate::print_config::enums::BedType) -> i32 {
+        use crate::print_config::config_def::{get_bed_temp_1st_layer_key, get_bed_temp_key};
+        let bed_temp_key = if is_first_layer { get_bed_temp_1st_layer_key(bed_type) } else { get_bed_temp_key(bed_type) };
+        pp_get_at(&pp_ints(&self.m_config, &bed_temp_key), extruder_id.max(0) as usize)
+    }
+
+    /// GCode.cpp:4180-4189 `int GCode::get_highest_bed_temperature(const bool is_first_layer, const
+    /// Print& print) const`
+    pub fn get_highest_bed_temperature(&self, is_first_layer: bool, first_layer_filaments: &[u32]) -> i32 {
+        let bed_type = self.curr_bed_type();
+        let mut bed_temp = 0;
+        // 总是取所有首层耗材中温度最高的，保证热稳定
+        for &fidx in first_layer_filaments {
+            bed_temp = bed_temp.max(self.get_bed_temperature(fidx as i32, is_first_layer, bed_type));
+        }
+        bed_temp
+    }
+
+    fn curr_bed_type(&self) -> crate::print_config::enums::BedType {
+        crate::print_config::enums::BedType::from_i32(pp_int(&self.m_config, "curr_bed_type").unwrap_or(1))
+    }
+
+    /// The placeholders `GCode::_do_export` sets before it processes `machine_start_gcode`
+    /// (GCode.cpp:2771-2772, 2885-3180), in its order.
+    pub fn init_export_placeholders(&mut self, inputs: &ExportPlaceholderInputs) {
+        use crate::config::{
+            ConfigOption, ConfigOptionBool, ConfigOptionBoolsNullable, ConfigOptionFloat, ConfigOptionFloats,
+            ConfigOptionFloatsNullable, ConfigOptionInt, ConfigOptionInts, ConfigOptionIntsNullable,
+            ConfigOptionPoints, ConfigOptionResolver, ConfigOptionString, ConfigOptionStrings,
+        };
+        let initial_extruder_id = inputs.initial_extruder_id;
+        let initial_non_support_extruder_id = inputs.initial_non_support_extruder_id;
+        let group_result = inputs.group_result.as_ref();
+        let first_nozzle_group_id = |filament_id: u32| -> i32 {
+            group_result
+                .and_then(|g| g.get_first_nozzle_for_filament(filament_id as i32))
+                .map(|n| n.group_id)
+                .unwrap_or(0)
+        };
+        let nozzle_id_for = |id: i32| -> i32 {
+            match group_result {
+                Some(g) => nozzle_id_for_gcode(g, id),
+                None => -1,
+            }
+        };
+        // GCode.cpp:2885-2895 match_physical_extruder_for_each_filament
+        let physical_extruder_map = pp_ints(&self.m_config, "physical_extruder_map");
+        let match_physical = |filaments: &[i32]| -> Vec<i32> {
+            let mut physicial_first_filaments = vec![0i32; filaments.len()];
+            for (extruder_id, &f) in filaments.iter().enumerate() {
+                let p = pp_get_at(&physical_extruder_map, extruder_id).max(0) as usize;
+                if p < physicial_first_filaments.len() {
+                    physicial_first_filaments[p] = f;
+                }
+            }
+            physicial_first_filaments
+        };
+        let first_filaments = match_physical(&inputs.first_filaments);
+        let pp = &mut self.m_placeholder_parser;
+        // GCode.cpp:2771-2772 (multi-diameter layering only; not modelled: no single-diameter
+        // layering nozzle).
+        // GCode.cpp:2896-2899
+        pp.set("first_tools", Box::new(ConfigOptionInts::from_values(first_filaments.clone())) as Box<dyn ConfigOption>);
+        pp.set("first_filaments", Box::new(ConfigOptionInts::from_values(first_filaments)) as Box<dyn ConfigOption>);
+        pp.set("initial_tool", initial_extruder_id);
+        pp.set("initial_extruder", initial_extruder_id);
+        // GCode.cpp:2901
+        let first_non_support_filaments = match_physical(&inputs.first_non_support_filaments);
+        // GCode.cpp:2903-2912
+        let mut first_non_support_hotends = Vec::with_capacity(first_non_support_filaments.len());
+        for &filament_id in &first_non_support_filaments {
+            if filament_id < 0 {
+                first_non_support_hotends.push(-1);
+                continue;
+            }
+            first_non_support_hotends.push(nozzle_id_for(first_nozzle_group_id(filament_id as u32)));
+        }
+        // GCode.cpp:2914-2929
+        pp.set(
+            "first_non_support_tools",
+            Box::new(ConfigOptionInts::from_values(first_non_support_filaments.clone())) as Box<dyn ConfigOption>,
+        );
+        pp.set(
+            "first_non_support_filaments",
+            Box::new(ConfigOptionInts::from_values(first_non_support_filaments)) as Box<dyn ConfigOption>,
+        );
+        pp.set(
+            "first_non_support_hotend",
+            Box::new(ConfigOptionInts::from_values(first_non_support_hotends)) as Box<dyn ConfigOption>,
+        );
+        pp.set("initial_no_support_tool", initial_non_support_extruder_id);
+        pp.set("initial_no_support_extruder", initial_non_support_extruder_id);
+        pp.set("initial_no_support_hotend", nozzle_id_for(first_nozzle_group_id(initial_non_support_extruder_id)));
+        pp.set("current_extruder", initial_extruder_id);
+        pp.set("current_hotend", nozzle_id_for(first_nozzle_group_id(initial_extruder_id)));
+        pp.set("initial_filament_id", initial_extruder_id as i32);
+        let filament_map = pp_ints(&self.m_config, "filament_map");
+        let extruder_id_of = |filament_id: u32| -> i32 {
+            if (filament_id as usize) < filament_map.len() {
+                filament_map[filament_id as usize] - 1
+            } else {
+                0
+            }
+        };
+        pp.set("initial_extruder_id", extruder_id_of(initial_extruder_id));
+        pp.set("initial_nozzle_id", first_nozzle_group_id(initial_extruder_id));
+        pp.set("initial_no_support_filament_id", initial_non_support_extruder_id as i32);
+        pp.set("initial_no_support_extruder_id", extruder_id_of(initial_non_support_extruder_id));
+        pp.set("initial_no_support_nozzle_id", first_nozzle_group_id(initial_non_support_extruder_id));
+        pp.set(
+            "nozzle_diameter_at_nozzle_id",
+            Box::new(ConfigOptionFloats::from_values(get_nozzle_diameters_by_nozzle_id(group_result))) as Box<dyn ConfigOption>,
+        );
+        pp.set(
+            "nozzle_volume_types",
+            Box::new(ConfigOptionStrings::from_values(get_nozzle_volume_types_by_nozzle_id(group_result)))
+                as Box<dyn ConfigOption>,
+        );
+        // GCode.cpp:2931-2938: scalar values for the initial extruder (variant-aware)
+        let fi = initial_extruder_id as usize;
+        let retraction_distances_when_cut = pp_floats(&self.m_config, "retraction_distances_when_cut");
+        let long_retractions_when_cut = pp_ints(&self.m_config, "long_retractions_when_cut");
+        let retraction_distances_when_ec = pp_floats(&self.m_config, "retraction_distances_when_ec");
+        let long_retractions_when_ec = pp_ints(&self.m_config, "long_retractions_when_ec");
+        pp.set("retraction_distance_when_cut", pp_get_at(&retraction_distances_when_cut, fi));
+        pp.set("long_retraction_when_cut", pp_get_at(&long_retractions_when_cut, fi) != 0);
+        pp.set("retraction_distance_when_ec", pp_get_at(&retraction_distances_when_ec, fi));
+        pp.set("long_retraction_when_ec", pp_get_at(&long_retractions_when_ec, fi) != 0);
+        // GCode.cpp:2942-2944
+        let clone_as = |key: &str, make: &dyn Fn(&dyn ConfigOption) -> Box<dyn ConfigOption>| -> Option<Box<dyn ConfigOption>> {
+            self.m_config.option(key).map(|o| make(o))
+        };
+        let as_bools_nullable = |o: &dyn ConfigOption| -> Box<dyn ConfigOption> {
+            match o.as_any().downcast_ref::<ConfigOptionBoolsNullable>() {
+                Some(b) => ConfigOption::clone(b),
+                None => {
+                    let v: Vec<u8> = o
+                        .vector_values_any()
+                        .and_then(|a| a.downcast_ref::<Vec<u8>>().cloned())
+                        .unwrap_or_default();
+                    Box::new(ConfigOptionBoolsNullable::from_values(v))
+                }
+            }
+        };
+        let as_floats_nullable = |o: &dyn ConfigOption| -> Box<dyn ConfigOption> {
+            match o.as_any().downcast_ref::<ConfigOptionFloatsNullable>() {
+                Some(f) => ConfigOption::clone(f),
+                None => {
+                    let v: Vec<f64> = o
+                        .vector_values_any()
+                        .and_then(|a| a.downcast_ref::<Vec<f64>>().cloned())
+                        .unwrap_or_default();
+                    Box::new(ConfigOptionFloatsNullable::from_values(v))
+                }
+            }
+        };
+        let long_cut = clone_as("long_retractions_when_cut", &as_bools_nullable);
+        let dist_ec = clone_as("retraction_distances_when_ec", &as_floats_nullable);
+        let long_ec = clone_as("long_retractions_when_ec", &as_bools_nullable);
+        let pp = &mut self.m_placeholder_parser;
+        if let Some(o) = long_cut {
+            pp.set("long_retractions_when_cut", o);
+        }
+        if let Some(o) = dist_ec {
+            pp.set("retraction_distances_when_ec", o);
+        }
+        if let Some(o) = long_ec {
+            pp.set("long_retractions_when_ec", o);
+        }
+        // GCode.cpp:2946-2956
+        pp.set("max_additional_fan", inputs.max_additional_fan as f64);
+        pp.set("total_layer_count", inputs.layer_count);
+        pp.set("current_object_idx", 0i32);
+        pp.set("has_wipe_tower", inputs.has_wipe_tower);
+        pp.set("has_wipe_tower_this_layer", inputs.has_wipe_tower);
+        pp.set("total_toolchanges", inputs.number_of_toolchanges.max(0));
+        // GCode.cpp:2957-2963
+        let plate_offset = inputs.plate_offset;
+        let printable_area: Vec<(f64, f64)> = self
+            .m_config
+            .option("printable_area")
+            .and_then(|o| o.as_any().downcast_ref::<ConfigOptionPoints>())
+            .map(|p| p.values.iter().map(|v| (v.x, v.y)).collect())
+            .unwrap_or_default();
+        let bbox_of = |pts: &[(f64, f64)]| -> ((f64, f64), (f64, f64)) {
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for &(x, y) in pts {
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x);
+                y1 = y1.max(y);
+            }
+            if pts.is_empty() {
+                ((0.0, 0.0), (0.0, 0.0))
+            } else {
+                ((x0, y0), (x1, y1))
+            }
+        };
+        let floats = |v: Vec<f64>| -> Box<dyn ConfigOption> { Box::new(ConfigOptionFloats::from_values(v)) };
+        {
+            let ((x0, y0), (x1, y1)) = bbox_of(&printable_area);
+            pp.set("print_bed_min", floats(vec![x0 - plate_offset.0 as f64, y0 - plate_offset.1 as f64]));
+            pp.set("print_bed_max", floats(vec![x1 - plate_offset.0 as f64, y1 - plate_offset.1 as f64]));
+            pp.set("print_bed_size", floats(vec![x1 - x0, y1 - y0]));
+        }
+        // GCode.cpp:2964-2997
+        {
+            let mut pts: Vec<crate::geometry::Vec2d> = inputs
+                .first_layer_convex_hull
+                .iter()
+                .map(|&(x, y)| crate::geometry::Vec2d::new(x, y))
+                .collect();
+            let ((bx0, by0), (bx1, by1)) = inputs.first_layer_bbox.unwrap_or(((0.0, 0.0), (0.0, 0.0)));
+            let without_offset = (
+                (bx0 - plate_offset.0 as f64, by0 - plate_offset.1 as f64),
+                (bx1 - plate_offset.0 as f64, by1 - plate_offset.1 as f64),
+            );
+            if inputs.calib_pa_line {
+                let ((qx0, qy0), (qx1, qy1)) = bbox_of(&printable_area);
+                pts = printable_area.iter().map(|&(x, y)| crate::geometry::Vec2d::new(x, y)).collect();
+                pp.set("first_layer_print_convex_hull", Box::new(ConfigOptionPoints::from_values(pts)) as Box<dyn ConfigOption>);
+                pp.set("first_layer_print_min", floats(vec![qx0, qy0]));
+                pp.set("first_layer_print_max", floats(vec![qx1, qy1]));
+                pp.set("first_layer_print_size", floats(vec![qx1 - qx0, qy1 - qy0]));
+            } else {
+                pp.set("first_layer_print_convex_hull", Box::new(ConfigOptionPoints::from_values(pts)) as Box<dyn ConfigOption>);
+                pp.set("first_layer_print_min", floats(vec![without_offset.0 .0, without_offset.0 .1]));
+                pp.set("first_layer_print_max", floats(vec![without_offset.1 .0, without_offset.1 .1]));
+                pp.set("first_layer_print_size", floats(vec![bx1 - bx0, by1 - by0]));
+            }
+            // GCode.cpp:2999-3024 BBS: deal with head wrap detect
+            pp.set("in_head_wrap_detect_zone", inputs.in_head_wrap_detect_zone);
+            // GCode.cpp:3026-3032
+            pp.set("max_print_z", Box::new(ConfigOptionInt::with_value(inputs.max_print_z.ceil() as i32)) as Box<dyn ConfigOption>);
+            // GCode.cpp:3034-3041
+            let (cx, cy) = inputs.first_layer_center_no_wipe_tower;
+            pp.set("first_layer_center_no_wipe_tower", floats(vec![cx, cy]));
+        }
+        // GCode.cpp:3044-3127
+        let extruder_ids: Vec<u32> = inputs.extruders.clone();
+        let chamber_temperatures = pp_ints(&self.m_config, "chamber_temperatures");
+        let temperature_vitrification = pp_ints(&self.m_config, "temperature_vitrification");
+        let mut max_chamber_temp = 0;
+        for &id in &extruder_ids {
+            max_chamber_temp = max_chamber_temp.max(pp_get_at(&chamber_temperatures, id as usize));
+        }
+        let mut min_temperature_vitrification = i32::MAX;
+        for &id in &extruder_ids {
+            min_temperature_vitrification =
+                min_temperature_vitrification.min(pp_get_at(&temperature_vitrification, id as usize));
+        }
+        let curr_bed_type = self.curr_bed_type();
+        let first_bed_temp_opt = pp_ints(
+            &self.m_config,
+            &crate::print_config::config_def::get_bed_temp_1st_layer_key(curr_bed_type),
+        );
+        let bed_temp_opt =
+            pp_ints(&self.m_config, &crate::print_config::config_def::get_bed_temp_key(curr_bed_type));
+        // BedTempFormula::btfHighestTemp = 1 (PrintConfig.hpp)
+        let target_bed_temp = if pp_int(&self.m_config, "bed_temperature_formula") == Some(1) {
+            self.get_highest_bed_temperature(true, &inputs.first_layer_filaments)
+        } else {
+            self.get_bed_temperature(initial_extruder_id as i32, true, curr_bed_type)
+        };
+        let nozzle_temperature_initial_layer = self.m_config.option("nozzle_temperature_initial_layer").map(|o| {
+            let v: Vec<i32> = o
+                .vector_values_any()
+                .and_then(|a| a.downcast_ref::<Vec<i32>>().cloned())
+                .unwrap_or_default();
+            Box::new(ConfigOptionIntsNullable::from_values(v)) as Box<dyn ConfigOption>
+        });
+        let printable_height = pp_float(&self.m_config, "printable_height").unwrap_or(0.0);
+        let filament_vendor = pp_strings(&self.m_config, "filament_vendor");
+        let is_all_bbl_filament = inputs
+            .used_filaments
+            .iter()
+            .all(|&idx| filament_vendor.get(idx as usize).map(|v| v == "Bambu Lab").unwrap_or(false));
+        let during_print_exhaust_fan_speed = pp_ints(&self.m_config, "during_print_exhaust_fan_speed");
+        let initial_ns = initial_non_support_extruder_id;
+        let outer_wall_volumetric_speed = get_outer_wall_volumetric_speed(
+            &self.m_config,
+            initial_ns as i32,
+            extruder_id_of(initial_ns),
+            self.get_filament_config_index(initial_ns as i32),
+        );
+        let filament_type = pp_strings(&self.m_config, "filament_type");
+        let has_tpu_in_first_layer = inputs
+            .first_layer_filaments
+            .iter()
+            .any(|&idx| filament_type.get(idx as usize).map(|t| t == "TPU").unwrap_or(false));
+        let pp = &mut self.m_placeholder_parser;
+        pp.set("bbl_bed_temperature_gcode", Box::new(ConfigOptionBool::with_value(false)) as Box<dyn ConfigOption>);
+        pp.set("bed_temperature_initial_layer", Box::new(ConfigOptionInts::from_values(first_bed_temp_opt.clone())) as Box<dyn ConfigOption>);
+        pp.set("bed_temperature", Box::new(ConfigOptionInts::from_values(bed_temp_opt)) as Box<dyn ConfigOption>);
+        pp.set("bed_temperature_initial_layer_single", Box::new(ConfigOptionInt::with_value(target_bed_temp)) as Box<dyn ConfigOption>);
+        pp.set("bed_temperature_initial_layer_vector", Box::new(ConfigOptionString::with_value("")) as Box<dyn ConfigOption>);
+        pp.set("chamber_temperature", Box::new(ConfigOptionInts::from_values(vec![max_chamber_temp])) as Box<dyn ConfigOption>);
+        pp.set("overall_chamber_temperature", Box::new(ConfigOptionInt::with_value(max_chamber_temp)) as Box<dyn ConfigOption>);
+        pp.set("enable_high_low_temp_mix", Box::new(ConfigOptionBool::with_value(true)) as Box<dyn ConfigOption>);
+        pp.set(
+            "min_vitrification_temperature",
+            Box::new(ConfigOptionInt::with_value(min_temperature_vitrification)) as Box<dyn ConfigOption>,
+        );
+        // support variables `first_layer_temperature` and `first_layer_bed_temperature`
+        pp.set("first_layer_bed_temperature", Box::new(ConfigOptionInts::from_values(first_bed_temp_opt)) as Box<dyn ConfigOption>);
+        if let Some(o) = nozzle_temperature_initial_layer {
+            pp.set("first_layer_temperature", o);
+        }
+        pp.set("max_print_height", Box::new(ConfigOptionInt::with_value(printable_height as i32)) as Box<dyn ConfigOption>);
+        pp.set("z_offset", Box::new(ConfigOptionFloat::with_value(0.0f32 as f64)) as Box<dyn ConfigOption>);
+        pp.set("plate_name", Box::new(ConfigOptionString::with_value(inputs.plate_name.clone())) as Box<dyn ConfigOption>);
+        pp.set("is_all_bbl_filament", is_all_bbl_filament);
+        // GCode.cpp:3088-3108. FIDELITY-NOTE: without a wipe tower `stop_pos` is an
+        // uninitialised Eigen vector in the C++; 0 here.
+        let (sx, sy) = inputs.wipe_tower_stop_pos.unwrap_or((0.0, 0.0));
+        pp.set("wipe_tower_center_pos_x", Box::new(ConfigOptionFloat::with_value(sx as f64)) as Box<dyn ConfigOption>);
+        pp.set("wipe_tower_center_pos_y", Box::new(ConfigOptionFloat::with_value(sy as f64)) as Box<dyn ConfigOption>);
+        pp.set(
+            "wipe_tower_center_pos_valid",
+            Box::new(ConfigOptionBool::with_value(inputs.wipe_tower_stop_pos.is_some())) as Box<dyn ConfigOption>,
+        );
+        // GCode.cpp:3110-3115 add during_print_exhaust_fan_speed
+        let during_print_exhaust_fan_speed_num: Vec<i32> =
+            during_print_exhaust_fan_speed.iter().map(|&item| (item as f64 / 100.0 * 255.0) as i32).collect();
+        pp.set(
+            "during_print_exhaust_fan_speed_num",
+            Box::new(ConfigOptionInts::from_values(during_print_exhaust_fan_speed_num)) as Box<dyn ConfigOption>,
+        );
+        // GCode.cpp:3117-3119
+        pp.set(
+            "outer_wall_volumetric_speed",
+            Box::new(ConfigOptionFloat::with_value(outer_wall_volumetric_speed as f64)) as Box<dyn ConfigOption>,
+        );
+        // GCode.cpp:3121-3123
+        pp.set("has_tpu_in_first_layer", Box::new(ConfigOptionBool::with_value(has_tpu_in_first_layer)) as Box<dyn ConfigOption>);
+        // GCode.cpp:3125-3127
+        if inputs.calib_pa_line {
+            pp.set("scan_first_layer", Box::new(ConfigOptionBool::with_value(false)) as Box<dyn ConfigOption>);
+        }
+        // GCode.cpp:3128-3178 hold chamber temp for flat print
+        pp.set(
+            "hold_chamber_temp_for_flat_print",
+            Box::new(ConfigOptionBool::with_value(inputs.hold_chamber_temp_for_flat_print)) as Box<dyn ConfigOption>,
+        );
+        pp.set("first_layer_area_sum", Box::new(ConfigOptionFloat::with_value(inputs.first_layer_area_sum)) as Box<dyn ConfigOption>);
+        // GCode.cpp:3181-3182 Sync variant-mapped params into placeholder_parser before
+        // processing start gcode
+        self.update_placeholder_parser_with_variant_params();
+    }
+
+    /// GCode.cpp:8551-8615 `void GCode::update_placeholder_parser_with_variant_params()`
+    pub fn update_placeholder_parser_with_variant_params(&mut self) {
+        use crate::config::{ConfigOption, ConfigOptionFloats, ConfigOptionInts};
+        let m_config = &self.m_config;
+        let num_filaments = pp_strings(m_config, "filament_type").len();
+        if num_filaments == 0 {
+            return;
+        }
+        // `get_filament_config_index` (see there).
+        let get_filament_config_index = |filament_id: usize| filament_id;
+        // Helpers: remap config arrays from variant index space to filament_id index space.
+        // After remapping, gcode templates can use param[filament_id] directly.
+        let remap_floats_by_filament = |src: &str| -> Vec<f64> {
+            let src = pp_floats(m_config, src);
+            let mut dst = vec![0.0; num_filaments];
+            for i in 0..num_filaments {
+                dst[i] = pp_get_at(&src, get_filament_config_index(i));
+            }
+            dst
+        };
+        let remap_ints_by_filament = |src: &str| -> Vec<i32> {
+            let src = pp_ints(m_config, src);
+            let mut dst = vec![0; num_filaments];
+            for i in 0..num_filaments {
+                dst[i] = pp_get_at(&src, get_filament_config_index(i));
+            }
+            dst
+        };
+        let floats = |v: Vec<f64>| -> Box<dyn ConfigOption> { Box::new(ConfigOptionFloats::from_values(v)) };
+        let ints = |v: Vec<i32>| -> Box<dyn ConfigOption> { Box::new(ConfigOptionInts::from_values(v)) };
+        let m_placeholder_parser = &mut self.m_placeholder_parser;
+
+        // --- filament_options_with_variant: gcode indexes by filament_id ---
+        m_placeholder_parser.set("filament_max_volumetric_speed", floats(remap_floats_by_filament("filament_max_volumetric_speed")));
+        m_placeholder_parser.set("filament_pre_cooling_temperature", ints(remap_ints_by_filament("filament_pre_cooling_temperature")));
+        m_placeholder_parser.set("filament_pre_cooling_temperature_nc", ints(remap_ints_by_filament("filament_pre_cooling_temperature_nc")));
+        m_placeholder_parser.set("filament_cooling_before_tower", floats(remap_floats_by_filament("filament_cooling_before_tower")));
+        m_placeholder_parser.set("nozzle_temperature_initial_layer", ints(remap_ints_by_filament("nozzle_temperature_initial_layer")));
+        m_placeholder_parser.set("nozzle_temperature", ints(remap_ints_by_filament("nozzle_temperature")));
+        // first_layer_temperature is a legacy alias of nozzle_temperature_initial_layer
+        m_placeholder_parser.set("first_layer_temperature", ints(remap_ints_by_filament("nozzle_temperature_initial_layer")));
+
+        // --- printer_options_with_variant_1: in m_config these are already merged as filament-indexed ---
+        m_placeholder_parser.set("retraction_distances_when_cut", floats(remap_floats_by_filament("retraction_distances_when_cut")));
+        // hotend_cooling_rate / hotend_heating_rate: gcode uses [filament_map[x]-1] (extruder_id), no remap needed
+
+        // --- filament_map: per-layer dynamic, sync from m_config to placeholder_parser ---
+        m_placeholder_parser.set("filament_map", ints(pp_ints(m_config, "filament_map")));
+
+        // --- flush_volumetric_speeds / flush_temperatures: derived with fallback ---
+        {
+            // PrimeVolumeMode::pvmFast = 1 (PrintConfig.hpp)
+            let use_fast_flush = pp_int(m_config, "prime_volume_mode") == Some(1);
+            let mut flush_v_speed = remap_floats_by_filament("filament_flush_volumetric_speed");
+            let filament_max_v = remap_floats_by_filament("filament_max_volumetric_speed");
+            let mut flush_temps =
+                remap_ints_by_filament(if use_fast_flush { "filament_flush_temp_fast" } else { "filament_flush_temp" });
+            let nozzle_temperature_range_high = pp_ints(m_config, "nozzle_temperature_range_high");
+            for i in 0..num_filaments {
+                if flush_v_speed[i] == 0.0 {
+                    flush_v_speed[i] = filament_max_v[i];
+                }
+                if flush_temps[i] == 0 {
+                    flush_temps[i] = pp_get_at(&nozzle_temperature_range_high, i);
+                }
+            }
+            m_placeholder_parser.set("flush_volumetric_speeds", floats(flush_v_speed));
+            m_placeholder_parser.set("flush_temperatures", ints(flush_temps));
+        }
+    }
+
+    /// The placeholders `GCode::set_extruder` sets for the new filament (GCode.cpp:8628-8638 for a
+    /// single-extruder setup, 8947-8958 after a tool change).
+    pub fn set_current_filament(&mut self, new_filament_id: u32, current_hotend: i32, new_nozzle_id: i32) {
+        let new_extruder_id = self.get_extruder_id(new_filament_id) as i32;
+        let fi = self.get_filament_config_index(new_filament_id as i32);
+        let retraction_distances_when_cut = pp_floats(&self.m_config, "retraction_distances_when_cut");
+        let long_retractions_when_cut = pp_ints(&self.m_config, "long_retractions_when_cut");
+        let retraction_distances_when_ec = pp_floats(&self.m_config, "retraction_distances_when_ec");
+        let long_retractions_when_ec = pp_ints(&self.m_config, "long_retractions_when_ec");
+        let pp = &mut self.m_placeholder_parser;
+        pp.set("current_extruder", new_filament_id);
+        pp.set("current_hotend", current_hotend);
+        pp.set("current_filament_id", new_filament_id as i32);
+        pp.set("current_extruder_id", new_extruder_id);
+        pp.set("current_nozzle_id", new_nozzle_id);
+        pp.set("retraction_distance_when_cut", pp_get_at(&retraction_distances_when_cut, fi));
+        pp.set("long_retraction_when_cut", pp_get_at(&long_retractions_when_cut, fi) != 0);
+        pp.set("retraction_distance_when_ec", pp_get_at(&retraction_distances_when_ec, fi));
+        pp.set("long_retraction_when_ec", pp_get_at(&long_retractions_when_ec, fi) != 0);
+    }
+
+    /// GCode.cpp:4110-4127 `std::string GCode::placeholder_parser_process(const std::string &name,
+    /// const std::string &templ, unsigned int current_filament_id, const DynamicConfig
+    /// *config_override)`
+    pub fn placeholder_parser_process(
+        &mut self,
+        name: &str,
+        templ: &str,
+        current_filament_id: u32,
+        config_override: Option<&crate::config::DynamicConfig>,
+    ) -> String {
+        match self.m_placeholder_parser.process(
+            templ,
+            current_filament_id,
+            config_override,
+            Some(&mut self.m_placeholder_parser_context),
+        ) {
+            Ok(s) => s,
+            Err(err) => {
+                // Collect the names of failed template substitutions for error reporting.
+                // Only if there was no error reported for this template, store the first error
+                // message into the map to be reported. We don't want to collect error message for
+                // each and every occurence of a single custom G-code section.
+                self.m_placeholder_parser_failed_templates
+                    .entry(name.to_string())
+                    .or_insert_with(|| err.what().to_string());
+                // Insert the macro error message into the G-code.
+                format!(
+                    "\n!!!!! Failed to process the custom G-code template {name}\n{}!!!!! End of an error report for the custom G-code template {name}\n\n",
+                    err.what()
+                )
+            }
+        }
+    }
+
+    /// GCode.cpp:3764-3790 `void GCode::check_placeholder_parser_failed()`: the export proceeded,
+    /// but some of the substitutions failed.
+    pub fn check_placeholder_parser_failed(&self) -> std::result::Result<(), crate::placeholder_parser::PlaceholderParserException> {
+        let mut has_machine_gcode = false;
+        let mut has_filament_gcode = false;
+        if !self.m_placeholder_parser_failed_templates.is_empty() {
+            // G-code export proceeded, but some of the PlaceholderParser substitutions failed.
+            let mut msg = String::from("Failed to generate gcode for invalid custom G-code.\n\n");
+            for (first, second) in &self.m_placeholder_parser_failed_templates {
+                msg.push_str(&format!("{first} {second}\n"));
+                if first == "filament_end_gcode" || first == "filament_start_gcode" {
+                    has_filament_gcode = true;
+                } else {
+                    has_machine_gcode = true;
+                }
+            }
+            msg.push_str("Please check the custom G-code or use the default custom G-code.\n");
+            if has_machine_gcode {
+                if has_filament_gcode {
+                    msg.push_str("You can find them from 'Printer settings' -> 'Machine G-code' and 'Filament settings' -> 'Advanced'.");
+                } else {
+                    msg.push_str("You can find it from 'Printer settings' -> 'Machine G-code'.");
+                }
+            } else {
+                msg.push_str("You can find it from 'Filament settings' -> 'Advanced'.");
+            }
+            return Err(crate::placeholder_parser::PlaceholderParserException::PlaceholderParserError(msg));
+        }
+        Ok(())
+    }
+}
+
+/// The keys the export adds to a copy of the job's settings for one template that the C++ hands
+/// the template in its `config_override`, with the types GCode.cpp gives them: the timelapse
+/// (GCode.cpp:4762-4780), the end (3605-3629), a filament start (3222-3231, 8645-8655), the layer
+/// change (5015-5017, 5079-5090).
+const PP_OVERRIDE_KEYS: [(&str, char); 18] = [
+    ("layer_num", 'i'),
+    ("layer_z", 'f'),
+    ("max_layer_z", 'f'),
+    ("most_used_physical_extruder_id", 'i'),
+    ("curr_physical_extruder_id", 'i'),
+    ("timelapse_pos_x", 'i'),
+    ("timelapse_pos_y", 'i'),
+    ("has_timelapse_safe_pos", 'b'),
+    ("timelapse_inline_photo", 'b'),
+    ("farthest_point_timelapse_enabled", 'b'),
+    ("clear_to_x0", 'b'),
+    ("filament_extruder_id", 'i'),
+    ("current_filament_id", 'i'),
+    ("current_extruder_id", 'i'),
+    ("current_nozzle_id", 'i'),
+    // layer_change_gcode (GCode.cpp:5084-5086)
+    ("curr_y_acceleration_limit", 'f'),
+    ("curr_accumulated_mass", 'f'),
+    ("curr_layer_mass", 'f'),
+];
+
+/// The keys the export adds to the settings that the C++ sets on the parser itself
+/// (`first_layer_print_min` / `_size`, GCode.cpp:2994-2996): they come in through
+/// [`ExportPlaceholderInputs::first_layer_bbox`].
+const PP_SET_KEYS: [&str; 2] = ["first_layer_print_min", "first_layer_print_size"];
+
+/// The template names `placeholder_parser_process` is called with, by the setting that holds the
+/// template (GCode.cpp:3184, 3232, 3618, 3629, 4780, 5019, 5094, ...).
+const PP_TEMPLATE_NAMES: [(&str, &str); 12] = [
+    ("machine_start_gcode", "machine_start_gcode"),
+    ("machine_end_gcode", "machine_end_gcode"),
+    ("time_lapse_gcode", "timelapse_gcode"),
+    ("filament_start_gcode", "filament_start_gcode"),
+    ("filament_end_gcode", "filament_end_gcode"),
+    ("change_filament_gcode", "change_filament_gcode"),
+    ("layer_change_gcode", "layer_change_gcode"),
+    ("before_layer_change_gcode", "before_layer_change_gcode"),
+    ("printing_by_object_gcode", "printing_by_object_gcode"),
+    ("machine_pause_gcode", "machine_pause_gcode"),
+    ("template_custom_gcode", "template_custom_gcode"),
+    ("wrapping_detection_gcode", "wrapping_detection_gcode"),
+];
+
+fn hash_json_value(v: &serde_json::Value, h: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    match v {
+        serde_json::Value::Null => 0u8.hash(h),
+        serde_json::Value::Bool(b) => (1u8, *b).hash(h),
+        serde_json::Value::Number(n) => (2u8, n.to_string()).hash(h),
+        serde_json::Value::String(s) => (3u8, s).hash(h),
+        serde_json::Value::Array(a) => {
+            (4u8, a.len()).hash(h);
+            for x in a {
+                hash_json_value(x, h);
+            }
+        }
+        serde_json::Value::Object(m) => {
+            (5u8, m.len()).hash(h);
+            for (k, x) in m {
+                k.hash(h);
+                hash_json_value(x, h);
+            }
+        }
+    }
+}
+
+/// The export's placeholder parser and what it was set up from.
+struct ExportPlaceholderSlot {
+    /// [`export_placeholders_key`] of the settings it was set up from.
+    key: u64,
+    /// Installed by the export ([`install_export_placeholders`]) rather than set up by a template.
+    installed: bool,
+    inputs: ExportPlaceholderInputs,
+    gp: GCodePlaceholders,
+}
+
+thread_local! {
+    /// The export's placeholder parser (GCode.hpp `m_placeholder_parser` and its companions).
+    /// `print.rs` hands every template its settings rather than the export's `GCode`, so the
+    /// parser is kept here for the export, as the seam context is (`SeamContextGuard`): the
+    /// export is single-threaded and sequential. A new export writer drops it
+    /// ([`reset_export_placeholders`]).
+    static EXPORT_PLACEHOLDERS: std::cell::RefCell<Option<ExportPlaceholderSlot>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A new export begins: the previous export's placeholder parser is dropped (GCode.cpp:2765 copies
+/// a fresh one from the Print for every export). Called where the export's writer is made.
+pub fn reset_export_placeholders() {
+    let _ = EXPORT_PLACEHOLDERS.try_with(|cell| {
+        if let Ok(mut slot) = cell.try_borrow_mut() {
+            *slot = None;
+        }
+    });
+}
+
+/// The value of a setting the export injected, as text or as a JSON number or boolean.
+fn injected_number(v: &serde_json::Value) -> Option<f64> {
+    match v {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        serde_json::Value::String(s) => match s.trim() {
+            "true" => Some(1.0),
+            "false" => Some(0.0),
+            t => t.parse::<f64>().ok(),
+        },
+        serde_json::Value::Array(a) => a.first().and_then(injected_number),
+        _ => None,
+    }
+}
+
+impl ExportPlaceholderInputs {
+    /// The inputs as far as the job's settings tell them, for the templates `print.rs` hands
+    /// over with the settings only: one filament prints first (the first, `initial_extruder_id`
+    /// 0), every configured filament is used, the first-layer box is the one the export added to
+    /// the settings (`first_layer_print_min` / `_size`), `max_print_z` as given.
+    ///
+    /// FIDELITY-NOTE: the tool ordering, the layer count, the convex hull of the first layer and
+    /// the wipe tower are not handed to the template code; the placeholders built from them take
+    /// the values of a print that has none (GCode.cpp:2859-2866).
+    pub fn from_settings(full: &crate::print_config::config_def::DynamicPrintConfig, settings: &serde_json::Value, max_print_z: f64) -> Self {
+        let nozzle_diameter = pp_floats(full, "nozzle_diameter");
+        let num_nozzles = nozzle_diameter.len().max(1);
+        let num_filaments = pp_strings(full, "filament_type").len().max(1);
+        let mut inputs = ExportPlaceholderInputs::new(num_nozzles);
+        let filament_map = pp_ints(full, "filament_map");
+        let extruder_of = |f: usize| -> usize { (pp_get_at(&filament_map, f) - 1).max(0) as usize };
+        let initial = inputs.initial_extruder_id as usize;
+        let e = extruder_of(initial).min(num_nozzles - 1);
+        inputs.first_filaments[e] = initial as i32;
+        inputs.first_non_support_filaments[e] = initial as i32;
+        inputs.extruders = (0..num_filaments as u32).collect();
+        inputs.used_filaments = inputs.extruders.clone();
+        inputs.first_layer_filaments = inputs.extruders.clone();
+        inputs.max_print_z = max_print_z;
+        let pair = |key: &str| -> Option<(f64, f64)> {
+            match settings.get(key)? {
+                serde_json::Value::Array(a) if a.len() >= 2 => {
+                    Some((injected_number(&a[0])?, injected_number(&a[1])?))
+                }
+                _ => None,
+            }
+        };
+        if let (Some(min), Some(size)) = (pair("first_layer_print_min"), pair("first_layer_print_size")) {
+            inputs.first_layer_bbox = Some((min, (min.0 + size.0, min.1 + size.1)));
+        }
+        // The nozzles of a printer without a dynamic nozzle map: one per extruder, each
+        // filament on its extruder's (`filament_map`).
+        let volume_types = pp_ints(full, "nozzle_volume_type");
+        let nozzle_list: Vec<crate::multi_nozzle_utils::NozzleInfo> = (0..num_nozzles)
+            .map(|id| crate::multi_nozzle_utils::NozzleInfo {
+                diameter: crate::utils::format_diameter_to_str_default(pp_get_at(&nozzle_diameter, id)),
+                volume_type: crate::extruder::NozzleVolumeType::from_i32(pp_get_at(&volume_types, id).clamp(0, 3)),
+                extruder_id: id as i32,
+                group_id: id as i32,
+            })
+            .collect();
+        let filament_nozzle_map: Vec<i32> =
+            (0..num_filaments).map(|f| extruder_of(f).min(num_nozzles - 1) as i32).collect();
+        inputs.group_result = crate::multi_nozzle_utils::LayeredNozzleGroupResult::create(
+            &filament_nozzle_map,
+            &nozzle_list,
+            &inputs.used_filaments,
+        );
+        inputs
+    }
+}
+
+/// The key the export's placeholder parser is kept under: the job's settings less the keys of one
+/// template's override, and the highest layer.
+fn export_placeholders_key(settings: &serde_json::Value, max_print_z: f64) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    if let Some(map) = settings.as_object() {
+        for (k, v) in map {
+            if PP_OVERRIDE_KEYS.iter().any(|(o, _)| o == k) {
+                continue;
+            }
+            k.hash(&mut h);
+            hash_json_value(v, &mut h);
+        }
+    }
+    max_print_z.to_bits().hash(&mut h);
+    h.finish()
+}
+
+/// The export's placeholder parser for the job's `settings`: `GCodePlaceholders::new` and
+/// `init_export_placeholders` (GCode.cpp:2765-3182), over the full configuration of the settings.
+fn new_export_placeholder_slot(
+    settings: &serde_json::Value,
+    inputs: Option<ExportPlaceholderInputs>,
+    max_print_z: f64,
+    installed: bool,
+) -> ExportPlaceholderSlot {
+    let mut base = settings.clone();
+    if let Some(map) = base.as_object_mut() {
+        for k in PP_SET_KEYS {
+            map.remove(k);
+        }
+    }
+    let full = full_print_config_from_settings(&base);
+    let inputs = inputs.unwrap_or_else(|| ExportPlaceholderInputs::from_settings(&full, settings, max_print_z));
+    let mut gp = GCodePlaceholders::new(full, &inputs);
+    gp.init_export_placeholders(&inputs);
+    ExportPlaceholderSlot { key: export_placeholders_key(settings, max_print_z), installed, inputs, gp }
+}
+
+/// `GCode::placeholder_parser_process` over the export's parser: the one the export installed, or
+/// else one set up for the job's `settings` (again when the settings differ).
+/// `start_of_export`: the template is `machine_start_gcode` or the first filament's start, which
+/// the C++ processes right after `_do_export` set the placeholders up (GCode.cpp:3182-3233); the
+/// Rust export writes them last, so an installed parser has them set up again first.
+pub fn export_placeholder_parser_process(
+    name: &str,
+    templ: &str,
+    settings: &serde_json::Value,
+    max_print_z: f64,
+    current_filament_id: Option<u32>,
+    config_override: Option<&crate::config::DynamicConfig>,
+) -> String {
+    export_placeholder_parser_process_at(name, templ, settings, max_print_z, current_filament_id, config_override, false)
+}
+
+fn export_placeholder_parser_process_at(
+    name: &str,
+    templ: &str,
+    settings: &serde_json::Value,
+    max_print_z: f64,
+    current_filament_id: Option<u32>,
+    config_override: Option<&crate::config::DynamicConfig>,
+    start_of_export: bool,
+) -> String {
+    let key = export_placeholders_key(settings, max_print_z);
+    EXPORT_PLACEHOLDERS.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        let keep = matches!(slot.as_ref(), Some(s) if s.installed || s.key == key);
+        if !keep {
+            *slot = Some(new_export_placeholder_slot(settings, None, max_print_z, false));
+        } else if start_of_export {
+            let s = slot.as_mut().unwrap();
+            let inputs = s.inputs.clone();
+            s.gp.init_export_placeholders(&inputs);
+        }
+        let gp = &mut slot.as_mut().unwrap().gp;
+        let filament = current_filament_id.unwrap_or_else(|| {
+            pp_int(gp.m_placeholder_parser.config(), "current_extruder").unwrap_or(0).max(0) as u32
+        });
+        let out = gp.placeholder_parser_process(name, templ, filament, config_override);
+        if crate::probe_enabled("PP_LIVE_TRACE") && gp.m_placeholder_parser_failed_templates.contains_key(name) {
+            eprintln!("PP_LIVE_TRACE {name}: {}", gp.m_placeholder_parser_failed_templates[name]);
+        }
+        out
+    })
+}
+
+/// The `config_override` the C++ builds for a template, from the keys the export added to the
+/// settings (PP_OVERRIDE_KEYS), with the keys of that template's override the export did not add
+/// (the nozzle tables of a filament or end template, GCode.cpp:3226-3227, 3601-3602).
+fn export_template_override(
+    name: &str,
+    settings: &serde_json::Value,
+    filament_id: Option<u32>,
+) -> crate::config::DynamicConfig {
+    use crate::config::{ConfigOptionBool, ConfigOptionFloat, ConfigOptionInt, ConfigOptionResolver};
+    let mut config = crate::config::DynamicConfig::new();
+    for (key, ty) in PP_OVERRIDE_KEYS {
+        let Some(v) = settings.get(key).and_then(injected_number) else {
+            continue;
+        };
+        let opt: Box<dyn crate::config::ConfigOption> = match ty {
+            'i' => Box::new(ConfigOptionInt::with_value(v as i32)),
+            'f' => Box::new(ConfigOptionFloat::with_value(v)),
+            _ => Box::new(ConfigOptionBool::with_value(v != 0.0)),
+        };
+        config.set_key_value(key, opt);
+    }
+    // GCode.cpp:3222-3225 (the first filament's start), 3610-3622 (each filament's end), 8645-8647
+    // (a filament start in set_extruder): the filament the template is for.
+    if matches!(name, "filament_start_gcode" | "filament_end_gcode") {
+        let id = filament_id.unwrap_or(0) as i32;
+        let extruder = match settings.get("filament_map") {
+            Some(serde_json::Value::Array(a)) => a.get(id as usize).or(a.first()).and_then(injected_number),
+            Some(v) => injected_number(v),
+            None => None,
+        }
+        .map(|m| (m as i32 - 1).max(0))
+        .unwrap_or(0);
+        for (key, value) in [
+            ("filament_extruder_id", id),
+            ("current_filament_id", id),
+            ("current_extruder_id", extruder),
+            ("current_nozzle_id", extruder),
+        ] {
+            if config.option(key).is_none() {
+                config.set_key_value(key, Box::new(ConfigOptionInt::with_value(value)));
+            }
+        }
+    }
+    config
+}
+
+/// The name and, for a per-filament setting, the filament of a template the export hands over
+/// by its text: the setting of the job that holds that text.
+fn template_name_and_filament(templ: &str, settings: &serde_json::Value) -> (&'static str, Option<u32>) {
+    for (key, name) in PP_TEMPLATE_NAMES {
+        match settings.get(key) {
+            Some(serde_json::Value::String(s)) if s == templ => return (name, None),
+            Some(serde_json::Value::Array(a)) => {
+                if let Some(i) = a.iter().position(|x| x.as_str() == Some(templ)) {
+                    return (name, Some(i as u32));
+                }
+            }
+            _ => {}
+        }
+    }
+    ("custom_gcode", None)
+}
+
+/// Install the export's placeholder parser, set up as `GCode::_do_export` sets it up
+/// (GCode.cpp:2765-3182), for every template of the export: the export calls this once before the
+/// first layer, with what it knows of the print (`inputs`; None takes them from the settings,
+/// [`ExportPlaceholderInputs::from_settings`]). Until then, and without it, the parser is set up by
+/// the first template [`process_gcode_template`] hands over.
+pub fn install_export_placeholders(settings: &serde_json::Value, inputs: Option<ExportPlaceholderInputs>, max_print_z: f64) {
+    let slot = new_export_placeholder_slot(settings, inputs, max_print_z, true);
+    EXPORT_PLACEHOLDERS.with(|cell| *cell.borrow_mut() = Some(slot));
+}
+
+/// `f` over the export's placeholder parser, when one is set up.
+pub fn with_export_placeholders<R>(f: impl FnOnce(&mut GCodePlaceholders) -> R) -> Option<R> {
+    EXPORT_PLACEHOLDERS.with(|cell| cell.borrow_mut().as_mut().map(|s| f(&mut s.gp)))
+}
+
+/// The value of a scalar of a tool change's template context as a double.
+fn context_number(ctx: &crate::gcode::gcode_template::Context, key: &str) -> Option<f64> {
+    use crate::gcode::gcode_template::Value;
+    match ctx.get(key)? {
+        Value::Int(i) => Some(*i as f64),
+        Value::Float(f) => Some(*f),
+        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        Value::Str(_) => None,
+    }
+}
+
+/// What `WipeTowerIntegration::append_tcr` knows of a tool change for its templates.
+pub struct ToolChangeTemplateInputs<'a> {
+    /// `crate::gcode::change_filament::build_context`: the temperatures, the toolchange count,
+    /// the flush lengths, the positions the template reads.
+    pub ctx: &'a crate::gcode::gcode_template::Context,
+    /// `gcodegen.writer().filament()->id()`, -1 without one (GCode.cpp:993).
+    pub old_filament_id: i32,
+    /// `tcr.new_tool` (GCode.cpp:681).
+    pub new_filament_id: u32,
+    /// `tcr.purge_volume` (GCode.cpp:1027).
+    pub purge_volume: f32,
+    /// `tcr.print_z` and `z` (GCode.cpp:999-1000).
+    pub print_z: f32,
+    /// `tool_change_start_pos` (GCode.cpp:770-777): bed coordinates.
+    pub tool_change_start_pos: (f32, f32),
+    /// `gcode_writer.get_position()(2)` (GCode.cpp:1025).
+    pub nozzle_z: f32,
+    /// The tower box, transformed (`transform_wt_pt(m_wipe_tower_bbx.min/max)`, GCode.cpp:1048-1052).
+    pub wipe_tower_box: ((f32, f32), (f32, f32)),
+    /// `m_wipe_tower_bbx` translated by the tower position (GCode.cpp:1089-1090).
+    pub wipe_tower_bbx_on_bed: ((f64, f64), (f64, f64)),
+    /// `tcr.is_contact` (GCode.cpp:1075).
+    pub is_contact: bool,
+    /// `gcodegen.m_layer_index == 0` (GCode.cpp:1065).
+    pub first_layer: bool,
+}
+
+/// GCode.cpp:991-1121: the `config_override` of `change_filament_gcode` in
+/// `WipeTowerIntegration::append_tcr`, with the configuration read from the export's (`m_config`,
+/// `m_print_config`).
+///
+/// FIDELITY-NOTE: `layer_num` (`gcodegen.m_layer_index`), `new_extruder_retracted_length` (the
+/// writer's per-filament retraction) and the per-filament first-layer phase are not known to the
+/// tower code: `layer_num` is left out, the retracted length is 0 and the temperatures are those of
+/// the context.
+pub fn change_filament_override(gp: &GCodePlaceholders, t: &ToolChangeTemplateInputs) -> crate::config::DynamicConfig {
+    use crate::config::{
+        ConfigOption, ConfigOptionBool, ConfigOptionFloat, ConfigOptionFloats, ConfigOptionInt, ConfigOptionInts,
+        ConfigOptionResolver, ConfigOptionString,
+    };
+    let cfg = &gp.m_config;
+    let mut config = crate::config::DynamicConfig::new();
+    let mut set = |key: &str, opt: Box<dyn ConfigOption>| config.set_key_value(key, opt);
+    let int = |v: i32| -> Box<dyn ConfigOption> { Box::new(ConfigOptionInt::with_value(v)) };
+    let float = |v: f64| -> Box<dyn ConfigOption> { Box::new(ConfigOptionFloat::with_value(v)) };
+    let boolean = |v: bool| -> Box<dyn ConfigOption> { Box::new(ConfigOptionBool::with_value(v)) };
+    let old_filament_id = t.old_filament_id;
+    let new_filament_id = t.new_filament_id;
+    let old_extruder_id = if old_filament_id >= 0 { gp.get_extruder_id(old_filament_id as u32) as i32 } else { -1 };
+    let new_extruder_id = gp.get_extruder_id(new_filament_id) as i32;
+    // A printer without a dynamic nozzle map: a filament's nozzle is its extruder's.
+    let old_nozzle_id = old_extruder_id;
+    let next_nozzle_id = new_extruder_id;
+    // GCode.cpp:997-1000
+    set("previous_extruder", int(old_filament_id));
+    set("next_extruder", int(new_filament_id as i32));
+    set("next_hotend", int(-1));
+    set("layer_z", float(t.print_z as f64));
+    set("toolchange_z", float(t.print_z as f64));
+    // GCode.cpp:1006-1013
+    let old_filament_config_idx = if old_filament_id != -1 { gp.get_filament_config_index(old_filament_id) } else { 0 };
+    let new_filament_config_idx = gp.get_filament_config_index(new_filament_id as i32);
+    let outer_wall_volumetric_speed =
+        get_outer_wall_volumetric_speed(cfg, new_filament_id as i32, new_extruder_id, new_filament_config_idx);
+    set("outer_wall_volumetric_speed", float(outer_wall_volumetric_speed as f64));
+    let retraction_length = pp_floats(cfg, "retraction_length");
+    let retract_length_toolchange = pp_floats(cfg, "retract_length_toolchange");
+    let old_retract_length = if old_filament_id != -1 { pp_get_at(&retraction_length, old_filament_config_idx) as f32 } else { 0.0 };
+    let new_retract_length = pp_get_at(&retraction_length, new_filament_config_idx) as f32;
+    let old_retract_length_toolchange =
+        if old_filament_id != -1 { pp_get_at(&retract_length_toolchange, old_filament_id as usize) as f32 } else { 0.0 };
+    let new_retract_length_toolchange = pp_get_at(&retract_length_toolchange, new_filament_id as usize) as f32;
+    let old_filament_retract_length_nc =
+        pp_get_at(&pp_floats(cfg, "filament_retract_length_nc"), old_filament_config_idx) as f32;
+    // GCode.cpp:1020-1034
+    let purge_volume = if t.purge_volume < crate::libslic3r::EPSILON as f32 { 0.0 } else { t.purge_volume.max(G_MIN_PURGE_VOLUME) };
+    let filament_diameter = pp_floats(cfg, "filament_diameter");
+    let new_filament_area =
+        ((std::f64::consts::PI / 4.0) * pp_get_at(&filament_diameter, new_filament_id as usize).powi(2)) as f32;
+    let purge_length = purge_volume / new_filament_area;
+    let old_filament_area = if old_filament_id != -1 {
+        ((std::f64::consts::PI / 4.0) * pp_get_at(&filament_diameter, old_filament_id as usize).powi(2)) as f32
+    } else {
+        new_filament_area
+    };
+    let filament_max_volumetric_speed = pp_floats(cfg, "filament_max_volumetric_speed");
+    let mut old_filament_e_feedrate = if old_filament_id != -1 {
+        (60.0 * pp_get_at(&filament_max_volumetric_speed, old_filament_config_idx) / old_filament_area as f64) as i32
+    } else {
+        200
+    };
+    if old_filament_e_feedrate == 0 {
+        old_filament_e_feedrate = 100;
+    }
+    let mut new_filament_e_feedrate =
+        (60.0 * pp_get_at(&filament_max_volumetric_speed, new_filament_config_idx) / new_filament_area as f64) as i32;
+    if new_filament_e_feedrate == 0 {
+        new_filament_e_feedrate = 100;
+    }
+    // GCode.cpp:1045-1053 set wipe_avoid_pos_x
+    let ((bx0, by0), (bx1, by1)) = t.wipe_tower_box;
+    let wipe_avoid_pos_x = get_wipe_avoid_pos_x(&Vec2f::new(bx0, by0), &Vec2f::new(bx1, by1), 3.0);
+    // GCode.cpp:1002-1004
+    let extruder_variants = pp_strings(cfg, "printer_extruder_variant");
+    let variant = |id: i32| -> String {
+        if id >= 0 && (id as usize) < extruder_variants.len() { extruder_variants[id as usize].clone() } else { String::new() }
+    };
+    // GCode.cpp:1006-1016
+    set("current_extruder_id", int(old_extruder_id));
+    set("next_extruder_id", int(new_extruder_id));
+    set("current_nozzle_id", int(old_nozzle_id));
+    set("next_nozzle_id", int(next_nozzle_id));
+    set("current_filament_id", int(old_filament_id));
+    set("next_filament_id", int(new_filament_id as i32));
+    let nozzle_diameters = gp.m_placeholder_parser.config().option("nozzle_diameter_at_nozzle_id").map(|o| ConfigOption::clone(o));
+    let nozzle_volume_types = gp.m_placeholder_parser.config().option("nozzle_volume_types").map(|o| ConfigOption::clone(o));
+    if let Some(o) = nozzle_diameters {
+        set("nozzle_diameter_at_nozzle_id", o);
+    }
+    if let Some(o) = nozzle_volume_types {
+        set("nozzle_volume_types", o);
+    }
+    let ctx_float = |key: &str, default: f64| context_number(t.ctx, key).unwrap_or(default);
+    set("max_layer_z", float(ctx_float("max_layer_z", 0.0)));
+    set("relative_e_axis", boolean(pp_bool(cfg, "use_relative_e_distances").unwrap_or(false)));
+    set("toolchange_count", int(ctx_float("toolchange_count", 0.0) as i32));
+    // GCode.cpp:1017-1043
+    set("fan_speed", int(0));
+    set("old_retract_length", float(old_retract_length as f64));
+    set("new_retract_length", float(new_retract_length as f64));
+    set("filament_retract_length_nc", float(old_filament_retract_length_nc as f64));
+    set("old_retract_length_toolchange", float(old_retract_length_toolchange as f64));
+    set("new_retract_length_toolchange", float(new_retract_length_toolchange as f64));
+    set("new_extruder_retracted_length", float(0.0));
+    set("old_filament_temp", int(ctx_float("old_filament_temp", 210.0) as i32));
+    set("new_filament_temp", int(ctx_float("new_filament_temp", 0.0) as i32));
+    set("x_after_toolchange", float(t.tool_change_start_pos.0 as f64));
+    set("y_after_toolchange", float(t.tool_change_start_pos.1 as f64));
+    set("z_after_toolchange", float(t.nozzle_z as f64));
+    set("first_flush_volume", float((purge_length / 2.0) as f64));
+    set("second_flush_volume", float((purge_length / 2.0) as f64));
+    set("old_filament_e_feedrate", int(old_filament_e_feedrate));
+    set("new_filament_e_feedrate", int(new_filament_e_feedrate));
+    set("old_extruder_variant", Box::new(ConfigOptionString::with_value(variant(old_extruder_id))));
+    set("new_extruder_variant", Box::new(ConfigOptionString::with_value(variant(new_extruder_id))));
+    for k in ["travel_point_1_x", "travel_point_1_y", "travel_point_2_x", "travel_point_2_y", "travel_point_3_x", "travel_point_3_y"] {
+        set(k, float(ctx_float(k, 0.0) as f32 as f64));
+    }
+    // GCode.cpp:1044-1069
+    {
+        let num_filaments = pp_strings(cfg, "filament_type").len();
+        let use_fast_flush = pp_int(cfg, "prime_volume_mode") == Some(1);
+        let flush_volumetric_speed = pp_floats(cfg, "filament_flush_volumetric_speed");
+        let flush_temp = pp_ints(cfg, if use_fast_flush { "filament_flush_temp_fast" } else { "filament_flush_temp" });
+        let nozzle_temperature_range_high = pp_ints(cfg, "nozzle_temperature_range_high");
+        let cooling_before_tower = pp_floats(cfg, "filament_cooling_before_tower");
+        let extruder_types = pp_ints(cfg, "extruder_type");
+        let has_mixed_extruder_types = extruder_types.len() > 1 && extruder_types.windows(2).any(|w| w[0] != w[1]);
+        // GCode.cpp:164 g_filament_switcher_extra_cooling_before_tower
+        let extra_cooling_before_tower =
+            if pp_bool(cfg, "has_filament_switcher").unwrap_or(false) && has_mixed_extruder_types { 10.0 } else { 0.0 };
+        let mut flush_v_speed = vec![0.0; num_filaments];
+        let mut flush_temps = vec![0; num_filaments];
+        let mut filament_cooling_before_tower = vec![0.0; num_filaments];
+        for idx in 0..num_filaments {
+            let fi = gp.get_filament_config_index(idx as i32);
+            flush_v_speed[idx] = pp_get_at(&flush_volumetric_speed, fi);
+            if flush_v_speed[idx] == 0.0 {
+                flush_v_speed[idx] = pp_get_at(&filament_max_volumetric_speed, fi);
+            }
+            flush_temps[idx] = pp_get_at(&flush_temp, fi);
+            if flush_temps[idx] == 0 {
+                flush_temps[idx] = pp_get_at(&nozzle_temperature_range_high, idx);
+            }
+            filament_cooling_before_tower[idx] = pp_get_at(&cooling_before_tower, fi) + extra_cooling_before_tower;
+        }
+        if t.is_contact || t.first_layer {
+            filament_cooling_before_tower.iter_mut().for_each(|v| *v = 0.0);
+        }
+        set("flush_volumetric_speeds", Box::new(ConfigOptionFloats::from_values(flush_v_speed)));
+        set("flush_temperatures", Box::new(ConfigOptionInts::from_values(flush_temps)));
+        set("filament_cooling_before_tower", Box::new(ConfigOptionFloats::from_values(filament_cooling_before_tower)));
+    }
+    set("flush_length", float(purge_length as f64));
+    // GCode.cpp:953-954 (no nozzle change is modelled)
+    set("wipe_avoid_perimeter", boolean(pp_bool(cfg, "prime_tower_skip_points").unwrap_or(false)));
+    set("wipe_avoid_pos_x", float(wipe_avoid_pos_x as f64));
+    // GCode.cpp:1074-1085
+    if pp_bool(cfg, "enable_tower_interface_features").unwrap_or(false) {
+        set("is_prime_tower_interface", boolean(t.is_contact));
+        set(
+            "filament_tower_interface_purge_volume",
+            float(pp_get_at(&pp_floats(cfg, "filament_tower_interface_purge_volume"), new_filament_id as usize)),
+        );
+        let mut temp = pp_get_at(&pp_ints(cfg, "filament_tower_interface_print_temp"), new_filament_id as usize);
+        if temp == -1 {
+            temp = pp_get_at(&pp_ints(cfg, "nozzle_temperature_range_high"), new_filament_id as usize);
+        }
+        set("filament_tower_interface_print_temp", int(temp));
+    } else {
+        set("is_prime_tower_interface", boolean(false));
+        set("filament_tower_interface_purge_volume", float(0.0));
+        set("filament_tower_interface_print_temp", int(-1));
+    }
+    // GCode.cpp:1086-1103 point for nozzle heating
+    {
+        let mut stop_pos = t.tool_change_start_pos;
+        let ((wx0, _), (wx1, _)) = t.wipe_tower_bbx_on_bed;
+        if (stop_pos.0 as f64) < (wx0 + wx1) / 2.0 {
+            stop_pos.0 -= 2.0;
+        } else {
+            stop_pos.0 += 2.0;
+        }
+        let printable_area: Vec<f64> = gp
+            .m_config
+            .option("printable_area")
+            .and_then(|o| o.as_any().downcast_ref::<crate::config::ConfigOptionPoints>())
+            .map(|p| p.values.iter().map(|v| v.x).collect())
+            .unwrap_or_default();
+        if let (Some(min), Some(max)) = (
+            printable_area.iter().cloned().reduce(f64::min),
+            printable_area.iter().cloned().reduce(f64::max),
+        ) {
+            if (stop_pos.0 as f64) < min {
+                stop_pos.0 = min as f32;
+            }
+            if (stop_pos.0 as f64) > max {
+                stop_pos.0 = max as f32;
+            }
+        }
+        set("wipe_tower_center_pos_x", float(stop_pos.0 as f64));
+        set("wipe_tower_center_pos_y", float(stop_pos.1 as f64));
+        set("wipe_tower_center_pos_valid", boolean(true));
+    }
+    // GCode.cpp:1105-1121 flush_length_N
+    for k in ["flush_length_1", "flush_length_2", "flush_length_3", "flush_length_4"] {
+        set(k, float(ctx_float(k, 0.0)));
+    }
+    config
+}
+
+/// The `config_override` of a filament start or end template in `append_tcr` (GCode.cpp:837-844,
+/// 1274-1281): the filament, its extruder and nozzle, the nozzle tables.
+pub fn filament_template_override(gp: &GCodePlaceholders, filament_id: u32, with_filament_extruder_id: bool) -> crate::config::DynamicConfig {
+    use crate::config::{ConfigOption, ConfigOptionInt, ConfigOptionResolver};
+    let mut config = crate::config::DynamicConfig::new();
+    let extruder_id = gp.get_extruder_id(filament_id) as i32;
+    if with_filament_extruder_id {
+        config.set_key_value("filament_extruder_id", Box::new(ConfigOptionInt::with_value(filament_id as i32)));
+    }
+    config.set_key_value("current_filament_id", Box::new(ConfigOptionInt::with_value(filament_id as i32)));
+    config.set_key_value("current_extruder_id", Box::new(ConfigOptionInt::with_value(extruder_id)));
+    config.set_key_value("current_nozzle_id", Box::new(ConfigOptionInt::with_value(extruder_id)));
+    for key in ["nozzle_diameter_at_nozzle_id", "nozzle_volume_types"] {
+        if let Some(o) = gp.m_placeholder_parser.config().option(key) {
+            config.set_key_value(key, ConfigOption::clone(o));
+        }
+    }
+    config
+}
+
+/// The text of a template as the configuration holds it: a single-string option
+/// (`machine_start_gcode`, ...) is read through `ConfigOptionString::deserialize`, which unescapes
+/// it (`unescape_string_cstyle`, Config.cpp); the elements of a per-filament option come back as
+/// they were (`parse_str_arr` escapes them, `ConfigOptionStrings::deserialize` unescapes them).
+fn config_string_value(name: &str, templ: &str) -> String {
+    if matches!(name, "filament_start_gcode" | "filament_end_gcode") {
+        return templ.to_string();
+    }
+    let mut out = String::new();
+    if crate::config::unescape_string_cstyle(templ, &mut out) {
+        out
+    } else {
+        templ.to_string()
+    }
+}
+
+/// `GCode::GCodeOutputStream::writeln` (GCode.cpp:7119-7123): the text and a newline when it does
+/// not end with one; nothing for an empty text.
+fn writeln_to(out: &mut String, what: &str) {
+    if !what.is_empty() {
+        out.push_str(what);
+        if !what.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+}
+
 /// Process BambuStudio gcode template, substituting variables.
 /// Handles [var], {var}, {expr}, {if cond}...{endif} patterns.
+///
+/// PLACEHOLDER_PARSER_LIVE (on): the template goes through `GCode::placeholder_parser_process`
+/// (GCode.cpp:4110-4127), i.e. `PlaceholderParser::process` over the export's parser set up as
+/// `GCode::_do_export` sets it up ([`export_placeholder_parser_process`]); the keys the export
+/// added to `settings` for this template are its `config_override`. The template's name and, for
+/// a per-filament setting, its filament are those of the setting holding the text. =0 keeps the
+/// substitution below.
 pub fn process_gcode_template(
     template: &str,
     settings: &serde_json::Value,
     config: &PrintConfig,
 ) -> String {
+    if crate::faithful_gate("PLACEHOLDER_PARSER_LIVE") {
+        let (name, filament) = template_name_and_filament(template, settings);
+        let templ = config_string_value(name, template);
+        let config_override = export_template_override(name, settings, filament);
+        return export_placeholder_parser_process(name, &templ, settings, 0.0, filament, Some(&config_override));
+    }
     // Helper: resolve a variable name to a string value
     let resolve_var = |name: &str| -> Option<String> {
         // Handle indexed access like "nozzle_temperature[0]" or "var[initial_no_support_extruder]"

@@ -107,5 +107,43 @@
    "WipeTower::tower_bed_z",
    "WipeTower::get_floating_area"
   ]
+ },
+ {
+  "unit": "GCode/ToolOrdering",
+  "round": "914",
+  "functions": [
+   "LayerTools::has_extruder",
+   "ToolOrdering::clear",
+   "ToolOrdering::has_wipe_tower",
+   "ToolOrdering::prepare_ordering_context",
+   "object_max_layer_height",
+   "WipingExtrusions::is_overriddable",
+   "WipingExtrusions::is_obj_overriddable",
+   "WipingExtrusions::is_support_overriddable",
+   "WipingExtrusions::get_support_extruder_overrides",
+   "WipingExtrusions::get_support_interface_extruder_overrides",
+   "WipingExtrusions::first_nonsoluble_extruder_on_layer",
+   "WipingExtrusions::last_nonsoluble_extruder_on_layer",
+   "WipingExtrusions::is_entity_overridden",
+   "WipingExtrusions::set_extruder_override",
+   "WipingExtrusions::get_extruder_overrides"
+  ]
+ },
+ {
+  "unit": "Model",
+  "round": "914",
+  "functions": [
+   "ModelObject::const_volumes",
+   "Model::get_material",
+   "ModelObject::is_fdm_support_painted",
+   "ModelObject::is_seam_painted",
+   "ModelObject::convex_hull_2d",
+   "ModelVolume::rotate",
+   "ModelInstance::transform_polygon",
+   "FacetsAnnotation::equals",
+   "Model::clear_assembly_artifacts",
+   "ModelVolume::set_material",
+   "ModelInstance::apply_arrange_result"
+  ]
  }
 ]

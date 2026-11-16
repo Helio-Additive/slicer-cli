@@ -33,7 +33,7 @@ use crate::gcode::thumbnail_data::ThumbnailData;
 use crate::geometry::geometry::{transform3d_from_string, Transform3d, Transformation, Vec3d};
 use crate::geometry::Point3F;
 use crate::locales_utils::{general_format, is_decimal_separator_point, CNumericLocalesSetter};
-use crate::model::{Model, ModelObject, ModelVolumeType, ObjectConfig};
+use crate::model::{Model, ModelObject, ModelVolumeType};
 use crate::normal_utils::{indexed_triangle_set, Vec3crd, Vec3f};
 use crate::png_read_write::{encode_png, PNG_COLOR_TYPE_RGB_ALPHA};
 use crate::semver::{Semver, SLIC3R_VERSION};
@@ -1306,7 +1306,7 @@ impl<'a> _3MF_Importer<'a> {
                         // new_model_object->clear_instances();
                         new_model_object.instances.clear();
                         // new_model_object->add_instance(*model_object->instances.back());
-                        let last_instance = *self.m_model.objects[i].instances.last().unwrap();
+                        let last_instance = self.m_model.objects[i].instances.last().unwrap().clone();
                         new_model_object.instances.push(last_instance);
                         // model_object->delete_last_instance();
                         self.m_model.objects[i].instances.pop();
@@ -1446,7 +1446,7 @@ impl<'a> _3MF_Importer<'a> {
                 // new_model_object->clear_instances();
                 new_model_object.instances.clear();
                 // new_model_object->add_instance(*object->instances.back());
-                let last_instance = *self.m_model.objects[obj_index].instances.last().unwrap();
+                let last_instance = self.m_model.objects[obj_index].instances.last().unwrap().clone();
                 new_model_object.instances.push(last_instance);
                 // object->delete_last_instance();
                 self.m_model.objects[obj_index].instances.pop();
@@ -2461,13 +2461,7 @@ impl<'a> _3MF_Importer<'a> {
             // 3mf.cpp:1609-1614
             self.m_curr_object.model_object_idx = self.m_model.objects.len() as i32;
             // m_model->add_object() — new empty ModelObject (no instances, no volumes).
-            self.m_model.objects.push(ModelObject {
-                name: String::new(),
-                mesh: TriangleMesh::new(),
-                instances: Vec::new(),
-                config: ObjectConfig::default(),
-                printable: true,
-            });
+            self.m_model.objects.push(ModelObject::new_for_model());
             self.m_curr_object.object = Some(self.m_model.objects.len() - 1);
             // (add_object cannot return nullptr here.)
 
@@ -2899,6 +2893,8 @@ impl<'a> _3MF_Importer<'a> {
         instance.position = Point3F::new(offset.x, offset.y, offset.z);
         instance.rotation_z = rotation.z.to_degrees();
         instance.scale = [scaling_factor.x, scaling_factor.y, scaling_factor.z];
+        // The full Transformation, on the instance's C++ member (model::ModelInstance).
+        instance.set_transformation(&t);
     }
 
     /// 3mf.cpp:1929-1933
@@ -3226,6 +3222,7 @@ impl<'a> _3MF_Importer<'a> {
                     object.instances[0].position = Point3F::new(0.0, 0.0, 0.0);
                     object.instances[0].rotation_z = 0.0;
                     object.instances[0].scale = [1.0, 1.0, 1.0];
+                    object.instances[0].set_transformation(&Transformation::new());
                     //FIXME do the mesh fixing?
                 }
             }

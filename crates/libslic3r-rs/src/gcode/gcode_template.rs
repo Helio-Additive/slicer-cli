@@ -107,6 +107,14 @@ impl Context {
         self.arrays.insert(key.to_string(), v);
         self
     }
+    /// The scalar bound to `key`.
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.scalars.get(key)
+    }
+    /// The array bound to `key`.
+    pub fn get_array(&self, key: &str) -> Option<&Vec<Value>> {
+        self.arrays.get(key)
+    }
 }
 
 // ============================================================================

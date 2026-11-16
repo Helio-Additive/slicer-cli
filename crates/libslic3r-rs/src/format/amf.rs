@@ -1158,7 +1158,7 @@ impl<'a> AMFParserContext<'a> {
                 if instance.anything_set() {
                     let model_object = &mut self.model.objects[model_object_idx];
                     // AMF.cpp:871-873 — mi->set_offset(Vec3d(...));
-                    let mi_idx = model_object.add_instance(Point3F::new(
+                    let mi_idx = model_object.add_instance_at(Point3F::new(
                         if instance.deltax_set {
                             instance.deltax as f64
                         } else {
@@ -1210,6 +1210,22 @@ impl<'a> AMFParserContext<'a> {
                     // factors; mirror{x,y,z} are dropped.
                     // AMF.cpp:879
                     mi.printable = instance.printable;
+                    // AMF.cpp:872-878 on the instance's C++ member (model::ModelInstance).
+                    use crate::geometry::geometry::Vec3d;
+                    let v = |set: bool, value: f32, default: f64| if set { value as f64 } else { default };
+                    let pos = mi.position;
+                    mi.set_offset(&Vec3d::new(pos.x, pos.y, pos.z));
+                    mi.set_rotation(&Vec3d::new(v(instance.rx_set, instance.rx, 0.0), v(instance.ry_set, instance.ry, 0.0), v(instance.rz_set, instance.rz, 0.0)));
+                    mi.set_scaling_factor(&Vec3d::new(
+                        v(instance.scalex_set, instance.scalex, 1.0),
+                        v(instance.scaley_set, instance.scaley, 1.0),
+                        v(instance.scalez_set, instance.scalez, 1.0),
+                    ));
+                    mi.set_mirror(&Vec3d::new(
+                        v(instance.mirrorx_set, instance.mirrorx, 1.0),
+                        v(instance.mirrory_set, instance.mirrory, 1.0),
+                        v(instance.mirrorz_set, instance.mirrorz, 1.0),
+                    ));
                 }
             }
         }

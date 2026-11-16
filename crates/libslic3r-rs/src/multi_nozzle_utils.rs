@@ -588,6 +588,14 @@ pub struct LayeredNozzleGroupResult {
     nozzle_list: Vec<NozzleInfo>,
 }
 
+impl Default for LayeredNozzleGroupResult {
+    // MultiNozzleUtils.hpp:117  LayeredNozzleGroupResult(bool support_dynamic_map = false), default argument
+    // (`LayeredNozzleGroupResult()` of ToolOrdering.cpp).
+    fn default() -> Self {
+        LayeredNozzleGroupResult::with_support(false)
+    }
+}
+
 impl LayeredNozzleGroupResult {
     // MultiNozzleUtils.hpp:117  LayeredNozzleGroupResult(bool support_dynamic_map = false)
     fn with_support(support_dynamic_map: bool) -> Self {

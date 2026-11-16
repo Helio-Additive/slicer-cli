@@ -1210,18 +1210,18 @@ pub fn nozzle_change_width_for_diameter(nozzle_diameter: f32) -> f32 {
 pub type WipeTowerPrintConfig = crate::print_config::config_def::DynamicPrintConfig;
 
 /// `config.<key>.value` of an enum option, as its integer.
-fn cfg_enum(config: &WipeTowerPrintConfig, key: &str) -> i32 {
+pub(crate) fn cfg_enum(config: &WipeTowerPrintConfig, key: &str) -> i32 {
     use crate::config::ConfigOptionResolver;
     config.option(key).and_then(|o| o.get_int().ok()).unwrap_or(0)
 }
 
 /// `config.<key>.value` of a float, percent or float-or-percent option.
-fn cfg_float(config: &WipeTowerPrintConfig, key: &str) -> f64 {
+pub(crate) fn cfg_float(config: &WipeTowerPrintConfig, key: &str) -> f64 {
     *config.opt_float(key)
 }
 
 /// `config.<key>.values` of a float vector option (nullable or not).
-fn cfg_floats(config: &WipeTowerPrintConfig, key: &str) -> Vec<f64> {
+pub(crate) fn cfg_floats(config: &WipeTowerPrintConfig, key: &str) -> Vec<f64> {
     use crate::config::ConfigOptionResolver;
     let opt = config.option(key).unwrap_or_else(|| panic!("option {key}"));
     if let Some(o) = opt.as_any().downcast_ref::<crate::config::ConfigOptionFloats>() {
@@ -1240,7 +1240,7 @@ fn cfg_floats(config: &WipeTowerPrintConfig, key: &str) -> Vec<f64> {
 }
 
 /// `config.<key>.values` of an int vector option (nullable or not).
-fn cfg_ints(config: &WipeTowerPrintConfig, key: &str) -> Vec<i32> {
+pub(crate) fn cfg_ints(config: &WipeTowerPrintConfig, key: &str) -> Vec<i32> {
     use crate::config::ConfigOptionResolver;
     let opt = config.option(key).unwrap_or_else(|| panic!("option {key}"));
     if let Some(o) = opt.as_any().downcast_ref::<crate::config::ConfigOptionInts>() {
@@ -1259,7 +1259,7 @@ fn cfg_ints(config: &WipeTowerPrintConfig, key: &str) -> Vec<i32> {
 }
 
 /// `config.<key>.values` of a bool vector option (as the C++ unsigned chars).
-fn cfg_bools(config: &WipeTowerPrintConfig, key: &str) -> Vec<bool> {
+pub(crate) fn cfg_bools(config: &WipeTowerPrintConfig, key: &str) -> Vec<bool> {
     use crate::config::ConfigOptionResolver;
     let opt = config.option(key).unwrap_or_else(|| panic!("option {key}"));
     if let Some(o) = opt.as_any().downcast_ref::<crate::config::ConfigOptionBools>() {
@@ -1272,7 +1272,7 @@ fn cfg_bools(config: &WipeTowerPrintConfig, key: &str) -> Vec<bool> {
 }
 
 /// `config.<key>.values` of a string vector option.
-fn cfg_strings(config: &WipeTowerPrintConfig, key: &str) -> Vec<String> {
+pub(crate) fn cfg_strings(config: &WipeTowerPrintConfig, key: &str) -> Vec<String> {
     use crate::config::ConfigOptionResolver;
     let opt = config.option(key).unwrap_or_else(|| panic!("option {key}"));
     opt.as_any()
@@ -1283,7 +1283,7 @@ fn cfg_strings(config: &WipeTowerPrintConfig, key: &str) -> Vec<String> {
 }
 
 /// Config.hpp:681 `get_at(i)`: `values[i]`, the first value past the end.
-fn get_at<T: Clone>(values: &[T], i: usize) -> T {
+pub(crate) fn get_at<T: Clone>(values: &[T], i: usize) -> T {
     if i < values.len() { values[i].clone() } else { values[0].clone() }
 }
 
@@ -8085,6 +8085,25 @@ fn cfg_get_extruder_index(config: &WipeTowerPrintConfig, filament_id: u32) -> i3
     0
 }
 
+/// PrintConfig.cpp:485-492 `get_filament_config_idx(config, filament_id)`: the
+/// index of the filament's own variant in the per-filament option lists.
+pub(crate) fn cfg_get_filament_config_idx(config: &WipeTowerPrintConfig, filament_id: u32) -> usize {
+    use crate::config::ConfigEnum;
+    use crate::print_config::enums::{ExtruderType, NozzleVolumeType};
+    let volume_type = <NozzleVolumeType as ConfigEnum>::from_int(get_at(&cfg_ints(config, "filament_volume_map"), filament_id as usize));
+    let extruder_type =
+        <ExtruderType as ConfigEnum>::from_int(get_at(&cfg_ints(config, "extruder_type"), cfg_get_extruder_index(config, filament_id) as usize));
+    let filament_variant_list = cfg_strings(config, "filament_extruder_variant");
+    let filament_self_idx = cfg_ints(config, "filament_self_index");
+    crate::print_config::config_def::get_config_index_base(
+        volume_type,
+        extruder_type,
+        filament_id as i32 + 1,
+        &filament_variant_list,
+        &filament_self_idx,
+    ) as usize
+}
+
 /// PrintConfig.cpp:494-502 `get_process_config_idx(config, filament_id)`.
 fn cfg_get_process_config_idx(config: &WipeTowerPrintConfig, filament_id: u32) -> usize {
     use crate::config::ConfigEnum;
@@ -12092,7 +12111,13 @@ impl WipeTower {
             }
         }
 
-        self.construct_tcr(&writer, false, old_tool, true, false, 0.0, false, -1.0)
+        let mut tcr = self.construct_tcr(&writer, false, old_tool, true, false, 0.0, false, -1.0);
+        // Not a C++ field: tells print.rs's exporter that this is the wall drawn
+        // on its own, which `generate_new` puts first in the layer under
+        // timelapse (WipeTower.cpp:8072-8073) and GCode prints before anything
+        // else of the layer (GCode.cpp:1508-1512).
+        tcr.is_out_wall_only = true;
+        tcr
     }
 
     /// WipeTower.cpp:8282-8312 `generate_rib_polygon(wt_box)`.

@@ -8,22 +8,11 @@
 //!
 //! coord_t -> i64, coordf_t -> f64 (none are used here).
 //!
-//! ## Blocked symbols (see NOTES at bottom of this file)
-//!
-//! The following `PrintBase.cpp` members depend on libslic3r subsystems that are
-//! not yet ported as faithful Rust equivalents (they exist only as stubs in this
-//! crate). They are intentionally NOT faked here:
-//!   * `PrintBase::update_object_placeholders` - needs `DynamicConfig` +
-//!     `ConfigOptionInt/String/Strings`, `ModelInstance::is_printable()` /
-//!     `get_scaling_factor(axis)`, and `boost::filesystem` path handling.
-//!   * `PrintBase::output_filename(format, default_ext, ...)` - needs
-//!     `DynamicConfig`, `PlaceholderParser::process` (a 1500-line Boost.Spirit
-//!     parser, stubbed in `placeholder_parser.rs`) and `boost::filesystem`.
-//!   * `PrintBase::output_filepath` - needs `boost::filesystem` and
-//!     `Model::propose_export_file_name_and_path`.
-//! Everything tractable (the state machine, warnings, cancellation, status value
-//! types and the `PrintObjectBase`/`PrintBase` delegation helpers) is ported
-//! faithfully below.
+//! The classes themselves (`PrintObjectBase`, `PrintBase`, `PrintBaseWithState`,
+//! `PrintObjectBaseWithState`) are below the state machine, with every member of
+//! the C++ that is not pure virtual; `update_object_placeholders`,
+//! `output_filename(format, ...)` and `output_filepath` read the model through
+//! `PrintBaseModel` and process the template with the crate's PlaceholderParser.
 
 use crate::object_id::ObjectID;
 use std::sync::Mutex;
@@ -141,6 +130,9 @@ pub enum SlicingNotificationType {
     SlicingNeedSupportOn,
     SlicingEmptyGcodeLayers,
     SlicingGcodeOverlap,
+    // PrintBase.hpp:67-68
+    SlicingSupportIncomplete,
+    SlicingSupportIncompleteOnBuildPlate,
 }
 
 // PrintBase.hpp:69 : typedef size_t TimeStamp;
@@ -250,6 +242,11 @@ impl From<&StateWithWarnings> for StateWithTimeStamp {
 // monotonically-increasing `++ g_last_timestamp` semantics. Modelled as an atomic
 // purely to satisfy Rust's aliasing rules; the increment is still a simple +1.
 static G_LAST_TIMESTAMP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The value of `PrintStateBase::g_last_timestamp` (PrintBase.hpp:107), the last timestamp handed out.
+pub fn g_last_timestamp() -> TimeStamp {
+    G_LAST_TIMESTAMP.load(std::sync::atomic::Ordering::SeqCst)
+}
 
 // Pre-increment helper reproducing `++ g_last_timestamp`.
 #[inline]
@@ -1023,30 +1020,798 @@ pub trait PrintBaseTrait {
 }
 
 // ---------------------------------------------------------------------------
-// NOTES on blocked PrintBase.cpp members (NOT ported; would require fakes):
+// PrintBase.hpp:335-689 / PrintBase.cpp:25-153: the classes themselves.
 //
-//  * update_object_placeholders (PrintBase.cpp:26-62): iterates m_model.objects,
-//    tests ModelInstance::is_printable() and reads get_scaling_factor(X/Y/Z), then
-//    writes ConfigOptionInt / ConfigOptionStrings / ConfigOptionString entries into
-//    a DynamicConfig via set_key_value. The Rust crate's Model uses a simplified
-//    Instance (bool printable, scale[3]) and has no DynamicConfig / ConfigOptionXxx
-//    key-value layer. Faithful porting is blocked on those config primitives.
-//
-//  * output_filename(format, default_ext, filename_base, config_override)
-//    (PrintBase.cpp:66-88): builds a DynamicConfig, sets "version"=SLIC3R_VERSION,
-//    calls PlaceholderParser::update_timestamp + this->update_object_placeholders,
-//    then PlaceholderParser::process(format, 0, &cfg) and boost::filesystem path /
-//    extension handling. Blocked on DynamicConfig, the (stubbed) PlaceholderParser
-//    expression engine, and a boost::filesystem equivalent.
-//
-//  * output_filepath (PrintBase.cpp:90-104): boost::filesystem path joins,
-//    is_directory(), make_preferred(), and Model::propose_export_file_name_and_path
-//    (not present in the Rust Model). Blocked on those.
-//
-// When DynamicConfig / ConfigOptionXxx and PlaceholderParser::process gain faithful
-// Rust ports, these three functions should be added here, mirroring PrintBase.cpp
-// lines 26-104 exactly.
+// `PrintObjectBase`, `PrintBase`, `PrintBaseWithState<Step, COUNT>` and
+// `PrintObjectBaseWithState<P, Step, COUNT>` with the members of the C++ that
+// are not pure virtual. What `update_object_placeholders` / `output_filepath`
+// read of `m_model` is `PrintBaseModel` (the Model of this crate has neither
+// `ModelObject::input_file` nor `ModelInstance::print_volume_state`), the pure
+// virtual `output_filename(filename_base)` of a derived class is passed in.
 // ---------------------------------------------------------------------------
+
+use crate::config::{ConfigOptionInt, ConfigOptionString, ConfigOptionStrings, DynamicConfig};
+use crate::print_config::config_def::DynamicPrintConfig;
+
+/// What PrintBase reads of one `ModelInstance` of `m_model`.
+#[derive(Debug, Clone, Default)]
+pub struct PrintBaseModelInstance {
+    /// `model_instance->is_printable()`
+    pub is_printable: bool,
+    /// `model_instance->get_scaling_factor(X / Y / Z)`
+    pub scaling_factor: [f64; 3],
+}
+
+/// What PrintBase reads of one `ModelObject` of `m_model`.
+#[derive(Debug, Clone, Default)]
+pub struct PrintBaseModelObject {
+    /// `model_object->name`
+    pub name: String,
+    /// `model_object->input_file`
+    pub input_file: String,
+    /// `model_object->instances`
+    pub instances: Vec<PrintBaseModelInstance>,
+}
+
+/// What PrintBase reads of `m_model` (PrintBase.hpp:559).
+#[derive(Debug, Clone, Default)]
+pub struct PrintBaseModel {
+    /// `m_model.objects`
+    pub objects: Vec<PrintBaseModelObject>,
+    /// `m_model.propose_export_file_name_and_path()`
+    pub proposed_export_file_name_and_path: String,
+}
+
+/// `boost::lexical_cast<std::string>(double)`: `%.17g` (`lcast_get_precision<double>()`).
+fn lexical_cast_double(v: f64) -> String {
+    crate::locales_utils::general_format(v, 17)
+}
+
+/// `boost::filesystem::path(p).filename()` (filesystem v3, POSIX).
+fn fs_filename(p: &str) -> String {
+    if p.is_empty() {
+        return String::new();
+    }
+    if p == "/" {
+        return "/".to_string();
+    }
+    if p.ends_with('/') {
+        // a trailing separator names the directory itself: "."
+        return ".".to_string();
+    }
+    match p.rfind('/') {
+        Some(i) => p[i + 1..].to_string(),
+        None => p.to_string(),
+    }
+}
+
+/// `boost::filesystem::path(p).extension()` (filesystem v3, POSIX).
+fn fs_extension(p: &str) -> String {
+    let name = fs_filename(p);
+    if name == "." || name == ".." {
+        return String::new();
+    }
+    match name.rfind('.') {
+        Some(i) => name[i..].to_string(),
+        None => String::new(),
+    }
+}
+
+/// `boost::filesystem::change_extension(p, new_extension)` (filesystem v3, POSIX).
+fn fs_change_extension(p: &str, new_extension: &str) -> String {
+    let mut out = p.to_string();
+    let ext_len = fs_extension(p).len();
+    out.truncate(out.len() - ext_len);
+    if !new_extension.is_empty() {
+        if !new_extension.starts_with('.') {
+            out.push('.');
+        }
+        out.push_str(new_extension);
+    }
+    out
+}
+
+/// `boost::filesystem::path(p).parent_path()` (filesystem v3, POSIX).
+fn fs_parent_path(p: &str) -> String {
+    let b = p.as_bytes();
+    if b.is_empty() {
+        return String::new();
+    }
+    // filename_pos
+    let mut end_pos = if p == "/" {
+        0
+    } else if p.ends_with('/') {
+        b.len() - 1
+    } else {
+        p.rfind('/').map_or(0, |i| i + 1)
+    };
+    let filename_was_separator = end_pos < b.len() && b[end_pos] == b'/';
+    let root_dir_pos: Option<usize> = if b[0] == b'/' { Some(0) } else { None };
+    while end_pos > 0 && Some(end_pos - 1) != root_dir_pos && b[end_pos - 1] == b'/' {
+        end_pos -= 1;
+    }
+    if end_pos == 1 && root_dir_pos == Some(0) && filename_was_separator {
+        return String::new();
+    }
+    p[..end_pos].to_string()
+}
+
+/// `lhs / rhs` of boost::filesystem::path (filesystem v3, POSIX).
+fn fs_join(lhs: &str, rhs: &str) -> String {
+    if rhs.is_empty() {
+        return lhs.to_string();
+    }
+    let mut out = lhs.to_string();
+    if !rhs.starts_with('/') && !out.is_empty() && !out.ends_with('/') {
+        out.push('/');
+    }
+    out.push_str(rhs);
+    out
+}
+
+/// PrintBase.hpp:337-357 `class PrintObjectBase : public ObjectBase`
+pub struct PrintObjectBase {
+    pub object_base: crate::object_id::ObjectBase,
+    /// PrintBase.hpp:356 `ModelObject *m_model_object`: the index of the object in the print's
+    /// `PrintBaseModel::objects`.
+    pub m_model_object: Option<usize>,
+}
+
+impl PrintObjectBase {
+    /// PrintBase.hpp:344 `PrintObjectBase(ModelObject *model_object)`
+    pub fn new(model_object: Option<usize>) -> Self {
+        PrintObjectBase { object_base: crate::object_id::ObjectBase::new(), m_model_object: model_object }
+    }
+
+    /// `ObjectBase::id()`
+    pub fn id(&self) -> ObjectID {
+        self.object_base.id()
+    }
+
+    /// PrintBase.hpp:340 `const ModelObject* model_object() const`, in the print's model.
+    pub fn model_object<'m>(&self, model: &'m PrintBaseModel) -> Option<&'m PrintBaseModelObject> {
+        self.m_model_object.map(|i| &model.objects[i])
+    }
+
+    /// PrintBase.hpp:341 `ModelObject* model_object()`
+    pub fn model_object_mut<'m>(&self, model: &'m mut PrintBaseModel) -> Option<&'m mut PrintBaseModelObject> {
+        self.m_model_object.map(move |i| &mut model.objects[i])
+    }
+
+    /// PrintBase.cpp:139-142 `std::mutex& PrintObjectBase::state_mutex(PrintBase *print)`
+    pub fn state_mutex(print: &PrintBase) -> &Mutex<()> {
+        print.state_mutex()
+    }
+
+    /// PrintBase.cpp:144-147 `std::function<void()> PrintObjectBase::cancel_callback(PrintBase *print)`
+    pub fn cancel_callback(print: &PrintBase) -> CancelCallbackType {
+        print.cancel_callback()
+    }
+
+    /// PrintBase.cpp:149-153 `void PrintObjectBase::status_update_warnings(PrintBase *print, ...)`
+    pub fn status_update_warnings(
+        &self,
+        print: &PrintBase,
+        step: i32,
+        warning_level: WarningLevel,
+        message: &str,
+        message_id: SlicingNotificationType,
+    ) {
+        print.status_update_warnings(step, warning_level, message, Some(self.id()), message_id);
+    }
+}
+
+/// PrintBase.hpp:384-585 `class PrintBase : public ObjectBase`, its data members and the members
+/// that are not pure virtual.
+pub struct PrintBase {
+    pub object_base: crate::object_id::ObjectBase,
+    /// PrintBase.hpp:559
+    pub m_model: PrintBaseModel,
+    /// PrintBase.hpp:560
+    pub m_full_print_config: DynamicPrintConfig,
+    /// PrintBase.hpp:561: original full print config without extruder applied
+    pub m_ori_full_print_config: DynamicPrintConfig,
+    /// PrintBase.hpp:562 `PlaceholderParser m_placeholder_parser`: its own configuration; its
+    /// external configuration is `m_full_print_config` (PrintBase.hpp:387), given in
+    /// `placeholder_parser()`.
+    pub m_placeholder_parser: crate::placeholder_parser::PlaceholderParser<'static>,
+    /// PrintBase.hpp:565
+    pub m_plate_index: i32,
+    /// PrintBase.hpp:566
+    pub m_no_check: bool,
+    /// PrintBase.hpp:569: current plate name (utf8)
+    pub m_plate_name: String,
+    /// PrintBase.hpp:571
+    pub m_status_callback: Option<StatusCallbackType>,
+    /// PrintBase.hpp:574 `std::atomic<CancelStatus> m_cancel_status`
+    m_cancel_status: std::sync::Arc<std::sync::atomic::AtomicI32>,
+    /// PrintBase.hpp:577 `m_cancel_callback = [](){}`
+    m_cancel_callback: CancelCallbackType,
+    /// PrintBase.hpp:582
+    m_state_mutex: Mutex<()>,
+}
+
+impl PrintBase {
+    /// PrintBase.hpp:387 `PrintBase() : m_placeholder_parser(&m_full_print_config) { this->restart(); }`
+    pub fn new() -> Self {
+        let pb = PrintBase {
+            object_base: crate::object_id::ObjectBase::new(),
+            m_model: PrintBaseModel::default(),
+            m_full_print_config: DynamicPrintConfig::new(),
+            m_ori_full_print_config: DynamicPrintConfig::new(),
+            m_placeholder_parser: crate::placeholder_parser::PlaceholderParser::new(None),
+            m_plate_index: 0,
+            m_no_check: false,
+            m_plate_name: String::new(),
+            m_status_callback: None,
+            m_cancel_status: std::sync::Arc::new(std::sync::atomic::AtomicI32::new(CancelStatus::NotCanceled as i32)),
+            m_cancel_callback: std::sync::Arc::new(|| {}),
+            m_state_mutex: Mutex::new(()),
+        };
+        pb.restart();
+        pb
+    }
+
+    /// `ObjectBase::id()`
+    pub fn id(&self) -> ObjectID {
+        self.object_base.id()
+    }
+
+    /// PrintBase.hpp:403 `virtual StringObjectException validate(...) const { return {}; }`
+    pub fn validate(&self, _warnings: Option<&mut Vec<StringObjectException>>) -> StringObjectException {
+        StringObjectException::default()
+    }
+
+    /// PrintBase.hpp:415
+    pub fn model(&self) -> &PrintBaseModel {
+        &self.m_model
+    }
+
+    /// PrintBase.hpp:429 `virtual void set_task(const TaskParams &params) {}`
+    pub fn set_task(&mut self, _params: &TaskParams) {}
+
+    /// PrintBase.hpp:432 `virtual int export_cached_data(...) { return 0; }`
+    pub fn export_cached_data(&mut self, _dir_path: &str, _obj_cnt_exported: &mut i32, _with_space: bool) -> i32 {
+        0
+    }
+
+    /// PrintBase.hpp:433 `virtual int load_cached_data(const std::string& directory) { return 0; }`
+    pub fn load_cached_data(&mut self, _directory: &str) -> i32 {
+        0
+    }
+
+    /// PrintBase.hpp:436 `virtual void finalize() {}`
+    pub fn finalize(&mut self) {}
+
+    /// PrintBase.hpp:480: default status console print out in the form of percent => message.
+    pub fn set_status_default(&mut self) {
+        self.m_status_callback = None;
+    }
+
+    /// PrintBase.hpp:482: no status output or callback whatsoever, useful mostly for automatic tests.
+    pub fn set_status_silent(&mut self) {
+        self.m_status_callback = Some(std::sync::Arc::new(|_: &SlicingStatus| {}));
+    }
+
+    /// PrintBase.hpp:484: register a custom status callback.
+    pub fn set_status_callback(&mut self, cb: StatusCallbackType) {
+        self.m_status_callback = Some(cb);
+    }
+
+    /// PrintBase.cpp:107-113 `PrintBase::set_status`
+    pub fn set_status(&self, percent: i32, message: &str, flags: u32, warning_step: i32) {
+        set_status(&self.m_status_callback, percent, message, flags, warning_step)
+    }
+
+    /// PrintBase.hpp:492
+    pub fn set_cancel_callback(&mut self, cancel_callback: CancelCallbackType) {
+        self.m_cancel_callback = cancel_callback;
+    }
+
+    /// PrintBase.hpp:502
+    pub fn cancel_status(&self) -> CancelStatus {
+        match self.m_cancel_status.load(std::sync::atomic::Ordering::Acquire) {
+            0 => CancelStatus::NotCanceled,
+            1 => CancelStatus::CanceledByUser,
+            _ => CancelStatus::CanceledInternal,
+        }
+    }
+
+    /// PrintBase.hpp:504: has the calculation been canceled?
+    pub fn canceled(&self) -> bool {
+        self.m_cancel_status.load(std::sync::atomic::Ordering::Acquire) != CancelStatus::NotCanceled as i32
+    }
+
+    /// PrintBase.hpp:506: cancel the running computation. Stop execution of all the background threads.
+    pub fn cancel(&self) {
+        self.m_cancel_status.store(CancelStatus::CanceledByUser as i32, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// PrintBase.hpp:507
+    pub fn cancel_internal(&self) {
+        self.m_cancel_status.store(CancelStatus::CanceledInternal as i32, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// PrintBase.hpp:509
+    pub fn restart(&self) {
+        self.m_cancel_status.store(CancelStatus::NotCanceled as i32, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// PrintBase.hpp:513 `const PlaceholderParser& placeholder_parser() const`: the parser with its
+    /// configuration and `m_full_print_config` as the external one.
+    pub fn placeholder_parser(&self) -> crate::placeholder_parser::PlaceholderParser<'_> {
+        let mut pp = crate::placeholder_parser::PlaceholderParser::new(Some(&self.m_full_print_config.base));
+        *pp.config_writable() = self.m_placeholder_parser.config().clone();
+        pp
+    }
+
+    /// PrintBase.hpp:514
+    pub fn full_print_config(&self) -> &DynamicPrintConfig {
+        &self.m_full_print_config
+    }
+
+    /// PrintBase.hpp:516
+    pub fn ori_full_print_config(&self) -> &DynamicPrintConfig {
+        &self.m_ori_full_print_config
+    }
+
+    /// PrintBase.cpp:90-104 `PrintBase::output_filepath`. `output_filename` is the pure virtual
+    /// `output_filename(filename_base)` of the derived class; what it throws is the `Err`.
+    pub fn output_filepath(
+        &self,
+        path: &str,
+        filename_base: &str,
+        output_filename: &dyn Fn(&str) -> Result<String, crate::exception::PlaceholderParserError>,
+    ) -> Result<String, crate::exception::PlaceholderParserError> {
+        // if we were supplied no path, generate an automatic one based on our first object's input file
+        if path.is_empty() {
+            // get the first input file name
+            return Ok(fs_join(&fs_parent_path(&self.m_model.proposed_export_file_name_and_path), &output_filename(filename_base)?));
+        }
+
+        // if we were supplied a directory, use it and append our automatically generated filename
+        let is_directory = std::fs::metadata(path).map(|m| m.is_dir()).unwrap_or(false);
+        if is_directory {
+            return Ok(fs_join(path, &output_filename(filename_base)?));
+        }
+
+        // if we were supplied a file which is not a directory, use it
+        Ok(path.to_string())
+    }
+
+    /// PrintBase.hpp:524
+    pub fn get_plate_index(&self) -> i32 {
+        self.m_plate_index
+    }
+
+    /// PrintBase.hpp:525
+    pub fn set_plate_index(&mut self, index: i32) {
+        self.m_plate_index = index;
+    }
+
+    /// PrintBase.hpp:526
+    pub fn get_no_check_flag(&self) -> bool {
+        self.m_no_check
+    }
+
+    /// PrintBase.hpp:527
+    pub fn set_no_check_flag(&mut self, no_check: bool) {
+        self.m_no_check = no_check;
+    }
+
+    /// PrintBase.hpp:529
+    pub fn get_plate_name(&self) -> String {
+        self.m_plate_name.clone()
+    }
+
+    /// PrintBase.hpp:530
+    pub fn set_plate_name(&mut self, name: &str) {
+        self.m_plate_name = name.to_string();
+    }
+
+    /// PrintBase.hpp:536
+    pub fn state_mutex(&self) -> &Mutex<()> {
+        &self.m_state_mutex
+    }
+
+    /// PrintBase.hpp:537
+    pub fn cancel_callback(&self) -> CancelCallbackType {
+        self.m_cancel_callback.clone()
+    }
+
+    /// PrintBase.hpp:538
+    pub fn call_cancel_callback(&self) {
+        (self.m_cancel_callback)();
+    }
+
+    /// PrintBase.cpp:115-124 / PrintBase.hpp:542-543 `PrintBase::status_update_warnings`
+    pub fn status_update_warnings(
+        &self,
+        step: i32,
+        warning_level: WarningLevel,
+        message: &str,
+        print_object: Option<ObjectID>,
+        message_id: SlicingNotificationType,
+    ) {
+        status_update_warnings(&self.m_status_callback, self.id(), step, warning_level, message, print_object, message_id)
+    }
+
+    /// PrintBase.hpp:550: if the background processing stop was requested, throw CanceledException.
+    pub fn throw_if_canceled(&self) -> Result<(), CanceledException> {
+        if self.m_cancel_status.load(std::sync::atomic::Ordering::Acquire) != 0 {
+            return Err(CanceledException);
+        }
+        Ok(())
+    }
+
+    /// PrintBase.hpp:552: wrapper around this->throw_if_canceled().
+    pub fn make_try_cancel(&self) -> PrintTryCancel {
+        let status = self.m_cancel_status.clone();
+        PrintTryCancel::new(std::sync::Arc::new(move || {
+            if status.load(std::sync::atomic::Ordering::Acquire) != 0 {
+                return Err(CanceledException);
+            }
+            Ok(())
+        }))
+    }
+
+    /// PrintBase.cpp:64-88 `PrintBase::output_filename(format, default_ext, filename_base, config_override)`:
+    /// an output file name from the format template, the default extension and the template
+    /// parameters. A thrown `PlaceholderParserError` is the `Err`.
+    pub fn output_filename(
+        &self,
+        format: &str,
+        default_ext: &str,
+        filename_base: &str,
+        config_override: Option<&DynamicConfig>,
+    ) -> Result<String, crate::exception::PlaceholderParserError> {
+        let mut cfg = DynamicConfig::new();
+        if let Some(c) = config_override {
+            cfg = c.clone();
+        }
+        cfg.set_key_value("version", Box::new(ConfigOptionString::with_value(crate::semver::SLIC3R_VERSION)));
+        crate::placeholder_parser::PlaceholderParser::update_timestamp_of(&mut cfg);
+        self.update_object_placeholders(&mut cfg, default_ext);
+        if !filename_base.is_empty() {
+            cfg.set_key_value("input_filename", Box::new(ConfigOptionString::with_value(format!("{filename_base}{default_ext}"))));
+            cfg.set_key_value("input_filename_base", Box::new(ConfigOptionString::with_value(filename_base)));
+        }
+        let filename = if format.is_empty() {
+            format!("{}{}", cfg.opt_string("input_filename_base"), default_ext)
+        } else {
+            match self.placeholder_parser().process(format, 0, Some(&cfg), None) {
+                Ok(s) => s,
+                Err(err) => {
+                    return Err(crate::exception::PlaceholderParserError::new(
+                        crate::i18n::translate("Failed processing of the filename_format template.") + "\n" + err.what(),
+                    ))
+                }
+            }
+        };
+        let mut filename = filename;
+        if fs_extension(&filename).is_empty() {
+            filename = fs_change_extension(&filename, default_ext);
+        }
+        Ok(filename)
+    }
+
+    /// PrintBase.cpp:25-62 `PrintBase::update_object_placeholders`: "scale", "input_filename",
+    /// "input_filename_base" placeholders from the current printable ModelObjects.
+    pub fn update_object_placeholders(&self, config: &mut DynamicConfig, default_ext: &str) {
+        // get the first input file name
+        let mut input_file = String::new();
+        let mut v_scale: Vec<String> = Vec::new();
+        let mut num_objects = 0;
+        let mut num_instances = 0;
+        for model_object in &self.m_model.objects {
+            let mut printable: Option<&PrintBaseModelInstance> = None;
+            for model_instance in &model_object.instances {
+                if model_instance.is_printable {
+                    printable = Some(model_instance);
+                    num_instances += 1;
+                }
+            }
+            if let Some(printable) = printable {
+                num_objects += 1;
+                // CHECK_ME -> Is the following correct ?
+                v_scale.push(
+                    "x:".to_string()
+                        + &lexical_cast_double(printable.scaling_factor[0] * 100.0)
+                        + "% y:"
+                        + &lexical_cast_double(printable.scaling_factor[1] * 100.0)
+                        + "% z:"
+                        + &lexical_cast_double(printable.scaling_factor[2] * 100.0)
+                        + "%",
+                );
+                if input_file.is_empty() {
+                    input_file = if model_object.name.is_empty() { model_object.input_file.clone() } else { model_object.name.clone() };
+                }
+            }
+        }
+
+        config.set_key_value("num_objects", Box::new(ConfigOptionInt::with_value(num_objects)));
+        config.set_key_value("num_instances", Box::new(ConfigOptionInt::with_value(num_instances)));
+
+        config.set_key_value("scale", Box::new(ConfigOptionStrings::from_values(v_scale)));
+        if !input_file.is_empty() {
+            // get basename with and without suffix
+            let input_filename = fs_filename(&input_file);
+            let input_filename_base = match input_filename.rfind('.') {
+                Some(i) => input_filename[..i].to_string(),
+                None => input_filename.clone(),
+            };
+            config.set_key_value("input_filename", Box::new(ConfigOptionString::with_value(format!("{input_filename_base}{default_ext}"))));
+            config.set_key_value("input_filename_base", Box::new(ConfigOptionString::with_value(input_filename_base)));
+        }
+    }
+}
+
+impl Default for PrintBase {
+    fn default() -> Self {
+        PrintBase::new()
+    }
+}
+
+impl PrintBaseTrait for PrintBase {
+    fn id(&self) -> ObjectID {
+        self.object_base.id()
+    }
+    fn state_mutex(&self) -> &Mutex<()> {
+        &self.m_state_mutex
+    }
+    fn status_callback(&self) -> &Option<StatusCallbackType> {
+        &self.m_status_callback
+    }
+}
+
+/// PrintBase.hpp:587-629 `template<typename PrintStepEnum, const size_t COUNT> class PrintBaseWithState : public PrintBase`
+pub struct PrintBaseWithState<S: StepType, const COUNT: usize> {
+    pub base: PrintBase,
+    /// PrintBase.hpp:628
+    m_state: PrintState<S, COUNT>,
+}
+
+impl<S: StepType, const COUNT: usize> PrintBaseWithState<S, COUNT> {
+    pub fn new() -> Self {
+        PrintBaseWithState { base: PrintBase::new(), m_state: PrintState::new() }
+    }
+
+    /// PrintBase.hpp:591
+    pub fn is_step_done(&self, step: S) -> bool {
+        self.m_state.is_done(step, self.base.state_mutex())
+    }
+
+    /// PrintBase.hpp:592
+    pub fn step_state_with_timestamp(&self, step: S) -> StateWithTimeStamp {
+        self.m_state.state_with_timestamp(step, self.base.state_mutex())
+    }
+
+    /// PrintBase.hpp:593
+    pub fn step_state_with_warnings(&self, step: S) -> StateWithWarnings {
+        self.m_state.state_with_warnings(step, self.base.state_mutex())
+    }
+
+    /// PrintBase.hpp:596
+    pub fn set_started(&mut self, step: S) -> Result<bool, CanceledException> {
+        let base = &self.base;
+        self.m_state.set_started(step, &base.m_state_mutex, || base.throw_if_canceled())
+    }
+
+    /// PrintBase.hpp:597-602
+    pub fn set_done(&mut self, step: S) -> Result<TimeStamp, CanceledException> {
+        let base = &self.base;
+        let status = self.m_state.set_done(step, &base.m_state_mutex, || base.throw_if_canceled())?;
+        if status.1 {
+            self.base.status_update_warnings(
+                step.index() as i32,
+                WarningLevel::NonCritical,
+                "",
+                None,
+                SlicingNotificationType::SlicingDefaultNotification,
+            );
+        }
+        Ok(status.0)
+    }
+
+    /// PrintBase.hpp:603-604
+    pub fn invalidate_step(&mut self, step: S) -> bool {
+        let cancel = self.base.cancel_callback();
+        self.m_state.invalidate(step, || cancel())
+    }
+
+    /// PrintBase.hpp:605-609: both overloads (an iterator range, an initializer list).
+    pub fn invalidate_steps<I: IntoIterator<Item = S> + Clone>(&mut self, steps: I) -> bool {
+        let cancel = self.base.cancel_callback();
+        self.m_state.invalidate_multiple(steps, || cancel())
+    }
+
+    /// PrintBase.hpp:610-611
+    pub fn invalidate_all_steps(&mut self) -> bool {
+        let cancel = self.base.cancel_callback();
+        self.m_state.invalidate_all(|| cancel())
+    }
+
+    /// PrintBase.hpp:613
+    pub fn is_step_started_unguarded(&self, step: S) -> bool {
+        self.m_state.is_started_unguarded(step)
+    }
+
+    /// PrintBase.hpp:614
+    pub fn is_step_done_unguarded(&self, step: S) -> bool {
+        self.m_state.is_done_unguarded(step)
+    }
+
+    /// PrintBase.hpp:616-625: add a slicing warning to the active Print step and send a status notification.
+    pub fn active_step_add_warning(
+        &mut self,
+        warning_level: WarningLevel,
+        message: &str,
+        message_id: SlicingNotificationType,
+    ) {
+        let active_step = self.m_state.active_step_add_warning(warning_level, message, message_id as i32, &self.base.m_state_mutex);
+        if active_step.1 {
+            // Update UI.
+            self.base.status_update_warnings(active_step.0.index() as i32, warning_level, message, None, message_id);
+        }
+    }
+}
+
+impl<S: StepType, const COUNT: usize> Default for PrintBaseWithState<S, COUNT> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The `PrintBase` of a `PrintType` (`Print`, `SLAPrint`, a `PrintBaseWithState`).
+pub trait AsPrintBase {
+    fn as_print_base(&self) -> &PrintBase;
+}
+
+impl AsPrintBase for PrintBase {
+    fn as_print_base(&self) -> &PrintBase {
+        self
+    }
+}
+
+impl<S: StepType, const COUNT: usize> AsPrintBase for PrintBaseWithState<S, COUNT> {
+    fn as_print_base(&self) -> &PrintBase {
+        &self.base
+    }
+}
+
+/// PrintBase.hpp:631-689 `template<typename PrintType, typename PrintObjectStepEnum, const size_t COUNT>
+/// class PrintObjectBaseWithState : public PrintObjectBase`.
+///
+/// `m_print` is the back pointer of the C++; the print owns its objects and outlives them.
+pub struct PrintObjectBaseWithState<P: AsPrintBase, S: StepType, const COUNT: usize> {
+    pub base: PrintObjectBase,
+    /// PrintBase.hpp:685 `PrintType *m_print`
+    pub m_print: *const P,
+    /// PrintBase.hpp:688
+    m_state: PrintState<S, COUNT>,
+}
+
+impl<P: AsPrintBase, S: StepType, const COUNT: usize> PrintObjectBaseWithState<P, S, COUNT> {
+    /// PrintBase.hpp:644 `PrintObjectBaseWithState(PrintType *print, ModelObject *model_object)`
+    pub fn new(print: *const P, model_object: Option<usize>) -> Self {
+        PrintObjectBaseWithState { base: PrintObjectBase::new(model_object), m_print: print, m_state: PrintState::new() }
+    }
+
+    /// PrintBase.hpp:635-636 `PrintType* print()`
+    pub fn print(&self) -> &P {
+        // SAFETY: the print outlives its objects (PrintBase.hpp:685).
+        unsafe { &*self.m_print }
+    }
+
+    fn print_base(&self) -> &PrintBase {
+        self.print().as_print_base()
+    }
+
+    /// PrintBase.hpp:639
+    pub fn is_step_done(&self, step: S) -> bool {
+        self.m_state.is_done(step, PrintObjectBase::state_mutex(self.print_base()))
+    }
+
+    /// PrintBase.hpp:640
+    pub fn step_state_with_timestamp(&self, step: S) -> StateWithTimeStamp {
+        self.m_state.state_with_timestamp(step, PrintObjectBase::state_mutex(self.print_base()))
+    }
+
+    /// PrintBase.hpp:641
+    pub fn step_state_with_warnings(&self, step: S) -> StateWithWarnings {
+        self.m_state.state_with_warnings(step, PrintObjectBase::state_mutex(self.print_base()))
+    }
+
+    /// PrintBase.hpp:646-647
+    pub fn set_started(&mut self, step: S) -> Result<bool, CanceledException> {
+        // SAFETY: as `print()`.
+        let print = unsafe { &*self.m_print }.as_print_base();
+        self.m_state.set_started(step, PrintObjectBase::state_mutex(print), || {
+            if print.canceled() {
+                return Err(CanceledException);
+            }
+            Ok(())
+        })
+    }
+
+    /// PrintBase.hpp:648-653
+    pub fn set_done(&mut self, step: S) -> Result<TimeStamp, CanceledException> {
+        // SAFETY: as `print()`.
+        let print = unsafe { &*self.m_print }.as_print_base();
+        let status = self.m_state.set_done(step, PrintObjectBase::state_mutex(print), || {
+            if print.canceled() {
+                return Err(CanceledException);
+            }
+            Ok(())
+        })?;
+        if status.1 {
+            self.base.status_update_warnings(
+                print,
+                step.index() as i32,
+                WarningLevel::NonCritical,
+                "",
+                SlicingNotificationType::SlicingDefaultNotification,
+            );
+        }
+        Ok(status.0)
+    }
+
+    /// PrintBase.hpp:655-656
+    pub fn invalidate_step(&mut self, step: S) -> bool {
+        let cancel = PrintObjectBase::cancel_callback(self.print_base());
+        self.m_state.invalidate(step, || cancel())
+    }
+
+    /// PrintBase.hpp:657-661: both overloads (an iterator range, an initializer list).
+    pub fn invalidate_steps<I: IntoIterator<Item = S> + Clone>(&mut self, steps: I) -> bool {
+        let cancel = PrintObjectBase::cancel_callback(self.print_base());
+        self.m_state.invalidate_multiple(steps, || cancel())
+    }
+
+    /// PrintBase.hpp:662-663
+    pub fn invalidate_all_steps(&mut self) -> bool {
+        let cancel = PrintObjectBase::cancel_callback(self.print_base());
+        self.m_state.invalidate_all(|| cancel())
+    }
+
+    /// PrintBase.hpp:664-665
+    pub fn invalidate_all_steps_without_cancel(&mut self) -> bool {
+        self.m_state.invalidate_all(|| {})
+    }
+
+    /// PrintBase.hpp:667
+    pub fn is_step_started_unguarded(&self, step: S) -> bool {
+        self.m_state.is_started_unguarded(step)
+    }
+
+    /// PrintBase.hpp:668
+    pub fn is_step_done_unguarded(&self, step: S) -> bool {
+        self.m_state.is_done_unguarded(step)
+    }
+
+    /// PrintBase.hpp:670-677: add a slicing warning to the active PrintObject step and send a status notification.
+    pub fn active_step_add_warning(
+        &mut self,
+        warning_level: WarningLevel,
+        message: &str,
+        message_id: SlicingNotificationType,
+    ) {
+        // SAFETY: as `print()`.
+        let print = unsafe { &*self.m_print }.as_print_base();
+        let active_step = self.m_state.active_step_add_warning(warning_level, message, message_id as i32, PrintObjectBase::state_mutex(print));
+        if active_step.1 {
+            self.base.status_update_warnings(print, active_step.0.index() as i32, warning_level, message, message_id);
+        }
+    }
+
+    /// PrintBase.hpp:682: if the background processing stop was requested, throw CanceledException.
+    pub fn throw_if_canceled(&self) -> Result<(), CanceledException> {
+        if self.print_base().canceled() {
+            return Err(CanceledException);
+        }
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {

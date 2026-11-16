@@ -468,3 +468,250 @@ fn stod(s: &str) -> Option<f64> {
     }
     None
 }
+
+// =============================================================================
+// FilamentMixer.hpp:16-55 / FilamentMixer.cpp:182-395, 562-581: the gradient curve of a mixed
+// slot and the expansion of mixed slots in unprintable sets (read by GCode/ToolOrdering.cpp).
+// =============================================================================
+
+/// FilamentMixer.hpp:19-24 `struct GradientAnchor`
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GradientAnchor {
+    pub x: f64,
+    pub y: f64,
+    pub m_in: f64,
+    pub m_out: f64,
+}
+
+impl Default for GradientAnchor {
+    fn default() -> Self {
+        GradientAnchor { x: 0.0, y: 0.0, m_in: f64::NAN, m_out: f64::NAN }
+    }
+}
+
+/// FilamentMixer.hpp:28-31 `struct GradientCurve`
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GradientCurve {
+    pub points: Vec<GradientAnchor>,
+}
+
+impl GradientCurve {
+    /// FilamentMixer.hpp:30
+    pub fn empty(&self) -> bool {
+        self.points.is_empty()
+    }
+}
+
+/// FilamentMixer.hpp:37
+pub const K_GRADIENT_MIN_RATIO: f64 = 0.1;
+/// FilamentMixer.hpp:38
+pub const K_GRADIENT_MAX_RATIO: f64 = 0.9;
+
+/// FilamentMixer.cpp:184-200 `parse_tangent_token`
+fn parse_tangent_token(tok: &str) -> f64 {
+    if tok.is_empty() {
+        return f64::NAN;
+    }
+    let lower: String = tok.bytes().map(|c| c.to_ascii_lowercase() as char).collect();
+    if lower == "nan" {
+        return f64::NAN;
+    }
+    match stod(tok) {
+        Some(v) => {
+            if !v.is_finite() {
+                return f64::NAN;
+            }
+            v
+        }
+        None => f64::NAN,
+    }
+}
+
+/// FilamentMixer.cpp:205-218 `split_commas`
+fn split_commas(seg: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    loop {
+        match seg[start..].find(',') {
+            None => {
+                out.push(seg[start..].to_string());
+                return out;
+            }
+            Some(off) => {
+                let comma = start + off;
+                out.push(seg[start..comma].to_string());
+                start = comma + 1;
+            }
+        }
+    }
+}
+
+/// FilamentMixer.cpp:225-260 `compute_pchip_default_tangents`
+pub fn compute_pchip_default_tangents(pts: &[GradientAnchor]) -> Vec<f64> {
+    let n = pts.len();
+    let mut m = vec![0.0f64; n];
+    if n < 2 {
+        return m;
+    }
+
+    let mut d = vec![0.0f64; n - 1];
+    for i in 0..n - 1 {
+        let h = (pts[i + 1].x - pts[i].x).max(1e-12);
+        d[i] = (pts[i + 1].y - pts[i].y) / h;
+    }
+
+    m[0] = d[0];
+    m[n - 1] = d[n - 2];
+    for i in 1..n - 1 {
+        m[i] = 0.5 * (d[i - 1] + d[i]);
+    }
+
+    for i in 0..n - 1 {
+        if d[i] == 0.0 {
+            m[i] = 0.0;
+            m[i + 1] = 0.0;
+            continue;
+        }
+        let a = m[i] / d[i];
+        let b = m[i + 1] / d[i];
+        // `a * a + b * b`: clang contracts it into fma(a, a, b * b) (-ffp-contract=on).
+        let s = a.mul_add(a, b * b);
+        if s > 9.0 {
+            let tau = 3.0 / s.sqrt();
+            m[i] = tau * a * d[i];
+            m[i + 1] = tau * b * d[i];
+        }
+    }
+    m
+}
+
+/// FilamentMixer.cpp:262-315 `parse_gradient_curve`
+pub fn parse_gradient_curve(s: &str) -> GradientCurve {
+    let mut curve = GradientCurve::default();
+    if s.is_empty() {
+        return curve;
+    }
+
+    // `while (std::getline(ss, segment, '|'))`: a trailing empty piece is not produced.
+    let mut segments: Vec<&str> = s.split('|').collect();
+    if segments.last().map_or(false, |l| l.is_empty()) {
+        segments.pop();
+    }
+    for segment in segments {
+        if segment.is_empty() {
+            continue;
+        }
+        let fields = split_commas(segment);
+        if fields.len() != 2 && fields.len() != 4 {
+            log::warn!(
+                "ignoring malformed segment \"{}\" (expected 2 or 4 comma-separated fields, got {})",
+                segment,
+                fields.len()
+            );
+            continue;
+        }
+        // try { std::stod(fields[0]); std::stod(fields[1]); ... } catch (...) { continue; }
+        let (Some(x), Some(y)) = (stod(&fields[0]), stod(&fields[1])) else {
+            log::warn!("ignoring unparseable segment \"{}\"", segment);
+            continue;
+        };
+        let x = 0.0f64.max(1.0f64.min(x));
+        let y = K_GRADIENT_MIN_RATIO.max(K_GRADIENT_MAX_RATIO.min(y));
+        let mut a = GradientAnchor::default();
+        a.x = x;
+        a.y = y;
+        if fields.len() == 4 {
+            a.m_in = parse_tangent_token(&fields[2]);
+            a.m_out = parse_tangent_token(&fields[3]);
+        }
+        curve.points.push(a);
+    }
+
+    if curve.points.len() < 2 {
+        if !curve.points.is_empty() {
+            log::warn!("only {} valid point(s), need at least 2; discarding", curve.points.len());
+        }
+        curve.points.clear();
+        return curve;
+    }
+
+    // std::sort by x (libc++ introsort; anchors of equal x keep libc++'s order).
+    crate::clipper::libcxx_sort(&mut curve.points, |a, b| a.x < b.x);
+    curve
+}
+
+/// FilamentMixer.cpp:350-395 `sample_gradient_curve`
+pub fn sample_gradient_curve(c: &GradientCurve, t: f64) -> f64 {
+    let pts = &c.points;
+    if pts.len() < 2 {
+        return 0.5;
+    }
+    if t <= pts[0].x {
+        return pts[0].y;
+    }
+    if t >= pts[pts.len() - 1].x {
+        return pts[pts.len() - 1].y;
+    }
+
+    let m_def = compute_pchip_default_tangents(pts);
+    let n = pts.len();
+
+    for i in 1..n {
+        let x0 = pts[i - 1].x;
+        let x1 = pts[i].x;
+        if t > x1 {
+            continue;
+        }
+
+        let y0 = pts[i - 1].y;
+        let y1 = pts[i].y;
+        let h = (x1 - x0).max(1e-12);
+        let m_left = if pts[i - 1].m_out.is_finite() { pts[i - 1].m_out } else { m_def[i - 1] };
+        let m_right = if pts[i].m_in.is_finite() { pts[i].m_in } else { m_def[i] };
+
+        let u = (t - x0) / h;
+        let u2 = u * u;
+        let u3 = u2 * u;
+        // The fmas clang contracts these sums of products into (-ffp-contract=on): the first product
+        // of `a * b + c * d` / `a * b - c * d` is fused, a product added to a sum is fused.
+        let h00 = 2.0f64.mul_add(u3, -(3.0 * u2)) + 1.0;
+        let h10 = (-2.0f64).mul_add(u2, u3) + u;
+        let h01 = (-2.0f64).mul_add(u3, 3.0 * u2);
+        let h11 = u3 - u2;
+        let s0 = h00.mul_add(y0, h10 * h * m_left);
+        let s1 = h01.mul_add(y1, s0);
+        let mut y = (h11 * h).mul_add(m_right, s1);
+        if y < K_GRADIENT_MIN_RATIO {
+            y = K_GRADIENT_MIN_RATIO;
+        }
+        if y > K_GRADIENT_MAX_RATIO {
+            y = K_GRADIENT_MAX_RATIO;
+        }
+        return y;
+    }
+    pts[pts.len() - 1].y
+}
+
+/// FilamentMixer.cpp:562-581 `expand_mixed_slots_in_unprintables`
+pub fn expand_mixed_slots_in_unprintables(
+    unprintables: &mut Vec<std::collections::BTreeSet<i32>>,
+    is_mixed: &[u8],
+    comp_strs: &[String],
+) {
+    for unprintable_set in unprintables.iter_mut() {
+        let mut expanded = std::collections::BTreeSet::new();
+        for &fid in unprintable_set.iter() {
+            if fid >= 0 && (fid as usize) < is_mixed.len() && is_mixed[fid as usize] != 0 && (fid as usize) < comp_strs.len() {
+                let comps = parse_mixed_components(&comp_strs[fid as usize]);
+                for c in comps {
+                    if c >= 1 {
+                        expanded.insert((c - 1) as i32);
+                    }
+                }
+            } else {
+                expanded.insert(fid);
+            }
+        }
+        *unprintable_set = expanded;
+    }
+}
