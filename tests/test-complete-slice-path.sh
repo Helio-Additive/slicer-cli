@@ -47,6 +47,22 @@ show() { tail -n 20 "$1/stderr"; grep '^\[\[SLICER_EVENT\]\]' "$1/stdout" | grep
 # py SCRIPT ARGS... : python3 on Windows runners needs native paths, so pass relative ones.
 py() { python3 -c "$@"; }
 
+# maker.py: mark(d, key...) lists settings a test types into a project's
+# Metadata/project_settings.config as the maker's own changes. A Bambu Studio
+# project keeps a value only when different_settings_to_system lists it: the
+# app, and slicer_cli, take every other value from the preset. Listed in
+# every slot (process, each filament, printer).
+cat > "$WORKDIR/maker.py" <<'PYEOF'
+def mark(d, *keys):
+    diff = list(d.get("different_settings_to_system") or [""])
+    slots = len(d.get("filament_settings_id") or [""]) + 2   # process, each filament, printer
+    diff += [""] * (slots - len(diff))
+    d["different_settings_to_system"] = [
+        ";".join([k for k in slot.split(";") if k] + [k for k in keys if k not in slot.split(";")]) for slot in diff]
+    return d
+PYEOF
+export PYTHONPATH="$WORKDIR${PYTHONPATH:+:$PYTHONPATH}"
+
 # Two ASCII STLs: a 20 mm cube and a 300 mm box (larger than the A1 mini bed).
 py '
 import sys
@@ -67,12 +83,16 @@ box("big.stl", 300, 10)
 # Copies of the Bambu fixture with one change each.
 py '
 import json, re, shutil, zipfile
+from maker import mark
 def rewrite(dst, settings=None, app=None):
     with zipfile.ZipFile("'"$FIXTURE"'") as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
         for item in zin.infolist():
             data = zin.read(item.filename)
             if settings and item.filename == "Metadata/project_settings.config":
-                d = json.loads(data); d.update(settings); data = json.dumps(d, indent=4).encode()
+                d = json.loads(data); d.update(settings)
+                # The edits are the changes of the maker (maker.py).
+                mark(d, *settings)
+                data = json.dumps(d, indent=4).encode()
             if app and item.filename == "3D/3dmodel.model":
                 data = re.sub(rb"(<metadata name=\"Application\">)[^<]*", rb"\g<1>" + app.encode(), data)
             zout.writestr(item, data)
@@ -476,6 +496,7 @@ with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("legacy.3mf", "w", zipf
         if item.filename == "Metadata/project_settings.config":
             d = json.loads(data)
             d["machine_start_gcode"] = d["machine_start_gcode"] + "\n; first {initial_no_support_filament_id}\n"
+            __import__("maker").mark(d, "machine_start_gcode")
             data = json.dumps(d, indent=4).encode()
         zout.writestr(item, data)
 '
@@ -1604,7 +1625,7 @@ with zipfile.ZipFile("h2d-fp.3mf", "w", zipfile.ZIP_DEFLATED) as out:
     for item in src.infolist():
         data = src.read(item.filename)
         if item.filename == "Metadata/project_settings.config":
-            d = json.loads(data); d["filament_printable"] = ["1"]; data = json.dumps(d, indent=4).encode()
+            d = json.loads(data); d["filament_printable"] = ["1"]; __import__("maker").mark(d, "filament_printable"); data = json.dumps(d, indent=4).encode()
         if item.filename.endswith(".gcode") or item.filename.endswith(".md5"):
             continue
         out.writestr(item, data)
@@ -2039,7 +2060,7 @@ with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile("noted3.3mf", "w", zip
     for item in zin.infolist():
         data = zin.read(item.filename)
         if item.filename == "Metadata/project_settings.config":
-            d = json.loads(data); d["support_threshold_angle"] = "999"; data = json.dumps(d, indent=4).encode()
+            d = json.loads(data); d["support_threshold_angle"] = "999"; __import__("maker").mark(d, "support_threshold_angle"); data = json.dumps(d, indent=4).encode()
         if item.filename == "Metadata/model_settings.config":
             t = data.decode()
             mark = "<metadata key=\"plater_id\" value=\"2\"/>"
@@ -3976,7 +3997,7 @@ for e in bambu orca; do
 import collections, json, sys
 c = collections.Counter(json.loads(l)["tag"] for l in open(sys.argv[1]) if l.strip())
 assert c.get("SettingsFilesMerged") == 1 and c.get("PlateSettingsApplied") == 2, dict(c)
-assert all(n == 2 for t, n in c.items() if t != "SettingsFilesMerged"), dict(c)
+assert all(n == 2 for t, n in c.items() if t not in ("SettingsFilesMerged", "ProjectRebasedOnSystemPresets")), dict(c)
 ' ev2-$e/normalized.jsonl || { show ev2-$e; fail "$e: --slice 0 sent a settings event more than once per plate"; }
 done
 echo "PASS: --slice 0's check pass sends no event twice (both engines)"
@@ -4467,21 +4488,58 @@ import json, sys
 s = json.load(open("d4l.json"))["extruder_nozzle_stats"]
 assert ";".join(s) == sys.argv[1], (s, sys.argv[1])
 ' "$want" || { fail "D4 bambu: --export-settings does not hold the computed extruder_nozzle_stats"; d4_ok=0; }
-# The keep guard: the project's own value, which no computation gives.
+# The keep guard: the project's own value, which no computation gives. The
+# newer extruder_nozzle_stats_new wins over the older key and comes out
+# re-serialised, as the official CLI writes it (BambuStudio.cpp 4555-4559,
+# 7191; Bambu Studio 2.9.1 gives this line for this project).
 py '
 import json, zipfile
 with zipfile.ZipFile("d4.3mf") as zin, zipfile.ZipFile("d4keep.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
     for item in zin.infolist():
         data = zin.read(item.filename)
         if item.filename == "Metadata/project_settings.config":
-            d = json.loads(data); d["extruder_nozzle_stats"] = ["Standard#1|High Flow#0", "Standard#1"]
+            d = json.loads(data); d["extruder_nozzle_stats_new"] = ["High Flow#1", "Standard#1"]
             data = json.dumps(d, indent=4).encode()
         zout.writestr(item, data)
 ' || { fail "D4 bambu: no exported H2D project for the keep check"; d4_ok=0; }
-run d4k "$B" d4keep.3mf --plate 1 -o d4k.gcode
+# The file's values as saved: the official CLI's reading of them, which is the
+# one checked against Bambu Studio 2.9.1.
+run d4k "$B" d4keep.3mf --plate 1 -o d4k.gcode --project-settings-as-saved
 got=$(hdr d4k.gcode extruder_nozzle_stats)
-[ "$(rc d4k)" = 0 ] && [ "$got" = "Standard#1|High Flow#0;Standard#1" ] || { show d4k; fail "D4 bambu: a 3MF's own extruder_nozzle_stats became '$got' (exit $(rc d4k))"; d4_ok=0; }
+[ "$(rc d4k)" = 0 ] && [ "$got" = "High Flow#1;Standard#1" ] || { show d4k; fail "D4 bambu: a 3MF's own extruder_nozzle_stats became '$got' (exit $(rc d4k))"; d4_ok=0; }
 [ $d4_ok = 1 ] && echo "PASS: D4 input without extruder_nozzle_stats gets the official CLI's value, a 3MF keeps its own (Bambu build)"
+
+# D4b: a Bambu Studio project loads the way the desktop loads it. A value the
+# file holds but does not list in different_settings_to_system is not the
+# maker's change, so the system preset's value is sliced (load_config_model,
+# Plater.cpp 12155 at v02.09.01.70 -> load_external_preset); a listed one is
+# kept; --project-settings-as-saved slices the file's values.
+py '
+import json, zipfile
+with zipfile.ZipFile("d4.3mf") as zin, zipfile.ZipFile("d4old.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["sparse_infill_density"] = "33%"
+            d["wall_loops"] = "5"
+            diff = d.get("different_settings_to_system") or [""]
+            diff[0] = "wall_loops"
+            d["different_settings_to_system"] = diff
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' || fail "D4b bambu: no exported H2D project for the preset check"
+preset_density=$(hdr d4p/out/plate_1.gcode sparse_infill_density)
+run d4r "$B" d4old.3mf --plate 1 -o d4r.gcode
+[ "$(rc d4r)" = 0 ] || { show d4r; fail "D4b bambu: the project exit $(rc d4r)"; }
+[ "$preset_density" != "33%" ] && [ "$(hdr d4r.gcode sparse_infill_density)" = "$preset_density" ] ||
+    fail "D4b bambu: a value the maker did not change is '$(hdr d4r.gcode sparse_infill_density)', the preset has '$preset_density'"
+[ "$(hdr d4r.gcode wall_loops)" = 5 ] || fail "D4b bambu: the maker's own wall_loops 5 became '$(hdr d4r.gcode wall_loops)'"
+grep -q 'ProjectRebasedOnSystemPresets' d4r/stdout || { show d4r; fail "D4b bambu: no ProjectRebasedOnSystemPresets event"; }
+run d4s "$B" d4old.3mf --plate 1 -o d4s.gcode --project-settings-as-saved
+[ "$(rc d4s)" = 0 ] && [ "$(hdr d4s.gcode sparse_infill_density)" = "33%" ] ||
+    { show d4s; fail "D4b bambu: --project-settings-as-saved gives sparse_infill_density '$(hdr d4s.gcode sparse_infill_density)' (exit $(rc d4s))"; }
+echo "PASS: D4b a Bambu Studio project takes the preset's value for what the maker did not change, and the file's with --project-settings-as-saved"
 
 # D5: each plate prints its own per-layer custom G-code. The loader keys
 # them by plate (bbs_3mf.cpp 3446/3474) and the Print reads the model's
@@ -5542,12 +5600,13 @@ for k in ("inherits_group", "different_settings_to_system"):
     v = ps.get(k)
     assert v is None or len(v) == n + 2, "%s has %d entries, want %d" % (k, len(v), n + 2)
 ' h3cinh/out/h3cinh.3mf || { fail "H3C: the exported project's inherits_group/different_settings_to_system are not one entry per preset after --load-filaments"; h3c_ok=0; }; }
-# A per-slot layout key as a flag is refused by name (the official CLI rebuilds
-# the layout from it); --allow-mix-temp is taken and reported as having no effect.
+# The rack from the command line, per-slot keys included, as the official CLI
+# rebuilds the layout from them (BambuStudio.cpp 7103-7172);
+# --allow-mix-temp is taken and reported as having no effect.
 run h3cslot "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
-    --extruder-nozzle-diameter 0.4 --slice 1 --outputdir h3cslot/out
-[ "$(rc h3cslot)" != 0 ] && grep -q "extruder-nozzle-diameter is a .* setting that slicer-cli does not take on the command line" h3cslot/stderr \
-    || { show h3cslot; fail "H3C: --extruder-nozzle-diameter was not refused by name (exit $(rc h3cslot))"; h3c_ok=0; }
+    --extruder-nozzle-count 3 --extruder-nozzle-volume-type "Standard,Standard,Standard" --extruder-nozzle-diameter "0.4,0.4,0.4" --slice 1 --outputdir h3cslot/out
+[ "$(rc h3cslot)" = 0 ] && [ "$(hdr h3cslot/out/plate_1.gcode extruder_nozzle_count)" = 3 ] && [ "$(hdr h3cslot/out/plate_1.gcode extruder_nozzle_stats)" = "Standard#3" ] \
+    || { show h3cslot; fail "H3C: the rack given on the command line is not the one the slice states (exit $(rc h3cslot), count $(hdr h3cslot/out/plate_1.gcode extruder_nozzle_count), stats $(hdr h3cslot/out/plate_1.gcode extruder_nozzle_stats))"; h3c_ok=0; }
 run h3cmix "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-process.json" --load-filaments "h3c-fil0.json;h3c-fil1.json" --filament-colour "#FF0000;#00FF00" \
     --allow-mix-temp=1 --slice 1 --outputdir h3cmix/out
 [ "$(rc h3cmix)" = 0 ] || { show h3cmix; fail "H3C: --allow-mix-temp refused the run (exit $(rc h3cmix))"; h3c_ok=0; }

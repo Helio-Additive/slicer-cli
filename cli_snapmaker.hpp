@@ -6,6 +6,7 @@
 #ifdef ENGINE_SNAPMAKER
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -67,7 +68,13 @@ void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model
                                int plate_id, bool& paint_remapped);
 
 /// The desktop's flow-type sync before a slice (filament_volume_type).
-void sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id);
+/// Returns a refusal sentence when a filament the plate uses is set to a
+/// high-flow nozzle it cannot print with (the grouping dialog's own block,
+/// FilamentGroupDialog.cpp 424-470), else empty. `used_filaments` holds the
+/// 1-based filaments the plate's objects use (empty: every filament), and
+/// `mapping_given` says the command line gave --filament-volume-type.
+std::string sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id,
+                                       const std::set<int>& used_filaments, bool mapping_given);
 
 /// The Snapmaker U1's plate types: an unsupported plate becomes Textured PEI.
 void force_u1_bed_type(Slic3r::DynamicPrintConfig& config, int plate_id);

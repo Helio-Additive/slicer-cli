@@ -30,6 +30,11 @@ std::vector<std::string> other_engine_only_flags();
 
 /// Empty when every print setting given on the command line can be applied
 /// like the official m_extra_config; else the refusal sentence.
+/// Why one setting is not taken as a flag, or empty when it is. --list-settings
+/// states it per setting (refused_as_flag), and tests/test_official_cli_parity.py
+/// holds every refusal of a setting an official command line handles to
+/// tests/official-cli-refused-settings.json.
+std::string setting_flag_refusal(const std::string& key);
 std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra);
 
 } // namespace slicer_cli
