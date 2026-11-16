@@ -1049,6 +1049,26 @@ pub fn its_make_cone(r: f64, h: f64, fa: f64) -> indexed_triangle_set {
     mesh
 }
 
+/// The gate of the float arithmetic of the sphere-like mesh makers (faithful, on unless
+/// `ITS_MAKE_FLOAT_STEP=0`). On: `sectorStep * j` and `stackStep * i` are float products (the steps
+/// are floats, the indices ints), and its_make_snap calls the float overloads of libc++'s
+/// `<math.h>` (`acos`, `sin` of a float are acosf, sinf) with the sum of get_m_len fused, as the C++
+/// build compiles TriangleMesh.cpp. Off: the earlier double products and double functions.
+fn its_make_float_step() -> bool {
+    crate::faithful_gate("ITS_MAKE_FLOAT_STEP")
+}
+
+/// `float * int` of a step and an index, promoted to double (TriangleMesh.cpp 1181, 1189, 1258,
+/// 1266): a float product on the gate's faithful arm.
+#[inline]
+fn step_times(step: f32, i: i32) -> f64 {
+    if its_make_float_step() {
+        (step * i as f32) as f64
+    } else {
+        step as f64 * i as f64
+    }
+}
+
 /// Generates mesh for a frustum dowel centered about the origin, using the count of sectors.
 /// TriangleMesh.cpp:1139-1190
 pub fn its_make_frustum_dowel(radius: f64, h: f64, sector_count: i32) -> indexed_triangle_set {
@@ -1066,8 +1086,8 @@ pub fn its_make_frustum_dowel(radius: f64, h: f64, sector_count: i32) -> indexed
         .reserve(((stack_count - 1) * sector_count + 2) as usize);
     // TriangleMesh.cpp:1148-1161
     for i in 0..=stack_count {
-        // TriangleMesh.cpp:1150 — from pi/2 to -pi/2.
-        let stack_angle = 0.5 * std::f64::consts::PI - stack_step as f64 * i as f64;
+        // TriangleMesh.cpp:1181 — from pi/2 to -pi/2.
+        let stack_angle = 0.5 * std::f64::consts::PI - step_times(stack_step, i);
         // TriangleMesh.cpp:1151
         let xy = radius * stack_angle.cos();
         // TriangleMesh.cpp:1152
@@ -1082,8 +1102,8 @@ pub fn its_make_frustum_dowel(radius: f64, h: f64, sector_count: i32) -> indexed
         } else {
             // TriangleMesh.cpp:1156-1160
             for j in 0..sector_count {
-                // TriangleMesh.cpp:1158 — from 0 to 2pi.
-                let sector_angle = sector_step as f64 * j as f64 + 0.25 * std::f64::consts::PI;
+                // TriangleMesh.cpp:1189 — from 0 to 2pi.
+                let sector_angle = step_times(sector_step, j) + 0.25 * std::f64::consts::PI;
                 // TriangleMesh.cpp:1159 — Vec3d(...).cast<float>()
                 mesh.vertices.push(Vec3f::new(
                     (xy * sector_angle.cos()) as f32,
@@ -1165,8 +1185,8 @@ pub fn its_make_sphere(radius: f64, fa: f64) -> indexed_triangle_set {
         .reserve(((stack_count - 1) * sector_count + 2) as usize);
     // TriangleMesh.cpp:1225-1238
     for i in 0..=stack_count {
-        // TriangleMesh.cpp:1227 — from pi/2 to -pi/2.
-        let stack_angle = 0.5 * std::f64::consts::PI - stack_step as f64 * i as f64;
+        // TriangleMesh.cpp:1258 — from pi/2 to -pi/2.
+        let stack_angle = 0.5 * std::f64::consts::PI - step_times(stack_step, i);
         // TriangleMesh.cpp:1228
         let xy = radius * stack_angle.cos();
         // TriangleMesh.cpp:1229
@@ -1177,8 +1197,8 @@ pub fn its_make_sphere(radius: f64, fa: f64) -> indexed_triangle_set {
         } else {
             // TriangleMesh.cpp:1233-1237
             for j in 0..sector_count {
-                // TriangleMesh.cpp:1235 — from 0 to 2pi.
-                let sector_angle = sector_step as f64 * j as f64;
+                // TriangleMesh.cpp:1266 — from 0 to 2pi.
+                let sector_angle = step_times(sector_step, j);
                 // TriangleMesh.cpp:1236 — Vec3d(...).cast<float>()
                 mesh.vertices.push(Vec3f::new(
                     (xy * sector_angle.cos()) as f32,
@@ -1257,8 +1277,10 @@ pub fn its_make_snap(
 
     // TriangleMesh.cpp:1286-1287 — unqualified acos(double) on a promoted float arg,
     // result narrowed back to float.
-    let b_angle = ((space_len / b_len) as f64).acos() as f32;
-    let t_angle = ((space_len / t_len) as f64).acos() as f32;
+    // (TriangleMesh.cpp:1317-1318; the faithful arm: libc++'s <math.h> float overload, acosf)
+    let float_math = its_make_float_step();
+    let b_angle = if float_math { (space_len / b_len).acos() } else { ((space_len / b_len) as f64).acos() as f32 };
+    let t_angle = if float_math { (space_len / t_len).acos() } else { ((space_len / t_len) as f64).acos() as f32 };
 
     // TriangleMesh.cpp:1289-1290
     let b_angle_step = b_angle / sectors_cnt as f32;
@@ -1308,6 +1330,14 @@ pub fn its_make_snap(
     let get_m_len = move |angle: f32| -> f32 {
         // TriangleMesh.cpp:1321
         let rad_sqr: f32 = b_len * b_len;
+        if float_math {
+            // TriangleMesh.cpp:1353 — sin(float) is sinf; the product of floats
+            let sin_sqr: f32 = angle.sin() * angle.sin();
+            // TriangleMesh.cpp:1354
+            let f_sqr: f32 = (1.0 - f) * (1.0 - f);
+            // TriangleMesh.cpp:1355 — sqrtf, `1 + (1 / f_sqr - 1) * sin_sqr` fused
+            return (rad_sqr / (1.0 / f_sqr - 1.0).mul_add(sin_sqr, 1.0)).sqrt();
+        }
         // TriangleMesh.cpp:1322 — sin(float) -> double sin, product narrowed to float.
         let sin_d = (angle as f64).sin();
         let sin_sqr: f32 = (sin_d * sin_d) as f32;
@@ -1352,7 +1382,9 @@ pub fn its_make_snap(
             // TriangleMesh.cpp:1356-1364 — add d side vertices and facets.
             // C++: while (!is_approx(b_angle_start, b_angle_stop)) — is_approx<float>
             // promotes both to double and compares with EPSILON (1e-4).
-            while (b_angle_start as f64 - b_angle_stop as f64).abs() >= crate::libslic3r::EPSILON {
+            // is_approx<float>: the precision is EPSILON converted to float
+            let precision = if float_math { (crate::libslic3r::EPSILON as f32) as f64 } else { crate::libslic3r::EPSILON };
+            while (b_angle_start as f64 - b_angle_stop as f64).abs() >= precision {
                 // TriangleMesh.cpp:1357-1358
                 b_angle_start += b_angle_step;
                 t_angle_start += t_angle_step;

@@ -759,8 +759,17 @@ mod tests {
         let rot: XYRotation = [0.3, 0.5];
         let tr = to_transform3f(&rot);
         let back = from_transform3f(&tr);
-        assert!((back[0] - 0.3).abs() < 1e-5, "x = {}", back[0]);
-        assert!((back[1] - 0.5).abs() < 1e-5, "y = {}", back[1]);
+        if crate::faithful_gate("TRANSFORMATION_EIGEN") {
+            // Geometry.cpp:327 `eulerAngles(2, 1, 0)` picks the other, equivalent branch for
+            // Ry(0.5)*Rx(0.3): the pin built with Eigen 5.0.1 returns
+            // (-2.8415926510965814, 2.6415926398815799, 3.1415926529727924).
+            assert!((back[0] - (-2.8415926510965814)).abs() < 1e-12, "x = {}", back[0]);
+            assert!((back[1] - 2.6415926398815799).abs() < 1e-12, "y = {}", back[1]);
+        } else {
+            // TRANSFORMATION_EIGEN=0: the former nalgebra decomposition.
+            assert!((back[0] - 0.3).abs() < 1e-5, "x = {}", back[0]);
+            assert!((back[1] - 0.5).abs() < 1e-5, "y = {}", back[1]);
+        }
     }
 
     #[test]

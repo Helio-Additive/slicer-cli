@@ -76,28 +76,32 @@ pub const BED_EPSILON: f64 = 3.0 * EPSILON;
 /// Build volume type classification
 /// BuildVolume.hpp:20-32
 /// C++: enum class Type : char
+///
+/// The discriminants are the C++ values (`Invalid = -1`, then 0, 1, 2, 3), so `type as i32` is the
+/// C++ `int(type)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i8)]
 pub enum Type {
     /// Not set yet or undefined
     /// BuildVolume.hpp:23
     /// C++: Invalid = -1,
-    Invalid,
+    Invalid = -1,
     /// Rectangular print bed (most common, cheap to work with)
     /// BuildVolume.hpp:25
     /// C++: Rectangle,
-    Rectangle,
+    Rectangle = 0,
     /// Circular print bed (common on deltas, cheap to work with)
     /// BuildVolume.hpp:27
     /// C++: Circle,
-    Circle,
+    Circle = 1,
     /// Convex print bed (complex to process)
     /// BuildVolume.hpp:29
     /// C++: Convex,
-    Convex,
+    Convex = 2,
     /// Some non-convex shape
     /// BuildVolume.hpp:31
     /// C++: Custom
-    Custom,
+    Custom = 3,
 }
 
 impl Type {

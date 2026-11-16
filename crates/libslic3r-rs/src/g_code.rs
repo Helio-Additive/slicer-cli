@@ -10,7 +10,11 @@
 //! the writer. `crate::gcode::exporter` is this module under its earlier name.
 //! The third part, from "The G-code text and its header" on, is the output
 //! container with the header and the config block of `GCode::_do_export`.
-//! The last part is the smooth-speed helpers of GCode.cpp.
+//! The smooth-speed helpers of GCode.cpp follow. The module `gcode_class` at the end
+//! holds the class `GCode` and its helper classes (`OozePrevention`, `Wipe`,
+//! `WipeTowerIntegration`, `ObjectByExtruder`, `LayerToPrint`, ...) as GCode.hpp declares
+//! them, over the faithful writer and the full configuration, with the file-static
+//! helpers that go with them; tests/g_code_native_parity.rs compares them with the C++.
 //! The layer loop of `GCode::process_layer` is still in `print.rs`.
 
 // GCode.cpp:84
@@ -1104,10 +1108,8 @@ pub(crate) fn append_tcr(
             to_object(tcr.tool_change_start_pos.x as f64, tcr.tool_change_start_pos.y as f64);
         let travel_points: Vec<crate::Point> = if print_config.prime_tower_skip_points {
             // :1191-1197 — gcode_to_point of the template's last XY.
-            let last = crate::gcode::g_code_processor::get_last_position_from_gcode(
-                &toolchange_gcode_str,
-            )
-            .unwrap_or([0.0, 0.0, 0.0]);
+            let mut last = [0.0f32, 0.0, 0.0];
+            crate::gcode::g_code_processor::get_last_position_from_gcode(&toolchange_gcode_str, &mut last);
             let gcode_last_pos2d_object = crate::Point::new(
                 ((last[0] as f64 + gox + print_config.extruder_offset_x) / sf).round() as crate::Coord,
                 ((last[1] as f64 + goy + print_config.extruder_offset_y) / sf).round() as crate::Coord,
@@ -11622,4 +11624,2556 @@ where
     let mut prepare_paths = merge_same_speed_paths(paths, path_speed_fn);
     // GCode.cpp:6269-6271 — step 2 split path.
     *paths = set_speed_transition(coeff, &mut prepare_paths);
+}
+
+// ===========================================================================
+// The class `GCode` of GCode.hpp:173-742 and its helper classes (GCode.hpp:44-171), as the C++
+// declares them, over the faithful writer (`crate::g_code_writer::GCodeWriter`) and the full
+// configuration (`FullPrintConfig`, here a `DynamicPrintConfig`). The engine's export does not run
+// through this class yet: `print.rs` drives the free functions above. The name `GCode` of this
+// module's struct is the C++ class's; the `GCode` above is the output container of the port.
+// ===========================================================================
+pub mod gcode_class {
+    use super::{pp_bool, pp_float, pp_floats, pp_get_at, pp_int, pp_ints, pp_string, pp_strings};
+    use crate::config::{ConfigBase, ConfigOptionPoints, ConfigOptionResolver};
+    use crate::g_code_writer::{GCodeWriter, LiftType};
+    use crate::geometry::{Point, Points, Polyline, Vec2d, Vec3d};
+    use crate::gcode::g_code_processor::GCodeProcessor;
+    use crate::libslic3r::{EPSILON, SCALED_EPSILON, SCALING_FACTOR};
+    use crate::print_config::config_def::DynamicPrintConfig;
+
+    /// `scale_(val)` (libslic3r.h): `val / SCALING_FACTOR`, a double.
+    #[inline]
+    fn scale_(val: f64) -> f64 {
+        val / SCALING_FACTOR
+    }
+
+    /// `unscale<double>(coord_t)` (libslic3r.h): `v * SCALING_FACTOR`.
+    #[inline]
+    fn unscale(v: crate::Coord) -> f64 {
+        v as f64 * SCALING_FACTOR
+    }
+
+    /// `Point(double x, double y)` (Point.hpp:133): `coord_t(lrint(x))`, rounding to nearest, ties to
+    /// even.
+    #[inline]
+    fn point_from_f64(x: f64, y: f64) -> Point {
+        Point::new(x.round_ties_even() as crate::Coord, y.round_ties_even() as crate::Coord)
+    }
+
+    // PrintConfig.hpp:40-43 `enum GCodeFlavor : unsigned char`, the values `gcode_flavor` holds.
+    pub(crate) const GCF_MARLIN_LEGACY: i32 = 0;
+    pub(crate) const GCF_REPRAP_FIRMWARE: i32 = 3;
+    pub(crate) const GCF_MARLIN_FIRMWARE: i32 = 7;
+
+    /// `ConfigOptionPoints::values` of an option of the configuration.
+    pub(crate) fn pp_points(config: &crate::config::DynamicConfig, key: &str) -> Vec<Vec2d> {
+        config
+            .option(key)
+            .and_then(|o| o.as_any().downcast_ref::<ConfigOptionPoints>())
+            .map(|p| p.values.clone())
+            .unwrap_or_default()
+    }
+
+    // -----------------------------------------------------------------------
+    // Free functions of GCode.cpp
+    // -----------------------------------------------------------------------
+
+    /// GCode.cpp:86-116 `static std::optional<Vec3f> infer_timelapse_final_plate_pos(const std::string
+    /// &gcode, const Point &safe_pos, float z)`: the position the timelapse G-code leaves the head
+    /// at, from its last `M9711` and the moves after it.
+    pub fn infer_timelapse_final_plate_pos(gcode: &str, safe_pos: &Point, z: f32) -> Option<[f32; 3]> {
+        let mut pos: [f32; 3] = [safe_pos.x as f32, safe_pos.y as f32, z];
+        let mut found_m9711 = false;
+        let mut gcode_after_last_m9711 = String::new();
+
+        let mut reader = crate::g_code_reader::GCodeReader::new();
+        reader.parse_buffer(gcode, |_, gline| {
+            if gline.cmd_is("M9711") {
+                if let Some(v) = gline.has_value(b'U').or_else(|| gline.has_value(b'X')) {
+                    pos[0] = v;
+                }
+                if let Some(v) = gline.has_value(b'V').or_else(|| gline.has_value(b'Y')) {
+                    pos[1] = v;
+                }
+                if let Some(v) = gline.has_value(b'Z') {
+                    pos[2] = v;
+                }
+                found_m9711 = true;
+                gcode_after_last_m9711.clear();
+            } else if found_m9711 {
+                gcode_after_last_m9711 += gline.raw();
+                gcode_after_last_m9711.push('\n');
+            }
+        });
+
+        if !found_m9711 {
+            return None;
+        }
+
+        let mut parsed_pos = pos;
+        crate::gcode::g_code_processor::get_last_position_from_gcode(&gcode_after_last_m9711, &mut parsed_pos);
+        Some(parsed_pos)
+    }
+
+    /// GCode.cpp:175-295 `static std::vector<Vec2d> get_path_of_change_filament(const Print& print)`.
+    /// `start_end_points` and `bed_exclude_area` are `print.config()`'s options of those names;
+    /// `object_bounding_boxes` is, per object of the print, the bounding box (min, max) of the
+    /// model object of its first instance (`print_instances[0].model_instance->get_object()->
+    /// bounding_box()`), in the print's order.
+    pub fn get_path_of_change_filament(
+        start_end_points: &[Vec2d],
+        bed_exclude_area: &[Vec2d],
+        object_bounding_boxes: &[(Vec3d, Vec3d)],
+    ) -> Vec<Vec2d> {
+        // give safe value in case there is no start_end_points in config
+        let mut out_points: Vec<Vec2d> = Vec::new();
+        out_points.push(Vec2d::new(54.0, 0.0));
+        out_points.push(Vec2d::new(54.0, 0.0));
+        out_points.push(Vec2d::new(54.0, 245.0));
+
+        // get the start_end_points from config (20, -3) (54, 245)
+        let points = start_end_points;
+        if points.len() != 2 {
+            return out_points;
+        }
+
+        let start_point = points[0];
+        let end_point = points[1];
+
+        // the cutter area size(18, 28)
+        let excluse_area = bed_exclude_area;
+        if excluse_area.len() != 4 {
+            return out_points;
+        }
+
+        let _cutter_area_x = excluse_area[2].x + 2.0;
+        let cutter_area_y = excluse_area[2].y + 2.0;
+
+        let start_x_position = start_point.x;
+        let end_x_position = end_point.x;
+        let end_y_position = end_point.y;
+
+        let mut can_travel_form_left = true;
+
+        // step 1: get the x-range intervals of all objects
+        let mut object_intervals: Vec<(f64, f64)> = Vec::new();
+        for (bb_min, bb_max) in object_bounding_boxes {
+            if bb_min.x < start_x_position && bb_min.y < cutter_area_y {
+                can_travel_form_left = false;
+            }
+
+            let object_scope = (bb_min.x - 2.0, bb_max.x + 2.0);
+            if object_intervals.is_empty() {
+                object_intervals.push(object_scope);
+            } else {
+                let mut new_object_intervals: Vec<(f64, f64)> = Vec::new();
+                let mut intervals_intersect = false;
+                let mut new_merged_scope: (f64, f64) = (0.0, 0.0);
+                for &object_interval in &object_intervals {
+                    if object_interval.1 >= object_scope.0 && object_interval.0 <= object_scope.1 {
+                        if intervals_intersect {
+                            new_merged_scope = (
+                                object_interval.0.min(new_merged_scope.0),
+                                object_interval.1.max(new_merged_scope.1),
+                            );
+                        } else {
+                            // it is the first intersection
+                            new_merged_scope =
+                                (object_interval.0.min(object_scope.0), object_interval.1.max(object_scope.1));
+                        }
+                        intervals_intersect = true;
+                    } else {
+                        new_object_intervals.push(object_interval);
+                    }
+                }
+
+                if intervals_intersect {
+                    new_object_intervals.push(new_merged_scope);
+                    object_intervals = new_object_intervals;
+                } else {
+                    object_intervals.push(object_scope);
+                }
+            }
+        }
+
+        // step 2: get the available x-range
+        // std::sort with `left.first < right.first`; equal keys keep an unspecified order, as the
+        // C++ introsort leaves them.
+        object_intervals.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(std::cmp::Ordering::Equal));
+        let mut available_intervals: Vec<(f64, f64)> = Vec::new();
+        let mut start_position = 0.0f64;
+        for &object_interval in &object_intervals {
+            if object_interval.0 > start_position {
+                available_intervals.push((start_position, object_interval.0));
+            }
+            start_position = object_interval.1;
+        }
+        available_intervals.push((start_position, 255.0));
+
+        // step 3: get the nearest path
+        let mut new_path = 255.0f64;
+        for &available_interval in &available_intervals {
+            if available_interval.0 > end_x_position {
+                let distance = available_interval.0 - end_x_position;
+                new_path = if (end_x_position - new_path).abs() < distance { new_path } else { available_interval.0 };
+                break;
+            } else if available_interval.1 >= end_x_position {
+                new_path = end_x_position;
+                break;
+            } else if !can_travel_form_left && available_interval.1 < start_x_position {
+                continue;
+            } else {
+                new_path = available_interval.1;
+            }
+        }
+
+        // step 4: generate path points  (new_path == start_x_position means not need to change path)
+        let out_point_1: Vec2d;
+        let out_point_2: Vec2d;
+        let out_point_3: Vec2d;
+        if new_path < start_x_position {
+            out_point_1 = Vec2d::new(start_x_position, cutter_area_y);
+            out_point_2 = Vec2d::new(new_path, cutter_area_y);
+            out_point_3 = Vec2d::new(new_path, end_y_position);
+        } else {
+            out_point_1 = Vec2d::new(new_path, 0.0);
+            out_point_2 = Vec2d::new(new_path, 0.0);
+            out_point_3 = Vec2d::new(new_path, end_y_position);
+        }
+
+        out_points.clear();
+        out_points.push(out_point_1);
+        out_points.push(out_point_2);
+        out_points.push(out_point_3);
+
+        out_points
+    }
+
+    /// GCode.cpp:526-529 `static inline Point wipe_tower_point_to_object_point(GCode& gcodegen, const
+    /// Vec2f& wipe_tower_pt)`: `Point(scale_(..), scale_(..))` rounds (Point(double, double)).
+    pub fn wipe_tower_point_to_object_point(gcodegen: &GCode, wipe_tower_pt: &[f32; 2]) -> Point {
+        point_from_f64(
+            scale_(wipe_tower_pt[0] as f64 - gcodegen.origin().x),
+            scale_(wipe_tower_pt[1] as f64 - gcodegen.origin().y),
+        )
+    }
+
+    /// `strtol(ptr, &endptr, 10)` on the bytes of `s` from `pos`: the value and the index past the
+    /// digits, or `pos` itself when nothing was parsed (leading blanks, a sign, then digits; the value
+    /// saturates at the bounds of `long`).
+    fn strtol10(s: &[u8], pos: usize) -> (i64, usize) {
+        let at = |i: usize| -> u8 { if i < s.len() { s[i] } else { 0 } };
+        let mut i = pos;
+        while matches!(at(i), b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c) {
+            i += 1;
+        }
+        let mut neg = false;
+        if at(i) == b'+' || at(i) == b'-' {
+            neg = at(i) == b'-';
+            i += 1;
+        }
+        if !at(i).is_ascii_digit() {
+            return (0, pos);
+        }
+        let mut v: i128 = 0;
+        while at(i).is_ascii_digit() {
+            v = (v * 10 + (at(i) - b'0') as i128).min(i64::MAX as i128 + 1);
+            i += 1;
+        }
+        let v = if neg { (-v).max(i64::MIN as i128) } else { v.min(i64::MAX as i128) };
+        (v as i64, i)
+    }
+
+    /// GCode.cpp:555-617 `static bool custom_gcode_sets_temperature(const std::string &gcode, const int
+    /// mcode_set_temp_dont_wait, const int mcode_set_temp_and_wait, const bool include_g10, int
+    /// &temp_out)`: whether the custom G-code sets the temperature with one of the two M-codes (or a
+    /// G10 when asked), and the temperature it sets.
+    pub fn custom_gcode_sets_temperature(
+        gcode: &str,
+        mcode_set_temp_dont_wait: i32,
+        mcode_set_temp_and_wait: i32,
+        include_g10: bool,
+        temp_out: &mut i32,
+    ) -> bool {
+        *temp_out = -1;
+        if gcode.is_empty() {
+            return false;
+        }
+
+        let s = gcode.as_bytes();
+        // `*ptr` past the end reads the terminating NUL.
+        let at = |i: usize| -> u8 { if i < s.len() { s[i] } else { 0 } };
+        // `strchr(set, c)` finds the terminating NUL of `set` too, so a NUL character is in every set.
+        let in_set = |set: &[u8], c: u8| -> bool { c == 0 || set.contains(&c) };
+        let mut ptr = 0usize;
+        let mut temp_set_by_gcode = false;
+        while at(ptr) != 0 {
+            // Skip whitespaces.
+            while at(ptr) == b' ' || at(ptr) == b'\t' {
+                ptr += 1;
+            }
+            if at(ptr) == b'M' || // Line starts with 'M'. It is a machine command.
+                (at(ptr) == b'G' && include_g10)
+            {
+                // Only check for G10 if requested
+                let is_gcode = at(ptr) == b'G';
+                ptr += 1;
+                // Parse the M or G code value.
+                let (mgcode_l, endptr) = strtol10(s, ptr);
+                let mgcode = mgcode_l as i32;
+                // `endptr != nullptr && endptr != ptr && is_gcode ? (G10) : (M-codes)`: the
+                // conditional binds loosest, so the first operand is the whole conjunction.
+                let cond = if endptr != ptr && is_gcode {
+                    // G10 found
+                    mgcode == 10
+                } else {
+                    // M104/M109 or M140/M190 found.
+                    mgcode == mcode_set_temp_dont_wait || mgcode == mcode_set_temp_and_wait
+                };
+                if cond {
+                    ptr = endptr;
+                    if !is_gcode {
+                        // Let the caller know that the custom M-code sets the temperature.
+                        temp_set_by_gcode = true;
+                    }
+                    // Now try to parse the temperature value.
+                    // While not at the end of the line:
+                    while !in_set(b";\r\n", at(ptr)) {
+                        // Skip whitespaces.
+                        while at(ptr) == b' ' || at(ptr) == b'\t' {
+                            ptr += 1;
+                        }
+                        if at(ptr) == b'S' {
+                            // Skip whitespaces.
+                            ptr += 1;
+                            while at(ptr) == b' ' || at(ptr) == b'\t' {
+                                ptr += 1;
+                            }
+                            // Parse an int.
+                            let (temp_parsed, endptr) = strtol10(s, ptr);
+                            if endptr > ptr {
+                                ptr = endptr;
+                                *temp_out = temp_parsed as i32;
+                                // Let the caller know that the custom G-code sets the temperature
+                                // Only do this after successfully parsing temperature since G10
+                                // can be used for other reasons
+                                temp_set_by_gcode = true;
+                            }
+                        } else {
+                            // Skip this word.
+                            while !in_set(b" \t;\r\n", at(ptr)) {
+                                ptr += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            // Skip the rest of the line.
+            while at(ptr) != 0 && at(ptr) != b'\r' && at(ptr) != b'\n' {
+                ptr += 1;
+            }
+            // Skip the end of line indicators.
+            while at(ptr) == b'\r' || at(ptr) == b'\n' {
+                ptr += 1;
+            }
+        }
+        temp_set_by_gcode
+    }
+
+    /// GCode.cpp:8091-8102 `std::string encodeBase64(uint64_t value)`: the eight bytes of `value`,
+    /// least significant first, in base64 (`boost::beast::detail::base64::encode`, padded).
+    pub fn encode_base64(value: u64) -> String {
+        //Always use big endian mode
+        let mut src = [0u8; 8];
+        for (i, b) in src.iter_mut().enumerate() {
+            *b = ((value >> (8 * i)) & 0xff) as u8;
+        }
+        base64_encode(&src)
+    }
+
+    /// `boost::beast::detail::base64::encode` (boost/beast/core/detail/base64.ipp): the standard
+    /// alphabet, `=` padding.
+    fn base64_encode(src: &[u8]) -> String {
+        const TAB: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::with_capacity(4 * src.len().div_ceil(3));
+        let mut i = 0;
+        while i + 3 <= src.len() {
+            let (a, b, c) = (src[i], src[i + 1], src[i + 2]);
+            out.push(TAB[(a >> 2) as usize] as char);
+            out.push(TAB[(((a & 3) << 4) | (b >> 4)) as usize] as char);
+            out.push(TAB[(((b & 15) << 2) | (c >> 6)) as usize] as char);
+            out.push(TAB[(c & 63) as usize] as char);
+            i += 3;
+        }
+        match src.len() - i {
+            2 => {
+                let (a, b) = (src[i], src[i + 1]);
+                out.push(TAB[(a >> 2) as usize] as char);
+                out.push(TAB[(((a & 3) << 4) | (b >> 4)) as usize] as char);
+                out.push(TAB[((b & 15) << 2) as usize] as char);
+                out.push('=');
+            }
+            1 => {
+                let a = src[i];
+                out.push(TAB[(a >> 2) as usize] as char);
+                out.push(TAB[((a & 3) << 4) as usize] as char);
+                out.push('=');
+                out.push('=');
+            }
+            _ => {}
+        }
+        out
+    }
+
+    /// GCode.cpp:4568-4574 `inline std::string get_instance_name(const PrintObject* object, size_t
+    /// inst_id)`: `object_name` is `object->model_object()->name`, `klipper_object_id`
+    /// `object->get_klipper_object_id()`.
+    pub fn get_instance_name(object_name: &str, klipper_object_id: usize, inst_id: usize) -> String {
+        let mut obj_name = object_name.to_string();
+        // replace space in obj_name with '-'
+        obj_name = obj_name.replace(' ', "_");
+
+        format!("{}_id_{}_copy_{}", obj_name, klipper_object_id, inst_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // GCode.hpp:44-55 class OozePrevention
+    // -----------------------------------------------------------------------
+
+    /// GCode.hpp:44-55 `class OozePrevention`
+    #[derive(Debug, Clone, Default)]
+    pub struct OozePrevention {
+        pub enable: bool,
+        pub standby_points: Points,
+    }
+
+    impl OozePrevention {
+        /// GCode.hpp:49 `OozePrevention() : enable(false) {}`
+        pub fn new() -> Self {
+            OozePrevention { enable: false, standby_points: Points::new() }
+        }
+
+        /// GCode.cpp:332-360 `std::string OozePrevention::pre_toolchange(GCode& gcodegen)`
+        pub fn pre_toolchange(&self, gcodegen: &mut GCode) -> String {
+            let mut gcode = String::new();
+
+            // move to the nearest standby point
+            if !self.standby_points.is_empty() {
+                // get current position in print coordinates
+                let writer_pos = gcodegen.writer().get_position();
+                // Point::new_scale: `coord_t(scale_(x))` truncates.
+                let pos = Point::new(scale_(writer_pos.x) as crate::Coord, scale_(writer_pos.y) as crate::Coord);
+
+                // find standby point
+                let mut standby_point = Point::new(0, 0);
+                pos.nearest_point(&self.standby_points, &mut standby_point);
+
+                /*  We don't call gcodegen.travel_to() because we don't need retraction (it was already
+                    triggered by the caller) nor reduce_crossing_wall and also because the coordinates
+                    of the destination point must not be transformed by origin nor current extruder offset.  */
+                gcode += &gcodegen
+                    .writer_mut()
+                    .travel_to_xy(Vec2d::new(unscale(standby_point.x), unscale(standby_point.y)), "move to standby position");
+            }
+
+            let standby_temperature_delta = pp_int(&gcodegen.config(), "standby_temperature_delta").unwrap_or(0);
+            if standby_temperature_delta != 0 {
+                // we assume that heating is always slower than cooling, so no need to block
+                let temp = self._get_temp(gcodegen) + standby_temperature_delta;
+                let id = gcodegen.writer().filament().map(|f| f.id() as i32).unwrap_or(0);
+                gcode += &gcodegen.writer().set_temperature(temp as u32, false, id);
+            }
+
+            gcode
+        }
+
+        /// GCode.cpp:362-367 `std::string OozePrevention::post_toolchange(GCode& gcodegen)`
+        pub fn post_toolchange(&self, gcodegen: &mut GCode) -> String {
+            if pp_int(&gcodegen.config(), "standby_temperature_delta").unwrap_or(0) != 0 {
+                let temp = self._get_temp(gcodegen);
+                let id = gcodegen.writer().filament().map(|f| f.id() as i32).unwrap_or(0);
+                gcodegen.writer().set_temperature(temp as u32, true, id)
+            } else {
+                String::new()
+            }
+        }
+
+        /// GCode.cpp:369-376 `int OozePrevention::_get_temp(GCode& gcodegen)`
+        fn _get_temp(&self, gcodegen: &GCode) -> i32 {
+            let filament_id = gcodegen.writer().filament().map(|f| f.id()).unwrap_or(0);
+            // `get_filament_config_idx(gcodegen.config(), ..)` reads the GCodeConfig options of the
+            // configuration, which the writer's configuration holds (GCode::apply_print_config).
+            let config_idx = crate::extruder::get_filament_config_idx(&gcodegen.writer().config, filament_id);
+            if gcodegen.layer_id() == Some(0) {
+                pp_get_at(&pp_ints(gcodegen.config(), "nozzle_temperature_initial_layer"), config_idx)
+            } else {
+                pp_get_at(&pp_ints(gcodegen.config(), "nozzle_temperature"), config_idx)
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // GCode.hpp:57-66 class Wipe
+    // -----------------------------------------------------------------------
+
+    /// GCode.hpp:57-66 `class Wipe`
+    #[derive(Debug, Clone, Default)]
+    pub struct Wipe {
+        pub enable: bool,
+        pub path: Polyline,
+    }
+
+    impl Wipe {
+        /// GCode.hpp:62 `Wipe() : enable(false) {}`
+        pub fn new() -> Self {
+            Wipe { enable: false, path: Polyline::new() }
+        }
+
+        /// GCode.hpp:63 `bool has_path() const { return !this->path.points.empty(); }`
+        pub fn has_path(&self) -> bool {
+            !self.path.points.is_empty()
+        }
+
+        /// GCode.hpp:64 `void reset_path() { this->path = Polyline(); }`
+        pub fn reset_path(&mut self) {
+            self.path = Polyline::new();
+        }
+
+        /// GCode.cpp:440-524 `std::string Wipe::wipe(GCode& gcodegen, bool toolchange, bool is_last)`.
+        /// The wipe of the class is `gcodegen.m_wipe`; it is taken out for the call and put back, as
+        /// the C++ `this` is a member of `gcodegen`.
+        pub fn wipe(gcodegen: &mut GCode, toolchange: bool, is_last: bool) -> String {
+            let mut gcode = String::new();
+
+            /*  Reduce feedrate a bit; travel speed is often too high to move on existing material.
+                Too fast = ripping of existing material; too slow = short wipe path, thus more blob.  */
+            //OrcaSlicer
+            let filament_id = gcodegen.writer().filament().map(|f| f.id()).unwrap_or(0);
+            let cur_speed = gcodegen.writer().get_current_speed();
+            let role_base_wipe_speed = pp_bool(gcodegen.config(), "role_base_wipe_speed").unwrap_or(false);
+            let mut wipe_speed = if role_base_wipe_speed && cur_speed > EPSILON {
+                cur_speed / 60.0
+            } else {
+                let wconfig = &gcodegen.writer().config;
+                wconfig.travel_speed.get_at(crate::extruder::get_process_config_idx(wconfig, filament_id))
+                    * pp_float(gcodegen.config(), "wipe_speed").unwrap_or(0.0)
+                    / 100.0
+            };
+
+            if toolchange {
+                let tc_wipe_speed = pp_float(gcodegen.print_config(), "prime_tower_wipe_speed").unwrap_or(0.0);
+                wipe_speed = if tc_wipe_speed > 0.0 {
+                    tc_wipe_speed
+                } else {
+                    pp_float(gcodegen.print_config(), "prime_tower_max_speed").unwrap_or(0.0)
+                };
+            }
+
+            // get the retraction length
+            let (retract_length_toolchange, retraction_length, retract_before_wipe) = {
+                let f = gcodegen.writer().filament().expect("Wipe::wipe(): no filament");
+                (f.retract_length_toolchange(), f.retraction_length(), f.retract_before_wipe())
+            };
+            let mut length = if toolchange { retract_length_toolchange } else { retraction_length };
+            // Shorten the retraction length by the amount already retracted before wipe.
+            length *= 1.0 - retract_before_wipe;
+
+            if length >= 0.0 {
+                /*  Calculate how long we need to travel in order to consume the required
+                    amount of retraction. In other words, how far do we move in XY at wipe_speed
+                    for the time needed to consume retraction_length at retraction_speed?  */
+                // BBS
+                let mut wipe_dist = scale_(pp_get_at(&pp_floats(gcodegen.config(), "wipe_distance"), filament_id as usize));
+                if toolchange {
+                    let tc_wipe_dist = pp_float(gcodegen.print_config(), "prime_tower_wipe_distance").unwrap_or(0.0);
+                    if tc_wipe_dist > 0.0 {
+                        wipe_dist = scale_(tc_wipe_dist);
+                    }
+                }
+
+                /*  Take the stored wipe path and replace first point with the current actual position
+                    (they might be different, for example, in case of loop clipping).  */
+                let mut wipe_path = Polyline::new();
+                wipe_path.append_point(*gcodegen.last_pos());
+                let stored = &gcodegen.m_wipe.path.points;
+                if stored.len() > 1 {
+                    wipe_path.append_points(&stored[1..].to_vec());
+                }
+
+                let len = wipe_path.length();
+                wipe_path.clip_end(len - wipe_dist);
+
+                // subdivide the retraction in segments
+                if !wipe_path.points.is_empty() {
+                    // BBS. Handle short path case.
+                    if wipe_path.length() < wipe_dist {
+                        wipe_dist = wipe_path.length();
+                        //BBS: avoid to divide 0
+                        wipe_dist = if wipe_dist < EPSILON { EPSILON } else { wipe_dist };
+                    }
+
+                    // add tag for processor
+                    gcode += &format!(
+                        ";{}\n",
+                        crate::gcode::g_code_processor::reserved_tag(crate::gcode::g_code_processor::ETags::WipeStart)
+                    );
+                    //BBS: don't need to enable cooling makers when this is the last wipe. Because no more cooling layer will clean this "_WIPE"
+                    let marker = if gcodegen.enable_cooling_markers() && !is_last { ";_WIPE" } else { "" };
+                    gcode += &gcodegen.writer_mut().set_speed(wipe_speed * 60.0, "", marker);
+                    for line in wipe_path.lines() {
+                        let segment_length = line.length();
+                        /*  Reduce retraction length a bit to avoid effective retraction speed to be greater than the configured one
+                            due to rounding (TODO: test and/or better math for this)  */
+                        let d_e = length * (segment_length / wipe_dist) * 0.95;
+                        //BBS: fix this FIXME
+                        let target = gcodegen.point_to_gcode(&line.b);
+                        gcode += &gcodegen.writer_mut().extrude_to_xy(target, -d_e, "wipe and retract", false);
+                    }
+                    // add tag for processor
+                    gcode += &format!(
+                        ";{}\n",
+                        crate::gcode::g_code_processor::reserved_tag(crate::gcode::g_code_processor::ETags::WipeEnd)
+                    );
+                    gcodegen.set_last_pos(*wipe_path.points.last().unwrap());
+                }
+
+                // prevent wiping again on same path
+                gcodegen.m_wipe.reset_path();
+            }
+
+            gcode
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // GCode.hpp:166-171 class ColorPrintColors
+    // -----------------------------------------------------------------------
+
+    /// GCode.hpp:166-171 `class ColorPrintColors`
+    pub struct ColorPrintColors;
+
+    /// GCode.cpp:1566 `const std::vector<std::string> ColorPrintColors::Colors`
+    const COLOR_PRINT_COLORS: [&str; 7] = ["#C0392B", "#E67E22", "#F1C40F", "#27AE60", "#1ABC9C", "#2980B9", "#9B59B6"];
+
+    impl ColorPrintColors {
+        /// GCode.hpp:170 `static const std::vector<std::string>& get() { return Colors; }`
+        pub fn get() -> &'static [&'static str] {
+            &COLOR_PRINT_COLORS
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // GCode.hpp:173-742 class GCode
+    // -----------------------------------------------------------------------
+
+    /// GCode.hpp:255-292 `struct LayerToPrint`: object and support extrusions of the same
+    /// PrintObject at the same print_z.
+    #[derive(Clone, Copy, Default)]
+    pub struct LayerToPrint<'a> {
+        pub object_layer: Option<&'a crate::layer::Layer>,
+        pub support_layer: Option<&'a crate::layer::Layer>,
+        //BBS: used for shared object logic
+        pub original_object: Option<&'a crate::print_object::PrintObject>,
+    }
+
+    impl<'a> LayerToPrint<'a> {
+        /// GCode.hpp:257 `LayerToPrint() : object_layer(nullptr), support_layer(nullptr),
+        /// original_object(nullptr) {}`
+        pub fn new() -> Self {
+            LayerToPrint { object_layer: None, support_layer: None, original_object: None }
+        }
+
+        /// GCode.hpp:261-270 `const Layer* layer() const`
+        pub fn layer(&self) -> Option<&'a crate::layer::Layer> {
+            if self.object_layer.is_some() {
+                return self.object_layer;
+            }
+
+            if self.support_layer.is_some() {
+                return self.support_layer;
+            }
+
+            None
+        }
+
+        /// GCode.hpp:272-275 `const PrintObject* object() const`: the configuration view of the
+        /// layer's object (`Layer::object`).
+        pub fn object(&self) -> Option<crate::print_object::ObjectRef<'a>> {
+            self.layer().map(|l| l.object())
+        }
+
+        /// GCode.hpp:276-291 `coordf_t print_z() const`
+        pub fn print_z(&self) -> f64 {
+            let mut sum_z = 0.0f64;
+            let mut count = 0usize;
+            if let Some(l) = self.object_layer {
+                sum_z += l.print_z;
+                count += 1;
+            }
+
+            if let Some(l) = self.support_layer {
+                sum_z += l.print_z;
+                count += 1;
+            }
+
+            sum_z / count as f64
+        }
+    }
+
+    /// GCode.hpp:336-375 `struct LayerResult`
+    #[derive(Debug, Clone, Default)]
+    pub struct LayerResult {
+        pub gcode: String,
+        pub layer_id: usize,
+        // Is spiral vase post processing enabled for this layer?
+        pub spiral_vase_enable: bool,
+        // Should the cooling buffer content be flushed at the end of this layer?
+        pub cooling_buffer_flush: bool,
+        // the layer store pos of gcode
+        pub gcode_store_pos: usize,
+        //store each layer_time
+        pub layer_time: f32,
+        pub not_set_additional_fan: bool,
+    }
+
+    impl LayerResult {
+        /// GCode.hpp:349-350 `LayerResult(const std::string& gcode_, const size_t layer_id_, const bool
+        /// spiral_vase_enable_, const bool cooling_buffer_flush_, const size_t gcode_store_pos_ =
+        /// static_cast<size_t>(-1))`
+        pub fn new(gcode: String, layer_id: usize, spiral_vase_enable: bool, cooling_buffer_flush: bool, gcode_store_pos: usize) -> Self {
+            LayerResult {
+                gcode,
+                layer_id,
+                spiral_vase_enable,
+                cooling_buffer_flush,
+                gcode_store_pos,
+                layer_time: 0.0,
+                not_set_additional_fan: false,
+            }
+        }
+    }
+
+    /// GCode.hpp:295-327 `class GCodeOutputStream`: the G-code file and the processor every text
+    /// written to it goes through.
+    ///
+    /// The C++ keeps a reference to the `GCode`'s processor; the stream keeps a pointer to it, as the
+    /// writer's extruders keep one to the writer's configuration.
+    pub struct GCodeOutputStream {
+        f: Option<std::fs::File>,
+        m_processor: *mut GCodeProcessor,
+        // errno captured at the first failed fwrite/fflush, 0 if none.
+        m_write_errno: i32,
+        // The error indicator of the stream (`ferror`).
+        m_error: bool,
+    }
+
+    impl GCodeOutputStream {
+        /// GCode.hpp:297 `GCodeOutputStream(FILE *f, GCodeProcessor &processor)`
+        ///
+        /// # Safety
+        /// `processor` must outlive the stream and not move while it is open.
+        pub unsafe fn new(f: Option<std::fs::File>, processor: *mut GCodeProcessor) -> Self {
+            GCodeOutputStream { f, m_processor: processor, m_write_errno: 0, m_error: false }
+        }
+
+        /// GCode.hpp:300 `bool is_open() const { return f; }`
+        pub fn is_open(&self) -> bool {
+            self.f.is_some()
+        }
+
+        /// GCode.cpp:7082-7085 `bool GCode::GCodeOutputStream::is_error() const`
+        pub fn is_error(&self) -> bool {
+            self.m_error
+        }
+
+        /// GCode.cpp:7087-7090 `std::string GCode::GCodeOutputStream::get_last_error() const`
+        pub fn get_last_error(&self) -> String {
+            if self.m_write_errno == 0 {
+                String::new()
+            } else {
+                std::io::Error::from_raw_os_error(self.m_write_errno).to_string()
+            }
+        }
+
+        /// GCode.cpp:7092-7096 `void GCode::GCodeOutputStream::flush()`
+        pub fn flush(&mut self) {
+            use std::io::Write;
+            if let Some(f) = self.f.as_mut() {
+                if let Err(e) = f.flush() {
+                    self.m_error = true;
+                    if self.m_write_errno == 0 {
+                        self.m_write_errno = e.raw_os_error().unwrap_or(5);
+                    }
+                }
+            }
+        }
+
+        /// GCode.cpp:7098-7104 `void GCode::GCodeOutputStream::close()`
+        pub fn close(&mut self) {
+            if self.f.is_some() {
+                self.f = None;
+            }
+        }
+
+        /// GCode.cpp:7106-7117 `void GCode::GCodeOutputStream::write(const char *what)`
+        pub fn write(&mut self, what: &str) {
+            use std::io::Write;
+            let gcode = what;
+            // writes string to file
+            if let Some(f) = self.f.as_mut() {
+                if let Err(e) = f.write_all(gcode.as_bytes()) {
+                    self.m_error = true;
+                    if self.m_write_errno == 0 {
+                        self.m_write_errno = e.raw_os_error().unwrap_or(5);
+                    }
+                }
+            }
+            //FIXME don't allocate a string, maybe process a batch of lines?
+            // SAFETY: the processor outlives the stream (`new`).
+            unsafe { (*self.m_processor).process_buffer(gcode) };
+        }
+
+        /// GCode.cpp:7119-7123 `void GCode::GCodeOutputStream::writeln(const std::string &what)`
+        pub fn writeln(&mut self, what: &str) {
+            if !what.is_empty() {
+                if what.ends_with('\n') {
+                    self.write(what);
+                } else {
+                    self.write(&format!("{what}\n"));
+                }
+            }
+        }
+
+        /// GCode.cpp:7125-7148 `void GCode::GCodeOutputStream::write_format(const char* format, ...)`:
+        /// the formatted text, written. The callers format with `format_args!` what the C++ formats
+        /// with `vsnprintf`.
+        pub fn write_format(&mut self, args: std::fmt::Arguments) {
+            let buffer = std::fmt::format(args);
+            self.write(&buffer);
+        }
+    }
+
+    /// GCode.hpp:173-742 `class GCode`: the members its ported methods use.
+    pub struct GCode<'a> {
+        /* Origin of print coordinates expressed in unscaled G-code coordinates.
+           This affects the input arguments supplied to the extrude*() and travel_to()
+           methods. */
+        pub m_origin: Vec2d,
+        pub m_config: DynamicPrintConfig,
+        /// `m_print->config()`: the print's own configuration, read where the C++ reads it through
+        /// `m_print` / `print.config()`.
+        pub m_print_config: DynamicPrintConfig,
+        // scaled G-code resolution
+        pub m_scaled_resolution: f64,
+        pub m_writer: GCodeWriter,
+        pub m_ooze_prevention: OozePrevention,
+        pub m_wipe: Wipe,
+        pub m_enable_loop_clipping: bool,
+        // If enabled, the G-code generator will put following comments at the ends
+        // of the G-code lines: _EXTRUDE_SET_SPEED, _WIPE, _OVERHANG_FAN_START, _OVERHANG_FAN_END, _IRONING_FAN_START, _IRONING_FAN_END
+        // Those comments are received and consumed (removed from the G-code) by the CoolingBuffer.pm Perl module.
+        pub m_enable_cooling_markers: bool,
+        pub m_is_ironing_fan_on: bool,
+        // Markers for the Pressure Equalizer to recognize the extrusion type.
+        // The Pressure Equalizer removes the markers from the final G-code.
+        pub m_enable_extrusion_role_markers: bool,
+        // Keeps track of the last extrusion role passed to the processor
+        pub m_last_processor_extrusion_role: crate::extrusion_entity::ExtrusionRole,
+        // How many times will change_layer() be called?
+        // change_layer() will update the progress bar.
+        pub m_layer_count: u32,
+        // Progress bar indicator. Increments from -1 up to layer_count.
+        pub m_layer_index: i32,
+        // Current layer processed. In sequential printing mode, only a single copy will be printed.
+        // In non-sequential mode, all its copies will be printed.
+        pub m_layer: Option<&'a crate::layer::Layer>,
+        /// `m_layer->object()->layers()`: the layers of the object `m_layer` belongs to.
+        pub m_layer_object_layers: &'a [crate::layer::Layer],
+        // m_layer is an object layer and it is being printed over raft surface.
+        pub m_object_layer_over_raft: bool,
+        // Support for the extrusion role markers. Which marker is active?
+        pub m_last_extrusion_role: crate::extrusion_entity::ExtrusionRole,
+        // Support for G-Code Processor
+        pub m_last_height: f32,
+        pub m_last_layer_z: f32,
+        pub m_max_layer_z: f32,
+        pub m_last_width: f32,
+        pub m_last_layer_accumulated_mass: f64,
+        pub m_last_pos: Point,
+        pub m_last_pos_defined: bool,
+        pub m_last_scarf_seam_flag: bool,
+        pub m_scarf_seam_start: bool,
+        pub m_spiral_vase: Option<crate::gcode::spiral_vase::SpiralVase>,
+        // Heights (print_z) at which the skirt has already been extruded.
+        pub m_skirt_done: Vec<f64>,
+        // Zero based filament of the last skirt layer, preferred again on the next one in multi-diameter prints.
+        pub m_skirt_last_filament: u32,
+        // Has the brim been extruded already? Brim is being extruded only for the first object of a multi-object print.
+        pub m_brim_done: bool,
+        // Flag indicating whether the nozzle temperature changes from 1st to 2nd layer were performed.
+        pub m_second_layer_things_done: bool,
+        pub m_bed_temp_transition_done: bool,
+        //BBS
+        pub m_enable_label_object: bool,
+        pub m_label_objects_ids: Vec<usize>,
+        // Bit i mirrors m_label_objects_ids[i] and stays set while that object still has
+        // something left to print. Broadcast to the firmware through M639 so it can end the
+        // print early once every remaining object has been skipped.
+        pub m_remaining_objects_bitmap: u64,
+        // Set when an object finished on the layer being generated; the next layer emits the
+        // broadcast right after change_layer(), which is guaranteed to sit outside M624/M625.
+        pub m_pending_remaining_objects_gcode: bool,
+        // Maps a layer index to the objects whose last layer it is. Only filled in by-layer mode.
+        pub m_objects_finished_at_layer: std::collections::BTreeMap<usize, Vec<usize>>,
+        pub m_smooth_coefficient: f32,
+        pub m_timelapse_warning_code: i32,
+        pub m_support_traditional_timelapse: bool,
+        pub m_silent_time_estimator_enabled: bool,
+        // Processor
+        pub m_processor: GCodeProcessor,
+        /// `m_curr_print`: whether it is set, and its `is_BBL_Printer()`.
+        pub m_curr_print_is_bbl_printer: Option<bool>,
+        pub m_toolchange_count: u32,
+        pub m_filament_change_sequence: Vec<u32>,
+        pub m_nozzle_change_sequence: Vec<u32>,
+        pub m_nominal_z: f64,
+        pub m_sub_layer_flow_ratio: f64,
+        pub m_sub_layer_height: f64,
+        pub m_need_change_layer_lift_z: bool,
+        pub m_start_gcode_filament: i32,
+        pub m_filament_instances_code: String,
+        pub m_cur_layer_idx: usize,
+        pub m_initial_layer_extruders: std::collections::BTreeSet<u32>,
+        pub m_sorted_layer_filaments: Vec<Vec<u32>>,
+    }
+
+    impl<'a> Default for GCode<'a> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl<'a> GCode<'a> {
+        /// GCode.hpp:175-203 `GCode()`
+        pub fn new() -> Self {
+            GCode {
+                m_origin: Vec2d::new(0.0, 0.0),
+                m_config: DynamicPrintConfig::new(),
+                m_print_config: DynamicPrintConfig::new(),
+                m_scaled_resolution: 0.0,
+                m_writer: GCodeWriter::new(),
+                m_ooze_prevention: OozePrevention::new(),
+                m_wipe: Wipe::new(),
+                m_enable_loop_clipping: true,
+                m_enable_cooling_markers: false,
+                m_is_ironing_fan_on: false,
+                m_enable_extrusion_role_markers: false,
+                m_last_processor_extrusion_role: crate::extrusion_entity::ExtrusionRole::None,
+                m_layer_count: 0,
+                m_layer_index: -1,
+                m_layer: None,
+                m_layer_object_layers: &[],
+                m_object_layer_over_raft: false,
+                m_last_extrusion_role: crate::extrusion_entity::ExtrusionRole::None,
+                m_last_height: 0.0,
+                m_last_layer_z: 0.0,
+                m_max_layer_z: 0.0,
+                m_last_width: 0.0,
+                m_last_layer_accumulated_mass: 0.0,
+                m_last_pos: Point::new(0, 0),
+                m_last_pos_defined: false,
+                m_last_scarf_seam_flag: false,
+                m_scarf_seam_start: false,
+                m_spiral_vase: None,
+                m_skirt_done: Vec::new(),
+                m_skirt_last_filament: u32::MAX,
+                m_brim_done: false,
+                m_second_layer_things_done: false,
+                m_bed_temp_transition_done: false,
+                m_enable_label_object: false,
+                m_label_objects_ids: Vec::new(),
+                m_remaining_objects_bitmap: 0,
+                m_pending_remaining_objects_gcode: false,
+                m_objects_finished_at_layer: std::collections::BTreeMap::new(),
+                m_smooth_coefficient: 0.0,
+                m_timelapse_warning_code: 0,
+                m_support_traditional_timelapse: true,
+                m_silent_time_estimator_enabled: false,
+                m_processor: GCodeProcessor::new(),
+                m_curr_print_is_bbl_printer: None,
+                m_toolchange_count: 0,
+                m_filament_change_sequence: Vec::new(),
+                m_nozzle_change_sequence: Vec::new(),
+                m_nominal_z: 0.0,
+                m_sub_layer_flow_ratio: 0.0,
+                m_sub_layer_height: 0.0,
+                m_need_change_layer_lift_z: false,
+                m_start_gcode_filament: -1,
+                m_filament_instances_code: String::new(),
+                m_cur_layer_idx: 0,
+                m_initial_layer_extruders: std::collections::BTreeSet::new(),
+                m_sorted_layer_filaments: Vec::new(),
+            }
+        }
+
+        /// GCode.hpp:211 `void set_gcode_offset(double x, double y)`
+        pub fn set_gcode_offset(&mut self, x: f64, y: f64) {
+            self.m_writer.set_xy_offset(x, y);
+            self.m_processor.set_xy_offset(x, y);
+        }
+
+        /// GCode.hpp:214 `const Vec2d& origin() const`
+        pub fn origin(&self) -> &Vec2d {
+            &self.m_origin
+        }
+
+        /// GCode.cpp:6446-6456 `void GCode::set_origin(const Vec2d &pointf)`
+        pub fn set_origin(&mut self, pointf: &Vec2d) {
+            // if origin increases (goes towards right), last_pos decreases because it goes towards left
+            let translate = point_from_f64(scale_(self.m_origin.x - pointf.x), scale_(self.m_origin.y - pointf.y));
+            self.m_last_pos = Point::new(self.m_last_pos.x + translate.x, self.m_last_pos.y + translate.y);
+            self.m_wipe.path.translate(translate);
+            self.m_origin = *pointf;
+        }
+
+        /// GCode.hpp:217 `const Point& last_pos() const`
+        pub fn last_pos(&self) -> &Point {
+            &self.m_last_pos
+        }
+
+        /// GCode.hpp:218 `const bool& last_scarf_seam_flag() const`
+        pub fn last_scarf_seam_flag(&self) -> bool {
+            self.m_last_scarf_seam_flag
+        }
+
+        /// GCode.hpp:219 `const bool& scarf_seam_start_flag() const`
+        pub fn scarf_seam_start_flag(&self) -> bool {
+            self.m_scarf_seam_start
+        }
+
+        /// The extruder of the writer's current filament (`m_writer.filament()->extruder_id()`).
+        fn current_extruder_id(&self) -> usize {
+            self.m_writer.filament().map(|f| f.extruder_id() as usize).unwrap_or(0)
+        }
+
+        /// GCode.cpp:9028-9033 `Vec2d GCode::point_to_gcode(const Point &point) const`: a model-space
+        /// scaled point in G-code coordinates.
+        pub fn point_to_gcode(&self, point: &Point) -> Vec2d {
+            // EXTRUDER_CONFIG(extruder_offset)
+            let extruder_offset = pp_get_at(&pp_points(&self.m_config, "extruder_offset"), self.current_extruder_id());
+            Vec2d::new(
+                unscale(point.x) + self.m_origin.x - extruder_offset.x,
+                unscale(point.y) + self.m_origin.y - extruder_offset.y,
+            )
+        }
+
+        /// GCode.cpp:9035-9042 `Point GCode::gcode_to_point(const Vec2d &point) const`
+        pub fn gcode_to_point(&self, point: &Vec2d) -> Point {
+            let extruder_offset = pp_get_at(&pp_points(&self.m_config, "extruder_offset"), self.current_extruder_id());
+            point_from_f64(
+                scale_(point.x - self.m_origin.x + extruder_offset.x),
+                scale_(point.y - self.m_origin.y + extruder_offset.y),
+            )
+        }
+
+        /// GCode.hpp:222 `const FullPrintConfig &config() const`
+        pub fn config(&self) -> &DynamicPrintConfig {
+            &self.m_config
+        }
+
+        /// `m_print->config()` (see `m_print_config`).
+        pub fn print_config(&self) -> &DynamicPrintConfig {
+            &self.m_print_config
+        }
+
+        /// GCode.hpp:223 `const Layer* layer() const`
+        pub fn layer(&self) -> Option<&'a crate::layer::Layer> {
+            self.m_layer
+        }
+
+        /// `layer()->id()` when there is a layer.
+        pub fn layer_id(&self) -> Option<usize> {
+            self.m_layer.map(|l| l.id())
+        }
+
+        /// GCode.hpp:224-225 `GCodeWriter& writer()`
+        pub fn writer(&self) -> &GCodeWriter {
+            &self.m_writer
+        }
+
+        /// GCode.hpp:224 `GCodeWriter& writer()` (the mutable one).
+        pub fn writer_mut(&mut self) -> &mut GCodeWriter {
+            &mut self.m_writer
+        }
+
+        /// GCode.hpp:231 `bool enable_cooling_markers() const`
+        pub fn enable_cooling_markers(&self) -> bool {
+            self.m_enable_cooling_markers
+        }
+
+        /// GCode.hpp:234 `unsigned int layer_count() const`
+        pub fn layer_count(&self) -> u32 {
+            self.m_layer_count
+        }
+
+        /// GCode.hpp:235 `void set_layer_count(unsigned int value)`
+        pub fn set_layer_count(&mut self, value: u32) {
+            self.m_layer_count = value;
+        }
+
+        /// GCode.cpp:6410-6431 `static void GCode::append_full_config(const DynamicPrintConfig &cfg,
+        /// std::string &str)`: every option of the configuration that is not banned nor nil, as
+        /// `; key = value` lines.
+        pub fn append_full_config(cfg: &DynamicPrintConfig, str: &mut String) {
+            // Sorted list of config keys, which shall not be stored into the G-code. Initializer list.
+            const BANNED_KEYS: [&str; 9] = [
+                "compatible_printers",
+                "compatible_prints",
+                "print_host",
+                "print_host_webui",
+                "printhost_apikey",
+                "printhost_cafile",
+                "printhost_user",
+                "printhost_password",
+                "printhost_port",
+            ];
+            let is_banned = |key: &str| -> bool { BANNED_KEYS.contains(&key) };
+            for key in cfg.keys() {
+                if !is_banned(&key) && !cfg.option(&key).map(|o| o.is_nil()).unwrap_or(true) {
+                    let value = cfg.opt_serialize(&key).unwrap_or_default();
+                    str.push_str(&format!("; {} = {}\n", key, value));
+                }
+            }
+        }
+
+        /// GCode.cpp:1959-1963 `std::string GCode::unretract(float extra_retract, bool include_unlift)`
+        pub fn unretract(&mut self, extra_retract: f32, include_unlift: bool) -> String {
+            let unlift = if include_unlift { self.m_writer.unlift() } else { String::new() };
+            unlift + &self.m_writer.unretract(extra_retract)
+        }
+
+        /// GCode.cpp:1952-1957 `bool GCode::is_BBL_Printer()`
+        pub fn is_bbl_printer(&self) -> bool {
+            if let Some(is_bbl) = self.m_curr_print_is_bbl_printer {
+                return is_bbl;
+            }
+            false
+        }
+
+        /// GCode.hpp:252 `void set_smooth_coff(float filamet_melting)`
+        pub fn set_smooth_coff(&mut self, filamet_melting: f32) {
+            self.m_smooth_coefficient = filamet_melting * pp_float(&self.m_config, "smooth_coefficient").unwrap_or(0.0) as f32;
+        }
+
+        /// GCode.hpp:420 `void set_last_pos(const Point &pos)`
+        pub fn set_last_pos(&mut self, pos: Point) {
+            self.m_last_pos = pos;
+            self.m_last_pos_defined = true;
+        }
+
+        /// GCode.hpp:421 `void set_last_scarf_seam_flag(bool flag)`
+        pub fn set_last_scarf_seam_flag(&mut self, flag: bool) {
+            self.m_last_scarf_seam_flag = flag;
+        }
+
+        /// GCode.hpp:422 `void set_scarf_seam_start_flag(bool flag)`
+        pub fn set_scarf_seam_start_flag(&mut self, flag: bool) {
+            self.m_scarf_seam_start = flag;
+        }
+
+        /// GCode.hpp:423 `bool last_pos_defined() const`
+        pub fn last_pos_defined(&self) -> bool {
+            self.m_last_pos_defined
+        }
+
+        /// GCode.cpp:6433-6444 `void GCode::set_extruders(const std::vector<unsigned int>
+        /// &extruder_ids)`
+        pub fn set_extruders(&mut self, extruder_ids: &[u32]) {
+            self.m_writer.set_extruders(extruder_ids.to_vec());
+
+            // enable wipe path generation if any extruder has wipe enabled
+            self.m_wipe.enable = false;
+            let wipe = pp_ints(&self.m_config, "wipe");
+            for &id in extruder_ids {
+                if pp_get_at(&wipe, id as usize) != 0 {
+                    self.m_wipe.enable = true;
+                    break;
+                }
+            }
+        }
+
+        /// GCode.cpp:6458-6471 `std::string GCode::preamble()`
+        pub fn preamble(&mut self) -> String {
+            let gcode = self.m_writer.preamble();
+
+            /*  Perform a *silent* move to z_offset: we need this to initialize the Z
+                position of our writer object so that any initial lift taking place
+                before the first layer change will raise the extruder from the correct
+                initial Z instead of 0.  */
+            //m_writer.travel_to_z(m_config.z_offset.value);
+            self.m_writer.travel_to_z(0.0, "");
+
+            gcode
+        }
+
+        /// The variant index of a filament in the per-variant filament vectors
+        /// (`get_filament_config_index`, GCode.cpp:3802-3808), as `GCodePlaceholders` resolves it.
+        fn filament_config_index(&self, filament_id: i32) -> usize {
+            filament_id.max(0) as usize
+        }
+
+        /// The variant index of a filament in the per-variant process vectors
+        /// (`get_nozzle_config_index`, GCode.cpp:3810-3816), as `GCodePlaceholders` resolves it.
+        fn nozzle_config_index(&self, filament_id: i32) -> usize {
+            filament_id.max(0) as usize
+        }
+
+        /// The current filament's id (`m_writer.filament()->id()`).
+        fn current_filament_id(&self) -> u32 {
+            self.m_writer.filament().map(|f| f.id()).unwrap_or(0)
+        }
+
+        /// GCode.cpp:3818-3825 `void GCode::set_extrude_acceleration(bool is_first_layer)`
+        pub fn set_extrude_acceleration(&mut self, is_first_layer: bool) {
+            let idx = self.nozzle_config_index(self.current_filament_id() as i32);
+            if is_first_layer {
+                let v = pp_get_at(&pp_floats(&self.m_config, "initial_layer_acceleration"), idx);
+                self.m_writer.set_acceleration((v + 0.5).floor() as u32);
+            } else {
+                let v = pp_get_at(&pp_floats(&self.m_config, "default_acceleration"), idx);
+                self.m_writer.set_acceleration((v + 0.5).floor() as u32);
+            }
+        }
+
+        /// GCode.cpp:4131-4171 `void GCode::print_machine_envelope(GCodeOutputStream &file, Print
+        /// &print, int extruder_id)`: the machine envelope G-code for the Marlin firmware, from the
+        /// `machine_max_xxx` parameters of `print.config()`.
+        pub fn print_machine_envelope(&self, file: &mut GCodeOutputStream, extruder_id: i32) {
+            let pc = &self.m_print_config;
+            // get_extruder_id(extruder_id): `filament_map` is 1-based.
+            let filament_map = pp_ints(&self.m_config, "filament_map");
+            let ext = if (extruder_id as usize) < filament_map.len() { (filament_map[extruder_id as usize] - 1) as usize } else { 0 };
+            let matched_machine_limit_idx = ext * 2;
+            let flavor = pp_int(pc, "gcode_flavor").unwrap_or(GCF_MARLIN_LEGACY);
+            if flavor == GCF_MARLIN_LEGACY || flavor == GCF_MARLIN_FIRMWARE {
+                let at = |key: &str| -> f64 { pp_floats(pc, key)[matched_machine_limit_idx] };
+                let front = |key: &str| -> f64 { pp_floats(pc, key)[0] };
+                file.write_format(format_args!(
+                    "M201 X{} Y{} Z{} E{}\n",
+                    (at("machine_max_acceleration_x") + 0.5) as i32,
+                    (at("machine_max_acceleration_y") + 0.5) as i32,
+                    (at("machine_max_acceleration_z") + 0.5) as i32,
+                    (at("machine_max_acceleration_e") + 0.5) as i32
+                ));
+                file.write_format(format_args!(
+                    "M203 X{} Y{} Z{} E{}\n",
+                    (at("machine_max_speed_x") + 0.5) as i32,
+                    (at("machine_max_speed_y") + 0.5) as i32,
+                    (at("machine_max_speed_z") + 0.5) as i32,
+                    (at("machine_max_speed_e") + 0.5) as i32
+                ));
+
+                // Now M204 - acceleration. This one is quite hairy thanks to how Marlin guys care about
+                // Legacy Marlin should export travel acceleration the same as printing acceleration.
+                // MarlinFirmware has the two separated.
+                let travel_acc = if flavor == GCF_MARLIN_LEGACY {
+                    (front("machine_max_acceleration_extruding") + 0.5) as i32
+                } else {
+                    (front("machine_max_acceleration_travel") + 0.5) as i32
+                };
+                file.write_format(format_args!(
+                    "M204 P{} R{} T{}\n",
+                    (front("machine_max_acceleration_extruding") + 0.5) as i32,
+                    (front("machine_max_acceleration_retracting") + 0.5) as i32,
+                    travel_acc
+                ));
+
+                file.write_format(format_args!(
+                    "M205 X{} Y{} Z{} E{}\n",
+                    crate::locales_utils::float_to_string_decimal_point(front("machine_max_jerk_x"), 2),
+                    crate::locales_utils::float_to_string_decimal_point(front("machine_max_jerk_y"), 2),
+                    crate::locales_utils::float_to_string_decimal_point(front("machine_max_jerk_z"), 2),
+                    crate::locales_utils::float_to_string_decimal_point(front("machine_max_jerk_e"), 2)
+                ));
+                //BBS: don't support M205 Sx Tx
+            }
+        }
+
+        /// GCode.cpp:4173-4178 `int GCode::get_bed_temperature(const int extruder_id, const bool
+        /// is_first_layer, const BedType bed_type) const`
+        fn bed_temperature(&self, extruder_id: i32, is_first_layer: bool, bed_type: crate::print_config::enums::BedType) -> i32 {
+            use crate::print_config::config_def::{get_bed_temp_1st_layer_key, get_bed_temp_key};
+            let bed_temp_key = if is_first_layer { get_bed_temp_1st_layer_key(bed_type) } else { get_bed_temp_key(bed_type) };
+            pp_get_at(&pp_ints(&self.m_config, &bed_temp_key), extruder_id.max(0) as usize)
+        }
+
+        /// GCode.cpp:4194-4220 `void GCode::_print_first_layer_bed_temperature(GCodeOutputStream &file,
+        /// Print &print, const std::string &gcode, unsigned int first_printing_extruder_id, bool wait)`:
+        /// the bed temperature of the first layer, unless the start G-code sets it.
+        /// `first_layer_filaments` is `print.get_slice_used_filaments(true)`.
+        pub fn _print_first_layer_bed_temperature(
+            &mut self,
+            file: &mut GCodeOutputStream,
+            first_layer_filaments: &[u32],
+            gcode: &str,
+            first_printing_extruder_id: u32,
+            wait: bool,
+        ) {
+            // Initial bed temperature based on the first extruder.
+            // BBS
+            let bed_temp: i32;
+            // BedTempFormula::btfHighestTemp == 1
+            if pp_int(&self.m_config, "bed_temperature_formula").unwrap_or(0) == 1 {
+                // get_highest_bed_temperature(true, print)
+                let bed_type = crate::print_config::enums::BedType::from_i32(pp_int(&self.m_config, "curr_bed_type").unwrap_or(1));
+                let mut highest = 0;
+                for &fidx in first_layer_filaments {
+                    highest = highest.max(self.bed_temperature(fidx as i32, true, bed_type));
+                }
+                bed_temp = highest;
+            } else {
+                let bed_type = crate::print_config::enums::BedType::from_i32(pp_int(&self.m_print_config, "curr_bed_type").unwrap_or(1));
+                bed_temp = self.bed_temperature(first_printing_extruder_id as i32, true, bed_type);
+            }
+            // Is the bed temperature set by the provided custom G-code?
+            let mut temp_by_gcode = -1;
+            let temp_set_by_gcode = custom_gcode_sets_temperature(gcode, 140, 190, false, &mut temp_by_gcode);
+            // BBS (the custom G-code's temperature is not used, `#if 0`).
+
+            // Always call m_writer.set_bed_temperature() so it will set the internal "current" state of the bed temp as if
+            // the custom start G-code emited these.
+            let set_temp_gcode = self.m_writer.set_bed_temperature(bed_temp, wait);
+            if !temp_set_by_gcode {
+                file.write(&set_temp_gcode);
+            }
+        }
+
+        /// GCode.cpp:4222-4262 `void GCode::_print_first_layer_extruder_temperatures(GCodeOutputStream
+        /// &file, Print &print, const std::string &gcode, unsigned int first_printing_extruder_id, bool
+        /// wait)`: the nozzle temperatures of the first layer, unless the start G-code sets them.
+        /// `print_extruders` is `print.extruders()`.
+        pub fn _print_first_layer_extruder_temperatures(
+            &mut self,
+            file: &mut GCodeOutputStream,
+            print_extruders: &[u32],
+            gcode: &str,
+            first_printing_extruder_id: u32,
+            wait: bool,
+        ) {
+            let pc_temps = pp_ints(&self.m_print_config, "nozzle_temperature_initial_layer");
+            // Is the bed temperature set by the provided custom G-code?
+            let mut temp_by_gcode = -1;
+            let include_g10 = pp_int(&self.m_print_config, "gcode_flavor").unwrap_or(GCF_MARLIN_LEGACY) == GCF_REPRAP_FIRMWARE;
+            if custom_gcode_sets_temperature(gcode, 104, 109, include_g10, &mut temp_by_gcode) {
+                // Set the extruder temperature at m_writer, but throw away the generated G-code as it will be written with the custom G-code.
+                let mut temp = pp_get_at(&pc_temps, self.filament_config_index(first_printing_extruder_id as i32));
+                if (0..1000).contains(&temp_by_gcode) {
+                    temp = temp_by_gcode;
+                }
+                self.m_writer.set_temperature(temp as u32, wait, first_printing_extruder_id as i32);
+            } else {
+                // Custom G-code does not set the extruder temperature. Do it now.
+                if pp_bool(&self.m_print_config, "single_extruder_multi_material").unwrap_or(false) {
+                    // Set temperature of the first printing extruder only.
+                    let temp = pp_get_at(&pc_temps, self.filament_config_index(first_printing_extruder_id as i32));
+                    if temp > 0 {
+                        file.write(&self.m_writer.set_temperature(temp as u32, wait, first_printing_extruder_id as i32));
+                    }
+                } else {
+                    // Set temperatures of all the printing extruders.
+                    for &tool_id in print_extruders {
+                        let mut temp = pp_get_at(&pc_temps, self.filament_config_index(tool_id as i32));
+                        if pp_bool(&self.m_print_config, "ooze_prevention").unwrap_or(false) {
+                            temp += pp_int(&self.m_print_config, "standby_temperature_delta").unwrap_or(0);
+                        }
+                        if temp > 0 {
+                            file.write(&self.m_writer.set_temperature(temp as u32, wait, tool_id as i32));
+                        }
+                    }
+                }
+            }
+        }
+
+        /// GCode.cpp:6513-6541 `void GCode::mass_load_limited_machine_acceleration(const
+        /// PrintStatistics curr_print_statistics, const Print &print, double &y_acceleration_limit_res,
+        /// double &accumulated_mass_res)`: the Y acceleration the accumulated print mass allows.
+        /// `total_weight` is `curr_print_statistics.total_weight`.
+        pub fn mass_load_limited_machine_acceleration(
+            &self,
+            total_weight: f64,
+            y_acceleration_limit_res: &mut f64,
+            accumulated_mass_res: &mut f64,
+        ) {
+            let mut curr_acceleration_y_config = 1e10f64;
+            let machine_max_acceleration_y = pp_floats(&self.m_print_config, "machine_max_acceleration_y");
+            for &temp in &machine_max_acceleration_y {
+                if curr_acceleration_y_config > temp {
+                    curr_acceleration_y_config = temp;
+                }
+            }
+            *accumulated_mass_res = total_weight;
+            // mass in g, acceleration in mm/s2
+            let machine_max_force_y = pp_float(&self.m_print_config, "machine_max_force_Y").unwrap_or(0.0);
+            let machine_bed_mass_y = pp_float(&self.m_print_config, "machine_bed_mass_Y").unwrap_or(0.0);
+            if machine_max_force_y > EPSILON && machine_bed_mass_y > EPSILON {
+                // This item is not applicable to this printer  FIXME-other printers need acceleration limit?
+                let virtual_force_g_mms2 = machine_max_force_y * 1e6; // x N =x * 1e6 g*mm/s2
+                if *accumulated_mass_res > EPSILON {
+                    let curr_acceleration_temp = virtual_force_g_mms2 / (machine_bed_mass_y + *accumulated_mass_res);
+                    *y_acceleration_limit_res = curr_acceleration_temp.min(curr_acceleration_y_config);
+                } else {
+                    *y_acceleration_limit_res = curr_acceleration_y_config;
+                }
+            } else {
+                *y_acceleration_limit_res = curr_acceleration_y_config;
+            }
+        }
+
+        /// GCode.cpp:6601-6613 `bool GCode::is_enable_overhang_speed()`
+        pub fn is_enable_overhang_speed(&self) -> bool {
+            let mut use_filament_overhang_speed = false;
+            let mut filament_idx = 0usize;
+            if let Some(f) = self.m_writer.filament() {
+                filament_idx = f.id() as usize;
+                use_filament_overhang_speed = pp_ints(&self.m_config, "override_process_overhang_speed")[filament_idx] != 0;
+            }
+            if use_filament_overhang_speed {
+                pp_ints(&self.m_config, "filament_enable_overhang_speed")[filament_idx] != 0
+            } else {
+                // NOZZLE_CONFIG(enable_overhang_speed)
+                let idx = self.nozzle_config_index(self.current_filament_id() as i32);
+                pp_get_at(&pp_ints(&self.m_config, "enable_overhang_speed"), idx) != 0
+            }
+        }
+
+        /// GCode.cpp:6615-6662 `double GCode::get_path_speed(const ExtrusionPath &path)`
+        pub fn get_path_speed(&self, path: &crate::extrusion_entity::ExtrusionPath) -> f64 {
+            use crate::extrusion_entity::ExtrusionRole as R;
+            let fid = self.current_filament_id();
+            let fcfg = |key: &str| -> f64 { pp_get_at(&pp_floats(&self.m_config, key), self.filament_config_index(fid as i32)) };
+            let ncfg = |key: &str| -> f64 { pp_get_at(&pp_floats(&self.m_config, key), self.nozzle_config_index(fid as i32)) };
+            let _min_speed = pp_get_at(&pp_floats(&self.m_config, "slow_down_min_speed"), fid as usize);
+            // set speed
+            let mut speed = 0.0f64;
+            if path.role == R::Perimeter {
+                speed = ncfg("inner_wall_speed");
+                if self.is_enable_overhang_speed() {
+                    let new_speed = self.get_overhang_degree_corr_speed(speed as f32, path.overhang_degree);
+                    speed = if new_speed == 0.0 { speed } else { new_speed };
+                }
+            } else if path.role == R::ExternalPerimeter {
+                speed = ncfg("outer_wall_speed");
+                if self.is_enable_overhang_speed() {
+                    let new_speed = self.get_overhang_degree_corr_speed(speed as f32, path.overhang_degree);
+                    speed = if new_speed == 0.0 { speed } else { new_speed };
+                }
+            } else if path.role == R::OverhangPerimeter && path.overhang_degree == 5.0 && self.is_enable_overhang_speed() {
+                let use_filament_bridge_speed = fcfg("override_process_overhang_speed") != 0.0;
+                speed = if use_filament_bridge_speed { fcfg("filament_overhang_totally_speed") } else { ncfg("overhang_totally_speed") };
+            } else if path.role == R::OverhangPerimeter || path.role == R::BridgeInfill || path.role == R::SupportTransition {
+                let use_filament_bridge_speed = fcfg("override_process_overhang_speed") != 0.0;
+                speed = if use_filament_bridge_speed { fcfg("filament_bridge_speed") } else { ncfg("bridge_speed") };
+            }
+            // BBS: if not set the speed, then use the filament_max_volumetric_speed directly
+            let filament_max_volumetric_speed = fcfg("filament_max_volumetric_speed");
+            if speed == 0.0 && path.mm3_per_mm > 0.0 {
+                speed = filament_max_volumetric_speed / path.mm3_per_mm;
+            }
+            if self.path_touches_bed(path) {
+                // BBS: for solid infill of initial layer, speed can be higher as long as
+                // wall lines have be attached
+                if path.role != R::BottomSurface {
+                    speed = ncfg("initial_layer_speed");
+                }
+            }
+
+            if filament_max_volumetric_speed > 0.0 {
+                let extrude_speed = filament_max_volumetric_speed / path.mm3_per_mm;
+
+                // cap speed with max_volumetric_speed anyway (even if user is not using autospeed)
+                speed = speed.min(extrude_speed);
+            }
+
+            speed
+        }
+
+        /// GCode.cpp:7171-7203 `double GCode::get_overhang_degree_corr_speed(float normal_speed, double
+        /// path_degree)`
+        pub fn get_overhang_degree_corr_speed(&self, normal_speed: f32, path_degree: f64) -> f64 {
+            // BBS: protection: overhang degree is float, make sure it not excess degree range
+            if path_degree <= 0.0 {
+                return normal_speed as f64;
+            }
+
+            // GCode.cpp:6584-6602 overhang_speed_key_map / filament_overhang_speed_key_map
+            let overhang_speed_key = |degree: i32| -> &'static str {
+                match degree {
+                    1 => "overhang_1_4_speed",
+                    2 => "overhang_2_4_speed",
+                    3 => "overhang_3_4_speed",
+                    4 => "overhang_4_4_speed",
+                    5 => "overhang_totally_speed",
+                    6 => "bridge_speed",
+                    _ => "",
+                }
+            };
+            let filament_overhang_speed_key = |degree: i32| -> &'static str {
+                match degree {
+                    1 => "filament_overhang_1_4_speed",
+                    2 => "filament_overhang_2_4_speed",
+                    3 => "filament_overhang_3_4_speed",
+                    4 => "filament_overhang_4_4_speed",
+                    5 => "filament_overhang_totally_speed",
+                    6 => "filament_bridge_speed",
+                    _ => "",
+                }
+            };
+
+            let mut filament_idx = 0usize;
+            let mut use_filament_overhang_speed = false;
+            if let Some(f) = self.m_writer.filament() {
+                filament_idx = f.id() as usize;
+                use_filament_overhang_speed = pp_ints(&self.m_config, "override_process_overhang_speed")[filament_idx] != 0;
+            }
+            let nozzle_idx = self.nozzle_config_index(self.current_filament_id() as i32);
+            let abs_value_at = |key: &str, idx: usize| -> f64 { self.m_config.get_abs_value_at(key, idx).unwrap_or(0.0) };
+
+            let lower_degree_bound = path_degree as i32;
+            // BBS: use lower speed of 75%-100% for better cooling
+            if path_degree >= 4.0 || path_degree == lower_degree_bound as f64 {
+                return if use_filament_overhang_speed {
+                    abs_value_at(filament_overhang_speed_key(lower_degree_bound), filament_idx)
+                } else {
+                    abs_value_at(overhang_speed_key(lower_degree_bound), nozzle_idx)
+                };
+            }
+            let upper_degree_bound = lower_degree_bound + 1;
+
+            let mut lower_speed_bound = if lower_degree_bound == 0 {
+                normal_speed as f64
+            } else if use_filament_overhang_speed {
+                abs_value_at(filament_overhang_speed_key(lower_degree_bound), filament_idx)
+            } else {
+                abs_value_at(overhang_speed_key(lower_degree_bound), nozzle_idx)
+            };
+
+            let mut upper_speed_bound = if upper_degree_bound == 0 {
+                normal_speed as f64
+            } else if use_filament_overhang_speed {
+                abs_value_at(filament_overhang_speed_key(upper_degree_bound), filament_idx)
+            } else {
+                abs_value_at(overhang_speed_key(upper_degree_bound), nozzle_idx)
+            };
+
+            lower_speed_bound = if lower_speed_bound == 0.0 { normal_speed as f64 } else { lower_speed_bound };
+            upper_speed_bound = if upper_speed_bound == 0.0 { normal_speed as f64 } else { upper_speed_bound };
+
+            // `lower + (upper - lower) * (path_degree - lower_degree_bound)`: one contracted multiply-add.
+            (upper_speed_bound - lower_speed_bound).mul_add(path_degree - lower_degree_bound as f64, lower_speed_bound)
+        }
+
+        /// GCode.cpp:7513-7563 `bool GCode::slowDownByHeight(double& maxSpeed, double& maxAcc, const
+        /// ExtrusionPath& path)`
+        pub fn slow_down_by_height(&mut self, max_speed: &mut f64, max_acc: &mut f64, path: &crate::extrusion_entity::ExtrusionPath) -> bool {
+            let mut desired_max_speed = 1000.0f64;
+            let mut desired_max_acc = 100000.0f64;
+            let current_height = self.m_layer.expect("slowDownByHeight(): no layer").print_z;
+            let nidx = self.nozzle_config_index(self.current_filament_id() as i32);
+            let ncfg = |cfg: &DynamicPrintConfig, key: &str| -> f64 { pp_get_at(&pp_floats(cfg, key), nidx) };
+            let mut do_slowdown_by_height = ncfg(&self.m_config, "enable_height_slowdown") != 0.0;
+
+            let role = path.role as u8;
+            if role > crate::extrusion_entity::ExtrusionRole::None as u8 && role <= crate::extrusion_entity::ExtrusionRole::GapFill as u8 {
+            } else {
+                do_slowdown_by_height = false;
+            }
+
+            if do_slowdown_by_height {
+                let height1 = ncfg(&self.m_config, "slowdown_start_height");
+                let height2 = ncfg(&self.m_config, "slowdown_end_height");
+                let speed1 = ncfg(&self.m_config, "slowdown_start_speed");
+                let speed2 = ncfg(&self.m_config, "slowdown_end_speed");
+                let acc1 = ncfg(&self.m_config, "slowdown_start_acc");
+                let acc2 = ncfg(&self.m_config, "slowdown_end_acc");
+
+                if height1 >= height2 || current_height < height1 {
+                    do_slowdown_by_height = false;
+                } else {
+                    if current_height > height2 {
+                        // above height 2, use speed2 and acc2
+                        desired_max_speed = speed2;
+                        desired_max_acc = acc2;
+                    } else {
+                        // speed should be decreased linearly
+                        // `(h - h1) / (h2 - h1) * (s2 - s1) + s1`: one contracted multiply-add.
+                        desired_max_speed = ((current_height - height1) / (height2 - height1)).mul_add(speed2 - speed1, speed1);
+                        // acceleration should be decreased linearly
+                        // `acc1 - (acc1 - acc2) / (h2 - h1) * (h - h1)`: a contracted multiply-subtract.
+                        desired_max_acc = (-((acc1 - acc2) / (height2 - height1))).mul_add(current_height - height1, acc1);
+                    }
+
+                    // modify travel speed and acceleration
+                    for av in self.m_writer.config.travel_speed.values.iter_mut() {
+                        if !av.is_nan() {
+                            *av = av.min(desired_max_speed);
+                        }
+                    }
+                    for bv in self.m_writer.config.travel_speed_z.values.iter_mut() {
+                        if !bv.is_nan() {
+                            *bv = bv.min(desired_max_speed);
+                        }
+                    }
+                    let desired_acc_u = desired_max_acc as u32;
+                    for ta in self.m_writer.get_travel_acceleration().iter_mut() {
+                        *ta = (*ta).min(desired_acc_u);
+                    }
+                    if !self.is_bbl_printer() {
+                        let travel_jerk = pp_float(&self.m_config, "travel_jerk").unwrap_or(0.0).min(desired_max_speed);
+                        if let Ok(Some(opt)) = self.m_config.option_mut("travel_jerk", true) {
+                            if let Some(f) = opt.as_any_mut().downcast_mut::<crate::config::ConfigOptionFloat>() {
+                                f.value = travel_jerk;
+                            }
+                        }
+                    }
+                }
+            }
+            *max_speed = desired_max_speed;
+            *max_acc = desired_max_acc;
+            do_slowdown_by_height
+        }
+
+        /// GCode.cpp:7565-7585 `double GCode::calc_max_volumetric_speed(const double layer_height, const
+        /// double line_width, const std::string co_str)`: the volumetric speed limit of the quadratic
+        /// whose six coefficients `co_str` lists, at the layer height and line width.
+        pub fn calc_max_volumetric_speed(&self, layer_height: f64, line_width: f64, co_str: &str) -> f64 {
+            let mut cs: Vec<f64> = Vec::new();
+
+            for token in co_str.split(' ') {
+                // std::getline(ss, token, ' ') yields the empty tokens between two blanks but no
+                // trailing empty token.
+                // std::stod: strtod, std::invalid_argument when nothing converts, std::out_of_range on
+                // ERANGE; both are caught and the token is skipped.
+                let r = crate::config::strtod_c(token.as_bytes());
+                if r.consumed != 0 && !r.erange {
+                    cs.push(r.value);
+                }
+            }
+            if cs.len() != 6 || cs.iter().all(|&v| v == 0.0) {
+                return f64::MAX;
+            }
+
+            let x = layer_height;
+            let y = line_width;
+
+            // cs[0]*x*x + cs[1]*y*y + cs[2]*x*y + cs[3]*x + cs[4]*y + cs[5], left to right, each
+            // product contracted into the running sum.
+            let mut res = cs[0] * x * x;
+            res = (cs[1] * y).mul_add(y, res);
+            res = (cs[2] * x).mul_add(y, res);
+            res = cs[3].mul_add(x, res);
+            res = cs[4].mul_add(y, res);
+            res + cs[5]
+        }
+
+        /// GCode.cpp:8104-8122 `std::string GCode::_encode_label_ids_to_base64(std::vector<size_t> ids)`
+        pub fn _encode_label_ids_to_base64(&self, ids: &[usize]) -> Result<String, String> {
+            debug_assert!(self.m_label_objects_ids.len() < 64);
+
+            let mut bitset: u64 = 0;
+            for &id in ids {
+                let index = self.m_label_objects_ids.partition_point(|&v| v < id);
+                if index < self.m_label_objects_ids.len() && self.m_label_objects_ids[index] == id {
+                    bitset |= 1u64 << index;
+                } else {
+                    return Err("Unknown label object id!".to_string());
+                }
+            }
+            if bitset == 0 {
+                return Err("Label object id error!".to_string());
+            }
+
+            Ok(encode_base64(bitset))
+        }
+
+        /// GCode.cpp:8125-8128 `bool GCode::_is_object_skip_early_end_enabled() const`
+        pub fn _is_object_skip_early_end_enabled(&self) -> bool {
+            self.m_enable_label_object
+        }
+
+        /// GCode.cpp:8130-8137 `void GCode::_init_remaining_objects_bitmap()`
+        pub fn _init_remaining_objects_bitmap(&mut self) {
+            let count = self.m_label_objects_ids.len();
+            // g_max_label_object is 64 and the gate above uses <=, so a full 64 objects can reach
+            // here. Shifting by 64 would be undefined, hence the explicit branch.
+            self.m_remaining_objects_bitmap = if count >= 64 { !0u64 } else { (1u64 << count) - 1 };
+            self.m_pending_remaining_objects_gcode = false;
+        }
+
+        /// GCode.cpp:8141-8153 `std::string GCode::_remaining_objects_gcode() const`
+        pub fn _remaining_objects_gcode(&self) -> String {
+            let mut ids = String::new();
+            for i in 0..self.m_label_objects_ids.len() {
+                if self.m_remaining_objects_bitmap & (1u64 << i) != 0 {
+                    if !ids.is_empty() {
+                        ids += ",";
+                    }
+                    ids += &self.m_label_objects_ids[i].to_string();
+                }
+            }
+
+            format!("; remaining object ids: {}\nM639 {}\n", ids, encode_base64(self.m_remaining_objects_bitmap))
+        }
+
+        /// GCode.cpp:8159-8177 `void GCode::_precompute_object_last_layers(const
+        /// std::vector<std::pair<coordf_t, std::vector<LayerToPrint>>> &layers_to_print)`.
+        /// `labeled_ids_of` gives the labeled ids of the instances of an object
+        /// (`instance.model_instance->get_labeled_id()`); the objects are told apart by address, as the
+        /// C++ map keys them.
+        pub fn _precompute_object_last_layers(
+            &mut self,
+            layers_to_print: &[(f64, Vec<LayerToPrint<'_>>)],
+            labeled_ids_of: &dyn Fn(&crate::print_object::PrintObject) -> Vec<usize>,
+        ) {
+            self.m_objects_finished_at_layer.clear();
+
+            let mut last_layer_of_object: std::collections::BTreeMap<*const crate::print_object::PrintObject, (usize, &crate::print_object::PrintObject)> =
+                std::collections::BTreeMap::new();
+            for (layer_idx, (_, ltps)) in layers_to_print.iter().enumerate() {
+                for layer_to_print in ltps {
+                    // original_object is filled in for every object on every layer, so it cannot tell
+                    // on its own whether this object has anything to print here. It is still the right
+                    // handle to use, because object() resolves to the shared source object.
+                    if let Some(obj) = layer_to_print.original_object {
+                        if layer_to_print.object_layer.is_some() || layer_to_print.support_layer.is_some() {
+                            last_layer_of_object.insert(obj as *const _, (layer_idx, obj));
+                        }
+                    }
+                }
+            }
+
+            for (_, (layer_idx, obj)) in last_layer_of_object {
+                for label_id in labeled_ids_of(obj) {
+                    self.m_objects_finished_at_layer.entry(layer_idx).or_default().push(label_id);
+                }
+            }
+        }
+
+        /// GCode.cpp:8179-8184 `void GCode::_clear_remaining_object(size_t label_id)`
+        pub fn _clear_remaining_object(&mut self, label_id: usize) {
+            let pos = self.m_label_objects_ids.partition_point(|&v| v < label_id);
+            if pos < self.m_label_objects_ids.len() && self.m_label_objects_ids[pos] == label_id {
+                self.m_remaining_objects_bitmap &= !(1u64 << pos);
+            }
+        }
+
+        /// GCode.cpp:8186-8196 `void GCode::_mark_objects_finished(size_t layer_idx)`
+        pub fn _mark_objects_finished(&mut self, layer_idx: usize) {
+            let Some(ids) = self.m_objects_finished_at_layer.get(&layer_idx).cloned() else {
+                return;
+            };
+
+            for label_id in ids {
+                self._clear_remaining_object(label_id);
+            }
+            self.m_pending_remaining_objects_gcode = true;
+        }
+
+        /// GCode.cpp:8342-8345 `void GCode::reset_last_acceleration()`
+        pub fn reset_last_acceleration(&mut self) {
+            self.m_writer.reset_last_acceleration();
+        }
+
+        /// GCode.cpp:8498-8529 `std::string GCode::retract(bool toolchange, bool is_last_retraction,
+        /// LiftType lift_type, bool apply_instantly, bool slow_lift)`
+        pub fn retract(&mut self, toolchange: bool, is_last_retraction: bool, lift_type: LiftType, apply_instantly: bool, slow_lift: bool) -> String {
+            let mut gcode = String::new();
+
+            if self.m_writer.filament().is_none() {
+                return gcode;
+            }
+
+            // wipe (if it's enabled for this extruder and we have a stored wipe path and no-zero wipe distance)
+            let fidx = self.filament_config_index(self.current_filament_id() as i32);
+            let wipe_on = pp_get_at(&pp_ints(&self.m_config, "wipe"), fidx) != 0;
+            let wipe_distance = pp_get_at(&pp_floats(&self.m_config, "wipe_distance"), fidx);
+            if wipe_on && self.m_wipe.has_path() && scale_(wipe_distance) > SCALED_EPSILON {
+                gcode += &if toolchange { self.m_writer.retract_for_toolchange(true) } else { self.m_writer.retract(true) };
+                gcode += &Wipe::wipe(self, toolchange, is_last_retraction);
+            }
+
+            /*  The parent class will decide whether we need to perform an actual retraction
+                (the extruder might be already retracted fully or partially). We call these
+                methods even if we performed wipe, since this will ensure the entire retraction
+                length is honored in case wipe path was too short.  */
+            gcode += &if toolchange { self.m_writer.retract_for_toolchange(false) } else { self.m_writer.retract(false) };
+
+            gcode += &self.m_writer.reset_e(false);
+            //BBS
+            let retraction_length = self.m_writer.filament().map(|f| f.retraction_length()).unwrap_or(0.0);
+            if retraction_length > 0.0 || pp_bool(&self.m_config, "use_firmware_retraction").unwrap_or(false) {
+                // BBS: force to use normal lift for spiral vase mode
+                if apply_instantly {
+                    gcode += &self.m_writer.eager_lift(lift_type, slow_lift);
+                } else {
+                    let spiral = self.m_spiral_vase.is_some();
+                    gcode += &self.m_writer.lazy_lift(lift_type, spiral, slow_lift);
+                }
+            }
+
+            gcode
+        }
+
+        /// GCode.hpp:713 `bool on_first_layer() const`
+        pub fn on_first_layer(&self) -> bool {
+            match self.m_layer {
+                Some(l) => l.id() == 0 && l.bottom_z().abs() < EPSILON,
+                None => false,
+            }
+        }
+
+        /// GCode.hpp:716-718 `bool path_touches_bed(const ExtrusionPath &path) const`: a merged first
+        /// band is emitted above layer 0, but its extrusion height reaches back to the bed.
+        pub fn path_touches_bed(&self, path: &crate::extrusion_entity::ExtrusionPath) -> bool {
+            match self.m_layer {
+                Some(l) => l.print_z - path.height <= EPSILON,
+                None => false,
+            }
+        }
+
+        /// GCode.hpp:719-723 `bool path_starts_at_object_base(const ExtrusionPath &path) const`
+        pub fn path_starts_at_object_base(&self, path: &crate::extrusion_entity::ExtrusionPath) -> bool {
+            match self.m_layer {
+                Some(l) => {
+                    !self.m_layer_object_layers.is_empty()
+                        && l.print_z - path.height <= self.m_layer_object_layers[0].bottom_z() + EPSILON
+                }
+                None => false,
+            }
+        }
+
+        /// GCode.hpp:725 `bool object_layer_over_raft() const`
+        pub fn object_layer_over_raft(&self) -> bool {
+            self.m_object_layer_over_raft
+        }
+    }
+
+    /// GCode.hpp:216 `void set_origin(const coordf_t x, const coordf_t y) { this->set_origin(Vec2d(x,
+    /// y)); }` (the overload taking the two coordinates).
+    pub fn set_origin(gcode: &mut GCode<'_>, x: f64, y: f64) {
+        gcode.set_origin(&Vec2d::new(x, y));
+    }
+
+    // -----------------------------------------------------------------------
+    // GCode.hpp:68-164 class WipeTowerIntegration
+    // -----------------------------------------------------------------------
+
+    /// GCode.hpp:68-164 `class WipeTowerIntegration`: the members its ported methods use, over the
+    /// tower's results the print keeps (`m_priming`, `m_tool_changes`, `m_final_purge` are
+    /// references to the Print's cached values).
+    pub struct WipeTowerIntegration<'w> {
+        // Left / right edges of the wipe tower, for the planning of wipe moves.
+        pub m_left: f32,
+        pub m_right: f32,
+        pub m_wipe_tower_pos: [f32; 2],
+        pub m_wipe_tower_rotation: f32,
+        pub m_extruder_offsets: Vec<Vec2d>,
+        // Reference to cached values at the Printer class.
+        pub m_priming: &'w [crate::gcode::wipe_tower::ToolChangeResult],
+        pub m_tool_changes: &'w [Vec<crate::gcode::wipe_tower::ToolChangeResult>],
+        pub m_final_purge: &'w crate::gcode::wipe_tower::ToolChangeResult,
+        // Current layer index.
+        pub m_layer_idx: i32,
+        pub m_tool_change_idx: i32,
+        // Whether the tower this integration emits is actually compacted, see wipe_tower_sparse_layers_skipped().
+        pub m_sparse_layers_skipped: bool,
+        // Print z of the compacted tower per planned layer, only filled when the tower is compacted.
+        pub m_compacted_tower_z: Vec<f32>,
+        // BBS
+        pub m_plate_origin: Vec3d,
+        pub m_single_extruder_multi_material: bool,
+        pub m_enable_timelapse_print: bool,
+        pub m_enable_wrapping_detection: bool,
+        pub m_is_first_print: bool,
+        pub m_wipe_tower_depth: f32,
+        pub m_wipe_tower_bbx: crate::bounding_box::BoundingBoxf,
+        pub m_rib_offset: [f32; 2],
+    }
+
+    impl<'w> WipeTowerIntegration<'w> {
+        /// GCode.hpp:70-103 `WipeTowerIntegration(const PrintConfig &print_config, const int plate_idx,
+        /// const Vec3d plate_origin, const std::vector<WipeTower::ToolChangeResult> &priming, const
+        /// std::vector<std::vector<WipeTower::ToolChangeResult>> &tool_changes, const
+        /// WipeTower::ToolChangeResult &final_purge, const std::vector<unsigned int>
+        /// &slice_used_filaments)`
+        pub fn new(
+            print_config: &DynamicPrintConfig,
+            plate_idx: usize,
+            plate_origin: Vec3d,
+            priming: &'w [crate::gcode::wipe_tower::ToolChangeResult],
+            tool_changes: &'w [Vec<crate::gcode::wipe_tower::ToolChangeResult>],
+            final_purge: &'w crate::gcode::wipe_tower::ToolChangeResult,
+            slice_used_filaments: &[u32],
+        ) -> Self {
+            let sparse = crate::gcode::wipe_tower::wipe_tower_sparse_layers_skipped(print_config);
+            let mut this = WipeTowerIntegration {
+                m_left: /*float(print_config.wipe_tower_x.value)*/ 0.0,
+                m_right: /*print_config.wipe_tower_x.value +*/ pp_float(print_config, "prime_tower_width").unwrap_or(0.0) as f32,
+                m_wipe_tower_pos: [
+                    pp_get_at(&pp_floats(print_config, "wipe_tower_x"), plate_idx) as f32,
+                    pp_get_at(&pp_floats(print_config, "wipe_tower_y"), plate_idx) as f32,
+                ],
+                m_wipe_tower_rotation: pp_float(print_config, "wipe_tower_rotation_angle").unwrap_or(0.0) as f32,
+                m_extruder_offsets: Vec::new(),
+                m_priming: priming,
+                m_tool_changes: tool_changes,
+                m_final_purge: final_purge,
+                m_layer_idx: -1,
+                m_tool_change_idx: 0,
+                m_sparse_layers_skipped: sparse,
+                m_compacted_tower_z: Vec::new(),
+                m_plate_origin: plate_origin,
+                m_single_extruder_multi_material: pp_bool(print_config, "single_extruder_multi_material").unwrap_or(false),
+                // TimelapseType::tlSmooth == 1
+                m_enable_timelapse_print: pp_int(print_config, "timelapse_type").unwrap_or(0) == 1,
+                m_enable_wrapping_detection: pp_bool(print_config, "enable_wrapping_detection").unwrap_or(false)
+                    && pp_points(print_config, "wrapping_exclude_area").len() > 2
+                    && slice_used_filaments.len() <= 1,
+                m_is_first_print: true,
+                m_wipe_tower_depth: 0.0,
+                m_wipe_tower_bbx: crate::bounding_box::BoundingBoxf::new(),
+                m_rib_offset: [0.0, 0.0],
+            };
+            if this.m_sparse_layers_skipped {
+                this.m_compacted_tower_z = crate::gcode::wipe_tower::compute_compacted_wipe_tower_z(tool_changes);
+            }
+            // initialize with the extruder offset of master extruder id
+            let extruder_offset = pp_points(print_config, "extruder_offset");
+            let filament_map = pp_ints(print_config, "filament_map"); // 1 based idx
+            let master_extruder_id = pp_int(print_config, "master_extruder_id").unwrap_or(1);
+            this.m_extruder_offsets = vec![pp_get_at(&extruder_offset, (master_extruder_id - 1).max(0) as usize); filament_map.len()];
+            for idx in 0..filament_map.len() {
+                this.m_extruder_offsets[idx] = pp_get_at(&extruder_offset, (filament_map[idx] - 1).max(0) as usize);
+            }
+            this
+        }
+
+        /// GCode.cpp:1477-1487 `std::string WipeTowerIntegration::prime(GCode& gcodegen)`: the priming
+        /// results are not emitted (`#if 0`).
+        pub fn prime(&self, _gcodegen: &mut GCode<'_>) -> String {
+            String::new()
+        }
+
+        /// GCode.hpp:106 `void next_layer() { ++ m_layer_idx; m_tool_change_idx = 0; }`
+        pub fn next_layer(&mut self) {
+            self.m_layer_idx += 1;
+            self.m_tool_change_idx = 0;
+        }
+
+        /// GCode.cpp:1524-1552 `bool WipeTowerIntegration::is_empty_wipe_tower_gcode(GCode &gcodegen,
+        /// int extruder_id, bool finish_layer)`
+        pub fn is_empty_wipe_tower_gcode(&self, gcodegen: &GCode<'_>, extruder_id: i32, finish_layer: bool) -> Result<bool, String> {
+            debug_assert!(self.m_layer_idx >= 0);
+            if self.m_layer_idx >= self.m_tool_changes.len() as i32 {
+                return Ok(true);
+            }
+            let layer = &self.m_tool_changes[self.m_layer_idx as usize];
+            if layer.is_empty() {
+                return Ok(true);
+            }
+
+            let mut ignore_sparse = false;
+            if self.m_sparse_layers_skipped {
+                ignore_sparse = crate::gcode::wipe_tower::wipe_tower_layer_is_sparse(layer);
+            }
+
+            if (self.m_enable_timelapse_print || self.m_enable_wrapping_detection) && self.m_is_first_print {
+                return Ok(false);
+            }
+
+            if gcodegen.writer().need_toolchange(extruder_id as u32) || finish_layer {
+                if !((self.m_tool_change_idx as usize) < layer.len()) {
+                    return Err("Wipe tower generation failed, possibly due to empty first layer.".to_string());
+                }
+
+                if !ignore_sparse {
+                    return Ok(false);
+                }
+            }
+
+            Ok(true)
+        }
+
+        /// GCode.cpp:1554-1564 `std::string WipeTowerIntegration::finalize(GCode& gcodegen)`: the final
+        /// purge is not emitted (`#if 0`).
+        pub fn finalize(&self, _gcodegen: &mut GCode<'_>) -> String {
+            String::new()
+        }
+
+        /// GCode.cpp:1467-1475 `double WipeTowerIntegration::compacted_tower_base_z() const`: the print z
+        /// of the compacted tower's own first layer, 0 when the tower is not compacted.
+        pub fn compacted_tower_base_z(&self) -> f64 {
+            // The accumulation in compute_compacted_wipe_tower_z() stays at zero until the first layer that
+            // really prints a tower, so the first non-zero entry is that layer's print z.
+            for &z in &self.m_compacted_tower_z {
+                if z > 0.0 {
+                    return z as f64;
+                }
+            }
+            0.0
+        }
+
+        /// GCode.hpp:112 `bool is_first_print() const`
+        pub fn is_first_print(&self) -> bool {
+            self.m_is_first_print
+        }
+
+        /// GCode.hpp:113 `void set_is_first_print(bool is)`
+        pub fn set_is_first_print(&mut self, is: bool) {
+            self.m_is_first_print = is;
+        }
+
+        /// GCode.hpp:115 `bool enable_timelapse_print() const`
+        pub fn enable_timelapse_print(&self) -> bool {
+            self.m_enable_timelapse_print
+        }
+
+        /// GCode.hpp:116 `void set_wipe_tower_depth(float depth)`
+        pub fn set_wipe_tower_depth(&mut self, depth: f32) {
+            self.m_wipe_tower_depth = depth;
+        }
+
+        /// GCode.hpp:117 `void set_wipe_tower_bbx(const BoundingBoxf & bbx)`
+        pub fn set_wipe_tower_bbx(&mut self, bbx: &crate::bounding_box::BoundingBoxf) {
+            self.m_wipe_tower_bbx = *bbx;
+        }
+
+        /// GCode.hpp:118 `void set_rib_offset(const Vec2f &rib_offset)`
+        pub fn set_rib_offset(&mut self, rib_offset: [f32; 2]) {
+            self.m_rib_offset = rib_offset;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // GCode.hpp:449-483 struct ObjectByExtruder
+    // -----------------------------------------------------------------------
+
+    /// ToolOrdering.hpp:39 `typedef boost::container::small_vector<int32_t, 3> ExtruderPerCopy;`
+    /// (`WipingExtrusions::ExtruderPerCopy`): per object instance, the extruder that prints an
+    /// extrusion, negative (-extruder-1) when it is printed with its own extruder.
+    pub type ExtruderPerCopy = Vec<i32>;
+
+    /// `ExtrusionEntitiesPtr` element: a non-owned reference to an extrusion entity, or to a
+    /// collection that is not sorted (added whole, GCode.cpp:9131).
+    #[derive(Clone, Copy)]
+    pub enum ExtrusionEntityRef<'e> {
+        Entity(&'e crate::extrusion_entity::ExtrusionEntityType),
+        Collection(&'e crate::extrusion_entity::ExtrusionEntityCollection),
+    }
+
+    /// GCode.hpp:467-470 `enum Type { PERIMETERS, INFILL }` of `Island::Region`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum RegionType {
+        Perimeters,
+        Infill,
+    }
+
+    /// GCode.hpp:458-474 `struct Region`
+    #[derive(Clone, Default)]
+    pub struct Region<'e> {
+        // Non-owned references to LayerRegion::perimeters::entities
+        pub perimeters: Vec<ExtrusionEntityRef<'e>>,
+        // Non-owned references to LayerRegion::fills::entities
+        pub infills: Vec<ExtrusionEntityRef<'e>>,
+        pub infills_overrides: Vec<Option<&'e ExtruderPerCopy>>,
+        pub perimeters_overrides: Vec<Option<&'e ExtruderPerCopy>>,
+    }
+
+    impl<'e> Region<'e> {
+        /// GCode.cpp:9109-9142 `void GCode::ObjectByExtruder::Island::Region::append(const Type type,
+        /// const ExtrusionEntityCollection* eec, const WipingExtrusions::ExtruderPerCopy*
+        /// copies_extruder)`: the entities of the collection appended to the perimeters or the
+        /// infills, with the instance extruders of each when there are overrides.
+        pub fn append(
+            &mut self,
+            r#type: RegionType,
+            eec: &'e crate::extrusion_entity::ExtrusionEntityCollection,
+            copies_extruder: Option<&'e ExtruderPerCopy>,
+        ) {
+            // We are going to manipulate either perimeters or infills, exactly in the same way. Let's create pointers to the proper structure to not repeat ourselves:
+            let (perimeters_or_infills, perimeters_or_infills_overrides) = match r#type {
+                RegionType::Perimeters => (&mut self.perimeters, &mut self.perimeters_overrides),
+                RegionType::Infill => (&mut self.infills, &mut self.infills_overrides),
+            };
+
+            // First we append the entities, there are eec->entities.size() of them:
+            let old_size = perimeters_or_infills.len();
+            let new_size = old_size + if eec.can_sort() { eec.entities.len() } else { 1 };
+            perimeters_or_infills.reserve(new_size - old_size);
+            if eec.can_sort() {
+                for ee in &eec.entities {
+                    perimeters_or_infills.push(ExtrusionEntityRef::Entity(ee));
+                }
+            } else {
+                perimeters_or_infills.push(ExtrusionEntityRef::Collection(eec));
+            }
+
+            if let Some(copies_extruder) = copies_extruder {
+                // Don't reallocate overrides if not needed.
+                // Missing overrides are implicitely considered non-overridden.
+                perimeters_or_infills_overrides.resize(old_size, None);
+                perimeters_or_infills_overrides.resize(new_size, Some(copies_extruder));
+            }
+        }
+    }
+
+    /// GCode.hpp:456-481 `struct Island`
+    #[derive(Clone, Default)]
+    pub struct Island<'e> {
+        // all extrusions for this island, grouped by regions
+        pub by_region: Vec<Region<'e>>,
+    }
+
+    impl<'e> Island<'e> {
+        /// GCode.cpp:9044-9104 `const std::vector<GCode::ObjectByExtruder::Island::Region>&
+        /// GCode::ObjectByExtruder::Island::by_region_per_copy(std::vector<Region>
+        /// &by_region_per_copy_cache, unsigned int copy, unsigned int extruder, bool wiping_entities)
+        /// const`: the regions of the entities printed during infill / perimeter wiping, or normally.
+        pub fn by_region_per_copy<'c>(
+            &'c self,
+            by_region_per_copy_cache: &'c mut Vec<Region<'e>>,
+            copy: u32,
+            extruder: u32,
+            wiping_entities: bool,
+        ) -> &'c Vec<Region<'e>> {
+            let mut has_overrides = false;
+            for reg in &self.by_region {
+                if !reg.infills_overrides.is_empty() || !reg.perimeters_overrides.is_empty() {
+                    has_overrides = true;
+                    break;
+                }
+            }
+
+            // Data is cleared, but the memory is not.
+            by_region_per_copy_cache.clear();
+
+            if !has_overrides {
+                // Simple case. No need to copy the regions.
+                return if wiping_entities { by_region_per_copy_cache } else { &self.by_region };
+            }
+
+            // Complex case. Some of the extrusions of some object instances are to be printed first - those are the wiping extrusions.
+            // Some of the extrusions of some object instances are printed later - those are the clean print extrusions.
+            // Filter out the extrusions based on the infill_overrides / perimeter_overrides:
+
+            for reg in &self.by_region {
+                by_region_per_copy_cache.push(Region::default()); // creates a region in the newly created Island
+
+                // Now we are going to iterate through perimeters and infills and pick ones that are supposed to be printed
+                // References are used so that we don't have to repeat the same code
+                for iter in 0..2 {
+                    let entities = if iter != 0 { &reg.infills } else { &reg.perimeters };
+                    let overrides = if iter != 0 { &reg.infills_overrides } else { &reg.perimeters_overrides };
+                    let back = by_region_per_copy_cache.last_mut().unwrap();
+                    let target_eec = if iter != 0 { &mut back.infills } else { &mut back.perimeters };
+
+                    // Now the most important thing - which extrusion should we print.
+                    // See function ToolOrdering::get_extruder_overrides for details about the negative numbers hack.
+                    if wiping_entities {
+                        // Apply overrides for this region.
+                        for i in 0..overrides.len() {
+                            let this_override = overrides[i];
+                            // This copy (aka object instance) should be printed with this extruder, which overrides the default one.
+                            if let Some(o) = this_override {
+                                if o[copy as usize] == extruder as i32 {
+                                    target_eec.push(entities[i]);
+                                }
+                            }
+                        }
+                    } else {
+                        // Apply normal extrusions (non-overrides) for this region.
+                        let mut i = 0usize;
+                        while i < overrides.len() {
+                            let this_override = overrides[i];
+                            // This copy (aka object instance) should be printed with this extruder, which shall be equal to the default one.
+                            if this_override.map(|o| o[copy as usize] == -(extruder as i32) - 1).unwrap_or(true) {
+                                target_eec.push(entities[i]);
+                            }
+                            i += 1;
+                        }
+                        while i < entities.len() {
+                            target_eec.push(entities[i]);
+                            i += 1;
+                        }
+                    }
+                }
+            }
+            by_region_per_copy_cache
+        }
+    }
+
+    /// GCode.hpp:449-483 `struct ObjectByExtruder`
+    #[derive(Clone, Default)]
+    pub struct ObjectByExtruder<'e> {
+        pub support: Option<&'e crate::extrusion_entity::ExtrusionEntityCollection>,
+        // erSupportMaterial / erSupportMaterialInterface / erSupportTransition or erMixed.
+        pub support_extrusion_role: Option<crate::extrusion_entity::ExtrusionRole>,
+        pub islands: Vec<Island<'e>>,
+    }
+
+    /// GCode.cpp:4264-4274 `inline GCode::ObjectByExtruder& object_by_extruder(std::map<unsigned int,
+    /// std::vector<GCode::ObjectByExtruder>> &by_extruder, unsigned int extruder_id, size_t object_idx,
+    /// size_t num_objects)`
+    pub fn object_by_extruder<'m, 'e>(
+        by_extruder: &'m mut std::collections::BTreeMap<u32, Vec<ObjectByExtruder<'e>>>,
+        extruder_id: u32,
+        object_idx: usize,
+        num_objects: usize,
+    ) -> &'m mut ObjectByExtruder<'e> {
+        let objects_by_extruder = by_extruder.entry(extruder_id).or_default();
+        if objects_by_extruder.is_empty() {
+            *objects_by_extruder = vec![ObjectByExtruder::default(); num_objects];
+        }
+        &mut objects_by_extruder[object_idx]
+    }
+
+    /// GCode.cpp:4276-4287 `inline std::vector<GCode::ObjectByExtruder::Island>&
+    /// object_islands_by_extruder(std::map<unsigned int, std::vector<GCode::ObjectByExtruder>>
+    /// &by_extruder, unsigned int extruder_id, size_t object_idx, size_t num_objects, size_t
+    /// num_islands)`
+    pub fn object_islands_by_extruder<'m, 'e>(
+        by_extruder: &'m mut std::collections::BTreeMap<u32, Vec<ObjectByExtruder<'e>>>,
+        extruder_id: u32,
+        object_idx: usize,
+        num_objects: usize,
+        num_islands: usize,
+    ) -> &'m mut Vec<Island<'e>> {
+        let islands = &mut object_by_extruder(by_extruder, extruder_id, object_idx, num_objects).islands;
+        if islands.is_empty() {
+            *islands = vec![Island::default(); num_islands];
+        }
+        islands
+    }
+
+    /// GCode.cpp:6565-6580 `static bool has_overhang_path_on_slope(const ExtrusionLoop &loop, double
+    /// slope_length)`
+    pub fn has_overhang_path_on_slope(r#loop: &crate::extrusion_entity::ExtrusionLoop, slope_length: f64) -> bool {
+        let mut count_length = 0.0f64;
+        for path in &r#loop.paths {
+            if count_length > slope_length {
+                return false;
+            }
+
+            if path.overhang_degree > 1.0 {
+                return true;
+            }
+
+            count_length += path.length();
+        }
+
+        false
+    }
+
+    /// GCode.cpp:1895-1950 `static std::vector<std::pair<std::string, std::string>>
+    /// validate_custom_gcode(const Print& print)` (namespace DoExport): the first reserved keywords
+    /// (at most five) the custom G-codes of `print.config()` contain, with the G-code they are in.
+    pub fn validate_custom_gcode(config: &crate::config::DynamicConfig) -> Vec<(String, String)> {
+        const MAX_TAGS_COUNT: u32 = 5;
+        let mut ret: Vec<(String, String)> = Vec::new();
+
+        let check = |ret: &mut Vec<(String, String)>, source: &str, gcode: &str| {
+            let mut tags: Vec<String> = Vec::new();
+            if crate::gcode::g_code_processor::contains_reserved_tags(gcode, MAX_TAGS_COUNT, &mut tags) && !tags.is_empty() {
+                let mut i = 0usize;
+                while ret.len() < MAX_TAGS_COUNT as usize && i < tags.len() {
+                    ret.push((source.to_string(), tags[i].clone()));
+                    i += 1;
+                }
+            }
+        };
+        let s = |key: &str| -> String { pp_string(config, key).unwrap_or_default() };
+        let max = MAX_TAGS_COUNT as usize;
+
+        check(&mut ret, "Machine start G-code", &s("machine_start_gcode"));
+        if ret.len() < max {
+            check(&mut ret, "Machine end G-code", &s("machine_end_gcode"));
+        }
+        if ret.len() < max {
+            check(&mut ret, "Before layer change G-code", &s("before_layer_change_gcode"));
+        }
+        if ret.len() < max {
+            check(&mut ret, "Layer change G-code", &s("layer_change_gcode"));
+        }
+        if ret.len() < max {
+            check(&mut ret, "Time lapse G-code", &s("time_lapse_gcode"));
+        }
+        if ret.len() < max {
+            check(&mut ret, "Time lapse G-code", &s("wrapping_detection_gcode"));
+        }
+        if ret.len() < max {
+            check(&mut ret, "Change filament G-code", &s("change_filament_gcode"));
+        }
+        if ret.len() < max {
+            check(&mut ret, "Printing by object G-code", &s("printing_by_object_gcode"));
+        }
+        //if (ret.size() < MAX_TAGS_COUNT) check(_(L("Color Change G-code")), config.color_change_gcode.value);
+        if ret.len() < max {
+            check(&mut ret, "Pause G-code", &s("machine_pause_gcode"));
+        }
+        if ret.len() < max {
+            check(&mut ret, "Template Custom G-code", &s("template_custom_gcode"));
+        }
+        if ret.len() < max {
+            for value in pp_strings(config, "filament_start_gcode") {
+                check(&mut ret, "Filament start G-code", &value);
+                if ret.len() == max {
+                    break;
+                }
+            }
+        }
+        if ret.len() < max {
+            for value in pp_strings(config, "filament_end_gcode") {
+                check(&mut ret, "Filament end G-code", &value);
+                if ret.len() == max {
+                    break;
+                }
+            }
+        }
+        //BBS: no custom_gcode_per_print_z, don't need to check
+
+        ret
+    }
+
+    /// What the Skirt helpers of GCode.cpp read from the `Print`.
+    pub struct SkirtPrint<'p> {
+        /// `print.skirt().entities.size()`
+        pub skirt_loops: usize,
+        /// `print.has_skirt()`
+        pub has_skirt: bool,
+        /// `print.has_infinite_skirt()`
+        pub has_infinite_skirt: bool,
+        /// `print.is_sequential_print()`
+        pub is_sequential_print: bool,
+        /// `Print::min_skirt_length`
+        pub min_skirt_length: f64,
+        /// `print.config()`
+        pub config: &'p crate::config::DynamicConfig,
+    }
+
+    /// GCode.cpp:4433-4448 `static void skirt_loops_per_extruder_all_printing(const Print &print, const
+    /// LayerTools &layer_tools, std::map<unsigned int, std::pair<size_t, size_t>>
+    /// &skirt_loops_per_extruder_out)` (namespace Skirt)
+    pub fn skirt_loops_per_extruder_all_printing(
+        print: &SkirtPrint<'_>,
+        layer_tools: &crate::gcode::tool_ordering::LayerTools,
+        skirt_loops_per_extruder_out: &mut std::collections::BTreeMap<u32, (usize, usize)>,
+    ) {
+        // Prime all extruders printing over the 1st layer over the skirt lines.
+        let n_loops = print.skirt_loops;
+        let n_tools = layer_tools.extruders.len();
+        let lines_per_extruder = (n_loops + n_tools - 1) / n_tools;
+
+        // BBS. Extrude skirt with first extruder if min_skirt_length is zero
+        if print.min_skirt_length < EPSILON {
+            skirt_loops_per_extruder_out.insert(layer_tools.extruders[0], (0, n_loops));
+        } else {
+            let mut i = 0usize;
+            while i < n_loops {
+                skirt_loops_per_extruder_out
+                    .insert(layer_tools.extruders[i / lines_per_extruder], (i, (i + lines_per_extruder).min(n_loops)));
+                i += lines_per_extruder;
+            }
+        }
+    }
+
+    /// GCode.cpp:4450-4505 `static std::map<unsigned int, std::pair<size_t, size_t>>
+    /// make_skirt_loops_multi_diameter(const Print &print, const LayerTools &layer_tools,
+    /// std::vector<coordf_t> &skirt_done, unsigned int &last_filament)` (namespace Skirt)
+    pub fn make_skirt_loops_multi_diameter(
+        print: &SkirtPrint<'_>,
+        layer_tools: &crate::gcode::tool_ordering::LayerTools,
+        skirt_done: &mut Vec<f64>,
+        last_filament: &mut u32,
+    ) -> std::collections::BTreeMap<u32, (usize, usize)> {
+        let mut skirt_loops_per_extruder_out = std::collections::BTreeMap::new();
+        if !print.has_skirt || print.skirt_loops == 0 || !layer_tools.has_skirt || layer_tools.extruders.is_empty() {
+            return skirt_loops_per_extruder_out;
+        }
+        let skirt_height = pp_int(print.config, "skirt_height").unwrap_or(0);
+        if skirt_done.len() >= skirt_height as usize && !print.has_infinite_skirt {
+            return skirt_loops_per_extruder_out;
+        }
+        let last_z = skirt_done.last().copied().unwrap_or(0.0);
+        if layer_tools.print_z < last_z + EPSILON {
+            return skirt_loops_per_extruder_out;
+        }
+
+        let height = layer_tools.print_z - last_z;
+        let mut chosen = u32::MAX;
+        // Tallest among the nozzles the step is too tall for.
+        let mut tallest = u32::MAX;
+        let mut tallest_height = 0.0f64;
+        for &filament in &layer_tools.extruders {
+            let nozzle = super::nozzle_diameter_for_filament(print.config, filament + 1) as f64;
+            if nozzle < EPSILON {
+                continue;
+            }
+            let range = crate::adaptive_layer_merge::adaptive_layer_height_range(nozzle);
+            if height < range.min_height - EPSILON {
+                continue;
+            }
+            if height > range.max_height + EPSILON {
+                if range.max_height > tallest_height {
+                    tallest_height = range.max_height;
+                    tallest = filament;
+                }
+                continue;
+            }
+            if chosen == u32::MAX || filament == *last_filament {
+                chosen = filament;
+            }
+        }
+        if chosen == u32::MAX {
+            // The step is too thin for every nozzle here: wait for a later layer, the step only grows.
+            // Otherwise it is too tall for some of them, and waiting would only widen that gap, so the tallest
+            // of those prints it now, clamped to its max height at extrusion time.
+            if tallest == u32::MAX {
+                return skirt_loops_per_extruder_out;
+            }
+            chosen = tallest;
+        }
+
+        skirt_loops_per_extruder_out.insert(chosen, (0, print.skirt_loops));
+        skirt_done.push(layer_tools.print_z);
+        *last_filament = chosen;
+        skirt_loops_per_extruder_out
+    }
+
+    /// GCode.cpp:4507-4528 `static std::map<unsigned int, std::pair<size_t, size_t>>
+    /// make_skirt_loops_per_extruder_1st_layer(const Print &print, const LayerTools &layer_tools,
+    /// std::vector<coordf_t> &skirt_done)` (namespace Skirt)
+    pub fn make_skirt_loops_per_extruder_1st_layer(
+        print: &SkirtPrint<'_>,
+        layer_tools: &crate::gcode::tool_ordering::LayerTools,
+        // Heights (print_z) at which the skirt has already been extruded.
+        skirt_done: &mut Vec<f64>,
+    ) -> std::collections::BTreeMap<u32, (usize, usize)> {
+        // Extrude skirt at the print_z of the raft layers and normal object layers
+        // not at the print_z of the interlaced support material layers.
+        let mut skirt_loops_per_extruder_out = std::collections::BTreeMap::new();
+        // BBS: Only in sequential (ByObject + multi-object) mode skip global skirt when skirt_per_object is on;
+        // otherwise fall through so the global skirt is printed around all objects.
+        if print.is_sequential_print && pp_bool(print.config, "skirt_per_object").unwrap_or(false) {
+            return skirt_loops_per_extruder_out;
+        }
+        //For sequential print, the following test may fail when extruding the 2nd and other objects.
+        // assert(skirt_done.empty());
+        if skirt_done.is_empty() && print.has_skirt && print.skirt_loops != 0 && layer_tools.has_skirt {
+            skirt_loops_per_extruder_all_printing(print, layer_tools, &mut skirt_loops_per_extruder_out);
+            skirt_done.push(layer_tools.print_z);
+        }
+        skirt_loops_per_extruder_out
+    }
+
+    /// GCode.cpp:4530-4564 `static std::map<unsigned int, std::pair<size_t, size_t>>
+    /// make_skirt_loops_per_extruder_other_layers(const Print &print, const LayerTools &layer_tools,
+    /// std::vector<coordf_t> &skirt_done)` (namespace Skirt)
+    pub fn make_skirt_loops_per_extruder_other_layers(
+        print: &SkirtPrint<'_>,
+        layer_tools: &crate::gcode::tool_ordering::LayerTools,
+        // Heights (print_z) at which the skirt has already been extruded.
+        skirt_done: &mut Vec<f64>,
+    ) -> std::collections::BTreeMap<u32, (usize, usize)> {
+        // Extrude skirt at the print_z of the raft layers and normal object layers
+        // not at the print_z of the interlaced support material layers.
+        let mut skirt_loops_per_extruder_out = std::collections::BTreeMap::new();
+        // BBS: Only in sequential (ByObject + multi-object) mode skip global skirt on other layers when skirt_per_object is on.
+        if print.is_sequential_print && pp_bool(print.config, "skirt_per_object").unwrap_or(false) {
+            return skirt_loops_per_extruder_out;
+        }
+        let skirt_height = pp_int(print.config, "skirt_height").unwrap_or(0);
+        if print.has_skirt && print.skirt_loops != 0 && layer_tools.has_skirt &&
+            // Not enough skirt layers printed yet.
+            //FIXME infinite or high skirt does not make sense for sequential print!
+            (skirt_done.len() < skirt_height as usize || print.has_infinite_skirt)
+        {
+            let valid = !skirt_done.is_empty() && *skirt_done.last().unwrap() < layer_tools.print_z - EPSILON;
+            // This print_z has not been extruded yet (sequential print)
+            // FIXME: The skirt_done should not be empty at this point. The check is a workaround
+            if valid {
+                // Prime all extruders planned for this layer, see
+                skirt_loops_per_extruder_all_printing(print, layer_tools, &mut skirt_loops_per_extruder_out);
+                skirt_done.push(layer_tools.print_z);
+            }
+        }
+        skirt_loops_per_extruder_out
+    }
+
+    /// GCode.cpp:4340-4429 `static std::string emit_custom_gcode_per_print_z(GCode &gcodegen, const
+    /// CustomGCode::Item *custom_gcode, unsigned int current_extruder_id, unsigned int
+    /// first_extruder_id, const PrintConfig &config, bool unretract_before_custom_for_pa_pattern)`
+    /// (namespace ProcessLayer). The templates go through `placeholders`, the export's placeholder
+    /// parser (`gcodegen.placeholder_parser_process`).
+    pub fn emit_custom_gcode_per_print_z(
+        gcodegen: &mut GCode<'_>,
+        placeholders: &mut super::GCodePlaceholders,
+        custom_gcode: Option<&crate::custom_g_code::Item>,
+        current_extruder_id: u32,
+        // ID of the first extruder printing this layer.
+        _first_extruder_id: u32,
+        config: &crate::config::DynamicConfig,
+        unretract_before_custom_for_pa_pattern: bool,
+    ) -> String {
+        use crate::custom_g_code::Type;
+        use crate::gcode::g_code_processor::{reserved_tag, ETags};
+        let mut gcode = String::new();
+        // BBS
+        let _single_filament_print = pp_floats(config, "filament_diameter").len() == 1;
+
+        if let Some(custom_gcode) = custom_gcode {
+            // Extruder switches are processed by LayerTools, they should be filtered out.
+            debug_assert!(custom_gcode.gcode_type != Type::ToolChange);
+
+            let gcode_type = custom_gcode.gcode_type;
+            let color_change = gcode_type == Type::ColorChange;
+            let _tool_change = gcode_type == Type::ToolChange;
+
+            let mut _pause_print_msg = String::new();
+            let mut _m600_extruder_before_layer = -1;
+            if color_change && custom_gcode.extruder > 0 {
+                _m600_extruder_before_layer = custom_gcode.extruder - 1;
+            } else if gcode_type == Type::PausePrint {
+                _pause_print_msg = custom_gcode.extra.clone();
+            }
+            //BBS: inserting color gcode is removed (`#if 0`)
+            if gcode_type == Type::PausePrint {
+                // Pause print
+                // add tag for processor
+                gcode += &format!(";{}\n", reserved_tag(ETags::PausePrint));
+                // FIXME_in_fw show message during print pause
+                let templ = pp_string(config, "machine_pause_gcode").unwrap_or_default();
+                gcode += &placeholders.placeholder_parser_process("machine_pause_gcode", &templ, current_extruder_id, None);
+                gcode += "\n";
+            } else {
+                // add tag for processor
+                gcode += &format!(";{}\n", reserved_tag(ETags::CustomCode));
+                // PA pattern calibration G-code is generated with a fresh writer and assumes the nozzle starts
+                // unretracted; after change_layer() the main path may still be retracted (e.g. wipe).
+                if unretract_before_custom_for_pa_pattern {
+                    gcode += &gcodegen.writer_mut().unretract(0.0);
+                }
+                if gcode_type == Type::Template {
+                    // Template Custom Gcode
+                    let templ = pp_string(config, "template_custom_gcode").unwrap_or_default();
+                    gcode += &placeholders.placeholder_parser_process("template_custom_gcode", &templ, current_extruder_id, None);
+                } else {
+                    // custom Gcode
+                    gcode += &custom_gcode.extra;
+                }
+            }
+            gcode += "\n";
+        }
+
+        gcode
+    }
 }

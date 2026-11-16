@@ -1469,6 +1469,10 @@ impl BoundingBoxf3 {
             Vec3d::new(self.min.x, self.max.y, self.max.z),
         ];
 
+        if crate::faithful_gate("BBOX_TRANSFORMED_EIGEN") {
+            return Self::transformed_eigen(&src_vertices, matrix);
+        }
+
         // BoundingBox.cpp:279 - dst = matrix * homogeneous(src)
         let mut dst_vertices = [Vec3d::new(0.0, 0.0, 0.0); 8];
         for (i, corner) in src_vertices.iter().enumerate() {
@@ -1502,6 +1506,37 @@ impl BoundingBoxf3 {
         }
 
         // BoundingBox.cpp:293 - return BoundingBoxf3(v_min, v_max)
+        Self::new_from_points(v_min, v_max)
+    }
+
+    /// BoundingBox.cpp:279-293 as the C++ build evaluates it (gate `BBOX_TRANSFORMED_EIGEN`,
+    /// faithful): `matrix * src_vertices.colwise().homogeneous()` is Eigen/src/Geometry/Homogeneous.h
+    /// `homogeneous_left_product_impl::evalTo`, the linear 3x3 block times the 3x8 vertices (a lazy
+    /// product into a 3-row destination: rows 0 and 1 a packet, `fma(m2, z, fma(m1, y, m0 * x))`,
+    /// row 2 `coeff()`, `m0 * x + (m1 * y + m2 * z)`), then the translation column added; then
+    /// `std::min` / `std::max` (`(b < a) ? b : a`, `(a < b) ? b : a`).
+    fn transformed_eigen(src_vertices: &[Vec3d; 8], matrix: &[[f64; 4]; 4]) -> Self {
+        use crate::geometry::geometry::eigen::{coeff_dot3, maxi, mini, packet_dot3};
+        let m = matrix;
+        let mut dst_vertices = [Vec3d::new(0.0, 0.0, 0.0); 8];
+        for (i, v) in src_vertices.iter().enumerate() {
+            let x = packet_dot3(m[0][0], m[0][1], m[0][2], v.x, v.y, v.z) + m[0][3];
+            let y = packet_dot3(m[1][0], m[1][1], m[1][2], v.x, v.y, v.z) + m[1][3];
+            let z = coeff_dot3(m[2][0], m[2][1], m[2][2], v.x, v.y, v.z) + m[2][3];
+            dst_vertices[i] = Vec3d::new(x, y, z);
+        }
+        // BoundingBox.cpp:281-291
+        let mut v_min = dst_vertices[0];
+        let mut v_max = v_min;
+        for d in dst_vertices.iter().skip(1) {
+            v_min.x = mini(v_min.x, d.x);
+            v_min.y = mini(v_min.y, d.y);
+            v_min.z = mini(v_min.z, d.z);
+            v_max.x = maxi(v_max.x, d.x);
+            v_max.y = maxi(v_max.y, d.y);
+            v_max.z = maxi(v_max.z, d.z);
+        }
+        // BoundingBox.cpp:293
         Self::new_from_points(v_min, v_max)
     }
 }

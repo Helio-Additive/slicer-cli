@@ -74,66 +74,45 @@ const SCALING_FACTOR: f64 = 0.00001;
 // Eigen arithmetic as the C++ build evaluates it
 // =============================================================================================
 
-/// One row of `linear * (x, y, z)` of an Eigen lazy product, `fma(m2, z, fma(m1, y, m0 * x))`.
-#[inline]
-fn eigen_row_dot(m: &Transform3d, row: usize, x: f64, y: f64, z: f64) -> f64 {
-    m[(row, 2)].mul_add(z, m[(row, 1)].mul_add(y, m[(row, 0)] * x))
-}
+// The Eigen operations shared with Geometry.cpp's port live in `geometry::eigen` (checked against
+// the pin by tests/geometry_transformation_native_parity.rs); these are the names Model.cpp's port
+// calls them by.
 
-/// Eigen `Transform3d * Vec3d` of an affine transform: `linear() * v + translation()`.
-#[inline]
-pub fn eigen_transform_point(t: &Transform3d, v: &Vec3d) -> Vec3d {
-    Vec3d::new(
-        eigen_row_dot(t, 0, v.x, v.y, v.z) + t[(0, 3)],
-        eigen_row_dot(t, 1, v.x, v.y, v.z) + t[(1, 3)],
-        eigen_row_dot(t, 2, v.x, v.y, v.z) + t[(2, 3)],
-    )
-}
-
-/// The last row of an Eigen lazy product of a 3-row left-hand side: rows 0 and 1 are one packet,
-/// row 2 is `coeff()`, the unrolled sum of the products `e0 + (e1 + e2)` (Eigen/src/Core/Redux.h
-/// `redux_novec_unroller`), unfused.
+/// The last row of an Eigen lazy product of a 3-row left-hand side, `coeff()`: `e0 + (e1 + e2)`.
 #[inline]
 fn eigen_tree_dot(a0: f64, a1: f64, a2: f64, x: f64, y: f64, z: f64) -> f64 {
-    a0 * x + (a1 * y + a2 * z)
+    crate::geometry::geometry::eigen::coeff_dot3(a0, a1, a2, x, y, z)
 }
 
-/// Eigen `Matrix3d * Vec3d`: rows 0 and 1 as a packet (`fma(m2, z, fma(m1, y, m0 * x))`), row 2
-/// as `coeff()` ([`eigen_tree_dot`]).
+/// One row of an Eigen lazy product evaluated in a packet, `fma(m2, z, fma(m1, y, m0 * x))`.
+#[inline]
+fn eigen_row_dot(m: &Transform3d, row: usize, x: f64, y: f64, z: f64) -> f64 {
+    crate::geometry::geometry::eigen::packet_dot3(m[(row, 0)], m[(row, 1)], m[(row, 2)], x, y, z)
+}
+
+/// Eigen `Transform3d * Vec3d` of an affine transform ([`crate::geometry::geometry::eigen::transform_mul_vec`]).
+#[inline]
+pub fn eigen_transform_point(t: &Transform3d, v: &Vec3d) -> Vec3d {
+    crate::geometry::geometry::eigen::transform_mul_vec(t, v)
+}
+
+/// Eigen `Matrix3d * Vec3d` ([`crate::geometry::geometry::eigen::mat3_mul_vec`]).
 #[inline]
 pub fn eigen_matrix3_mul_vec(m: &Matrix3d, v: &Vec3d) -> Vec3d {
-    let row = |r: usize| m[(r, 2)].mul_add(v.z, m[(r, 1)].mul_add(v.y, m[(r, 0)] * v.x));
-    Vec3d::new(row(0), row(1), eigen_tree_dot(m[(2, 0)], m[(2, 1)], m[(2, 2)], v.x, v.y, v.z))
+    crate::geometry::geometry::eigen::mat3_mul_vec(m, v)
 }
 
-/// Eigen `Transform3d * Transform3d` of two affine transforms (Eigen/src/Geometry/Transform.h
-/// 1434-1440): `res.linear() = lhs.linear() * rhs.linear(); res.translation() = lhs.linear() *
-/// rhs.translation() + lhs.translation(); res.makeAffine()`; rows 0 and 1 of each column as a
-/// packet, row 2 as `coeff()` ([`eigen_tree_dot`]).
+/// Eigen `Transform3d * Transform3d` of two affine transforms
+/// ([`crate::geometry::geometry::eigen::transform_mul`]).
+#[inline]
 pub fn eigen_mul_affine(a: &Transform3d, b: &Transform3d) -> Transform3d {
-    let mut r = Transform3d::identity();
-    for c in 0..4 {
-        for row in 0..2 {
-            r[(row, c)] = eigen_row_dot(a, row, b[(0, c)], b[(1, c)], b[(2, c)]);
-        }
-        r[(2, c)] = eigen_tree_dot(a[(2, 0)], a[(2, 1)], a[(2, 2)], b[(0, c)], b[(1, c)], b[(2, c)]);
-    }
-    for row in 0..3 {
-        r[(row, 3)] += a[(row, 3)];
-    }
-    r
+    crate::geometry::geometry::eigen::transform_mul(a, b)
 }
 
-/// Eigen `Matrix3d * Matrix3d` (rows as [`eigen_mul_affine`]).
+/// Eigen `Matrix3d * Matrix3d` ([`crate::geometry::geometry::eigen::mat3_mul`]).
+#[inline]
 pub fn eigen_matrix3_mul(a: &Matrix3d, b: &Matrix3d) -> Matrix3d {
-    let mut r = Matrix3d::zeros();
-    for c in 0..3 {
-        for row in 0..2 {
-            r[(row, c)] = a[(row, 2)].mul_add(b[(2, c)], a[(row, 1)].mul_add(b[(1, c)], a[(row, 0)] * b[(0, c)]));
-        }
-        r[(2, c)] = eigen_tree_dot(a[(2, 0)], a[(2, 1)], a[(2, 2)], b[(0, c)], b[(1, c)], b[(2, c)]);
-    }
-    r
+    crate::geometry::geometry::eigen::mat3_mul(a, b)
 }
 
 /// The linear part of an affine transform.
@@ -150,43 +129,17 @@ fn affine_of(m: &Matrix3d) -> Transform3d {
     t
 }
 
-/// Eigen/src/LU/Determinant.h:21-24, 47-51: `bruteforce_det3_helper(m,0,1,2) -
-/// bruteforce_det3_helper(m,1,0,2) + bruteforce_det3_helper(m,2,0,1)`, each helper
-/// `m(0,a) * (m(1,b) * m(2,c) - m(1,c) * m(2,b))` with the difference fused.
+/// Eigen `Matrix3d::determinant()` ([`crate::geometry::geometry::eigen::determinant3`]).
+#[inline]
 pub fn eigen_determinant3(m: &Matrix3d) -> f64 {
-    let helper = |a: usize, b: usize, c: usize| m[(0, a)] * m[(1, b)].mul_add(m[(2, c)], -(m[(1, c)] * m[(2, b)]));
-    helper(0, 1, 2) - helper(1, 0, 2) + helper(2, 0, 1)
+    crate::geometry::geometry::eigen::determinant3(m)
 }
 
-/// Eigen `Transform3d::inverse()` of an affine transform (Transform.h, `hint & Affine`): the
-/// linear part inverted by cofactors (Eigen/src/LU/InverseImpl.h, size 3), the translation
-/// `-linear_inv * translation`.
+/// Eigen `Transform3d::inverse()` of an affine transform
+/// ([`crate::geometry::geometry::eigen::transform_inverse`]).
+#[inline]
 pub fn eigen_inverse_affine(t: &Transform3d) -> Transform3d {
-    let m = linear_of(t);
-    let cofactor = |i: usize, j: usize| {
-        let (i1, i2, j1, j2) = ((i + 1) % 3, (i + 2) % 3, (j + 1) % 3, (j + 2) % 3);
-        m[(i1, j1)].mul_add(m[(i2, j2)], -(m[(i1, j2)] * m[(i2, j1)]))
-    };
-    let c0 = [cofactor(0, 0), cofactor(1, 0), cofactor(2, 0)];
-    let det = c0[0] * m[(0, 0)] + c0[1] * m[(1, 0)] + c0[2] * m[(2, 0)];
-    let invdet = 1.0 / det;
-    let mut inv = Matrix3d::zeros();
-    inv[(1, 0)] = cofactor(0, 1) * invdet;
-    inv[(1, 1)] = cofactor(1, 1) * invdet;
-    inv[(2, 0)] = cofactor(0, 2) * invdet;
-    inv[(1, 2)] = cofactor(2, 1) * invdet;
-    inv[(2, 1)] = cofactor(1, 2) * invdet;
-    inv[(2, 2)] = cofactor(2, 2) * invdet;
-    inv[(0, 0)] = c0[0] * invdet;
-    inv[(0, 1)] = c0[1] * invdet;
-    inv[(0, 2)] = c0[2] * invdet;
-    let mut r = affine_of(&inv);
-    let tr = Vec3d::new(t[(0, 3)], t[(1, 3)], t[(2, 3)]);
-    for row in 0..2 {
-        r[(row, 3)] = -inv[(row, 2)].mul_add(tr.z, inv[(row, 1)].mul_add(tr.y, inv[(row, 0)] * tr.x));
-    }
-    r[(2, 3)] = -eigen_tree_dot(inv[(2, 0)], inv[(2, 1)], inv[(2, 2)], tr.x, tr.y, tr.z);
-    r
+    crate::geometry::geometry::eigen::transform_inverse(t)
 }
 
 /// BoundingBox.cpp:265-294 `BoundingBoxf3::transformed(const Transform3d &matrix)`: the eight
@@ -303,37 +256,10 @@ fn eigen_is_approx_mat4(a: &Transform3d, b: &Transform3d) -> bool {
     dd <= prec * prec * aa.min(bb)
 }
 
-/// Eigen `Quaterniond(AngleAxisd(angle, axis)).toRotationMatrix()` (Eigen/src/Geometry/AngleAxis.h
-/// and Quaternion.h `toRotationMatrix`).
+/// Eigen `Quaterniond(AngleAxisd(angle, axis)).toRotationMatrix()`
+/// ([`crate::geometry::geometry::eigen::Quaterniond`]).
 pub fn eigen_angle_axis_rotation_matrix(angle: f64, axis: &Vec3d) -> Matrix3d {
-    // AngleAxis -> Quaternion: w = cos(a/2), vec = sin(a/2) * axis
-    let ha = 0.5 * angle;
-    let s = ha.sin();
-    let (w, x, y, z) = (ha.cos(), s * axis.x, s * axis.y, s * axis.z);
-    // Quaternion::toRotationMatrix
-    let tx = 2.0 * x;
-    let ty = 2.0 * y;
-    let tz = 2.0 * z;
-    let twx = tx * w;
-    let twy = ty * w;
-    let twz = tz * w;
-    let txx = tx * x;
-    let txy = ty * x;
-    let txz = tz * x;
-    let tyy = ty * y;
-    let tyz = tz * y;
-    let tzz = tz * z;
-    let mut res = Matrix3d::zeros();
-    res[(0, 0)] = 1.0 - (tyy + tzz);
-    res[(0, 1)] = txy - twz;
-    res[(0, 2)] = txz + twy;
-    res[(1, 0)] = txy + twz;
-    res[(1, 1)] = 1.0 - (txx + tzz);
-    res[(1, 2)] = tyz - twx;
-    res[(2, 0)] = txz - twy;
-    res[(2, 1)] = tyz + twx;
-    res[(2, 2)] = 1.0 - (txx + tyy);
-    res
+    crate::geometry::geometry::eigen::Quaterniond::from_angle_axis(angle, axis).to_rotation_matrix()
 }
 
 /// `scale_(v)` then `coord_t(...)`: divide by SCALING_FACTOR and truncate.
@@ -723,6 +649,21 @@ impl ModelConfig {
         use crate::config::ConfigBase;
         let _ = self.m_data.set_int(opt_key, value, true);
         self.touch();
+    }
+
+    /// PrintConfig.hpp:2126-2127 `set_deserialize(opt_key, str, substitution_context, append)`:
+    /// `m_data.set_deserialize(...); touch();` (no touch when it throws).
+    pub fn set_deserialize(
+        &mut self,
+        opt_key: &str,
+        str: &str,
+        substitution_context: &mut crate::config::ConfigSubstitutionContext,
+        append: bool,
+    ) -> Result<(), crate::config::ConfigurationError> {
+        use crate::config::ConfigBase;
+        self.m_data.set_deserialize(opt_key, str, substitution_context, append)?;
+        self.touch();
+        Ok(())
     }
 
     /// PrintConfig.hpp:2133
@@ -1583,6 +1524,10 @@ impl ModelFacetsAnnotation {
     /// Model.cpp:4668-4676: clears the data and increases the timestamp.
     pub fn reset(&mut self) {
         self.facets.reset();
+        self.base.touch();
+    }
+    /// ObjectID.hpp `ObjectWithTimestamp::touch()`: a new timestamp.
+    pub fn touch(&mut self) {
         self.base.touch();
     }
     /// Replace the data and touch (the commit of a computed annotation).
@@ -3678,26 +3623,9 @@ impl ModelInstance {
     }
 }
 
-/// Eigen `AngleAxisd(angle, axis).toRotationMatrix()` (Eigen/src/Geometry/AngleAxis.h 237-255).
+/// Eigen `AngleAxisd(angle, axis).toRotationMatrix()` ([`crate::geometry::geometry::eigen::AngleAxisd`]).
 pub fn eigen_angle_axis_matrix3(angle: f64, axis: &Vec3d) -> Matrix3d {
-    let sin_axis = axis * angle.sin();
-    let c = angle.cos();
-    let cos1_axis = axis * (1.0 - c);
-    let mut res = Matrix3d::zeros();
-    let mut tmp = cos1_axis.x * axis.y;
-    res[(0, 1)] = tmp - sin_axis.z;
-    res[(1, 0)] = tmp + sin_axis.z;
-    tmp = cos1_axis.x * axis.z;
-    res[(0, 2)] = tmp + sin_axis.y;
-    res[(2, 0)] = tmp - sin_axis.y;
-    tmp = cos1_axis.y * axis.z;
-    res[(1, 2)] = tmp - sin_axis.x;
-    res[(2, 1)] = tmp + sin_axis.x;
-    // res.diagonal() = (cos1_axis.cwiseProduct(m_axis)).array() + c; (vector operations, unfused)
-    res[(0, 0)] = cos1_axis.x * axis.x + c;
-    res[(1, 1)] = cos1_axis.y * axis.y + c;
-    res[(2, 2)] = cos1_axis.z * axis.z + c;
-    res
+    crate::geometry::geometry::eigen::AngleAxisd::new(angle, *axis).to_rotation_matrix()
 }
 
 /// Default implementation for ModelInstance - creates instance at origin.
@@ -4494,6 +4422,61 @@ impl Model {
             }
         }
         input_file
+    }
+
+    /// Model.cpp:1117-1120 `get_auxiliary_file_temp_path()`
+    pub fn get_auxiliary_file_temp_path(&mut self) -> String {
+        self.get_backup_path_sub("/Auxiliaries")
+    }
+
+    /// Model.cpp:1123-1189 `get_backup_path()`: the backup directory of this model, created (with
+    /// `3D/Objects`, `Metadata` and `lock.txt`) when it is used first.
+    ///
+    /// FIDELITY-NOTE: the free-space check of the system temp directory (and the fall back to
+    /// `data_dir()/tmp`) is not made: the crate has no file system space query.
+    pub fn get_backup_path(&mut self) -> String {
+        if self.backup_path.is_empty() {
+            let pid = crate::utils::get_current_pid();
+            let parent_path = std::path::PathBuf::from(crate::utils::temporary_dir());
+            let now_time = chrono::Local::now();
+            let buf = format!("/bamboo_model/{}#{}#{}", now_time.format("%a_%b_%d/%H_%M_%S"), pid, self.id().id);
+
+            self.backup_path = format!("{}{}", parent_path.to_string_lossy(), buf);
+            log::info!("model {:p}, id {}, backup_path empty, set to {}", self, self.id().id, self.backup_path);
+            let temp_path = std::path::Path::new(&self.backup_path);
+            if temp_path.exists() {
+                log::info!("model {:p}, id {}, remove previous {}", self, self.id().id, self.backup_path);
+                let _ = std::fs::remove_dir_all(temp_path);
+            }
+        }
+        let temp_path = std::path::PathBuf::from(&self.backup_path);
+        if !temp_path.exists() {
+            log::info!("create /3D/Objects in {}", self.backup_path);
+            if let Err(ex) = std::fs::create_dir_all(format!("{}/3D/Objects", self.backup_path)) {
+                log::error!("Failed to create backup path{}: {}", self.backup_path, ex);
+            }
+            log::info!("create /Metadata in {}", self.backup_path);
+            let _ = std::fs::create_dir_all(format!("{}/Metadata", self.backup_path));
+            log::info!("create /lock.txt in {}", self.backup_path);
+            let _ = crate::utils::save_string_file(
+                std::path::Path::new(&format!("{}/lock.txt", self.backup_path)),
+                &crate::utils::get_current_pid().to_string(),
+            );
+        }
+
+        self.backup_path.clone()
+    }
+
+    /// Model.cpp:1204-1216 `get_backup_path(const std::string &sub_path)`
+    pub fn get_backup_path_sub(&mut self, sub_path: &str) -> String {
+        let path = format!("{}/{}", self.get_backup_path(), sub_path);
+        if !std::path::Path::new(&path).exists() {
+            log::info!("create missing sub_path{}", path);
+            if let Err(ex) = std::fs::create_dir_all(&path) {
+                log::error!("Failed to create missing sub_path{}: {}", path, ex);
+            }
+        }
+        path
     }
 
     /// Model.cpp:1218-1232 `set_backup_path` — FIDELITY-NOTE: no backup files are removed.

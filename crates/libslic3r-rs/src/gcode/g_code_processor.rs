@@ -54,6 +54,9 @@ fn role_key(role: ExtrusionRole) -> RoleKey {
 
 // GCodeProcessor.cpp:27
 const DEFAULT_TOOLPATH_WIDTH: f32 = 0.4;
+/// PrintConfig.hpp:795-796 `AUX_FAN_STANDARD_GCODE_INDEX`, `AUX_FAN_OPTIONAL_GCODE_INDEX`
+const AUX_FAN_STANDARD_GCODE_INDEX: i32 = 2;
+const AUX_FAN_OPTIONAL_GCODE_INDEX: i32 = 10;
 // GCodeProcessor.cpp:28
 const DEFAULT_TOOLPATH_HEIGHT: f32 = 0.2;
 
@@ -182,6 +185,9 @@ pub struct Mode {
     pub moves_times: Vec<(EMoveType, f32)>,
     pub roles_times: Vec<(ExtrusionRole, f32)>,
     pub layers_times: Vec<f32>,
+    /// GCodeProcessor.hpp:77-80 `std::vector<float> preview_layers_times;`: like layers_times but one
+    /// entry per slider tick, filled only for mixed-color sublayers.
+    pub preview_layers_times: Vec<f32>,
 }
 
 impl Mode {
@@ -193,6 +199,7 @@ impl Mode {
         self.moves_times.clear();
         self.roles_times.clear();
         self.layers_times.clear();
+        self.preview_layers_times.clear();
     }
 }
 
@@ -1610,6 +1617,27 @@ impl UsedFilaments {
 // GCodeProcessor::ETags / CustomETags — hpp:445-484, cpp:48-83
 // ===========================================================================
 
+impl UsedFilaments {
+    /// GCodeProcessor.cpp:1526-1534 `void GCodeProcessor::UsedFilaments::process_caches(GCodeProcessor*
+    /// processor)`. What the C++ reads from the processor is passed in: the active filament (forced
+    /// and not), the diameter and density of the active filament, the current extrusion role.
+    pub fn process_caches(
+        &mut self,
+        active_filament_id: i32,
+        active_filament_id_support: i32,
+        diameter: f32,
+        density: f32,
+        role: ExtrusionRole,
+    ) {
+        self.process_color_change_cache();
+        self.process_model_cache(active_filament_id);
+        self.process_role_cache(diameter, density, role);
+        self.process_wipe_tower_cache(active_filament_id);
+        self.process_support_cache(active_filament_id_support);
+        self.process_total_volume_cache(active_filament_id);
+    }
+}
+
 /// GCodeProcessor.hpp:445-470  enum class ETags : unsigned char
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1887,11 +1915,11 @@ pub fn get_last_z_from_gcode(gcode_str: &str) -> Option<f64> {
     }
 }
 
-/// GCodeProcessor.cpp:3107-3222  get_last_position_from_gcode
-///
-/// Returns `Some([x,y,z])` if any axis was parsed, else `None`. Preserves the
-/// `sizeof(const char*)` 8-byte parse bound (see `get_last_z_from_gcode`).
-pub fn get_last_position_from_gcode(gcode_str: &str) -> Option<[f32; 3]> {
+/// GCodeProcessor.cpp:3264-3379  `static bool get_last_position_from_gcode(const std::string
+/// &gcode_str, Vec3f &pos)`: each axis of `pos` the moves of the text set is overwritten with the
+/// last value; true when one was. Preserves the `sizeof(const char*)` 8-byte parse bound (see
+/// `get_last_z_from_gcode`).
+pub fn get_last_position_from_gcode(gcode_str: &str, pos: &mut [f32; 3]) -> bool {
     // auto parse_G387 = [](const std::string& line_str) -> int
     fn parse_g387(line_str: &str) -> i32 {
         if !line_str.starts_with("G387 ") {
@@ -1911,7 +1939,6 @@ pub fn get_last_position_from_gcode(gcode_str: &str) -> Option<[f32; 3]> {
     let mut start_index: i64 = 0;
     let mut end_index: i64 = 0;
     let mut is_z_changed = false;
-    let mut pos: [f32; 3] = [0.0, 0.0, 0.0];
     let mut pre_pos: [f32; 3] = [0.0, 0.0, 0.0];
     let mut pre_pos_valid: [i32; 3] = [0, 0, 0];
     while end_index < str_size {
@@ -2014,11 +2041,7 @@ pub fn get_last_position_from_gcode(gcode_str: &str) -> Option<[f32; 3]> {
         start_index = end_index + 1;
         end_index = start_index;
     }
-    if is_z_changed {
-        Some(pos)
-    } else {
-        None
-    }
+    is_z_changed
 }
 
 /// `is_end_of_word` lambda: `c == ' ' || '\t' || '\r' || '\n' || 0 || ';'`.
@@ -2161,6 +2184,8 @@ pub struct MoveVertex {
     pub height: f32,         // mm
     pub mm3_per_mm: f32,
     pub fan_speed: f32,    // percentage
+    /// GCodeProcessor.hpp:221 `float additional_fan_speed{ 0.0f };` (auxiliary/side fan, M106 P2)
+    pub additional_fan_speed: f32,
     pub temperature: f32,  // Celsius degrees
     pub layer_duration: f32, // s (layer id before finalize)
     pub thermal_index_min: f32,
@@ -2192,6 +2217,7 @@ impl Default for MoveVertex {
             height: 0.0,
             mm3_per_mm: 0.0,
             fan_speed: 0.0,
+            additional_fan_speed: 0.0,
             temperature: 0.0,
             layer_duration: 0.0,
             thermal_index_min: 0.0,
@@ -2248,6 +2274,8 @@ pub struct GCodeProcessorResult {
     pub long_retraction_when_cut: bool,
     pub is_helio_gcode: bool,
     pub timelapse_warning_code: i32,
+    /// GCodeProcessor.hpp:287 `bool support_traditional_timelapse{true};`
+    pub support_traditional_timelapse: bool,
     pub printable_height: f32,
     pub settings_ids: SettingsIds,
     pub filaments_count: usize,
@@ -2287,6 +2315,7 @@ impl Default for GCodeProcessorResult {
             long_retraction_when_cut: false,
             is_helio_gcode: false,
             timelapse_warning_code: 0,
+            support_traditional_timelapse: true,
             printable_height: 0.0,
             settings_ids: SettingsIds::default(),
             filaments_count: 0,
@@ -2323,6 +2352,8 @@ impl GCodeProcessorResult {
         self.label_object_enabled = false;
         self.long_retraction_when_cut = false;
         self.timelapse_warning_code = 0;
+        // GCodeProcessor.cpp:1589
+        self.support_traditional_timelapse = true;
         self.printable_height = 0.0;
         self.settings_ids.reset();
         self.filaments_count = 0;
@@ -2342,38 +2373,81 @@ impl GCodeProcessorResult {
 // ===========================================================================
 // MachineEnvelopeConfig — PrintConfig.hpp machine_max_* / machine_min_*
 // ===========================================================================
-/// Faithful (scalar) model of `MachineEnvelopeConfig` (the machine motion
-/// limits read by `TimeProcessor`). In C++ each field is a per-mode array
-/// (`ConfigOptionFloatsNullable`) indexed `extruder_id*2 + mode`; `get_option_value`
-/// falls back to `.back()` when the index is out of range. For BambuStudio the
-/// arrays carry identical values per mode/extruder, so a single scalar per axis
-/// is an exact match for `get_option_value` on any index.
-///
-/// `*_present` flags model whether the C++ option array is non-empty: an empty
-/// array makes the getter fall back (0.0 / passthrough feedrate). When unset,
-/// the processor reproduces the legacy "no machine limits" behaviour.
+/// `MachineEnvelopeConfig` (PrintConfig.hpp): the machine motion limits `TimeProcessor` reads, each
+/// a `ConfigOptionFloats(Nullable)` indexed `extruder_id * 2 + mode` (speeds, accelerations) or
+/// `mode` (jerks, minimum rates); `get_option_value` falls back to the last value past the end and
+/// to 0 on an empty array. The values are kept as the floats `get_option_value` reads them as.
 #[derive(Debug, Clone, Default)]
 pub struct MachineLimits {
-    pub present: bool,
-    pub max_acceleration_x: f32,
-    pub max_acceleration_y: f32,
-    pub max_acceleration_z: f32,
-    pub max_acceleration_e: f32,
-    pub max_acceleration_extruding: f32,
-    pub max_acceleration_retracting: f32,
-    pub max_acceleration_travel: f32,
-    pub max_speed_x: f32,
-    pub max_speed_y: f32,
-    pub max_speed_z: f32,
-    pub max_speed_e: f32,
-    pub max_jerk_x: f32,
-    pub max_jerk_y: f32,
-    pub max_jerk_z: f32,
-    pub max_jerk_e: f32,
-    pub min_extruding_rate: f32,
-    pub min_extruding_rate_present: bool,
-    pub min_travel_rate: f32,
-    pub min_travel_rate_present: bool,
+    pub machine_max_acceleration_x: Vec<f32>,
+    pub machine_max_acceleration_y: Vec<f32>,
+    pub machine_max_acceleration_z: Vec<f32>,
+    pub machine_max_acceleration_e: Vec<f32>,
+    pub machine_max_acceleration_extruding: Vec<f32>,
+    pub machine_max_acceleration_retracting: Vec<f32>,
+    pub machine_max_acceleration_travel: Vec<f32>,
+    pub machine_max_speed_x: Vec<f32>,
+    pub machine_max_speed_y: Vec<f32>,
+    pub machine_max_speed_z: Vec<f32>,
+    pub machine_max_speed_e: Vec<f32>,
+    pub machine_max_jerk_x: Vec<f32>,
+    pub machine_max_jerk_y: Vec<f32>,
+    pub machine_max_jerk_z: Vec<f32>,
+    pub machine_max_jerk_e: Vec<f32>,
+    pub machine_min_extruding_rate: Vec<f32>,
+    pub machine_min_travel_rate: Vec<f32>,
+}
+
+impl MachineLimits {
+    /// `MachineEnvelopeConfig()`: the defaults of the definitions (PrintConfig.cpp:4968-5131, per
+    /// mode: normal, stealth). MACHINE_LIMITS_DEFAULTS (on); =0 gives empty arrays (no limit), as the
+    /// port had before.
+    pub fn machine_envelope_config() -> Self {
+        if !crate::faithful_gate("MACHINE_LIMITS_DEFAULTS") {
+            return MachineLimits::default();
+        }
+        MachineLimits {
+            // name, max_feedrate,  max_acceleration, max_jerk (PrintConfig.cpp:4974-4980)
+            machine_max_speed_x: vec![500.0, 200.0],
+            machine_max_speed_y: vec![500.0, 200.0],
+            machine_max_speed_z: vec![12.0, 12.0],
+            machine_max_speed_e: vec![120.0, 120.0],
+            machine_max_acceleration_x: vec![1000.0, 1000.0],
+            machine_max_acceleration_y: vec![1000.0, 1000.0],
+            machine_max_acceleration_z: vec![500.0, 200.0],
+            machine_max_acceleration_e: vec![5000.0, 5000.0],
+            machine_max_jerk_x: vec![10.0, 10.0],
+            machine_max_jerk_y: vec![10.0, 10.0],
+            machine_max_jerk_z: vec![0.2f64 as f32, 0.4f64 as f32],
+            machine_max_jerk_e: vec![2.5, 2.5],
+            // PrintConfig.cpp:5074-5130
+            machine_min_extruding_rate: vec![0.0, 0.0],
+            machine_min_travel_rate: vec![0.0, 0.0],
+            machine_max_acceleration_extruding: vec![1500.0, 1250.0],
+            machine_max_acceleration_retracting: vec![1500.0, 1250.0],
+            machine_max_acceleration_travel: vec![1500.0, 1250.0],
+        }
+    }
+}
+
+/// GCodeProcessor.cpp:115-119 `get_option_value(const ConfigOptionFloatsNullable& option, size_t id)`
+/// over the limits' floats.
+fn ml_get(option: &[f32], id: usize) -> f32 {
+    if option.is_empty() {
+        0.0
+    } else if id < option.len() {
+        option[id]
+    } else {
+        *option.last().unwrap()
+    }
+}
+
+/// GCodeProcessor.cpp:103-107 `set_option_value(ConfigOptionFloatsNullable& option, size_t id, float
+/// value)` over the limits' floats.
+fn ml_set(option: &mut [f32], id: usize, value: f32) {
+    if id < option.len() {
+        option[id] = value;
+    }
 }
 
 // ===========================================================================
@@ -2388,10 +2462,9 @@ pub struct MachineLimits {
 pub struct TimeProcessor {
     pub extruder_unloaded: bool,
     pub machine_envelope_processing_enabled: bool,
-    /// MachineEnvelopeConfig machine_limits (GCodeProcessor.hpp:818). Populated by
-    /// `GCodeProcessor::apply_config` (cpp:1964-1995) when the gcode flavor is
-    /// Marlin/Klipper; otherwise stays at the empty default so the getters fall
-    /// back exactly like the C++ `get_option_value` on empty arrays.
+    /// MachineEnvelopeConfig machine_limits (GCodeProcessor.hpp:818): the defaults of
+    /// `MachineEnvelopeConfig()` (reset), the configuration's under the Marlin and
+    /// Klipper flavors (`GCodeProcessor::apply_config`, cpp:2027-2033).
     pub machine_limits: MachineLimits,
     pub filament_load_times: f32,
     pub filament_unload_times: f32,
@@ -2541,7 +2614,7 @@ impl TimeProcessor {
         self.extruder_unloaded = true;
         self.machine_envelope_processing_enabled = false;
         // GCodeProcessor.cpp:526  machine_limits = MachineEnvelopeConfig();
-        self.machine_limits = MachineLimits::default();
+        self.machine_limits = MachineLimits::machine_envelope_config();
         self.filament_load_times = 0.0;
         self.filament_unload_times = 0.0;
         self.extruder_change_times = 0.0;
@@ -2559,7 +2632,7 @@ impl Default for TimeProcessor {
         let mut tp = TimeProcessor {
             extruder_unloaded: true,
             machine_envelope_processing_enabled: false,
-            machine_limits: MachineLimits::default(),
+            machine_limits: MachineLimits::machine_envelope_config(),
             filament_load_times: 0.0,
             filament_unload_times: 0.0,
             extruder_change_times: 0.0,
@@ -2623,6 +2696,9 @@ enum Cmd {
     Sync,
     M622,
     M623,
+    VM104,
+    VM109,
+    VG1,
 }
 
 const CMD_TABLE: &[(&str, Cmd, bool)] = &[
@@ -2671,6 +2747,12 @@ const CMD_TABLE: &[(&str, Cmd, bool)] = &[
     // GCodeProcessor.cpp:1762-1763 — M622 / M623 (PROCESS_G4_G29, below).
     ("M622", Cmd::M622, false),
     ("M623", Cmd::M623, false),
+    // GCodeProcessor.cpp:1757-1758 — VM104 / VM109 (the virtual temperature commands of `;V...`
+    // comments).
+    ("VM104", Cmd::VM104, false),
+    ("VM109", Cmd::VM109, false),
+    // GCodeProcessor.cpp:1756 — VG1 (the virtual move of `;VG1` comments).
+    ("VG1", Cmd::VG1, false),
 ];
 
 fn cmd_from_id(id: usize) -> Cmd {
@@ -2696,15 +2778,16 @@ pub enum GCodeFlavor {
     Sailfish,
     MakerWare,
     Smoothie,
+    /// gcfMach3 (set by Cura's `FLAVOR:Mach3`, `process_cura_tags`).
+    Mach3,
     Other,
 }
 
 /// GCodeProcessor.hpp:440-1211  class GCodeProcessor (state machine).
 ///
-/// BLOCKED members (unported deps): MultiNozzleUtils nozzle group/status,
-/// extruder_offsets/Vec3f, SeamsDetector/OptionsZCorrector full behavior,
-/// producer regex detection, ArcFitter (G2/G3 interpolation), data-checking.
-/// The fields below cover the time / filament path.
+/// Not modelled: `OptionsZCorrector` (with `custom_gcode_per_print_z`), the
+/// filament lists and the pre-heating context of `post_process`, the data
+/// checkers' members (ENABLE_GCODE_VIEWER_DATA_CHECKING is off at the pin).
 pub struct GCodeProcessor {
     m_command_processor: CommandProcessor,
     m_units: EUnits,
@@ -2744,6 +2827,8 @@ pub struct GCodeProcessor {
     m_forced_height: f32,
     m_mm3_per_mm: f32,
     m_fan_speed: f32, // percentage
+    /// GCodeProcessor.hpp:1215 `float m_additional_fan_speed;` (auxiliary/side fan, M106 P2)
+    m_additional_fan_speed: f32,
     m_extrusion_role: ExtrusionRole,
 
     m_filament_maps: Vec<i32>,
@@ -2778,6 +2863,10 @@ pub struct GCodeProcessor {
     m_seams_count: i32,
     m_detect_layer_based_on_tag: bool,
     m_measure_g29_time: bool,
+    /// GCodeProcessor.hpp:1206 `SeamsDetector m_seams_detector;`
+    m_seams_detector: SeamsDetector,
+    /// GCodeProcessor.hpp:1233 `EProducer m_producer;`
+    m_producer: EProducer,
     // BLOCKED(deps): m_extruder_offsets (Vec3f), m_seams_detector,
     // m_options_z_corrector, m_nozzle_group_result/recorder — see notes.
     m_extruder_offsets: Vec<[f32; 3]>,
@@ -2824,6 +2913,7 @@ impl GCodeProcessor {
             m_forced_height: 0.0,
             m_mm3_per_mm: 0.0,
             m_fan_speed: 0.0,
+            m_additional_fan_speed: 0.0,
             m_extrusion_role: ExtrusionRole::None,
             m_filament_maps: Vec::new(),
             m_physical_extruder_map: Vec::new(),
@@ -2851,6 +2941,8 @@ impl GCodeProcessor {
             m_seams_count: 0,
             m_detect_layer_based_on_tag: false,
             m_measure_g29_time: false,
+            m_seams_detector: SeamsDetector::default(),
+            m_producer: EProducer::Unknown,
             m_extruder_offsets: vec![[0.0; 3]; MIN_EXTRUDERS_COUNT],
             m_time_processor: TimeProcessor::default(),
             m_used_filaments: UsedFilaments::default(),
@@ -2915,6 +3007,8 @@ impl GCodeProcessor {
         self.m_forced_height = 0.0;
         self.m_mm3_per_mm = 0.0;
         self.m_fan_speed = 0.0;
+        // GCodeProcessor.cpp:2586
+        self.m_additional_fan_speed = 0.0;
 
         self.m_extrusion_role = ExtrusionRole::None;
 
@@ -2952,11 +3046,20 @@ impl GCodeProcessor {
 
         self.m_detect_layer_based_on_tag = false;
         self.m_seams_count = 0;
+        // GCodeProcessor.cpp:2624
+        self.m_producer = EProducer::Unknown;
     }
 
     /// GCodeProcessor.cpp:2429-2432  void GCodeProcessor::enable_stealth_time_estimator(bool)
     pub fn enable_stealth_time_estimator(&mut self, enabled: bool) {
         self.m_time_processor.machines[ETimeMode::Stealth as usize].enabled = enabled;
+    }
+
+    /// GCodeProcessor.hpp:1336 `void set_xy_offset(double x, double y) { m_x_offset = x; m_y_offset =
+    /// y; }` (BBS: set offset for gcode writer)
+    pub fn set_xy_offset(&mut self, x: f64, y: f64) {
+        self.m_x_offset = x;
+        self.m_y_offset = y;
     }
 
     /// Faithful port of the machine-limit / acceleration parts of
@@ -2995,34 +3098,32 @@ impl GCodeProcessor {
             self.m_flavor,
             GCodeFlavor::MarlinLegacy | GCodeFlavor::MarlinFirmware | GCodeFlavor::Klipper
         ) {
+            // `machine_limits = reinterpret_cast<const MachineEnvelopeConfig&>(config)`: the
+            // port's configuration holds one value per limit, the same for both modes.
+            let two = |v: f64| -> Vec<f32> { vec![v as f32, v as f32] };
             let ml = &mut self.m_time_processor.machine_limits;
-            ml.present = true;
-            ml.max_acceleration_x = config.machine_max_acceleration_x as f32;
-            ml.max_acceleration_y = config.machine_max_acceleration_y as f32;
-            ml.max_acceleration_z = config.machine_max_acceleration_z as f32;
-            ml.max_acceleration_e = config.machine_max_acceleration_e as f32;
-            ml.max_acceleration_extruding = config.machine_max_acceleration_extruding as f32;
-            ml.max_acceleration_retracting = config.machine_max_acceleration_retracting as f32;
-            ml.max_acceleration_travel = config.machine_max_acceleration_travel as f32;
-            ml.max_speed_x = config.machine_max_speed_x as f32;
-            ml.max_speed_y = config.machine_max_speed_y as f32;
-            ml.max_speed_z = config.machine_max_speed_z as f32;
-            ml.max_speed_e = config.machine_max_speed_e as f32;
-            ml.max_jerk_x = config.machine_max_jerk_x as f32;
-            ml.max_jerk_y = config.machine_max_jerk_y as f32;
-            ml.max_jerk_z = config.machine_max_jerk_z as f32;
-            ml.max_jerk_e = config.machine_max_jerk_e as f32;
-            // BambuStudio always carries these arrays (length == 2*extruders), so the
-            // C++ `.empty()` guard is false: model them as present.
-            ml.min_extruding_rate = config.machine_min_extruding_rate as f32;
-            ml.min_extruding_rate_present = true;
-            ml.min_travel_rate = config.machine_min_travel_rate as f32;
-            ml.min_travel_rate_present = true;
+            ml.machine_max_acceleration_x = two(config.machine_max_acceleration_x);
+            ml.machine_max_acceleration_y = two(config.machine_max_acceleration_y);
+            ml.machine_max_acceleration_z = two(config.machine_max_acceleration_z);
+            ml.machine_max_acceleration_e = two(config.machine_max_acceleration_e);
+            ml.machine_max_acceleration_extruding = two(config.machine_max_acceleration_extruding);
+            ml.machine_max_acceleration_retracting = two(config.machine_max_acceleration_retracting);
+            ml.machine_max_acceleration_travel = two(config.machine_max_acceleration_travel);
+            ml.machine_max_speed_x = two(config.machine_max_speed_x);
+            ml.machine_max_speed_y = two(config.machine_max_speed_y);
+            ml.machine_max_speed_z = two(config.machine_max_speed_z);
+            ml.machine_max_speed_e = two(config.machine_max_speed_e);
+            ml.machine_max_jerk_x = two(config.machine_max_jerk_x);
+            ml.machine_max_jerk_y = two(config.machine_max_jerk_y);
+            ml.machine_max_jerk_z = two(config.machine_max_jerk_z);
+            ml.machine_max_jerk_e = two(config.machine_max_jerk_e);
+            ml.machine_min_extruding_rate = two(config.machine_min_extruding_rate);
+            ml.machine_min_travel_rate = two(config.machine_min_travel_rate);
 
-            // GCodeProcessor.cpp:1966-1969 — legacy Marlin has no separate travel
+            // GCodeProcessor.cpp:2029-2032 — legacy Marlin has no separate travel
             // acceleration; it uses the 'extruding' value instead.
             if self.m_flavor == GCodeFlavor::MarlinLegacy {
-                ml.max_acceleration_travel = ml.max_acceleration_extruding;
+                ml.machine_max_acceleration_travel = ml.machine_max_acceleration_extruding.clone();
             }
         }
 
@@ -3074,6 +3175,13 @@ impl GCodeProcessor {
             self.ensure_nozzle_group_result(self.m_result.filaments_count as i32);
         }
 
+        // GCodeProcessor.cpp:2057-2059 — m_first_layer_height from `initial_layer_print_height`,
+        // which the startup paths are flattened to and the first `Z_HEIGHT` tag compares with.
+        // PROCESSOR_FIRST_LAYER_HEIGHT (on); =0 leaves it 0.
+        if crate::faithful_gate("PROCESSOR_FIRST_LAYER_HEIGHT") {
+            self.m_first_layer_height = config.first_layer_height.abs() as f32;
+        }
+
         // GCodeProcessor.cpp:2054 — prepare_compensation_time (PROCESS_G4_G29).
         if crate::faithful_gate("PROCESS_G4_G29") {
             self.m_time_processor.prepare_compensation_time =
@@ -3108,33 +3216,18 @@ impl GCodeProcessor {
     }
 
     /// `get_option_value(machine_max_acceleration_extruding, mode)` (cpp:1986).
-    fn get_axis_max_acceleration_extruding(&self, _mode: usize) -> f32 {
-        let ml = &self.m_time_processor.machine_limits;
-        if ml.present {
-            ml.max_acceleration_extruding
-        } else {
-            0.0
-        }
+    fn get_axis_max_acceleration_extruding(&self, mode: usize) -> f32 {
+        ml_get(&self.m_time_processor.machine_limits.machine_max_acceleration_extruding, mode)
     }
 
     /// `get_option_value(machine_max_acceleration_retracting, mode)` (cpp:1989).
-    fn get_machine_limit_retract_acceleration(&self, _mode: usize) -> f32 {
-        let ml = &self.m_time_processor.machine_limits;
-        if ml.present {
-            ml.max_acceleration_retracting
-        } else {
-            0.0
-        }
+    fn get_machine_limit_retract_acceleration(&self, mode: usize) -> f32 {
+        ml_get(&self.m_time_processor.machine_limits.machine_max_acceleration_retracting, mode)
     }
 
     /// `get_option_value(machine_max_acceleration_travel, mode)` (cpp:1992).
-    fn get_machine_limit_travel_acceleration(&self, _mode: usize) -> f32 {
-        let ml = &self.m_time_processor.machine_limits;
-        if ml.present {
-            ml.max_acceleration_travel
-        } else {
-            0.0
-        }
+    fn get_machine_limit_travel_acceleration(&self, mode: usize) -> f32 {
+        ml_get(&self.m_time_processor.machine_limits.machine_max_acceleration_travel, mode)
     }
 
     // ----- accessors -----
@@ -3196,79 +3289,71 @@ impl GCodeProcessor {
 
     /// GCodeProcessor.cpp:6022-6028 — machine_min_extruding_rate empty → feedrate,
     /// else max(feedrate, min_extruding_rate).
-    fn minimum_feedrate(&self, _mode: ETimeMode, feedrate: f32) -> f32 {
+    fn minimum_feedrate(&self, mode: ETimeMode, feedrate: f32) -> f32 {
         let ml = &self.m_time_processor.machine_limits;
-        if !ml.min_extruding_rate_present {
-            feedrate
-        } else {
-            feedrate.max(ml.min_extruding_rate)
+        if ml.machine_min_extruding_rate.is_empty() {
+            return feedrate;
         }
+        feedrate.max(ml_get(&ml.machine_min_extruding_rate, mode as usize))
     }
 
     /// GCodeProcessor.cpp:6030-6036 — machine_min_travel_rate empty → feedrate,
     /// else max(feedrate, min_travel_rate).
-    fn minimum_travel_feedrate(&self, _mode: ETimeMode, feedrate: f32) -> f32 {
+    fn minimum_travel_feedrate(&self, mode: ETimeMode, feedrate: f32) -> f32 {
         let ml = &self.m_time_processor.machine_limits;
-        if !ml.min_travel_rate_present {
-            feedrate
-        } else {
-            feedrate.max(ml.min_travel_rate)
+        if ml.machine_min_travel_rate.is_empty() {
+            return feedrate;
         }
+        feedrate.max(ml_get(&ml.machine_min_travel_rate, mode as usize))
     }
 
     /// GCodeProcessor.cpp:6038-6049 — per-axis max feedrate (mm/s).
     /// `axis` is the `Axis` discriminant (X=0,Y=1,Z=2,E=3); other axes → 0.0.
-    fn get_axis_max_feedrate(&self, _mode: ETimeMode, axis: usize, _extruder_id: i32) -> f32 {
+    fn get_axis_max_feedrate(&self, mode: ETimeMode, axis: usize, extruder_id: i32) -> f32 {
         let ml = &self.m_time_processor.machine_limits;
-        if !ml.present {
-            return 0.0;
-        }
+        let matched_pos = (extruder_id * 2) as usize;
         match axis {
-            0 => ml.max_speed_x,
-            1 => ml.max_speed_y,
-            2 => ml.max_speed_z,
-            3 => ml.max_speed_e,
+            0 => ml_get(&ml.machine_max_speed_x, matched_pos + mode as usize),
+            1 => ml_get(&ml.machine_max_speed_y, matched_pos + mode as usize),
+            2 => ml_get(&ml.machine_max_speed_z, matched_pos + mode as usize),
+            3 => ml_get(&ml.machine_max_speed_e, matched_pos + mode as usize),
             _ => 0.0,
         }
     }
 
     /// GCodeProcessor.cpp:6051-6062 — per-axis max acceleration (mm/s^2).
-    fn get_axis_max_acceleration(&self, _mode: ETimeMode, axis: usize, _extruder_id: i32) -> f32 {
+    fn get_axis_max_acceleration(&self, mode: ETimeMode, axis: usize, extruder_id: i32) -> f32 {
         let ml = &self.m_time_processor.machine_limits;
-        if !ml.present {
-            return 0.0;
-        }
+        let matched_pos = (extruder_id * 2) as usize;
         match axis {
-            0 => ml.max_acceleration_x,
-            1 => ml.max_acceleration_y,
-            2 => ml.max_acceleration_z,
-            3 => ml.max_acceleration_e,
+            0 => ml_get(&ml.machine_max_acceleration_x, matched_pos + mode as usize),
+            1 => ml_get(&ml.machine_max_acceleration_y, matched_pos + mode as usize),
+            2 => ml_get(&ml.machine_max_acceleration_z, matched_pos + mode as usize),
+            3 => ml_get(&ml.machine_max_acceleration_e, matched_pos + mode as usize),
             _ => 0.0,
         }
     }
 
     /// GCodeProcessor.cpp:6064-6074 — per-axis max jerk (mm/s).
-    fn get_axis_max_jerk(&self, _mode: ETimeMode, axis: usize) -> f32 {
+    fn get_axis_max_jerk(&self, mode: ETimeMode, axis: usize) -> f32 {
         let ml = &self.m_time_processor.machine_limits;
-        if !ml.present {
-            return 0.0;
-        }
         match axis {
-            0 => ml.max_jerk_x,
-            1 => ml.max_jerk_y,
-            2 => ml.max_jerk_z,
-            3 => ml.max_jerk_e,
+            0 => ml_get(&ml.machine_max_jerk_x, mode as usize),
+            1 => ml_get(&ml.machine_max_jerk_y, mode as usize),
+            2 => ml_get(&ml.machine_max_jerk_z, mode as usize),
+            3 => ml_get(&ml.machine_max_jerk_e, mode as usize),
             _ => 0.0,
         }
     }
 
     /// GCodeProcessor.cpp:6076-6081 — (x,y,z) max jerk.
-    fn get_xyz_max_jerk(&self, _mode: ETimeMode) -> [f32; 3] {
+    fn get_xyz_max_jerk(&self, mode: ETimeMode) -> [f32; 3] {
         let ml = &self.m_time_processor.machine_limits;
-        if !ml.present {
-            return [0.0, 0.0, 0.0];
-        }
-        [ml.max_jerk_x, ml.max_jerk_y, ml.max_jerk_z]
+        [
+            ml_get(&ml.machine_max_jerk_x, mode as usize),
+            ml_get(&ml.machine_max_jerk_y, mode as usize),
+            ml_get(&ml.machine_max_jerk_z, mode as usize),
+        ]
     }
 
     /// GCodeProcessor.cpp:6083-6087  get_retract_acceleration
@@ -3457,29 +3542,35 @@ impl GCodeProcessor {
             Cmd::Sync => self.process_sync(line),
             Cmd::M622 => self.process_m622(line),
             Cmd::M623 => self.process_m623(line),
+            Cmd::VM104 => self.process_vm104(line),
+            Cmd::VM109 => self.process_vm109(line),
+            Cmd::VG1 => self.process_vg1(line),
         }
     }
 
     /// GCodeProcessor.cpp:3381-3632  process_tags.
     ///
     /// PROCESS_TAGS (on); =0 ignores every tag, as the port did before R846.
-    /// Not ported: the producers' tags (`process_producers_tags`; the port only
-    /// processes G-code it wrote, with `producers_enabled` false), the seams
-    /// detector of an outer wall (`m_seams_detector` has no Rust counterpart),
-    /// and the color change, pause and custom G-code tags (:3525-3608), whose
-    /// `process_custom_gcode_time`, `process_filaments` and
-    /// `custom_gcode_per_print_z` are missing; those tags are ignored.
+    /// Not ported: the color change, pause and custom G-code tags (:3525-3608),
+    /// whose `custom_gcode_per_print_z` and `OptionsZCorrector` are missing; those
+    /// tags are ignored. The producers' tags run only with `producers_enabled`
+    /// (G-code loaded from a file), never for the G-code the port writes.
     fn process_tags(&mut self, comment: &str, producers_enabled: bool) {
         if !crate::faithful_gate("PROCESS_TAGS") {
             return;
         }
-        // :3385-3387 — producers tags (never: see above).
-        let _ = producers_enabled;
+        // :3385-3387 — producers tags
+        if producers_enabled && self.process_producers_tags(comment) {
+            return;
+        }
 
         // :3389-3396 — extrusion role tag
         if let Some(rest) = comment.strip_prefix(reserved_tag(ETags::Role)) {
             self.set_extrusion_role(crate::extrusion_entity::string_to_role(rest));
-            // :3391-3392 m_seams_detector.activate(true) — not ported.
+            // :3391-3392 (the detector's state feeds only the seam moves of the preview).
+            if self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
+                self.m_seams_detector.activate(true);
+            }
             self.m_processing_start_custom_gcode =
                 self.m_extrusion_role == ExtrusionRole::Custom && self.m_g1_line_id == 0;
             return;
@@ -3587,14 +3678,22 @@ impl GCodeProcessor {
         }
 
         // :3510-3523 — height and width tags (no producers: always read)
+        // PROCESSOR_PARSE_NUMBER (on): `parse_number` as the C++ compiles it here (the value it
+        // reads is kept even when the text does not end with the number). =0 keeps the value only
+        // when the whole text parses.
+        let faithful_parse_number = crate::faithful_gate("PROCESSOR_PARSE_NUMBER");
         if let Some(rest) = comment.strip_prefix(reserved_tag(ETags::Height)) {
-            if let Some(v) = parse_number_f32(rest) {
+            if faithful_parse_number {
+                let _ = parse_number(rest, &mut self.m_forced_height);
+            } else if let Some(v) = parse_number_f32(rest) {
                 self.m_forced_height = v;
             }
             return;
         }
         if let Some(rest) = comment.strip_prefix(reserved_tag(ETags::Width)) {
-            if let Some(v) = parse_number_f32(rest) {
+            if faithful_parse_number {
+                let _ = parse_number(rest, &mut self.m_forced_width);
+            } else if let Some(v) = parse_number_f32(rest) {
                 self.m_forced_width = v;
             }
             return;
@@ -3839,8 +3938,13 @@ impl GCodeProcessor {
         };
 
         // extrude width/height + filament caches (cpp:4842-4903)
+        // PROCESSOR_ARC_DOUBLE (on): `delta_pos[E]` is a double (AxisCoords), so the filament volume
+        // and the widths of an arc are computed in double and stored as floats
+        // (GCodeProcessor.cpp:5025, 5065-5072). =0 computes them in float.
+        let arc_double = crate::faithful_gate("PROCESSOR_ARC_DOUBLE");
         if r#type == EMoveType::Extrude {
-            let volume_extruded_filament = area_filament_cross_section * de as f32;
+            let volume_extruded_filament =
+                if arc_double { (area_filament_cross_section as f64 * de) as f32 } else { area_filament_cross_section * de as f32 };
             let area_toolpath_cross_section = volume_extruded_filament / delta_xyz;
 
             match self.m_extrusion_role {
@@ -3877,16 +3981,30 @@ impl GCodeProcessor {
             if self.m_forced_width > 0.0 {
                 self.m_width = self.m_forced_width;
             } else if self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
-                self.m_width = de as f32 * (PI as f32 * sqr(1.05 * filament_radius))
-                    / (delta_xyz * self.m_height);
+                self.m_width = if arc_double {
+                    //BBS: cross section: rectangle
+                    (de * ((PI * sqr(1.05f32 * filament_radius) as f64) as f32) as f64 / (delta_xyz * self.m_height) as f64) as f32
+                } else {
+                    de as f32 * (PI as f32 * sqr(1.05 * filament_radius)) / (delta_xyz * self.m_height)
+                };
             } else if self.m_extrusion_role == ExtrusionRole::BridgeInfill
                 || self.m_extrusion_role == ExtrusionRole::None
             {
-                self.m_width = filament_diameter * (de as f32 / delta_xyz).sqrt();
+                self.m_width = if arc_double {
+                    //BBS: cross section: circle
+                    (filament_diameter as f64 * (de / delta_xyz as f64).sqrt()) as f32
+                } else {
+                    filament_diameter * (de as f32 / delta_xyz).sqrt()
+                };
             } else {
-                self.m_width = de as f32 * (PI as f32 * sqr(filament_radius))
-                    / (delta_xyz * self.m_height)
-                    + (1.0 - 0.25 * PI as f32) * self.m_height;
+                self.m_width = if arc_double {
+                    //BBS: cross section: rectangle + 2 semicircles
+                    (de * ((PI * sqr(filament_radius) as f64) as f32) as f64 / (delta_xyz * self.m_height) as f64
+                        + (((1.0 - 0.25 * PI) as f32) * self.m_height) as f64) as f32
+                } else {
+                    de as f32 * (PI as f32 * sqr(filament_radius)) / (delta_xyz * self.m_height)
+                        + (1.0 - 0.25 * PI as f32) * self.m_height
+                };
             }
             if self.m_width == 0.0 {
                 self.m_width = DEFAULT_TOOLPATH_WIDTH;
@@ -4387,23 +4505,60 @@ impl GCodeProcessor {
 
     /// GCodeProcessor.cpp:5293-5305  process_M106 — set fan speed.
     fn process_m106(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        //BBS: for Bambu machine ,we both use M106 P1 and M106 to indicate the part cooling fan
+        //So we must not ignore M106 P1
         if !line.has_p() || (line.has_p() && line.p() == 1.0) {
+            // The absence of P means the print cooling fan, so ignore anything else.
             if let Some(new_fan_speed) = line.has_value(b'S') {
                 self.m_fan_speed = (100.0 / 255.0) * new_fan_speed;
             } else {
                 self.m_fan_speed = 100.0;
             }
+        } else if crate::faithful_gate("PROCESSOR_AUX_FAN")
+            && line.has_p()
+            && (line.p() == AUX_FAN_STANDARD_GCODE_INDEX as f32 || line.p() == AUX_FAN_OPTIONAL_GCODE_INDEX as f32)
+        {
+            // GCodeProcessor.cpp:5497-5507 — auxiliary/side cooling fan. The preview only has a single
+            // channel for them, so with two independently driven fans the last one written wins.
+            // PROCESSOR_AUX_FAN (on); =0 ignores it.
+            if let Some(new_fan_speed) = line.has_value(b'S') {
+                self.m_additional_fan_speed = (100.0 / 255.0) * new_fan_speed;
+            } else {
+                self.m_additional_fan_speed = 100.0;
+            }
         }
     }
 
-    /// GCodeProcessor.cpp:5307-5310  process_M107 — disable fan.
-    fn process_m107(&mut self, _line: &crate::g_code_reader::GCodeLine) {
-        self.m_fan_speed = 0.0;
+    /// GCodeProcessor.cpp:5510-5518  process_M107 — disable fan; without P or P1 the part fan, P2 /
+    /// P10 the auxiliary side fans. PROCESSOR_AUX_FAN (on); =0 turns the part fan off whatever P is.
+    fn process_m107(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if !crate::faithful_gate("PROCESSOR_AUX_FAN") {
+            self.m_fan_speed = 0.0;
+            return;
+        }
+        // M107: disable fan; without P or P1 = part fan, P2 / P10 = auxiliary side fans
+        if !line.has_p() || (line.has_p() && line.p() == 1.0) {
+            self.m_fan_speed = 0.0;
+        } else if line.has_p()
+            && (line.p() == AUX_FAN_STANDARD_GCODE_INDEX as f32 || line.p() == AUX_FAN_OPTIONAL_GCODE_INDEX as f32)
+        {
+            self.m_additional_fan_speed = 0.0;
+        }
     }
 
-    // BLOCKED(deps): process_M108 (Sailfish tool change) needs process_T(substr);
-    // only relevant for gcfSailfish flavor (not default). No-op for default flavor.
-    fn process_m108(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5520-5532  process_M108 — the tool change of Sailfish.
+    fn process_m108(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        // These M-codes are used by Sailfish to change active tool.
+        // They have to be processed otherwise toolchanges will be unrecognised
+        if self.m_flavor != GCodeFlavor::Sailfish {
+            return;
+        }
+
+        let cmd = line.raw().to_string();
+        if let Some(pos) = cmd.find('T') {
+            self.process_t_command(&cmd[pos..], -1);
+        }
+    }
 
     /// GCodeProcessor.cpp:5326-5342  process_M109 — set extruder temp + wait.
     fn process_m109(&mut self, line: &crate::g_code_reader::GCodeLine) {
@@ -4440,7 +4595,19 @@ impl GCodeProcessor {
     }
 
     // BLOCKED(deps): process_M135 (MakerWare tool change) — only for gcfMakerWare.
-    fn process_m135(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5562-5574  process_M135 — the tool change of MakerWare.
+    fn process_m135(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        // These M-codes are used by MakerWare to change active tool.
+        // They have to be processed otherwise toolchanges will be unrecognised
+        if self.m_flavor != GCodeFlavor::MakerWare {
+            return;
+        }
+
+        let cmd = line.raw().to_string();
+        if let Some(pos) = cmd.find('T') {
+            self.process_t_command(&cmd[pos..], -1);
+        }
+    }
 
     /// GCodeProcessor.cpp:5381-5386  process_M140 — set bed temperature.
     fn process_m140(&mut self, line: &crate::g_code_reader::GCodeLine) {
@@ -4476,14 +4643,15 @@ impl GCodeProcessor {
         }
     }
 
-    /// GCodeProcessor.cpp:5600-5617  process_M201 — max printing acceleration.
-    /// The port keeps one value per axis, the Normal mode's; C++'s loop runs over
-    /// the extruders' Normal entries when the arrays hold two values or more,
-    /// as the Bambu Lab profiles' do. MACHINE_LIMITS (on); =0 ignores the line.
+    /// GCodeProcessor.cpp:5600-5617  process_M201 — max printing acceleration: the
+    /// entries of the first `size() / 2` extruders the loop reaches (its index steps
+    /// by 2 below `size() / 2`), the Normal mode's and, with envelope processing,
+    /// the Stealth mode's. MACHINE_LIMITS (on); =0 ignores the line.
     fn process_m201(&mut self, line: &crate::g_code_reader::GCodeLine) {
-        if !crate::faithful_gate("MACHINE_LIMITS") || !self.m_time_processor.machine_limits.present {
+        if !crate::faithful_gate("MACHINE_LIMITS") {
             return;
         }
+        // see http://reprap.org/wiki/G-code#M201:_Set_max_printing_acceleration
         let factor = if !matches!(self.m_flavor, GCodeFlavor::RepRapSprinter | GCodeFlavor::RepRapFirmware)
             && self.m_units == EUnits::Inches
         {
@@ -4491,30 +4659,42 @@ impl GCodeProcessor {
         } else {
             1.0
         };
+        let envelope = self.m_time_processor.machine_envelope_processing_enabled;
         let ml = &mut self.m_time_processor.machine_limits;
-        if line.has_x() {
-            ml.max_acceleration_x = line.x() * factor;
-        }
-        if line.has_y() {
-            ml.max_acceleration_y = line.y() * factor;
-        }
-        if line.has_z() {
-            ml.max_acceleration_z = line.z() * factor;
-        }
-        if line.has_e() {
-            ml.max_acceleration_e = line.e() * factor;
+        let indx_limit = ml.machine_max_acceleration_x.len() / 2;
+        let mut index = 0usize;
+        while index < indx_limit {
+            for i in 0..ETimeMode::COUNT {
+                if i == ETimeMode::Normal as usize || envelope {
+                    if line.has_x() {
+                        ml_set(&mut ml.machine_max_acceleration_x, index + i, line.x() * factor);
+                    }
+                    if line.has_y() {
+                        ml_set(&mut ml.machine_max_acceleration_y, index + i, line.y() * factor);
+                    }
+                    if line.has_z() {
+                        ml_set(&mut ml.machine_max_acceleration_z, index + i, line.z() * factor);
+                    }
+                    if line.has_e() {
+                        ml_set(&mut ml.machine_max_acceleration_e, index + i, line.e() * factor);
+                    }
+                }
+            }
+            index += 2;
         }
     }
 
     /// GCodeProcessor.cpp:5619-5649  process_M203 — maximum feedrate, mm/s on
     /// Marlin, Smoothie and Klipper, mm/min elsewhere (MACHINE_LIMITS, as M201).
     fn process_m203(&mut self, line: &crate::g_code_reader::GCodeLine) {
-        if !crate::faithful_gate("MACHINE_LIMITS") || !self.m_time_processor.machine_limits.present {
+        if !crate::faithful_gate("MACHINE_LIMITS") {
             return;
         }
+        // see http://reprap.org/wiki/G-code#M203:_Set_maximum_feedrate
         if self.m_flavor == GCodeFlavor::RepetierFirmware {
             return;
         }
+        // http://smoothieware.org/supported-g-codes
         let factor = if matches!(
             self.m_flavor,
             GCodeFlavor::MarlinLegacy | GCodeFlavor::MarlinFirmware | GCodeFlavor::Smoothie | GCodeFlavor::Klipper
@@ -4523,18 +4703,29 @@ impl GCodeProcessor {
         } else {
             MMMIN_TO_MMSEC
         };
+        let envelope = self.m_time_processor.machine_envelope_processing_enabled;
         let ml = &mut self.m_time_processor.machine_limits;
-        if line.has_x() {
-            ml.max_speed_x = line.x() * factor;
-        }
-        if line.has_y() {
-            ml.max_speed_y = line.y() * factor;
-        }
-        if line.has_z() {
-            ml.max_speed_z = line.z() * factor;
-        }
-        if line.has_e() {
-            ml.max_speed_e = line.e() * factor;
+        //BBS:
+        let indx_limit = ml.machine_max_speed_x.len() / 2;
+        let mut index = 0usize;
+        while index < indx_limit {
+            for i in 0..ETimeMode::COUNT {
+                if i == ETimeMode::Normal as usize || envelope {
+                    if line.has_x() {
+                        ml_set(&mut ml.machine_max_speed_x, index + i, line.x() * factor);
+                    }
+                    if line.has_y() {
+                        ml_set(&mut ml.machine_max_speed_y, index + i, line.y() * factor);
+                    }
+                    if line.has_z() {
+                        ml_set(&mut ml.machine_max_speed_z, index + i, line.z() * factor);
+                    }
+                    if line.has_e() {
+                        ml_set(&mut ml.machine_max_speed_e, index + i, line.e() * factor);
+                    }
+                }
+            }
+            index += 2;
         }
     }
 
@@ -4572,35 +4763,37 @@ impl GCodeProcessor {
         }
     }
 
-    /// GCodeProcessor.cpp:5680-5708  process_M205 — jerk and minimum rates
-    /// (MACHINE_LIMITS, Normal mode).
+    /// GCodeProcessor.cpp:5680-5708  process_M205 — jerk and minimum rates, the
+    /// Normal mode's and, with envelope processing, the Stealth mode's
+    /// (MACHINE_LIMITS).
     fn process_m205(&mut self, line: &crate::g_code_reader::GCodeLine) {
-        if !crate::faithful_gate("MACHINE_LIMITS") || !self.m_time_processor.machine_limits.present {
+        if !crate::faithful_gate("MACHINE_LIMITS") {
             return;
         }
+        let envelope = self.m_time_processor.machine_envelope_processing_enabled;
         let ml = &mut self.m_time_processor.machine_limits;
-        if line.has_x() {
-            let max_jerk = line.x();
-            ml.max_jerk_x = max_jerk;
-            ml.max_jerk_y = max_jerk;
-        }
-        if line.has_y() {
-            ml.max_jerk_y = line.y();
-        }
-        if line.has_z() {
-            ml.max_jerk_z = line.z();
-        }
-        if line.has_e() {
-            ml.max_jerk_e = line.e();
-        }
-        if let Some(value) = line.has_value(b'S') {
-            if ml.min_extruding_rate_present {
-                ml.min_extruding_rate = value;
-            }
-        }
-        if let Some(value) = line.has_value(b'T') {
-            if ml.min_travel_rate_present {
-                ml.min_travel_rate = value;
+        for i in 0..ETimeMode::COUNT {
+            if i == ETimeMode::Normal as usize || envelope {
+                if line.has_x() {
+                    let max_jerk = line.x();
+                    ml_set(&mut ml.machine_max_jerk_x, i, max_jerk);
+                    ml_set(&mut ml.machine_max_jerk_y, i, max_jerk);
+                }
+                if line.has_y() {
+                    ml_set(&mut ml.machine_max_jerk_y, i, line.y());
+                }
+                if line.has_z() {
+                    ml_set(&mut ml.machine_max_jerk_z, i, line.z());
+                }
+                if line.has_e() {
+                    ml_set(&mut ml.machine_max_jerk_e, i, line.e());
+                }
+                if let Some(value) = line.has_value(b'S') {
+                    ml_set(&mut ml.machine_min_extruding_rate, i, value);
+                }
+                if let Some(value) = line.has_value(b'T') {
+                    ml_set(&mut ml.machine_min_travel_rate, i, value);
+                }
             }
         }
     }
@@ -4611,6 +4804,35 @@ impl GCodeProcessor {
     /// on the machines, a real effect); jerk/velocity writes are no-ops.
     fn process_set_velocity_limit(&mut self, line: &crate::g_code_reader::GCodeLine) {
         let raw = line.raw();
+        // KLIPPER_SVL_CPP (on): GCodeProcessor.cpp:5710-5762 as written: SQUARE_CORNER_VELOCITY sets
+        // the X and Y jerks, ACCEL the accelerations, VELOCITY the X and Y speeds, each found by
+        // `std::regex_search` and read by `std::stof` (0 when it throws). =0 reads ACCEL only, from
+        // the first occurrence of the key.
+        if crate::faithful_gate("KLIPPER_SVL_CPP") {
+            // handle SQUARE_CORNER_VELOCITY
+            if let Some(jerk) = klipper_regex_value(raw, "SQUARE_CORNER_VELOCITY") {
+                let ml = &mut self.m_time_processor.machine_limits;
+                for i in 0..ETimeMode::COUNT {
+                    ml_set(&mut ml.machine_max_jerk_x, i, jerk);
+                    ml_set(&mut ml.machine_max_jerk_y, i, jerk);
+                }
+            }
+            if let Some(accl) = klipper_regex_value(raw, "ACCEL") {
+                for i in 0..ETimeMode::COUNT {
+                    let mode = if i == 0 { ETimeMode::Normal } else { ETimeMode::Stealth };
+                    self.set_acceleration(mode, accl);
+                    self.set_travel_acceleration(mode, accl);
+                }
+            }
+            if let Some(speed) = klipper_regex_value(raw, "VELOCITY") {
+                let ml = &mut self.m_time_processor.machine_limits;
+                for i in 0..ETimeMode::COUNT {
+                    ml_set(&mut ml.machine_max_speed_x, i, speed);
+                    ml_set(&mut ml.machine_max_speed_y, i, speed);
+                }
+            }
+            return;
+        }
         if let Some(accl) = parse_klipper_kv(raw, "ACCEL") {
             for i in 0..ETimeMode::COUNT {
                 let mode = if i == 0 {
@@ -4640,6 +4862,31 @@ impl GCodeProcessor {
 
     /// GCodeProcessor.cpp:5593-5601  process_M400 — BBS dwell -> st_synchronize.
     fn process_m400(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        // PROCESSOR_M400_CPP (on): `line.has_value('S', value_s) || line.has_value('P', value_p)` reads
+        // P only without S, and `value_s += value_p * 0.001` multiplies by the double 0.001
+        // (GCodeProcessor.cpp:5808-5811). =0 adds both in float.
+        if crate::faithful_gate("PROCESSOR_M400_CPP") {
+            let mut value_s = 0.0f32;
+            let mut value_p = 0.0f32;
+            let has = match line.has_value(b'S') {
+                Some(v) => {
+                    value_s = v;
+                    true
+                }
+                None => match line.has_value(b'P') {
+                    Some(v) => {
+                        value_p = v;
+                        true
+                    }
+                    None => false,
+                },
+            };
+            if has {
+                value_s = (value_s as f64 + value_p as f64 * 0.001) as f32;
+                self.simulate_st_synchronize(value_s, ExtrusionRole::None);
+            }
+            return;
+        }
         let value_s = line.has_value(b'S');
         let value_p = line.has_value(b'P');
         if value_s.is_some() || value_p.is_some() {
@@ -4649,29 +4896,77 @@ impl GCodeProcessor {
         }
     }
 
-    // BLOCKED(deps): process_M401 / process_M402 only act for gcfRepetier (not
-    // default). No-op for default flavor.
-    fn process_m401(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
-    fn process_m402(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:5814-5823  process_M401 — Repetier: store the position.
+    fn process_m401(&mut self, _line: &crate::g_code_reader::GCodeLine) {
+        if self.m_flavor != GCodeFlavor::RepetierFirmware {
+            return;
+        }
+
+        for a in 0..=3usize {
+            self.m_cached_position.position[a] = self.m_start_position[a];
+        }
+        self.m_cached_position.feedrate = self.m_feedrate;
+    }
+
+    /// GCodeProcessor.cpp:5825-5855  process_M402 — Repetier: go to the stored position. `line.has(a)`
+    /// with an `unsigned char` axis calls `has(char)` (a character of code 0..2, never in a line),
+    /// and `line.has_value(4, p)` looks for the character of code 4: neither matches, as in C++.
+    fn process_m402(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if self.m_flavor != GCodeFlavor::RepetierFirmware {
+            return;
+        }
+
+        // see for reference:
+        // https://github.com/repetier/Repetier-Firmware/blob/master/src/ArduinoAVR/Repetier/Printer.cpp
+        // void Printer::GoToMemoryPosition(bool x, bool y, bool z, bool e, float feed)
+
+        let has_xyz = !(line.has_char(b'X') || line.has_char(b'Y') || line.has_char(b'Z'));
+
+        let mut p: f32;
+        for a in 0..=2u8 {
+            if has_xyz || line.has_char(a) {
+                p = self.m_cached_position.position[a as usize] as f32;
+                if p != f32::MAX {
+                    self.m_start_position[a as usize] = p as f64;
+                }
+            }
+        }
+
+        p = self.m_cached_position.position[3] as f32;
+        if p != f32::MAX {
+            self.m_start_position[3] = p as f64;
+        }
+
+        p = match line.has_value(4) {
+            Some(v) => v,
+            None => self.m_cached_position.feedrate,
+        };
+
+        if p != f32::MAX {
+            self.m_feedrate = p;
+        }
+    }
 
     /// GCodeProcessor.cpp:5857-5872  process_M566 — instantaneous speed change,
-    /// mm/min (MACHINE_LIMITS).
+    /// mm/min, both modes (MACHINE_LIMITS).
     fn process_m566(&mut self, line: &crate::g_code_reader::GCodeLine) {
-        if !crate::faithful_gate("MACHINE_LIMITS") || !self.m_time_processor.machine_limits.present {
+        if !crate::faithful_gate("MACHINE_LIMITS") {
             return;
         }
         let ml = &mut self.m_time_processor.machine_limits;
-        if line.has_x() {
-            ml.max_jerk_x = line.x() * MMMIN_TO_MMSEC;
-        }
-        if line.has_y() {
-            ml.max_jerk_y = line.y() * MMMIN_TO_MMSEC;
-        }
-        if line.has_z() {
-            ml.max_jerk_z = line.z() * MMMIN_TO_MMSEC;
-        }
-        if line.has_e() {
-            ml.max_jerk_e = line.e() * MMMIN_TO_MMSEC;
+        for i in 0..ETimeMode::COUNT {
+            if line.has_x() {
+                ml_set(&mut ml.machine_max_jerk_x, i, line.x() * MMMIN_TO_MMSEC);
+            }
+            if line.has_y() {
+                ml_set(&mut ml.machine_max_jerk_y, i, line.y() * MMMIN_TO_MMSEC);
+            }
+            if line.has_z() {
+                ml_set(&mut ml.machine_max_jerk_z, i, line.z() * MMMIN_TO_MMSEC);
+            }
+            if line.has_e() {
+                ml_set(&mut ml.machine_max_jerk_e, i, line.e() * MMMIN_TO_MMSEC);
+            }
         }
     }
 
@@ -5044,6 +5339,11 @@ impl GCodeProcessor {
                     .or_insert(0.0) += block_time;
             }
             if move_id < self.m_result.moves.len() {
+                // PROCESSOR_MOVE_TIME_INT (on): the C++ handlers are lambdas `(const TimeBlock& block,
+                // int time)` wrapped in `block_handler_t` (`std::function<void(const TimeBlock&, const
+                // float)>`, GCodeProcessor.hpp:699), so the time a move stores is truncated to whole
+                // seconds (GCodeProcessor.cpp:2807, 6388, 6422). =0 stores it whole.
+                let time = if crate::faithful_gate("PROCESSOR_MOVE_TIME_INT") { (time as i32) as f32 } else { time };
                 self.m_result.moves[move_id].time[machine_idx] = time;
             }
         }
@@ -5052,7 +5352,11 @@ impl GCodeProcessor {
     /// GCodeProcessor.cpp:3936-4337  void GCodeProcessor::process_G1(line)
     fn process_g1(&mut self, line: &crate::g_code_reader::GCodeLine) {
         use crate::g_code_reader::Axis;
-        // process_helioadditive_comment(line); — BLOCKED(deps): helio parser.
+        // PROCESSOR_HELIO_COMMENT (on): the thermal index of the line's comment (it only reaches the
+        // moves of the result). =0 leaves it alone.
+        if crate::faithful_gate("PROCESSOR_HELIO_COMMENT") {
+            self.process_helioadditive_comment(line);
+        }
 
         let filament_id = self.get_filament_id(true);
         let _last_filament_id = self.get_last_filament_id(false);
@@ -5544,11 +5848,677 @@ impl GCodeProcessor {
             }
         }
 
-        // BLOCKED(deps): m_seams_detector + spiral_vase_layers side-effects need
-        // SeamsDetector + tag pipeline. Not ported.
+        // GCodeProcessor.cpp:4459-4515 — the seams detector and the spiral vase layers.
+        // PROCESSOR_SEAMS (on): what they change is the moves of the result (the seam moves, the
+        // layer ranges), not the times. =0 leaves both out.
+        if crate::faithful_gate("PROCESSOR_SEAMS") {
+            self.process_g1_seams_and_spiral_layers(r#type, filament_id, &delta_pos);
+        }
 
         // store move
         self.store_move_vertex(r#type, EMovePathType::NoopMove);
+    }
+
+    /// GCodeProcessor.cpp:4521-4903 `void GCodeProcessor::process_VG1(const GCodeReader::GCodeLine&
+    /// line)`: the virtual move of a `;VG1` comment. It is `process_G1` without the thermal index of
+    /// the comment, the seams and the spiral vase layers, with the virtual flush (`m_virtual_flushing`)
+    /// in place of the real one, the centripetal limit taken with the extrusion acceleration and on
+    /// extrusion-only moves too, and the junction speed of the jerk model per axis (X, Y, Z together,
+    /// then E) of the earlier planner.
+    fn process_vg1(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        use crate::g_code_reader::Axis;
+        let filament_id = self.get_filament_id(true);
+        let _last_filament_id = self.get_last_filament_id(false);
+        let filament_diameter = if (filament_id as usize) < self.m_result.filament_diameters.len() {
+            self.m_result.filament_diameters[filament_id as usize]
+        } else {
+            *self.m_result.filament_diameters.last().unwrap()
+        };
+        let filament_radius = 0.5 * filament_diameter;
+        let area_filament_cross_section = (PI as f32) * sqr(filament_radius);
+
+        // absolute_position lambda (cpp:3945-3957)
+        let global_relative = self.m_global_positioning_type == EPositioningType::Relative;
+        let e_relative = self.m_e_local_positioning_type == EPositioningType::Relative;
+        let units_inches = self.m_units == EUnits::Inches;
+        let start_position = self.m_start_position;
+        let origin = self.m_origin;
+        let absolute_position = |axis: usize, lineg1: &crate::g_code_reader::GCodeLine| -> f64 {
+            let mut is_relative = global_relative;
+            if axis == Axis::E as usize {
+                is_relative |= e_relative;
+            }
+            let ax = match axis {
+                0 => Axis::X,
+                1 => Axis::Y,
+                2 => Axis::Z,
+                _ => Axis::E,
+            };
+            if lineg1.has(ax) {
+                let length_scale = if units_inches { INCHES_TO_MM } else { 1.0 };
+                let ret = (lineg1.value(ax) * length_scale) as f64;
+                if is_relative {
+                    start_position[axis] + ret
+                } else {
+                    origin[axis] + ret
+                }
+            } else {
+                start_position[axis]
+            }
+        };
+
+        self.m_g1_line_id += 1;
+        // enable processing of lines M201/M203/M204/M205
+        self.m_time_processor.machine_envelope_processing_enabled = true;
+
+        // updates axes positions from line (X..=E)
+        for a in 0..=(Axis::E as usize) {
+            self.m_end_position[a] = absolute_position(a, line);
+        }
+
+        // updates feedrate from line, if present
+        if line.has_f() {
+            self.m_feedrate = line.f() * MMMIN_TO_MMSEC;
+        }
+
+        // calculates movement deltas
+        let mut max_abs_delta: f32 = 0.0;
+        let mut delta_pos: AxisCoords = [0.0; 4];
+        for a in 0..=(Axis::E as usize) {
+            delta_pos[a] = self.m_end_position[a] - self.m_start_position[a];
+            max_abs_delta = max_abs_delta.max((delta_pos[a] as f32).abs());
+        }
+
+        // no displacement, return
+        if max_abs_delta == 0.0 {
+            return;
+        }
+
+        let dx = delta_pos[Axis::X as usize];
+        let dy = delta_pos[Axis::Y as usize];
+        let dz = delta_pos[Axis::Z as usize];
+        let de = delta_pos[Axis::E as usize];
+
+        // move_type lambda (cpp:3959-3976)
+        let move_type = |dp: &AxisCoords| -> EMoveType {
+            let (px, py, pz, pe) = (
+                dp[Axis::X as usize],
+                dp[Axis::Y as usize],
+                dp[Axis::Z as usize],
+                dp[Axis::E as usize],
+            );
+            if self.m_wiping {
+                EMoveType::Wipe
+            } else if pe < 0.0 {
+                if px != 0.0 || py != 0.0 || pz != 0.0 {
+                    EMoveType::Travel
+                } else {
+                    EMoveType::Retract
+                }
+            } else if pe > 0.0 {
+                if px == 0.0 && py == 0.0 {
+                    if pz == 0.0 {
+                        EMoveType::Unretract
+                    } else {
+                        EMoveType::Travel
+                    }
+                } else if px != 0.0 || py != 0.0 {
+                    EMoveType::Extrude
+                } else {
+                    EMoveType::Noop
+                }
+            } else if px != 0.0 || py != 0.0 || pz != 0.0 {
+                EMoveType::Travel
+            } else {
+                EMoveType::Noop
+            }
+        };
+
+        let r#type = move_type(&delta_pos);
+        if r#type == EMoveType::Extrude {
+            // C++: float delta_xyz = std::sqrt(sqr(dpX)+sqr(dpY)+sqr(dpZ));
+            // delta_pos is std::array<double,4>, so sqr/sum/sqrt are double.
+            let delta_xyz = (dx * dx + dy * dy + dz * dz).sqrt() as f32;
+            // C++: float vol = area_filament_cross_section * dpE; (float*double->double)
+            let volume_extruded_filament = (area_filament_cross_section as f64 * de) as f32;
+            let area_toolpath_cross_section = volume_extruded_filament / delta_xyz;
+
+            if self.m_extrusion_role == ExtrusionRole::SupportMaterial
+                || self.m_extrusion_role == ExtrusionRole::SupportMaterialInterface
+                || self.m_extrusion_role == ExtrusionRole::SupportTransition
+            {
+                self.m_used_filaments
+                    .increase_support_caches(volume_extruded_filament as f64);
+            } else if self.m_extrusion_role == ExtrusionRole::WipeTower {
+                self.m_used_filaments
+                    .increase_wipe_tower_caches(volume_extruded_filament as f64);
+            } else {
+                self.m_used_filaments
+                    .increase_model_caches(volume_extruded_filament as f64);
+            }
+            self.m_mm3_per_mm = area_toolpath_cross_section;
+
+            if self.m_forced_height > 0.0 {
+                self.m_height = self.m_forced_height;
+            } else if self.m_end_position[Axis::Z as usize]
+                > (self.m_extruded_last_z + EPSILON) as f64
+            {
+                self.m_height =
+                    (self.m_end_position[Axis::Z as usize] - self.m_extruded_last_z as f64) as f32;
+            }
+            if self.m_height == 0.0 {
+                self.m_height = DEFAULT_TOOLPATH_HEIGHT;
+            }
+            if self.m_end_position[Axis::Z as usize] == 0.0 {
+                self.m_end_position[Axis::Z as usize] = self.m_height as f64;
+            }
+            self.m_extruded_last_z = self.m_end_position[Axis::Z as usize] as f32;
+            // m_options_z_corrector.update(m_height); — BLOCKED(deps): no-op.
+
+            if self.m_forced_width > 0.0 {
+                self.m_width = self.m_forced_width;
+            } else if self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
+                // C++: m_width = delta_pos[E] * static_cast<float>(M_PI*sqr(1.05f*fr))
+                //               / (delta_xyz * m_height);
+                // delta_pos[E] is double; the cast constant is float; division promotes
+                // to double; the result is cast to float on assignment.
+                let c1 = (PI * sqr(1.05 * filament_radius) as f64) as f32;
+                self.m_width =
+                    (de * c1 as f64 / (delta_xyz * self.m_height) as f64) as f32;
+            } else if self.m_extrusion_role == ExtrusionRole::BridgeInfill
+                || self.m_extrusion_role == ExtrusionRole::None
+            {
+                // C++: m_width = (float)filament_diameters[id] * std::sqrt(dpE/delta_xyz);
+                // dpE/delta_xyz is double; sqrt is double; float*double -> double -> float.
+                let fd = self.m_result.filament_diameters[filament_id as usize];
+                self.m_width = (fd as f64 * (de / delta_xyz as f64).sqrt()) as f32;
+            } else {
+                // C++: m_width = delta_pos[E] * static_cast<float>(M_PI*sqr(fr))
+                //               / (delta_xyz * m_height)
+                //               + static_cast<float>(1.0 - 0.25*M_PI) * m_height;
+                let c2 = (PI * sqr(filament_radius) as f64) as f32;
+                let c3 = (1.0 - 0.25 * PI) as f32;
+                self.m_width = (de * c2 as f64 / (delta_xyz * self.m_height) as f64
+                    + (c3 * self.m_height) as f64) as f32;
+            }
+            if self.m_width == 0.0 {
+                self.m_width = DEFAULT_TOOLPATH_WIDTH;
+            }
+            self.m_width = self.m_width.min(2.0_f32.max(4.0 * self.m_height));
+        } else if r#type == EMoveType::Unretract && self.m_virtual_flushing {
+            // BLOCKED(deps): flushing path needs get_extruder_id + remaining_volume
+            // bookkeeping. Ported faithfully below using current state.
+            let extruder_id = self.get_extruder_id(true).max(0) as usize;
+            let volume_flushed_filament = area_filament_cross_section * de as f32;
+            let last_filament_id = self.get_last_filament_id(false);
+            if extruder_id < self.m_remaining_volume.len()
+                && self.m_remaining_volume[extruder_id] > volume_flushed_filament
+            {
+                if last_filament_id != -1 {
+                    self.m_used_filaments
+                        .update_flush_per_filament(last_filament_id as usize, volume_flushed_filament);
+                }
+                self.m_remaining_volume[extruder_id] -= volume_flushed_filament;
+            } else if extruder_id < self.m_remaining_volume.len() {
+                let rem = self.m_remaining_volume[extruder_id];
+                if last_filament_id != -1 {
+                    self.m_used_filaments
+                        .update_flush_per_filament(last_filament_id as usize, rem);
+                }
+                self.m_used_filaments.update_flush_per_filament(
+                    filament_id as usize,
+                    volume_flushed_filament - rem,
+                );
+                self.m_remaining_volume[extruder_id] = 0.0;
+            }
+        }
+
+        if line.has_f() {
+            self.m_feedrate = line.f() * MMMIN_TO_MMSEC;
+        }
+
+        // time estimate section -------------------------------------------------
+        // C++ move_length: float sq_xyz_length = sqr(dpX)+sqr(dpY)+sqr(dpZ); (double->float)
+        //   return (sq_xyz_length > 0) ? std::sqrt(sq_xyz_length) : std::abs(dpE);
+        let sq_xyz_length = (dx * dx + dy * dy + dz * dz) as f32;
+        let distance = if sq_xyz_length > 0.0 {
+            sq_xyz_length.sqrt()
+        } else {
+            de.abs() as f32
+        };
+        let inv_distance = 1.0 / distance;
+        let is_extrusion_only_move = dx == 0.0 && dy == 0.0 && dz == 0.0 && de != 0.0;
+
+        for i in 0..ETimeMode::COUNT {
+            let mode = if i == 0 {
+                ETimeMode::Normal
+            } else {
+                ETimeMode::Stealth
+            };
+            if !self.m_time_processor.machines[i].enabled {
+                continue;
+            }
+
+            // curr.feedrate (cpp:4108-4110)
+            let mut feedrate = if de == 0.0 {
+                self.minimum_travel_feedrate(mode, self.m_feedrate)
+            } else {
+                self.minimum_feedrate(mode, self.m_feedrate)
+            };
+
+            // enter/exit direction (cpp:4112-4117)
+            let mut enter_direction = [dx as f32, dy as f32, dz as f32];
+            let norm =
+                (enter_direction[0].powi(2) + enter_direction[1].powi(2) + enter_direction[2].powi(2)).sqrt();
+            if !is_extrusion_only_move {
+                enter_direction = [enter_direction[0] / norm, enter_direction[1] / norm, enter_direction[2] / norm];
+            }
+            let exit_direction = enter_direction;
+            let prev_exit_direction = self.m_time_processor.machines[i].prev.exit_direction;
+            let prev_feedrate = self.m_time_processor.machines[i].prev.feedrate;
+            let prev_safe_feedrate = self.m_time_processor.machines[i].prev.safe_feedrate;
+            let blocks_empty = self.m_time_processor.machines[i].blocks.is_empty();
+            let extrude_factor =
+                self.m_time_processor.machines[i].extrude_factor_override_percentage;
+
+            let mut block = TimeBlock::default();
+            block.move_type = r#type;
+            block.skippable_type = self.m_skippable_type;
+            block.role = if r#type != EMoveType::Travel
+                || self.m_extrusion_role == ExtrusionRole::Custom
+            {
+                self.m_extrusion_role
+            } else {
+                ExtrusionRole::None
+            };
+            block.distance = distance;
+            block.move_id = self.m_result.moves.len() as u32;
+            block.g1_line_id = self.m_g1_line_id;
+            block.layer_id = 1u32.max(self.m_layer_id);
+            block.flags.prepare_stage = self.m_processing_start_custom_gcode;
+
+            let float_model_g1 = crate::faithful_gate("TIME_FLOAT_MODEL");
+            // block acceleration (cpp:4131-4135)
+            let mut acceleration = if r#type == EMoveType::Travel {
+                self.get_travel_acceleration(mode)
+            } else if is_extrusion_only_move {
+                self.get_retract_acceleration(mode)
+            } else {
+                self.get_acceleration(mode)
+            };
+
+            // centripetal acceleration limit (cpp:4137-4161)
+            if (prev_exit_direction[0] != 0.0 || prev_exit_direction[1] != 0.0)
+                && (enter_direction[0] != 0.0 || enter_direction[1] != 0.0)
+            {
+                let mut v1 = [prev_exit_direction[0], prev_exit_direction[1], 0.0f32];
+                normalize3(&mut v1);
+                let mut v2 = [enter_direction[0], enter_direction[1], 0.0f32];
+                normalize3(&mut v2);
+                let norm_diff = ((v2[0] - v1[0]).powi(2)
+                    + (v2[1] - v1[1]).powi(2)
+                    + (v2[2] - v1[2]).powi(2))
+                .sqrt();
+                if norm_diff < 0.5 && norm_diff > 0.00001 {
+                    let float_model = crate::faithful_gate("TIME_FLOAT_MODEL");
+                    // GCodeProcessor.cpp:4336-4337: float products summed in one
+                    // expression, which clang on arm64 contracts into a fused
+                    // multiply-add (the left product is the fused one).
+                    let (dot, cross) = if float_model {
+                        (
+                            v1[0].mul_add(v2[0], v1[1] * v2[1]),
+                            v1[0].mul_add(v2[1], -(v1[1] * v2[0])),
+                        )
+                    } else {
+                        (v1[0] * v2[0] + v1[1] * v2[1], v1[0] * v2[1] - v1[1] * v2[0])
+                    };
+                    let angle = (cross as f64).atan2(dot as f64) as f32;
+                    // C++: float sin_theta_2 = sqrt((1.0f - cos(angle)) * 0.5f);
+                    // (GCodeProcessor.cpp:4339). `angle` is a float and libc++'s
+                    // <math.h> declares `float cos(float)` / `float sqrt(float)` in
+                    // the global namespace, so the whole expression is single
+                    // precision: `1 - cosf(angle)` cancels for the small angles this
+                    // branch takes (norm_diff < 0.5), which a double cosine does not
+                    // reproduce.
+                    let sin_theta_2 = if float_model {
+                        ((1.0f32 - angle.cos()) * 0.5f32).sqrt()
+                    } else {
+                        ((1.0 - (angle as f64).cos()) * 0.5).sqrt() as f32
+                    };
+                    // C++: float r = sqrt(sqr(dpX)+sqr(dpY)) * 0.5 / sin_theta_2;
+                    // sqr(double); 0.5 is double; division in double -> float.
+                    let r = ((dx * dx + dy * dy).sqrt() * 0.5 / sin_theta_2 as f64) as f32;
+                    let acc = self.get_acceleration(mode);
+                    feedrate = feedrate.min((acc * r).sqrt());
+                }
+            }
+
+            // block cruise feedrate (cpp:4163-4186)
+            // `curr.axis_feedrate` / `abs_axis_feedrate` are AxisCoords, arrays of
+            // double (GCodeProcessor.hpp:548, :639-640), and `delta_pos` is one
+            // too: `curr.feedrate * delta_pos[a] * inv_distance` is evaluated in
+            // double, and `std::min<float>(factor, max / abs)` rounds a double
+            // quotient. TIME_FLOAT_MODEL follows that; without it the port keeps
+            // its single-precision arithmetic.
+            let mut axis_feedrate = [0.0f64; 4];
+            let mut abs_axis_feedrate = [0.0f64; 4];
+            let mut min_feedrate_factor = 1.0f32;
+            for a in 0..=(Axis::E as usize) {
+                axis_feedrate[a] = if float_model_g1 {
+                    feedrate as f64 * delta_pos[a] * inv_distance as f64
+                } else {
+                    (feedrate * delta_pos[a] as f32 * inv_distance) as f64
+                };
+                if a == Axis::E as usize {
+                    axis_feedrate[a] = if float_model_g1 {
+                        axis_feedrate[a] * extrude_factor as f64
+                    } else {
+                        (axis_feedrate[a] as f32 * extrude_factor) as f64
+                    };
+                }
+                abs_axis_feedrate[a] = axis_feedrate[a].abs();
+                if abs_axis_feedrate[a] != 0.0 {
+                    let axis_max_feedrate = self.get_axis_max_feedrate(
+                        mode,
+                        a,
+                        self.get_machine_config_idx(self.get_filament_id(true)),
+                    );
+                    if axis_max_feedrate != 0.0 {
+                        min_feedrate_factor = if float_model_g1 {
+                            min_feedrate_factor
+                                .min((axis_max_feedrate as f64 / abs_axis_feedrate[a]) as f32)
+                        } else {
+                            min_feedrate_factor
+                                .min(axis_max_feedrate / abs_axis_feedrate[a] as f32)
+                        };
+                    }
+                }
+            }
+            feedrate *= min_feedrate_factor;
+            block.feedrate_profile.cruise = feedrate;
+            if min_feedrate_factor < 1.0 {
+                for a in 0..=(Axis::E as usize) {
+                    if float_model_g1 {
+                        axis_feedrate[a] *= min_feedrate_factor as f64;
+                        abs_axis_feedrate[a] *= min_feedrate_factor as f64;
+                    } else {
+                        axis_feedrate[a] = (axis_feedrate[a] as f32 * min_feedrate_factor) as f64;
+                        abs_axis_feedrate[a] =
+                            (abs_axis_feedrate[a] as f32 * min_feedrate_factor) as f64;
+                    }
+                }
+            }
+
+            // axis-limited acceleration (cpp:4189-4194)
+            // C++ has NO `axis_max_acceleration != 0.0` guard: when the limit is
+            // 0 and the candidate is > 0, acceleration is clamped to 0/(x) == 0.
+            for a in 0..=(Axis::E as usize) {
+                let axis_max_acceleration = self.get_axis_max_acceleration(
+                    mode,
+                    a,
+                    self.get_machine_config_idx(self.get_filament_id(true)),
+                );
+                if float_model_g1 {
+                    // cpp:4374-4375: float * double * float, compared and divided
+                    // in double.
+                    if acceleration as f64 * delta_pos[a].abs() * inv_distance as f64
+                        > axis_max_acceleration as f64
+                    {
+                        acceleration = (axis_max_acceleration as f64
+                            / (delta_pos[a].abs() * inv_distance as f64))
+                            as f32;
+                    }
+                } else if acceleration * (delta_pos[a] as f32).abs() * inv_distance
+                    > axis_max_acceleration
+                {
+                    acceleration = axis_max_acceleration / ((delta_pos[a] as f32).abs() * inv_distance);
+                }
+            }
+            block.acceleration = acceleration;
+
+            // block exit feedrate (cpp:4198-4207)
+            // C++ has NO `axis_max_jerk != 0.0` guard: when the jerk limit is 0 and
+            // abs_axis_feedrate > 0, safe_feedrate is clamped to min(.,0) == 0.
+            let mut safe_feedrate = block.feedrate_profile.cruise;
+            for a in 0..=(Axis::E as usize) {
+                let axis_max_jerk = self.get_axis_max_jerk(mode, a);
+                if abs_axis_feedrate[a] > axis_max_jerk as f64 {
+                    safe_feedrate = safe_feedrate.min(axis_max_jerk);
+                }
+            }
+            block.feedrate_profile.exit = safe_feedrate;
+
+            const PREVIOUS_FEEDRATE_THRESHOLD: f32 = 0.0001;
+            // block entry feedrate (cpp:4211-4252)
+            let mut vmax_junction = safe_feedrate;
+            if !blocks_empty && prev_feedrate > PREVIOUS_FEEDRATE_THRESHOLD {
+                let cruise = block.feedrate_profile.cruise;
+                let prev_speed_larger = prev_feedrate > cruise;
+                let smaller_speed_factor = if prev_speed_larger { cruise / prev_feedrate } else { prev_feedrate / cruise };
+                // Pick the smaller of the nominal speeds. Higher speed shall not be achieved at the junction during coasting.
+                vmax_junction = if prev_speed_larger { cruise } else { prev_feedrate };
+
+                let mut v_factor = 1.0f32;
+                let mut limited = false;
+
+                let prev_axis_feedrate = self.m_time_processor.machines[i].prev.axis_feedrate;
+                for a in 0..=(Axis::E as usize) {
+                    // Limit an axis. We have to differentiate coasting from the reversal of an axis movement, or a full stop.
+                    if a == Axis::X as usize {
+                        let mut exit_v = [
+                            prev_feedrate * prev_exit_direction[0],
+                            prev_feedrate * prev_exit_direction[1],
+                            prev_feedrate * prev_exit_direction[2],
+                        ];
+                        if prev_speed_larger {
+                            for c in exit_v.iter_mut() {
+                                *c *= smaller_speed_factor;
+                            }
+                        }
+                        let entry_v = [cruise * enter_direction[0], cruise * enter_direction[1], cruise * enter_direction[2]];
+                        let mut jerk_v = [
+                            (entry_v[0] - exit_v[0]).abs(),
+                            (entry_v[1] - exit_v[1]).abs(),
+                            (entry_v[2] - exit_v[2]).abs(),
+                        ];
+                        let max_xyz_jerk_v = self.get_xyz_max_jerk(mode);
+
+                        for idx in 0..3 {
+                            if jerk_v[idx] > max_xyz_jerk_v[idx] {
+                                v_factor *= max_xyz_jerk_v[idx] / jerk_v[idx];
+                                for c in jerk_v.iter_mut() {
+                                    *c *= v_factor;
+                                }
+                                limited = true;
+                            }
+                        }
+                    } else if a == Axis::Y as usize || a == Axis::Z as usize {
+                        continue;
+                    } else {
+                        let mut v_exit = prev_axis_feedrate[a] as f32;
+                        let mut v_entry = axis_feedrate[a] as f32;
+
+                        if prev_speed_larger {
+                            v_exit *= smaller_speed_factor;
+                        }
+
+                        if limited {
+                            v_exit *= v_factor;
+                            v_entry *= v_factor;
+                        }
+
+                        // Calculate the jerk depending on whether the axis is coasting in the same direction or reversing a direction.
+                        let jerk = if v_exit > v_entry {
+                            if v_entry > 0.0 || v_exit < 0.0 {
+                                // coasting
+                                v_exit - v_entry
+                            } else {
+                                // axis reversal
+                                v_exit.max(-v_entry)
+                            }
+                        } else if v_entry < 0.0 || v_exit > 0.0 {
+                            // v_exit <= v_entry, coasting
+                            v_entry - v_exit
+                        } else {
+                            // axis reversal
+                            (-v_exit).max(v_entry)
+                        };
+
+                        let axis_max_jerk = self.get_axis_max_jerk(mode, a);
+                        if jerk > axis_max_jerk {
+                            v_factor *= axis_max_jerk / jerk;
+                            limited = true;
+                        }
+                    }
+                }
+
+                if limited {
+                    vmax_junction *= v_factor;
+                }
+
+                // Now the transition velocity is known, which maximizes the shared exit / entry velocity while
+                // respecting the jerk factors, it may be possible, that applying separate safe exit / entry velocities will achieve faster prints.
+                let vmax_junction_threshold = vmax_junction * 0.99f32;
+
+                // Not coasting. The machine will stop and start the movements anyway, better to start the segment from start.
+                if prev_safe_feedrate > vmax_junction_threshold && safe_feedrate > vmax_junction_threshold {
+                    vmax_junction = safe_feedrate;
+                }
+            }
+
+            let v_allowable = max_allowable_speed(-acceleration, safe_feedrate, block.distance);
+            block.feedrate_profile.entry = vmax_junction.min(v_allowable);
+            block.max_entry_speed = vmax_junction;
+            block.flags.nominal_length = block.feedrate_profile.cruise <= v_allowable;
+            block.flags.recalculate = true;
+            block.safe_feedrate = safe_feedrate;
+
+            block.calculate_trapezoid();
+
+            // updates previous + push block
+            {
+                let machine = &mut self.m_time_processor.machines[i];
+                machine.curr.feedrate = feedrate;
+                machine.curr.safe_feedrate = safe_feedrate;
+                machine.curr.axis_feedrate = axis_feedrate;
+                machine.curr.abs_axis_feedrate = abs_axis_feedrate;
+                machine.curr.enter_direction = enter_direction;
+                machine.curr.exit_direction = exit_direction;
+                machine.prev = machine.curr.clone();
+                machine.blocks.push(block);
+            }
+
+            if self.m_time_processor.machines[i].blocks.len()
+                > TimeProcessor::PLANNER_REFRESH_THRESHOLD
+            {
+                self.run_calculate_time(
+                    i,
+                    TimeProcessor::PLANNER_QUEUE_SIZE,
+                    0.0,
+                    ExtrusionRole::None,
+                );
+            }
+        }
+
+        // store move
+        self.store_move_vertex(r#type, EMovePathType::NoopMove);
+    }
+
+    /// GCodeProcessor.cpp:4459-4515, the tail of `process_G1` before the move is stored: the seam of
+    /// an outer wall loop (a `Seam` move where the loop closes) and the layer ranges of a spiral vase.
+    fn process_g1_seams_and_spiral_layers(&mut self, r#type: EMoveType, filament_id: i32, delta_pos: &AxisCoords) {
+        use crate::g_code_reader::Axis;
+        let off = self.m_extruder_offsets[filament_id as usize];
+        let back_position = |this: &Self| -> [f32; 3] { this.m_result.moves.last().map(|m| m.position).unwrap_or([0.0; 3]) };
+        if self.m_seams_detector.is_active() {
+            // check for seam starting vertex
+            if r#type == EMoveType::Extrude
+                && self.m_extrusion_role == ExtrusionRole::ExternalPerimeter
+                && !self.m_seams_detector.has_first_vertex()
+            {
+                //BBS: m_result.moves.back().position has plate offset, must minus plate offset before calculate the real seam position
+                let b = back_position(self);
+                let real_first_pos =
+                    [(b[0] as f64 - self.m_x_offset) as f32, (b[1] as f64 - self.m_y_offset) as f32, b[2]];
+                self.m_seams_detector
+                    .set_first_vertex([real_first_pos[0] - off[0], real_first_pos[1] - off[1], real_first_pos[2] - off[2]]);
+            } else if r#type == EMoveType::Extrude
+                && self.m_extrusion_role == ExtrusionRole::ExternalPerimeter
+                && self.m_detect_layer_based_on_tag
+            {
+                let b = back_position(self);
+                let real_last_pos =
+                    [(b[0] as f64 - self.m_x_offset) as f32, (b[1] as f64 - self.m_y_offset) as f32, b[2]];
+                let new_pos = [real_last_pos[0] - off[0], real_last_pos[1] - off[1], real_last_pos[2] - off[2]];
+                // We may have sloped loop, drop any previous start pos if we have z increment
+                let first_vertex = self.m_seams_detector.get_first_vertex();
+                if new_pos[2] > first_vertex.unwrap()[2] {
+                    self.m_seams_detector.set_first_vertex(new_pos);
+                }
+            }
+            // check for seam ending vertex and store the resulting move
+            else if (r#type != EMoveType::Extrude
+                || (self.m_extrusion_role != ExtrusionRole::ExternalPerimeter
+                    && self.m_extrusion_role != ExtrusionRole::OverhangPerimeter))
+                && self.m_seams_detector.has_first_vertex()
+            {
+                let curr_pos = [
+                    self.m_end_position[Axis::X as usize] as f32,
+                    self.m_end_position[Axis::Y as usize] as f32,
+                    self.m_end_position[Axis::Z as usize] as f32,
+                ];
+                //BBS: m_result.moves.back().position has plate offset, must minus plate offset before calculate the real seam position
+                let b = back_position(self);
+                let real_last_pos =
+                    [(b[0] as f64 - self.m_x_offset) as f32, (b[1] as f64 - self.m_y_offset) as f32, b[2]];
+                let new_pos = [real_last_pos[0] - off[0], real_last_pos[1] - off[1], real_last_pos[2] - off[2]];
+                let first_vertex = self.m_seams_detector.get_first_vertex().unwrap();
+                // the threshold value = 0.0625f == 0.25 * 0.25 is arbitrary, we may find some smarter condition later
+                let d = [new_pos[0] - first_vertex[0], new_pos[1] - first_vertex[1], new_pos[2] - first_vertex[2]];
+                if d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < 0.0625f32 {
+                    let mid = [
+                        0.5f32 * (new_pos[0] + first_vertex[0]),
+                        0.5f32 * (new_pos[1] + first_vertex[1]),
+                        0.5f32 * (new_pos[2] + first_vertex[2]),
+                    ];
+                    self.m_end_position[Axis::X as usize] = mid[0] as f64;
+                    self.m_end_position[Axis::Y as usize] = mid[1] as f64;
+                    self.m_end_position[Axis::Z as usize] = mid[2] as f64;
+                    self.store_move_vertex(EMoveType::Seam, EMovePathType::NoopMove);
+                    self.m_end_position[Axis::X as usize] = curr_pos[0] as f64;
+                    self.m_end_position[Axis::Y as usize] = curr_pos[1] as f64;
+                    self.m_end_position[Axis::Z as usize] = curr_pos[2] as f64;
+                }
+
+                self.m_seams_detector.activate(false);
+            }
+        } else if r#type == EMoveType::Extrude && self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
+            self.m_seams_detector.activate(true);
+            let plate_offset = [self.m_x_offset as f32, self.m_y_offset as f32, 0.0f32];
+            let b = back_position(self);
+            self.m_seams_detector.set_first_vertex([
+                b[0] - off[0] - plate_offset[0],
+                b[1] - off[1] - plate_offset[1],
+                b[2] - off[2] - plate_offset[2],
+            ]);
+        }
+
+        if self.m_detect_layer_based_on_tag && !self.m_result.spiral_vase_layers.is_empty() {
+            if delta_pos[Axis::Z as usize] >= 0.0 && r#type == EMoveType::Extrude {
+                let current_z = self.m_end_position[Axis::Z as usize] as f32;
+                // replace layer height placeholder with correct value
+                let last = self.m_result.spiral_vase_layers.last_mut().unwrap();
+                if last.0 == f32::MAX {
+                    last.0 = current_z;
+                } else {
+                    last.0 = last.0.max(current_z);
+                }
+            }
+            if !self.m_result.moves.is_empty() {
+                let v = self.m_result.moves.len() - 1 - self.m_seams_count as usize;
+                (self.m_result.spiral_vase_layers.last_mut().unwrap().1).1 = v;
+            }
+        }
     }
 
     /// GCodeProcessor.cpp:5935-5995  void GCodeProcessor::store_move_vertex(type, path_type)
@@ -5610,6 +6580,7 @@ impl GCodeProcessor {
             height: self.m_height,
             mm3_per_mm: self.m_mm3_per_mm,
             fan_speed: self.m_fan_speed,
+            additional_fan_speed: self.m_additional_fan_speed,
             temperature: self.m_extruder_temps[filament_id as usize],
             layer_duration: self.m_layer_id as f32,
             thermal_index_min: self.m_thermal_index.min,
@@ -5758,13 +6729,8 @@ impl GCodeProcessor {
                 .unwrap_or(&DEFAULT_FILAMENT_DENSITY)
         };
         let role = self.m_extrusion_role;
-        let uf = &mut self.m_used_filaments;
-        uf.process_color_change_cache();
-        uf.process_model_cache(active_filament_id);
-        uf.process_role_cache(diameter, density, role);
-        uf.process_wipe_tower_cache(active_filament_id);
-        uf.process_support_cache(active_filament_id_support);
-        uf.process_total_volume_cache(active_filament_id);
+        self.m_used_filaments
+            .process_caches(active_filament_id, active_filament_id_support, diameter, density, role);
     }
 
     /// GCodeProcessor.cpp:6212-6237  void GCodeProcessor::update_estimated_times_stats()
@@ -5926,6 +6892,43 @@ fn normalized3(v: [f32; 3]) -> [f32; 3] {
 
 /// Parse a Klipper `KEY=<float>` token from a raw line (mirrors the regex
 /// `\sKEY\s*=\s*([0-9]*\.*[0-9]*)`). Returns the parsed value if present.
+/// `std::regex_search(raw, matches, std::regex("\\s<KEY>\\s*=\\s*([0-9]*\\.*[0-9]*)"))` then
+/// `std::stof(matches[1])` (GCodeProcessor.cpp:5713-5759): None when nothing matches, the value when
+/// it does, 0 when `stof` throws on the group.
+fn klipper_regex_value(raw: &str, key: &str) -> Option<f32> {
+    let s = raw.as_bytes();
+    let is_space = |c: u8| matches!(c, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
+    for i in 0..s.len() {
+        if !is_space(s[i]) || !s[i + 1..].starts_with(key.as_bytes()) {
+            continue;
+        }
+        let mut j = i + 1 + key.len();
+        while j < s.len() && is_space(s[j]) {
+            j += 1;
+        }
+        if j >= s.len() || s[j] != b'=' {
+            continue;
+        }
+        j += 1;
+        while j < s.len() && is_space(s[j]) {
+            j += 1;
+        }
+        let start = j;
+        while j < s.len() && s[j].is_ascii_digit() {
+            j += 1;
+        }
+        while j < s.len() && s[j] == b'.' {
+            j += 1;
+        }
+        while j < s.len() && s[j].is_ascii_digit() {
+            j += 1;
+        }
+        let r = crate::config::strtod_c(&s[start..j]);
+        return Some(if r.consumed == 0 { 0.0 } else { r.value as f32 });
+    }
+    None
+}
+
 fn parse_klipper_kv(raw: &str, key: &str) -> Option<f32> {
     let idx = raw.find(key)?;
     // Require whitespace before the key (the `\s` in the regex).
@@ -5949,9 +6952,1285 @@ fn parse_klipper_kv(raw: &str, key: &str) -> Option<f32> {
     after[..end].parse::<f32>().ok()
 }
 
+
+// ===========================================================================
+// GCodeProcessor.cpp:97-119 — the option helpers of the machine limits
+// ===========================================================================
+
+/// GCodeProcessor.cpp:97-119 `static void set_option_value(...)` / `static float
+/// get_option_value(...)`: the two overloads of each, on `ConfigOptionFloats` and
+/// `ConfigOptionFloatsNullable`.
+pub trait MachineLimitOption {
+    /// GCodeProcessor.cpp:97-107 `set_option_value(option, id, value)`
+    fn set_option_value(&mut self, id: usize, value: f32);
+    /// GCodeProcessor.cpp:109-119 `get_option_value(option, id)`: 0 when empty, the last value
+    /// past the end.
+    fn get_option_value(&self, id: usize) -> f32;
+}
+
+impl MachineLimitOption for crate::config::ConfigOptionFloats {
+    /// GCodeProcessor.cpp:97-101 `static void set_option_value(ConfigOptionFloats& option, size_t id,
+    /// float value)`
+    fn set_option_value(&mut self, id: usize, value: f32) {
+        if id < self.values.len() {
+            self.values[id] = value as f64;
+        }
+    }
+
+    /// GCodeProcessor.cpp:109-113 `static float get_option_value(const ConfigOptionFloats& option,
+    /// size_t id)`
+    fn get_option_value(&self, id: usize) -> f32 {
+        if self.values.is_empty() {
+            0.0
+        } else if id < self.values.len() {
+            self.values[id] as f32
+        } else {
+            *self.values.last().unwrap() as f32
+        }
+    }
+}
+
+impl MachineLimitOption for crate::config::ConfigOptionFloatsNullable {
+    /// GCodeProcessor.cpp:103-107 `static void set_option_value(ConfigOptionFloatsNullable& option,
+    /// size_t id, float value)`
+    fn set_option_value(&mut self, id: usize, value: f32) {
+        if id < self.values.len() {
+            self.values[id] = value as f64;
+        }
+    }
+
+    /// GCodeProcessor.cpp:115-119 `static float get_option_value(const ConfigOptionFloatsNullable&
+    /// option, size_t id)`
+    fn get_option_value(&self, id: usize) -> f32 {
+        if self.values.is_empty() {
+            0.0
+        } else if id < self.values.len() {
+            self.values[id] as f32
+        } else {
+            *self.values.last().unwrap() as f32
+        }
+    }
+}
+
+/// GCodeProcessor.cpp:2654-2657 `static inline const char* remove_eols(const char *begin, const char
+/// *end)`: the end of `s[begin..end]` without its trailing line ends.
+pub fn remove_eols(s: &[u8], begin: usize, mut end: usize) -> usize {
+    while begin != end && (s[end - 1] == b'\r' || s[end - 1] == b'\n') {
+        end -= 1;
+    }
+    end
+}
+
+/// The number types `parse_number` reads (GCodeProcessor.cpp:3129-3170): what the conversion leaves
+/// in `out` (None: `out` is not written) and whether the number spanned the whole input.
+pub trait ParseNumber: Sized + Copy {
+    fn parse_number_impl(sv: &str) -> (Option<Self>, bool);
+}
+
+impl ParseNumber for f32 {
+    /// The legacy branch (the macOS standard library has no `std::from_chars` for floating point):
+    /// `out = string_to_double_decimal_point(str, &read); return str.size() == read;` (the value is
+    /// written whatever was read; nothing read leaves 0).
+    fn parse_number_impl(sv: &str) -> (Option<f32>, bool) {
+        let (v, read) = crate::locales_utils::string_to_double_decimal_point(sv);
+        (Some(v as f32), sv.len() == read)
+    }
+}
+
+impl ParseNumber for i32 {
+    /// `std::from_chars(first, last, int&)`: an optional '-', decimal digits; `out` is written when
+    /// digits were read and the value fits, and the result is true only when they span the input.
+    fn parse_number_impl(sv: &str) -> (Option<i32>, bool) {
+        let b = sv.as_bytes();
+        let mut i = 0usize;
+        if i < b.len() && b[i] == b'-' {
+            i += 1;
+        }
+        let digits_start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == digits_start {
+            // std::errc::invalid_argument
+            return (None, false);
+        }
+        match sv[..i].parse::<i32>() {
+            Ok(v) => (Some(v), i == b.len()),
+            // std::errc::result_out_of_range
+            Err(_) => (None, false),
+        }
+    }
+}
+
+/// GCodeProcessor.cpp:3137-3170 `template<typename T> static inline bool parse_number(const
+/// std::string_view sv, T &out)`: true when the number was parsed into `out` and spanned the whole
+/// input string.
+pub fn parse_number<T: ParseNumber>(sv: &str, out: &mut T) -> bool {
+    let (v, whole) = T::parse_number_impl(sv);
+    if let Some(v) = v {
+        *out = v;
+    }
+    v.is_some() && whole
+}
+
+// ===========================================================================
+// GCodeProcessor.hpp:389-450 namespace ExtruderPreHeating
+// ===========================================================================
+
+/// GCodeProcessor.hpp:415-448 `struct ExtruderUsageBlcok`: the usage of an extruder in a section,
+/// between two extruder change blocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtruderUsageBlcok {
+    pub extruder_id: i32,
+    pub start_id: u32,
+    pub end_id: u32,
+    pub start_filament: i32,
+    pub end_filament: i32,
+    pub start_nozzle_id: i32,
+    pub end_nozzle_id: i32,
+    pub post_extrusion_start_id: u32,
+    pub post_extrusion_end_id: u32,
+    pub ignore_cooling_before_tower: bool,
+}
+
+impl Default for ExtruderUsageBlcok {
+    /// GCodeProcessor.hpp:447 `ExtruderUsageBlcok() = default;` with the member initializers.
+    fn default() -> Self {
+        ExtruderUsageBlcok {
+            extruder_id: -1,
+            start_id: u32::MAX,
+            end_id: u32::MAX,
+            start_filament: -1,
+            end_filament: -1,
+            start_nozzle_id: -1,
+            end_nozzle_id: -1,
+            post_extrusion_start_id: u32::MAX,
+            post_extrusion_end_id: u32::MAX,
+            ignore_cooling_before_tower: false,
+        }
+    }
+}
+
+impl ExtruderUsageBlcok {
+    /// GCodeProcessor.hpp:428-433 `void initialize_step_1(int extruder_id_, int start_id_, int
+    /// start_filament_, int start_nozzle_id_)`
+    pub fn initialize_step_1(&mut self, extruder_id: i32, start_id: i32, start_filament: i32, start_nozzle_id: i32) {
+        self.extruder_id = extruder_id;
+        self.start_id = start_id as u32;
+        self.start_filament = start_filament;
+        self.start_nozzle_id = start_nozzle_id;
+    }
+
+    /// GCodeProcessor.hpp:434-436 `void initialize_step_2(int post_extrusion_start_id_)`
+    pub fn initialize_step_2(&mut self, post_extrusion_start_id: i32) {
+        self.post_extrusion_start_id = post_extrusion_start_id as u32;
+    }
+
+    /// GCodeProcessor.hpp:437-442 `void initialize_step_3(int end_id_, int end_filament_, int
+    /// post_extrusion_end_id_, int end_nozzle_id_)`
+    pub fn initialize_step_3(&mut self, end_id: i32, end_filament: i32, post_extrusion_end_id: i32, end_nozzle_id: i32) {
+        self.end_id = end_id as u32;
+        self.end_filament = end_filament;
+        self.post_extrusion_end_id = post_extrusion_end_id as u32;
+        self.end_nozzle_id = end_nozzle_id;
+    }
+
+    /// GCodeProcessor.hpp:443-445 `void reset() { *this = ExtruderUsageBlcok(); }`
+    pub fn reset(&mut self) {
+        *self = ExtruderUsageBlcok::default();
+    }
+}
+
+/// GCodeProcessor.hpp:785-799 `struct FilamentVariantRows`: variant-expanded filament rows with
+/// their labels.
+#[derive(Debug, Clone, Default)]
+pub struct FilamentVariantRows {
+    pub nozzle_temp: Vec<i32>,
+    pub pre_cooling_temp: Vec<i32>,
+    pub preheat_temperature_delta: Vec<f64>,
+    pub extruder_variant: Vec<String>,
+    pub self_index: Vec<i32>,
+    // Indexed by filament id: row of the filament's statically assigned variant, used when the nozzle is unknown.
+    pub default_row: Vec<i32>,
+}
+
+impl FilamentVariantRows {
+    /// GCodeProcessor.hpp:794-798 `template<class T> static T value_at(const std::vector<T>& values,
+    /// int row)`: the same fallback as `ConfigOptionVector::get_at()` for arrays shorter than the
+    /// row count.
+    pub fn value_at<T: Clone + Default>(values: &[T], row: i32) -> T {
+        if values.is_empty() {
+            T::default()
+        } else {
+            values[if (row as usize) < values.len() { row as usize } else { 0 }].clone()
+        }
+    }
+}
+
+// ===========================================================================
+// GCodeProcessor.hpp:1043-1063 class SeamsDetector
+// ===========================================================================
+
+/// GCodeProcessor.hpp:1043-1063 `class SeamsDetector`
+#[derive(Debug, Clone, Default)]
+pub struct SeamsDetector {
+    m_active: bool,
+    m_first_vertex: Option<[f32; 3]>,
+}
+
+impl SeamsDetector {
+    /// GCodeProcessor.hpp:1049-1055 `void activate(bool active)`
+    pub fn activate(&mut self, active: bool) {
+        if self.m_active != active {
+            self.m_active = active;
+            if self.m_active {
+                self.m_first_vertex = None;
+            }
+        }
+    }
+
+    /// GCodeProcessor.hpp:1057 `std::optional<Vec3f> get_first_vertex() const`
+    pub fn get_first_vertex(&self) -> Option<[f32; 3]> {
+        self.m_first_vertex
+    }
+
+    /// GCodeProcessor.hpp:1058 `void set_first_vertex(const Vec3f& vertex)`
+    pub fn set_first_vertex(&mut self, vertex: [f32; 3]) {
+        self.m_first_vertex = Some(vertex);
+    }
+
+    /// GCodeProcessor.hpp:1060 `bool is_active() const`
+    pub fn is_active(&self) -> bool {
+        self.m_active
+    }
+
+    /// GCodeProcessor.hpp:1061 `bool has_first_vertex() const`
+    pub fn has_first_vertex(&self) -> bool {
+        self.m_first_vertex.is_some()
+    }
+}
+
+// ===========================================================================
+// GCodeProcessor.hpp:1098-1166 struct DataChecker (ENABLE_GCODE_VIEWER_DATA_CHECKING)
+// ===========================================================================
+
+/// GCodeProcessor.hpp:1100-1105 `struct DataChecker::Error`
+#[derive(Debug, Clone, Copy)]
+pub struct DataCheckerError {
+    pub value: f32,
+    pub tag_value: f32,
+    pub role: ExtrusionRole,
+}
+
+/// GCodeProcessor.hpp:1098-1165 `struct DataChecker`: the values the G-code tags declare against
+/// those the processor computes.
+#[derive(Debug, Clone)]
+pub struct DataChecker {
+    pub r#type: String,
+    pub threshold: f32,
+    pub last_tag_value: f32,
+    pub count: u32,
+    pub errors: Vec<DataCheckerError>,
+}
+
+impl DataChecker {
+    /// GCodeProcessor.hpp:1113-1115 `DataChecker(const std::string& type, float threshold)`
+    pub fn new(r#type: &str, threshold: f32) -> Self {
+        DataChecker { r#type: r#type.to_string(), threshold, last_tag_value: 0.0, count: 0, errors: Vec::new() }
+    }
+
+    /// GCodeProcessor.hpp:1117-1125 `void update(float value, ExtrusionRole role)`
+    pub fn update(&mut self, value: f32, role: ExtrusionRole) {
+        if role != ExtrusionRole::Custom {
+            self.count += 1;
+            if self.last_tag_value != 0.0 && (value - self.last_tag_value).abs() / self.last_tag_value > self.threshold {
+                self.errors.push(DataCheckerError { value, tag_value: self.last_tag_value, role });
+            }
+        }
+    }
+
+    /// GCodeProcessor.hpp:1127 `void reset()`
+    pub fn reset(&mut self) {
+        self.last_tag_value = 0.0;
+        self.errors.clear();
+        self.count = 0;
+    }
+
+    /// GCodeProcessor.hpp:1129-1139 `std::pair<float, float> get_min() const`
+    pub fn get_min(&self) -> (f32, f32) {
+        let mut delta_min = f32::MAX;
+        let mut perc_min = 0.0f32;
+        for e in &self.errors {
+            if delta_min > e.value - e.tag_value {
+                delta_min = e.value - e.tag_value;
+                perc_min = 100.0 * delta_min / e.tag_value;
+            }
+        }
+        (delta_min, perc_min)
+    }
+
+    /// GCodeProcessor.hpp:1141-1151 `std::pair<float, float> get_max() const`
+    pub fn get_max(&self) -> (f32, f32) {
+        let mut delta_max = -f32::MAX;
+        let mut perc_max = 0.0f32;
+        for e in &self.errors {
+            if delta_max < e.value - e.tag_value {
+                delta_max = e.value - e.tag_value;
+                perc_max = 100.0 * delta_max / e.tag_value;
+            }
+        }
+        (delta_max, perc_max)
+    }
+
+    /// GCodeProcessor.hpp:1153-1161 `void output() const`: the text the C++ writes to `std::cout`.
+    pub fn output(&self) -> String {
+        let mut out = String::new();
+        if !self.errors.is_empty() {
+            out += &format!("{}:\n", self.r#type);
+            out += &format!(
+                "Errors: {} ({}%)\n",
+                self.errors.len(),
+                crate::locales_utils::general_format((100.0f32 * self.errors.len() as f32 / self.count as f32) as f64, 6)
+            );
+            let (min, perc_min) = self.get_min();
+            let (max, perc_max) = self.get_max();
+            out += &format!(
+                "min: {}({}%) - max: {}({}%)\n",
+                crate::locales_utils::general_format(min as f64, 6),
+                crate::locales_utils::general_format(perc_min as f64, 6),
+                crate::locales_utils::general_format(max as f64, 6),
+                crate::locales_utils::general_format(perc_max as f64, 6)
+            );
+        }
+        out
+    }
+}
+
+// ===========================================================================
+// GCodeProcessor.hpp:1219-1234 enum class EProducer, GCodeProcessor.cpp:1618-1631 Producers
+// ===========================================================================
+
+/// GCodeProcessor.hpp:1219-1231 `enum class EProducer`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EProducer {
+    Unknown,
+    BambuStudio,
+    Slic3rPE,
+    Slic3r,
+    SuperSlicer,
+    Cura,
+    Simplify3D,
+    CraftWare,
+    IdeaMaker,
+    KissSlicer,
+}
+
+/// GCodeProcessor.cpp:1618-1631 `const std::vector<std::pair<GCodeProcessor::EProducer, std::string>>
+/// GCodeProcessor::Producers` (`SLIC3R_APP_NAME` is "BambuStudio"; the other producers are commented
+/// out at the pin).
+pub const PRODUCERS: [(EProducer, &str); 2] =
+    [(EProducer::BambuStudio, "BambuStudio"), (EProducer::BambuStudio, "generated by BambuStudio")];
+
+/// GCodeProcessor.cpp:1633 `unsigned int GCodeProcessor::s_result_id = 0;`
+static S_RESULT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// GCodeProcessor.hpp:1336-1355 `static ThermalIndex parse_helioadditive_comment(const std::string
+/// comment, bool& is_helio)`: the thermal index of a `;helioadditive=` comment, matched by
+/// `\bti\.max=(-?[0-9]*\.?[0-9]+),ti\.min=(-?[0-9]*\.?[0-9]+),ti\.mean=(-?[0-9]*\.?[0-9]+)\b`.
+pub fn parse_helioadditive_comment(comment: &str, is_helio: &mut bool) -> ThermalIndex {
+    if comment.contains(";helioadditive=") {
+        match helio_regex_search(comment.as_bytes()) {
+            Some((max_s, min_s, mean_s)) => {
+                // std::stof(..) * 100.0: a float times a double, stored as a float.
+                let stof = |s: &str| -> f32 { crate::config::strtod_c(s.as_bytes()).value as f32 };
+                let max_val = (stof(max_s) as f64 * 100.0) as f32;
+                let min_val = (stof(min_s) as f64 * 100.0) as f32;
+                let mean_val = (stof(mean_s) as f64 * 100.0) as f32;
+                *is_helio = true;
+                ThermalIndex::with_values(min_val, max_val, mean_val)
+            }
+            None => ThermalIndex::new(),
+        }
+    } else {
+        ThermalIndex::new()
+    }
+}
+
+/// `std::regex_search` (ECMAScript) of the thermal index pattern: the leftmost match, its three
+/// groups. `-?[0-9]*\.?[0-9]+` backtracks: the greedy `[0-9]*` gives back digits so that `[0-9]+`
+/// matches at least one; the `\b` after the third number needs a word character before the end of
+/// the match and a non-word one (or the end) after it.
+fn helio_regex_search(s: &[u8]) -> Option<(&str, &str, &str)> {
+    let is_word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    // `-?[0-9]*\.?[0-9]+` at `i`: every end the pattern can reach, longest first (the order the
+    // ECMAScript backtracking tries them).
+    let number_ends = |i: usize| -> Vec<usize> {
+        let mut out = Vec::new();
+        let mut j = i;
+        if j < s.len() && s[j] == b'-' {
+            j += 1;
+        }
+        let digits_start = j;
+        let mut k = j;
+        while k < s.len() && s[k].is_ascii_digit() {
+            k += 1;
+        }
+        // Greedy `[0-9]*` takes k-digits_start digits, then gives back one at a time.
+        let mut star = k;
+        loop {
+            // optional '.'
+            let mut after_dot = vec![];
+            if star < s.len() && s[star] == b'.' {
+                after_dot.push(star + 1);
+            }
+            after_dot.push(star);
+            for &p in &after_dot {
+                let mut q = p;
+                while q < s.len() && s[q].is_ascii_digit() {
+                    q += 1;
+                }
+                // `[0-9]+` greedy: longest first, at least one digit.
+                let mut e = q;
+                while e > p {
+                    out.push(e);
+                    e -= 1;
+                }
+            }
+            if star == digits_start {
+                break;
+            }
+            star -= 1;
+        }
+        out
+    };
+    let lit = |i: usize, t: &[u8]| -> Option<usize> {
+        if s.len() >= i + t.len() && &s[i..i + t.len()] == t {
+            Some(i + t.len())
+        } else {
+            None
+        }
+    };
+    for start in 0..s.len() {
+        // `\b` before "ti": the previous character is not a word character ('t' is one).
+        if start > 0 && is_word(s[start - 1]) {
+            continue;
+        }
+        let Some(a) = lit(start, b"ti.max=") else { continue };
+        for e1 in number_ends(a) {
+            let Some(b) = lit(e1, b",ti.min=") else { continue };
+            for e2 in number_ends(b) {
+                let Some(c) = lit(e2, b",ti.mean=") else { continue };
+                for e3 in number_ends(c) {
+                    // `\b`: s[e3-1] is a digit (a word character), so the next one must not be.
+                    if e3 < s.len() && is_word(s[e3]) {
+                        continue;
+                    }
+                    let st = |x: usize, y: usize| std::str::from_utf8(&s[x..y]).unwrap_or("");
+                    return Some((st(a, e1), st(b, e2), st(c, e3)));
+                }
+            }
+        }
+    }
+    None
+}
+
+impl TimeMachine {
+    /// GCodeProcessor.cpp:416-421 `void GCodeProcessor::TimeMachine::handle_time_block(const TimeBlock&
+    /// block, float time, int activate_machine_idx, GCodeProcessorResult& result)`
+    pub fn handle_time_block(block: &TimeBlock, time: f32, activate_machine_idx: usize, result: &mut GCodeProcessorResult) {
+        if block.skippable_type != SkipType::StNone {
+            *result.skippable_part_time.entry(block.skippable_type).or_insert(0.0) += block.time();
+        }
+        result.moves[block.move_id as usize].time[activate_machine_idx] = time;
+    }
+}
+
+impl GCodeProcessor {
+    /// GCodeProcessor.hpp:546 `bool is_helio_gcode()`
+    pub fn is_helio_gcode(&self) -> bool {
+        self.m_is_helio_gcode
+    }
+
+    /// GCodeProcessor.hpp:1304-1306 `bool is_stealth_time_estimator_enabled() const`
+    pub fn is_stealth_time_estimator_enabled(&self) -> bool {
+        self.m_time_processor.machines[ETimeMode::Stealth as usize].enabled
+    }
+
+    /// GCodeProcessor.hpp:1307 `void enable_machine_envelope_processing(bool enabled)`
+    pub fn enable_machine_envelope_processing(&mut self, enabled: bool) {
+        self.m_time_processor.machine_envelope_processing_enabled = enabled;
+    }
+
+    /// GCodeProcessor.hpp:1339-1341 `void detect_layer_based_on_tag(bool enabled)` (Orca: if true,
+    /// only change new layer if ETags::Layer_Change occurs).
+    pub fn detect_layer_based_on_tag(&mut self, enabled: bool) {
+        self.m_detect_layer_based_on_tag = enabled;
+    }
+
+    /// GCodeProcessor.cpp:2763-2777 `void GCodeProcessor::initialize(const std::string& filename)`:
+    /// the streaming interface's start; the first move is a dummy move.
+    pub fn initialize(&mut self, filename: &str) {
+        // process gcode
+        self.m_result.filename = filename.to_string();
+        // m_result.id = ++s_result_id;
+        self.m_result.id = S_RESULT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        // 1st move must be a dummy move
+        self.m_result.moves.push(MoveVertex::default());
+    }
+
+    /// GCodeProcessor.cpp:2779-2783 `void GCodeProcessor::initialize_from_context(const
+    /// std::shared_ptr<MultiNozzleUtils::NozzleGroupResultBase>& nozzle_group_result)`
+    pub fn initialize_from_context(&mut self, nozzle_group_result: Option<crate::multi_nozzle_utils::LayeredNozzleGroupResult>) {
+        self.m_nozzle_group_result = nozzle_group_result;
+    }
+
+    /// GCodeProcessor.cpp:2903-2916 `std::vector<std::pair<CustomGCode::Type, std::pair<float,
+    /// float>>> GCodeProcessor::get_custom_gcode_times(PrintEstimatedStatistics::ETimeMode mode, bool
+    /// include_remaining) const`
+    pub fn get_custom_gcode_times(&self, mode: ETimeMode, include_remaining: bool) -> Vec<(CustomGCodeType, (f32, f32))> {
+        let mut ret: Vec<(CustomGCodeType, (f32, f32))> = Vec::new();
+        if (mode as usize) < ETimeMode::COUNT {
+            let machine = &self.m_time_processor.machines[mode as usize];
+            let mut total_time = 0.0f32;
+            for &(r#type, time) in &machine.gcode_time.times {
+                let remaining = if include_remaining { machine.time - total_time } else { 0.0 };
+                ret.push((r#type, (time, remaining)));
+                total_time += time;
+            }
+        }
+        ret
+    }
+
+    /// GCodeProcessor.cpp:2918-2929 `std::vector<std::pair<EMoveType, float>>
+    /// GCodeProcessor::get_moves_time(PrintEstimatedStatistics::ETimeMode mode) const`
+    pub fn get_moves_time(&self, mode: ETimeMode) -> Vec<(EMoveType, f32)> {
+        let mut ret: Vec<(EMoveType, f32)> = Vec::new();
+        if (mode as usize) < ETimeMode::COUNT {
+            let moves_time = &self.m_time_processor.machines[mode as usize].moves_time;
+            for i in 0..moves_time.len() {
+                let time = moves_time[i];
+                if time > 0.0 {
+                    ret.push((emove_type_from_index(i), time));
+                }
+            }
+        }
+        ret
+    }
+
+    /// GCodeProcessor.cpp:2931-2942 `std::vector<std::pair<ExtrusionRole, float>>
+    /// GCodeProcessor::get_roles_time(PrintEstimatedStatistics::ETimeMode mode) const`
+    pub fn get_roles_time(&self, mode: ETimeMode) -> Vec<(ExtrusionRole, f32)> {
+        let mut ret: Vec<(ExtrusionRole, f32)> = Vec::new();
+        if (mode as usize) < ETimeMode::COUNT {
+            let roles_time = &self.m_time_processor.machines[mode as usize].roles_time;
+            for i in 0..roles_time.len() {
+                let time = roles_time[i];
+                if time > 0.0 {
+                    ret.push((extrusion_role_from_index(i), time));
+                }
+            }
+        }
+        ret
+    }
+
+    /// GCodeProcessor.cpp:2977-2982 `std::vector<float>
+    /// GCodeProcessor::get_layers_time(PrintEstimatedStatistics::ETimeMode mode) const`
+    pub fn get_layers_time(&self, mode: ETimeMode) -> Vec<f32> {
+        if (mode as usize) < ETimeMode::COUNT {
+            self.m_time_processor.machines[mode as usize].layers_time.clone()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// GCodeProcessor.cpp:3122-3126 `void GCodeProcessor::process_helioadditive_comment(const
+    /// GCodeReader::GCodeLine &line)`: the thermal index of a comment added by the helio processing
+    /// server.
+    pub fn process_helioadditive_comment(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        let comment = line.raw();
+        self.m_thermal_index = parse_helioadditive_comment(comment, &mut self.m_is_helio_gcode);
+    }
+
+    /// GCodeProcessor.cpp:3643-3658 `bool GCodeProcessor::process_producers_tags(const std::string_view
+    /// comment)`
+    fn process_producers_tags(&mut self, comment: &str) -> bool {
+        match self.m_producer {
+            EProducer::Slic3rPE | EProducer::Slic3r | EProducer::SuperSlicer | EProducer::BambuStudio => {
+                self.process_bambuslicer_tags(comment)
+            }
+            EProducer::Cura => self.process_cura_tags(comment),
+            EProducer::Simplify3D => self.process_simplify3d_tags(comment),
+            EProducer::CraftWare => self.process_craftware_tags(comment),
+            EProducer::IdeaMaker => self.process_ideamaker_tags(comment),
+            EProducer::KissSlicer => self.process_kissslicer_tags(comment),
+            _ => false,
+        }
+    }
+
+    /// GCodeProcessor.cpp:3660-3663 `bool GCodeProcessor::process_bambuslicer_tags(const
+    /// std::string_view comment)`
+    fn process_bambuslicer_tags(&mut self, _comment: &str) -> bool {
+        false
+    }
+
+    /// GCodeProcessor.cpp:3665-3737 `bool GCodeProcessor::process_cura_tags(const std::string_view
+    /// comment)`
+    fn process_cura_tags(&mut self, comment: &str) -> bool {
+        // TYPE -> extrusion role
+        let mut tag = "TYPE:";
+        if let Some(pos) = comment.find(tag) {
+            let r#type = &comment[pos + tag.len()..];
+            match r#type {
+                "SKIRT" => self.set_extrusion_role(ExtrusionRole::Skirt),
+                "WALL-OUTER" => self.set_extrusion_role(ExtrusionRole::ExternalPerimeter),
+                "WALL-INNER" => self.set_extrusion_role(ExtrusionRole::Perimeter),
+                "SKIN" => self.set_extrusion_role(ExtrusionRole::SolidInfill),
+                "FILL" => self.set_extrusion_role(ExtrusionRole::InternalInfill),
+                "SUPPORT" => self.set_extrusion_role(ExtrusionRole::SupportMaterial),
+                "SUPPORT-INTERFACE" => self.set_extrusion_role(ExtrusionRole::SupportMaterialInterface),
+                "PRIME-TOWER" => self.set_extrusion_role(ExtrusionRole::WipeTower),
+                _ => {
+                    self.set_extrusion_role(ExtrusionRole::None);
+                    // BOOST_LOG_TRIVIAL(warning) << "GCodeProcessor found unknown extrusion role: " << type;
+                }
+            }
+
+            if self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
+                self.m_seams_detector.activate(true);
+            }
+
+            return true;
+        }
+
+        // flavor
+        tag = "FLAVOR:";
+        if let Some(pos) = comment.find(tag) {
+            let flavor = &comment[pos + tag.len()..];
+            match flavor {
+                "BFB" => self.m_flavor = GCodeFlavor::MarlinLegacy, // is this correct ?
+                "Mach3" => self.m_flavor = GCodeFlavor::Mach3,
+                "Makerbot" => self.m_flavor = GCodeFlavor::MakerWare,
+                "UltiGCode" => self.m_flavor = GCodeFlavor::MarlinLegacy, // is this correct ?
+                "Marlin(Volumetric)" => self.m_flavor = GCodeFlavor::MarlinLegacy, // is this correct ?
+                "Griffin" => self.m_flavor = GCodeFlavor::MarlinLegacy, // is this correct ?
+                "Repetier" => self.m_flavor = GCodeFlavor::RepetierFirmware,
+                "RepRap" => self.m_flavor = GCodeFlavor::RepRapFirmware,
+                "Marlin" => self.m_flavor = GCodeFlavor::MarlinLegacy,
+                _ => {} // BOOST_LOG_TRIVIAL(warning) << "GCodeProcessor found unknown flavor: " << flavor;
+            }
+
+            return true;
+        }
+
+        // layer
+        tag = "LAYER:";
+        if comment.contains(tag) {
+            self.m_layer_id += 1;
+            return true;
+        }
+
+        false
+    }
+
+    /// GCodeProcessor.cpp:3739-3879 `bool GCodeProcessor::process_simplify3d_tags(const
+    /// std::string_view comment)`
+    fn process_simplify3d_tags(&mut self, comment: &str) -> bool {
+        // extrusion roles
+
+        // in older versions the comments did not contain the key 'feature'
+        let mut cmt = comment;
+        if cmt.find(" feature") == Some(0) {
+            cmt = &cmt[8..];
+        }
+
+        // `cmt.find(x) == 0`
+        let at0 = |cmt: &str, x: &str| cmt.find(x) == Some(0);
+
+        // ; skirt
+        if at0(cmt, " skirt") {
+            self.set_extrusion_role(ExtrusionRole::Skirt);
+            return true;
+        }
+
+        // ; outer perimeter
+        if at0(cmt, " outer perimeter") {
+            self.set_extrusion_role(ExtrusionRole::ExternalPerimeter);
+            self.m_seams_detector.activate(true);
+            return true;
+        }
+
+        // ; inner perimeter
+        if at0(cmt, " inner perimeter") {
+            self.set_extrusion_role(ExtrusionRole::Perimeter);
+            return true;
+        }
+
+        // ; gap fill
+        if at0(cmt, " gap fill") {
+            self.set_extrusion_role(ExtrusionRole::GapFill);
+            return true;
+        }
+
+        // ; infill
+        if at0(cmt, " infill") {
+            self.set_extrusion_role(ExtrusionRole::InternalInfill);
+            return true;
+        }
+
+        // ; solid layer
+        if at0(cmt, " solid layer") {
+            self.set_extrusion_role(ExtrusionRole::SolidInfill);
+            return true;
+        }
+
+        // ; bridge
+        if at0(cmt, " bridge") {
+            self.set_extrusion_role(ExtrusionRole::BridgeInfill);
+            return true;
+        }
+
+        // ; support
+        if at0(cmt, " support") {
+            self.set_extrusion_role(ExtrusionRole::SupportMaterial);
+            return true;
+        }
+
+        // ; dense support
+        if at0(cmt, " dense support") {
+            self.set_extrusion_role(ExtrusionRole::SupportMaterialInterface);
+            return true;
+        }
+
+        // ; prime pillar
+        if at0(cmt, " prime pillar") {
+            self.set_extrusion_role(ExtrusionRole::WipeTower);
+            return true;
+        }
+
+        // ; ooze shield
+        if at0(cmt, " ooze shield") {
+            self.set_extrusion_role(ExtrusionRole::None); // Missing mapping
+            return true;
+        }
+
+        // ; raft
+        if at0(cmt, " raft") {
+            self.set_extrusion_role(ExtrusionRole::SupportMaterial);
+            return true;
+        }
+
+        // ; internal single extrusion
+        if at0(cmt, " internal single extrusion") {
+            self.set_extrusion_role(ExtrusionRole::None); // Missing mapping
+            return true;
+        }
+
+        // geometry
+        // ; tool
+        let mut tag = " tool";
+        if at0(cmt, tag) {
+            let data = &cmt[tag.len()..];
+            // `substr(start + 1, end != npos ? end - start - 1 : npos)`; `find_first_of(' ', npos)`
+            // is npos.
+            let sub = |start: usize, end: Option<usize>| -> &str {
+                match end {
+                    Some(e) => &data[start + 1..e],
+                    None => &data[start + 1..],
+                }
+            };
+            let h_start = data.find('H');
+            let h_end = h_start.and_then(|h| data[h..].find(' ').map(|p| p + h));
+            let w_start = data.find('W');
+            let w_end = w_start.and_then(|w| data[w..].find(' ').map(|p| p + w));
+            if let Some(h_start) = h_start {
+                // BOOST_LOG_TRIVIAL(error) on an invalid value for Height
+                let _ = parse_number(sub(h_start, h_end), &mut self.m_forced_height);
+            }
+            if let Some(w_start) = w_start {
+                // BOOST_LOG_TRIVIAL(error) on an invalid value for Width
+                let _ = parse_number(sub(w_start, w_end), &mut self.m_forced_width);
+            }
+
+            return true;
+        }
+
+        // ; layer
+        tag = " layer";
+        if at0(cmt, tag) {
+            // skip lines "; layer end"
+            let data = &cmt[tag.len()..];
+            if !data.contains("end") {
+                self.m_layer_id += 1;
+            }
+
+            return true;
+        }
+
+        false
+    }
+
+    /// GCodeProcessor.cpp:3881-3929 `bool GCodeProcessor::process_craftware_tags(const
+    /// std::string_view comment)`
+    fn process_craftware_tags(&mut self, comment: &str) -> bool {
+        // segType -> extrusion role
+        let tag = "segType:";
+        if let Some(pos) = comment.find(tag) {
+            let r#type = &comment[pos + tag.len()..];
+            match r#type {
+                "Skirt" => self.set_extrusion_role(ExtrusionRole::Skirt),
+                "Perimeter" => self.set_extrusion_role(ExtrusionRole::ExternalPerimeter),
+                "HShell" => self.set_extrusion_role(ExtrusionRole::None),
+                "InnerHair" => self.set_extrusion_role(ExtrusionRole::None),
+                "Loop" => self.set_extrusion_role(ExtrusionRole::None),
+                "Infill" => self.set_extrusion_role(ExtrusionRole::InternalInfill),
+                "Raft" => self.set_extrusion_role(ExtrusionRole::Skirt),
+                "Support" => self.set_extrusion_role(ExtrusionRole::SupportMaterial),
+                "SupportTouch" => self.set_extrusion_role(ExtrusionRole::SupportMaterial),
+                "SoftSupport" => self.set_extrusion_role(ExtrusionRole::SupportMaterialInterface),
+                "Pillar" => self.set_extrusion_role(ExtrusionRole::WipeTower),
+                _ => {
+                    self.set_extrusion_role(ExtrusionRole::None);
+                    // BOOST_LOG_TRIVIAL(warning) << "GCodeProcessor found unknown extrusion role: " << type;
+                }
+            }
+
+            if self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
+                self.m_seams_detector.activate(true);
+            }
+
+            return true;
+        }
+
+        // layer
+        if comment.find(" Layer #") == Some(0) {
+            self.m_layer_id += 1;
+            return true;
+        }
+
+        false
+    }
+
+    /// GCodeProcessor.cpp:3931-3990 `bool GCodeProcessor::process_ideamaker_tags(const
+    /// std::string_view comment)`
+    fn process_ideamaker_tags(&mut self, comment: &str) -> bool {
+        // TYPE -> extrusion role
+        let mut tag = "TYPE:";
+        if let Some(pos) = comment.find(tag) {
+            let r#type = &comment[pos + tag.len()..];
+            match r#type {
+                "RAFT" => self.set_extrusion_role(ExtrusionRole::Skirt),
+                "WALL-OUTER" => self.set_extrusion_role(ExtrusionRole::ExternalPerimeter),
+                "WALL-INNER" => self.set_extrusion_role(ExtrusionRole::Perimeter),
+                "SOLID-FILL" => self.set_extrusion_role(ExtrusionRole::SolidInfill),
+                "FILL" => self.set_extrusion_role(ExtrusionRole::InternalInfill),
+                "BRIDGE" => self.set_extrusion_role(ExtrusionRole::BridgeInfill),
+                "SUPPORT" => self.set_extrusion_role(ExtrusionRole::SupportMaterial),
+                _ => {
+                    self.set_extrusion_role(ExtrusionRole::None);
+                    // BOOST_LOG_TRIVIAL(warning) << "GCodeProcessor found unknown extrusion role: " << type;
+                }
+            }
+
+            if self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
+                self.m_seams_detector.activate(true);
+            }
+
+            return true;
+        }
+
+        // geometry
+        // width
+        tag = "WIDTH:";
+        if let Some(pos) = comment.find(tag) {
+            // BOOST_LOG_TRIVIAL(error) on an invalid value for Width
+            let _ = parse_number(&comment[pos + tag.len()..], &mut self.m_forced_width);
+            return true;
+        }
+
+        // height
+        tag = "HEIGHT:";
+        if let Some(pos) = comment.find(tag) {
+            // BOOST_LOG_TRIVIAL(error) on an invalid value for Height
+            let _ = parse_number(&comment[pos + tag.len()..], &mut self.m_forced_height);
+            return true;
+        }
+
+        // layer
+        if comment.find("LAYER:") == Some(0) {
+            self.m_layer_id += 1;
+            return true;
+        }
+
+        false
+    }
+
+    /// GCodeProcessor.cpp:3992-4098 `bool GCodeProcessor::process_kissslicer_tags(const
+    /// std::string_view comment)`
+    fn process_kissslicer_tags(&mut self, comment: &str) -> bool {
+        // extrusion roles
+        let at0 = |x: &str| comment.find(x) == Some(0);
+
+        // ; 'Raft Path'
+        if at0(" 'Raft Path'") {
+            self.set_extrusion_role(ExtrusionRole::Skirt);
+            return true;
+        }
+
+        // ; 'Support Interface Path'
+        if at0(" 'Support Interface Path'") {
+            self.set_extrusion_role(ExtrusionRole::SupportMaterialInterface);
+            return true;
+        }
+
+        // ; 'Travel/Ironing Path'
+        if at0(" 'Travel/Ironing Path'") {
+            self.set_extrusion_role(ExtrusionRole::Ironing);
+            return true;
+        }
+
+        // ; 'Support (may Stack) Path'
+        if at0(" 'Support (may Stack) Path'") {
+            self.set_extrusion_role(ExtrusionRole::SupportMaterial);
+            return true;
+        }
+
+        // ; 'Perimeter Path'
+        if at0(" 'Perimeter Path'") {
+            self.set_extrusion_role(ExtrusionRole::ExternalPerimeter);
+            self.m_seams_detector.activate(true);
+            return true;
+        }
+
+        // ; 'Pillar Path'
+        if at0(" 'Pillar Path'") {
+            self.set_extrusion_role(ExtrusionRole::None);
+            return true;
+        }
+
+        // ; 'Destring/Wipe/Jump Path'
+        if at0(" 'Destring/Wipe/Jump Path'") {
+            self.set_extrusion_role(ExtrusionRole::None);
+            return true;
+        }
+
+        // ; 'Prime Pillar Path'
+        if at0(" 'Prime Pillar Path'") {
+            self.set_extrusion_role(ExtrusionRole::None);
+            return true;
+        }
+
+        // ; 'Loop Path'
+        if at0(" 'Loop Path'") {
+            self.set_extrusion_role(ExtrusionRole::None);
+            return true;
+        }
+
+        // ; 'Crown Path'
+        if at0(" 'Crown Path'") {
+            self.set_extrusion_role(ExtrusionRole::None);
+            return true;
+        }
+
+        // ; 'Solid Path'
+        if at0(" 'Solid Path'") {
+            self.set_extrusion_role(ExtrusionRole::None);
+            return true;
+        }
+
+        // ; 'Stacked Sparse Infill Path'
+        if at0(" 'Stacked Sparse Infill Path'") {
+            self.set_extrusion_role(ExtrusionRole::InternalInfill);
+            return true;
+        }
+
+        // ; 'Sparse Infill Path'
+        if at0(" 'Sparse Infill Path'") {
+            self.set_extrusion_role(ExtrusionRole::SolidInfill);
+            return true;
+        }
+
+        // geometry
+
+        // layer
+        if at0(" BEGIN_LAYER_") {
+            self.m_layer_id += 1;
+            return true;
+        }
+
+        false
+    }
+
+    /// GCodeProcessor.cpp:4100-4111 `bool GCodeProcessor::detect_producer(const std::string_view
+    /// comment)`
+    pub fn detect_producer(&mut self, comment: &str) -> bool {
+        for &(id, search_string) in PRODUCERS.iter() {
+            if comment.contains(search_string) {
+                self.m_producer = id;
+                //BOOST_LOG_TRIVIAL(info) << "Detected gcode producer: " << search_string;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// GCodeProcessor.cpp:5482-5485 `void GCodeProcessor::process_VM104(const GCodeReader::GCodeLine&
+    /// line)`
+    fn process_vm104(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        self.process_m104(line);
+    }
+
+    /// GCodeProcessor.cpp:5539-5542 `void GCodeProcessor::process_VM109(const GCodeReader::GCodeLine&
+    /// line)`
+    fn process_vm109(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        self.process_m109(line);
+    }
+
+    /// GCodeProcessor.cpp:5986-5991 `void GCodeProcessor::init_filament_maps_when_import_only_gcode()`
+    pub fn init_filament_maps_when_import_only_gcode(&mut self) {
+        if self.m_filament_maps.is_empty() {
+            // EnforcerBlockerType::ExtruderMax
+            self.m_filament_maps = vec![1; crate::triangle_selector::EnforcerBlockerType::extruder_max().0 as usize];
+        }
+    }
+
+    /// GCodeProcessor.cpp:6375-6378 `float GCodeProcessor::get_hotend_change_time()`
+    pub fn get_hotend_change_time(&self) -> f32 {
+        self.m_time_processor.hotend_change_times
+    }
+
+    /// GCodeProcessor.cpp:6380-6399 `void GCodeProcessor::process_custom_gcode_time(CustomGCode::Type
+    /// code)`
+    pub fn process_custom_gcode_time(&mut self, code: CustomGCodeType) {
+        for i in 0..ETimeMode::COUNT {
+            if !self.m_time_processor.machines[i].enabled {
+                continue;
+            }
+
+            self.m_time_processor.machines[i].gcode_time.needed = true;
+            //FIXME this simulates st_synchronize! is it correct?
+            // The estimated time may be longer than the real print time.
+            // machine.simulate_st_synchronize(0, erNone, handle_time_block)
+            self.run_calculate_time(i, 0, 0.0, ExtrusionRole::None);
+            let gcode_time = &mut self.m_time_processor.machines[i].gcode_time;
+            if gcode_time.cache != 0.0 {
+                gcode_time.times.push((code, gcode_time.cache));
+                gcode_time.cache = 0.0;
+            }
+        }
+    }
+
+    /// GCodeProcessor.cpp:6401-6414 `void GCodeProcessor::process_filaments(CustomGCode::Type code)`
+    pub fn process_filaments(&mut self, code: CustomGCodeType) {
+        if code == CustomGCodeType::ColorChange {
+            self.m_used_filaments.process_color_change_cache();
+        }
+
+        if code == CustomGCodeType::ToolChange {
+            let active_filament_id = self.get_filament_id(true);
+            let active_filament_id_support = self.get_filament_id(false);
+            self.m_used_filaments.process_model_cache(active_filament_id);
+            self.m_used_filaments.process_support_cache(active_filament_id_support);
+            self.m_used_filaments.process_total_volume_cache(active_filament_id);
+            //BBS: reset remaining filament
+            let last_extruder_id = self.get_extruder_id(true) as usize;
+            self.m_remaining_volume[last_extruder_id] = self.m_nozzle_volume[last_extruder_id];
+        }
+    }
+
+    /// GCodeProcessor.cpp:6456-6507 `void GCodeProcessor::update_preview_layers_times_stats()`
+    pub fn update_preview_layers_times_stats(&mut self) {
+        // Tag-based layers (spiral vase / scarf) replace the renderer's layer list, so the per-run
+        // partition below would not line up with the slider ticks; leave those to layers_times.
+        if self.m_detect_layer_based_on_tag {
+            return;
+        }
+
+        for mode_idx in 0..ETimeMode::COUNT {
+            if self.m_result.print_statistics.modes[mode_idx].layers_times.is_empty() {
+                continue;
+            }
+
+            // Slice time by the same consecutive extrusion-Z runs the renderer builds the slider ticks from
+            // (a new run starts whenever the extrusion Z changes by more than EPSILON).
+            let mut run_times: Vec<f32> = Vec::new();
+            let mut prev_time = 0.0f32; // previous move's cumulative time (move.time is a prefix sum)
+            let mut last_z = f32::NAN;
+            let mut pending = 0.0f32; // pre-print time before the first extrusion run
+            for mv in &self.m_result.moves {
+                let current_time = prev_time.max(mv.time[mode_idx]);
+                let dt = current_time - prev_time;
+                prev_time = current_time;
+                if mv.move_type == EMoveType::Extrude
+                    && (run_times.is_empty() || (mv.position[2] - last_z).abs() > EPSILON)
+                {
+                    run_times.push(0.0);
+                    last_z = mv.position[2];
+                }
+                if run_times.is_empty() {
+                    pending += dt; // before the first extrusion; folded into the first run below
+                } else {
+                    *run_times.last_mut().unwrap() += dt;
+                }
+            }
+
+            let data = &mut self.m_result.print_statistics.modes[mode_idx];
+            // Only mixed-color sublayers make the runs finer than the logical layers; otherwise layers_times
+            // already lines up with the slider, so leave preview empty and let the slider reuse it.
+            if run_times.len() <= data.layers_times.len() {
+                continue;
+            }
+
+            // Fold the pre-print time (and any rounding) into the first run so the prefix sum the slider
+            // builds from these durations ends exactly at the estimated total time.
+            run_times[0] += pending;
+            let mut sum = 0.0f32;
+            for &t in &run_times {
+                sum += t;
+            }
+            run_times[0] += 0.0f32.max(data.time - sum);
+            data.preview_layers_times = run_times;
+        }
+    }
+
+    /// GCodeProcessor.cpp:6509-6563 `void GCodeProcessor::update_slice_warnings()` (BBS: ugly code...)
+    pub fn update_slice_warnings(&mut self) {
+        self.m_result.warnings.clear();
+
+        let mut used_filaments: Vec<usize> = Vec::with_capacity(self.m_used_filaments.total_volumes_per_filament.len());
+        for (&k, _) in &self.m_used_filaments.total_volumes_per_filament {
+            used_filaments.push(k);
+        }
+        // assert(!used_filaments.empty()) is compiled out (NDEBUG).
+        let _ = used_filaments;
+        let mut warning = SliceWarning::default();
+
+        // bbs:timelapse checker
+        warning.params.clear();
+        warning.level = 1;
+        if !self.m_result.support_traditional_timelapse {
+            warning.level = 2;
+            warning.msg = NOT_SUPPORT_TRADITIONAL_TIMELAPSE.to_string();
+            warning.error_code = "10018003".to_string();
+            self.m_result.warnings.push(warning.clone());
+
+            // Compatible with older version for A series
+            warning.level = 3;
+            warning.error_code = "1000C003".to_string();
+            self.m_result.warnings.push(warning.clone());
+        }
+
+        if self.m_result.timelapse_warning_code != 0 {
+            if self.m_result.timelapse_warning_code & 1 != 0 {
+                warning.level = 1;
+                warning.msg = NOT_GENERATE_TIMELAPSE.to_string();
+                warning.error_code = "10014001".to_string();
+                self.m_result.warnings.push(warning.clone());
+            }
+            if (self.m_result.timelapse_warning_code >> 1) & 1 != 0 {
+                warning.level = 1;
+                warning.msg = NOT_GENERATE_TIMELAPSE.to_string();
+                warning.error_code = "10014002".to_string();
+                self.m_result.warnings.push(warning.clone());
+            }
+            if (self.m_result.timelapse_warning_code >> 2) & 1 != 0 {
+                warning.level = 2;
+                warning.msg = SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER.to_string();
+                warning.error_code = "10018004".to_string();
+                self.m_result.warnings.push(warning.clone());
+            }
+        }
+
+        self.m_result.warnings.shrink_to_fit();
+    }
+}
+
+/// GCodeProcessor.hpp:16-18 `#define NOT_SUPPORT_TRADITIONAL_TIMELAPSE`, `NOT_GENERATE_TIMELAPSE`,
+/// `SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER` (the message keys of the slice warnings).
+pub const NOT_SUPPORT_TRADITIONAL_TIMELAPSE: &str = "not_support_traditional_timelapse";
+pub const NOT_GENERATE_TIMELAPSE: &str = "not_generate_timelapse";
+pub const SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER: &str = "smooth_timelapse_without_prime_tower";
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `producer` lines of tests/data/g_code_processor/g_code_processor.txt.gz (gen.cpp, which
+    /// includes the pin's GCodeProcessor.cpp): `process_producers_tags` with `m_producer` set, from a
+    /// fresh processor per comment. The C++ detects no producer but BambuStudio at the pin, so the
+    /// tag parsers of the other producers are reached only this way.
+    #[test]
+    fn test_producer_tags_native() {
+        use std::io::Read;
+        let path = format!("{}/tests/data/g_code_processor/g_code_processor.txt.gz", env!("CARGO_MANIFEST_DIR"));
+        let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(file).read_to_string(&mut text).expect("gzip");
+        let unhex = |t: &str| -> String {
+            if t == "-" {
+                return String::new();
+            }
+            let b: Vec<u8> = (0..t.len() / 2).map(|i| u8::from_str_radix(&t[2 * i..2 * i + 2], 16).unwrap()).collect();
+            String::from_utf8(b).unwrap()
+        };
+        // PrintConfig.hpp:40-43 `enum GCodeFlavor`
+        let flavor_id = |f: GCodeFlavor| -> i32 {
+            match f {
+                GCodeFlavor::MarlinLegacy => 0,
+                GCodeFlavor::Klipper => 1,
+                GCodeFlavor::RepRapSprinter => 2,
+                GCodeFlavor::RepRapFirmware => 3,
+                GCodeFlavor::RepetierFirmware => 4,
+                GCodeFlavor::MakerWare => 6,
+                GCodeFlavor::MarlinFirmware => 7,
+                GCodeFlavor::Sailfish => 8,
+                GCodeFlavor::Mach3 => 9,
+                GCodeFlavor::Smoothie => 11,
+                GCodeFlavor::Other => -1,
+            }
+        };
+        let producers = [
+            EProducer::Unknown,
+            EProducer::BambuStudio,
+            EProducer::Slic3rPE,
+            EProducer::Slic3r,
+            EProducer::SuperSlicer,
+            EProducer::Cura,
+            EProducer::Simplify3D,
+            EProducer::CraftWare,
+            EProducer::IdeaMaker,
+            EProducer::KissSlicer,
+        ];
+        let mut n = 0usize;
+        let mut bad: Vec<String> = Vec::new();
+        for line in text.lines().filter(|l| l.starts_with("producer ")) {
+            let t: Vec<&str> = line.split(' ').collect();
+            let id: usize = t[1].parse().unwrap();
+            let comment = unhex(t[2]);
+            let mut p = GCodeProcessor::new();
+            p.m_producer = producers[id];
+            p.m_forced_width = 0.0;
+            p.m_forced_height = 0.0;
+            let r = p.process_producers_tags(&comment);
+            let got = format!(
+                "producer {} {} {} {} {} {:08x} {:08x} {} {}",
+                id,
+                t[2],
+                r as i32,
+                p.m_extrusion_role as u8,
+                p.m_layer_id,
+                p.m_forced_width.to_bits(),
+                p.m_forced_height.to_bits(),
+                flavor_id(p.m_flavor),
+                p.m_seams_detector.is_active() as i32
+            );
+            n += 1;
+            if got != line {
+                bad.push(format!("  want {line}\n  got  {got}"));
+            }
+        }
+        assert!(n > 800, "only {n} producer lines");
+        assert!(bad.is_empty(), "{} of {} producer lines differ:\n{}", bad.len(), n, bad.join("\n"));
+    }
 
     #[test]
     fn test_kinematics_helpers() {
@@ -6043,7 +8322,8 @@ mod tests {
     #[test]
     fn test_get_last_position_from_gcode() {
         let g = "G1 X1 Y2 Z0.2\nG1 X3 Y4 Z0.4\n";
-        let p = get_last_position_from_gcode(g).unwrap();
+        let mut p = [0.0f32; 3];
+        assert!(get_last_position_from_gcode(g, &mut p));
         assert!((p[0] - 3.0).abs() < 1e-6);
         assert!((p[1] - 4.0).abs() < 1e-6);
         assert!((p[2] - 0.4).abs() < 1e-6);

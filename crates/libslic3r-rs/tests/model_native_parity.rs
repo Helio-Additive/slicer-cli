@@ -7,10 +7,11 @@
 //! IDs (relative to the first model of a scenario), mesh digests, polygons.
 //!
 //! Lines whose name starts with `svd_` depend on `Geometry::Transformation`'s decomposition and
-//! rotation getters (Eigen's JacobiSVD / computeRotationScaling in C++, nalgebra's SVD in
-//! `geometry/geometry.rs`); lines whose name starts with `geo_` are results of other units
-//! (TriangleMesh.cpp mesh makers, BuildVolume's bed type). They are compared and their differences
-//! reported, without failing: those ports are not this unit. Every other line has to be equal.
+//! rotation getters (Eigen's JacobiSVD / computeRotationScaling, ported in `geometry::eigen` behind
+//! the faithful gate `TRANSFORMATION_EIGEN`); lines whose name starts with `geo_` are results of
+//! other units (TriangleMesh.cpp mesh makers behind `ITS_MAKE_FLOAT_STEP`, BuildVolume's bed type).
+//! Every line has to be equal, these too, with the gates on (the default); with a gate off their
+//! differences are reported by name.
 //!
 //! The IDs come from the process-wide counter of `object_id.rs`, so this file holds one test.
 
@@ -1233,13 +1234,12 @@ fn model_matches_the_pin() {
             e.0 += 1;
             e.1 += n;
             e.2 = e.2.max(ulps);
-        } else {
-            failures.push(format!("line {}:\n  rust {}\n  c++  {}", k + 1, got, want));
         }
+        failures.push(format!("line {}:\n  rust {}\n  c++  {}", k + 1, got, want));
     }
     println!("compared lines by name: {:?}", compared);
     for (name, (lines, tokens, ulps)) in &svd_diffs {
-        println!("reported-only differences (decomposition / other units): {name}: {lines} lines, {tokens} tokens, max {ulps} ulps");
+        println!("differences of the decomposition / other units: {name}: {lines} lines, {tokens} tokens, max {ulps} ulps");
     }
     if !failures.is_empty() {
         let shown: Vec<&String> = failures.iter().take(12).collect();

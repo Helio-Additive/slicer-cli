@@ -145,5 +145,66 @@
    "ModelVolume::set_material",
    "ModelInstance::apply_arrange_result"
   ]
+ },
+ {
+  "unit": "Print",
+  "round": "915",
+  "functions": [
+   "FakeWipeTower::set_fake_extrusion_data",
+   "FakeWipeTower::set_pos",
+   "FakeWipeTower::getFakeExtrusionPathsFromWipeTower",
+   "Print::invalidate_state_by_config_options",
+   "Print::invalidate_step",
+   "Print::is_step_done",
+   "Print::print_object_ids",
+   "Print::update_filament_self_index_cache",
+   "Print::get_config_index",
+   "PrintInstance::shift_without_plate_offset",
+   "PrintObjectRegions::ref_cnt_inc",
+   "PrintObjectRegions::ref_cnt_dec",
+   "PrintObjectRegions::clear",
+   "PrintStatistics::clear",
+   "PrintStatistics::config",
+   "PrintStatistics::placeholders",
+   "WipeTowerData::clear"
+  ]
+ },
+ {
+  "unit": "Format/bbs_3mf",
+  "round": "915",
+  "functions": [
+   "local_tag_name",
+   "bbs_get_attribute_value_charptr",
+   "bbs_has_attribute_value_int",
+   "parse_int_list",
+   "bbs_encoded_has_dotdot_component",
+   "mz_zip_read_istream",
+   "reset_stream",
+   "_BBS_3MF_Exporter::_add_bbox_file_to_archive",
+   "_BBS_3MF_Importer::parse_error_message",
+   "_BBS_3MF_Importer::get_thumbnail",
+   "_BBS_3MF_Importer::_stop_xml_parser",
+   "_BBS_3MF_Importer::_handle_start_config_metadata",
+   "_BBS_3MF_Importer::ObjectImporter::_stop_object_xml_parser",
+   "_BBS_3MF_Importer::ObjectImporter::object_parse_error_message"
+  ]
+ },
+ {
+  "unit": "GCode",
+  "round": "915",
+  "functions": [
+   "get_instance_name",
+   "GCode::is_enable_overhang_speed",
+   "GCode::get_path_speed",
+   "WipeTowerIntegration::prime",
+   "WipeTowerIntegration::finalize"
+  ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": "915",
+  "functions": [
+   "GCodeProcessor::process_custom_gcode_time"
+  ]
  }
 ]

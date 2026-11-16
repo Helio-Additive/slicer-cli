@@ -1,0 +1,3401 @@
+FILE crates/libslic3r-rs/tests/data/painted_cube.3mf
+R 1 0 302e302e302e30
+CFG 0 14650fb0739d0383
+MI - - - - - -
+DI none
+PI - - - - - -
+OBJECTS 1
+O 0 7061696e7465645f63756265 - 1 1 1 3488a79fd2efc09e
+OC extruder 31
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 1 3ff0000000000000 0000000000000000 0000000000000000 4024000000000000 0000000000000000 3ff0000000000000 0000000000000000 4024000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 7061696e7465645f63756265 0 - 7061696e7465645f637562652e336d66 0 0 4024000000000000 4024000000000000 4024000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 3187f77ba5818643 0 0 0 0 0 4024000000000000 4024000000000000 4024000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 4 16 0e57af97bd473faa 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 - 0
+POI 1 0 1
+PF - - - - - -
+PS - - 0 0 0 0 - - -
+PMAP 0 | 0 | 0 | 0
+PCFG 0 14650fb0739d0383
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383
+FILE tests/fixtures/calib_base.3mf
+R 1 1 322e352e312e3532
+CFG 535 7884000cedd85fbf
+MI - - - - - -
+MD 4170706c69636174696f6e 42616d627553747564696f2d30322e30352e30312e3532
+MD 42616d627553747564696f3a336d6656657273696f6e 31
+MD 436f70797269676874 -
+MD 4372656174696f6e44617465 323032362d30342d3032
+MD 4465736372697074696f6e -
+MD 44657369676e6572 -
+MD 44657369676e6572436f766572 -
+MD 44657369676e6572557365724964 -
+MD 4c6963656e7365 -
+MD 4d6f64696669636174696f6e44617465 323032362d30342d3032
+MD 4f726967696e -
+MD 50726f66696c65436f766572 -
+MD 50726f66696c654465736372697074696f6e -
+MD 50726f66696c655469746c65 -
+MD 5468756d626e61696c5f4d6964646c65 2f4d657461646174612f706c6174655f312e706e67
+MD 5468756d626e61696c5f536d616c6c 2f4d657461646174612f706c6174655f315f736d616c6c2e706e67
+MD 5469746c65 -
+DI none
+PI - - - - - -
+OBJECTS 1
+O 0 43756265 - 1 1 1 3488a79fd2efc09e
+OC extruder 31
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 3521 3ff0000000000000 0000000000000000 0000000000000000 405fffffde7210bf 0000000000000000 3ff0000000000000 0000000000000000 405fffffde7210bf 0000000000000000 0000000000000000 3ff0000000000000 40299999a04f9640 1 0000000000000000 0000000000000000 0000000000000000
+V 0 43756265 0 - 63616c69625f626173652e336d66 0 0 0000000000000000 0000000000000000 0000000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 0f4e3863dae426e3 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 - 0
+POI 2 0 3521
+PF - 3c6261636b75703e2f4d657461646174612f706c6174655f312e706e67 3c6261636b75703e2f4d657461646174612f706c6174655f6e6f5f6c696768745f312e706e67 3c6261636b75703e2f4d657461646174612f746f705f312e706e67 3c6261636b75703e2f4d657461646174612f7069636b5f312e706e67 -
+PS - - 0 0 0 0 - - -
+PMAP 1 1 | 0 | 0 | 0
+PCFG 3 6c883dbd4de51cbf
+PCK filament_map 31
+PCK filament_map_mode 4175746f20466f7220466c757368
+PCK filament_volume_map 30
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383
+FILE tests/fixtures/calib_base_orca.3mf
+R 1 1 322e362e302e3531
+CFG 440 c13b81d5b6d4a1e6
+MI - - - - - -
+MD 4170706c69636174696f6e 42616d627553747564696f2d30322e30362e30302e3531
+MD 42616d627553747564696f3a336d6656657273696f6e 31
+MD 436f70797269676874 -
+MD 4372656174696f6e44617465 -
+MD 4465736372697074696f6e -
+MD 44657369676e6572 -
+MD 44657369676e6572436f766572 -
+MD 44657369676e6572557365724964 -
+MD 4c6963656e7365 -
+MD 4d6f64696669636174696f6e44617465 -
+MD 4f726361536c69636572 322e342e302d616c706861
+MD 4f726967696e -
+MD 5468756d626e61696c5f4d6964646c65 2f4d657461646174612f706c6174655f312e706e67
+MD 5468756d626e61696c5f536d616c6c 2f4d657461646174612f706c6174655f315f736d616c6c2e706e67
+MD 5469746c65 -
+DI none
+PI - - - - - -
+OBJECTS 1
+O 0 637562652e73746c - 1 1 1 3488a79fd2efc09e
+OC extruder 31
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 27 3ff0000000000000 0000000000000000 0000000000000000 4060000000000000 0000000000000000 3ff0000000000000 0000000000000000 4060000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 637562652e73746c 0 - 637562652e73746c 0 0 4024000000000000 4024000000000000 4024000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 4024000000000000 0000000000000000 3ff0000000000000 0000000000000000 4024000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 e9aed5d571227f03 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 - 0
+POI 2 0 27
+PF - - - - - -
+PS - - 0 0 0 0 - - -
+PMAP 0 | 1 0 | 1 0 | 1 0
+PCFG 0 14650fb0739d0383
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383
+FILE tests/fixtures/calib_base_snapmaker.3mf
+R 1 0 302e302e302e30
+CFG 0 14650fb0739d0383
+MI - - - - - -
+MD 4170706c69636174696f6e 536e61706d616b65725f4f7263612d322e342e31
+MD 436f70797269676874 -
+MD 4372656174696f6e44617465 -
+MD 4465736372697074696f6e -
+MD 44657369676e6572 -
+MD 44657369676e6572436f766572 -
+MD 44657369676e6572557365724964 -
+MD 4c6963656e7365 -
+MD 4d6f64696669636174696f6e44617465 -
+MD 4f726967696e -
+MD 536e61706d616b65725f4f7263613a336d6656657273696f6e 31
+MD 5469746c65 -
+DI none
+PI - - - - - -
+OBJECTS 1
+O 0 637562652e73746c - 1 1 1 3488a79fd2efc09e
+OC extruder 31
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 28 3ff0000000000000 0000000000000000 0000000000000000 4060f00000000000 0000000000000000 3ff0000000000000 0000000000000000 4061000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 637562652e73746c 0 - 637562652e73746c 0 0 4024000000000000 4024000000000000 4024000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 4024000000000000 0000000000000000 3ff0000000000000 0000000000000000 4024000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 e9aed5d571227f03 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 - 0
+POI 2 0 28
+PF 3c6261636b75703e2f4d657461646174612f706c6174655f312e67636f6465 - - - - -
+PS - - 0 0 0 0 - - -
+PMAP 1 1 | 0 | 0 | 0
+PCFG 2 05eb9f69b1a5c862
+PCK filament_map 31
+PCK filament_map_mode 4175746f20466f7220466c757368
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383
+FILE tests/fixtures/legacy_token.3mf
+R 1 1 322e352e312e3532
+CFG 535 d39baeb408f2c9a0
+MI - - - - - -
+MD 4170706c69636174696f6e 42616d627553747564696f2d30322e30352e30312e3532
+MD 42616d627553747564696f3a336d6656657273696f6e 31
+MD 436f70797269676874 -
+MD 4372656174696f6e44617465 323032362d30342d3032
+MD 4465736372697074696f6e -
+MD 44657369676e6572 -
+MD 44657369676e6572436f766572 -
+MD 44657369676e6572557365724964 -
+MD 4c6963656e7365 -
+MD 4d6f64696669636174696f6e44617465 323032362d30342d3032
+MD 4f726967696e -
+MD 50726f66696c65436f766572 -
+MD 50726f66696c654465736372697074696f6e -
+MD 50726f66696c655469746c65 -
+MD 5468756d626e61696c5f4d6964646c65 2f4d657461646174612f706c6174655f312e706e67
+MD 5468756d626e61696c5f536d616c6c 2f4d657461646174612f706c6174655f315f736d616c6c2e706e67
+MD 5469746c65 -
+DI none
+PI - - - - - -
+OBJECTS 1
+O 0 43756265 - 1 1 1 3488a79fd2efc09e
+OC extruder 31
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 3521 3ff0000000000000 0000000000000000 0000000000000000 405fffffde7210bf 0000000000000000 3ff0000000000000 0000000000000000 405fffffde7210bf 0000000000000000 0000000000000000 3ff0000000000000 40299999a04f9640 1 0000000000000000 0000000000000000 0000000000000000
+V 0 43756265 0 - 6c65676163795f746f6b656e2e336d66 0 0 0000000000000000 0000000000000000 0000000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 0f4e3863dae426e3 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 - 0
+POI 2 0 3521
+PF - 3c6261636b75703e2f4d657461646174612f706c6174655f312e706e67 3c6261636b75703e2f4d657461646174612f706c6174655f6e6f5f6c696768745f312e706e67 3c6261636b75703e2f4d657461646174612f746f705f312e706e67 3c6261636b75703e2f4d657461646174612f7069636b5f312e706e67 -
+PS - - 0 0 0 0 - - -
+PMAP 1 1 | 0 | 0 | 0
+PCFG 3 6c883dbd4de51cbf
+PCK filament_map 31
+PCK filament_map_mode 4175746f20466f7220466c757368
+PCK filament_volume_map 30
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383
+FILE tests/fixtures/legacy_token_orca.3mf
+R 1 1 322e362e302e3531
+CFG 440 ac0877b380a64979
+MI - - - - - -
+MD 4170706c69636174696f6e 42616d627553747564696f2d30322e30362e30302e3531
+MD 42616d627553747564696f3a336d6656657273696f6e 31
+MD 436f70797269676874 -
+MD 4372656174696f6e44617465 -
+MD 4465736372697074696f6e -
+MD 44657369676e6572 -
+MD 44657369676e6572436f766572 -
+MD 44657369676e6572557365724964 -
+MD 4c6963656e7365 -
+MD 4d6f64696669636174696f6e44617465 -
+MD 4f726361536c69636572 322e342e302d616c706861
+MD 4f726967696e -
+MD 5468756d626e61696c5f4d6964646c65 2f4d657461646174612f706c6174655f312e706e67
+MD 5468756d626e61696c5f536d616c6c 2f4d657461646174612f706c6174655f315f736d616c6c2e706e67
+MD 5469746c65 -
+DI none
+PI - - - - - -
+OBJECTS 1
+O 0 637562652e73746c - 1 1 1 3488a79fd2efc09e
+OC extruder 31
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 27 3ff0000000000000 0000000000000000 0000000000000000 4060000000000000 0000000000000000 3ff0000000000000 0000000000000000 4060000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 637562652e73746c 0 - 637562652e73746c 0 0 4024000000000000 4024000000000000 4024000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 4024000000000000 0000000000000000 3ff0000000000000 0000000000000000 4024000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 e9aed5d571227f03 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 - 0
+POI 2 0 27
+PF - - - - - -
+PS - - 0 0 0 0 - - -
+PMAP 0 | 1 0 | 1 0 | 1 0
+PCFG 0 14650fb0739d0383
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383
+FILE tests/fixtures/legacy_token_snapmaker.3mf
+R 1 0 302e302e302e30
+CFG 0 14650fb0739d0383
+MI - - - - - -
+MD 4170706c69636174696f6e 536e61706d616b65725f4f7263612d322e342e31
+MD 436f70797269676874 -
+MD 4372656174696f6e44617465 -
+MD 4465736372697074696f6e -
+MD 44657369676e6572 -
+MD 44657369676e6572436f766572 -
+MD 44657369676e6572557365724964 -
+MD 4c6963656e7365 -
+MD 4d6f64696669636174696f6e44617465 -
+MD 4f726967696e -
+MD 536e61706d616b65725f4f7263613a336d6656657273696f6e 31
+MD 5469746c65 -
+DI none
+PI - - - - - -
+OBJECTS 1
+O 0 637562652e73746c - 1 1 1 3488a79fd2efc09e
+OC extruder 31
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 28 3ff0000000000000 0000000000000000 0000000000000000 4060f00000000000 0000000000000000 3ff0000000000000 0000000000000000 4061000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 637562652e73746c 0 - 637562652e73746c 0 0 4024000000000000 4024000000000000 4024000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 4024000000000000 0000000000000000 3ff0000000000000 0000000000000000 4024000000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 e9aed5d571227f03 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 - 0
+POI 2 0 28
+PF 3c6261636b75703e2f4d657461646174612f706c6174655f312e67636f6465 - - - - -
+PS - - 0 0 0 0 - - -
+PMAP 1 1 | 0 | 0 | 0
+PCFG 2 05eb9f69b1a5c862
+PCK filament_map 31
+PCK filament_map_mode 4175746f20466f7220466c757368
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383
+STORE store_zip64
+SR 1
+ARCHIVE 12
+ENTRY 3D/3dmodel.model 4304
+<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">
+ <metadata name="Application">BambuStudio-02.09.01.70</metadata>
+ <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <metadata name="Copyright"></metadata>
+ <metadata name="CreationDate">DATE</metadata>
+ <metadata name="Description">a description</metadata>
+ <metadata name="Designer">alice</metadata>
+ <metadata name="DesignerCover"></metadata>
+ <metadata name="DesignerUserId">42</metadata>
+ <metadata name="License">BY-SA</metadata>
+ <metadata name="ModificationDate">DATE</metadata>
+ <metadata name="Origin"></metadata>
+ <metadata name="ProfileCover"></metadata>
+ <metadata name="ProfileDescription"></metadata>
+ <metadata name="ProfileTitle"></metadata>
+ <metadata name="Title">Test &amp;amp; &amp;lt;model&amp;gt;</metadata>
+ <resources>
+  <object id="1" type="model">
+   <mesh>
+    <vertices>
+     <vertex x="5" y="5" z="-5"/>
+     <vertex x="5" y="-5" z="-5"/>
+     <vertex x="-5" y="-5" z="-5"/>
+     <vertex x="-5" y="5" z="-5"/>
+     <vertex x="5" y="5" z="5"/>
+     <vertex x="-5" y="5" z="5"/>
+     <vertex x="-5" y="-5" z="5"/>
+     <vertex x="5" y="-5" z="5"/>
+    </vertices>
+    <triangles>
+     <triangle v1="0" v2="1" v3="2" paint_color="8"/>
+     <triangle v1="0" v2="2" v3="3" paint_supports="4"/>
+     <triangle v1="4" v2="5" v3="6" paint_seam="8"/>
+     <triangle v1="4" v2="6" v3="7" paint_color="C"/>
+     <triangle v1="0" v2="4" v3="7"/>
+     <triangle v1="0" v2="7" v3="1"/>
+     <triangle v1="1" v2="7" v3="6"/>
+     <triangle v1="1" v2="6" v3="2"/>
+     <triangle v1="2" v2="6" v3="5"/>
+     <triangle v1="2" v2="5" v3="3"/>
+     <triangle v1="4" v2="0" v3="3"/>
+     <triangle v1="4" v2="3" v3="5"/>
+    </triangles>
+   </mesh>
+  </object>
+  <object id="2" type="model">
+   <components>
+    <component objectid="1" transform="1 0 0 0 1 0 0 0 1 5 5 5"/>
+   </components>
+  </object>
+  <object id="3" type="model">
+   <mesh>
+    <vertices>
+     <vertex x="2.5" y="3" z="-3.5"/>
+     <vertex x="2.5" y="-3" z="-3.5"/>
+     <vertex x="-2.5" y="-3" z="-3.5"/>
+     <vertex x="-2.5" y="3" z="-3.5"/>
+     <vertex x="2.5" y="3" z="3.5"/>
+     <vertex x="-2.5" y="3" z="3.5"/>
+     <vertex x="-2.5" y="-3" z="3.5"/>
+     <vertex x="2.5" y="-3" z="3.5"/>
+    </vertices>
+    <triangles>
+     <triangle v1="0" v2="1" v3="2"/>
+     <triangle v1="0" v2="2" v3="3"/>
+     <triangle v1="4" v2="5" v3="6"/>
+     <triangle v1="4" v2="6" v3="7"/>
+     <triangle v1="0" v2="4" v3="7"/>
+     <triangle v1="0" v2="7" v3="1"/>
+     <triangle v1="1" v2="7" v3="6"/>
+     <triangle v1="1" v2="6" v3="2"/>
+     <triangle v1="2" v2="6" v3="5"/>
+     <triangle v1="2" v2="5" v3="3"/>
+     <triangle v1="4" v2="0" v3="3"/>
+     <triangle v1="4" v2="3" v3="5"/>
+    </triangles>
+   </mesh>
+  </object>
+  <object id="4" type="other">
+   <mesh>
+    <vertices>
+     <vertex x="1" y="1" z="-1"/>
+     <vertex x="1" y="-1" z="-1"/>
+     <vertex x="-1" y="-1" z="-1"/>
+     <vertex x="-1" y="1" z="-1"/>
+     <vertex x="1" y="1" z="1"/>
+     <vertex x="-1" y="1" z="1"/>
+     <vertex x="-1" y="-1" z="1"/>
+     <vertex x="1" y="-1" z="1"/>
+    </vertices>
+    <triangles>
+     <triangle v1="0" v2="1" v3="2"/>
+     <triangle v1="0" v2="2" v3="3"/>
+     <triangle v1="4" v2="5" v3="6"/>
+     <triangle v1="4" v2="6" v3="7"/>
+     <triangle v1="0" v2="4" v3="7"/>
+     <triangle v1="0" v2="7" v3="1"/>
+     <triangle v1="1" v2="7" v3="6"/>
+     <triangle v1="1" v2="6" v3="2"/>
+     <triangle v1="2" v2="6" v3="5"/>
+     <triangle v1="2" v2="5" v3="3"/>
+     <triangle v1="4" v2="0" v3="3"/>
+     <triangle v1="4" v2="3" v3="5"/>
+    </triangles>
+   </mesh>
+  </object>
+  <object id="5" type="model">
+   <components>
+    <component objectid="3" transform="1 0 0 0 1 0 0 0 1 2.5 3 3.5"/>
+    <component objectid="4" transform="1 0 0 0 1 0 0 0 1 1.5 -0.5 2"/>
+   </components>
+  </object>
+ </resources>
+ <build>
+  <item objectid="2" transform="1 0 0 0 1 0 0 0 1 50 60 5" printable="1"/>
+  <item objectid="2" transform="0.877582562 0.479425539 0 -0.479425539 0.877582562 0 0 0 1 120 60 5" printable="1"/>
+  <item objectid="5" transform="1 0 0 0 1 0 0 0 1 100 100 0" printable="1"/>
+ </build>
+</model>
+
+@@END@@
+ENTRY Metadata/brim_ear_points.txt 118
+brim_points_format_version=1
+object_id=1|1.000000 2.000000 0.000000 0.500000 0 -3.250000 4.500000 0.000000 0.750000 0
+
+@@END@@
+ENTRY Metadata/custom_gcode_per_layer.xml 330
+<?xml version="1.0" encoding="utf-8"?>
+<custom_gcodes_per_layer>
+<plate>
+<plate_info id="1"/>
+<layer top_z="2.3999999999999999" type="0" extruder="1" color="#FF0000" extra="" gcode=""/>
+<layer top_z="5" type="4" extruder="1" color="" extra="G4 S1" gcode="G4 S1"/>
+<mode value="SingleExtruder"/>
+</plate>
+</custom_gcodes_per_layer>
+@@END@@
+ENTRY Metadata/cut_information.xml 219
+<?xml version="1.0" encoding="utf-8"?>
+<objects>
+ <object id="1">
+  <cut_id id="0" check_sum="1" connectors_cnt="0"/>
+ </object>
+ <object id="2">
+  <cut_id id="0" check_sum="1" connectors_cnt="0"/>
+ </object>
+</objects>
+@@END@@
+ENTRY Metadata/filament_sequence.json 78
+{"plate_1":{"nozzle_sequence":[0],"optimal_assignment":[],"sequence":[1,2,1]}}
+@@END@@
+ENTRY Metadata/layer_config_ranges.xml 175
+<?xml version="1.0" encoding="utf-8"?>
+<objects>
+ <object id="1">
+  <range min_z="2" max_z="4">
+   <option opt_key="layer_height">0.1</option>
+  </range>
+ </object>
+</objects>
+@@END@@
+ENTRY Metadata/layer_heights_profile.txt 49
+object_id=1|0.000000;0.200000;10.000000;0.200000
+
+@@END@@
+ENTRY Metadata/model_settings.config 2851
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="2">
+    <metadata key="name" value="cube_a"/>
+    <metadata key="extruder" value="1"/>
+    <metadata key="sparse_infill_density" value="25%"/>
+    <metadata face_count="12"/>
+    <part id="1" subtype="normal_part" uuid="UUID">
+      <metadata key="name" value="cube_a_part"/>
+      <metadata key="matrix" value="1 0 0 5 0 1 0 5 0 0 1 5 0 0 0 1"/>
+      <metadata key="extruder" value="2"/>
+      <mesh_stat face_count="12" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
+    </part>
+  </object>
+  <object id="5">
+    <metadata key="name" value="two &amp; parts"/>
+    <metadata key="module" value="mod"/>
+    <metadata key="extruder" value="2"/>
+    <metadata face_count="12"/>
+    <part id="3" subtype="normal_part" uuid="UUID">
+      <metadata key="name" value="part &quot;main&quot;"/>
+      <metadata key="matrix" value="1 0 0 2.5 0 1 0 3 0 0 1 3.5 0 0 0 1"/>
+      <metadata key="source_file" value="part.stl"/>
+      <metadata key="source_object_id" value="0"/>
+      <metadata key="source_volume_id" value="1"/>
+      <metadata key="source_offset_x" value="1"/>
+      <metadata key="source_offset_y" value="2"/>
+      <metadata key="source_offset_z" value="3"/>
+      <mesh_stat face_count="12" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
+    </part>
+    <part id="4" subtype="modifier_part">
+      <metadata key="name" value="modifier"/>
+      <metadata key="matrix" value="1 0 0 1.5 0 1 0 -0.5 0 0 1 2 0 0 0 1"/>
+      <metadata key="wall_loops" value="3"/>
+      <mesh_stat face_count="12" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
+    </part>
+  </object>
+  <plate>
+    <metadata key="plater_id" value="1"/>
+    <metadata key="plater_name" value="Plate One"/>
+    <metadata key="locked" value="false"/>
+    <metadata key="bed_type" value="High Temp Plate"/>
+    <metadata key="print_sequence" value="by object"/>
+    <metadata key="first_layer_print_sequence" value="1 2"/>
+    <metadata key="spiral_mode" value="false"/>
+    <metadata key="filament_map_mode" value="Manual"/>
+    <metadata key="filament_maps" value="1 2"/>
+    <model_instance>
+      <metadata key="object_id" value="2"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="@12"/>
+    </model_instance>
+    <model_instance>
+      <metadata key="object_id" value="2"/>
+      <metadata key="instance_id" value="1"/>
+      <metadata key="identify_id" value="@13"/>
+    </model_instance>
+    <model_instance>
+      <metadata key="object_id" value="5"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="@31"/>
+    </model_instance>
+  </plate>
+  <assemble>
+  </assemble>
+</config>
+
+@@END@@
+ENTRY Metadata/project_settings.config 26995
+{
+    "accel_to_decel_enable": "0",
+    "accel_to_decel_factor": "50%",
+    "activate_air_filtration": [
+        "0"
+    ],
+    "additional_cooling_fan_speed": [
+        "0"
+    ],
+    "additional_fan_full_speed_layer": [
+        "0"
+    ],
+    "alternate_extra_wall": "0",
+    "ams_filament_load_time_ams": "0",
+    "ams_filament_load_time_ams_lite": "0",
+    "ams_filament_load_time_n3f_s": "0",
+    "ams_filament_unload_time_ams": "0",
+    "ams_filament_unload_time_ams_lite": "0",
+    "ams_filament_unload_time_n3f_s": "0",
+    "ams_nozzle_idx": [
+        "0"
+    ],
+    "apply_scarf_seam_on_circles": "1",
+    "aux_fan_independent_control": "0",
+    "aux_fan_standard_side": "right",
+    "auxiliary_fan": "0",
+    "avoid_crossing_wall_includes_support": "0",
+    "bed_custom_model": "",
+    "bed_custom_texture": "",
+    "bed_exclude_area": [
+        "0x0"
+    ],
+    "bed_heat_soak_area": [],
+    "bed_temperature_formula": "by_first_filament",
+    "before_layer_change_gcode": "",
+    "best_object_pos": "0.5,0.5",
+    "bottom_color_penetration_layers": "3",
+    "bottom_shell_layers": "3",
+    "bottom_shell_thickness": "0",
+    "bottom_surface_density": "100%",
+    "bottom_surface_pattern": "zig-zag",
+    "bridge_angle": "0",
+    "bridge_flow": "1",
+    "bridge_no_support": "0",
+    "bridge_speed": [
+        "25"
+    ],
+    "brim_object_gap": "0",
+    "brim_type": "auto_brim",
+    "brim_width": "0",
+    "chamber_temperatures": [
+        "0"
+    ],
+    "change_filament_gcode": "",
+    "circle_compensation_manual_offset": "0",
+    "circle_compensation_speed": [
+        "200"
+    ],
+    "close_additional_fan_first_x_layers": [
+        "1"
+    ],
+    "close_fan_the_first_x_layers": [
+        "1"
+    ],
+    "close_optional_fan_first_x_layers": [
+        "1"
+    ],
+    "complete_print_exhaust_fan_speed": [
+        "80"
+    ],
+    "conformal_hub_radius": "0",
+    "conformal_infill": "0",
+    "conformal_link_flip_layers": "0",
+    "conformal_link_keep_layers": "1",
+    "conformal_pole": "layer",
+    "conformal_ray_count": "0",
+    "conformal_stagger": "none",
+    "cool_plate_temp": [
+        "35"
+    ],
+    "cool_plate_temp_initial_layer": [
+        "35"
+    ],
+    "cooling_filter_enabled": "0",
+    "cooling_perimeter_transition_distance": [
+        "10"
+    ],
+    "cooling_slowdown_logic": [
+        "uniform_cooling"
+    ],
+    "counter_coef_1": [
+        "0"
+    ],
+    "counter_coef_2": [
+        "0.025"
+    ],
+    "counter_coef_3": [
+        "-0.11"
+    ],
+    "counter_limit_max": [
+        "0.05"
+    ],
+    "counter_limit_min": [
+        "-0.04"
+    ],
+    "counterbore_hole_bridging": "none",
+    "curr_bed_type": "Cool Plate",
+    "default_acceleration": [
+        "500"
+    ],
+    "default_ams_type": "-1",
+    "default_filament_colour": [
+        ""
+    ],
+    "default_jerk": "0",
+    "default_wipe_tower_pos": "0.644,0.977",
+    "deretraction_speed": [
+        "0"
+    ],
+    "detect_floating_vertical_shell": "1",
+    "detect_narrow_internal_solid_infill": "1",
+    "detect_overhang_wall": "1",
+    "detect_thin_wall": "0",
+    "diameter_limit": [
+        "50"
+    ],
+    "draft_shield": "disabled",
+    "during_print_exhaust_fan_speed": [
+        "60"
+    ],
+    "elefant_foot_compensation": "0",
+    "embedding_wall_into_infill": "0",
+    "enable_arc_fitting": "0",
+    "enable_circle_compensation": "0",
+    "enable_filament_dynamic_map": "0",
+    "enable_height_slowdown": [
+        "0"
+    ],
+    "enable_long_retraction_when_cut": "0",
+    "enable_mixed_color_sublayer": "0",
+    "enable_order_independent_overlap_carving": "0",
+    "enable_overhang_bridge_fan": [
+        "1"
+    ],
+    "enable_overhang_speed": [
+        "1"
+    ],
+    "enable_pre_heating": "0",
+    "enable_pressure_advance": [
+        "0"
+    ],
+    "enable_prime_tower": "0",
+    "enable_support": "0",
+    "enable_support_ironing": "0",
+    "enable_tower_interface_features": "0",
+    "enable_wrapping_detection": "0",
+    "enforce_support_layers": "0",
+    "eng_plate_temp": [
+        "45"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "45"
+    ],
+    "ensure_vertical_shell_thickness": "enabled",
+    "exclude_object": "1",
+    "extruder_ams_count": [],
+    "extruder_clearance_dist_to_rod": "40",
+    "extruder_clearance_height_to_lid": "120",
+    "extruder_clearance_height_to_rod": "40",
+    "extruder_clearance_max_radius": "68",
+    "extruder_colour": [
+        ""
+    ],
+    "extruder_max_nozzle_count": [
+        "1"
+    ],
+    "extruder_nozzle_count": [
+        "1"
+    ],
+    "extruder_nozzle_diameter": [
+        "0.4"
+    ],
+    "extruder_nozzle_slot": [],
+    "extruder_nozzle_stats": [],
+    "extruder_nozzle_volume_type": [
+        "Standard"
+    ],
+    "extruder_offset": [
+        "0x0"
+    ],
+    "extruder_printable_area": [],
+    "extruder_printable_height": [
+        "0"
+    ],
+    "extruder_type": [
+        "Direct Drive"
+    ],
+    "fan_cooling_layer_time": [
+        "60"
+    ],
+    "fan_direction": "undefine",
+    "fan_max_speed": [
+        "100"
+    ],
+    "fan_min_speed": [
+        "20"
+    ],
+    "farthest_point_timelapse": "0",
+    "filament_adaptive_volumetric_speed": [
+        "0"
+    ],
+    "filament_adhesiveness_category": [
+        "0"
+    ],
+    "filament_bridge_speed": [
+        "25"
+    ],
+    "filament_change_length": [
+        "10"
+    ],
+    "filament_change_length_nc": [
+        "10"
+    ],
+    "filament_colour": [
+        "#00AE42"
+    ],
+    "filament_cooling_before_tower": [
+        "10"
+    ],
+    "filament_cost": [
+        "0"
+    ],
+    "filament_density": [
+        "0"
+    ],
+    "filament_dev_ams_drying_ams_limitations": [
+        ""
+    ],
+    "filament_dev_ams_drying_heat_distortion_temperature": [
+        "0"
+    ],
+    "filament_dev_ams_drying_temperature": [
+        "0"
+    ],
+    "filament_dev_ams_drying_time": [
+        "0"
+    ],
+    "filament_dev_chamber_drying_bed_temperature": [
+        "0"
+    ],
+    "filament_dev_chamber_drying_time": [
+        "0"
+    ],
+    "filament_dev_drying_cooling_temperature": [
+        "0"
+    ],
+    "filament_dev_drying_softening_temperature": [
+        "0"
+    ],
+    "filament_diameter": [
+        "1.75"
+    ],
+    "filament_diameter_map": [],
+    "filament_enable_overhang_speed": [
+        "1"
+    ],
+    "filament_end_gcode": [
+        " "
+    ],
+    "filament_extruder_compatibility": [
+        "0"
+    ],
+    "filament_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "filament_flow_ratio": [
+        "1"
+    ],
+    "filament_flush_temp": [
+        "0"
+    ],
+    "filament_flush_temp_fast": [
+        "0"
+    ],
+    "filament_flush_volumetric_speed": [
+        "0"
+    ],
+    "filament_idle_travel_cooling_enabled": [
+        "1"
+    ],
+    "filament_ids": [],
+    "filament_is_mixed": [
+        "0"
+    ],
+    "filament_is_support": [
+        "0"
+    ],
+    "filament_map": [
+        "1"
+    ],
+    "filament_map_2": [
+        "1"
+    ],
+    "filament_map_mode": "Auto For Flush",
+    "filament_max_volumetric_speed": [
+        "2"
+    ],
+    "filament_metal_stickiness": [
+        "None"
+    ],
+    "filament_minimal_purge_on_wipe_tower": [
+        "15"
+    ],
+    "filament_mixed_components": [
+        ""
+    ],
+    "filament_mixed_gradient": [
+        "0"
+    ],
+    "filament_mixed_gradient_curve": [
+        ""
+    ],
+    "filament_mixed_gradient_per_part": [
+        "0"
+    ],
+    "filament_mixed_gradient_range": [
+        ""
+    ],
+    "filament_mixed_sublayer_ratios": [
+        ""
+    ],
+    "filament_notes": "",
+    "filament_nozzle_map": [
+        "1"
+    ],
+    "filament_overhang_1_4_speed": [
+        "0"
+    ],
+    "filament_overhang_2_4_speed": [
+        "0"
+    ],
+    "filament_overhang_3_4_speed": [
+        "0"
+    ],
+    "filament_overhang_4_4_speed": [
+        "0"
+    ],
+    "filament_overhang_totally_speed": [
+        "10"
+    ],
+    "filament_pre_cooling_temperature": [
+        "0"
+    ],
+    "filament_pre_cooling_temperature_nc": [
+        "0"
+    ],
+    "filament_pre_heating_enabled": [
+        "1"
+    ],
+    "filament_preheat_temperature_delta": [
+        "0"
+    ],
+    "filament_prime_tower_speed_factor_curve": [
+        ""
+    ],
+    "filament_prime_volume": [
+        "45"
+    ],
+    "filament_prime_volume_nc": [
+        "60"
+    ],
+    "filament_printable": [
+        "3"
+    ],
+    "filament_ramming_travel_time": [
+        "0"
+    ],
+    "filament_ramming_travel_time_nc": [
+        "0"
+    ],
+    "filament_ramming_volumetric_speed": [
+        "-1"
+    ],
+    "filament_ramming_volumetric_speed_nc": [
+        "-1"
+    ],
+    "filament_retract_length_nc": [
+        "10"
+    ],
+    "filament_retract_length_toolchange": [
+        "nil"
+    ],
+    "filament_retract_restart_extra_toolchange": [
+        "nil"
+    ],
+    "filament_scarf_gap": [
+        "0"
+    ],
+    "filament_scarf_height": [
+        "10%"
+    ],
+    "filament_scarf_length": [
+        "10"
+    ],
+    "filament_scarf_seam_type": [
+        "none"
+    ],
+    "filament_self_index": [
+        "1"
+    ],
+    "filament_shrink": [
+        "100%"
+    ],
+    "filament_soluble": [
+        "0"
+    ],
+    "filament_start_gcode": [
+        " "
+    ],
+    "filament_tower_interface_pre_extrusion_dist": [
+        "10"
+    ],
+    "filament_tower_interface_pre_extrusion_length": [
+        "0"
+    ],
+    "filament_tower_interface_print_temp": [
+        "-1"
+    ],
+    "filament_tower_interface_purge_volume": [
+        "20"
+    ],
+    "filament_tower_ironing_area": [
+        "4"
+    ],
+    "filament_type": [
+        "PLA"
+    ],
+    "filament_velocity_adaptation_factor": [
+        "1"
+    ],
+    "filament_vendor": [
+        "(Undefined)"
+    ],
+    "filament_volume_map": [
+        "0"
+    ],
+    "filename_format": "[input_filename_base].gcode",
+    "fill_multiline": "1",
+    "filter_out_gap_fill": "0",
+    "fins_extrude_safe_temp": [
+        "0"
+    ],
+    "first_layer_print_sequence": [
+        "0"
+    ],
+    "first_x_layer_fan_speed": [
+        "0"
+    ],
+    "first_x_layer_optional_fan_speed": [
+        "0"
+    ],
+    "first_x_layer_part_fan_speed": [
+        "0"
+    ],
+    "flush_into_infill": "0",
+    "flush_into_objects": "0",
+    "flush_into_support": "1",
+    "flush_multiplier": [
+        "1"
+    ],
+    "flush_multiplier_fast": [
+        "1.2"
+    ],
+    "flush_volumes_matrix": [
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0"
+    ],
+    "flush_volumes_vector": [
+        "140",
+        "140",
+        "140",
+        "140",
+        "140",
+        "140",
+        "140",
+        "140"
+    ],
+    "from": "project",
+    "full_fan_speed_layer": [
+        "0"
+    ],
+    "fuzzy_skin": "none",
+    "fuzzy_skin_first_layer": "0",
+    "fuzzy_skin_mode": "displacement",
+    "fuzzy_skin_noise_type": "classic",
+    "fuzzy_skin_octaves": "4",
+    "fuzzy_skin_persistence": "0.5",
+    "fuzzy_skin_point_distance": "0.8",
+    "fuzzy_skin_scale": "1",
+    "fuzzy_skin_thickness": "0.3",
+    "gap_infill_speed": [
+        "30"
+    ],
+    "gcode_add_line_number": "0",
+    "gcode_flavor": "marlin",
+    "grab_length": [
+        "0"
+    ],
+    "group_algo_with_time": "0",
+    "handle_hotend_as_extruder": "0",
+    "has_filament_switcher": "0",
+    "has_scarf_joint_seam": "0",
+    "head_wrap_detect_zone": [],
+    "hole_coef_1": [
+        "0"
+    ],
+    "hole_coef_2": [
+        "-0.025"
+    ],
+    "hole_coef_3": [
+        "0.28"
+    ],
+    "hole_limit_max": [
+        "0.25"
+    ],
+    "hole_limit_min": [
+        "0.08"
+    ],
+    "hot_plate_temp": [
+        "45"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "45"
+    ],
+    "hotend_cooling_rate": [
+        "2"
+    ],
+    "hotend_cooling_rate_on_rack": [
+        "2"
+    ],
+    "hotend_heating_rate": [
+        "2"
+    ],
+    "impact_strength_z": [
+        "0"
+    ],
+    "independent_support_layer_height": "1",
+    "infill_combination": "0",
+    "infill_direction": "45",
+    "infill_instead_top_bottom_surfaces": "0",
+    "infill_jerk": "9",
+    "infill_lock_depth": "1",
+    "infill_rotate_step": "0",
+    "infill_shift_step": "0.4",
+    "infill_wall_overlap": "15%",
+    "initial_layer_acceleration": [
+        "300"
+    ],
+    "initial_layer_flow_ratio": "1",
+    "initial_layer_infill_line_width": "0",
+    "initial_layer_infill_speed": [
+        "60"
+    ],
+    "initial_layer_jerk": "9",
+    "initial_layer_line_width": "0.4",
+    "initial_layer_print_height": "0.2",
+    "initial_layer_speed": [
+        "30"
+    ],
+    "initial_layer_travel_acceleration": [
+        "500"
+    ],
+    "inner_wall_acceleration": [
+        "0"
+    ],
+    "inner_wall_jerk": "9",
+    "inner_wall_line_width": "0.4",
+    "inner_wall_speed": [
+        "60"
+    ],
+    "interface_shells": "0",
+    "interlocking_beam": "0",
+    "interlocking_beam_layer_count": "2",
+    "interlocking_beam_width": "0.8",
+    "interlocking_boundary_avoidance": "2",
+    "interlocking_depth": "2",
+    "interlocking_orientation": "22.5",
+    "internal_bridge_support_thickness": "0",
+    "internal_solid_infill_line_width": "0.4",
+    "internal_solid_infill_pattern": "zig-zag",
+    "internal_solid_infill_speed": [
+        "100"
+    ],
+    "ironing_direction": "45",
+    "ironing_fan_speed": [
+        "-1"
+    ],
+    "ironing_flow": "10%",
+    "ironing_inset": "0",
+    "ironing_pattern": "zig-zag",
+    "ironing_spacing": "0.1",
+    "ironing_speed": "20",
+    "ironing_type": "no ironing",
+    "is_infill_first": "0",
+    "layer_change_gcode": "",
+    "layer_height": "0.2",
+    "line_width": "0.4",
+    "locked_skeleton_infill_pattern": "zigzag",
+    "locked_skin_infill_pattern": "crosszag",
+    "long_retractions_when_cut": [
+        "0"
+    ],
+    "long_retractions_when_ec": [
+        "0"
+    ],
+    "machine_bed_mass_Y": "0",
+    "machine_end_gcode": "M104 S0 ; turn off temperature\nG28 X0  ; home X axis\nM84     ; disable motors\n",
+    "machine_hotend_change_time": "0",
+    "machine_load_filament_time": "0",
+    "machine_max_acceleration_e": [
+        "5000",
+        "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+        "1500",
+        "1250"
+    ],
+    "machine_max_acceleration_retracting": [
+        "1500",
+        "1250"
+    ],
+    "machine_max_acceleration_travel": [
+        "1500",
+        "1250"
+    ],
+    "machine_max_acceleration_x": [
+        "1000",
+        "1000"
+    ],
+    "machine_max_acceleration_y": [
+        "1000",
+        "1000"
+    ],
+    "machine_max_acceleration_z": [
+        "500",
+        "200"
+    ],
+    "machine_max_force_Y": "0",
+    "machine_max_jerk_e": [
+        "2.5",
+        "2.5"
+    ],
+    "machine_max_jerk_x": [
+        "10",
+        "10"
+    ],
+    "machine_max_jerk_y": [
+        "10",
+        "10"
+    ],
+    "machine_max_jerk_z": [
+        "0.2",
+        "0.4"
+    ],
+    "machine_max_printed_mass": "0",
+    "machine_max_speed_e": [
+        "120",
+        "120"
+    ],
+    "machine_max_speed_x": [
+        "500",
+        "200"
+    ],
+    "machine_max_speed_y": [
+        "500",
+        "200"
+    ],
+    "machine_max_speed_z": [
+        "12",
+        "12"
+    ],
+    "machine_min_extruding_rate": [
+        "0",
+        "0"
+    ],
+    "machine_min_travel_rate": [
+        "0",
+        "0"
+    ],
+    "machine_pause_gcode": "",
+    "machine_prepare_compensation_time": "260",
+    "machine_start_gcode": "G28 ; home all axes\nG1 Z5 F5000 ; lift nozzle\n",
+    "machine_switch_extruder_time": "5",
+    "machine_unload_filament_time": "0",
+    "master_extruder_id": "1",
+    "max_bridge_length": "10",
+    "max_layer_height": [
+        "0"
+    ],
+    "max_travel_detour_distance": "0",
+    "min_bead_width": "85%",
+    "min_feature_size": "25%",
+    "min_layer_height": [
+        "0.07"
+    ],
+    "min_temperature_when_ec": [
+        "-1"
+    ],
+    "minimum_sparse_infill_area": "15",
+    "mmu_segmented_region_interlocking_depth": "0",
+    "mmu_segmented_region_max_width": "0",
+    "modifier_ignore_infill": "0",
+    "monotonic_travel_into_wall": "0%",
+    "name": "project_settings",
+    "no_slow_down_for_cooling_on_outwalls": [
+        "0"
+    ],
+    "nozzle_diameter": [
+        "0.4"
+    ],
+    "nozzle_flush_dataset": [
+        "0"
+    ],
+    "nozzle_height": "4",
+    "nozzle_temperature": [
+        "200"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "200"
+    ],
+    "nozzle_temperature_range_high": [
+        "240"
+    ],
+    "nozzle_temperature_range_low": [
+        "190"
+    ],
+    "nozzle_volume": [
+        "0"
+    ],
+    "nozzle_volume_type": [
+        "Standard"
+    ],
+    "only_one_wall_first_layer": "0",
+    "ooze_prevention": "0",
+    "optional_cooling_fan_speed": [
+        "0"
+    ],
+    "optional_fan_full_speed_layer": [
+        "0"
+    ],
+    "other_layers_print_sequence": [
+        "0"
+    ],
+    "other_layers_print_sequence_nums": "0",
+    "outer_wall_acceleration": [
+        "500"
+    ],
+    "outer_wall_jerk": "9",
+    "outer_wall_line_width": "0",
+    "outer_wall_speed": [
+        "60"
+    ],
+    "overhang_1_4_speed": [
+        "0"
+    ],
+    "overhang_2_4_speed": [
+        "0"
+    ],
+    "overhang_3_4_speed": [
+        "0"
+    ],
+    "overhang_4_4_speed": [
+        "0"
+    ],
+    "overhang_fan_speed": [
+        "100"
+    ],
+    "overhang_fan_threshold": [
+        "95%"
+    ],
+    "overhang_threshold_participating_cooling": [
+        "95%"
+    ],
+    "overhang_totally_speed": [
+        "10"
+    ],
+    "override_filament_scarf_seam_setting": "0",
+    "override_process_overhang_speed": [
+        "0"
+    ],
+    "periodic_modifier": "0",
+    "periodic_modifier_apply_layers": "1",
+    "periodic_modifier_skip_layers": "1",
+    "physical_extruder_map": [
+        "0"
+    ],
+    "post_process": [],
+    "pre_start_fan_time": [
+        "0"
+    ],
+    "precise_outer_wall": "0",
+    "precise_z_height": "0",
+    "pressure_advance": [
+        "0.02"
+    ],
+    "prime_tower_acceleration": "0",
+    "prime_tower_brim_width": "3",
+    "prime_tower_enable_framework": "0",
+    "prime_tower_extra_rib_length": "0",
+    "prime_tower_feedrate_factor": "1",
+    "prime_tower_fillet_wall": "1",
+    "prime_tower_flat_ironing": "0",
+    "prime_tower_infill_gap": "150%",
+    "prime_tower_ironing_speed": "10",
+    "prime_tower_lift_height": "-1",
+    "prime_tower_lift_speed": "90",
+    "prime_tower_line_ironing": "1",
+    "prime_tower_line_width": "0",
+    "prime_tower_max_speed": "90",
+    "prime_tower_ramming_line_width": "0",
+    "prime_tower_rib_wall": "1",
+    "prime_tower_rib_width": "8",
+    "prime_tower_side_scrape": "0",
+    "prime_tower_side_scrape_along_length": "2",
+    "prime_tower_side_scrape_face": "front_back",
+    "prime_tower_side_scrape_height": "1.5",
+    "prime_tower_side_scrape_length": "2",
+    "prime_tower_side_scrape_point_spacing": "1",
+    "prime_tower_side_scrape_speed": "1400",
+    "prime_tower_side_scrape_wall_gap": "0.2",
+    "prime_tower_skip_points": "1",
+    "prime_tower_tail_slowdown_volume": "10",
+    "prime_tower_tail_speed_factor": "100%",
+    "prime_tower_width": "35",
+    "prime_tower_wipe_distance": "0",
+    "prime_tower_wipe_speed": "0",
+    "prime_volume_mode": "Default",
+    "print_extruder_id": [
+        "1"
+    ],
+    "print_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "print_flow_ratio": "1",
+    "print_in_clockwise": "0",
+    "print_sequence": "by layer",
+    "printable_area": [
+        "0x0",
+        "200x0",
+        "200x200",
+        "0x200"
+    ],
+    "printable_height": "100",
+    "printer_extruder_id": [
+        "1"
+    ],
+    "printer_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "printer_model": "",
+    "printer_notes": "",
+    "printer_structure": "undefine",
+    "printing_by_object_gcode": "",
+    "process_notes": "",
+    "raft_contact_distance": "0.1",
+    "raft_expansion": "1.5",
+    "raft_first_layer_density": "90%",
+    "raft_first_layer_expansion": "-1",
+    "raft_layers": "0",
+    "reduce_crossing_wall": "0",
+    "reduce_fan_stop_start_freq": [
+        "0"
+    ],
+    "reduce_infill_retraction_mode": "Auto",
+    "required_nozzle_HRC": [
+        "0"
+    ],
+    "resolution": "0.01",
+    "retract_before_wipe": [
+        "100%"
+    ],
+    "retract_length_toolchange": [
+        "10"
+    ],
+    "retract_lift_above": [
+        "0"
+    ],
+    "retract_lift_below": [
+        "0"
+    ],
+    "retract_restart_extra": [
+        "0"
+    ],
+    "retract_restart_extra_toolchange": [
+        "0"
+    ],
+    "retract_when_changing_layer": [
+        "0"
+    ],
+    "retraction_distances_when_cut": [
+        "18"
+    ],
+    "retraction_distances_when_ec": [
+        "10"
+    ],
+    "retraction_length": [
+        "0.8"
+    ],
+    "retraction_minimum_travel": [
+        "2"
+    ],
+    "retraction_speed": [
+        "30"
+    ],
+    "role_base_wipe_speed": "1",
+    "scan_first_layer": "0",
+    "scarf_angle_threshold": "155",
+    "seam_gap": "15%",
+    "seam_placement_away_from_overhangs": "0",
+    "seam_position": "aligned",
+    "seam_slope_conditional": "1",
+    "seam_slope_entire_loop": "0",
+    "seam_slope_gap": "0",
+    "seam_slope_inner_walls": "1",
+    "seam_slope_min_length": "10",
+    "seam_slope_start_height": "10%",
+    "seam_slope_steps": "10",
+    "seam_slope_type": "none",
+    "silent_mode": "0",
+    "single_extruder_multi_material": "0",
+    "skeleton_infill_density": "15%",
+    "skeleton_infill_line_width": "0.4",
+    "skin_infill_density": "15%",
+    "skin_infill_depth": "2",
+    "skin_infill_line_width": "0.4",
+    "skirt_distance": "2",
+    "skirt_height": "1",
+    "skirt_loops": "1",
+    "skirt_per_object": "1",
+    "slice_closing_radius": "0.049",
+    "slicing_mode": "regular",
+    "slow_down_for_layer_cooling": [
+        "1"
+    ],
+    "slow_down_layer_time": [
+        "5"
+    ],
+    "slow_down_min_speed": [
+        "10"
+    ],
+    "slowdown_end_acc": [
+        "100000"
+    ],
+    "slowdown_end_height": [
+        "400"
+    ],
+    "slowdown_end_speed": [
+        "1000"
+    ],
+    "slowdown_start_acc": [
+        "100000"
+    ],
+    "slowdown_start_height": [
+        "0"
+    ],
+    "slowdown_start_speed": [
+        "1000"
+    ],
+    "small_perimeter_speed": [
+        "50%"
+    ],
+    "small_perimeter_threshold": [
+        "0"
+    ],
+    "smooth_coefficient": "80",
+    "smooth_speed_discontinuity_area": "1",
+    "solid_infill_filament": "0",
+    "sparse_infill_acceleration": [
+        "100%"
+    ],
+    "sparse_infill_anchor": "400%",
+    "sparse_infill_anchor_max": "20",
+    "sparse_infill_density": "20%",
+    "sparse_infill_filament": "0",
+    "sparse_infill_lattice_angle_1": "-45",
+    "sparse_infill_lattice_angle_2": "45",
+    "sparse_infill_line_width": "0.4",
+    "sparse_infill_pattern": "cubic",
+    "sparse_infill_speed": [
+        "100"
+    ],
+    "spiral_mode": "0",
+    "spiral_mode_max_xy_smoothing": "200%",
+    "spiral_mode_smooth": "0",
+    "standby_temperature_delta": "-5",
+    "start_end_points": [
+        "30x-3",
+        "54x245"
+    ],
+    "sub_top_surface_pattern": "monotonic",
+    "supertack_plate_temp": [
+        "35"
+    ],
+    "supertack_plate_temp_initial_layer": [
+        "35"
+    ],
+    "support_air_filtration": "0",
+    "support_angle": "0",
+    "support_base_pattern": "default",
+    "support_base_pattern_spacing": "2.5",
+    "support_bottom_interface_spacing": "0.5",
+    "support_bottom_z_distance": "0.2",
+    "support_chamber_temp_control": "0",
+    "support_cooling_filter": "0",
+    "support_critical_regions_only": "0",
+    "support_expansion": "0",
+    "support_fast_purge_mode": "0",
+    "support_filament": "0",
+    "support_interface_bottom_layers": "0",
+    "support_interface_filament": "0",
+    "support_interface_loop_pattern": "0",
+    "support_interface_not_for_body": "1",
+    "support_interface_pattern": "auto",
+    "support_interface_spacing": "0.5",
+    "support_interface_speed": [
+        "80"
+    ],
+    "support_interface_top_layers": "3",
+    "support_ironing_direction": "0",
+    "support_ironing_flow": "10%",
+    "support_ironing_inset": "0",
+    "support_ironing_pattern": "zig-zag",
+    "support_ironing_spacing": "0.1",
+    "support_ironing_speed": "20",
+    "support_line_width": "0.4",
+    "support_object_first_layer_gap": "0.2",
+    "support_object_skip_flush": "0",
+    "support_object_xy_distance": "0.35",
+    "support_on_build_plate_only": "0",
+    "support_remove_small_overhang": "1",
+    "support_speed": [
+        "80"
+    ],
+    "support_style": "default",
+    "support_threshold_angle": "30",
+    "support_top_z_distance": "0.2",
+    "support_type": "normal(auto)",
+    "symmetric_infill_y_axis": "0",
+    "sync_auxiliary_fan_to_second_fan": "0",
+    "temperature_vitrification": [
+        "100"
+    ],
+    "template_custom_gcode": "",
+    "textured_plate_temp": [
+        "45"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "45"
+    ],
+    "thick_bridges": "0",
+    "thumbnail_size": [
+        "50x50"
+    ],
+    "time_lapse_gcode": "",
+    "timelapse_type": "0",
+    "top_area_threshold": "200%",
+    "top_color_penetration_layers": "4",
+    "top_one_wall_type": "all top",
+    "top_shell_layers": "4",
+    "top_shell_thickness": "0.6",
+    "top_solid_infill_flow_ratio": [
+        "1"
+    ],
+    "top_surface_acceleration": [
+        "500"
+    ],
+    "top_surface_density": "100%",
+    "top_surface_jerk": "9",
+    "top_surface_line_width": "0.4",
+    "top_surface_pattern": "zig-zag",
+    "top_surface_speed": [
+        "100"
+    ],
+    "top_z_overrides_xy_distance": "0",
+    "travel_acceleration": [
+        "500"
+    ],
+    "travel_jerk": "9",
+    "travel_short_distance_acceleration": [
+        "250"
+    ],
+    "travel_speed": [
+        "120"
+    ],
+    "travel_speed_z": [
+        "0"
+    ],
+    "tree_support_branch_angle": "40",
+    "tree_support_branch_diameter": "5",
+    "tree_support_branch_diameter_angle": "5",
+    "tree_support_branch_distance": "5",
+    "tree_support_tip_diameter": "0.8",
+    "tree_support_wall_count": "-1",
+    "use_firmware_retraction": "0",
+    "use_relative_e_distances": "1",
+    "version": "02.09.01.70",
+    "vertical_shell_speed": [
+        "80%"
+    ],
+    "volumetric_speed_coefficients": [
+        ""
+    ],
+    "wall_distribution_count": "1",
+    "wall_filament": "0",
+    "wall_generator": "arachne",
+    "wall_loops": "2",
+    "wall_sequence": "inner wall/outer wall",
+    "wall_transition_angle": "10",
+    "wall_transition_filter_deviation": "25%",
+    "wall_transition_length": "100%",
+    "wipe": [
+        "0"
+    ],
+    "wipe_distance": [
+        "2"
+    ],
+    "wipe_speed": "80%",
+    "wipe_tower_no_sparse_layers": "0",
+    "wipe_tower_rotation_angle": "0",
+    "wipe_tower_x": [
+        "15"
+    ],
+    "wipe_tower_y": [
+        "220"
+    ],
+    "wrapping_detection_gcode": "",
+    "wrapping_detection_layers": "20",
+    "wrapping_exclude_area": [],
+    "xy_contour_compensation": "0",
+    "xy_hole_compensation": "0",
+    "z_direction_outwall_speed_continuous": "0",
+    "z_hop": [
+        "0.4"
+    ],
+    "z_hop_types": [
+        "Spiral Lift"
+    ]
+}
+
+@@END@@
+ENTRY Metadata/slice_info.config 1676
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <header>
+    <header_item key="X-BBL-Client-Type" value="slicer"/>
+    <header_item key="X-BBL-Client-Version" value="02.09.01.70"/>
+  </header>
+  <plate>
+    <metadata key="index" value="1"/>
+    <metadata key="extruder_type" value="0"/>
+    <metadata key="nozzle_volume_type" value="0"/>
+    <metadata key="printer_model_id" value=""/>
+    <metadata key="nozzle_diameters" value="0.4"/>
+    <metadata key="timelapse_type" value="0"/>
+    <metadata key="prediction" value="1234"/>
+    <metadata key="weight" value="5.67"/>
+    <metadata key="pause_count" value="0"/>
+    <metadata key="first_layer_time" value="88"/>
+    <metadata key="outside" value="false"/>
+    <metadata key="support_used" value="false"/>
+    <metadata key="label_object_enabled" value="false"/>
+    <metadata key="support_material_on_wipe_tower" value="false"/>
+    <metadata key="enable_filament_dynamic_map" value="false"/>
+    <metadata key="has_filament_switcher" value="false"/>
+    <metadata key="multi_nozzle_diameter_mode" value="0"/>
+    <metadata key="filament_maps" value="1"/>
+    <object identify_id="@12" name="cube_a" skipped="false" />
+    <object identify_id="@13" name="cube_a" skipped="false" />
+    <object identify_id="@31" name="two &amp; parts" skipped="false" />
+    <filament id="1" tray_info_idx="GFL99" type="PLA" color="#FFFFFF" used_m="1.23" used_g="3.21" group_id="0" nozzle_diameter="0.40" volume_type="Standard" used_for_object="true" used_for_support="false" directly_used="true" total_load_time="0.00" total_unload_time="0.00"/>
+    <warning msg="test_warning" level="1" error_code ="1000C001"  />
+  </plate>
+</config>
+
+@@END@@
+ENTRY [Content_Types].xml 432
+<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+ <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+ <Default Extension="png" ContentType="image/png"/>
+ <Default Extension="gcode" ContentType="text/x.gcode"/>
+</Types>
+@@END@@
+ENTRY _rels/.rels 673
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+ <Relationship Target="/Metadata/plate_1.png" Id="rel-2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"/>
+ <Relationship Target="/Metadata/plate_1.png" Id="rel-4" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-middle"/>
+<Relationship Target="/Metadata/plate_1_small.png" Id="rel-5" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-small"/>
+</Relationships>
+@@END@@
+FILE store_zip64 reload
+R 1 1 322e392e312e3730
+CFG 602 fcb1b5f729cd02d2
+MI 546573742026203c6d6f64656c3e - 61206465736372697074696f6e 42592d5341 - -
+MD 4170706c69636174696f6e 42616d627553747564696f2d30322e30392e30312e3730
+MD 42616d627553747564696f3a336d6656657273696f6e 31
+MD 436f70797269676874 -
+MD 4372656174696f6e44617465 323032362d31312d3136
+MD 4465736372697074696f6e 61206465736372697074696f6e
+MD 44657369676e6572 616c696365
+MD 44657369676e6572436f766572 -
+MD 44657369676e6572557365724964 3432
+MD 4c6963656e7365 42592d5341
+MD 4d6f64696669636174696f6e44617465 323032362d31312d3136
+MD 4f726967696e -
+MD 50726f66696c65436f766572 -
+MD 50726f66696c654465736372697074696f6e -
+MD 50726f66696c655469746c65 -
+MD 5468756d626e61696c5f4d6964646c65 2f4d657461646174612f706c6174655f312e706e67
+MD 5468756d626e61696c5f536d616c6c 2f4d657461646174612f706c6174655f315f736d616c6c2e706e67
+MD 5469746c65 546573742026203c6d6f64656c3e
+DI 616c696365 3432 -
+PI - - - - - -
+OBJECTS 2
+O 0 637562655f61 - 2 1 2 c1d69afb5b32b137
+OC extruder 31
+OC sparse_infill_density 323525
+LHP 0
+LCR 4000000000000000 4010000000000000 1 05961fc08e31bb60
+BP 2 3f800000 40000000 00000000 3f000000 0 c0500000 40900000 00000000 3f400000 0
+CUT 0 1 0
+I 0 1 @12 3ff0000000000000 0000000000000000 0000000000000000 404b800000000000 0000000000000000 3ff0000000000000 0000000000000000 4050400000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+I 1 1 0 3fec1528066a8e7a bfdeaee874b7d1ad 0000000000000000 405e7f6905f89278 3fdeaee874b7d1ad 3fec1528066a8e7a 0000000000000000 4050b23e1a87c0a9 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 637562655f615f70617274 0 3c677569643e 73746f72655f7a697036342e336d66 0 0 0000000000000000 0000000000000000 0000000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 4014000000000000 0000000000000000 3ff0000000000000 0000000000000000 4014000000000000 0000000000000000 0000000000000000 3ff0000000000000 4014000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 98eb0db7512f91b3 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 1 4 0ccec18f26ade844 1 4 03af08eb59ae86bb 2 8 6bd9098c3225c0a1 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+O 1 74776f2026207061727473 6d6f64 1 2 1 3492c99fd2f84ee9
+OC extruder 32
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 @31 3ff0000000000000 0000000000000000 0000000000000000 4059000000000000 0000000000000000 3ff0000000000000 0000000000000000 4059000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 7061727420226d61696e22 0 3c677569643e 706172742e73746c 0 1 3ff0000000000000 4000000000000000 4008000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 4004000000000000 0000000000000000 3ff0000000000000 0000000000000000 4008000000000000 0000000000000000 0000000000000000 3ff0000000000000 400c000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 4004000000000000 0000000000000000 3ff0000000000000 0000000000000000 4008000000000000 0000000000000000 0000000000000000 3ff0000000000000 400c000000000000 0
+VMESH 8 12 fad7c22eb764a8b3 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+V 1 6d6f646966696572 2 - - -1 -1 0000000000000000 0000000000000000 0000000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 3ff8000000000000 0000000000000000 3ff0000000000000 0000000000000000 bfe0000000000000 0000000000000000 0000000000000000 3ff0000000000000 4000000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 3ff8000000000000 0000000000000000 3ff0000000000000 0000000000000000 bfe0000000000000 0000000000000000 0000000000000000 3ff0000000000000 4000000000000000 0
+VMESH 8 12 9f1bbb192b52f6f3 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 1 62eff3b4400d7f9f
+VCK wall_loops 33
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 506c617465204f6e65 0
+POI 2 0 @12
+POI 5 0 @31
+PF - - - - - -
+PS 31323334 352e3637 0 0 0 0 - 302e34 30
+PFIL 0 504c41 23464646464646 47464c3939 3f9d70a4 404d70a4 1 0 3fd999999999999a 5374616e64617264 0 0 1 0000000000000000 0000000000000000
+PW 746573745f7761726e696e67 1
+PMAP 1 1 | 3 0 1 0 | 1 0 | 0
+PCFG 8 92c0402f9c634c5e
+PCK curr_bed_type 486967682054656d7020506c617465
+PCK enable_filament_dynamic_map 30
+PCK filament_map 31
+PCK filament_map_mode 4d616e75616c
+PCK first_layer_print_sequence 312c32
+PCK has_filament_switcher 30
+PCK print_sequence 6279206f626a656374
+PCK spiral_mode 30
+CG 0 1 2
+CGI 4003333333333333 0 1 23464630303030 -
+CGI 4014000000000000 4 1 - 4734205331
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383
+STORE store_split
+SR 1
+ARCHIVE 15
+ENTRY 3D/3dmodel.model 2245
+<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">
+ <metadata name="Application">BambuStudio-02.09.01.70</metadata>
+ <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <metadata name="Copyright"></metadata>
+ <metadata name="CreationDate">DATE</metadata>
+ <metadata name="Description">a description</metadata>
+ <metadata name="Designer">alice</metadata>
+ <metadata name="DesignerCover"></metadata>
+ <metadata name="DesignerUserId">42</metadata>
+ <metadata name="License">BY-SA</metadata>
+ <metadata name="ModificationDate">DATE</metadata>
+ <metadata name="Origin"></metadata>
+ <metadata name="ProfileCover"></metadata>
+ <metadata name="ProfileDescription"></metadata>
+ <metadata name="ProfileTitle"></metadata>
+ <metadata name="Title">Test &amp;amp; &amp;lt;model&amp;gt;</metadata>
+ <resources>
+  <object id="2" p:UUID="00000001-61cb-4c03-9d28-80fed5dfa1dc" type="model">
+   <components>
+    <component p:path="/3D/Objects/object_1.model" objectid="1" p:UUID="00010000-b206-40ff-9872-83e8017abed1" transform="1 0 0 0 1 0 0 0 1 5 5 5"/>
+   </components>
+  </object>
+  <object id="5" p:UUID="00000002-61cb-4c03-9d28-80fed5dfa1dc" type="model">
+   <components>
+    <component p:path="/3D/Objects/object_2.model" objectid="3" p:UUID="00020000-b206-40ff-9872-83e8017abed1" transform="1 0 0 0 1 0 0 0 1 2.5 3 3.5"/>
+    <component p:path="/3D/Objects/object_2.model" objectid="4" p:UUID="00020001-b206-40ff-9872-83e8017abed1" transform="1 0 0 0 1 0 0 0 1 1.5 -0.5 2"/>
+   </components>
+  </object>
+ </resources>
+ <build p:UUID="2c7c17d8-22b5-4d84-8835-1976022ea369">
+  <item objectid="2" p:UUID="00000002-b1ec-4553-aec9-835e5b724bb4" transform="1 0 0 0 1 0 0 0 1 50 60 5" printable="1"/>
+  <item objectid="2" p:UUID="00000002-b1ec-4553-aec9-835e5b724bb4" transform="0.877582562 0.479425539 0 -0.479425539 0.877582562 0 0 0 1 120 60 5" printable="1"/>
+  <item objectid="5" p:UUID="00000005-b1ec-4553-aec9-835e5b724bb4" transform="1 0 0 0 1 0 0 0 1 100 100 0" printable="1"/>
+ </build>
+</model>
+
+@@END@@
+ENTRY 3D/Objects/object_1.model 1378
+<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">
+ <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <resources>
+  <object id="1" p:UUID="00010000-81cb-4c03-9d28-80fed5dfa1dc" type="model">
+   <mesh>
+    <vertices>
+     <vertex x="5" y="5" z="-5"/>
+     <vertex x="5" y="-5" z="-5"/>
+     <vertex x="-5" y="-5" z="-5"/>
+     <vertex x="-5" y="5" z="-5"/>
+     <vertex x="5" y="5" z="5"/>
+     <vertex x="-5" y="5" z="5"/>
+     <vertex x="-5" y="-5" z="5"/>
+     <vertex x="5" y="-5" z="5"/>
+    </vertices>
+    <triangles>
+     <triangle v1="0" v2="1" v3="2" paint_color="8"/>
+     <triangle v1="0" v2="2" v3="3" paint_supports="4"/>
+     <triangle v1="4" v2="5" v3="6" paint_seam="8"/>
+     <triangle v1="4" v2="6" v3="7" paint_color="C"/>
+     <triangle v1="0" v2="4" v3="7"/>
+     <triangle v1="0" v2="7" v3="1"/>
+     <triangle v1="1" v2="7" v3="6"/>
+     <triangle v1="1" v2="6" v3="2"/>
+     <triangle v1="2" v2="6" v3="5"/>
+     <triangle v1="2" v2="5" v3="3"/>
+     <triangle v1="4" v2="0" v3="3"/>
+     <triangle v1="4" v2="3" v3="5"/>
+    </triangles>
+   </mesh>
+  </object>
+ </resources>
+ <build/>
+</model>
+
+@@END@@
+ENTRY 3D/Objects/object_2.model 2250
+<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">
+ <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <resources>
+  <object id="3" p:UUID="00020000-81cb-4c03-9d28-80fed5dfa1dc" type="model">
+   <mesh>
+    <vertices>
+     <vertex x="2.5" y="3" z="-3.5"/>
+     <vertex x="2.5" y="-3" z="-3.5"/>
+     <vertex x="-2.5" y="-3" z="-3.5"/>
+     <vertex x="-2.5" y="3" z="-3.5"/>
+     <vertex x="2.5" y="3" z="3.5"/>
+     <vertex x="-2.5" y="3" z="3.5"/>
+     <vertex x="-2.5" y="-3" z="3.5"/>
+     <vertex x="2.5" y="-3" z="3.5"/>
+    </vertices>
+    <triangles>
+     <triangle v1="0" v2="1" v3="2"/>
+     <triangle v1="0" v2="2" v3="3"/>
+     <triangle v1="4" v2="5" v3="6"/>
+     <triangle v1="4" v2="6" v3="7"/>
+     <triangle v1="0" v2="4" v3="7"/>
+     <triangle v1="0" v2="7" v3="1"/>
+     <triangle v1="1" v2="7" v3="6"/>
+     <triangle v1="1" v2="6" v3="2"/>
+     <triangle v1="2" v2="6" v3="5"/>
+     <triangle v1="2" v2="5" v3="3"/>
+     <triangle v1="4" v2="0" v3="3"/>
+     <triangle v1="4" v2="3" v3="5"/>
+    </triangles>
+   </mesh>
+  </object>
+  <object id="4" p:UUID="00020001-81cb-4c03-9d28-80fed5dfa1dc" type="other">
+   <mesh>
+    <vertices>
+     <vertex x="1" y="1" z="-1"/>
+     <vertex x="1" y="-1" z="-1"/>
+     <vertex x="-1" y="-1" z="-1"/>
+     <vertex x="-1" y="1" z="-1"/>
+     <vertex x="1" y="1" z="1"/>
+     <vertex x="-1" y="1" z="1"/>
+     <vertex x="-1" y="-1" z="1"/>
+     <vertex x="1" y="-1" z="1"/>
+    </vertices>
+    <triangles>
+     <triangle v1="0" v2="1" v3="2"/>
+     <triangle v1="0" v2="2" v3="3"/>
+     <triangle v1="4" v2="5" v3="6"/>
+     <triangle v1="4" v2="6" v3="7"/>
+     <triangle v1="0" v2="4" v3="7"/>
+     <triangle v1="0" v2="7" v3="1"/>
+     <triangle v1="1" v2="7" v3="6"/>
+     <triangle v1="1" v2="6" v3="2"/>
+     <triangle v1="2" v2="6" v3="5"/>
+     <triangle v1="2" v2="5" v3="3"/>
+     <triangle v1="4" v2="0" v3="3"/>
+     <triangle v1="4" v2="3" v3="5"/>
+    </triangles>
+   </mesh>
+  </object>
+ </resources>
+ <build/>
+</model>
+
+@@END@@
+ENTRY 3D/_rels/3dmodel.model.rels 404
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Target="/3D/Objects/object_1.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+ <Relationship Target="/3D/Objects/object_2.model" Id="rel-2" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>
+@@END@@
+ENTRY Metadata/brim_ear_points.txt 118
+brim_points_format_version=1
+object_id=1|1.000000 2.000000 0.000000 0.500000 0 -3.250000 4.500000 0.000000 0.750000 0
+
+@@END@@
+ENTRY Metadata/custom_gcode_per_layer.xml 330
+<?xml version="1.0" encoding="utf-8"?>
+<custom_gcodes_per_layer>
+<plate>
+<plate_info id="1"/>
+<layer top_z="2.3999999999999999" type="0" extruder="1" color="#FF0000" extra="" gcode=""/>
+<layer top_z="5" type="4" extruder="1" color="" extra="G4 S1" gcode="G4 S1"/>
+<mode value="SingleExtruder"/>
+</plate>
+</custom_gcodes_per_layer>
+@@END@@
+ENTRY Metadata/cut_information.xml 219
+<?xml version="1.0" encoding="utf-8"?>
+<objects>
+ <object id="1">
+  <cut_id id="0" check_sum="1" connectors_cnt="0"/>
+ </object>
+ <object id="2">
+  <cut_id id="0" check_sum="1" connectors_cnt="0"/>
+ </object>
+</objects>
+@@END@@
+ENTRY Metadata/filament_sequence.json 78
+{"plate_1":{"nozzle_sequence":[0],"optimal_assignment":[],"sequence":[1,2,1]}}
+@@END@@
+ENTRY Metadata/layer_config_ranges.xml 175
+<?xml version="1.0" encoding="utf-8"?>
+<objects>
+ <object id="1">
+  <range min_z="2" max_z="4">
+   <option opt_key="layer_height">0.1</option>
+  </range>
+ </object>
+</objects>
+@@END@@
+ENTRY Metadata/layer_heights_profile.txt 49
+object_id=1|0.000000;0.200000;10.000000;0.200000
+
+@@END@@
+ENTRY Metadata/model_settings.config 2851
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="2">
+    <metadata key="name" value="cube_a"/>
+    <metadata key="extruder" value="1"/>
+    <metadata key="sparse_infill_density" value="25%"/>
+    <metadata face_count="12"/>
+    <part id="1" subtype="normal_part" uuid="UUID">
+      <metadata key="name" value="cube_a_part"/>
+      <metadata key="matrix" value="1 0 0 5 0 1 0 5 0 0 1 5 0 0 0 1"/>
+      <metadata key="extruder" value="2"/>
+      <mesh_stat face_count="12" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
+    </part>
+  </object>
+  <object id="5">
+    <metadata key="name" value="two &amp; parts"/>
+    <metadata key="module" value="mod"/>
+    <metadata key="extruder" value="2"/>
+    <metadata face_count="12"/>
+    <part id="3" subtype="normal_part" uuid="UUID">
+      <metadata key="name" value="part &quot;main&quot;"/>
+      <metadata key="matrix" value="1 0 0 2.5 0 1 0 3 0 0 1 3.5 0 0 0 1"/>
+      <metadata key="source_file" value="part.stl"/>
+      <metadata key="source_object_id" value="0"/>
+      <metadata key="source_volume_id" value="1"/>
+      <metadata key="source_offset_x" value="1"/>
+      <metadata key="source_offset_y" value="2"/>
+      <metadata key="source_offset_z" value="3"/>
+      <mesh_stat face_count="12" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
+    </part>
+    <part id="4" subtype="modifier_part">
+      <metadata key="name" value="modifier"/>
+      <metadata key="matrix" value="1 0 0 1.5 0 1 0 -0.5 0 0 1 2 0 0 0 1"/>
+      <metadata key="wall_loops" value="3"/>
+      <mesh_stat face_count="12" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
+    </part>
+  </object>
+  <plate>
+    <metadata key="plater_id" value="1"/>
+    <metadata key="plater_name" value="Plate One"/>
+    <metadata key="locked" value="false"/>
+    <metadata key="bed_type" value="High Temp Plate"/>
+    <metadata key="print_sequence" value="by object"/>
+    <metadata key="first_layer_print_sequence" value="1 2"/>
+    <metadata key="spiral_mode" value="false"/>
+    <metadata key="filament_map_mode" value="Manual"/>
+    <metadata key="filament_maps" value="1 2"/>
+    <model_instance>
+      <metadata key="object_id" value="2"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="@12"/>
+    </model_instance>
+    <model_instance>
+      <metadata key="object_id" value="2"/>
+      <metadata key="instance_id" value="1"/>
+      <metadata key="identify_id" value="@13"/>
+    </model_instance>
+    <model_instance>
+      <metadata key="object_id" value="5"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="@31"/>
+    </model_instance>
+  </plate>
+  <assemble>
+  </assemble>
+</config>
+
+@@END@@
+ENTRY Metadata/project_settings.config 26995
+{
+    "accel_to_decel_enable": "0",
+    "accel_to_decel_factor": "50%",
+    "activate_air_filtration": [
+        "0"
+    ],
+    "additional_cooling_fan_speed": [
+        "0"
+    ],
+    "additional_fan_full_speed_layer": [
+        "0"
+    ],
+    "alternate_extra_wall": "0",
+    "ams_filament_load_time_ams": "0",
+    "ams_filament_load_time_ams_lite": "0",
+    "ams_filament_load_time_n3f_s": "0",
+    "ams_filament_unload_time_ams": "0",
+    "ams_filament_unload_time_ams_lite": "0",
+    "ams_filament_unload_time_n3f_s": "0",
+    "ams_nozzle_idx": [
+        "0"
+    ],
+    "apply_scarf_seam_on_circles": "1",
+    "aux_fan_independent_control": "0",
+    "aux_fan_standard_side": "right",
+    "auxiliary_fan": "0",
+    "avoid_crossing_wall_includes_support": "0",
+    "bed_custom_model": "",
+    "bed_custom_texture": "",
+    "bed_exclude_area": [
+        "0x0"
+    ],
+    "bed_heat_soak_area": [],
+    "bed_temperature_formula": "by_first_filament",
+    "before_layer_change_gcode": "",
+    "best_object_pos": "0.5,0.5",
+    "bottom_color_penetration_layers": "3",
+    "bottom_shell_layers": "3",
+    "bottom_shell_thickness": "0",
+    "bottom_surface_density": "100%",
+    "bottom_surface_pattern": "zig-zag",
+    "bridge_angle": "0",
+    "bridge_flow": "1",
+    "bridge_no_support": "0",
+    "bridge_speed": [
+        "25"
+    ],
+    "brim_object_gap": "0",
+    "brim_type": "auto_brim",
+    "brim_width": "0",
+    "chamber_temperatures": [
+        "0"
+    ],
+    "change_filament_gcode": "",
+    "circle_compensation_manual_offset": "0",
+    "circle_compensation_speed": [
+        "200"
+    ],
+    "close_additional_fan_first_x_layers": [
+        "1"
+    ],
+    "close_fan_the_first_x_layers": [
+        "1"
+    ],
+    "close_optional_fan_first_x_layers": [
+        "1"
+    ],
+    "complete_print_exhaust_fan_speed": [
+        "80"
+    ],
+    "conformal_hub_radius": "0",
+    "conformal_infill": "0",
+    "conformal_link_flip_layers": "0",
+    "conformal_link_keep_layers": "1",
+    "conformal_pole": "layer",
+    "conformal_ray_count": "0",
+    "conformal_stagger": "none",
+    "cool_plate_temp": [
+        "35"
+    ],
+    "cool_plate_temp_initial_layer": [
+        "35"
+    ],
+    "cooling_filter_enabled": "0",
+    "cooling_perimeter_transition_distance": [
+        "10"
+    ],
+    "cooling_slowdown_logic": [
+        "uniform_cooling"
+    ],
+    "counter_coef_1": [
+        "0"
+    ],
+    "counter_coef_2": [
+        "0.025"
+    ],
+    "counter_coef_3": [
+        "-0.11"
+    ],
+    "counter_limit_max": [
+        "0.05"
+    ],
+    "counter_limit_min": [
+        "-0.04"
+    ],
+    "counterbore_hole_bridging": "none",
+    "curr_bed_type": "Cool Plate",
+    "default_acceleration": [
+        "500"
+    ],
+    "default_ams_type": "-1",
+    "default_filament_colour": [
+        ""
+    ],
+    "default_jerk": "0",
+    "default_wipe_tower_pos": "0.644,0.977",
+    "deretraction_speed": [
+        "0"
+    ],
+    "detect_floating_vertical_shell": "1",
+    "detect_narrow_internal_solid_infill": "1",
+    "detect_overhang_wall": "1",
+    "detect_thin_wall": "0",
+    "diameter_limit": [
+        "50"
+    ],
+    "draft_shield": "disabled",
+    "during_print_exhaust_fan_speed": [
+        "60"
+    ],
+    "elefant_foot_compensation": "0",
+    "embedding_wall_into_infill": "0",
+    "enable_arc_fitting": "0",
+    "enable_circle_compensation": "0",
+    "enable_filament_dynamic_map": "0",
+    "enable_height_slowdown": [
+        "0"
+    ],
+    "enable_long_retraction_when_cut": "0",
+    "enable_mixed_color_sublayer": "0",
+    "enable_order_independent_overlap_carving": "0",
+    "enable_overhang_bridge_fan": [
+        "1"
+    ],
+    "enable_overhang_speed": [
+        "1"
+    ],
+    "enable_pre_heating": "0",
+    "enable_pressure_advance": [
+        "0"
+    ],
+    "enable_prime_tower": "0",
+    "enable_support": "0",
+    "enable_support_ironing": "0",
+    "enable_tower_interface_features": "0",
+    "enable_wrapping_detection": "0",
+    "enforce_support_layers": "0",
+    "eng_plate_temp": [
+        "45"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "45"
+    ],
+    "ensure_vertical_shell_thickness": "enabled",
+    "exclude_object": "1",
+    "extruder_ams_count": [],
+    "extruder_clearance_dist_to_rod": "40",
+    "extruder_clearance_height_to_lid": "120",
+    "extruder_clearance_height_to_rod": "40",
+    "extruder_clearance_max_radius": "68",
+    "extruder_colour": [
+        ""
+    ],
+    "extruder_max_nozzle_count": [
+        "1"
+    ],
+    "extruder_nozzle_count": [
+        "1"
+    ],
+    "extruder_nozzle_diameter": [
+        "0.4"
+    ],
+    "extruder_nozzle_slot": [],
+    "extruder_nozzle_stats": [],
+    "extruder_nozzle_volume_type": [
+        "Standard"
+    ],
+    "extruder_offset": [
+        "0x0"
+    ],
+    "extruder_printable_area": [],
+    "extruder_printable_height": [
+        "0"
+    ],
+    "extruder_type": [
+        "Direct Drive"
+    ],
+    "fan_cooling_layer_time": [
+        "60"
+    ],
+    "fan_direction": "undefine",
+    "fan_max_speed": [
+        "100"
+    ],
+    "fan_min_speed": [
+        "20"
+    ],
+    "farthest_point_timelapse": "0",
+    "filament_adaptive_volumetric_speed": [
+        "0"
+    ],
+    "filament_adhesiveness_category": [
+        "0"
+    ],
+    "filament_bridge_speed": [
+        "25"
+    ],
+    "filament_change_length": [
+        "10"
+    ],
+    "filament_change_length_nc": [
+        "10"
+    ],
+    "filament_colour": [
+        "#00AE42"
+    ],
+    "filament_cooling_before_tower": [
+        "10"
+    ],
+    "filament_cost": [
+        "0"
+    ],
+    "filament_density": [
+        "0"
+    ],
+    "filament_dev_ams_drying_ams_limitations": [
+        ""
+    ],
+    "filament_dev_ams_drying_heat_distortion_temperature": [
+        "0"
+    ],
+    "filament_dev_ams_drying_temperature": [
+        "0"
+    ],
+    "filament_dev_ams_drying_time": [
+        "0"
+    ],
+    "filament_dev_chamber_drying_bed_temperature": [
+        "0"
+    ],
+    "filament_dev_chamber_drying_time": [
+        "0"
+    ],
+    "filament_dev_drying_cooling_temperature": [
+        "0"
+    ],
+    "filament_dev_drying_softening_temperature": [
+        "0"
+    ],
+    "filament_diameter": [
+        "1.75"
+    ],
+    "filament_diameter_map": [],
+    "filament_enable_overhang_speed": [
+        "1"
+    ],
+    "filament_end_gcode": [
+        " "
+    ],
+    "filament_extruder_compatibility": [
+        "0"
+    ],
+    "filament_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "filament_flow_ratio": [
+        "1"
+    ],
+    "filament_flush_temp": [
+        "0"
+    ],
+    "filament_flush_temp_fast": [
+        "0"
+    ],
+    "filament_flush_volumetric_speed": [
+        "0"
+    ],
+    "filament_idle_travel_cooling_enabled": [
+        "1"
+    ],
+    "filament_ids": [],
+    "filament_is_mixed": [
+        "0"
+    ],
+    "filament_is_support": [
+        "0"
+    ],
+    "filament_map": [
+        "1"
+    ],
+    "filament_map_2": [
+        "1"
+    ],
+    "filament_map_mode": "Auto For Flush",
+    "filament_max_volumetric_speed": [
+        "2"
+    ],
+    "filament_metal_stickiness": [
+        "None"
+    ],
+    "filament_minimal_purge_on_wipe_tower": [
+        "15"
+    ],
+    "filament_mixed_components": [
+        ""
+    ],
+    "filament_mixed_gradient": [
+        "0"
+    ],
+    "filament_mixed_gradient_curve": [
+        ""
+    ],
+    "filament_mixed_gradient_per_part": [
+        "0"
+    ],
+    "filament_mixed_gradient_range": [
+        ""
+    ],
+    "filament_mixed_sublayer_ratios": [
+        ""
+    ],
+    "filament_notes": "",
+    "filament_nozzle_map": [
+        "1"
+    ],
+    "filament_overhang_1_4_speed": [
+        "0"
+    ],
+    "filament_overhang_2_4_speed": [
+        "0"
+    ],
+    "filament_overhang_3_4_speed": [
+        "0"
+    ],
+    "filament_overhang_4_4_speed": [
+        "0"
+    ],
+    "filament_overhang_totally_speed": [
+        "10"
+    ],
+    "filament_pre_cooling_temperature": [
+        "0"
+    ],
+    "filament_pre_cooling_temperature_nc": [
+        "0"
+    ],
+    "filament_pre_heating_enabled": [
+        "1"
+    ],
+    "filament_preheat_temperature_delta": [
+        "0"
+    ],
+    "filament_prime_tower_speed_factor_curve": [
+        ""
+    ],
+    "filament_prime_volume": [
+        "45"
+    ],
+    "filament_prime_volume_nc": [
+        "60"
+    ],
+    "filament_printable": [
+        "3"
+    ],
+    "filament_ramming_travel_time": [
+        "0"
+    ],
+    "filament_ramming_travel_time_nc": [
+        "0"
+    ],
+    "filament_ramming_volumetric_speed": [
+        "-1"
+    ],
+    "filament_ramming_volumetric_speed_nc": [
+        "-1"
+    ],
+    "filament_retract_length_nc": [
+        "10"
+    ],
+    "filament_retract_length_toolchange": [
+        "nil"
+    ],
+    "filament_retract_restart_extra_toolchange": [
+        "nil"
+    ],
+    "filament_scarf_gap": [
+        "0"
+    ],
+    "filament_scarf_height": [
+        "10%"
+    ],
+    "filament_scarf_length": [
+        "10"
+    ],
+    "filament_scarf_seam_type": [
+        "none"
+    ],
+    "filament_self_index": [
+        "1"
+    ],
+    "filament_shrink": [
+        "100%"
+    ],
+    "filament_soluble": [
+        "0"
+    ],
+    "filament_start_gcode": [
+        " "
+    ],
+    "filament_tower_interface_pre_extrusion_dist": [
+        "10"
+    ],
+    "filament_tower_interface_pre_extrusion_length": [
+        "0"
+    ],
+    "filament_tower_interface_print_temp": [
+        "-1"
+    ],
+    "filament_tower_interface_purge_volume": [
+        "20"
+    ],
+    "filament_tower_ironing_area": [
+        "4"
+    ],
+    "filament_type": [
+        "PLA"
+    ],
+    "filament_velocity_adaptation_factor": [
+        "1"
+    ],
+    "filament_vendor": [
+        "(Undefined)"
+    ],
+    "filament_volume_map": [
+        "0"
+    ],
+    "filename_format": "[input_filename_base].gcode",
+    "fill_multiline": "1",
+    "filter_out_gap_fill": "0",
+    "fins_extrude_safe_temp": [
+        "0"
+    ],
+    "first_layer_print_sequence": [
+        "0"
+    ],
+    "first_x_layer_fan_speed": [
+        "0"
+    ],
+    "first_x_layer_optional_fan_speed": [
+        "0"
+    ],
+    "first_x_layer_part_fan_speed": [
+        "0"
+    ],
+    "flush_into_infill": "0",
+    "flush_into_objects": "0",
+    "flush_into_support": "1",
+    "flush_multiplier": [
+        "1"
+    ],
+    "flush_multiplier_fast": [
+        "1.2"
+    ],
+    "flush_volumes_matrix": [
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0"
+    ],
+    "flush_volumes_vector": [
+        "140",
+        "140",
+        "140",
+        "140",
+        "140",
+        "140",
+        "140",
+        "140"
+    ],
+    "from": "project",
+    "full_fan_speed_layer": [
+        "0"
+    ],
+    "fuzzy_skin": "none",
+    "fuzzy_skin_first_layer": "0",
+    "fuzzy_skin_mode": "displacement",
+    "fuzzy_skin_noise_type": "classic",
+    "fuzzy_skin_octaves": "4",
+    "fuzzy_skin_persistence": "0.5",
+    "fuzzy_skin_point_distance": "0.8",
+    "fuzzy_skin_scale": "1",
+    "fuzzy_skin_thickness": "0.3",
+    "gap_infill_speed": [
+        "30"
+    ],
+    "gcode_add_line_number": "0",
+    "gcode_flavor": "marlin",
+    "grab_length": [
+        "0"
+    ],
+    "group_algo_with_time": "0",
+    "handle_hotend_as_extruder": "0",
+    "has_filament_switcher": "0",
+    "has_scarf_joint_seam": "0",
+    "head_wrap_detect_zone": [],
+    "hole_coef_1": [
+        "0"
+    ],
+    "hole_coef_2": [
+        "-0.025"
+    ],
+    "hole_coef_3": [
+        "0.28"
+    ],
+    "hole_limit_max": [
+        "0.25"
+    ],
+    "hole_limit_min": [
+        "0.08"
+    ],
+    "hot_plate_temp": [
+        "45"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "45"
+    ],
+    "hotend_cooling_rate": [
+        "2"
+    ],
+    "hotend_cooling_rate_on_rack": [
+        "2"
+    ],
+    "hotend_heating_rate": [
+        "2"
+    ],
+    "impact_strength_z": [
+        "0"
+    ],
+    "independent_support_layer_height": "1",
+    "infill_combination": "0",
+    "infill_direction": "45",
+    "infill_instead_top_bottom_surfaces": "0",
+    "infill_jerk": "9",
+    "infill_lock_depth": "1",
+    "infill_rotate_step": "0",
+    "infill_shift_step": "0.4",
+    "infill_wall_overlap": "15%",
+    "initial_layer_acceleration": [
+        "300"
+    ],
+    "initial_layer_flow_ratio": "1",
+    "initial_layer_infill_line_width": "0",
+    "initial_layer_infill_speed": [
+        "60"
+    ],
+    "initial_layer_jerk": "9",
+    "initial_layer_line_width": "0.4",
+    "initial_layer_print_height": "0.2",
+    "initial_layer_speed": [
+        "30"
+    ],
+    "initial_layer_travel_acceleration": [
+        "500"
+    ],
+    "inner_wall_acceleration": [
+        "0"
+    ],
+    "inner_wall_jerk": "9",
+    "inner_wall_line_width": "0.4",
+    "inner_wall_speed": [
+        "60"
+    ],
+    "interface_shells": "0",
+    "interlocking_beam": "0",
+    "interlocking_beam_layer_count": "2",
+    "interlocking_beam_width": "0.8",
+    "interlocking_boundary_avoidance": "2",
+    "interlocking_depth": "2",
+    "interlocking_orientation": "22.5",
+    "internal_bridge_support_thickness": "0",
+    "internal_solid_infill_line_width": "0.4",
+    "internal_solid_infill_pattern": "zig-zag",
+    "internal_solid_infill_speed": [
+        "100"
+    ],
+    "ironing_direction": "45",
+    "ironing_fan_speed": [
+        "-1"
+    ],
+    "ironing_flow": "10%",
+    "ironing_inset": "0",
+    "ironing_pattern": "zig-zag",
+    "ironing_spacing": "0.1",
+    "ironing_speed": "20",
+    "ironing_type": "no ironing",
+    "is_infill_first": "0",
+    "layer_change_gcode": "",
+    "layer_height": "0.2",
+    "line_width": "0.4",
+    "locked_skeleton_infill_pattern": "zigzag",
+    "locked_skin_infill_pattern": "crosszag",
+    "long_retractions_when_cut": [
+        "0"
+    ],
+    "long_retractions_when_ec": [
+        "0"
+    ],
+    "machine_bed_mass_Y": "0",
+    "machine_end_gcode": "M104 S0 ; turn off temperature\nG28 X0  ; home X axis\nM84     ; disable motors\n",
+    "machine_hotend_change_time": "0",
+    "machine_load_filament_time": "0",
+    "machine_max_acceleration_e": [
+        "5000",
+        "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+        "1500",
+        "1250"
+    ],
+    "machine_max_acceleration_retracting": [
+        "1500",
+        "1250"
+    ],
+    "machine_max_acceleration_travel": [
+        "1500",
+        "1250"
+    ],
+    "machine_max_acceleration_x": [
+        "1000",
+        "1000"
+    ],
+    "machine_max_acceleration_y": [
+        "1000",
+        "1000"
+    ],
+    "machine_max_acceleration_z": [
+        "500",
+        "200"
+    ],
+    "machine_max_force_Y": "0",
+    "machine_max_jerk_e": [
+        "2.5",
+        "2.5"
+    ],
+    "machine_max_jerk_x": [
+        "10",
+        "10"
+    ],
+    "machine_max_jerk_y": [
+        "10",
+        "10"
+    ],
+    "machine_max_jerk_z": [
+        "0.2",
+        "0.4"
+    ],
+    "machine_max_printed_mass": "0",
+    "machine_max_speed_e": [
+        "120",
+        "120"
+    ],
+    "machine_max_speed_x": [
+        "500",
+        "200"
+    ],
+    "machine_max_speed_y": [
+        "500",
+        "200"
+    ],
+    "machine_max_speed_z": [
+        "12",
+        "12"
+    ],
+    "machine_min_extruding_rate": [
+        "0",
+        "0"
+    ],
+    "machine_min_travel_rate": [
+        "0",
+        "0"
+    ],
+    "machine_pause_gcode": "",
+    "machine_prepare_compensation_time": "260",
+    "machine_start_gcode": "G28 ; home all axes\nG1 Z5 F5000 ; lift nozzle\n",
+    "machine_switch_extruder_time": "5",
+    "machine_unload_filament_time": "0",
+    "master_extruder_id": "1",
+    "max_bridge_length": "10",
+    "max_layer_height": [
+        "0"
+    ],
+    "max_travel_detour_distance": "0",
+    "min_bead_width": "85%",
+    "min_feature_size": "25%",
+    "min_layer_height": [
+        "0.07"
+    ],
+    "min_temperature_when_ec": [
+        "-1"
+    ],
+    "minimum_sparse_infill_area": "15",
+    "mmu_segmented_region_interlocking_depth": "0",
+    "mmu_segmented_region_max_width": "0",
+    "modifier_ignore_infill": "0",
+    "monotonic_travel_into_wall": "0%",
+    "name": "project_settings",
+    "no_slow_down_for_cooling_on_outwalls": [
+        "0"
+    ],
+    "nozzle_diameter": [
+        "0.4"
+    ],
+    "nozzle_flush_dataset": [
+        "0"
+    ],
+    "nozzle_height": "4",
+    "nozzle_temperature": [
+        "200"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "200"
+    ],
+    "nozzle_temperature_range_high": [
+        "240"
+    ],
+    "nozzle_temperature_range_low": [
+        "190"
+    ],
+    "nozzle_volume": [
+        "0"
+    ],
+    "nozzle_volume_type": [
+        "Standard"
+    ],
+    "only_one_wall_first_layer": "0",
+    "ooze_prevention": "0",
+    "optional_cooling_fan_speed": [
+        "0"
+    ],
+    "optional_fan_full_speed_layer": [
+        "0"
+    ],
+    "other_layers_print_sequence": [
+        "0"
+    ],
+    "other_layers_print_sequence_nums": "0",
+    "outer_wall_acceleration": [
+        "500"
+    ],
+    "outer_wall_jerk": "9",
+    "outer_wall_line_width": "0",
+    "outer_wall_speed": [
+        "60"
+    ],
+    "overhang_1_4_speed": [
+        "0"
+    ],
+    "overhang_2_4_speed": [
+        "0"
+    ],
+    "overhang_3_4_speed": [
+        "0"
+    ],
+    "overhang_4_4_speed": [
+        "0"
+    ],
+    "overhang_fan_speed": [
+        "100"
+    ],
+    "overhang_fan_threshold": [
+        "95%"
+    ],
+    "overhang_threshold_participating_cooling": [
+        "95%"
+    ],
+    "overhang_totally_speed": [
+        "10"
+    ],
+    "override_filament_scarf_seam_setting": "0",
+    "override_process_overhang_speed": [
+        "0"
+    ],
+    "periodic_modifier": "0",
+    "periodic_modifier_apply_layers": "1",
+    "periodic_modifier_skip_layers": "1",
+    "physical_extruder_map": [
+        "0"
+    ],
+    "post_process": [],
+    "pre_start_fan_time": [
+        "0"
+    ],
+    "precise_outer_wall": "0",
+    "precise_z_height": "0",
+    "pressure_advance": [
+        "0.02"
+    ],
+    "prime_tower_acceleration": "0",
+    "prime_tower_brim_width": "3",
+    "prime_tower_enable_framework": "0",
+    "prime_tower_extra_rib_length": "0",
+    "prime_tower_feedrate_factor": "1",
+    "prime_tower_fillet_wall": "1",
+    "prime_tower_flat_ironing": "0",
+    "prime_tower_infill_gap": "150%",
+    "prime_tower_ironing_speed": "10",
+    "prime_tower_lift_height": "-1",
+    "prime_tower_lift_speed": "90",
+    "prime_tower_line_ironing": "1",
+    "prime_tower_line_width": "0",
+    "prime_tower_max_speed": "90",
+    "prime_tower_ramming_line_width": "0",
+    "prime_tower_rib_wall": "1",
+    "prime_tower_rib_width": "8",
+    "prime_tower_side_scrape": "0",
+    "prime_tower_side_scrape_along_length": "2",
+    "prime_tower_side_scrape_face": "front_back",
+    "prime_tower_side_scrape_height": "1.5",
+    "prime_tower_side_scrape_length": "2",
+    "prime_tower_side_scrape_point_spacing": "1",
+    "prime_tower_side_scrape_speed": "1400",
+    "prime_tower_side_scrape_wall_gap": "0.2",
+    "prime_tower_skip_points": "1",
+    "prime_tower_tail_slowdown_volume": "10",
+    "prime_tower_tail_speed_factor": "100%",
+    "prime_tower_width": "35",
+    "prime_tower_wipe_distance": "0",
+    "prime_tower_wipe_speed": "0",
+    "prime_volume_mode": "Default",
+    "print_extruder_id": [
+        "1"
+    ],
+    "print_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "print_flow_ratio": "1",
+    "print_in_clockwise": "0",
+    "print_sequence": "by layer",
+    "printable_area": [
+        "0x0",
+        "200x0",
+        "200x200",
+        "0x200"
+    ],
+    "printable_height": "100",
+    "printer_extruder_id": [
+        "1"
+    ],
+    "printer_extruder_variant": [
+        "Direct Drive Standard"
+    ],
+    "printer_model": "",
+    "printer_notes": "",
+    "printer_structure": "undefine",
+    "printing_by_object_gcode": "",
+    "process_notes": "",
+    "raft_contact_distance": "0.1",
+    "raft_expansion": "1.5",
+    "raft_first_layer_density": "90%",
+    "raft_first_layer_expansion": "-1",
+    "raft_layers": "0",
+    "reduce_crossing_wall": "0",
+    "reduce_fan_stop_start_freq": [
+        "0"
+    ],
+    "reduce_infill_retraction_mode": "Auto",
+    "required_nozzle_HRC": [
+        "0"
+    ],
+    "resolution": "0.01",
+    "retract_before_wipe": [
+        "100%"
+    ],
+    "retract_length_toolchange": [
+        "10"
+    ],
+    "retract_lift_above": [
+        "0"
+    ],
+    "retract_lift_below": [
+        "0"
+    ],
+    "retract_restart_extra": [
+        "0"
+    ],
+    "retract_restart_extra_toolchange": [
+        "0"
+    ],
+    "retract_when_changing_layer": [
+        "0"
+    ],
+    "retraction_distances_when_cut": [
+        "18"
+    ],
+    "retraction_distances_when_ec": [
+        "10"
+    ],
+    "retraction_length": [
+        "0.8"
+    ],
+    "retraction_minimum_travel": [
+        "2"
+    ],
+    "retraction_speed": [
+        "30"
+    ],
+    "role_base_wipe_speed": "1",
+    "scan_first_layer": "0",
+    "scarf_angle_threshold": "155",
+    "seam_gap": "15%",
+    "seam_placement_away_from_overhangs": "0",
+    "seam_position": "aligned",
+    "seam_slope_conditional": "1",
+    "seam_slope_entire_loop": "0",
+    "seam_slope_gap": "0",
+    "seam_slope_inner_walls": "1",
+    "seam_slope_min_length": "10",
+    "seam_slope_start_height": "10%",
+    "seam_slope_steps": "10",
+    "seam_slope_type": "none",
+    "silent_mode": "0",
+    "single_extruder_multi_material": "0",
+    "skeleton_infill_density": "15%",
+    "skeleton_infill_line_width": "0.4",
+    "skin_infill_density": "15%",
+    "skin_infill_depth": "2",
+    "skin_infill_line_width": "0.4",
+    "skirt_distance": "2",
+    "skirt_height": "1",
+    "skirt_loops": "1",
+    "skirt_per_object": "1",
+    "slice_closing_radius": "0.049",
+    "slicing_mode": "regular",
+    "slow_down_for_layer_cooling": [
+        "1"
+    ],
+    "slow_down_layer_time": [
+        "5"
+    ],
+    "slow_down_min_speed": [
+        "10"
+    ],
+    "slowdown_end_acc": [
+        "100000"
+    ],
+    "slowdown_end_height": [
+        "400"
+    ],
+    "slowdown_end_speed": [
+        "1000"
+    ],
+    "slowdown_start_acc": [
+        "100000"
+    ],
+    "slowdown_start_height": [
+        "0"
+    ],
+    "slowdown_start_speed": [
+        "1000"
+    ],
+    "small_perimeter_speed": [
+        "50%"
+    ],
+    "small_perimeter_threshold": [
+        "0"
+    ],
+    "smooth_coefficient": "80",
+    "smooth_speed_discontinuity_area": "1",
+    "solid_infill_filament": "0",
+    "sparse_infill_acceleration": [
+        "100%"
+    ],
+    "sparse_infill_anchor": "400%",
+    "sparse_infill_anchor_max": "20",
+    "sparse_infill_density": "20%",
+    "sparse_infill_filament": "0",
+    "sparse_infill_lattice_angle_1": "-45",
+    "sparse_infill_lattice_angle_2": "45",
+    "sparse_infill_line_width": "0.4",
+    "sparse_infill_pattern": "cubic",
+    "sparse_infill_speed": [
+        "100"
+    ],
+    "spiral_mode": "0",
+    "spiral_mode_max_xy_smoothing": "200%",
+    "spiral_mode_smooth": "0",
+    "standby_temperature_delta": "-5",
+    "start_end_points": [
+        "30x-3",
+        "54x245"
+    ],
+    "sub_top_surface_pattern": "monotonic",
+    "supertack_plate_temp": [
+        "35"
+    ],
+    "supertack_plate_temp_initial_layer": [
+        "35"
+    ],
+    "support_air_filtration": "0",
+    "support_angle": "0",
+    "support_base_pattern": "default",
+    "support_base_pattern_spacing": "2.5",
+    "support_bottom_interface_spacing": "0.5",
+    "support_bottom_z_distance": "0.2",
+    "support_chamber_temp_control": "0",
+    "support_cooling_filter": "0",
+    "support_critical_regions_only": "0",
+    "support_expansion": "0",
+    "support_fast_purge_mode": "0",
+    "support_filament": "0",
+    "support_interface_bottom_layers": "0",
+    "support_interface_filament": "0",
+    "support_interface_loop_pattern": "0",
+    "support_interface_not_for_body": "1",
+    "support_interface_pattern": "auto",
+    "support_interface_spacing": "0.5",
+    "support_interface_speed": [
+        "80"
+    ],
+    "support_interface_top_layers": "3",
+    "support_ironing_direction": "0",
+    "support_ironing_flow": "10%",
+    "support_ironing_inset": "0",
+    "support_ironing_pattern": "zig-zag",
+    "support_ironing_spacing": "0.1",
+    "support_ironing_speed": "20",
+    "support_line_width": "0.4",
+    "support_object_first_layer_gap": "0.2",
+    "support_object_skip_flush": "0",
+    "support_object_xy_distance": "0.35",
+    "support_on_build_plate_only": "0",
+    "support_remove_small_overhang": "1",
+    "support_speed": [
+        "80"
+    ],
+    "support_style": "default",
+    "support_threshold_angle": "30",
+    "support_top_z_distance": "0.2",
+    "support_type": "normal(auto)",
+    "symmetric_infill_y_axis": "0",
+    "sync_auxiliary_fan_to_second_fan": "0",
+    "temperature_vitrification": [
+        "100"
+    ],
+    "template_custom_gcode": "",
+    "textured_plate_temp": [
+        "45"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "45"
+    ],
+    "thick_bridges": "0",
+    "thumbnail_size": [
+        "50x50"
+    ],
+    "time_lapse_gcode": "",
+    "timelapse_type": "0",
+    "top_area_threshold": "200%",
+    "top_color_penetration_layers": "4",
+    "top_one_wall_type": "all top",
+    "top_shell_layers": "4",
+    "top_shell_thickness": "0.6",
+    "top_solid_infill_flow_ratio": [
+        "1"
+    ],
+    "top_surface_acceleration": [
+        "500"
+    ],
+    "top_surface_density": "100%",
+    "top_surface_jerk": "9",
+    "top_surface_line_width": "0.4",
+    "top_surface_pattern": "zig-zag",
+    "top_surface_speed": [
+        "100"
+    ],
+    "top_z_overrides_xy_distance": "0",
+    "travel_acceleration": [
+        "500"
+    ],
+    "travel_jerk": "9",
+    "travel_short_distance_acceleration": [
+        "250"
+    ],
+    "travel_speed": [
+        "120"
+    ],
+    "travel_speed_z": [
+        "0"
+    ],
+    "tree_support_branch_angle": "40",
+    "tree_support_branch_diameter": "5",
+    "tree_support_branch_diameter_angle": "5",
+    "tree_support_branch_distance": "5",
+    "tree_support_tip_diameter": "0.8",
+    "tree_support_wall_count": "-1",
+    "use_firmware_retraction": "0",
+    "use_relative_e_distances": "1",
+    "version": "02.09.01.70",
+    "vertical_shell_speed": [
+        "80%"
+    ],
+    "volumetric_speed_coefficients": [
+        ""
+    ],
+    "wall_distribution_count": "1",
+    "wall_filament": "0",
+    "wall_generator": "arachne",
+    "wall_loops": "2",
+    "wall_sequence": "inner wall/outer wall",
+    "wall_transition_angle": "10",
+    "wall_transition_filter_deviation": "25%",
+    "wall_transition_length": "100%",
+    "wipe": [
+        "0"
+    ],
+    "wipe_distance": [
+        "2"
+    ],
+    "wipe_speed": "80%",
+    "wipe_tower_no_sparse_layers": "0",
+    "wipe_tower_rotation_angle": "0",
+    "wipe_tower_x": [
+        "15"
+    ],
+    "wipe_tower_y": [
+        "220"
+    ],
+    "wrapping_detection_gcode": "",
+    "wrapping_detection_layers": "20",
+    "wrapping_exclude_area": [],
+    "xy_contour_compensation": "0",
+    "xy_hole_compensation": "0",
+    "z_direction_outwall_speed_continuous": "0",
+    "z_hop": [
+        "0.4"
+    ],
+    "z_hop_types": [
+        "Spiral Lift"
+    ]
+}
+
+@@END@@
+ENTRY Metadata/slice_info.config 1676
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <header>
+    <header_item key="X-BBL-Client-Type" value="slicer"/>
+    <header_item key="X-BBL-Client-Version" value="02.09.01.70"/>
+  </header>
+  <plate>
+    <metadata key="index" value="1"/>
+    <metadata key="extruder_type" value="0"/>
+    <metadata key="nozzle_volume_type" value="0"/>
+    <metadata key="printer_model_id" value=""/>
+    <metadata key="nozzle_diameters" value="0.4"/>
+    <metadata key="timelapse_type" value="0"/>
+    <metadata key="prediction" value="1234"/>
+    <metadata key="weight" value="5.67"/>
+    <metadata key="pause_count" value="0"/>
+    <metadata key="first_layer_time" value="88"/>
+    <metadata key="outside" value="false"/>
+    <metadata key="support_used" value="false"/>
+    <metadata key="label_object_enabled" value="false"/>
+    <metadata key="support_material_on_wipe_tower" value="false"/>
+    <metadata key="enable_filament_dynamic_map" value="false"/>
+    <metadata key="has_filament_switcher" value="false"/>
+    <metadata key="multi_nozzle_diameter_mode" value="0"/>
+    <metadata key="filament_maps" value="1"/>
+    <object identify_id="@12" name="cube_a" skipped="false" />
+    <object identify_id="@13" name="cube_a" skipped="false" />
+    <object identify_id="@31" name="two &amp; parts" skipped="false" />
+    <filament id="1" tray_info_idx="GFL99" type="PLA" color="#FFFFFF" used_m="1.23" used_g="3.21" group_id="0" nozzle_diameter="0.40" volume_type="Standard" used_for_object="true" used_for_support="false" directly_used="true" total_load_time="0.00" total_unload_time="0.00"/>
+    <warning msg="test_warning" level="1" error_code ="1000C001"  />
+  </plate>
+</config>
+
+@@END@@
+ENTRY [Content_Types].xml 432
+<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+ <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+ <Default Extension="png" ContentType="image/png"/>
+ <Default Extension="gcode" ContentType="text/x.gcode"/>
+</Types>
+@@END@@
+ENTRY _rels/.rels 673
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+ <Relationship Target="/Metadata/plate_1.png" Id="rel-2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"/>
+ <Relationship Target="/Metadata/plate_1.png" Id="rel-4" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-middle"/>
+<Relationship Target="/Metadata/plate_1_small.png" Id="rel-5" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-small"/>
+</Relationships>
+@@END@@
+FILE store_split reload
+R 1 1 322e392e312e3730
+CFG 602 fcb1b5f729cd02d2
+MI 546573742026203c6d6f64656c3e - 61206465736372697074696f6e 42592d5341 - -
+MD 4170706c69636174696f6e 42616d627553747564696f2d30322e30392e30312e3730
+MD 42616d627553747564696f3a336d6656657273696f6e 31
+MD 436f70797269676874 -
+MD 4372656174696f6e44617465 323032362d31312d3136
+MD 4465736372697074696f6e 61206465736372697074696f6e
+MD 44657369676e6572 616c696365
+MD 44657369676e6572436f766572 -
+MD 44657369676e6572557365724964 3432
+MD 4c6963656e7365 42592d5341
+MD 4d6f64696669636174696f6e44617465 323032362d31312d3136
+MD 4f726967696e -
+MD 50726f66696c65436f766572 -
+MD 50726f66696c654465736372697074696f6e -
+MD 50726f66696c655469746c65 -
+MD 5468756d626e61696c5f4d6964646c65 2f4d657461646174612f706c6174655f312e706e67
+MD 5468756d626e61696c5f536d616c6c 2f4d657461646174612f706c6174655f315f736d616c6c2e706e67
+MD 5469746c65 546573742026203c6d6f64656c3e
+DI 616c696365 3432 -
+PI - - - - - -
+OBJECTS 2
+O 0 637562655f61 - 2 1 2 c1d69afb5b32b137
+OC extruder 31
+OC sparse_infill_density 323525
+LHP 0
+LCR 4000000000000000 4010000000000000 1 05961fc08e31bb60
+BP 2 3f800000 40000000 00000000 3f000000 0 c0500000 40900000 00000000 3f400000 0
+CUT 0 1 0
+I 0 1 @12 3ff0000000000000 0000000000000000 0000000000000000 404b800000000000 0000000000000000 3ff0000000000000 0000000000000000 4050400000000000 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+I 1 1 0 3fec1528066a8e7a bfdeaee874b7d1ad 0000000000000000 405e7f6905f89278 3fdeaee874b7d1ad 3fec1528066a8e7a 0000000000000000 4050b23e1a87c0a9 0000000000000000 0000000000000000 3ff0000000000000 4024000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 637562655f615f70617274 0 3c677569643e 73746f72655f73706c69742e336d66 0 0 0000000000000000 0000000000000000 0000000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 4014000000000000 0000000000000000 3ff0000000000000 0000000000000000 4014000000000000 0000000000000000 0000000000000000 3ff0000000000000 4014000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0
+VMESH 8 12 98eb0db7512f91b3 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 1 4 0ccec18f26ade844 1 4 03af08eb59ae86bb 2 8 6bd9098c3225c0a1 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+O 1 74776f2026207061727473 6d6f64 1 2 1 3492c99fd2f84ee9
+OC extruder 32
+LHP 0
+BP 0
+CUT 0 1 0
+I 0 1 @31 3ff0000000000000 0000000000000000 0000000000000000 4059000000000000 0000000000000000 3ff0000000000000 0000000000000000 4059000000000000 0000000000000000 0000000000000000 3ff0000000000000 0000000000000000 0 0000000000000000 0000000000000000 0000000000000000
+V 0 7061727420226d61696e22 0 3c677569643e 706172742e73746c 0 1 3ff0000000000000 4000000000000000 4008000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 4004000000000000 0000000000000000 3ff0000000000000 0000000000000000 4008000000000000 0000000000000000 0000000000000000 3ff0000000000000 400c000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 4004000000000000 0000000000000000 3ff0000000000000 0000000000000000 4008000000000000 0000000000000000 0000000000000000 3ff0000000000000 400c000000000000 0
+VMESH 8 12 fad7c22eb764a8b3 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 0 14650fb0739d0383
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+V 1 6d6f646966696572 2 - - -1 -1 0000000000000000 0000000000000000 0000000000000000 0 0 3ff0000000000000 0000000000000000 0000000000000000 3ff8000000000000 0000000000000000 3ff0000000000000 0000000000000000 bfe0000000000000 0000000000000000 0000000000000000 3ff0000000000000 4000000000000000
+VM 3ff0000000000000 0000000000000000 0000000000000000 3ff8000000000000 0000000000000000 3ff0000000000000 0000000000000000 bfe0000000000000 0000000000000000 0000000000000000 3ff0000000000000 4000000000000000 0
+VMESH 8 12 9f1bbb192b52f6f3 0 0 0 0 0 0000000000000000 0000000000000000 0000000000000000
+VC 1 62eff3b4400d7f9f
+VCK wall_loops 33
+VF 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d 0 0 44bda7d473cdca4d
+VT - - 0
+VCUT 0 0 00000000 00000000 00000000 00000000
+PLATES 1
+P 0 0 506c617465204f6e65 0
+POI 2 0 @12
+POI 5 0 @31
+PF - - - - - -
+PS 31323334 352e3637 0 0 0 0 - 302e34 30
+PFIL 0 504c41 23464646464646 47464c3939 3f9d70a4 404d70a4 1 0 3fd999999999999a 5374616e64617264 0 0 1 0000000000000000 0000000000000000
+PW 746573745f7761726e696e67 1
+PMAP 1 1 | 3 0 1 0 | 1 0 | 0
+PCFG 8 92c0402f9c634c5e
+PCK curr_bed_type 486967682054656d7020506c617465
+PCK enable_filament_dynamic_map 30
+PCK filament_map 31
+PCK filament_map_mode 4d616e75616c
+PCK first_layer_print_sequence 312c32
+PCK has_filament_switcher 30
+PCK print_sequence 6279206f626a656374
+PCK spiral_mode 30
+CG 0 1 2
+CGI 4003333333333333 0 1 23464630303030 -
+CGI 4014000000000000 4 1 - 4734205331
+ASM 14650fb0739d0383 14650fb0739d0383 14650fb0739d0383

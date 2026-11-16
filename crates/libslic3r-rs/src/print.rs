@@ -679,6 +679,29 @@ impl Print {
         // GCode.cpp:3486 — m_wipe_tower->set_wipe_tower_bbx(print.get_wipe_tower_bbx()).
         writer.wipe_tower_bbx = self.wipe_tower_bbx;
 
+        // GCode.cpp:2817 (sequential) and 2851 (by layer): `this->set_extruders(...)`, the
+        // extruders the writer prints with (GCode.cpp:6433-6444: `m_writer.set_extruders`, which
+        // sets `multiple_extruders`, and `m_wipe.enable`). EXPORT_SET_EXTRUDERS (on); =0 leaves
+        // the writer untold, as before, so `set_extruder` keeps its bare T line.
+        if crate::faithful_gate("EXPORT_SET_EXTRUDERS") {
+            let extruder_ids = self.export_set_extruders_ids();
+            // GCode.cpp:2809-2811, 2828-2830: no object to print throws before set_extruders.
+            if !extruder_ids.is_empty() {
+                match self.raw_settings.as_ref() {
+                    Some(settings) => {
+                        // `m_config.wipe`: the print's PrintConfig option.
+                        // FIDELITY-NOTE: read from the job's settings; the filament
+                        // overrides `print_config_diffs` applies (`filament_wipe`) are not.
+                        let full = full_print_config_from_settings(settings);
+                        let wipe: Vec<bool> = crate::gcode::wipe_tower::cfg_bools(&full, "wipe");
+                        crate::g_code::set_extruders(&mut writer, &extruder_ids, &wipe);
+                    }
+                    // A print without settings keeps the writer's wipe as it is.
+                    None => writer.set_extruders(&extruder_ids),
+                }
+            }
+        }
+
         // GCode.cpp member state
         let mut last_layer_z: f64 = 0.0;
         let mut max_layer_z: f64 = 0.0;
@@ -5149,6 +5172,73 @@ fn full_print_config_from_settings(settings: &serde_json::Value) -> crate::print
 }
 
 impl Print {
+    /// The ids `GCode::_do_export` hands `set_extruders` (GCode.cpp:2790-2851):
+    /// `print.extruders()` for a sequential print (:2817), the tool ordering's
+    /// `all_extruders()` otherwise (:2851).
+    ///
+    /// FIDELITY-NOTE: this Print keeps no ToolOrdering of the export. The tool
+    /// ordering's `all_extruders()` is the union of the extruders of its layers
+    /// (`collect_extruder_statistics`, ToolOrdering.cpp:1402-1423), which
+    /// `collect_extruders` (:939-1017) takes from every layer region that prints
+    /// something and from the support layers. The export prints a region with its
+    /// `wall_filament` (`emit_layer_by_island`), so that is the extruder taken per
+    /// region with extrusions; a support layer adds its support filament when it is
+    /// not "don't care" (0, which prints with an extruder of the layer). The
+    /// sequential arm takes the extruders of the regions (`Print::extruders()` by
+    /// the region path of `object_extruders`, Print.cpp:487-490) and the support
+    /// filaments (`support_material_extruders`, Print.cpp:523-555).
+    fn export_set_extruders_ids(&self) -> Vec<u32> {
+        let num_extruders = self.config.num_filaments() as u32;
+        let support_filament_of = |id: u32| -> u32 {
+            // Print.cpp:537-538 `(i >= num_extruders) ? 0 : i`
+            let i = id - 1;
+            if i >= num_extruders {
+                0
+            } else {
+                i
+            }
+        };
+        let mut extruders: Vec<u32> = Vec::new();
+        // Print.hpp `is_sequential_print()`: by object and more than one object.
+        let sequential = self.config.print_sequence == crate::print_config::PrintSequence::ByObject && self.objects.len() > 1;
+        if sequential {
+            extruders.extend(self.all_extruders().into_iter().map(|e| e as u32));
+            for object in &self.objects {
+                let oc = object.config();
+                if oc.enable_support || oc.raft_layers > 0 {
+                    if self.config.support_filament > 0 {
+                        extruders.push(support_filament_of(self.config.support_filament));
+                    }
+                    if self.config.support_interface_filament > 0 {
+                        extruders.push(support_filament_of(self.config.support_interface_filament));
+                    }
+                }
+            }
+        } else {
+            for object in &self.objects {
+                for layer in object.layers() {
+                    for layerm in layer.regions() {
+                        if !layerm.has_extrusions() {
+                            continue;
+                        }
+                        let wall_filament = layerm.region.as_ref().map(|pr| pr.config().wall_filament).unwrap_or(1).max(1);
+                        extruders.push(wall_filament as u32 - 1);
+                    }
+                }
+                for support_layer in &object.support_layers {
+                    let has_support = support_layer.support_fills.as_ref().map(|f| !f.entities.is_empty()).unwrap_or(false);
+                    if has_support && self.config.support_filament > 0 {
+                        extruders.push(support_filament_of(self.config.support_filament));
+                    }
+                }
+            }
+        }
+        // sort_remove_duplicates
+        extruders.sort_unstable();
+        extruders.dedup();
+        extruders
+    }
+
     /// Print.hpp `const DynamicPrintConfig& full_print_config() const`. Made
     /// from `raw_settings` the first time it is read (see the field).
     fn full_print_config_from_raw_settings(&mut self) -> Option<&crate::print_config::config_def::DynamicPrintConfig> {
@@ -5689,6 +5779,2799 @@ impl Print {
         self.wiping_layer_overrides = wiping_layer_overrides;
         true
     }
+}
+
+
+// ============================================================================
+// Print.hpp / Print.cpp, the classes as the C++ declares them.
+// ============================================================================
+
+/// The classes of Print.hpp in the shape of the C++ (`Print`, `PrintObject`, `PrintRegion`,
+/// `PrintInstance`, `PrintObjectRegions`, `PrintStatistics`, `WipeTowerData`, `FakeWipeTower`,
+/// ...) and the member functions of Print.cpp over them.
+///
+/// `Print::apply` (PrintApply.cpp, `crate::print_apply`) builds this state from a `Model` and a
+/// `DynamicPrintConfig` as the C++ does. The live pipeline driver is the `Print` of the parent
+/// module, which `app_slice` builds by hand; it does not read this one yet.
+///
+/// The static configuration classes (`PrintConfig`, `PrintObjectConfig`, `PrintRegionConfig`) are
+/// `DynamicPrintConfig`s that hold the members of the class
+/// (`config_def::static_print_config_defaults`), the convention of `config_def`.
+/// The pointers of the C++ between these classes are indices or shared cells: a `PrintInstance`
+/// names its model instance by its index in the ModelObject, a `PrintObject` its ModelObject by
+/// its index in `Print::m_model`, and the `PrintRegion`s of `PrintObjectRegions::all_regions` are
+/// shared with `Print::m_print_regions` and the region lists through `Rc<RefCell<..>>`.
+#[allow(non_camel_case_types, non_upper_case_globals, non_snake_case)]
+pub mod faithful {
+    use crate::config::{ConfigBase, ConfigOption, ConfigOptionResolver, DynamicConfig};
+    use crate::gcode::wipe_tower::{cfg_bools, cfg_enum, cfg_float, cfg_floats, cfg_ints, cfg_strings, get_at};
+    use crate::geometry::{Point, Polygon};
+    use crate::libslic3r::EPSILON;
+    use crate::model::{GlobalFeatureFilaments, Model, ModelObject};
+    use crate::object_id::{ObjectBase, ObjectID};
+    use crate::print_base::{PrintBaseWithState, PrintState, StepType};
+    use crate::print_config::config_def::DynamicPrintConfig;
+    use crate::print_config::enums::{BrimType, DraftShield, ExtruderType, FilamentMapMode, NozzleVolumeType, PrintSequence, TimelapseType};
+    use std::cell::RefCell;
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::rc::Rc;
+    use std::sync::Arc;
+
+    /// Print.hpp `PrintConfig`: the members of the static class.
+    pub type PrintConfig = DynamicPrintConfig;
+    /// Print.hpp `PrintObjectConfig`: the members of the static class.
+    pub type PrintObjectConfig = DynamicPrintConfig;
+    /// Print.hpp `PrintRegionConfig`: the members of the static class.
+    pub type PrintRegionConfig = DynamicPrintConfig;
+    /// `Vec3crd`
+    pub type Vec3crd = [i64; 3];
+    /// `Vec3d`
+    pub type Vec3d = [f64; 3];
+
+    /// A `PrintConfig` / `PrintObjectConfig` / `PrintRegionConfig` with the defaults of its members
+    /// (`T::defaults()`), the state of a default-constructed static class.
+    pub fn static_config_defaults(class_name: &str) -> DynamicPrintConfig {
+        crate::print_config::config_def::static_print_config_defaults(class_name).clone()
+    }
+
+    /// `boost::hash_combine(seed, v)` for a `size_t` v (boost/container_hash/hash.hpp,
+    /// `hash_detail::hash_mix` for 64 bits), as config.rs has it.
+    fn boost_hash_combine(seed: &mut u64, v: u64) {
+        let mut x = seed.wrapping_add(0x9e3779b9).wrapping_add(v);
+        const M: u64 = 0xe9846af9b1a615d;
+        x ^= x >> 32;
+        x = x.wrapping_mul(M);
+        x ^= x >> 32;
+        x = x.wrapping_mul(M);
+        x ^= x >> 28;
+        *seed = x;
+    }
+
+    /// PrintConfig.hpp:965-970 `size_t hash() const throw()` of a static class: `boost::hash_combine`
+    /// of the hash of every member, in the order of the members.
+    pub fn static_config_hash(config: &DynamicPrintConfig, class_name: &str) -> u64 {
+        let mut seed: u64 = 0;
+        for (_, key) in crate::print_config::config_def::static_print_config_members(class_name) {
+            if let Some(opt) = config.option(key) {
+                boost_hash_combine(&mut seed, opt.hash());
+            }
+        }
+        seed
+    }
+
+    /// The `==` of two static configurations of the same class: every member equal.
+    pub fn static_config_equal(lhs: &DynamicPrintConfig, rhs: &DynamicPrintConfig) -> bool {
+        lhs.diff(rhs).map(|d| d.is_empty()).unwrap_or(false)
+    }
+
+    /// `config.<key>.value` of a bool option, false when the option is missing.
+    fn cfg_bool(config: &DynamicPrintConfig, key: &str) -> bool {
+        config.option(key).and_then(|o| o.get_bool().ok()).unwrap_or(false)
+    }
+
+    /// `config.<key>.value` of an int option.
+    fn cfg_int(config: &DynamicPrintConfig, key: &str) -> i32 {
+        config.option(key).and_then(|o| o.get_int().ok()).unwrap_or(0)
+    }
+
+    /// `config.<key>.value` of a string option.
+    fn cfg_string(config: &DynamicPrintConfig, key: &str) -> String {
+        config
+            .option(key)
+            .and_then(|o| o.as_any().downcast_ref::<crate::config::ConfigOptionString>())
+            .map(|o| o.value.clone())
+            .unwrap_or_default()
+    }
+
+    /// `config.<key>.values` of a points option (`Pointfs`).
+    fn cfg_points(config: &DynamicPrintConfig, key: &str) -> Vec<crate::geometry::Vec2d> {
+        config
+            .option(key)
+            .and_then(|o| o.as_any().downcast_ref::<crate::config::ConfigOptionPoints>())
+            .map(|o| o.values.clone())
+            .unwrap_or_default()
+    }
+
+    /// `sort_remove_duplicates(vec)` (libslic3r.h).
+    fn sort_remove_duplicates<T: Ord>(vec: &mut Vec<T>) {
+        vec.sort();
+        vec.dedup();
+    }
+
+    /// PrintConfig.cpp:454-469 `float nozzle_diameter_for_filament(const PrintConfig &config,
+    /// unsigned int filament_id)`: the nozzle diameter a 1-based filament selected
+    /// (`filament_diameter_map`), else that of its slot.
+    pub fn nozzle_diameter_for_filament(config: &DynamicPrintConfig, filament_id: u32) -> f32 {
+        if filament_id != 0 {
+            let fil_idx = (filament_id - 1) as usize;
+            let selected = cfg_strings(config, "filament_diameter_map");
+            if fil_idx < selected.len() && !selected[fil_idx].is_empty() && !selected[fil_idx].contains(';') {
+                let diameter = crate::locales_utils::string_to_double_decimal_point(&selected[fil_idx]).0;
+                if diameter > 0.0 {
+                    return diameter as f32;
+                }
+            }
+        }
+        let nozzle_idx = if filament_id == 0 { 0 } else { (filament_id - 1) as usize };
+        get_at(&cfg_floats(config, "nozzle_diameter"), nozzle_idx) as f32
+    }
+
+    /// AdaptiveLayerMerge.cpp `has_multiple_used_nozzle_diameters(print_config, filament_ids)`.
+    fn has_multiple_used_nozzle_diameters(config: &DynamicPrintConfig, filament_ids: &[u32]) -> bool {
+        crate::adaptive_layer_merge::has_multiple_used_nozzle_diameters(&|f| nozzle_diameter_for_filament(config, f), filament_ids)
+    }
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:117-140 — the steps.
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:117-131 `enum PrintStep`
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub enum PrintStep {
+        psWipeTower = 0,
+        psSkirtBrim = 1,
+        psGCodeExport = 2,
+        psConflictCheck = 3,
+    }
+
+    impl PrintStep {
+        /// Print.hpp:122 `psToolOrdering = psWipeTower`
+        pub const psToolOrdering: PrintStep = PrintStep::psWipeTower;
+        /// Print.hpp:126 `psSlicingFinished = psSkirtBrim`
+        pub const psSlicingFinished: PrintStep = PrintStep::psSkirtBrim;
+    }
+
+    /// Print.hpp:130 `psCount`
+    pub const psCount: usize = 4;
+
+    impl StepType for PrintStep {
+        fn index(self) -> usize {
+            self as usize
+        }
+        fn from_index(idx: usize) -> Self {
+            match idx {
+                0 => PrintStep::psWipeTower,
+                1 => PrintStep::psSkirtBrim,
+                2 => PrintStep::psGCodeExport,
+                _ => PrintStep::psConflictCheck,
+            }
+        }
+    }
+
+    /// Print.hpp:133-140 `enum PrintObjectStep`
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub enum PrintObjectStep {
+        posSlice = 0,
+        posPerimeters = 1,
+        posPrepareInfill = 2,
+        posInfill = 3,
+        posIroning = 4,
+        posSupportMaterial = 5,
+        posDetectOverhangsForLift = 6,
+        posSimplifyWall = 7,
+        posSimplifyInfill = 8,
+        posSimplifySupportPath = 9,
+    }
+
+    /// Print.hpp:139 `posCount`
+    pub const posCount: usize = 10;
+
+    impl StepType for PrintObjectStep {
+        fn index(self) -> usize {
+            self as usize
+        }
+        fn from_index(idx: usize) -> Self {
+            match idx {
+                0 => PrintObjectStep::posSlice,
+                1 => PrintObjectStep::posPerimeters,
+                2 => PrintObjectStep::posPrepareInfill,
+                3 => PrintObjectStep::posInfill,
+                4 => PrintObjectStep::posIroning,
+                5 => PrintObjectStep::posSupportMaterial,
+                6 => PrintObjectStep::posDetectOverhangsForLift,
+                7 => PrintObjectStep::posSimplifyWall,
+                8 => PrintObjectStep::posSimplifyInfill,
+                _ => PrintObjectStep::posSimplifySupportPath,
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:71-81 `struct SupportStageTimes`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:71-81 `struct SupportStageTimes`
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub struct SupportStageTimes {
+        pub detect: i64,
+        pub tree_generate: i64,
+        pub normal_generate: i64,
+        pub interface_generate: i64,
+        pub toolpath_generate: i64,
+    }
+
+    impl SupportStageTimes {
+        /// Print.hpp:79 `void reset() { *this = {}; }`
+        pub fn reset(&mut self) {
+            *self = SupportStageTimes::default();
+        }
+        /// Print.hpp:80
+        pub fn total(&self) -> i64 {
+            self.detect + self.tree_generate + self.normal_generate + self.interface_generate + self.toolpath_generate
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:144-205 `class PrintRegion`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:142-205 `class PrintRegion`: a group of volumes to print sharing the same config.
+    #[derive(Clone)]
+    pub struct PrintRegion {
+        m_config: PrintRegionConfig,
+        m_config_hash: u64,
+        pub(crate) m_print_region_id: i32,
+        pub(crate) m_print_object_region_id: i32,
+        pub(crate) m_ref_cnt: i32,
+        m_gradient_volume_id: ObjectID,
+    }
+
+    impl PrintRegion {
+        /// Print.cpp:54 `PrintRegion::PrintRegion(const PrintRegionConfig &config) : PrintRegion(config, config.hash()) {}`
+        pub fn new(config: PrintRegionConfig) -> Self {
+            let hash = static_config_hash(&config, "PrintRegionConfig");
+            PrintRegion::with_hash(config, hash, -1, ObjectID::default_invalid())
+        }
+
+        /// Print.hpp:148 `PrintRegion(const PrintRegionConfig &config, const size_t config_hash, int
+        /// print_object_region_id = -1, ObjectID gradient_volume_id = ObjectID())`
+        pub fn with_hash(config: PrintRegionConfig, config_hash: u64, print_object_region_id: i32, gradient_volume_id: ObjectID) -> Self {
+            PrintRegion {
+                m_config: config,
+                m_config_hash: config_hash,
+                m_print_region_id: -1,
+                m_print_object_region_id: print_object_region_id,
+                m_ref_cnt: 0,
+                m_gradient_volume_id: gradient_volume_id,
+            }
+        }
+
+        /// Print.hpp:156
+        pub fn config(&self) -> &PrintRegionConfig {
+            &self.m_config
+        }
+        /// Print.hpp:157
+        pub fn config_hash(&self) -> u64 {
+            self.m_config_hash
+        }
+        /// Print.hpp:159
+        pub fn print_region_id(&self) -> i32 {
+            self.m_print_region_id
+        }
+        /// Print.hpp:160
+        pub fn print_object_region_id(&self) -> i32 {
+            self.m_print_object_region_id
+        }
+        /// Print.hpp:164
+        pub fn gradient_volume_id(&self) -> ObjectID {
+            self.m_gradient_volume_id
+        }
+
+        /// PrintRegion.cpp:7-19 `unsigned int PrintRegion::extruder(FlowRole role) const`
+        pub fn extruder(&self, role: crate::flow::FlowRole) -> u32 {
+            use crate::flow::FlowRole;
+            match role {
+                FlowRole::Perimeter | FlowRole::ExternalPerimeter => cfg_int(&self.m_config, "wall_filament") as u32,
+                FlowRole::Infill => cfg_int(&self.m_config, "sparse_infill_filament") as u32,
+                FlowRole::SolidInfill | FlowRole::TopSolidInfill => cfg_int(&self.m_config, "solid_infill_filament") as u32,
+                _ => panic!("Unknown role"),
+            }
+        }
+
+        /// PrintRegion.cpp:74-89 `static void PrintRegion::collect_object_printing_extruders(const
+        /// PrintConfig &print_config, const PrintRegionConfig &region_config, const bool has_brim,
+        /// std::vector<unsigned int> &object_extruders)`
+        pub fn collect_object_printing_extruders_static(
+            print_config: &PrintConfig,
+            region_config: &PrintRegionConfig,
+            has_brim: bool,
+            object_extruders: &mut Vec<u32>,
+        ) {
+            // These checks reflect the same logic used in the GUI for enabling/disabling extruder selection fields.
+            let num_extruders = cfg_floats(print_config, "filament_diameter").len() as i32;
+            let mut emplace_extruder = |extruder_id: i32| {
+                let i = 0.max(extruder_id - 1);
+                object_extruders.push(if i >= num_extruders { 0 } else { i as u32 });
+            };
+            if cfg_int(region_config, "wall_loops") > 0 || has_brim {
+                emplace_extruder(cfg_int(region_config, "wall_filament"));
+            }
+            if cfg_float(region_config, "sparse_infill_density") > 0.0 {
+                emplace_extruder(cfg_int(region_config, "sparse_infill_filament"));
+            }
+            if cfg_int(region_config, "top_shell_layers") > 0 || cfg_int(region_config, "bottom_shell_layers") > 0 {
+                emplace_extruder(cfg_int(region_config, "solid_infill_filament"));
+            }
+        }
+
+        /// PrintRegion.cpp:91-103 `void PrintRegion::collect_object_printing_extruders(const Print
+        /// &print, std::vector<unsigned int> &object_extruders) const`
+        pub fn collect_object_printing_extruders(&self, print: &Print, object_extruders: &mut Vec<u32>) {
+            PrintRegion::collect_object_printing_extruders_static(print.config(), self.config(), print.has_brim(), object_extruders);
+        }
+
+        /// Print.hpp:179 `void set_config(const PrintRegionConfig &config)`
+        pub fn set_config(&mut self, config: PrintRegionConfig) {
+            self.m_config = config;
+            self.m_config_hash = static_config_hash(&self.m_config, "PrintRegionConfig");
+        }
+
+        /// Print.hpp:181-182 `void config_apply_only(const ConfigBase &other, const t_config_option_keys &keys, bool ignore_nonexistent = false)`
+        pub fn config_apply_only(&mut self, other: &dyn ConfigBase, keys: &[String], ignore_nonexistent: bool) {
+            let _ = self.m_config.apply_only(other, keys, ignore_nonexistent);
+            self.m_config_hash = static_config_hash(&self.m_config, "PrintRegionConfig");
+        }
+    }
+
+    impl std::fmt::Debug for PrintRegion {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("PrintRegion")
+                .field("config_hash", &self.m_config_hash)
+                .field("print_region_id", &self.m_print_region_id)
+                .field("print_object_region_id", &self.m_print_object_region_id)
+                .field("ref_cnt", &self.m_ref_cnt)
+                .finish()
+        }
+    }
+
+    /// Print.hpp:197 `inline bool operator==(const PrintRegion &lhs, const PrintRegion &rhs)`
+    impl PartialEq for PrintRegion {
+        fn eq(&self, rhs: &Self) -> bool {
+            self.config_hash() == rhs.config_hash() && static_config_equal(self.config(), rhs.config())
+        }
+    }
+
+    /// A `PrintRegion*` of the C++: shared by `PrintObjectRegions::all_regions`, its region lists and
+    /// `Print::m_print_regions`.
+    pub type PrintRegionPtr = Rc<RefCell<PrintRegion>>;
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:248-270 `struct PrintInstance`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:248-270 `struct PrintInstance`: a single instance of a PrintObject.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct PrintInstance {
+        /// `PrintObject *print_object`: the index of the parent object in `Print::m_objects`
+        /// (`usize::MAX` before the object is added to the print).
+        pub print_object: usize,
+        /// `const ModelInstance *model_instance`: its index in the ModelObject's instances.
+        pub model_instance: usize,
+        /// Shift of this instance's center into the world coordinates.
+        pub shift: Point,
+        /// OrcaSlicer: instance id.
+        pub id: usize,
+    }
+
+    impl PrintInstance {
+        /// Print.cpp:5847-5852 `Point PrintInstance::shift_without_plate_offset() const`
+        pub fn shift_without_plate_offset(&self, print: &Print) -> Point {
+            let plate_offset = print.get_plate_origin();
+            let s = |v: f64| (v / crate::libslic3r::SCALING_FACTOR) as i64;
+            Point::new(self.shift.x - s(plate_offset[0]), self.shift.y - s(plate_offset[1]))
+        }
+
+        /// Print.cpp:5836-5838 `BoundingBoxf3 PrintInstance::get_bounding_box() const`
+        pub fn get_bounding_box(&self, print: &Print) -> crate::bounding_box::BoundingBoxf3 {
+            let po = &print.m_objects[self.print_object];
+            let mo = po.model_object(print);
+            mo.instance_bounding_box(self.model_instance, false)
+        }
+    }
+
+    /// Print.hpp:272 `typedef std::vector<PrintInstance> PrintInstances;`
+    pub type PrintInstances = Vec<PrintInstance>;
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:274-358 `class PrintObjectRegions`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:281 `using BoundingBox = Eigen::AlignedBox<float, 3>;`: min and max corners.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct AlignedBox3f {
+        pub min: [f32; 3],
+        pub max: [f32; 3],
+    }
+
+    impl Default for AlignedBox3f {
+        /// Eigen's default AlignedBox is empty: min = +max float, max = -max float (`setEmpty()`).
+        fn default() -> Self {
+            AlignedBox3f { min: [f32::MAX; 3], max: [-f32::MAX; 3] }
+        }
+    }
+
+    impl AlignedBox3f {
+        /// `AlignedBox(const Vec3f &min, const Vec3f &max)`
+        pub fn new(min: [f32; 3], max: [f32; 3]) -> Self {
+            AlignedBox3f { min, max }
+        }
+        /// `extend(const Vec3f &p)`
+        pub fn extend(&mut self, p: [f32; 3]) {
+            for i in 0..3 {
+                self.min[i] = self.min[i].min(p[i]);
+                self.max[i] = self.max[i].max(p[i]);
+            }
+        }
+        /// `isEmpty()`: some min coordinate above its max.
+        pub fn is_empty(&self) -> bool {
+            (0..3).any(|i| self.min[i] > self.max[i])
+        }
+        /// `intersects(const AlignedBox &b)`
+        pub fn intersects(&self, b: &AlignedBox3f) -> bool {
+            (0..3).all(|i| self.min[i] <= b.max[i] && b.min[i] <= self.max[i])
+        }
+        /// `contains(const AlignedBox &b)`
+        pub fn contains(&self, b: &AlignedBox3f) -> bool {
+            (0..3).all(|i| self.min[i] <= b.min[i] && b.max[i] <= self.max[i])
+        }
+    }
+
+    /// Print.hpp:282-285 `struct VolumeExtents`
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct VolumeExtents {
+        pub volume_id: ObjectID,
+        pub bbox: AlignedBox3f,
+    }
+
+    /// Print.hpp:287-299 `struct VolumeRegion`
+    #[derive(Debug, Clone, Default)]
+    pub struct VolumeRegion {
+        /// `const ModelVolume *model_volume`: the index of the volume in its ModelObject.
+        pub model_volume: Option<usize>,
+        /// Index of a parent VolumeRegion.
+        pub parent: i32,
+        /// `PrintRegion *region`: null for a negative volume.
+        pub region: Option<PrintRegionPtr>,
+        /// `const BoundingBox *bbox`: the index of the VolumeExtents of the layer range.
+        pub bbox: Option<usize>,
+        /// `const VolumeRegion *prev_same_region`: the index of that VolumeRegion.
+        pub prev_same_region: Option<usize>,
+    }
+
+    /// Print.hpp:301-309 `struct PaintedRegion`
+    #[derive(Debug, Clone)]
+    pub struct PaintedRegion {
+        /// 1-based extruder identifier.
+        pub extruder_id: u32,
+        /// Index of a parent VolumeRegion.
+        pub parent: i32,
+        /// Pointer to PrintObjectRegions::all_regions.
+        pub region: Option<PrintRegionPtr>,
+    }
+
+    /// Print.hpp:315-319 `enum class ParentType`
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum FuzzySkinParentType {
+        VolumeRegion,
+        PaintedRegion,
+    }
+
+    /// Print.hpp:313-329 `struct FuzzySkinPaintedRegion`
+    #[derive(Debug, Clone)]
+    pub struct FuzzySkinPaintedRegion {
+        pub parent_type: FuzzySkinParentType,
+        /// Index of a parent VolumeRegion or PaintedRegion.
+        pub parent: i32,
+        /// Pointer to PrintObjectRegions::all_regions.
+        pub region: Option<PrintRegionPtr>,
+    }
+
+    impl FuzzySkinPaintedRegion {
+        /// Print.cpp:5914-5924 `PrintRegion *FuzzySkinPaintedRegion::parent_print_object_region(const LayerRangeRegions &layer_range) const`
+        pub fn parent_print_object_region(&self, layer_range: &LayerRangeRegions) -> Option<PrintRegionPtr> {
+            if self.parent_type == FuzzySkinParentType::PaintedRegion {
+                return layer_range.painted_regions[self.parent as usize].region.clone();
+            }
+            debug_assert!(self.parent_type == FuzzySkinParentType::VolumeRegion);
+            layer_range.volume_regions[self.parent as usize].region.clone()
+        }
+
+        /// Print.cpp:5926-5929
+        pub fn parent_print_object_region_id(&self, layer_range: &LayerRangeRegions) -> i32 {
+            self.parent_print_object_region(layer_range).map(|r| r.borrow().print_object_region_id()).unwrap_or(-1)
+        }
+    }
+
+    /// Print.hpp:331-349 `struct LayerRangeRegions`
+    #[derive(Debug, Clone, Default)]
+    pub struct LayerRangeRegions {
+        pub layer_height_range: (f64, f64),
+        /// `const DynamicPrintConfig* config`: the key of the range in the ModelObject's
+        /// `layer_config_ranges`, None for a single range with no config override.
+        pub config: Option<(f64, f64)>,
+        /// Volumes sorted by ModelVolume::id().
+        pub volumes: Vec<VolumeExtents>,
+        pub volume_regions: Vec<VolumeRegion>,
+        pub painted_regions: Vec<PaintedRegion>,
+        pub fuzzy_skin_painted_regions: Vec<FuzzySkinPaintedRegion>,
+    }
+
+    impl LayerRangeRegions {
+        /// Print.hpp:344-347 `bool has_volume(const ObjectID id) const`
+        pub fn has_volume(&self, id: ObjectID) -> bool {
+            // lower_bound_by_predicate(volumes, l.volume_id < id)
+            let it = self.volumes.partition_point(|l| l.volume_id < id);
+            it != self.volumes.len() && self.volumes[it].volume_id == id
+        }
+    }
+
+    /// Print.hpp:274-358 `class PrintObjectRegions`
+    #[derive(Debug, Clone, Default)]
+    pub struct PrintObjectRegions {
+        pub all_regions: Vec<PrintRegionPtr>,
+        pub layer_ranges: Vec<LayerRangeRegions>,
+        /// Transformation of this ModelObject into one of the associated PrintObjects.
+        pub trafo_bboxes: crate::geometry::geometry::Transform3d,
+        pub cached_volume_ids: Vec<ObjectID>,
+        /// Snapshot of slot_per_part_enabled used to generate the current regions.
+        pub last_slot_per_part_enabled: Vec<bool>,
+        /// Number of PrintObjects generated from the same ModelObject and sharing the regions.
+        m_ref_cnt: usize,
+    }
+
+    impl PrintObjectRegions {
+        /// Print.hpp:353 `void ref_cnt_inc() { ++ m_ref_cnt; }`
+        pub fn ref_cnt_inc(&mut self) {
+            self.m_ref_cnt += 1;
+        }
+        /// Print.hpp:354 `void ref_cnt_dec() { if (-- m_ref_cnt == 0) delete this; }`: true when the
+        /// last PrintObject let go of it (the owner drops it then).
+        pub fn ref_cnt_dec(&mut self) -> bool {
+            self.m_ref_cnt -= 1;
+            self.m_ref_cnt == 0
+        }
+        /// Print.hpp:355-360
+        pub fn clear(&mut self) {
+            self.all_regions.clear();
+            self.layer_ranges.clear();
+            self.cached_volume_ids.clear();
+            self.last_slot_per_part_enabled.clear();
+        }
+    }
+
+    /// A `PrintObjectRegions*` of the C++, shared by the PrintObjects of one ModelObject.
+    pub type PrintObjectRegionsPtr = Rc<RefCell<PrintObjectRegions>>;
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:401-712 `class PrintObject`: what Print.cpp and PrintApply.cpp read and write.
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:401-712 `class PrintObject`, the members `Print::apply` sets and Print.cpp reads.
+    ///
+    /// FIDELITY-NOTE: the layers, the slicing parameters and the per-object skirt of the C++ object
+    /// are made by the slicing steps, which run on the live `crate::print_object::PrintObject`; here
+    /// the object has no layers (`layer_count()` is 0).
+    pub struct PrintObject {
+        /// `ObjectBase` of `PrintObjectBase`.
+        pub object_base: ObjectBase,
+        /// `ModelObject *m_model_object`: its index in `Print::m_model.objects`.
+        pub m_model_object: usize,
+        /// `PrintState<PrintObjectStep, posCount> m_state`
+        pub m_state: PrintState<PrintObjectStep, posCount>,
+        /// Print.hpp `Vec3crd m_size`
+        pub m_size: Vec3crd,
+        /// Print.hpp `double m_max_z`
+        pub m_max_z: f64,
+        /// Print.hpp `PrintObjectConfig m_config`
+        pub m_config: PrintObjectConfig,
+        /// Print.hpp `Transform3d m_trafo`
+        pub m_trafo: crate::geometry::geometry::Transform3d,
+        /// Print.hpp `PrintInstances m_instances`
+        pub m_instances: PrintInstances,
+        /// Print.hpp `Point m_center_offset`
+        pub m_center_offset: Point,
+        /// Print.hpp `PrintObjectRegions *m_shared_regions`
+        pub m_shared_regions: Option<PrintObjectRegionsPtr>,
+        /// Print.hpp `SupportStageTimes m_support_stage_times`
+        pub m_support_stage_times: SupportStageTimes,
+        /// Print.hpp `PrintObject* m_shared_object`: its index in `Print::m_objects`.
+        pub m_shared_object: Option<usize>,
+        /// Print.hpp `size_t m_klipper_object_id`
+        pub m_klipper_object_id: usize,
+        /// Print.hpp `AutoContourHolesCompensationParams auto_contour_holes_compensation_params`:
+        /// the twelve coefficient lists, in the order of the struct.
+        pub auto_contour_holes_compensation_params: Vec<Vec<f64>>,
+        /// Print.hpp `std::vector<int> object_first_layer_wall_extruders`
+        pub object_first_layer_wall_extruders: Vec<i32>,
+        /// Print.hpp `int object_brim_filament`
+        pub object_brim_filament: i32,
+        /// Print.hpp `double object_brim_print_z`
+        pub object_brim_print_z: f64,
+        /// Print.hpp `bool has_variable_layer_heights`
+        pub has_variable_layer_heights: bool,
+        /// The number of layers / support layers the slicing steps made (none here).
+        pub m_layer_count: usize,
+        pub m_support_layer_count: usize,
+    }
+
+    impl PrintObject {
+        /// The members of the C++ constructor's initializer list (PrintObject.cpp:73-80):
+        /// the model object, the trafo, the instances, a default config. `PrintObject::new_for_print`
+        /// (PrintApply) does the rest of the constructor.
+        pub fn with_model_object(model_object: usize, trafo: crate::geometry::geometry::Transform3d, instances: PrintInstances) -> Self {
+            PrintObject {
+                object_base: ObjectBase::new(),
+                m_model_object: model_object,
+                m_state: PrintState::new(),
+                m_size: [0, 0, 0],
+                m_max_z: 0.0,
+                m_config: static_config_defaults("PrintObjectConfig"),
+                m_trafo: trafo,
+                m_instances: instances,
+                m_center_offset: Point::new(0, 0),
+                m_shared_regions: None,
+                m_support_stage_times: SupportStageTimes::default(),
+                m_shared_object: None,
+                m_klipper_object_id: 0,
+                auto_contour_holes_compensation_params: Vec::new(),
+                object_first_layer_wall_extruders: Vec::new(),
+                object_brim_filament: 0,
+                object_brim_print_z: 0.0,
+                has_variable_layer_heights: false,
+                m_layer_count: 0,
+                m_support_layer_count: 0,
+            }
+        }
+
+        /// `ObjectBase::id()`
+        pub fn id(&self) -> ObjectID {
+            self.object_base.id()
+        }
+        /// PrintBase.hpp `const ModelObject* model_object() const`, in the print's model.
+        pub fn model_object<'p>(&self, print: &'p Print) -> &'p ModelObject {
+            &print.m_model.objects[self.m_model_object]
+        }
+        /// Print.hpp:404
+        pub fn size(&self) -> &Vec3crd {
+            &self.m_size
+        }
+        /// Print.hpp:405
+        pub fn config(&self) -> &PrintObjectConfig {
+            &self.m_config
+        }
+        /// Print.hpp:406 `void configBrimWidth(double m) { m_config.brim_width.value = m; }`
+        pub fn configBrimWidth(&mut self, m: f64) {
+            let _ = self.m_config.set_key_value("brim_width", Box::new(crate::config::ConfigOptionFloat::with_value(m)));
+        }
+        /// Print.hpp:407 (the object here has no layers, see the struct)
+        pub fn layers(&self) -> usize {
+            self.m_layer_count
+        }
+        /// Print.hpp:408
+        pub fn support_layers(&self) -> usize {
+            self.m_support_layer_count
+        }
+        /// Print.hpp:409
+        pub fn trafo(&self) -> &crate::geometry::geometry::Transform3d {
+            &self.m_trafo
+        }
+        /// Print.hpp:420-422 `Transform3d trafo_centered() const`
+        pub fn trafo_centered(&self) -> crate::geometry::geometry::Transform3d {
+            let mut t = self.m_trafo;
+            // t.pretranslate(Vec3d(- unscale(m_center_offset.x()), - unscale(m_center_offset.y()), 0))
+            let dx = -(self.m_center_offset.x as f64 * crate::libslic3r::SCALING_FACTOR);
+            let dy = -(self.m_center_offset.y as f64 * crate::libslic3r::SCALING_FACTOR);
+            t[(0, 3)] += dx;
+            t[(1, 3)] += dy;
+            t
+        }
+        /// Print.hpp:423
+        pub fn instances(&self) -> &PrintInstances {
+            &self.m_instances
+        }
+        /// Print.hpp:442 `BoundingBox bounding_box() const`
+        pub fn bounding_box(&self) -> crate::geometry::BoundingBox {
+            crate::geometry::BoundingBox::from_points_minmax(
+                Point::new(-self.m_size[0] / 2, -self.m_size[1] / 2),
+                Point::new(self.m_size[0] / 2, self.m_size[1] / 2),
+            )
+        }
+        /// Print.hpp:445
+        pub fn height(&self) -> i64 {
+            self.m_size[2]
+        }
+        /// Print.hpp:446
+        pub fn max_z(&self) -> f64 {
+            self.m_max_z
+        }
+        /// Print.hpp:448
+        pub fn center_offset(&self) -> &Point {
+            &self.m_center_offset
+        }
+        /// Print.hpp:457-462 `bool has_brim() const`
+        pub fn has_brim(&self) -> bool {
+            let brim_type = cfg_enum(&self.m_config, "brim_type");
+            ((brim_type != BrimType::BtNoBrim as i32 && cfg_float(&self.m_config, "brim_width") > 0.0)
+                || brim_type == BrimType::BtAutoBrim as i32
+                || brim_type == BrimType::BtBrimEars as i32)
+                && !self.has_raft()
+        }
+        /// Print.hpp:472
+        pub fn total_layer_count(&self) -> usize {
+            self.layer_count() + self.support_layer_count()
+        }
+        /// Print.hpp:473
+        pub fn layer_count(&self) -> usize {
+            self.m_layer_count
+        }
+        /// Print.hpp:499
+        pub fn support_layer_count(&self) -> usize {
+            self.m_support_layer_count
+        }
+        /// Print.hpp:518
+        pub fn num_printing_regions(&self) -> usize {
+            self.m_shared_regions.as_ref().map(|r| r.borrow().all_regions.len()).unwrap_or(0)
+        }
+        /// Print.hpp:519
+        pub fn printing_region(&self, idx: usize) -> PrintRegionPtr {
+            self.m_shared_regions.as_ref().unwrap().borrow().all_regions[idx].clone()
+        }
+        /// PrintObject.cpp `std::vector<std::reference_wrapper<const PrintRegion>> PrintObject::all_regions() const`
+        pub fn all_regions(&self) -> Vec<PrintRegionPtr> {
+            match &self.m_shared_regions {
+                Some(r) => r.borrow().all_regions.clone(),
+                None => Vec::new(),
+            }
+        }
+        /// Print.hpp:522
+        pub fn shared_regions(&self) -> Option<PrintObjectRegionsPtr> {
+            self.m_shared_regions.clone()
+        }
+        /// Print.hpp:524
+        pub fn has_support(&self) -> bool {
+            cfg_bool(&self.m_config, "enable_support") || cfg_int(&self.m_config, "enforce_support_layers") > 0
+        }
+        /// Print.hpp:525
+        pub fn has_raft(&self) -> bool {
+            cfg_int(&self.m_config, "raft_layers") > 0
+        }
+        /// Print.hpp:526
+        pub fn has_support_material(&self) -> bool {
+            self.has_support() || self.has_raft()
+        }
+        /// Print.hpp:527-528
+        pub fn support_stage_times(&self) -> &SupportStageTimes {
+            &self.m_support_stage_times
+        }
+        /// Print.hpp:530
+        pub fn is_mm_painted(&self, print: &Print) -> bool {
+            self.model_object(print).is_mm_painted()
+        }
+        /// Print.hpp:560
+        pub fn get_shared_object(&self) -> Option<usize> {
+            self.m_shared_object
+        }
+        /// Print.hpp:578
+        pub fn get_klipper_object_id(&self) -> usize {
+            self.m_klipper_object_id
+        }
+        /// Print.hpp:579
+        pub fn set_klipper_object_id(&mut self, id: usize) {
+            self.m_klipper_object_id = id;
+        }
+        /// Print.hpp:581
+        pub fn set_auto_circle_compenstaion_params(&mut self, params: Vec<Vec<f64>>) {
+            self.auto_contour_holes_compensation_params = params;
+        }
+        /// Print.hpp:582
+        pub fn get_auto_circle_compenstaion_params(&self) -> Vec<Vec<f64>> {
+            self.auto_contour_holes_compensation_params.clone()
+        }
+        /// Print.hpp:591 `void config_apply(const ConfigBase &other, bool ignore_nonexistent = false)`
+        pub fn config_apply(&mut self, other: &dyn ConfigBase, ignore_nonexistent: bool) {
+            // StaticConfig::apply: apply_only over the own keys.
+            let keys = self.m_config.keys();
+            let _ = self.m_config.apply_only(other, &keys, ignore_nonexistent);
+        }
+        /// Print.hpp:592
+        pub fn config_apply_only(&mut self, other: &dyn ConfigBase, keys: &[String], ignore_nonexistent: bool) {
+            let _ = self.m_config.apply_only(other, keys, ignore_nonexistent);
+        }
+        /// Print.cpp:2073-2077 `void PrintObject::set_shared_object(PrintObject *object)`
+        pub fn set_shared_object(&mut self, object: usize) {
+            self.m_shared_object = Some(object);
+        }
+        /// Print.cpp:2079-2090 `void PrintObject::clear_shared_object()`
+        pub fn clear_shared_object(&mut self) {
+            if self.m_shared_object.is_some() {
+                self.m_layer_count = 0;
+                self.m_support_layer_count = 0;
+                self.m_shared_object = None;
+                // invalidate_all_steps_without_cancel()
+                self.m_state.invalidate_all(|| {});
+            }
+        }
+        /// PrintBase.hpp:667 `bool is_step_done_unguarded(PrintObjectStepEnum step) const`
+        pub fn is_step_done_unguarded(&self, step: PrintObjectStep) -> bool {
+            self.m_state.is_done_unguarded(step)
+        }
+        /// PrintBase.hpp:650 `bool is_step_done(PrintObjectStepEnum step) const`
+        pub fn is_step_done(&self, step: PrintObjectStep, print: &Print) -> bool {
+            self.m_state.is_done(step, print.base.base.state_mutex())
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:714-768 `struct FakeWipeTower`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:714-768 `struct FakeWipeTower`
+    #[derive(Debug, Clone, Default)]
+    pub struct FakeWipeTower {
+        pub pos: [f32; 2],
+        pub width: f32,
+        pub height: f32,
+        pub layer_height: f32,
+        pub depth: f32,
+        pub brim_width: f32,
+        pub plate_origin: [f64; 2],
+        pub rib_offset: [f32; 2],
+        /// wipe tower's true outer wall and brim, by print_z
+        pub outer_wall: BTreeMap<ordered_float::OrderedFloat<f32>, Vec<crate::geometry::Polyline>>,
+    }
+
+    impl FakeWipeTower {
+        /// Print.hpp:731-741
+        pub fn set_fake_extrusion_data(&mut self, p: [f32; 2], w: f32, h: f32, lh: f32, d: f32, bd: f32, o: [f64; 2]) {
+            self.pos = p;
+            self.width = w;
+            self.height = h;
+            self.layer_height = lh;
+            self.depth = d;
+            self.brim_width = bd;
+            self.plate_origin = o;
+        }
+
+        /// Print.hpp:743 `void set_pos(Vec2f p) { pos = p+rib_offset; }`
+        pub fn set_pos(&mut self, p: [f32; 2]) {
+            self.pos = [p[0] + self.rib_offset[0], p[1] + self.rib_offset[1]];
+        }
+
+        /// Print.hpp:745-767 `std::vector<ExtrusionPaths> getFakeExtrusionPathsFromWipeTower() const`:
+        /// per layer the outline of the tower, and on the first layer its brim, as point lists.
+        pub fn getFakeExtrusionPathsFromWipeTower(&self) -> Vec<Vec<(crate::extrusion_entity::ExtrusionRole, f32, Vec<Point>)>> {
+            use crate::extrusion_entity::ExtrusionRole;
+            // `int d = scale_(depth)`: the float through double, truncated to int.
+            let scale_i = |v: f32| (v as f64 / crate::libslic3r::SCALING_FACTOR) as i32 as i64;
+            let d = scale_i(self.depth);
+            let w = scale_i(self.width);
+            let bd = scale_i(self.brim_width);
+            let min_corner = Point::new(
+                (self.pos[0] as f64 / crate::libslic3r::SCALING_FACTOR) as i64,
+                (self.pos[1] as f64 / crate::libslic3r::SCALING_FACTOR) as i64,
+            );
+            let max_corner = Point::new(min_corner.x + w, min_corner.y + d);
+
+            let mut paths: Vec<Vec<(ExtrusionRole, f32, Vec<Point>)>> = Vec::new();
+            let mut h = 0.0f32;
+            while h < self.height {
+                let polyline = vec![
+                    min_corner,
+                    Point::new(max_corner.x, min_corner.y),
+                    max_corner,
+                    Point::new(min_corner.x, max_corner.y),
+                    min_corner,
+                ];
+                paths.push(vec![(ExtrusionRole::WipeTower, self.layer_height, polyline)]);
+
+                if h == 0.0 {
+                    // add brim
+                    let wtbmin = Point::new(min_corner.x - bd, min_corner.y - bd);
+                    let wtbmax = Point::new(max_corner.x + bd, max_corner.y + bd);
+                    let brim = vec![wtbmin, Point::new(wtbmax.x, wtbmin.y), wtbmax, Point::new(wtbmin.x, wtbmax.y), wtbmin];
+                    paths.last_mut().unwrap().push((ExtrusionRole::Brim, self.layer_height, brim));
+                }
+                h += self.layer_height;
+            }
+            paths
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:770-818 `struct WipeTowerData`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:770-818 `struct WipeTowerData`, what the plater and the G-code export read of
+    /// the tower.
+    #[derive(Debug, Clone, Default)]
+    pub struct WipeTowerData {
+        pub priming: Option<Vec<crate::gcode::wipe_tower::ToolChangeResult>>,
+        pub tool_changes: Vec<Vec<crate::gcode::wipe_tower::ToolChangeResult>>,
+        pub final_purge: Option<crate::gcode::wipe_tower::ToolChangeResult>,
+        pub used_filament: Vec<f32>,
+        pub number_of_toolchanges: i32,
+        pub depth: f32,
+        pub brim_width: f32,
+        /// `BoundingBoxf bbx`: min and max, including brim.
+        pub bbx: ((f64, f64), (f64, f64)),
+        pub rib_offset: [f32; 2],
+        /// `std::optional<WipeTowerMeshData> wipe_tower_mesh_data`: its bottom outline.
+        pub wipe_tower_mesh_data_bottom: Option<Polygon>,
+    }
+
+    impl WipeTowerData {
+        /// Print.hpp:808 `WipeTowerData(ToolOrdering &tool_ordering) : tool_ordering(tool_ordering) { clear(); }`
+        pub fn new() -> Self {
+            let mut d = WipeTowerData::default();
+            d.clear();
+            d
+        }
+        /// Print.hpp:796-805 `void clear()`
+        pub fn clear(&mut self) {
+            self.priming = None;
+            self.tool_changes.clear();
+            self.final_purge = None;
+            self.used_filament.clear();
+            self.number_of_toolchanges = -1;
+            self.depth = 0.0;
+            self.brim_width = 0.0;
+            self.wipe_tower_mesh_data_bottom = None;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:820-852 `struct PrintStatistics`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:820-852 `struct PrintStatistics`
+    #[derive(Debug, Clone, Default)]
+    pub struct PrintStatistics {
+        pub estimated_normal_print_time: String,
+        pub estimated_silent_print_time: String,
+        pub total_used_filament: f64,
+        pub total_extruded_volume: f64,
+        pub total_cost: f64,
+        pub total_toolchanges: i32,
+        pub total_weight: f64,
+        pub total_wipe_tower_cost: f64,
+        pub total_wipe_tower_filament: f64,
+        pub initial_tool: u32,
+        pub filament_stats: BTreeMap<usize, f64>,
+    }
+
+    impl PrintStatistics {
+        /// Print.hpp:822 `PrintStatistics() { clear(); }`
+        pub fn new() -> Self {
+            let mut s = PrintStatistics::default();
+            s.clear();
+            s
+        }
+
+        /// Print.cpp:4454-4471 `DynamicConfig PrintStatistics::config() const`
+        pub fn config(&self) -> DynamicConfig {
+            use crate::config::{ConfigOptionFloat, ConfigOptionInt, ConfigOptionString};
+            let mut config = DynamicConfig::new();
+            let normal_print_time = crate::utils::short_time(&self.estimated_normal_print_time);
+            let silent_print_time = crate::utils::short_time(&self.estimated_silent_print_time);
+            config.set_key_value("print_time", Box::new(ConfigOptionString::with_value(normal_print_time.clone())));
+            config.set_key_value("normal_print_time", Box::new(ConfigOptionString::with_value(normal_print_time)));
+            config.set_key_value("silent_print_time", Box::new(ConfigOptionString::with_value(silent_print_time)));
+            config.set_key_value("used_filament", Box::new(ConfigOptionFloat::with_value(self.total_used_filament / 1000.0)));
+            config.set_key_value("extruded_volume", Box::new(ConfigOptionFloat::with_value(self.total_extruded_volume)));
+            config.set_key_value("total_cost", Box::new(ConfigOptionFloat::with_value(self.total_cost)));
+            config.set_key_value("total_toolchanges", Box::new(ConfigOptionInt::with_value(self.total_toolchanges)));
+            config.set_key_value("total_weight", Box::new(ConfigOptionFloat::with_value(self.total_weight)));
+            config.set_key_value("total_wipe_tower_cost", Box::new(ConfigOptionFloat::with_value(self.total_wipe_tower_cost)));
+            config.set_key_value("total_wipe_tower_filament", Box::new(ConfigOptionFloat::with_value(self.total_wipe_tower_filament)));
+            config.set_key_value("initial_tool", Box::new(ConfigOptionInt::with_value(self.initial_tool as i32)));
+            config
+        }
+
+        /// Print.cpp:4473-4482 `DynamicConfig PrintStatistics::placeholders()`
+        pub fn placeholders() -> DynamicConfig {
+            use crate::config::ConfigOptionString;
+            let mut config = DynamicConfig::new();
+            for key in [
+                "print_time",
+                "normal_print_time",
+                "silent_print_time",
+                "used_filament",
+                "extruded_volume",
+                "total_cost",
+                "total_weight",
+                "intial_tool",
+                "total_toolchanges",
+                "total_wipe_tower_cost",
+                "total_wipe_tower_filament",
+            ] {
+                config.set_key_value(key, Box::new(ConfigOptionString::with_value(format!("{{{}}}", key))));
+            }
+            config
+        }
+
+        /// Print.hpp:841-851 `void clear()`
+        pub fn clear(&mut self) {
+            self.total_used_filament = 0.0;
+            self.total_extruded_volume = 0.0;
+            self.total_cost = 0.0;
+            self.total_toolchanges = 0;
+            self.total_weight = 0.0;
+            self.total_wipe_tower_cost = 0.0;
+            self.total_wipe_tower_filament = 0.0;
+            self.initial_tool = 0;
+            self.filament_stats.clear();
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:870-882 `struct StatisticsByExtruderCount`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:870-882 `struct StatisticsByExtruderCount`
+    #[derive(Debug, Clone, Default)]
+    pub struct StatisticsByExtruderCount {
+        pub stats_by_single_extruder: crate::gcode::tool_ordering::FilamentChangeStats,
+        pub stats_by_multi_extruder_best: crate::gcode::tool_ordering::FilamentChangeStats,
+        pub stats_by_multi_extruder_curr: crate::gcode::tool_ordering::FilamentChangeStats,
+    }
+
+    impl StatisticsByExtruderCount {
+        /// Print.hpp:876-880
+        pub fn clear(&mut self) {
+            self.stats_by_single_extruder = Default::default();
+            self.stats_by_multi_extruder_best = Default::default();
+            self.stats_by_multi_extruder_curr = Default::default();
+        }
+    }
+
+    /// Print.hpp:1193-1205 `struct FilamentIndexKey`
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FilamentIndexKey {
+        pub filament_id: i32,
+        pub extruder: ExtruderType,
+        pub nozzle_volume_type: NozzleVolumeType,
+    }
+
+    /// Print.hpp:1220-1229 `struct FilamentIndexKeyHash`
+    impl std::hash::Hash for FilamentIndexKey {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            self.filament_id.hash(state);
+            (self.extruder as i32).hash(state);
+            (self.nozzle_volume_type as i32).hash(state);
+        }
+    }
+
+    /// Print.hpp:1207-1219 `struct PrintIndexKey`
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct PrintIndexKey {
+        pub filament_id: i32,
+        pub extruder_id: i32,
+        pub extruder: ExtruderType,
+        pub nozzle_volume_type: NozzleVolumeType,
+    }
+
+    /// Print.hpp:1238-1248 `struct PrintIndexKeyHash`
+    impl std::hash::Hash for PrintIndexKey {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            self.filament_id.hash(state);
+            self.extruder_id.hash(state);
+            (self.extruder as i32).hash(state);
+            (self.nozzle_volume_type as i32).hash(state);
+        }
+    }
+
+    /// FilamentGroupUtils.hpp:47-66 `struct NozzleLoadedFilamentInfo : public FilamentInfo`, which
+    /// `Print::m_nozzle_loaded_filament_info` holds.
+    ///
+    /// FIDELITY-NOTE: not ported in filament_group_utils.rs; the members are those of the C++, the
+    /// base flattened into `base`.
+    #[derive(Debug, Clone)]
+    pub struct NozzleLoadedFilamentInfo {
+        pub base: crate::filament_group_utils::FilamentInfo,
+        pub nozzle_id: i32,
+        pub filament_id: String,
+        pub valid: bool,
+    }
+
+    /// PrintConfig.hpp:339-346 `static std::unordered_map<NozzleType, std::string> NozzleTypeEumnToStr`
+    pub fn nozzle_type_eumn_to_str(type_: crate::common_defs::NozzleType) -> String {
+        use crate::common_defs::NozzleType;
+        match type_ {
+            NozzleType::Undefine => "undefine",
+            NozzleType::HardenedSteel => "hardened_steel",
+            NozzleType::StainlessSteel => "stainless_steel",
+            NozzleType::TungstenCarbide => "tungsten_carbide",
+            NozzleType::Brass => "brass",
+            NozzleType::E3D => "E3D",
+        }
+        .to_string()
+    }
+
+    /// Print.hpp:1249 `using FilamentIndexMap = std::unordered_map<FilamentIndexKey, int, FilamentIndexKeyHash>;`
+    pub type FilamentIndexMap = HashMap<FilamentIndexKey, i32>;
+    /// Print.hpp:1250
+    pub type PrintIndexMap = HashMap<PrintIndexKey, i32>;
+
+    /// The two index maps `Print::get_config_index` overloads take (Print.hpp:1251-1252).
+    pub trait ConfigIndexMap {
+        /// The key of a filament on its nozzle.
+        fn config_index_lookup(&mut self, filament_id: i32, extruder_id: i32, extruder: ExtruderType, nozzle_volume_type: NozzleVolumeType) -> (bool, i32);
+        fn config_index_insert(&mut self, filament_id: i32, extruder_id: i32, extruder: ExtruderType, nozzle_volume_type: NozzleVolumeType, index: i32);
+        /// The overload keyed without the extruder (FilamentIndexMap) takes the 1-based filament
+        /// for `get_config_index_base`, the other the 1-based extruder.
+        const BY_FILAMENT: bool;
+    }
+
+    impl ConfigIndexMap for FilamentIndexMap {
+        fn config_index_lookup(&mut self, filament_id: i32, _extruder_id: i32, extruder: ExtruderType, nozzle_volume_type: NozzleVolumeType) -> (bool, i32) {
+            match self.get(&FilamentIndexKey { filament_id, extruder, nozzle_volume_type }) {
+                Some(&v) => (true, v),
+                None => (false, 0),
+            }
+        }
+        fn config_index_insert(&mut self, filament_id: i32, _extruder_id: i32, extruder: ExtruderType, nozzle_volume_type: NozzleVolumeType, index: i32) {
+            self.insert(FilamentIndexKey { filament_id, extruder, nozzle_volume_type }, index);
+        }
+        const BY_FILAMENT: bool = true;
+    }
+
+    impl ConfigIndexMap for PrintIndexMap {
+        fn config_index_lookup(&mut self, filament_id: i32, extruder_id: i32, extruder: ExtruderType, nozzle_volume_type: NozzleVolumeType) -> (bool, i32) {
+            match self.get(&PrintIndexKey { filament_id, extruder_id, extruder, nozzle_volume_type }) {
+                Some(&v) => (true, v),
+                None => (false, 0),
+            }
+        }
+        fn config_index_insert(&mut self, filament_id: i32, extruder_id: i32, extruder: ExtruderType, nozzle_volume_type: NozzleVolumeType, index: i32) {
+            self.insert(PrintIndexKey { filament_id, extruder_id, extruder, nozzle_volume_type }, index);
+        }
+        const BY_FILAMENT: bool = false;
+    }
+
+    /// Print.cpp:94-243 `static std::unordered_set<std::string> steps_gcode` (the adjacent literals "wipe_speed" "default_jerk" of 200-201 are one string)
+    const INVALIDATE_STEPS_GCODE: &[&str] = &[
+        "additional_cooling_fan_speed",
+        "optional_cooling_fan_speed",
+        "reduce_crossing_wall",
+        "max_travel_detour_distance",
+        "avoid_crossing_wall_includes_support",
+        "printable_area",
+        "bed_exclude_area",
+        "thumbnail_size",
+        "before_layer_change_gcode",
+        "enable_pressure_advance",
+        "pressure_advance",
+        "enable_overhang_bridge_fan",
+        "overhang_fan_speed",
+        "ironing_fan_speed",
+        "pre_start_fan_time",
+        "overhang_fan_threshold",
+        "overhang_threshold_participating_cooling",
+        "slow_down_for_layer_cooling",
+        "no_slow_down_for_cooling_on_outwalls",
+        "deretraction_speed",
+        "close_fan_the_first_x_layers",
+        "first_x_layer_part_fan_speed",
+        "close_additional_fan_first_x_layers",
+        "close_optional_fan_first_x_layers",
+        "additional_fan_full_speed_layer",
+        "optional_fan_full_speed_layer",
+        "first_x_layer_fan_speed",
+        "first_x_layer_optional_fan_speed",
+        "machine_end_gcode",
+        "printing_by_object_gcode",
+        "filament_end_gcode",
+        "post_process",
+        "extruder_clearance_height_to_rod",
+        "extruder_clearance_height_to_lid",
+        "extruder_clearance_dist_to_rod",
+        "nozzle_height",
+        "extruder_clearance_max_radius",
+        "extruder_colour",
+        "extruder_offset",
+        "filament_flow_ratio",
+        "reduce_fan_stop_start_freq",
+        "fan_cooling_layer_time",
+        "full_fan_speed_layer",
+        "filament_colour",
+        "default_filament_colour",
+        "filament_diameter",
+        "volumetric_speed_coefficients",
+        "filament_density",
+        "filament_cost",
+        "initial_layer_acceleration",
+        "outer_wall_acceleration",
+        "top_surface_acceleration",
+        "accel_to_decel_enable",
+        "accel_to_decel_factor",
+        "supertack_plate_temp_initial_layer",
+        "cool_plate_temp_initial_layer",
+        "eng_plate_temp_initial_layer",
+        "hot_plate_temp_initial_layer",
+        "textured_plate_temp_initial_layer",
+        "gcode_add_line_number",
+        "layer_change_gcode",
+        "time_lapse_gcode",
+        "wrapping_detection_gcode",
+        "fan_min_speed",
+        "fan_max_speed",
+        "printable_height",
+        "slow_down_min_speed",
+        "reduce_infill_retraction_mode",
+        "filename_format",
+        "retraction_minimum_travel",
+        "retract_before_wipe",
+        "retract_when_changing_layer",
+        "retraction_length",
+        "retract_length_toolchange",
+        "filament_retract_length_toolchange",
+        "z_hop",
+        "filament_retract_length_nc",
+        "retract_restart_extra",
+        "retract_restart_extra_toolchange",
+        "filament_retract_restart_extra_toolchange",
+        "retraction_speed",
+        "retract_lift_above",
+        "retract_lift_below",
+        "slow_down_layer_time",
+        "standby_temperature_delta",
+        "machine_start_gcode",
+        "filament_start_gcode",
+        "change_filament_gcode",
+        "wipe",
+        "wipe_distance",
+        "curr_bed_type",
+        "nozzle_volume",
+        "chamber_temperatures",
+        "required_nozzle_HRC",
+        "upward_compatible_machine",
+        "is_infill_first",
+        "seam_gap",
+        "wipe_speeddefault_jerk",
+        "outer_wall_jerk",
+        "inner_wall_jerk",
+        "infill_jerk",
+        "top_surface_jerk",
+        "initial_layer_jerk",
+        "travel_jerk",
+        "inner_wall_acceleration",
+        "sparse_infill_acceleration",
+        "exclude_object",
+        "print_in_clockwise",
+        "use_relative_e_distances",
+        "activate_air_filtration",
+        "during_print_exhaust_fan_speed",
+        "complete_print_exhaust_fan_speed",
+        "use_firmware_retraction",
+        "enable_long_retraction_when_cut",
+        "long_retractions_when_cut",
+        "retraction_distances_when_cut",
+        "filament_long_retractions_when_cut",
+        "filament_retraction_distances_when_cut",
+        "grab_length",
+        "bed_temperature_formula",
+        "filament_notes",
+        "process_notes",
+        "printer_notes",
+        "filament_velocity_adaptation_factor",
+        "filament_tower_interface_purge_volume",
+        "default_ams_type",
+        "ams_filament_load_time_ams",
+        "ams_filament_load_time_ams_lite",
+        "ams_filament_load_time_n3f_s",
+        "ams_filament_unload_time_ams",
+        "ams_filament_unload_time_ams_lite",
+        "ams_filament_unload_time_n3f_s",
+    ];
+    /// Print.cpp:245 `static std::unordered_set<std::string> steps_ignore;`
+    const INVALIDATE_STEPS_IGNORE: &[&str] = &[];
+    /// Print.cpp:264-293: the keys that invalidate posSlice
+    const INVALIDATE_OSTEPS_SLICE: &[&str] = &[
+        "initial_layer_print_height",
+        "nozzle_diameter",
+        "filament_diameter_map",
+        "multi_nozzle_diameter_mode",
+        "resolution",
+        "precise_z_height",
+        "filament_shrink",
+        "enable_circle_compensation",
+        "circle_compensation_manual_offset",
+        "circle_compensation_speed",
+        "counter_coef_1",
+        "counter_coef_2",
+        "counter_coef_3",
+        "hole_coef_1",
+        "hole_coef_2",
+        "hole_coef_3",
+        "counter_limit_min",
+        "counter_limit_max",
+        "hole_limit_min",
+        "hole_limit_max",
+        "diameter_limit",
+        "spiral_mode",
+        "enable_order_independent_overlap_carving",
+        "periodic_modifier",
+        "periodic_modifier_skip_layers",
+        "periodic_modifier_apply_layers",
+        "modifier_ignore_infill",
+    ];
+    /// Print.cpp:296-383: the keys that invalidate psWipeTower and psSkirtBrim
+    const INVALIDATE_STEPS_WIPE_TOWER_SKIRT_BRIM: &[&str] = &[
+        "print_sequence",
+        "filament_type",
+        "nozzle_temperature_initial_layer",
+        "filament_minimal_purge_on_wipe_tower",
+        "filament_max_volumetric_speed",
+        "filament_adaptive_volumetric_speed",
+        "filament_ramming_volumetric_speed",
+        "filament_ramming_volumetric_speed_nc",
+        "gcode_flavor",
+        "single_extruder_multi_material",
+        "nozzle_temperature",
+        "filament_pre_cooling_temperature",
+        "filament_pre_cooling_temperature_nc",
+        "filament_ramming_travel_time",
+        "filament_ramming_travel_time_nc",
+        "supertack_plate_temp",
+        "cool_plate_temp",
+        "eng_plate_temp",
+        "hot_plate_temp",
+        "textured_plate_temp",
+        "enable_prime_tower",
+        "enable_wrapping_detection",
+        "prime_tower_enable_framework",
+        "prime_tower_width",
+        "prime_tower_max_speed",
+        "prime_tower_feedrate_factor",
+        "prime_tower_tail_speed_factor",
+        "prime_tower_tail_slowdown_volume",
+        "prime_tower_lift_speed",
+        "prime_tower_lift_height",
+        "prime_tower_brim_width",
+        "prime_tower_skip_points",
+        "prime_tower_flat_ironing",
+        "prime_tower_line_ironing",
+        "prime_tower_ironing_speed",
+        "prime_tower_side_scrape",
+        "prime_tower_side_scrape_face",
+        "prime_tower_side_scrape_length",
+        "prime_tower_side_scrape_height",
+        "prime_tower_side_scrape_speed",
+        "prime_tower_side_scrape_wall_gap",
+        "prime_tower_side_scrape_point_spacing",
+        "prime_tower_side_scrape_along_length",
+        "prime_tower_acceleration",
+        "prime_tower_line_width",
+        "prime_tower_ramming_line_width",
+        "prime_tower_wipe_speed",
+        "prime_tower_wipe_distance",
+        "prime_tower_rib_wall",
+        "prime_tower_extra_rib_length",
+        "prime_tower_rib_width",
+        "prime_tower_fillet_wall",
+        "first_layer_print_sequence",
+        "other_layers_print_sequence",
+        "other_layers_print_sequence_nums",
+        "extruder_ams_count",
+        "extruder_nozzle_stats",
+        "enable_filament_dynamic_map",
+        "filament_cooling_before_tower",
+        "enable_tower_interface_features",
+        "filament_tower_ironing_area",
+        "filament_tower_interface_print_temp",
+        "filament_tower_interface_pre_extrusion_dist",
+        "filament_tower_interface_pre_extrusion_length",
+        "filament_prime_tower_speed_factor_curve",
+        "filament_idle_travel_cooling_enabled",
+        "prime_volume_mode",
+        "filament_map_mode",
+        "filament_map",
+        "filament_nozzle_map",
+        "filament_volume_map",
+        "filament_adhesiveness_category",
+        "wipe_tower_no_sparse_layers",
+        "flush_volumes_matrix",
+        "filament_prime_volume",
+        "filament_prime_volume_nc",
+        "flush_into_infill",
+        "flush_into_support",
+        "initial_layer_infill_speed",
+        "travel_speed",
+        "travel_speed_z",
+        "initial_layer_speed",
+        "default_acceleration",
+        "travel_acceleration",
+        "initial_layer_travel_acceleration",
+    ];
+
+
+    // ------------------------------------------------------------------------
+    // Print.hpp:900-1336 `class Print`
+    // ------------------------------------------------------------------------
+
+    /// Print.hpp:900-1336 `class Print : public PrintBaseWithState<PrintStep, psCount>`
+    pub struct Print {
+        /// `PrintBaseWithState<PrintStep, psCount>`: the state, the full configurations, the
+        /// placeholder parser, the plate index and name, the callbacks.
+        pub base: PrintBaseWithState<PrintStep, psCount>,
+        /// PrintBase.hpp:559 `Model m_model`
+        pub m_model: Model,
+        pub m_config: PrintConfig,
+        pub m_default_object_config: PrintObjectConfig,
+        pub m_default_region_config: PrintRegionConfig,
+        pub m_objects: Vec<PrintObject>,
+        pub m_print_regions: Vec<PrintRegionPtr>,
+        pub m_isBBLPrinter: bool,
+        /// Convex hull of the 1st layer extrusions.
+        pub m_first_layer_convex_hull: Polygon,
+        pub m_skirt_convex_hull: Vec<Point>,
+        pub m_extruder_filament_info: Vec<Vec<DynamicPrintConfig>>,
+        pub m_nozzle_loaded_filament_info: Vec<NozzleLoadedFilamentInfo>,
+        /// `ToolOrdering m_tool_ordering`: its printing extruders (`all_extruders()`), what
+        /// Print.cpp reads of it outside `_make_wipe_tower`.
+        pub m_tool_ordering_all_extruders: Vec<u32>,
+        pub m_wipe_tower_data: WipeTowerData,
+        pub m_print_statistics: PrintStatistics,
+        pub m_support_used: bool,
+        pub m_statistics_by_extruder_count: StatisticsByExtruderCount,
+        pub m_nozzle_group_result: Option<Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>,
+        pub m_single_diameter_layering_nozzle: f64,
+        pub m_filament_index_map: FilamentIndexMap,
+        pub m_nozzle_index_map: PrintIndexMap,
+        pub m_filament_self_index: Vec<i32>,
+        pub m_slice_used_filaments: Vec<u32>,
+        pub m_slice_used_filaments_first_layer: Vec<u32>,
+        pub m_slice_used_mixed_filaments: Vec<u32>,
+        pub m_slice_directly_used_filaments: Vec<u32>,
+        /// BBS: plate's origin
+        pub m_origin: Vec3d,
+        /// BBS: modified_count
+        pub m_modified_count: i32,
+        /// `ConflictResultOpt m_conflict_result`: the names of the two objects.
+        pub m_conflict_result: Option<(String, String)>,
+        pub m_fake_wipe_tower: FakeWipeTower,
+        pub m_has_auto_filament_map_result: bool,
+        pub m_geometric_unprintable_filaments: Vec<BTreeSet<i32>>,
+        pub m_filament_print_time: HashMap<i32, HashMap<i32, f64>>,
+        /// OrcaSlicer: calibration
+        pub m_calib_params: Option<crate::calib::CalibParams>,
+    }
+
+    /// Print.cpp:55 `float Print::min_skirt_length = 0;`
+    pub static min_skirt_length: f32 = 0.0;
+
+    impl Default for Print {
+        fn default() -> Self {
+            Print::new()
+        }
+    }
+
+    impl Print {
+        /// Print.hpp:913 `Print() = default;`
+        pub fn new() -> Self {
+            Print {
+                base: PrintBaseWithState::new(),
+                m_model: Model::new(),
+                m_config: static_config_defaults("PrintConfig"),
+                m_default_object_config: static_config_defaults("PrintObjectConfig"),
+                m_default_region_config: static_config_defaults("PrintRegionConfig"),
+                m_objects: Vec::new(),
+                m_print_regions: Vec::new(),
+                m_isBBLPrinter: false,
+                m_first_layer_convex_hull: Polygon::default(),
+                m_skirt_convex_hull: Vec::new(),
+                m_extruder_filament_info: Vec::new(),
+                m_nozzle_loaded_filament_info: Vec::new(),
+                m_tool_ordering_all_extruders: Vec::new(),
+                m_wipe_tower_data: WipeTowerData::new(),
+                m_print_statistics: PrintStatistics::new(),
+                m_support_used: false,
+                m_statistics_by_extruder_count: StatisticsByExtruderCount::default(),
+                m_nozzle_group_result: None,
+                m_single_diameter_layering_nozzle: 0.0,
+                m_filament_index_map: HashMap::new(),
+                m_nozzle_index_map: HashMap::new(),
+                m_filament_self_index: Vec::new(),
+                m_slice_used_filaments: Vec::new(),
+                m_slice_used_filaments_first_layer: Vec::new(),
+                m_slice_used_mixed_filaments: Vec::new(),
+                m_slice_directly_used_filaments: Vec::new(),
+                m_origin: [0.0, 0.0, 0.0],
+                m_modified_count: 0,
+                m_conflict_result: None,
+                m_fake_wipe_tower: FakeWipeTower::default(),
+                m_has_auto_filament_map_result: false,
+                m_geometric_unprintable_filaments: Vec::new(),
+                m_filament_print_time: HashMap::new(),
+                m_calib_params: None,
+            }
+        }
+
+        /// PrintBase.hpp `const DynamicPrintConfig& full_print_config() const`
+        pub fn full_print_config(&self) -> &DynamicPrintConfig {
+            &self.base.base.m_full_print_config
+        }
+
+        /// PrintBase.hpp `const Model& model() const`
+        pub fn model(&self) -> &Model {
+            &self.m_model
+        }
+
+        /// Print.cpp:57-68 `void Print::clear()`
+        pub fn clear(&mut self) {
+            // std::scoped_lock<std::mutex> lock(this->state_mutex());
+            // The following call should stop background processing if it is running.
+            self.invalidate_all_steps();
+            self.m_objects.clear();
+            self.m_print_regions.clear();
+            self.m_model.clear_objects();
+            self.m_statistics_by_extruder_count.clear();
+            self.m_nozzle_group_result = None;
+        }
+
+        /// PrintBase.hpp:610-611 `bool invalidate_all_steps()`
+        pub fn invalidate_all_steps(&mut self) -> bool {
+            self.base.invalidate_all_steps()
+        }
+
+        /// Print.cpp:70-79 `bool Print::has_tpu_filament() const`
+        pub fn has_tpu_filament(&self) -> bool {
+            let filament_type = cfg_strings(&self.m_config, "filament_type");
+            for &filament_id in &self.m_tool_ordering_all_extruders {
+                let filament_name = get_at(&filament_type, filament_id as usize);
+                if filament_name == "TPU" {
+                    return true;
+                }
+            }
+            false
+        }
+
+        /// Print.cpp:81-447 `bool Print::invalidate_state_by_config_options(const ConfigOptionResolver &, const std::vector<t_config_option_key> &opt_keys)`.
+        /// Called by Print::apply(). This method only accepts PrintConfig option keys.
+        pub fn invalidate_state_by_config_options(&mut self, opt_keys: &[String]) -> bool {
+            if opt_keys.is_empty() {
+                return false;
+            }
+            let mut steps: Vec<PrintStep> = Vec::new();
+            let mut osteps: Vec<PrintObjectStep> = Vec::new();
+            let mut invalidated = false;
+
+            for opt_key in opt_keys {
+                let k = opt_key.as_str();
+                if INVALIDATE_STEPS_GCODE.contains(&k) {
+                    // These options only affect G-code export or they are just notes without influence on the generated G-code,
+                    // so there is nothing to invalidate.
+                    steps.push(PrintStep::psGCodeExport);
+                } else if INVALIDATE_STEPS_IGNORE.contains(&k) {
+                    // These steps have no influence on the G-code whatsoever. Just ignore them.
+                } else if matches!(
+                    k,
+                    "skirt_loops"
+                        | "skirt_height"
+                        | "draft_shield"
+                        | "skirt_distance"
+                        | "skirt_per_object"
+                        | "ooze_prevention"
+                        | "wipe_tower_x"
+                        | "wipe_tower_y"
+                        | "wipe_tower_rotation_angle"
+                ) {
+                    steps.push(PrintStep::psSkirtBrim);
+                } else if INVALIDATE_OSTEPS_SLICE.contains(&k) {
+                    osteps.push(PrintObjectStep::posSlice);
+                } else if INVALIDATE_STEPS_WIPE_TOWER_SKIRT_BRIM.contains(&k) {
+                    steps.push(PrintStep::psWipeTower);
+                    steps.push(PrintStep::psSkirtBrim);
+                } else if matches!(
+                    k,
+                    "filament_soluble"
+                        | "filament_is_support"
+                        | "filament_printable"
+                        | "impact_strength_z"
+                        | "filament_scarf_seam_type"
+                        | "filament_scarf_height"
+                        | "filament_scarf_gap"
+                        | "filament_scarf_length"
+                        | "filament_change_length"
+                        | "independent_support_layer_height"
+                        | "top_z_overrides_xy_distance"
+                        | "filament_change_length_nc"
+                ) {
+                    steps.push(PrintStep::psWipeTower);
+                    // Soluble support interface / non-soluble base interface produces non-soluble interface layers below soluble interface layers.
+                    // Thus switching between soluble / non-soluble interface layer material may require recalculation of supports.
+                    osteps.push(PrintObjectStep::posSupportMaterial);
+                    osteps.push(PrintObjectStep::posSimplifySupportPath);
+                } else if matches!(
+                    k,
+                    "initial_layer_line_width"
+                        | "initial_layer_infill_line_width"
+                        | "min_layer_height"
+                        | "max_layer_height"
+                        | "enable_arc_fitting"
+                        | "wall_sequence"
+                        | "z_direction_outwall_speed_continuous"
+                        | "override_filament_scarf_seam_setting"
+                        | "seam_slope_type"
+                        | "seam_slope_start_height"
+                        | "seam_slope_gap"
+                        | "seam_slope_min_length"
+                        | "embedding_wall_into_infill"
+                        | "alternate_extra_wall"
+                ) {
+                    osteps.push(PrintObjectStep::posPerimeters);
+                    osteps.push(PrintObjectStep::posInfill);
+                    osteps.push(PrintObjectStep::posSupportMaterial);
+                    osteps.push(PrintObjectStep::posSimplifyWall);
+                    osteps.push(PrintObjectStep::posSimplifyInfill);
+                    osteps.push(PrintObjectStep::posSimplifySupportPath);
+                    steps.push(PrintStep::psSkirtBrim);
+                } else if k == "z_hop_types" {
+                    osteps.push(PrintObjectStep::posDetectOverhangsForLift);
+                } else {
+                    // for legacy, if we can't handle this option let's invalidate all steps
+                    invalidated |= self.invalidate_all_steps();
+                    // Continue with the other opt_keys to possibly invalidate any object specific steps.
+                }
+            }
+
+            sort_remove_duplicates(&mut steps);
+            for step in steps {
+                invalidated |= self.invalidate_step(step);
+            }
+            sort_remove_duplicates(&mut osteps);
+            for ostep in osteps {
+                for i in 0..self.m_objects.len() {
+                    invalidated |= self.print_object_invalidate_step(i, ostep);
+                }
+            }
+
+            invalidated
+        }
+
+        /// PrintObject.cpp `bool PrintObject::invalidate_step(PrintObjectStep step)`: the step,
+        /// the steps of the object that depend on it and the print steps after it.
+        pub fn print_object_invalidate_step(&mut self, object_idx: usize, step: PrintObjectStep) -> bool {
+            use PrintObjectStep::*;
+            let cancel = self.base.base.cancel_callback();
+            let obj = &mut self.m_objects[object_idx];
+            let mut invalidated = obj.m_state.invalidate(step, || cancel());
+            // propagate to dependent steps
+            if step == posPerimeters {
+                invalidated |= obj.m_state.invalidate_multiple([posPerimeters, posPrepareInfill, posInfill, posIroning, posSimplifyWall, posSimplifyInfill], || cancel());
+                invalidated |= self.invalidate_steps(&[PrintStep::psSkirtBrim]);
+            } else if step == posPrepareInfill {
+                invalidated |= obj.m_state.invalidate_multiple([posInfill, posIroning, posSimplifyWall, posSimplifyInfill], || cancel());
+            } else if step == posInfill {
+                invalidated |= obj.m_state.invalidate_multiple([posIroning, posSimplifyInfill], || cancel());
+                invalidated |= self.invalidate_steps(&[PrintStep::psSkirtBrim]);
+            } else if step == posSlice {
+                invalidated |= obj.m_state.invalidate_multiple(
+                    [posPerimeters, posPrepareInfill, posInfill, posIroning, posSupportMaterial, posSimplifyWall, posSimplifyInfill, posSimplifySupportPath],
+                    || cancel(),
+                );
+                invalidated |= self.invalidate_steps(&[PrintStep::psSkirtBrim]);
+                // m_slicing_params.valid = false;
+            } else if step == posSupportMaterial {
+                invalidated |= obj.m_state.invalidate_multiple([posSimplifySupportPath], || cancel());
+                invalidated |= self.invalidate_steps(&[PrintStep::psSkirtBrim]);
+                // m_slicing_params.valid = false;
+            }
+
+            // Wipe tower depends on the ordering of extruders, which in turn depends on everything.
+            // It also decides about what the wipe_into_infill / wipe_into_object features will do,
+            // and that too depends on many of the settings.
+            invalidated |= self.invalidate_step(PrintStep::psWipeTower);
+            // Invalidate G-code export in any case.
+            invalidated |= self.invalidate_step(PrintStep::psGCodeExport);
+            invalidated
+        }
+
+        /// PrintBase.hpp:605-609 `bool invalidate_steps(std::initializer_list<PrintStepEnum> il)`
+        pub fn invalidate_steps(&mut self, steps: &[PrintStep]) -> bool {
+            self.base.invalidate_steps(steps.iter().copied().collect::<Vec<_>>())
+        }
+
+        /// Print.cpp:449-452 `void Print::set_calib_params(const Calib_Params &params)`
+        pub fn set_calib_params(&mut self, params: crate::calib::CalibParams) {
+            self.m_calib_params = Some(params);
+        }
+
+        /// Print.cpp:454-457 `void Print::set_nozzle_loaded_filament_info(...)`
+        pub fn set_nozzle_loaded_filament_info(&mut self, filament_info: Vec<NozzleLoadedFilamentInfo>) {
+            self.m_nozzle_loaded_filament_info = filament_info;
+        }
+
+        /// Print.cpp:459-466 `bool Print::invalidate_step(PrintStep step)`
+        pub fn invalidate_step(&mut self, step: PrintStep) -> bool {
+            let mut invalidated = self.base.invalidate_step(step);
+            // Propagate to dependent steps.
+            if step != PrintStep::psGCodeExport {
+                invalidated |= self.base.invalidate_step(PrintStep::psGCodeExport);
+            }
+            invalidated
+        }
+
+        /// Print.hpp:938 `bool is_step_done(PrintStep step) const`
+        pub fn is_step_done(&self, step: PrintStep) -> bool {
+            self.base.is_step_done(step)
+        }
+
+        /// Print.cpp:468-479 `bool Print::is_step_done(PrintObjectStep step) const`: true if an object
+        /// step is done on all objects and there's at least one object.
+        pub fn is_object_step_done(&self, step: PrintObjectStep) -> bool {
+            if self.m_objects.is_empty() {
+                return false;
+            }
+            let _lock = self.base.base.state_mutex().lock();
+            for object in &self.m_objects {
+                if !object.is_step_done_unguarded(step) {
+                    return false;
+                }
+            }
+            true
+        }
+
+        /// Print.cpp:481-521 `std::vector<unsigned int> Print::object_extruders() const`: 0-based
+        /// indices of the extruders the objects use (the `#else` branch: the volumes' extruders
+        /// and the layer range filaments).
+        pub fn object_extruders(&self) -> Vec<u32> {
+            let mut extruders: Vec<u32> = Vec::with_capacity(self.m_print_regions.len() * self.m_objects.len() * 3);
+            for object in &self.m_objects {
+                let mo = object.model_object(self);
+                let global_features =
+                    GlobalFeatureFilaments::from_config(&self.m_default_region_config, cfg_floats(&self.m_config, "filament_diameter").len());
+                for mv in &mo.volumes {
+                    let volume_extruders = mv.get_extruders(mo, &global_features);
+                    for extruder in volume_extruders {
+                        debug_assert!(extruder > 0);
+                        extruders.push((extruder - 1) as u32);
+                    }
+                }
+
+                // layer range
+                for (_, layer_range) in &mo.layer_config_ranges {
+                    for key in ["extruder", "wall_filament", "sparse_infill_filament", "solid_infill_filament"] {
+                        if !layer_range.has(key) {
+                            continue;
+                        }
+                        //BBS: actually when user doesn't change filament by height range(value is default 0), height range should not save key "extruder".
+                        //Add protection here to avoid overflow
+                        let value = layer_range.option(key).and_then(|o| o.get_int().ok()).unwrap_or(0);
+                        if value > 0 {
+                            extruders.push((value - 1) as u32);
+                        }
+                    }
+                }
+            }
+            sort_remove_duplicates(&mut extruders);
+            extruders
+        }
+
+        /// Print.cpp:523-555 `std::vector<unsigned int> Print::support_material_extruders() const`
+        pub fn support_material_extruders(&self) -> Vec<u32> {
+            let mut extruders: Vec<u32> = Vec::new();
+            let mut support_uses_current_extruder = false;
+            let num_extruders = cfg_floats(&self.m_config, "filament_diameter").len() as u32;
+
+            for object in &self.m_objects {
+                if object.has_support_material() {
+                    let support_filament = cfg_int(object.config(), "support_filament");
+                    debug_assert!(support_filament >= 0);
+                    if support_filament == 0 {
+                        support_uses_current_extruder = true;
+                    } else {
+                        let i = (support_filament - 1) as u32;
+                        extruders.push(if i >= num_extruders { 0 } else { i });
+                    }
+                    let support_interface_filament = cfg_int(object.config(), "support_interface_filament");
+                    debug_assert!(support_interface_filament >= 0);
+                    if support_interface_filament == 0 {
+                        support_uses_current_extruder = true;
+                    } else {
+                        let i = (support_interface_filament - 1) as u32;
+                        extruders.push(if i >= num_extruders { 0 } else { i });
+                    }
+                }
+            }
+
+            if support_uses_current_extruder {
+                // Add all object extruders to the support extruders as it is not know which one will be used to print supports.
+                extruders.extend(self.object_extruders());
+            }
+
+            sort_remove_duplicates(&mut extruders);
+            extruders
+        }
+
+        /// Print.cpp:557-576 `std::vector<unsigned int> Print::extruders(bool conside_custom_gcode) const`
+        pub fn extruders(&self, conside_custom_gcode: bool) -> Vec<u32> {
+            let mut extruders = self.object_extruders();
+            extruders.extend(self.support_material_extruders());
+
+            if conside_custom_gcode {
+                //BBS
+                let num_extruders = cfg_strings(&self.m_config, "filament_colour").len() as i32;
+                if let Some(info) = self.m_model.plates_custom_gcodes.get(&self.m_model.curr_plate_index) {
+                    for item in &info.gcodes {
+                        if item.gcode_type == crate::custom_g_code::Type::ToolChange && item.extruder <= num_extruders {
+                            extruders.push((item.extruder - 1) as u32);
+                        }
+                    }
+                }
+            }
+
+            sort_remove_duplicates(&mut extruders);
+            extruders
+        }
+
+        /// Print.cpp:606-644 `bool Print::uses_multiple_nozzle_diameters() const`
+        pub fn uses_multiple_nozzle_diameters(&self) -> bool {
+            if !crate::print_config::config_def::multi_nozzle_diameter_mode_enabled(self.full_print_config()) {
+                return false;
+            }
+            // Sliced straight at the one nozzle's band height, every layer is already what that nozzle prints.
+            if self.m_single_diameter_layering_nozzle > EPSILON {
+                return false;
+            }
+
+            // Regions and object configs only.
+            let mut filaments: Vec<u32> = Vec::new();
+            for region in &self.m_print_regions {
+                region.borrow().collect_object_printing_extruders(self, &mut filaments);
+            }
+            for object in &self.m_objects {
+                if object.has_support_material() {
+                    // A "don't care" support filament prints with one of the filaments collected above.
+                    let support_filament = cfg_int(object.config(), "support_filament");
+                    if support_filament > 0 {
+                        filaments.push((support_filament - 1) as u32);
+                    }
+                    let support_interface_filament = cfg_int(object.config(), "support_interface_filament");
+                    if support_interface_filament > 0 {
+                        filaments.push((support_interface_filament - 1) as u32);
+                    }
+                }
+            }
+            sort_remove_duplicates(&mut filaments);
+            if has_multiple_used_nozzle_diameters(&self.m_config, &filaments) {
+                return true;
+            }
+
+            // A plate using only one coarse filament still needs adaptive bands when the layer grid is anchored to a
+            // smaller nozzle.
+            let reference_nozzle = crate::print_config::config_def::layer_grid_nozzle_diameter(self.full_print_config());
+            if reference_nozzle <= EPSILON {
+                return false;
+            }
+            filaments
+                .iter()
+                .any(|&filament_id| nozzle_diameter_for_filament(&self.m_config, filament_id + 1) as f64 > reference_nozzle + EPSILON)
+        }
+
+        /// Print.cpp:713-719 `unsigned int Print::num_object_instances() const`
+        pub fn num_object_instances(&self) -> u32 {
+            let mut instances: u32 = 0;
+            for print_object in &self.m_objects {
+                instances += print_object.instances().len() as u32;
+            }
+            instances
+        }
+
+        /// Print.cpp:721-730 `double Print::max_allowed_layer_height() const`
+        pub fn max_allowed_layer_height(&self) -> f64 {
+            let mut nozzle_diameter_max = 0.0_f64;
+            // Resolved per filament, not per extruder slot.
+            for filament_id in self.extruders(false) {
+                nozzle_diameter_max = nozzle_diameter_max.max(nozzle_diameter_for_filament(&self.m_config, filament_id + 1) as f64);
+            }
+            nozzle_diameter_max
+        }
+
+        /// Print.cpp:732-740 `std::vector<ObjectID> Print::print_object_ids() const`
+        pub fn print_object_ids(&self) -> Vec<ObjectID> {
+            let mut out: Vec<ObjectID> = Vec::with_capacity(self.m_objects.len() + 1);
+            for print_object in &self.m_objects {
+                out.push(print_object.id());
+            }
+            out
+        }
+
+        /// Print.cpp:742-745 `bool Print::has_infinite_skirt() const`
+        pub fn has_infinite_skirt(&self) -> bool {
+            (cfg_enum(&self.m_config, "draft_shield") == DraftShield::DsEnabled as i32 && cfg_int(&self.m_config, "skirt_loops") > 0)
+                || (cfg_bool(&self.m_config, "ooze_prevention") && self.extruders(false).len() > 1)
+        }
+
+        /// Print.cpp:747-750 `bool Print::has_skirt() const`
+        pub fn has_skirt(&self) -> bool {
+            (cfg_int(&self.m_config, "skirt_height") > 0 && cfg_int(&self.m_config, "skirt_loops") > 0)
+                || cfg_enum(&self.m_config, "draft_shield") != DraftShield::DsDisabled as i32
+        }
+
+        /// Print.cpp:752-755 `bool Print::has_brim() const`
+        pub fn has_brim(&self) -> bool {
+            self.m_objects.iter().any(|object| object.has_brim())
+        }
+
+        /// Print.hpp:915 `PrinterTechnology technology() const noexcept override { return ptFFF; }`
+        pub fn technology(&self) -> crate::config::PrinterTechnology {
+            crate::config::PrinterTechnology::PtFFF
+        }
+
+        /// Print.hpp:923 `bool empty() const override { return m_objects.empty(); }`
+        pub fn empty(&self) -> bool {
+            self.m_objects.is_empty()
+        }
+
+        /// Print.hpp:942 `bool finished() const override { return this->is_step_done(psGCodeExport); }`
+        pub fn finished(&self) -> bool {
+            self.is_step_done(PrintStep::psGCodeExport)
+        }
+
+        /// Print.hpp:948-950 `bool has_auto_brim() const`
+        pub fn has_auto_brim(&self) -> bool {
+            self.m_objects.iter().any(|object| cfg_enum(object.config(), "brim_type") == BrimType::BtAutoBrim as i32)
+        }
+
+        /// Print.hpp:984 `double single_diameter_layering_nozzle() const`
+        pub fn single_diameter_layering_nozzle(&self) -> f64 {
+            self.m_single_diameter_layering_nozzle
+        }
+
+        /// Print.hpp:989 `const PrintConfig& config() const`
+        pub fn config(&self) -> &PrintConfig {
+            &self.m_config
+        }
+        /// Print.hpp:990
+        pub fn default_object_config(&self) -> &PrintObjectConfig {
+            &self.m_default_object_config
+        }
+        /// Print.hpp:991
+        pub fn default_region_config(&self) -> &PrintRegionConfig {
+            &self.m_default_region_config
+        }
+        /// Print.hpp:993
+        pub fn objects(&self) -> &[PrintObject] {
+            &self.m_objects
+        }
+        /// Print.hpp:994-995 `const PrintObject* get_object(size_t idx) const`
+        pub fn get_object(&self, idx: usize) -> &PrintObject {
+            &self.m_objects[idx]
+        }
+
+        /// Print.hpp:1027 `const StatisticsByExtruderCount statistics_by_extruder() const`
+        pub fn statistics_by_extruder(&self) -> &StatisticsByExtruderCount {
+            &self.m_statistics_by_extruder_count
+        }
+
+        /// Print.hpp:1018 `const PrintStatistics& print_statistics() const`
+        pub fn print_statistics(&self) -> &PrintStatistics {
+            &self.m_print_statistics
+        }
+
+        /// Print.hpp:1038-1040 `bool is_sequential_print() const`
+        pub fn is_sequential_print(&self) -> bool {
+            cfg_enum(self.config(), "print_sequence") == PrintSequence::ByObject as i32 && self.m_objects.len() > 1
+        }
+
+        /// Print.hpp:1071 `const std::vector<std::vector<DynamicPrintConfig>>& get_extruder_filament_info() const`
+        pub fn get_extruder_filament_info(&self) -> &Vec<Vec<DynamicPrintConfig>> {
+            &self.m_extruder_filament_info
+        }
+        /// Print.hpp:1072
+        pub fn set_extruder_filament_info(&mut self, filament_info: Vec<Vec<DynamicPrintConfig>>) {
+            self.m_extruder_filament_info = filament_info;
+        }
+        /// Print.hpp:1077
+        pub fn set_geometric_unprintable_filaments(&mut self, unprintables_filament_ids: Vec<BTreeSet<i32>>) {
+            self.m_geometric_unprintable_filaments = unprintables_filament_ids;
+        }
+        /// Print.hpp:1078
+        pub fn get_geometric_unprintable_filaments(&self) -> Vec<BTreeSet<i32>> {
+            self.m_geometric_unprintable_filaments.clone()
+        }
+        /// Print.hpp:1080
+        pub fn set_filament_print_time(&mut self, filament_print_time: HashMap<i32, HashMap<i32, f64>>) {
+            self.m_filament_print_time = filament_print_time;
+        }
+        /// Print.hpp:1081
+        pub fn get_filament_print_time(&self) -> HashMap<i32, HashMap<i32, f64>> {
+            self.m_filament_print_time.clone()
+        }
+        /// Print.hpp:1083
+        pub fn set_nozzle_group_result(&mut self, result: Option<Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>) {
+            self.m_nozzle_group_result = result;
+        }
+        /// Print.hpp:1084
+        pub fn get_nozzle_group_result(&self) -> Option<Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>> {
+            self.m_nozzle_group_result.clone()
+        }
+        /// Print.hpp:1085-1088 (the layered result is the only kind made here)
+        pub fn get_layered_nozzle_group_result(&self) -> Option<Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>> {
+            self.m_nozzle_group_result.clone()
+        }
+        /// Print.hpp:1090-1093
+        pub fn set_slice_used_filaments(&mut self, first_layer_used_filaments: Vec<u32>, used_filaments: Vec<u32>) {
+            self.m_slice_used_filaments_first_layer = first_layer_used_filaments;
+            self.m_slice_used_filaments = used_filaments;
+        }
+        /// Print.hpp:1094
+        pub fn get_slice_used_filaments(&self, first_layer: bool) -> Vec<u32> {
+            if first_layer {
+                self.m_slice_used_filaments_first_layer.clone()
+            } else {
+                self.m_slice_used_filaments.clone()
+            }
+        }
+        /// Print.hpp:1097-1099
+        pub fn set_slice_used_mixed_filaments(&mut self, used_mixed_filaments: Vec<u32>) {
+            self.m_slice_used_mixed_filaments = used_mixed_filaments;
+        }
+        /// Print.hpp:1100
+        pub fn get_slice_used_mixed_filaments(&self) -> &Vec<u32> {
+            &self.m_slice_used_mixed_filaments
+        }
+        /// Print.hpp:1103-1105
+        pub fn set_slice_directly_used_filaments(&mut self, directly_used_filaments: Vec<u32>) {
+            self.m_slice_directly_used_filaments = directly_used_filaments;
+        }
+        /// Print.hpp:1106
+        pub fn get_slice_directly_used_filaments(&self) -> &Vec<u32> {
+            &self.m_slice_directly_used_filaments
+        }
+
+        /// Print.hpp:1130 `size_t num_print_regions() const throw()`
+        pub fn num_print_regions(&self) -> usize {
+            self.m_print_regions.len()
+        }
+        /// Print.hpp:1131 `const PrintRegion& get_print_region(size_t idx) const`
+        pub fn get_print_region(&self, idx: usize) -> PrintRegionPtr {
+            self.m_print_regions[idx].clone()
+        }
+        /// Print.hpp:1135
+        pub fn set_plate_origin(&mut self, origin: Vec3d) {
+            self.m_origin = origin;
+        }
+        /// Print.hpp:1136
+        pub fn get_plate_origin(&self) -> Vec3d {
+            self.m_origin
+        }
+        /// Print.hpp:1142
+        pub fn get_modified_count(&self) -> i32 {
+            self.m_modified_count
+        }
+        /// Print.hpp:1144
+        pub fn is_support_used(&self) -> bool {
+            self.m_support_used
+        }
+        /// Print.hpp:1145
+        pub fn is_BBL_Printer(&self) -> bool {
+            self.m_isBBLPrinter
+        }
+        /// Print.hpp:1146
+        pub fn set_BBL_Printer(&mut self, is_bbl: bool) {
+            self.m_isBBLPrinter = is_bbl;
+        }
+        /// Print.hpp:1147-1155 `std::string get_conflict_string() const`
+        pub fn get_conflict_string(&self) -> String {
+            let mut result = String::new();
+            if let Some((obj_name1, obj_name2)) = &self.m_conflict_result {
+                result = format!("Found gcode path conflicts between object {} and {}", obj_name1, obj_name2);
+            }
+            result
+        }
+        /// Print.hpp:1171
+        pub fn get_wipe_tower_depth(&self) -> f32 {
+            self.m_wipe_tower_data.depth
+        }
+        /// Print.hpp:1172
+        pub fn get_wipe_tower_bbx(&self) -> ((f64, f64), (f64, f64)) {
+            self.m_wipe_tower_data.bbx
+        }
+        /// Print.hpp:1173
+        pub fn get_rib_offset(&self) -> [f32; 2] {
+            self.m_wipe_tower_data.rib_offset
+        }
+        /// Print.hpp:1174
+        pub fn get_fake_wipe_tower(&self) -> &FakeWipeTower {
+            &self.m_fake_wipe_tower
+        }
+
+        /// Print.hpp:1192-1194 `bool is_all_objects_are_short() const`
+        pub fn is_all_objects_are_short(&self) -> bool {
+            let nozzle_height = cfg_float(self.config(), "nozzle_height");
+            self.m_objects.iter().all(|obj| (obj.height() as f64) < nozzle_height / crate::libslic3r::SCALING_FACTOR)
+        }
+
+        /// Print.cpp:1306-1317 `bool Print::is_dynamic_group_reorder() const`
+        pub fn is_dynamic_group_reorder(&self) -> bool {
+            if !cfg_bool(self.config(), "enable_filament_dynamic_map")
+                || cfg_enum(self.config(), "filament_map_mode") != FilamentMapMode::FmmAutoForFlush as i32
+                || cfg_floats(self.config(), "nozzle_diameter").len() <= 1
+            {
+                return false;
+            }
+
+            let is_mixed = cfg_bools(self.config(), "filament_is_mixed");
+            for filament_id in self.extruders(false) {
+                if (filament_id as usize) < is_mixed.len() && is_mixed[filament_id as usize] {
+                    return false;
+                }
+            }
+            true
+        }
+
+        /// Print.cpp:1319-1322 `int Print::get_filament_config_indx(int filament_id, int layer_id)`
+        pub fn get_filament_config_indx(&mut self, filament_id: i32, layer_id: i32) -> i32 {
+            let variant_list = cfg_strings(&self.m_config, "filament_extruder_variant");
+            let self_index_list = self.m_filament_self_index.clone();
+            let mut index_map = std::mem::take(&mut self.m_filament_index_map);
+            let index = self.get_config_index(filament_id, layer_id, &variant_list, &self_index_list, &mut index_map);
+            self.m_filament_index_map = index_map;
+            index
+        }
+
+        /// Print.cpp:1324-1353 `void Print::update_filament_self_index_cache()`
+        pub fn update_filament_self_index_cache(&mut self) {
+            let values: Vec<i32> = if self.base.base.m_full_print_config.has("filament_self_index") {
+                cfg_ints(&self.base.base.m_full_print_config, "filament_self_index")
+            } else if self.base.base.m_ori_full_print_config.has("filament_self_index") {
+                cfg_ints(&self.base.base.m_ori_full_print_config, "filament_self_index")
+            } else {
+                cfg_ints(&self.m_config, "filament_self_index")
+            };
+
+            let expected_size = cfg_strings(&self.m_config, "filament_extruder_variant").len();
+            self.m_filament_self_index.clear();
+            if expected_size == 0 {
+                self.m_filament_index_map.clear();
+                self.m_nozzle_index_map.clear();
+                return;
+            }
+            self.m_filament_self_index.resize(expected_size, 1);
+            if !values.is_empty() {
+                for i in 0..expected_size {
+                    let mut v = if i < values.len() { values[i] } else { 1 };
+                    if v <= 0 {
+                        v = 1;
+                    }
+                    self.m_filament_self_index[i] = v;
+                }
+            }
+            self.m_filament_index_map.clear();
+            self.m_nozzle_index_map.clear();
+        }
+
+        /// Print.cpp:1355-1358 `int Print::get_nozzle_config_index(int filament_id, int layer_id)`
+        pub fn get_nozzle_config_index(&mut self, filament_id: i32, layer_id: i32) -> i32 {
+            let variant_list = cfg_strings(&self.m_config, "print_extruder_variant");
+            let self_index_list = cfg_ints(&self.m_config, "print_extruder_id");
+            let mut index_map = std::mem::take(&mut self.m_nozzle_index_map);
+            let index = self.get_config_index(filament_id, layer_id, &variant_list, &self_index_list, &mut index_map);
+            self.m_nozzle_index_map = index_map;
+            index
+        }
+
+        /// Print.cpp:1360-1383 and 1385-1409, the two overloads of `int Print::get_config_index(int
+        /// filament_id, int layer_id, const std::vector<std::string> &variant_list, const
+        /// std::vector<int>& self_index_list, FilamentIndexMap / PrintIndexMap &index_map)`.
+        pub fn get_config_index<M: ConfigIndexMap>(
+            &self,
+            filament_id: i32,
+            layer_id: i32,
+            variant_list: &[String],
+            self_index_list: &[i32],
+            index_map: &mut M,
+        ) -> i32 {
+            let group_result = self.get_layered_nozzle_group_result().expect("get_layered_nozzle_group_result");
+            let nozzle_info = group_result.get_nozzle_for_filament(filament_id, layer_id);
+            let Some(nozzle_info) = nozzle_info else {
+                // BOOST_LOG_TRIVIAL(error) << "could not found group_nozzle_info corresponding to filament_id ..."
+                return 0;
+            };
+
+            // to 1 based (the PrintIndexMap overload)
+            let extruder_id = nozzle_info.extruder_id + 1;
+            let extruder_type = ExtruderType::from_i32(get_at(&cfg_ints(&self.m_config, "extruder_type"), nozzle_info.extruder_id as usize));
+            let nozzle_volume_type = NozzleVolumeType::from_i32(nozzle_info.volume_type as i32);
+
+            let key_extruder_id = if M::BY_FILAMENT { 0 } else { extruder_id };
+            let (found, value) = index_map.config_index_lookup(filament_id, key_extruder_id, extruder_type, nozzle_volume_type);
+            if !found {
+                let base_id = if M::BY_FILAMENT { filament_id + 1 } else { extruder_id };
+                let index = crate::print_config::config_def::get_config_index_base(
+                    nozzle_volume_type,
+                    extruder_type,
+                    base_id,
+                    variant_list,
+                    self_index_list,
+                );
+                index_map.config_index_insert(filament_id, key_extruder_id, extruder_type, nozzle_volume_type, index);
+                index
+            } else {
+                value
+            }
+        }
+
+        /// Print.cpp:1903-1916 `double Print::skirt_first_layer_height() const`
+        ///
+        /// FIDELITY-NOTE: with a single-diameter layering nozzle the C++ returns the first object's
+        /// `slicing_parameters().first_print_layer_height`, which the slicing steps compute; the
+        /// objects here keep no slicing parameters, so `first_print_layer_height` is passed in.
+        pub fn skirt_first_layer_height(&self, first_object_first_print_layer_height: Option<f64>) -> f64 {
+            if self.m_single_diameter_layering_nozzle > EPSILON {
+                if let Some(h) = first_object_first_print_layer_height {
+                    return h;
+                }
+            }
+            // Same first grid step as SlicingParameters: multi-diameter slicing subdivides the initial layer too.
+            cfg_float(&self.m_config, "initial_layer_print_height")
+                / (1.max(crate::print_config::config_def::layer_grid_subdivision(self.full_print_config())) as f64)
+        }
+
+        /// Print.cpp:2048-2054 `bool Print::has_support_material() const`
+        pub fn has_support_material(&self) -> bool {
+            for object in &self.m_objects {
+                if object.has_support_material() {
+                    return true;
+                }
+            }
+            false
+        }
+
+        /// Print.cpp:2056-2071 `void Print::auto_assign_extruders(ModelObject* model_object) const`:
+        /// assigns extruders to the volumes having a material but not having extruders set in the
+        /// volume config.
+        pub fn auto_assign_extruders(&self, model_object: &mut ModelObject) {
+            // only assign extruders if object has more than one volume
+            if model_object.volumes.len() < 2 {
+                return;
+            }
+            for volume_id in 0..model_object.volumes.len() {
+                let volume = &mut model_object.volumes[volume_id];
+                //FIXME Vojtech: This assigns an extruder ID even to a modifier volume, if it has a material assigned.
+                if (volume.is_model_part() || volume.is_modifier()) && !volume.material_id().is_empty() && !volume.config.has("extruder") {
+                    volume.config.set("extruder", (volume_id + 1) as i32);
+                }
+            }
+        }
+
+        /// Print.cpp:3107-3110 `Vec2d Print::translate_to_print_space(const Vec2d& point) const`
+        pub fn translate_to_print_space(&self, point: crate::geometry::Vec2d) -> crate::geometry::Vec2d {
+            crate::geometry::Vec2d::new(point.x - self.m_origin[0], point.y - self.m_origin[1])
+        }
+
+        /// Print.cpp:3112-3114 `Vec2d Print::translate_to_print_space(const Point& point) const`
+        pub fn translate_point_to_print_space(&self, point: &Point) -> crate::geometry::Vec2d {
+            crate::geometry::Vec2d::new(
+                point.x as f64 * crate::libslic3r::SCALING_FACTOR - self.m_origin[0],
+                point.y as f64 * crate::libslic3r::SCALING_FACTOR - self.m_origin[1],
+            )
+        }
+
+        /// Print.cpp:3155-3186 `int Print::get_hrc_by_nozzle_type(const NozzleType&type)`
+        ///
+        /// FIDELITY-NOTE: the C++ reads `resources/info/nozzle_info.json` and falls back to this table
+        /// when it cannot parse it; the table is what the resource file holds at the pin.
+        pub fn get_hrc_by_nozzle_type(type_: crate::common_defs::NozzleType) -> i32 {
+            let nozzle_type_to_hrc: BTreeMap<&str, i32> =
+                [("hardened_steel", 55), ("stainless_steel", 20), ("tungsten_carbide", 85), ("brass", 2), ("undefine", 0)].into_iter().collect();
+            let name = nozzle_type_eumn_to_str(type_);
+            if let Some(&v) = nozzle_type_to_hrc.get(name.as_str()) {
+                return v;
+            }
+            //0 represents undefine
+            0
+        }
+
+        /// Print.cpp:3241-3320 `void Print::update_filament_maps_to_config(std::vector<int> f_maps,
+        /// std::vector<int> f_volume_maps, std::vector<int> f_nozzle_maps)`, the part that writes the
+        /// maps (3243-3264).
+        ///
+        /// FIDELITY-NOTE: the rest (3266-3318) re-derives the per-filament variant values of the full
+        /// configuration (`update_values_to_printer_extruders_for_multiple_filaments`,
+        /// `compute_filament_override_value`), which is left out; `filament_map_2` and the volume
+        /// map are set as 3271-3285 sets them.
+        pub fn update_filament_maps_to_config(&mut self, f_maps: Vec<i32>, f_volume_maps: Vec<i32>, f_nozzle_maps: Vec<i32>) {
+            use crate::config::ConfigOptionInts;
+            let set_ints = |cfg: &mut DynamicPrintConfig, key: &str, v: Vec<i32>| {
+                cfg.set_key_value(key, Box::new(ConfigOptionInts::from_values(v)));
+            };
+            if cfg_ints(&self.m_config, "filament_map") != f_maps
+                || cfg_ints(&self.m_config, "filament_volume_map") != f_volume_maps
+                || cfg_ints(&self.m_config, "filament_nozzle_map") != f_nozzle_maps
+            {
+                set_ints(&mut self.base.base.m_ori_full_print_config, "filament_map", f_maps.clone());
+                set_ints(&mut self.m_config, "filament_map", f_maps.clone());
+
+                if !f_volume_maps.is_empty() {
+                    set_ints(&mut self.base.base.m_ori_full_print_config, "filament_volume_map", f_volume_maps.clone());
+                    set_ints(&mut self.m_config, "filament_volume_map", f_volume_maps.clone());
+                } else {
+                    let mut ori = if self.base.base.m_ori_full_print_config.has("filament_volume_map") {
+                        cfg_ints(&self.base.base.m_ori_full_print_config, "filament_volume_map")
+                    } else {
+                        Vec::new()
+                    };
+                    ori.resize(f_maps.len(), NozzleVolumeType::NvtStandard as i32);
+                    set_ints(&mut self.base.base.m_ori_full_print_config, "filament_volume_map", ori);
+                    let mut own = cfg_ints(&self.m_config, "filament_volume_map");
+                    own.resize(f_maps.len(), NozzleVolumeType::NvtStandard as i32);
+                    set_ints(&mut self.m_config, "filament_volume_map", own);
+                }
+
+                if !f_nozzle_maps.is_empty() {
+                    set_ints(&mut self.base.base.m_ori_full_print_config, "filament_nozzle_map", f_nozzle_maps.clone());
+                    set_ints(&mut self.m_config, "filament_nozzle_map", f_nozzle_maps);
+                }
+            }
+
+            {
+                //filament_map_2
+                let ori = &self.base.base.m_ori_full_print_config;
+                let extruder_type = if ori.has("extruder_type") { cfg_ints(ori, "extruder_type") } else { vec![0] };
+                let nozzle_volume_type = if ori.has("nozzle_volume_type") { cfg_ints(ori, "nozzle_volume_type") } else { vec![0] };
+                let mut volume_map = cfg_ints(&self.m_config, "filament_volume_map");
+                let mut ori_volume_map = if ori.has("filament_volume_map") { cfg_ints(ori, "filament_volume_map") } else { Vec::new() };
+                for index in 0..f_maps.len() {
+                    let nvt = get_at(&nozzle_volume_type, (f_maps[index] - 1) as usize);
+                    let _ = get_at(&extruder_type, (f_maps[index] - 1) as usize);
+                    if f_volume_maps.is_empty() {
+                        if index < volume_map.len() {
+                            volume_map[index] = nvt;
+                        }
+                        if index < ori_volume_map.len() {
+                            ori_volume_map[index] = nvt;
+                        }
+                    }
+                }
+                set_ints(&mut self.m_config, "filament_volume_map", volume_map);
+                if self.base.base.m_ori_full_print_config.has("filament_volume_map") {
+                    set_ints(&mut self.base.base.m_ori_full_print_config, "filament_volume_map", ori_volume_map);
+                }
+                self.base.base.m_full_print_config = self.base.base.m_ori_full_print_config.clone();
+            }
+            self.update_filament_self_index_cache();
+            self.m_has_auto_filament_map_result = true;
+        }
+
+        /// Print.cpp:3402-3405 `void Print::apply_config_for_render(const DynamicConfig &config)`
+        pub fn apply_config_for_render(&mut self, config: &DynamicConfig) {
+            // StaticConfig::apply: the keys of the class
+            let keys = self.m_config.keys();
+            let _ = self.m_config.apply_only(config, &keys, true);
+        }
+
+        /// Print.cpp:3407-3410 `std::vector<int> Print::get_filament_maps() const`
+        pub fn get_filament_maps(&self) -> Vec<i32> {
+            cfg_ints(&self.m_config, "filament_map")
+        }
+        /// Print.cpp:3412-3415
+        pub fn get_filament_nozzle_maps(&self) -> Vec<i32> {
+            cfg_ints(&self.m_config, "filament_nozzle_map")
+        }
+        /// Print.cpp:3417-3420
+        pub fn get_filament_volume_maps(&self) -> Vec<i32> {
+            cfg_ints(&self.m_config, "filament_volume_map")
+        }
+        /// Print.cpp:3422-3425
+        pub fn get_filament_map_mode(&self) -> FilamentMapMode {
+            FilamentMapMode::from_i32(cfg_enum(&self.m_config, "filament_map_mode"))
+        }
+
+        /// Print.cpp:3427-3450 `std::vector<FilamentMapMode> Print::get_available_filament_map_modes() const`
+        pub fn get_available_filament_map_modes(&self) -> Vec<FilamentMapMode> {
+            let mut available_modes = vec![FilamentMapMode::FmmAutoForFlush, FilamentMapMode::FmmAutoForMatch];
+
+            if self.m_config.has("extruder_type") {
+                let values = cfg_ints(&self.m_config, "extruder_type");
+                if values.len() > 1 {
+                    let mut has_different_types = false;
+                    let first_type = values[0];
+                    for v in values.iter().skip(1) {
+                        if *v != first_type {
+                            has_different_types = true;
+                            break;
+                        }
+                    }
+                    if has_different_types {
+                        available_modes.push(FilamentMapMode::FmmAutoForQuality);
+                    }
+                }
+            }
+
+            available_modes.push(FilamentMapMode::FmmManual);
+            available_modes
+        }
+
+        /// Print.cpp:3452-3472 `bool Print::get_full_filament_extruder_variants(const size_t
+        /// filament_id, std::vector<std::string>& variants) const`
+        pub fn get_full_filament_extruder_variants(&self, filament_id: usize, variants: &mut Vec<String>) -> bool {
+            variants.clear();
+            let ori = &self.base.base.m_ori_full_print_config;
+            if !ori.has("filament_extruder_variant") {
+                return false;
+            }
+            let filament_variants = cfg_strings(ori, "filament_extruder_variant");
+
+            if !ori.has("filament_self_index") {
+                let dup_variants: BTreeSet<String> = filament_variants.iter().cloned().collect();
+                variants.extend(dup_variants);
+            } else {
+                let filament_self_index = cfg_ints(ori, "filament_self_index");
+                for i in 0..filament_self_index.len() {
+                    if (filament_self_index[i] - 1) as i64 == filament_id as i64 {
+                        variants.push(filament_variants[i].clone());
+                    }
+                }
+            }
+            true
+        }
+
+        /// Print.cpp:3474-3502 `std::vector<FilamentUsageType> Print::get_filament_usage_type() const`
+        pub fn get_filament_usage_type(&self) -> Vec<crate::print_config::enums::FilamentUsageType> {
+            use crate::print_config::enums::FilamentUsageType;
+            let mut filament_usage_types = Vec::new();
+
+            let mut model_filaments: std::collections::HashSet<i32> = std::collections::HashSet::new();
+            let mut support_filaments: std::collections::HashSet<i32> = std::collections::HashSet::new(); //0 base
+            for obj in &self.m_objects {
+                let obj_filaments = self.print_object_object_extruders(obj);
+                model_filaments.extend(obj_filaments.iter().map(|&f| f as i32));
+
+                let support_fil = cfg_int(obj.config(), "support_filament") - 1;
+                let support_interface_fil = cfg_int(obj.config(), "support_interface_filament") - 1;
+                if support_fil >= 0 {
+                    support_filaments.insert(support_fil);
+                }
+                if support_interface_fil >= 0 {
+                    support_filaments.insert(support_interface_fil);
+                }
+            }
+
+            for idx in 0..cfg_strings(&self.m_config, "filament_type").len() as i32 {
+                let is_model = model_filaments.contains(&idx);
+                let is_support = support_filaments.contains(&idx);
+
+                if is_model && is_support {
+                    filament_usage_types.push(FilamentUsageType::Hybrid);
+                } else if is_support {
+                    filament_usage_types.push(FilamentUsageType::SupportOnly);
+                } else {
+                    filament_usage_types.push(FilamentUsageType::ModelOnly);
+                }
+            }
+            filament_usage_types
+        }
+
+        /// PrintObject.cpp:3903-3923 `std::vector<unsigned int> PrintObject::object_extruders() const`:
+        /// the extruders of the object's volumes (the `#else` branch).
+        pub fn print_object_object_extruders(&self, object: &PrintObject) -> Vec<u32> {
+            let mut extruders: Vec<u32> = Vec::with_capacity(object.all_regions().len() * 3);
+            let mo = object.model_object(self);
+            let global_features =
+                GlobalFeatureFilaments::from_config(self.default_region_config(), cfg_floats(self.config(), "filament_diameter").len());
+            for mv in &mo.volumes {
+                let volume_extruders = mv.get_extruders(mo, &global_features);
+                for extruder in volume_extruders {
+                    debug_assert!(extruder > 0);
+                    extruders.push((extruder - 1) as u32);
+                }
+            }
+            sort_remove_duplicates(&mut extruders);
+            extruders
+        }
+
+        /// Print.cpp:3504-3535 `std::vector<std::set<int>> Print::get_physical_unprintable_filaments(const std::vector<unsigned int>& used_filaments) const`
+        pub fn get_physical_unprintable_filaments(&self, used_filaments: &[u32]) -> Vec<BTreeSet<i32>> {
+            let extruder_num = cfg_floats(&self.m_config, "nozzle_diameter").len();
+            let mut physical_unprintables: Vec<BTreeSet<i32>> = vec![BTreeSet::new(); extruder_num];
+            if extruder_num < 2 {
+                return physical_unprintables;
+            }
+
+            let filament_printable = cfg_ints(&self.m_config, "filament_printable");
+            let get_unprintable_extruder_id = |filament_idx: u32| -> i32 {
+                let status = filament_printable[filament_idx as usize];
+                for i in 0..extruder_num as i32 {
+                    if (status >> i) & 1 == 0 {
+                        return i;
+                    }
+                }
+                -1
+            };
+
+            let filament_type = cfg_strings(&self.m_config, "filament_type");
+            let mut tpu_filaments: BTreeSet<u32> = BTreeSet::new();
+            for &f in used_filaments {
+                if get_at(&filament_type, f as usize) == "TPU" {
+                    tpu_filaments.insert(f);
+                }
+            }
+
+            for &f in used_filaments {
+                let extruder_id = get_unprintable_extruder_id(f);
+                if extruder_id == -1 {
+                    continue;
+                }
+                physical_unprintables[extruder_id as usize].insert(f as i32);
+            }
+
+            physical_unprintables
+        }
+
+        /// Print.cpp:3537-3566 `std::map<int, std::set<NozzleVolumeType>> Print::get_filament_unprintable_flow(const std::vector<unsigned int> &used_filaments) const`
+        pub fn get_filament_unprintable_flow(&self, used_filaments: &[u32]) -> BTreeMap<i32, BTreeSet<NozzleVolumeType>> {
+            use crate::print_config::config_def::convert_to_nvt_type;
+            let extruder_variant_list = cfg_strings(&self.m_config, "printer_extruder_variant");
+            let ori = &self.base.base.m_ori_full_print_config;
+            let filament_variant_list = cfg_strings(ori, "filament_extruder_variant");
+            let filament_self_index: Vec<i32> =
+                if !ori.has("filament_self_index") { vec![1; filament_variant_list.len()] } else { cfg_ints(ori, "filament_self_index") };
+            let mut ret: BTreeMap<i32, BTreeSet<NozzleVolumeType>> = BTreeMap::new();
+            let used_fils_set: std::collections::HashSet<i32> = used_filaments.iter().map(|&f| f as i32).collect();
+
+            // std::unordered_map<int, std::set<NozzleVolumeType>>: the order of the iteration below
+            // does not show in the result (a std::map).
+            let mut filament_variant_map: BTreeMap<i32, BTreeSet<NozzleVolumeType>> = BTreeMap::new();
+            for i in 0..filament_variant_list.len() {
+                let volume = convert_to_nvt_type(&filament_variant_list[i]);
+                if volume != NozzleVolumeType::NvtHybrid {
+                    filament_variant_map.entry(filament_self_index[i]).or_default().insert(volume);
+                }
+            }
+
+            for (first, volumes) in &filament_variant_map {
+                let fil_idx = first - 1;
+                if !used_fils_set.contains(&fil_idx) {
+                    continue;
+                }
+                for exd_idx in 0..extruder_variant_list.len() {
+                    let exd_volume = convert_to_nvt_type(&extruder_variant_list[exd_idx]);
+                    debug_assert!(exd_volume != NozzleVolumeType::NvtHybrid);
+                    if !volumes.contains(&exd_volume) && exd_volume != NozzleVolumeType::NvtHybrid {
+                        ret.entry(fil_idx).or_default().insert(exd_volume);
+                    }
+                }
+            }
+            ret
+        }
+
+        /// Print.cpp:3568-3571 `std::vector<double> Print::get_extruder_printable_height() const`
+        pub fn get_extruder_printable_height(&self) -> Vec<f64> {
+            cfg_floats(&self.m_config, "extruder_printable_height")
+        }
+
+        /// The `extruder_printable_area` of the config (`ConfigOptionPointsGroups`).
+        fn extruder_printable_areas(&self) -> Vec<Vec<crate::geometry::Vec2d>> {
+            self.m_config
+                .option("extruder_printable_area")
+                .and_then(|o| o.as_any().downcast_ref::<crate::config::ConfigOptionPointsGroups>())
+                .map(|o| o.values.clone())
+                .unwrap_or_default()
+        }
+
+        /// Print.cpp:3573-3582 `std::vector<Polygons> Print::get_extruder_printable_polygons() const`
+        pub fn get_extruder_printable_polygons(&self) -> Vec<Vec<Polygon>> {
+            let mut extruder_printable_polys: Vec<Vec<Polygon>> = Vec::new();
+            for e_printable_area in self.extruder_printable_areas() {
+                let ploys = vec![polygon_new_scale(&e_printable_area)];
+                extruder_printable_polys.push(ploys);
+            }
+            extruder_printable_polys
+        }
+
+        /// Print.cpp:3584-3595 `std::vector<Polygons> Print::get_extruder_unprintable_polygons() const`
+        pub fn get_extruder_unprintable_polygons(&self) -> Vec<Vec<Polygon>> {
+            let printable_area = cfg_points(&self.m_config, "printable_area");
+            let printable_poly = polygon_new_scale(&printable_area);
+            let mut extruder_unprintable_polys: Vec<Vec<Polygon>> = Vec::new();
+            for e_printable_area in self.extruder_printable_areas() {
+                let ploys = crate::clipper_utils::diff_polygons(std::slice::from_ref(&printable_poly), &[polygon_new_scale(&e_printable_area)]);
+                extruder_unprintable_polys.push(ploys);
+            }
+            extruder_unprintable_polys
+        }
+
+        /// Print.cpp:3609-3616 `size_t Print::get_extruder_id(unsigned int filament_id) const`
+        pub fn get_extruder_id(&self, filament_id: u32) -> usize {
+            let filament_map = self.get_filament_maps();
+            if (filament_id as usize) < filament_map.len() {
+                return (filament_map[filament_id as usize] - 1) as usize;
+            }
+            0
+        }
+
+        /// Print.cpp:3618-3621 `size_t Print::get_filament_config_idx(unsigned int filament_id) const`
+        pub fn get_filament_config_idx(&self, filament_id: u32) -> usize {
+            crate::gcode::wipe_tower::cfg_get_filament_config_idx(&self.m_config, filament_id)
+        }
+
+        /// Print.cpp:3623-3626 `size_t Print::get_process_config_idx(unsigned int filament_id) const`
+        /// over PrintConfig.cpp:494-502 `get_process_config_idx(config, filament_id)`.
+        pub fn get_process_config_idx(&self, filament_id: u32) -> usize {
+            use crate::config::ConfigEnum;
+            let config = &self.m_config;
+            let volume_type = <NozzleVolumeType as ConfigEnum>::from_int(get_at(&cfg_ints(config, "filament_volume_map"), filament_id as usize));
+            // get_extruder_index: filament_map[filament_id] - 1, 0 past its end
+            let filament_map = cfg_ints(config, "filament_map");
+            let extruder_id = if (filament_id as usize) < filament_map.len() { filament_map[filament_id as usize] - 1 } else { 0 };
+            let extruder_type = <ExtruderType as ConfigEnum>::from_int(get_at(&cfg_ints(config, "extruder_type"), extruder_id as usize));
+            let print_extruder_id = cfg_ints(config, "printer_extruder_id");
+            let variant_list = cfg_strings(config, "printer_extruder_variant");
+            crate::print_config::config_def::get_config_index_base(volume_type, extruder_type, extruder_id + 1, &variant_list, &print_extruder_id) as usize
+        }
+
+        /// Print.cpp:3628-3653 `bool Print::support_material_on_wipe_tower() const`
+        pub fn support_material_on_wipe_tower(&self) -> bool {
+            if !self.has_wipe_tower() || !self.has_support_material() {
+                return false;
+            }
+
+            for object in &self.m_objects {
+                if !object.has_support_material() {
+                    continue;
+                }
+
+                let obj_filaments = self.print_object_object_extruders(object);
+                let support_fil = cfg_int(object.config(), "support_filament");
+                let support_interface_fil = cfg_int(object.config(), "support_interface_filament");
+
+                let support_differs_from_body = |filament_1based: i32| -> bool {
+                    if filament_1based <= 0 {
+                        return false;
+                    }
+                    let filament_0based = (filament_1based - 1) as u32;
+                    !obj_filaments.contains(&filament_0based)
+                };
+
+                if support_differs_from_body(support_fil) || support_differs_from_body(support_interface_fil) {
+                    return true;
+                }
+            }
+            false
+        }
+
+        /// Print.cpp:3655-3671 `bool Print::has_wipe_tower() const`
+        pub fn has_wipe_tower(&self) -> bool {
+            if cfg_bool(&self.m_config, "enable_prime_tower") {
+                if cfg_bool(&self.m_config, "enable_wrapping_detection") && cfg_points(&self.m_config, "wrapping_exclude_area").len() > 2 {
+                    return true;
+                }
+
+                if self.enable_timelapse_print() {
+                    return true;
+                }
+
+                let is_mixed: Vec<u8> = cfg_bools(&self.m_config, "filament_is_mixed").iter().map(|&b| b as u8).collect();
+                let used_filaments = crate::filament_mixer::expand_mixed_filaments(
+                    &self.extruders(true),
+                    &is_mixed,
+                    &cfg_strings(&self.m_config, "filament_mixed_components"),
+                );
+                return !cfg_bool(&self.m_config, "spiral_mode") && used_filaments.len() > 1;
+            }
+            false
+        }
+
+        /// Print.cpp:3742-3745 `bool Print::enable_timelapse_print() const`
+        pub fn enable_timelapse_print(&self) -> bool {
+            cfg_enum(&self.m_config, "timelapse_type") == TimelapseType::TlSmooth as i32
+        }
+
+        /// Print.cpp:3082-3104 `std::vector<Point> Print::first_layer_wipe_tower_corners(bool
+        /// check_wipe_tower_existance) const`: the 4 wipe tower corners in the world coordinates
+        /// (shifted and rotated), including the wipe tower brim.
+        pub fn first_layer_wipe_tower_corners(&self, check_wipe_tower_existance: bool) -> Vec<Point> {
+            let mut corners: Vec<Point> = Vec::new();
+            if check_wipe_tower_existance && (!self.has_wipe_tower() || self.m_wipe_tower_data.tool_changes.is_empty()) {
+                return corners;
+            }
+            let ((min_x, min_y), (max_x, max_y)) = self.m_wipe_tower_data.bbx;
+            let width = max_x - min_x;
+            let depth = max_y - min_y;
+            let pt0 = (min_x + self.m_wipe_tower_data.rib_offset[0] as f64, min_y + self.m_wipe_tower_data.rib_offset[1] as f64);
+            let angle = cfg_float(&self.m_config, "wipe_tower_rotation_angle").to_radians();
+            let (sin, cos) = (angle.sin(), angle.cos());
+            let plate_index = self.base.base.m_plate_index.max(0) as usize;
+            let wx = get_at(&cfg_floats(&self.m_config, "wipe_tower_x"), plate_index);
+            let wy = get_at(&cfg_floats(&self.m_config, "wipe_tower_y"), plate_index);
+            for pt in [pt0, (pt0.0 + width, pt0.1), (pt0.0 + width, pt0.1 + depth), (pt0.0, pt0.1 + depth)] {
+                // Eigen::Rotation2Dd(deg2rad(angle)) * pt: the rows of the rotation matrix times pt.
+                let x = (-sin).mul_add(pt.1, cos * pt.0);
+                let y = cos.mul_add(pt.1, sin * pt.0);
+                // BBS: add partplate logic
+                let x = x + (wx + self.m_origin[0]);
+                let y = y + (wy + self.m_origin[1]);
+                // Point(scale_(x), scale_(y)): Point(double, double) rounds.
+                corners.push(Point::new(
+                    (x / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64,
+                    (y / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64,
+                ));
+            }
+            corners
+        }
+
+        /// Print.cpp:4402-4410 `std::string Print::output_filename(const std::string &filename_base) const`
+        pub fn output_filename(&self, filename_base: &str) -> Result<String, crate::exception::PlaceholderParserError> {
+            use crate::config::{ConfigOptionInt, ConfigOptionString};
+            // Set the placeholders for the data know first after the G-code export is finished.
+            let mut config = if self.finished() { self.print_statistics().config() } else { PrintStatistics::placeholders() };
+            config.set_key_value("num_filaments", Box::new(ConfigOptionInt::with_value(cfg_floats(&self.m_config, "nozzle_diameter").len() as i32)));
+            config.set_key_value("plate_name", Box::new(ConfigOptionString::with_value(self.base.base.get_plate_name())));
+
+            self.base.base.output_filename(&cfg_string(&self.m_config, "filename_format"), ".gcode", filename_base, Some(&config))
+        }
+
+        /// Print.cpp:4412-4418 `void Print::set_gcode_file_ready()`
+        pub fn set_gcode_file_ready(&mut self) {
+            let _ = self.base.set_started(PrintStep::psGCodeExport);
+            let _ = self.base.set_done(PrintStep::psGCodeExport);
+        }
+
+        /// Print.cpp:4419-4425 `void Print::set_gcode_file_invalidated()`
+        pub fn set_gcode_file_invalidated(&mut self) {
+            self.invalidate_step(PrintStep::psGCodeExport);
+        }
+    }
+
+    /// Print.hpp:45 `#define MAX_OUTER_NOZZLE_RADIUS 4`
+    pub const MAX_OUTER_NOZZLE_RADIUS: i32 = 4;
+
+    /// Print.hpp:1369 `inline double compacted_tower_half_clearance(double clearance)`: half of a
+    /// clearance distance, the share each of the two outlines carries, after the 0.2 mm of rounding slack.
+    pub fn compacted_tower_half_clearance(clearance: f64) -> f64 {
+        0.5 * (clearance - 0.2)
+    }
+
+    /// Print.hpp:1400-1414 `struct CompactedTowerClearance`
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct CompactedTowerClearance {
+        /// Height the object may reach above the tower base. Zero means it may not rise at all.
+        pub allowed_rise: f64,
+        /// Clearance that applies once the object stands clear of the toolhead in XY, i.e. rod or lid.
+        pub far_clearance: f64,
+        /// The object sits within the toolhead radius, so the head body limits it rather than the rod.
+        pub near_body: bool,
+        /// Horizontal clearance this particular object has to keep from the tower.
+        pub body_clearance: f64,
+    }
+
+    /// Print.hpp:1422-1425 `inline bool compacted_tower_body_tier(const CompactedTowerClearance &clearance)`
+    pub fn compacted_tower_body_tier(clearance: &CompactedTowerClearance) -> bool {
+        clearance.body_clearance > MAX_OUTER_NOZZLE_RADIUS as f64
+    }
+
+    /// `Polygon::new_scale(const std::vector<Vec2d>&)`: every point `scale_`d (truncated).
+    fn polygon_new_scale(points: &[crate::geometry::Vec2d]) -> Polygon {
+        let pts: Vec<Point> = points
+            .iter()
+            .map(|p| Point::new((p.x / crate::libslic3r::SCALING_FACTOR) as i64, (p.y / crate::libslic3r::SCALING_FACTOR) as i64))
+            .collect();
+        Polygon::from_points(pts)
+    }
+
 }
 
 impl Default for Print {

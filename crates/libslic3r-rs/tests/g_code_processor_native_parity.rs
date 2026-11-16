@@ -1,0 +1,379 @@
+//! `slicer::gcode::g_code_processor` (the port of libslic3r/GCode/GCodeProcessor.cpp) against the C++
+//! at the pin.
+//!
+//! `tests/data/g_code_processor/g_code_processor.txt.gz` is the output of `gen.cpp` beside it (gzip
+//! -9n), which includes the pin's GCodeProcessor.cpp. It holds the results of the file-static
+//! helpers (`remove_eols`, `parse_number`, `set_option_value` / `get_option_value`), of the static
+//! queries (`parse_helioadditive_comment`, `get_last_position_from_gcode`, `get_last_z_from_gcode`,
+//! `get_gcode_last_filament`, `contains_reserved_tag(s)`), and of whole synthetic programs run
+//! through `apply_config`, `initialize`, `process_buffer` and `finalize(true)` with the machine
+//! limits of a BBL printer under four G-code flavors: the estimated times per mode, the times per
+//! role, move type and layer, the filament volumes, every move and the text after
+//! `TimeProcessor::post_process`. The header of gen.cpp describes the lines. The producer tags are
+//! compared by the unit tests of the module (they are private).
+
+use slicer::config::ConfigOptionFloats;
+use slicer::gcode::g_code_processor::*;
+use std::io::Read;
+
+fn read_vectors() -> String {
+    let path = format!("{}/tests/data/g_code_processor/g_code_processor.txt.gz", env!("CARGO_MANIFEST_DIR"));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut text).expect("gzip");
+    text
+}
+
+fn unhex(t: &str) -> String {
+    if t == "-" {
+        return String::new();
+    }
+    let b: Vec<u8> = (0..t.len() / 2).map(|i| u8::from_str_radix(&t[2 * i..2 * i + 2], 16).expect("hex")).collect();
+    String::from_utf8(b).expect("the vectors are UTF-8")
+}
+
+fn hex(s: &str) -> String {
+    if s.is_empty() {
+        return "-".to_string();
+    }
+    s.bytes().map(|c| format!("{:02x}", c)).collect()
+}
+
+fn f32h(v: f32) -> String {
+    format!("{:08x}", v.to_bits())
+}
+
+fn f64h(v: f64) -> String {
+    format!("{:016x}", v.to_bits())
+}
+
+fn f32of(t: &str) -> f32 {
+    f32::from_bits(u32::from_str_radix(t, 16).expect("f32 bits"))
+}
+
+#[test]
+fn helpers() {
+    let text = read_vectors();
+    let mut n = 0usize;
+    let mut bad: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let t: Vec<&str> = line.split(' ').collect();
+        let got: Option<String> = match t[0] {
+            "eols" => {
+                let s = unhex(t[1]);
+                let e = remove_eols(s.as_bytes(), 0, s.len());
+                Some(format!("eols {} {}", t[1], e))
+            }
+            "pnf" => {
+                let s = unhex(t[1]);
+                let mut v = 0.0f32;
+                let ok = parse_number(&s, &mut v);
+                Some(format!("pnf {} {} {}", t[1], ok as i32, f32h(v)))
+            }
+            "pni" => {
+                let s = unhex(t[1]);
+                let mut v = 0i32;
+                let ok = parse_number(&s, &mut v);
+                Some(format!("pni {} {} {}", t[1], ok as i32, v))
+            }
+            "optv" => {
+                let id: usize = t[1].parse().unwrap();
+                let value = f32of(t[2]);
+                let nvals: usize = t[3].parse().unwrap();
+                let mut opt = ConfigOptionFloats::from_values((0..nvals).map(|i| 10.0 * (i + 1) as f64 + 0.25).collect());
+                let before = opt.get_option_value(id);
+                opt.set_option_value(id, value);
+                let mut s = format!("optv {} {} {} {}", id, t[2], nvals, f32h(before));
+                for v in &opt.values {
+                    s += &format!(" {}", f64h(*v));
+                }
+                Some(s)
+            }
+            "helio" => {
+                let c = unhex(t[1]);
+                let mut is_helio = false;
+                let ti = parse_helioadditive_comment(&c, &mut is_helio);
+                Some(format!("helio {} {} {} {} {}", t[1], is_helio as i32, f32h(ti.min), f32h(ti.max), f32h(ti.mean)))
+            }
+            "lastpos" => {
+                let s = unhex(t[1]);
+                let mut p = [f32of(t[2]), f32of(t[3]), f32of(t[4])];
+                let r = get_last_position_from_gcode(&s, &mut p);
+                Some(format!("lastpos {} {} {} {} {} {} {} {}", t[1], t[2], t[3], t[4], r as i32, f32h(p[0]), f32h(p[1]), f32h(p[2])))
+            }
+            "lastz" => {
+                let s = unhex(t[1]);
+                let r = get_last_z_from_gcode(&s);
+                Some(format!("lastz {} {} {}", t[1], r.is_some() as i32, f64h(r.unwrap_or(-1.0))))
+            }
+            "lastfil" => {
+                let s = unhex(t[1]);
+                Some(format!("lastfil {} {}", t[1], get_gcode_last_filament(&s)))
+            }
+            "tag" => {
+                let s = unhex(t[1]);
+                let r = contains_reserved_tag(&s);
+                Some(format!("tag {} {} {}", t[1], r.is_some() as i32, hex(&r.unwrap_or_default())))
+            }
+            "tags" => {
+                let s = unhex(t[1]);
+                let max: u32 = t[2].parse().unwrap();
+                let mut fs: Vec<String> = Vec::new();
+                let r = contains_reserved_tags(&s, max, &mut fs);
+                let mut o = format!("tags {} {} {} {}", t[1], max, r as i32, fs.len());
+                for f in &fs {
+                    o += &format!(" {}", hex(f));
+                }
+                Some(o)
+            }
+            _ => None,
+        };
+        if let Some(g) = got {
+            n += 1;
+            if g != line {
+                bad.push(format!("  want {line}\n  got  {g}"));
+            }
+        }
+    }
+    assert!(n >= 150, "only {n} helper lines");
+    assert!(bad.is_empty(), "{} of {} helper lines differ:\n{}", bad.len(), n, bad.join("\n"));
+}
+
+struct Case {
+    name: String,
+    cfg: Vec<(String, String)>,
+    stealth: bool,
+    envelope: bool,
+    prog: String,
+    lines: Vec<String>,
+}
+
+fn cases(text: &str) -> Vec<Case> {
+    let mut out = Vec::new();
+    let mut cur: Option<Case> = None;
+    for line in text.lines() {
+        let t: Vec<&str> = line.splitn(2, ' ').collect();
+        match t[0] {
+            "case" => {
+                cur = Some(Case {
+                    name: t[1].to_string(),
+                    cfg: Vec::new(),
+                    stealth: false,
+                    envelope: false,
+                    prog: String::new(),
+                    lines: Vec::new(),
+                })
+            }
+            "end" => out.push(cur.take().expect("case")),
+            _ => {
+                if let Some(c) = cur.as_mut() {
+                    match t[0] {
+                        "cfg" => {
+                            let kv: Vec<&str> = t[1].split(' ').collect();
+                            c.cfg.push((kv[0].to_string(), unhex(kv[1])));
+                        }
+                        "stealth" => c.stealth = t[1] == "1",
+                        "envelope" => c.envelope = t[1] == "1",
+                        "prog" => c.prog = unhex(t[1]),
+                        _ => c.lines.push(line.to_string()),
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The port's `PrintConfig` with the values the case gives to the C++ `PrintConfig`.
+fn rust_config(cfg: &[(String, String)]) -> slicer::print_config::PrintConfig {
+    use slicer::print_config::GCodeFlavor;
+    let mut c = slicer::print_config::PrintConfig::new();
+    for (k, v) in cfg {
+        let list: Vec<f64> = v.split(',').filter_map(|x| x.parse::<f64>().ok()).collect();
+        let first = list.first().copied().unwrap_or(0.0);
+        match k.as_str() {
+            "gcode_flavor" => {
+                c.gcode_flavor = match v.as_str() {
+                    "marlin" => GCodeFlavor::MarlinLegacy,
+                    "marlin2" => GCodeFlavor::Marlin,
+                    "klipper" => GCodeFlavor::Klipper,
+                    "reprapfirmware" => GCodeFlavor::RepRapFirmware,
+                    "reprap" => GCodeFlavor::RepRapSprinter,
+                    "repetier" => GCodeFlavor::Repetier,
+                    "sailfish" => GCodeFlavor::Sailfish,
+                    "makerware" => GCodeFlavor::MakerWare,
+                    "smoothie" => GCodeFlavor::Smoothie,
+                    other => panic!("flavor {other}"),
+                }
+            }
+            "machine_max_acceleration_x" => c.machine_max_acceleration_x = first,
+            "machine_max_acceleration_y" => c.machine_max_acceleration_y = first,
+            "machine_max_acceleration_z" => c.machine_max_acceleration_z = first,
+            "machine_max_acceleration_e" => c.machine_max_acceleration_e = first,
+            "machine_max_acceleration_extruding" => c.machine_max_acceleration_extruding = first,
+            "machine_max_acceleration_retracting" => c.machine_max_acceleration_retracting = first,
+            "machine_max_acceleration_travel" => c.machine_max_acceleration_travel = first,
+            "machine_max_speed_x" => c.machine_max_speed_x = first,
+            "machine_max_speed_y" => c.machine_max_speed_y = first,
+            "machine_max_speed_z" => c.machine_max_speed_z = first,
+            "machine_max_speed_e" => c.machine_max_speed_e = first,
+            "machine_max_jerk_x" => c.machine_max_jerk_x = first,
+            "machine_max_jerk_y" => c.machine_max_jerk_y = first,
+            "machine_max_jerk_z" => c.machine_max_jerk_z = first,
+            "machine_max_jerk_e" => c.machine_max_jerk_e = first,
+            "machine_min_extruding_rate" => c.machine_min_extruding_rate = first,
+            "machine_min_travel_rate" => c.machine_min_travel_rate = first,
+            "filament_diameter" => {
+                c.filament_diameters = list.clone();
+                c.filament_diameter = first;
+            }
+            "filament_density" => {
+                c.filament_densities = list.clone();
+                c.filament_density = first;
+            }
+            "nozzle_volume" => c.nozzle_volumes = list.clone(),
+            "machine_load_filament_time" => c.machine_load_filament_time = first,
+            "machine_unload_filament_time" => c.machine_unload_filament_time = first,
+            "machine_switch_extruder_time" => c.machine_switch_extruder_time = first,
+            "machine_hotend_change_time" => c.machine_hotend_change_time = first,
+            "machine_prepare_compensation_time" => c.machine_prepare_compensation_time = first,
+            "extruder_offset" => {
+                let xy: Vec<f64> = v.split('x').map(|x| x.parse().unwrap()).collect();
+                c.extruder_offset_x = xy[0];
+                c.extruder_offset_y = xy[1];
+            }
+            "filament_map" => c.filament_map = v.split(',').map(|x| x.parse().unwrap()).collect(),
+            "initial_layer_print_height" => c.first_layer_height = first,
+            other => panic!("config key {other}"),
+        }
+    }
+    c
+}
+
+/// The lines of a case as the port gives them, in gen.cpp's format.
+fn rust_lines(c: &Case) -> Vec<String> {
+    let config = rust_config(&c.cfg);
+    let mut p = GCodeProcessor::new();
+    p.reset();
+    p.apply_config(&config);
+    p.enable_stealth_time_estimator(c.stealth);
+    p.enable_machine_envelope_processing(c.envelope);
+    p.initialize(&format!("{}.gcode", c.name));
+    p.process_buffer(&c.prog);
+    p.finalize(false);
+
+    let mut out = Vec::new();
+    for mode in [ETimeMode::Normal, ETimeMode::Stealth] {
+        let m = mode as usize;
+        out.push(format!("time {} {}", m, f32h(p.get_time(mode))));
+        out.push(format!("prepare {} {}", m, f32h(p.get_prepare_time(mode))));
+        let roles = p.get_roles_time(mode);
+        let mut s = format!("roles {} {}", m, roles.len());
+        for (r, t) in roles {
+            s += &format!(" {} {}", r as u8, f32h(t));
+        }
+        out.push(s);
+        let mt = p.get_moves_time(mode);
+        let mut s = format!("mtimes {} {}", m, mt.len());
+        for (r, t) in mt {
+            s += &format!(" {} {}", r as u8, f32h(t));
+        }
+        out.push(s);
+        let lt = p.get_layers_time(mode);
+        let mut s = format!("layers {} {}", m, lt.len());
+        for t in lt {
+            s += &format!(" {}", f32h(t));
+        }
+        out.push(s);
+        let cg = p.get_custom_gcode_times(mode, true);
+        let mut s = format!("cgt {} {}", m, cg.len());
+        for (r, (a, b)) in cg {
+            s += &format!(" {} {} {}", r as u8, f32h(a), f32h(b));
+        }
+        out.push(s);
+    }
+    let ps = &p.result().print_statistics;
+    let vols = |kind: &str, m: &std::collections::BTreeMap<usize, f64>| {
+        let mut s = format!("vol {} {}", kind, m.len());
+        for (k, v) in m {
+            s += &format!(" {} {}", k, f64h(*v));
+        }
+        s
+    };
+    out.push(vols("total", &ps.total_volumes_per_extruder));
+    out.push(vols("model", &ps.model_volumes_per_extruder));
+    out.push(vols("support", &ps.support_volumes_per_extruder));
+    out.push(vols("wipe", &ps.wipe_tower_volumes_per_extruder));
+    out.push(vols("flush", &ps.flush_per_filament));
+    let moves = &p.result().moves;
+    out.push(format!("moves {}", moves.len()));
+    for mv in moves {
+        out.push(format!(
+            "m {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+            mv.move_type as u8,
+            mv.extrusion_role as u8,
+            mv.extruder_id,
+            mv.cp_color_id,
+            mv.gcode_id,
+            f32h(mv.position[0]),
+            f32h(mv.position[1]),
+            f32h(mv.position[2]),
+            f32h(mv.delta_extruder),
+            f32h(mv.feedrate),
+            f32h(mv.width),
+            f32h(mv.height),
+            f32h(mv.mm3_per_mm),
+            f32h(mv.fan_speed),
+            f32h(mv.temperature),
+            f32h(mv.layer_duration),
+            f32h(mv.time[0]),
+            f32h(mv.time[1]),
+            f32h(mv.additional_fan_speed)
+        ));
+    }
+    out.push(format!("post {}", hex(&p.time_processor().post_process(&c.prog))));
+    out
+}
+
+#[test]
+fn programs() {
+    let text = read_vectors();
+    let cs = cases(&text);
+    assert!(cs.len() >= 30, "only {} cases", cs.len());
+    let mut report: Vec<String> = Vec::new();
+    let mut total = 0usize;
+    let mut differ = 0usize;
+    let mut compared = 0usize;
+    for c in &cs {
+        compared += 1;
+        let got = rust_lines(c);
+        // GCP_CASE=<name>: every line of the case, the C++ one then the port's.
+        if std::env::var("GCP_CASE").map(|v| v == c.name).unwrap_or(false) {
+            for (i, want) in c.lines.iter().enumerate() {
+                let g = got.get(i).cloned().unwrap_or_default();
+                eprintln!("{} {}\n{} {}", if &g == want { "=" } else { "C" }, want, if &g == want { "=" } else { "R" }, g);
+            }
+        }
+        let mut first: Option<String> = None;
+        let mut n_bad = 0usize;
+        for (i, want) in c.lines.iter().enumerate() {
+            total += 1;
+            let g = got.get(i).cloned().unwrap_or_default();
+            if &g != want {
+                n_bad += 1;
+                if first.is_none() {
+                    first = Some(format!("  want {want}\n  got  {g}"));
+                }
+            }
+        }
+        if got.len() != c.lines.len() {
+            n_bad += 1;
+        }
+        if n_bad > 0 {
+            differ += n_bad;
+            report.push(format!("{}: {} of {} lines differ\n{}", c.name, n_bad, c.lines.len(), first.unwrap_or_default()));
+        }
+    }
+    assert!(compared >= 90, "only {compared} cases compared");
+    assert!(report.is_empty(), "{} of {} program lines differ:\n{}", differ, total, report.join("\n"));
+}
