@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**45.3% of the named C++ functions are ported or verified (4336 of 9574); 32.6% by size of body.**
+**46.8% of the named C++ functions are ported or verified (4483 of 9574); 37.6% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 2506 | 26.2% | 39.6% |
-| partial `[~]` | 2732 | 28.5% | 27.8% |
-| ported `[x]` | 3393 | 35.4% | 24.2% |
-| verified `[v]` | 943 | 9.8% | 8.5% |
+| not started `[ ]` | 2370 | 24.8% | 34.6% |
+| partial `[~]` | 2721 | 28.4% | 27.8% |
+| ported `[x]` | 3394 | 35.5% | 24.0% |
+| verified `[v]` | 1089 | 11.4% | 13.6% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -57,7 +57,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | C++ unit | Tier | Rust file | Status | Functions | not started | partial | ported | verified |
 |-|-|-|-|-|-|-|-|-|
 | `AABBMesh` | 1 | `aabb_mesh.rs` | partial | 20 | 2 | 9 | 9 | 0 |
-| `AABBTreeIndirect` | 1 | `aabb_tree_indirect.rs` | partial | 41 | 5 | 11 | 25 | 0 |
+| `AABBTreeIndirect` | 1 | `aabb_tree_indirect.rs` | partial | 41 | 5 | 10 | 26 | 0 |
 | `AABBTreeLines` | 1 | `aabb_tree_lines.rs` | partial | 13 | 0 | 1 | 12 | 0 |
 | `AdaptiveLayerMerge` | 3 | `adaptive_layer_merge.rs` | ported | 16 | 0 | 0 | 6 | 10 |
 | `Algorithm/LineSegmentation/LineSegmentation` | 1 | `algorithm/line_segmentation/line_segmentation.rs` | partial | 29 | 7 | 17 | 5 | 0 |
@@ -257,7 +257,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `MinAreaBoundingBox` | 1 | `min_area_bounding_box.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `MinimumSpanningTree` | 3 | `minimum_spanning_tree.rs` | ported | 6 | 0 | 0 | 6 | 0 |
 | `miniz_extension` | 1 | `miniz_extension.rs` | partial | 9 | 6 | 1 | 2 | 0 |
-| `Model` | 1 | `model.rs` | partial | 374 | 231 | 135 | 8 | 0 |
+| `Model` | 1 | `model.rs` | partial | 374 | 230 | 136 | 8 | 0 |
 | `ModelArrange` | 1 | `model_arrange.rs` | partial | 14 | 9 | 3 | 2 | 0 |
 | `MTUtils` | 1 | `mt_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 14 | 38 | 1 |
@@ -276,7 +276,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Optimize/Optimizer` | 3 | `optimize/optimizer.rs` | partial | 15 | 3 | 2 | 10 | 0 |
 | `Orient` | 1 | `orient.rs` | partial | 22 | 6 | 9 | 7 | 0 |
 | `OverhangDetector` | 2 | `overhang_detector.rs` | partial | 15 | 0 | 3 | 12 | 0 |
-| `PaintReproject` | 3 | `paint_reproject.rs` | partial | 50 | 29 | 5 | 0 | 16 |
+| `PaintReproject` | 3 | `paint_reproject.rs` | partial | 50 | 0 | 1 | 16 | 33 |
 | `ParameterUtils` | 1 | `parameter_utils.rs` | partial | 3 | 1 | 1 | 1 | 0 |
 | `pchheader` | 3 | `pchheader.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `PerfTrace` | 3 | `perf_trace.rs` | verified | 1 | 0 | 0 | 0 | 1 |
@@ -288,13 +288,13 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Polygon` | 1 | `geometry/polygon.rs` | partial | 86 | 4 | 28 | 54 | 0 |
 | `PolygonTrimmer` | 1 | `polygon_trimmer.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Polyline` | 1 | `geometry/polyline.rs` | partial | 52 | 2 | 21 | 29 | 0 |
-| `Preset` | 1 | `preset.rs` | partial | 108 | 72 | 24 | 12 | 0 |
-| `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 128 | 10 | 3 | 0 |
+| `Preset` | 1 | `preset.rs` | partial | 108 | 70 | 26 | 12 | 0 |
+| `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 126 | 12 | 3 | 0 |
 | `PrincipalComponents2D` | 1 | `principal_components2_d.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `Print` | 1 | `print.rs` | partial | 236 | 162 | 69 | 5 | 0 |
 | `PrintApply` | 1 | `print_apply.rs` | partial | 44 | 27 | 14 | 3 | 0 |
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 40 | 20 | 17 | 0 |
-| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 102 | 27 | 8 | 0 |
+| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 18 | 17 | 11 | 91 |
 | `PrintObject` | 1 | `print_object.rs` | partial | 82 | 52 | 24 | 6 | 0 |
 | `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 20 | 3 | 1 | 0 |
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
@@ -361,7 +361,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 31 | 43 | 62 | 0 |
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 16 | 13 | 15 | 1 |
-| `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 18 | 21 | 64 | 0 |
+| `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 0 | 20 | 45 | 38 |
 | `TriangleSetSampling` | 3 | `triangle_set_sampling.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `TriangulateWall` | 3 | `triangulate_wall.rs` | partial | 13 | 0 | 1 | 12 | 0 |
 | `Triangulation` | 1 | `triangulation.rs` | partial | 14 | 1 | 9 | 4 | 0 |
@@ -427,7 +427,7 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 - [x] `intersect_ray_recursive_first_hit` (line 396) → `aabb_tree_indirect.rs:883`
 - [x] `intersect_ray_recursive_all_hits` (line 443) → `aabb_tree_indirect.rs:1027`
 - [x] `closest_point_to_triangle` (line 475) → `aabb_tree_indirect.rs:570`
-- [~] `squared_exterior_distance` (line 552) → `aabb_tree_lines.rs, geometry/aabb_tree.rs` — not in the paired file
+- [~] `squared_exterior_distance` (line 552) → `aabb_tree_indirect.rs:1512` — divergent
 - [x] `squared_distance_to_indexed_primitives_recursive` (line 571) → `aabb_tree_indirect.rs:1178`
 - [x] `indexed_primitives_within_distance_squared_recurisve` (line 654) → `aabb_tree_indirect.rs:1351`
 - [x] `build_aabb_tree_over_indexed_triangle_set` (line 691) → `aabb_tree_indirect.rs:723`
@@ -444,8 +444,8 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 
 **class `BoundingBoxWrapper`**
 
-- [~] `idx` (line 230) → `aabb_tree_lines.rs, geometry/convex_hull.rs, mesh_raycast.rs` — not in the paired file
-- [~] `centroid` (line 232) → `aabb_tree_lines.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [x] `idx` (line 230) → `aabb_tree_indirect.rs:1731`
+- [~] `centroid` (line 232) → `aabb_tree_indirect.rs:1737` — divergent
 
 **class `IndexedTriangleSetDistancer`**
 
@@ -457,21 +457,21 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 
 **class `Tree`**
 
-- [x] `clear` (line 74) → `aabb_tree_indirect.rs:94`
-- [x] `build` (line 86) → `aabb_tree_indirect.rs:101`
+- [x] `clear` (line 74) → `aabb_tree_indirect.rs:1575`
+- [x] `build` (line 86) → `aabb_tree_indirect.rs:1580`
 - [x] `build_modify_input` (line 93) → `aabb_tree_indirect.rs:109`
-- [x] `empty` (line 106) → `aabb_tree_indirect.rs:149`
-- [x] `left_child_idx` (line 109) → `aabb_tree_indirect.rs:156`
-- [x] `right_child_idx` (line 110) → `aabb_tree_indirect.rs:163`
-- [~] `build` (line 115) → `aabb_tree_lines.rs, boost_polygon_voronoi.rs, fill/fill_conformal_chart.rs` — not in the paired file
-- [x] `build_recursive` (line 124) → `aabb_tree_indirect.rs:184`
-- [x] `partition_input` (line 157) → `aabb_tree_indirect.rs:240`
+- [x] `empty` (line 106) → `aabb_tree_indirect.rs:1606`
+- [x] `left_child_idx` (line 109) → `aabb_tree_indirect.rs:1610`
+- [x] `right_child_idx` (line 110) → `aabb_tree_indirect.rs:1614`
+- [~] `build` (line 115) → `aabb_tree_indirect.rs:101` — divergent
+- [x] `build_recursive` (line 124) → `aabb_tree_indirect.rs:1619`
+- [x] `partition_input` (line 157) → `aabb_tree_indirect.rs:1655`
 
 **class `Tree::Node`**
 
-- [x] `is_valid` (line 63) → `aabb_tree_indirect.rs:40`
-- [x] `is_inner` (line 64) → `aabb_tree_indirect.rs:47`
-- [x] `is_leaf` (line 65) → `aabb_tree_indirect.rs:54`
+- [x] `is_valid` (line 63) → `aabb_tree_indirect.rs:1542`
+- [x] `is_inner` (line 64) → `aabb_tree_indirect.rs:1546`
+- [x] `is_leaf` (line 65) → `aabb_tree_indirect.rs:1550`
 - [~] `set` (line 68) → `app_config.rs, color.rs, config.rs` — not in the paired file
 
 **class `Within<Eigen::AlignedBox<CoordType, NumD>>`**
@@ -1225,9 +1225,9 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [x] `translate` (line 143) → `bounding_box.rs:1071`
 - [x] `inflated` (line 145) → `bounding_box.rs:1099`
 - [x] `volume` (line 148) → `bounding_box.rs:816`
-- [~] `contains` (line 150) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 150) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [~] `merge` (line 152) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
-- [~] `contains` (line 154) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 154) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `intersects` (line 158) → `bounding_box.rs:1390`
 - [~] `merge` (line 159) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
 - [x] `size` (line 185) → `bounding_box.rs:1288`
@@ -1243,8 +1243,8 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [x] `translate` (line 45) → `bounding_box.rs:1307`
 - [~] `translate` (line 46) → `bounding_box.rs:730` — partial
 - [x] `inflated` (line 48) → `bounding_box.rs:776`
-- [~] `contains` (line 50) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `contains` (line 54) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 50) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
+- [~] `contains` (line 54) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `overlap` (line 57) → `bounding_box.rs:1131`
 - [x] `scale` (line 63) → `bounding_box.rs:1041`
 - [~] `merge` (line 73) → `geometry/bounding_box.rs, shortest_path.rs, support/support_layer.rs` — not in the paired file
@@ -2183,38 +2183,38 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 130) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 131) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 133) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:3842`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:3164`
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 144) → `fill/fill_floating_concentric.rs` — not in the paired file
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 152) → `fill/fill_floating_concentric.rs` — not in the paired file
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 161) → `fill/fill_floating_concentric.rs` — not in the paired file
-- [x] `PolyTreeToExPolygons` (line 175) → `clipper_utils.rs:1498`
-- [x] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs:1538`
+- [x] `PolyTreeToExPolygons` (line 175) → `clipper_utils.rs:849`
+- [x] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs:889`
 - [~] `has_duplicate_points` (line 233) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
 - [~] `has_duplicate_points` (line 250) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
-- [x] `raw_offset` (line 273) → `clipper_utils.rs:1562`
-- [x] `safety_offset` (line 304) → `clipper_utils.rs:1607`
-- [x] `clipper_do` (line 310) → `clipper_utils.rs:1624`
+- [x] `raw_offset` (line 273) → `clipper_utils.rs:913`
+- [x] `safety_offset` (line 304) → `clipper_utils.rs:958`
+- [x] `clipper_do` (line 310) → `clipper_utils.rs:975`
 - [~] `clipper_do` (line 325) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `clipper_union` (line 340) → `clipper_utils.rs:1668`
-- [x] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs:1686`
+- [x] `clipper_union` (line 340) → `clipper_utils.rs:1019`
+- [x] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs:1037`
 - [~] `offset_ex` (line 358) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1697`
-- [x] `expand_paths` (line 367) → `clipper_utils.rs:1711`
+- [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1048`
+- [x] `expand_paths` (line 367) → `clipper_utils.rs:1062`
 - [~] `union_safety_offset` (line 370) → `bridge_detector.rs` — not in the paired file
 - [~] `union_safety_offset` (line 371) → `bridge_detector.rs` — not in the paired file
 - [~] `union_safety_offset_ex` (line 372) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:4366`
-- [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:1466`
-- [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:1486`
+- [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:3689`
+- [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:817`
+- [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:837`
 - [~] `expand` (line 381) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
-- [x] `shrink_paths` (line 382) → `clipper_utils.rs:1728`
+- [x] `shrink_paths` (line 382) → `clipper_utils.rs:1079`
 - [~] `expand` (line 383) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `expand_ex` (line 385) → `clipper_utils.rs`
-- [x] `shrink` (line 388) → `clipper_utils.rs:966`
+- [x] `shrink` (line 388) → `clipper_utils.rs:339`
 - [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs` — not in the paired file
 - [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs` — not in the paired file
-- [x] `offset_paths` (line 400) → `clipper_utils.rs:1774`
-- [x] `closing` (line 407) → `clipper_utils.rs:1254`
+- [x] `offset_paths` (line 400) → `clipper_utils.rs:1125`
+- [x] `closing` (line 407) → `clipper_utils.rs:610`
 - [ ] `closing_ex` (line 410) → `clipper_utils.rs`
 - [~] `offset` (line 410) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [ ] `closing_ex` (line 412) → `clipper_utils.rs`
@@ -2225,24 +2225,24 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `offset` (line 420) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `opening` (line 422) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `contour_to_polygons` (line 423) → `clipper_utils.rs`
-- [x] `opening` (line 424) → `clipper_utils.rs:1073`
+- [x] `opening` (line 424) → `clipper_utils.rs:429`
 - [~] `opening` (line 426) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 429) → `clipper_utils.rs`
-- [x] `opening_ex` (line 430) → `clipper_utils.rs:1088`
-- [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1842`
-- [~] `diff_ex` (line 470) → `clipper_utils.rs:1105` — partial
+- [x] `opening_ex` (line 430) → `clipper_utils.rs:444`
+- [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1193`
+- [~] `diff_ex` (line 470) → `clipper_utils.rs:461` — partial
 - [~] `diff_ex` (line 480) → `fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 488) → `fill/fill_radial_zig_zag.rs` — not in the paired file
 - [ ] `diff_ln` (line 496) → `clipper_utils.rs`
 - [~] `offset_expolygon_inner` (line 508) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `offset_expolygon_inner` (line 510) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `expolygon_offset` (line 513) → `clipper_utils.rs:1934`
-- [x] `expolygons_offset_raw` (line 524) → `clipper_utils.rs:1951`
+- [x] `expolygon_offset` (line 513) → `clipper_utils.rs:1285`
+- [x] `expolygons_offset_raw` (line 524) → `clipper_utils.rs:1302`
 - [~] `intersection_ln` (line 536) → `bridge_detector.rs, internal_bridge_detector.rs` — not in the paired file
-- [x] `expolygons_offset` (line 539) → `clipper_utils.rs:1974`
+- [x] `expolygons_offset` (line 539) → `clipper_utils.rs:1325`
 - [~] `intersection_ln` (line 541) → `bridge_detector.rs, internal_bridge_detector.rs` — not in the paired file
-- [v] `expolygons_offset_pt` (line 552) → `clipper_utils.rs:1996` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
+- [v] `expolygons_offset_pt` (line 552) → `clipper_utils.rs:1347` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
 - [~] `offset` (line 559) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `offset` (line 561) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `offset` (line 563) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
@@ -2251,7 +2251,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `offset_ex` (line 570) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset_ex` (line 572) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset_ex` (line 574) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset2` (line 577) → `clipper_utils.rs:1278` — divergent
+- [~] `offset2` (line 577) → `clipper_utils.rs:633` — divergent
 - [ ] `offset2_ex` (line 581) → `clipper_utils.rs`
 - [ ] `offset2_ex` (line 585) → `clipper_utils.rs`
 - [~] `closing` (line 592) → `clipper_utils.rs` — another overload of the name is ported
@@ -2263,7 +2263,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `opening` (line 619) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `opening` (line 625) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `traverse_pt` (line 625) → `clipper_utils.rs`
-- [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:2075`
+- [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:1426`
 - [ ] `traverse_pt` (line 653) → `clipper_utils.rs`
 - [~] `clipper_do_polytree` (line 656) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `_clipper` (line 670) → `clipper_utils.rs`
@@ -2285,13 +2285,13 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `intersection` (line 707) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `intersection` (line 709) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `intersection` (line 711) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
-- [x] `intersection` (line 714) → `clipper_utils.rs:488`
+- [x] `intersection` (line 714) → `clipper_utils.rs:135`
 - [~] `union_` (line 721) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
 - [~] `union_` (line 723) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
 - [~] `union_` (line 725) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
-- [~] `union_` (line 727) → `clipper_utils.rs:331` — partial
+- [~] `union_` (line 727) → `clipper_utils.rs:81` — divergent
 - [~] `union_` (line 735) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
-- [v] `_clipper_ex` (line 738) → `clipper_utils.rs:2116` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
+- [v] `_clipper_ex` (line 738) → `clipper_utils.rs:1467` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
 - [~] `diff_ex` (line 741) → `fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 743) → `fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 745) → `fill/fill_radial_zig_zag.rs` — not in the paired file
@@ -2318,16 +2318,16 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `intersection_ex` (line 802) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_ex` (line 804) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_ex` (line 806) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 808) → `clipper_utils.rs:1193` — partial
+- [~] `intersection_ex` (line 808) → `clipper_utils.rs:549` — partial
 - [~] `intersection_ex` (line 810) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `union_ex` (line 813) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `union_ex` (line 815) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `union_ex` (line 817) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `union_ex` (line 817) → `clipper_utils.rs:99` — divergent
 - [~] `union_ex` (line 822) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `union_ex` (line 825) → `clipper_utils.rs:376` — divergent
+- [~] `union_ex` (line 825) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
 - [ ] `xor_ex` (line 833) → `clipper_utils.rs`
 - [ ] `xor_ex` (line 836) → `clipper_utils.rs`
-- [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:2151`
+- [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:1502`
 - [ ] `_clipper_pl_recombine` (line 854) → `clipper_utils.rs`
 - [ ] `_clipper_pl_closed` (line 890) → `clipper_utils.rs`
 - [~] `diff_pl` (line 909) → `clipper_utils.rs` — another overload of the name is ported
@@ -2336,7 +2336,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `diff_pl` (line 915) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `diff_pl` (line 917) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `diff_pl` (line 919) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `diff_pl` (line 921) → `clipper_utils.rs:3910`
+- [x] `diff_pl` (line 921) → `clipper_utils.rs:3232`
 - [~] `intersection_pl` (line 923) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_pl` (line 925) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_pl` (line 927) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
@@ -2344,7 +2344,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `intersection_pl` (line 931) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_pl` (line 933) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_pl` (line 935) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [x] `intersection_pl` (line 937) → `clipper_utils.rs:3940`
+- [x] `intersection_pl` (line 937) → `clipper_utils.rs:3262`
 - [ ] `_clipper_ln` (line 940) → `clipper_utils.rs`
 - [ ] `union_pt` (line 962) → `clipper_utils.rs`
 - [ ] `union_pt` (line 966) → `clipper_utils.rs`
@@ -2355,9 +2355,9 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `simplify_polygons` (line 1026) → `arachne/wall_tool_paths.rs, clipper.rs, emboss.rs` — not in the paired file
 - [ ] `simplify_polygons_ex` (line 1043) → `clipper_utils.rs`
 - [ ] `top_level_islands` (line 1059) → `clipper_utils.rs`
-- [x] `fix_after_outer_offset` (line 1077) → `clipper_utils.rs:2174`
-- [x] `fix_after_inner_offset` (line 1095) → `clipper_utils.rs:2194`
-- [~] `mittered_offset_path_scaled` (line 1120) → `clipper_utils.rs:2253` — partial
+- [x] `fix_after_outer_offset` (line 1077) → `clipper_utils.rs:1525`
+- [x] `fix_after_inner_offset` (line 1095) → `clipper_utils.rs:1545`
+- [~] `mittered_offset_path_scaled` (line 1120) → `clipper_utils.rs:1604` — partial
 - [~] `variable_offset_inner` (line 1260) → `clipper2_utils.rs` — not in the paired file
 - [~] `variable_offset_outer` (line 1302) → `clipper2_utils.rs` — not in the paired file
 - [~] `variable_offset_outer_ex` (line 1344) → `clipper2_utils.rs` — not in the paired file
@@ -2996,7 +2996,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `DynamicConfig`**
 
 - [v] `remove_nil_options` (line 1681) → `config.rs:8118` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `optptr` (line 1693) → `config.rs` — another overload of the name is ported
+- [~] `optptr` (line 1693) → `print_config.rs` — not in the paired file
 - [x] `optptr` (line 1716) → `config.rs:8528`
 - [v] `read_cli` (line 1722) → `config.rs:8398` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `keys` (line 1846) → `config.rs:8566` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -3705,10 +3705,10 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `is_valid` (line 60) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [x] `douglas_peucker` (line 69) → `ex_polygon.rs:117`
 - [~] `medial_axis` (line 75) → `geometry/expolygon.rs` — not in the paired file
-- [~] `contains` (line 76) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `contains` (line 81) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 76) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
+- [~] `contains` (line 81) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [~] `num_contours` (line 82) → `geometry/expolygon.rs` — not in the paired file
-- [~] `contains` (line 92) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 92) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `contains` (line 109) → `ex_polygon.rs:175`
 - [x] `on_boundary` (line 121) → `ex_polygon.rs:200`
 - [x] `point_projection` (line 132) → `ex_polygon.rs:223`
@@ -5898,20 +5898,20 @@ Rust file: `frustum.rs`. Status: **partial**.
 
 **class `Frustum`**
 
-- [~] `intersects` (line 112) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `intersects` (line 124) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `intersects` (line 131) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `intersects` (line 141) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `intersects` (line 112) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
+- [~] `intersects` (line 124) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
+- [~] `intersects` (line 131) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
+- [~] `intersects` (line 141) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
 
 **class `Frustum::Plane`**
 
 - [x] `set_abcd` (line 5) → `frustum.rs:104`
 - [x] `normailze` (line 18) → `frustum.rs:124`
 - [x] `distance` (line 28) → `frustum.rs:144`
-- [~] `intersects` (line 40) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `intersects` (line 75) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `intersects` (line 83) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `intersects` (line 96) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `intersects` (line 40) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
+- [~] `intersects` (line 75) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
+- [~] `intersects` (line 83) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
+- [~] `intersects` (line 96) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
 
 ### `FuzzySkin` (.cpp+.hpp)
 
@@ -7667,7 +7667,7 @@ Rust file: `geometry/circle.rs`. Status: **partial**. Not listed: 9 constructors
 - [x] `invalid` (line 79) → `geometry/circle.rs:183`
 - [x] `valid` (line 80) → `geometry/circle.rs:189`
 - [x] `contains` (line 81) → `geometry/circle.rs:195`
-- [~] `contains` (line 82) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 82) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `inflated` (line 85) → `geometry/circle.rs:211`
 - [x] `make_invalid` (line 87) → `geometry/circle.rs:221`
 
@@ -7676,7 +7676,7 @@ Rust file: `geometry/circle.rs`. Status: **partial**. Not listed: 9 constructors
 - [x] `invalid` (line 49) → `geometry/circle.rs:101`
 - [x] `valid` (line 50) → `geometry/circle.rs:107`
 - [x] `contains` (line 51) → `geometry/circle.rs:113`
-- [~] `contains` (line 52) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 52) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `inflated` (line 54) → `geometry/circle.rs:128`
 - [x] `make_invalid` (line 57) → `geometry/circle.rs:139`
 
@@ -7910,7 +7910,7 @@ Rust file: `i18n.rs`. Status: **partial**.
 - [x] `set_translate_callback` (line 17) → `i18n.rs:22`
 - [x] `translate` (line 18) → `i18n.rs:39`
 - [~] `translate` (line 19) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `L` (line 31) → `print_base.rs, sla/pad.rs` — not in the paired file
+- [~] `L` (line 31) → `print_base.rs, print_config.rs, sla/pad.rs` — not in the paired file
 - [ ] `L_CONTEXT` (line 32) → `i18n.rs`
 - [ ] `_u8L` (line 33) → `i18n.rs`
 
@@ -8190,8 +8190,8 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 - [~] `lower_bound_by_predicate` (line 220) → `fill/fill_base.rs` — not in the paired file
 - [ ] `binary_find` (line 242) → `libslic3r.rs`
 - [ ] `binary_find_by_predicate` (line 254) → `libslic3r.rs`
-- [~] `contains` (line 264) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `contains` (line 266) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 264) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
+- [~] `contains` (line 266) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [ ] `one_of` (line 269) → `libslic3r.rs`
 - [ ] `one_of` (line 271) → `libslic3r.rs`
 - [~] `sqr` (line 275) → `build_volume.rs, clipper2/clipper_core.rs, extrusion_simulator.rs` — not in the paired file
@@ -8717,7 +8717,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `get_facets` (line 4599) → `triangle_selector.rs` — not in the paired file
 - [~] `get_facets` (line 4608) → `triangle_selector.rs` — not in the paired file
 - [~] `shift_states_above` (line 4615) → `triangle_selector.rs` — not in the paired file
-- [ ] `replace_state` (line 4624) → `model.rs`
+- [~] `replace_state` (line 4624) → `triangle_selector.rs` — not in the paired file
 - [ ] `set_enforcer_block_type_limit` (line 4634) → `model.rs`
 - [~] `get_facets_strict` (line 4644) → `triangle_selector.rs` — not in the paired file
 - [~] `has_facets` (line 4652) → `triangle_selector.rs` — not in the paired file
@@ -9861,71 +9861,71 @@ Rust file: `paint_reproject.rs`. Status: **partial**. Not listed: 5 constructors
 
 **free functions**
 
-- [v] `cross_2d` (line 37) → `paint_reproject.rs:52` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `project_to_2d` (line 42) → `paint_reproject.rs:57` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `polygon_signed_area` (line 51) → `paint_reproject.rs:66` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `clip_polygon_by_triangle` (line 59) → `paint_reproject.rs:83` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `triangle_overlap_area` (line 105) → `paint_reproject.rs:141` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `dominant_projection_axis` (line 123) → `paint_reproject.rs:160` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit (the body reads as partial to the estimate)
-- [v] `transform_triangle` (line 131) → `paint_reproject.rs:192` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit (the body reads as partial to the estimate)
-- [ ] `reproject_one_annotation` (line 943) → `paint_reproject.rs`
-- [ ] `reproject_one_annotation_by_region` (line 1309) → `paint_reproject.rs`
-- [v] `count_valid_nodes` (line 1385) → `paint_reproject.rs:264` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `classify_cut_faces` (line 1439) → `paint_reproject.rs:310` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `annotation_bit_ranges` (line 1501) → `paint_reproject.rs:363` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `extract_source_roots` (line 1530) → `paint_reproject.rs:390` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `splice_congruent_paint` (line 1555) → `paint_reproject.rs:413` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [ ] `reproject_paint` (line 1582) → `paint_reproject.rs`
-- [ ] `reproject_paint_geometric` (line 1725) → `paint_reproject.rs`
-- [ ] `fill_operand_colour` (line 1885) → `paint_reproject.rs`
-- [v] `append_shifted_annotation` (line 1895) → `paint_reproject.rs:440` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [ ] `operand_band` (line 1917) → `paint_reproject.rs`
-- [ ] `operand_reach` (line 1923) → `paint_reproject.rs`
-- [ ] `measure_operand` (line 1934) → `paint_reproject.rs`
-- [v] `face_samples` (line 1970) → `paint_reproject.rs:455` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [ ] `rank_operands_per_face` (line 1985) → `paint_reproject.rs`
-- [ ] `paint_by_operand_filament` (line 2103) → `paint_reproject.rs`
-- [ ] `reproject_paint_from_volumes` (line 2200) → `paint_reproject.rs`
+- [v] `cross_2d` (line 37) → `paint_reproject.rs:60` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `project_to_2d` (line 42) → `paint_reproject.rs:65` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `polygon_signed_area` (line 51) → `paint_reproject.rs:74` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `clip_polygon_by_triangle` (line 59) → `paint_reproject.rs:91` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `triangle_overlap_area` (line 105) → `paint_reproject.rs:149` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `dominant_projection_axis` (line 123) → `paint_reproject.rs:168` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit (the body reads as partial to the estimate)
+- [v] `transform_triangle` (line 131) → `paint_reproject.rs:200` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit (the body reads as partial to the estimate)
+- [v] `reproject_one_annotation` (line 943) → `paint_reproject.rs:1067` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `reproject_one_annotation_by_region` (line 1309) → `paint_reproject.rs:1427` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `count_valid_nodes` (line 1385) → `paint_reproject.rs:1496` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `classify_cut_faces` (line 1439) → `paint_reproject.rs:1542` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `annotation_bit_ranges` (line 1501) → `paint_reproject.rs:1595` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `extract_source_roots` (line 1530) → `paint_reproject.rs:1622` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `splice_congruent_paint` (line 1555) → `paint_reproject.rs:1645` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `reproject_paint` (line 1582) → `paint_reproject.rs:1693` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `reproject_paint_geometric` (line 1725) → `paint_reproject.rs:1835` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `fill_operand_colour` (line 1885) → `paint_reproject.rs:2037` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `append_shifted_annotation` (line 1895) → `paint_reproject.rs:1969` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `operand_band` (line 1917) → `paint_reproject.rs:2094` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `operand_reach` (line 1923) → `paint_reproject.rs:2100` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `measure_operand` (line 1934) → `paint_reproject.rs:2122` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `face_samples` (line 1970) → `paint_reproject.rs:1984` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `rank_operands_per_face` (line 1985) → `paint_reproject.rs:2183` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `paint_by_operand_filament` (line 2103) → `paint_reproject.rs:2290` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `reproject_paint_from_volumes` (line 2200) → `paint_reproject.rs:2413` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
 
 **class `DestinationInSourceFrame`**
 
-- [v] `triangle` (line 1194) → `paint_reproject.rs:249` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
-- [v] `to_source` (line 1199) → `paint_reproject.rs:254` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `triangle` (line 1194) → `paint_reproject.rs:1317` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `to_source` (line 1199) → `paint_reproject.rs:1322` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
 
 **class `DestinationSeedIndex`**
 
-- [ ] `ensure_tree` (line 1256) → `paint_reproject.rs`
-- [ ] `seeds` (line 1266) → `paint_reproject.rs`
+- [x] `ensure_tree` (line 1256) → `paint_reproject.rs:1386`
+- [x] `seeds` (line 1266) → `paint_reproject.rs:1396`
 
 **class `PaintRegionSource`**
 
-- [~] `empty` (line 749) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `leaf_count` (line 750) → `paint_reproject.rs`
-- [ ] `finest_leaf_edge` (line 756) → `paint_reproject.rs`
-- [~] `coverage` (line 763) → `bridge_detector.rs` — not in the paired file
-- [ ] `collect_leaves` (line 863) → `paint_reproject.rs`
-- [ ] `leaf_triangle` (line 900) → `paint_reproject.rs`
+- [x] `empty` (line 749) → `paint_reproject.rs:890`
+- [v] `leaf_count` (line 750) → `paint_reproject.rs:894` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `finest_leaf_edge` (line 756) → `paint_reproject.rs:903` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `coverage` (line 763) → `paint_reproject.rs:913` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [x] `collect_leaves` (line 863) → `paint_reproject.rs:978`
+- [x] `leaf_triangle` (line 900) → `paint_reproject.rs:1022`
 
 **class `PaintReprojector`**
 
-- [ ] `source_node_count` (line 173) → `paint_reproject.rs`
-- [ ] `fallback_count` (line 178) → `paint_reproject.rs`
-- [ ] `rebound_count` (line 183) → `paint_reproject.rs`
-- [ ] `resolve_source_roots` (line 195) → `paint_reproject.rs`
-- [ ] `measure_overlap` (line 282) → `paint_reproject.rs`
-- [ ] `measure_point_sample` (line 401) → `paint_reproject.rs`
-- [~] `triangle_vertices` (line 515) → `geometry/aabb_tree.rs, triangle_mesh.rs` — not in the paired file
-- [ ] `sample_state` (line 528) → `paint_reproject.rs`
-- [ ] `root_overlap_area` (line 547) → `paint_reproject.rs`
-- [ ] `collect_overlap_areas` (line 578) → `paint_reproject.rs`
-- [ ] `projection_axis` (line 609) → `paint_reproject.rs`
-- [ ] `normals_parallel` (line 616) → `paint_reproject.rs`
-- [ ] `projection_axis` (line 633) → `paint_reproject.rs`
+- [x] `source_node_count` (line 173) → `paint_reproject.rs:418`
+- [x] `fallback_count` (line 178) → `paint_reproject.rs:423`
+- [x] `rebound_count` (line 183) → `paint_reproject.rs:428`
+- [v] `resolve_source_roots` (line 195) → `paint_reproject.rs:434` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `measure_overlap` (line 282) → `paint_reproject.rs:507` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [v] `measure_point_sample` (line 401) → `paint_reproject.rs:591` — R911: tests/paint_reproject_native_parity.rs: against the pin's PaintReproject.cpp: point and overlap samplers, region sources, reproject_one_annotation, reproject_paint and reproject_paint_geometric with world matrices, progress and cancel, reproject_paint_from_volumes on its merge, filament-only and boolean paths, measure_operand; bit for bit
+- [x] `triangle_vertices` (line 515) → `paint_reproject.rs:654`
+- [x] `sample_state` (line 528) → `paint_reproject.rs:662`
+- [x] `root_overlap_area` (line 547) → `paint_reproject.rs:684`
+- [x] `collect_overlap_areas` (line 578) → `paint_reproject.rs:716`
+- [x] `projection_axis` (line 609) → `paint_reproject.rs:745`
+- [x] `normals_parallel` (line 616) → `paint_reproject.rs:750`
+- [~] `projection_axis` (line 633) → `paint_reproject.rs` — another overload of the name is ported
 
 **class `RegionEdgeLimit`**
 
-- [~] `value` (line 1161) → `format/assembly_tree_json.rs, g_code_reader.rs, int128.rs` — not in the paired file
-- [~] `trafo` (line 1162) → `sla/agg_raster.rs` — not in the paired file
+- [x] `value` (line 1161) → `paint_reproject.rs:1253`
+- [x] `trafo` (line 1162) → `paint_reproject.rs:1258`
 
 ### `ParameterUtils` (.cpp+.hpp)
 
@@ -10009,7 +10009,7 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 
 - [~] `get_extruder_id` (line 739) → `gcode/g_code_processor.rs, multi_nozzle_utils.rs` — not in the paired file
 - [ ] `evaluate_full_macro` (line 747) → `placeholder_parser.rs`
-- [~] `optptr` (line 749) → `config.rs` — not in the paired file
+- [~] `optptr` (line 749) → `config.rs, print_config.rs` — not in the paired file
 - [ ] `resolve_symbol` (line 761) → `placeholder_parser.rs`
 - [ ] `legacy_variable_expansion` (line 764) → `placeholder_parser.rs`
 - [ ] `legacy_variable_expansion2` (line 800) → `placeholder_parser.rs`
@@ -10325,8 +10325,8 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [x] `polygons_simplify` (line 658) → `geometry/polygon.rs:1559`
 - [~] `polygons_match` (line 681) → `geometry/polygon.rs:1590` — partial
 - [x] `overlaps` (line 699) → `geometry/polygon.rs:1624`
-- [~] `contains` (line 708) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
-- [~] `contains` (line 717) → `aabb_tree_lines.rs, adaptive_layer_merge.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `contains` (line 708) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
+- [~] `contains` (line 717) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `make_circle` (line 729) → `geometry/polygon.rs:1666`
 - [x] `make_circle_num_segments` (line 736) → `geometry/polygon.rs:1676`
 
@@ -10513,7 +10513,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [ ] `reset_dirty` (line 323) → `preset.rs`
 - [ ] `printer_technology` (line 347) → `preset.rs`
 - [ ] `printer_technology` (line 354) → `preset.rs`
-- [ ] `set_num_extruders` (line 362) → `preset.rs`
+- [~] `set_num_extruders` (line 362) → `print_config.rs` — not in the paired file
 - [ ] `get_printer_id` (line 374) → `preset.rs`
 - [x] `update_suffix_modified` (line 449) → `preset.rs:446`
 - [x] `remove_suffix_modified` (line 455) → `preset.rs:454`
@@ -10530,7 +10530,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [x] `label` (line 757) → `preset.rs:465`
 - [ ] `display_name` (line 763) → `preset.rs`
 - [ ] `set_visible_from_appconfig` (line 873) → `preset.rs`
-- [ ] `get_filament_type` (line 904) → `preset.rs`
+- [~] `get_filament_type` (line 904) → `print_config.rs` — not in the paired file
 - [ ] `get_printer_type` (line 909) → `preset.rs`
 - [ ] `get_printer_name` (line 926) → `preset.rs`
 - [ ] `get_current_printer_type` (line 941) → `preset.rs`
@@ -10709,7 +10709,7 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [ ] `load_installed_sla_materials` (line 2121) → `preset_bundle.rs`
 - [ ] `load_selections` (line 2146) → `preset_bundle.rs`
 - [ ] `export_selections` (line 2397) → `preset_bundle.rs`
-- [ ] `set_num_filaments` (line 2494) → `preset_bundle.rs`
+- [~] `set_num_filaments` (line 2494) → `print_config.rs` — not in the paired file
 - [ ] `update_num_filaments` (line 2568) → `preset_bundle.rs`
 - [ ] `is_mixed_filament` (line 2648) → `preset_bundle.rs`
 - [ ] `physical_filament_config_indices` (line 2654) → `preset_bundle.rs`
@@ -10743,7 +10743,7 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [ ] `validate_filament_nozzle_diameter_selections` (line 4243) → `preset_bundle.rs`
 - [ ] `is_the_only_edited_filament` (line 4661) → `preset_bundle.rs`
 - [ ] `get_printer_extruder_count` (line 4688) → `preset_bundle.rs`
-- [ ] `support_different_extruders` (line 4697) → `preset_bundle.rs`
+- [~] `support_different_extruders` (line 4697) → `print_config.rs` — not in the paired file
 - [ ] `get_printer_nozzle_volume_list` (line 4706) → `preset_bundle.rs`
 - [ ] `get_default_nozzle_volume_types_for_filaments` (line 4722) → `preset_bundle.rs`
 - [ ] `full_config` (line 4738) → `preset_bundle.rs`
@@ -10842,8 +10842,8 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `Print`**
 
-- [~] `clear` (line 60) → `print.rs:2051` — divergent
-- [~] `has_tpu_filament` (line 74) → `print.rs:2071` — partial
+- [~] `clear` (line 60) → `print.rs:2050` — divergent
+- [~] `has_tpu_filament` (line 74) → `print.rs:2070` — partial
 - [ ] `invalidate_state_by_config_options` (line 87) → `print.rs`
 - [ ] `set_calib_params` (line 449) → `print.rs`
 - [ ] `set_nozzle_loaded_filament_info` (line 454) → `print.rs`
@@ -10899,16 +10899,16 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `get_wipe_tower_bbx` (line 1172) → `print.rs`
 - [ ] `get_rib_offset` (line 1173) → `print.rs`
 - [ ] `is_all_objects_are_short` (line 1192) → `print.rs`
-- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:3853`
-- [x] `is_filaments_compatible` (line 1268) → `print.rs:3885`
-- [x] `get_compatible_filament_type` (line 1285) → `print.rs:3909`
+- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:3852`
+- [x] `is_filaments_compatible` (line 1268) → `print.rs:3884`
+- [x] `get_compatible_filament_type` (line 1285) → `print.rs:3908`
 - [ ] `is_dynamic_group_reorder` (line 1306) → `print.rs`
 - [ ] `get_filament_config_indx` (line 1319) → `print.rs`
 - [ ] `update_filament_self_index_cache` (line 1324) → `print.rs`
 - [ ] `get_nozzle_config_index` (line 1355) → `print.rs`
 - [ ] `get_config_index` (line 1360) → `print.rs`
 - [ ] `get_config_index` (line 1385) → `print.rs`
-- [~] `validate` (line 1413) → `print.rs:2120` — divergent
+- [~] `validate` (line 1413) → `print.rs:2119` — divergent
 - [~] `bounding_box` (line 1849) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `total_bounding_box` (line 1864) → `print.rs`
 - [ ] `skirt_first_layer_height` (line 1903) → `print.rs`
@@ -10921,14 +10921,14 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs`
 - [ ] `has_support_material` (line 2048) → `print.rs`
 - [ ] `auto_assign_extruders` (line 2058) → `print.rs`
-- [~] `process` (line 2178) → `print.rs:2219` — divergent
+- [~] `process` (line 2178) → `print.rs:2218` — divergent
 - [~] `export_gcode` (line 2839) → `print.rs:608` — divergent
-- [~] `_make_skirt` (line 2869) → `print.rs:3455` — divergent
+- [~] `_make_skirt` (line 2869) → `print.rs:3454` — divergent
 - [ ] `first_layer_islands` (line 3061) → `print.rs`
 - [ ] `first_layer_wipe_tower_corners` (line 3082) → `print.rs`
 - [ ] `translate_to_print_space` (line 3107) → `print.rs`
 - [ ] `translate_to_print_space` (line 3112) → `print.rs`
-- [~] `get_filament_temp_type` (line 3116) → `print.rs:3821` — divergent
+- [~] `get_filament_temp_type` (line 3116) → `print.rs:3820` — divergent
 - [ ] `get_hrc_by_nozzle_type` (line 3155) → `print.rs`
 - [ ] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs`
 - [ ] `finalize_first_layer_convex_hull` (line 3229) → `print.rs`
@@ -11232,86 +11232,86 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 
 - [x] `SplitStringAndRemoveDuplicateElement` (line 27) → `print_config.rs:6552`
 - [x] `ReplaceString` (line 48) → `print_config.rs:6593`
-- [ ] `is_filament_extruder_override_key` (line 95) → `print_config.rs`
+- [x] `is_filament_extruder_override_key` (line 95) → `print_config.rs:8180`
 - [~] `get_extruder_index` (line 111) → `extruder.rs` — not in the paired file
-- [ ] `has_authoritative_per_slot_nozzle_diameters` (line 120) → `print_config.rs`
-- [~] `multi_nozzle_diameter_mode_enabled` (line 139) → `nozzle_inventory.rs` — not in the paired file
-- [ ] `printer_nozzle_diameter_mode_tag` (line 145) → `print_config.rs`
-- [ ] `multi_nozzle_value` (line 153) → `print_config.rs`
-- [ ] `multi_nozzle_retraction_length` (line 163) → `print_config.rs`
-- [ ] `multi_nozzle_ironing_inset` (line 168) → `print_config.rs`
-- [ ] `multi_nozzle_wall_loops` (line 173) → `print_config.rs`
-- [ ] `multi_nozzle_top_shell_layers` (line 178) → `print_config.rs`
-- [ ] `multi_nozzle_top_shell_thickness` (line 183) → `print_config.rs`
-- [ ] `multi_nozzle_bottom_shell_layers` (line 188) → `print_config.rs`
-- [ ] `is_tree` (line 193) → `print_config.rs`
-- [ ] `multi_nozzle_bottom_shell_thickness` (line 193) → `print_config.rs`
-- [ ] `is_tree_slim` (line 197) → `print_config.rs`
-- [ ] `multi_nozzle_top_color_penetration_layers` (line 198) → `print_config.rs`
-- [ ] `is_auto` (line 201) → `print_config.rs`
-- [ ] `multi_nozzle_bottom_color_penetration_layers` (line 203) → `print_config.rs`
-- [ ] `multi_nozzle_support_z_distance` (line 208) → `print_config.rs`
-- [ ] `is_multi_nozzle_auto_option` (line 213) → `print_config.rs`
-- [ ] `multi_nozzle_prime_tower_line_width` (line 237) → `print_config.rs`
-- [ ] `multi_nozzle_prime_tower_ramming_line_width` (line 244) → `print_config.rs`
-- [ ] `multi_nozzle_prime_tower_feedrate_factor` (line 250) → `print_config.rs`
-- [ ] `configured_nozzle_diameters` (line 258) → `print_config.rs`
-- [ ] `has_multiple_configured_nozzle_diameters` (line 273) → `print_config.rs`
-- [ ] `layer_grid_nozzle_diameter` (line 294) → `print_config.rs`
-- [ ] `layer_grid_subdivision` (line 305) → `print_config.rs`
-- [ ] `sync_mixed_filament_nozzle_diameters` (line 315) → `print_config.rs`
-- [ ] `complete_filament_nozzle_diameter_selections` (line 368) → `print_config.rs`
-- [ ] `is_auto_filament_map_mode` (line 420) → `print_config.rs`
-- [~] `get_valid_nozzle_volume_type` (line 436) → `extruder.rs` — not in the paired file
+- [v] `has_authoritative_per_slot_nozzle_diameters` (line 120) → `print_config.rs:15449` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_diameter_mode_enabled` (line 139) → `print_config.rs:15474` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
+- [v] `printer_nozzle_diameter_mode_tag` (line 145) → `print_config.rs:15480` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_value` (line 153) → `print_config.rs:15489` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_retraction_length` (line 163) → `print_config.rs:15500` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_ironing_inset` (line 168) → `print_config.rs:15505` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_wall_loops` (line 173) → `print_config.rs:15510` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_top_shell_layers` (line 178) → `print_config.rs:15515` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_top_shell_thickness` (line 183) → `print_config.rs:15520` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_bottom_shell_layers` (line 188) → `print_config.rs:15525` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `is_tree` (line 193) → `print_config.rs:15861` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_bottom_shell_thickness` (line 193) → `print_config.rs:15530` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `is_tree_slim` (line 197) → `print_config.rs:15866` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_top_color_penetration_layers` (line 198) → `print_config.rs:15535` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `is_auto` (line 201) → `print_config.rs:15871` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_bottom_color_penetration_layers` (line 203) → `print_config.rs:15540` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_support_z_distance` (line 208) → `print_config.rs:15545` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `is_multi_nozzle_auto_option` (line 213) → `print_config.rs:15550` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_prime_tower_line_width` (line 237) → `print_config.rs:15583` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_prime_tower_ramming_line_width` (line 244) → `print_config.rs:15588` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `multi_nozzle_prime_tower_feedrate_factor` (line 250) → `print_config.rs:15593` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `configured_nozzle_diameters` (line 258) → `print_config.rs:15599` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `has_multiple_configured_nozzle_diameters` (line 273) → `print_config.rs:15620` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `layer_grid_nozzle_diameter` (line 294) → `print_config.rs:15645` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `layer_grid_subdivision` (line 305) → `print_config.rs:15657` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `sync_mixed_filament_nozzle_diameters` (line 315) → `print_config.rs:15671` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `complete_filament_nozzle_diameter_selections` (line 368) → `print_config.rs:15734` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `is_auto_filament_map_mode` (line 420) → `print_config.rs:15855` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_valid_nozzle_volume_type` (line 436) → `print_config.rs:15876` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [ ] `nozzle_diameter_for_filament` (line 454) → `print_config.rs`
-- [ ] `bed_type_to_gcode_string` (line 470) → `print_config.rs`
-- [ ] `primary_nozzle_diameter` (line 471) → `print_config.rs`
+- [v] `bed_type_to_gcode_string` (line 470) → `print_config.rs:15905` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `primary_nozzle_diameter` (line 471) → `print_config.rs:15889` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [~] `get_filament_config_idx` (line 485) → `extruder.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 494) → `extruder.rs` — not in the paired file
-- [ ] `get_bed_temp_key` (line 498) → `print_config.rs`
+- [v] `get_bed_temp_key` (line 498) → `print_config.rs:15919` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [x] `enum_names_from_keys_map` (line 504) → `print_config.rs:6677`
-- [ ] `get_bed_temp_1st_layer_key` (line 518) → `print_config.rs`
-- [ ] `legacy_fallback_nozzle_volume_type` (line 907) → `print_config.rs`
+- [v] `get_bed_temp_1st_layer_key` (line 518) → `print_config.rs:15940` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `legacy_fallback_nozzle_volume_type` (line 907) → `print_config.rs:15961` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [ ] `CLASS_NAME` (line 937) → `print_config.rs`
-- [~] `get_extruder_variant_string` (line 952) → `extruder.rs` — not in the paired file
-- [ ] `get_extruder_supported_nozzle_volume_types` (line 973) → `print_config.rs`
-- [~] `get_config_index_base` (line 993) → `extruder.rs` — not in the paired file
-- [ ] `find_printer_variant_index` (line 1010) → `print_config.rs`
-- [~] `get_nozzle_volume_type_string` (line 1023) → `multi_nozzle_utils.rs, nozzle_inventory.rs` — not in the paired file
-- [ ] `get_ams_type_name` (line 1032) → `print_config.rs`
-- [ ] `get_ams_type_display_name` (line 1042) → `print_config.rs`
-- [ ] `get_ams_load_time_key` (line 1065) → `print_config.rs`
-- [ ] `get_ams_unload_time_key` (line 1075) → `print_config.rs`
-- [ ] `gather_ams_times` (line 1087) → `print_config.rs`
-- [ ] `get_ams_load_times` (line 1107) → `print_config.rs`
-- [ ] `get_ams_unload_times` (line 1108) → `print_config.rs`
-- [ ] `get_supported_ams_time_types` (line 1110) → `print_config.rs`
-- [ ] `sync_nozzle_volume_type_to_extruder_count` (line 1126) → `print_config.rs`
-- [x] `get_extruder_ams_count` (line 1154) → `print_config.rs:6719`
-- [ ] `get_effective_ams_nozzle_idx` (line 1176) → `print_config.rs`
-- [~] `is_single_ext_multi_nozzle` (line 1199) → `nozzle_inventory.rs` — not in the paired file
-- [x] `get_extruder_nozzle_stats` (line 1212) → `print_config.rs:6756`
-- [x] `save_extruder_ams_count_to_string` (line 1247) → `print_config.rs:6793`
-- [~] `nozzle_volume_type_from_string` (line 1264) → `nozzle_inventory.rs` — not in the paired file
-- [~] `default_nozzle_volume_slots` (line 1275) → `nozzle_inventory.rs` — not in the paired file
-- [ ] `get_extruder_default_nozzle_volume_type` (line 1315) → `print_config.rs`
-- [~] `get_default_nozzle_volume_type` (line 1323) → `nozzle_inventory.rs` — not in the paired file
-- [x] `convert_to_nvt_type` (line 1329) → `print_config.rs:6820`
-- [ ] `is_nozzle_printable_for_filament` (line 1354) → `print_config.rs`
-- [x] `save_extruder_nozzle_stats_to_string` (line 1443) → `print_config.rs:6858`
-- [ ] `split_nozzle_stats_for_export` (line 1459) → `print_config.rs`
-- [ ] `assign_printer_technology_to_unknown` (line 1487) → `print_config.rs`
-- [ ] `trim_option_values` (line 1495) → `print_config.rs`
+- [v] `get_extruder_variant_string` (line 952) → `print_config.rs:15971` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_extruder_supported_nozzle_volume_types` (line 973) → `print_config.rs:15990` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_config_index_base` (line 993) → `print_config.rs:16018` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `find_printer_variant_index` (line 1010) → `print_config.rs:16043` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
+- [v] `get_nozzle_volume_type_string` (line 1023) → `print_config.rs:16060` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
+- [v] `get_ams_type_name` (line 1032) → `print_config.rs:16069` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_ams_type_display_name` (line 1042) → `print_config.rs:16079` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_ams_load_time_key` (line 1065) → `print_config.rs:16098` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_ams_unload_time_key` (line 1075) → `print_config.rs:16108` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `gather_ams_times` (line 1087) → `print_config.rs:16119` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_ams_load_times` (line 1107) → `print_config.rs:16143` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_ams_unload_times` (line 1108) → `print_config.rs:16148` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_supported_ams_time_types` (line 1110) → `print_config.rs:16153` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `sync_nozzle_volume_type_to_extruder_count` (line 1126) → `print_config.rs:16172` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_extruder_ams_count` (line 1154) → `print_config.rs:6719` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_effective_ams_nozzle_idx` (line 1176) → `print_config.rs:16282` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `is_single_ext_multi_nozzle` (line 1199) → `print_config.rs:16312` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
+- [x] `get_extruder_nozzle_stats` (line 1212) → `print_config.rs:16326`
+- [v] `save_extruder_ams_count_to_string` (line 1247) → `print_config.rs:6793` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `nozzle_volume_type_from_string` (line 1264) → `print_config.rs:16375` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `default_nozzle_volume_slots` (line 1275) → `print_config.rs:16384` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_extruder_default_nozzle_volume_type` (line 1315) → `print_config.rs:16441` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_default_nozzle_volume_type` (line 1323) → `print_config.rs:16455` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [x] `convert_to_nvt_type` (line 1329) → `print_config.rs:16465`
+- [v] `is_nozzle_printable_for_filament` (line 1354) → `print_config.rs:16505` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `save_extruder_nozzle_stats_to_string` (line 1443) → `print_config.rs:6858` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `split_nozzle_stats_for_export` (line 1459) → `print_config.rs:16545` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [x] `assign_printer_technology_to_unknown` (line 1487) → `print_config.rs:8185`
+- [x] `trim_option_values` (line 1495) → `print_config.rs:8195`
 - [~] `load` (line 2325) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 2340) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [ ] `collect_aux_fan_slots` (line 8284) → `print_config.rs`
-- [ ] `min_object_distance` (line 8683) → `print_config.rs`
-- [ ] `handle_legacy_sla` (line 8884) → `print_config.rs`
-- [ ] `update_static_print_config_from_dynamic` (line 10490) → `print_config.rs`
-- [ ] `align_filament_variant_overrides` (line 10512) → `print_config.rs`
-- [ ] `apply_multi_nozzle_retraction_length` (line 10552) → `print_config.rs`
-- [ ] `filament_override_default_indices` (line 10574) → `print_config.rs`
-- [ ] `compute_filament_override_value` (line 10601) → `print_config.rs`
+- [v] `collect_aux_fan_slots` (line 8284) → `print_config.rs:16598` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `min_object_distance` (line 8683) → `print_config.rs:16627` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `handle_legacy_sla` (line 8884) → `print_config.rs:17453` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `update_static_print_config_from_dynamic` (line 10490) → `print_config.rs:18850` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `align_filament_variant_overrides` (line 10512) → `print_config.rs:18882` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `apply_multi_nozzle_retraction_length` (line 10552) → `print_config.rs:18932` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `filament_override_default_indices` (line 10574) → `print_config.rs:18964` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `compute_filament_override_value` (line 10601) → `print_config.rs:19009` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [~] `validate` (line 10643) → `print_config.rs:934` — divergent
 - [~] `to_points` (line 11450) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `get_shared_poly` (line 11458) → `print_config.rs`
@@ -11334,51 +11334,51 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 **class `DynamicPrintConfig`**
 
 - [~] `def` (line 696) → `config.rs` — not in the paired file
-- [~] `handle_legacy` (line 726) → `config.rs` — not in the paired file
-- [ ] `repair_invalid_filament_extrusion_parameters` (line 1372) → `print_config.rs`
-- [ ] `full_print_config` (line 8667) → `print_config.rs`
-- [ ] `new_from_defaults_keys` (line 8676) → `print_config.rs`
-- [ ] `normalize_fdm` (line 8710) → `print_config.rs`
-- [ ] `normalize_fdm_1` (line 8759) → `print_config.rs`
-- [ ] `normalize_fdm_2` (line 8813) → `print_config.rs`
-- [ ] `get_parameter_size` (line 8906) → `print_config.rs`
-- [ ] `set_num_extruders` (line 8935) → `print_config.rs`
-- [ ] `set_num_filaments` (line 8953) → `print_config.rs`
+- [x] `handle_legacy` (line 726) → `print_config.rs:15148`
+- [v] `repair_invalid_filament_extrusion_parameters` (line 1372) → `print_config.rs:17323` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `full_print_config` (line 8667) → `print_config.rs:18366` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `new_from_defaults_keys` (line 8676) → `print_config.rs:18373` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `normalize_fdm` (line 8710) → `print_config.rs:16941` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `normalize_fdm_1` (line 8759) → `print_config.rs:16997` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `normalize_fdm_2` (line 8813) → `print_config.rs:17061` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_parameter_size` (line 8906) → `print_config.rs:17120` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `set_num_extruders` (line 8935) → `print_config.rs:18380` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `set_num_filaments` (line 8953) → `print_config.rs:18400` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [~] `validate` (line 8970) → `print_config.rs:4103` — divergent
-- [ ] `get_filament_type` (line 9009) → `print_config.rs`
-- [ ] `is_using_different_extruders` (line 9081) → `print_config.rs`
-- [ ] `support_different_extruders` (line 9110) → `print_config.rs`
-- [ ] `get_index_for_extruder` (line 9133) → `print_config.rs`
-- [ ] `update_values_from_single_to_multi` (line 9171) → `print_config.rs`
-- [ ] `update_values_from_multi_to_multi` (line 9331) → `print_config.rs`
-- [ ] `update_values_from_multi_to_multi_2` (line 9505) → `print_config.rs`
-- [ ] `get_filament_vendor` (line 9713) → `print_config.rs`
-- [ ] `get_filament_type` (line 9726) → `print_config.rs`
-- [ ] `get_extruder_nozzle_volume_count` (line 9738) → `print_config.rs`
+- [~] `get_filament_type` (line 9009) → `print_config.rs` — another overload of the name is ported
+- [v] `is_using_different_extruders` (line 9081) → `print_config.rs:17207` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `support_different_extruders` (line 9110) → `print_config.rs:17234` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_index_for_extruder` (line 9133) → `print_config.rs:17256` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `update_values_from_single_to_multi` (line 9171) → `print_config.rs:18437` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `update_values_from_multi_to_multi` (line 9331) → `print_config.rs:18535` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `update_values_from_multi_to_multi_2` (line 9505) → `print_config.rs:18710` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `get_filament_vendor` (line 9713) → `print_config.rs:17297` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
+- [v] `get_filament_type` (line 9726) → `print_config.rs:17309` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
+- [v] `get_extruder_nozzle_volume_count` (line 9738) → `print_config.rs:17407` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [ ] `update_values_to_printer_extruders` (line 9780) → `print_config.rs`
 - [ ] `update_values_to_printer_extruders_for_multiple_filaments` (line 9996) → `print_config.rs`
 - [ ] `update_filament_config_values_for_multiple_extruders` (line 10194) → `print_config.rs`
-- [ ] `update_non_diff_values_to_base_config` (line 10326) → `print_config.rs`
-- [ ] `update_diff_values_to_child_config` (line 10403) → `print_config.rs`
+- [v] `update_non_diff_values_to_base_config` (line 10326) → `print_config.rs:19089` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `update_diff_values_to_child_config` (line 10403) → `print_config.rs:19155` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 
 **class `PrintConfigDef`**
 
-- [ ] `init_common_params` (line 1518) → `print_config.rs`
-- [ ] `init_fff_params` (line 1704) → `print_config.rs`
-- [ ] `init_extruder_option_keys` (line 7593) → `print_config.rs`
-- [ ] `init_filament_option_keys` (line 7624) → `print_config.rs`
-- [ ] `init_sla_params` (line 7653) → `print_config.rs`
+- [v] `init_common_params` (line 1518) → `print_config.rs:8283` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
+- [v] `init_fff_params` (line 1704) → `print_config.rs:8471` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
+- [v] `init_extruder_option_keys` (line 7593) → `print_config.rs:15070` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
+- [~] `init_filament_option_keys` (line 7624) → `print_config.rs:15110` — partial
+- [v] `init_sla_params` (line 7653) → `print_config.rs:14444` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [~] `handle_legacy` (line 8306) → `config.rs` — not in the paired file
 
 **class `StaticPrintConfig`**
 
-- [~] `def` (line 823) → `config.rs` — not in the paired file
-- [~] `handle_legacy` (line 832) → `config.rs` — not in the paired file
+- [x] `def` (line 823) → `print_config.rs:16908`
+- [x] `handle_legacy` (line 832) → `print_config.rs:16918`
 
 **class `StaticPrintConfig::StaticCache`**
 
 - [~] `initialized` (line 861) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs` — not in the paired file
-- [~] `optptr` (line 863) → `config.rs` — not in the paired file
+- [~] `optptr` (line 863) → `print_config.rs:16901` — divergent
 - [~] `optptr` (line 869) → `config.rs` — not in the paired file
 - [~] `finalize` (line 881) → `cut_utils.rs, fill/fill_base.rs, gcode/g_code_processor.rs` — not in the paired file
 
@@ -11892,7 +11892,7 @@ Rust file: `sla/concave_hull.rs`. Status: **partial**. Not listed: 2 constructor
 **class `ConcaveHull`**
 
 - [x] `centroid` (line 14) → `sla/concave_hull.rs:77`
-- [~] `centroid` (line 28) → `aabb_tree_lines.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [~] `centroid` (line 28) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `calculate_centroids` (line 41) → `sla/concave_hull.rs:129` — divergent
 - [x] `merge_polygons` (line 52) → `sla/concave_hull.rs:140`
 - [x] `add_connector_rectangles` (line 54) → `sla/concave_hull.rs:148`
@@ -12640,7 +12640,7 @@ Rust file: `support/support_material.rs`. Status: **partial**. Not listed: 6 con
 
 - [~] `insert` (line 2099) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
 - [~] `height` (line 2113) → `arrange.rs, clipper2/clipper_core.rs, flow.rs` — not in the paired file
-- [~] `intersects` (line 2117) → `aabb_tree_lines.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `intersects` (line 2117) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, bounding_box.rs` — not in the paired file
 
 **class `PrintObjectSupportMaterial`**
 
@@ -13544,8 +13544,8 @@ Rust file: `triangle_mesh.rs`. Status: **partial**. Not listed: 6 constructors, 
 - [ ] `its_convex_hull` (line 1737) → `triangle_mesh.rs`
 - [x] `its_reverse_all_facets` (line 1821) → `triangle_mesh.rs:1412`
 - [x] `its_merge` (line 1827) → `triangle_mesh.rs:1423`
-- [~] `its_merge` (line 1839) → `slices_to_triangle_mesh.rs` — not in the paired file
-- [~] `its_merge` (line 1849) → `slices_to_triangle_mesh.rs` — not in the paired file
+- [~] `its_merge` (line 1839) → `paint_reproject.rs, slices_to_triangle_mesh.rs` — not in the paired file
+- [~] `its_merge` (line 1849) → `paint_reproject.rs, slices_to_triangle_mesh.rs` — not in the paired file
 - [x] `its_volume` (line 1858) → `triangle_mesh.rs:1472`
 - [x] `its_average_edge_length` (line 1879) → `triangle_mesh.rs:1507`
 - [x] `its_split` (line 1894) → `triangle_mesh.rs:1529`
@@ -13706,76 +13706,76 @@ Rust file: `triangle_selector.rs`. Status: **partial**. Not listed: 13 construct
 
 **free functions**
 
-- [ ] `read_paint_nibble` (line 19) → `triangle_selector.rs`
-- [ ] `clamp_paint_state` (line 35) → `triangle_selector.rs`
-- [x] `test_line_inside_sphere` (line 52) → `triangle_selector.rs:117`
-- [x] `test_line_inside_cylinder` (line 91) → `triangle_selector.rs:168`
-- [x] `test_line_inside_capsule` (line 145) → `triangle_selector.rs:241`
-- [x] `is_point_inside_triangle` (line 224) → `triangle_selector.rs:944`
-- [x] `is_mesh_point_not_clipped` (line 2430) → `triangle_selector.rs:968`
-- [x] `is_circle_pointer_inside_triangle` (line 2509) → `triangle_selector.rs:973`
-- [x] `line_plane_intersection` (line 2543) → `triangle_selector.rs:995`
+- [v] `read_paint_nibble` (line 19) → `triangle_selector.rs:107` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `clamp_paint_state` (line 35) → `triangle_selector.rs:128` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `test_line_inside_sphere` (line 52) → `triangle_selector.rs:249`
+- [x] `test_line_inside_cylinder` (line 91) → `triangle_selector.rs:300`
+- [x] `test_line_inside_capsule` (line 145) → `triangle_selector.rs:373`
+- [x] `is_point_inside_triangle` (line 224) → `triangle_selector.rs:1124`
+- [x] `is_mesh_point_not_clipped` (line 2430) → `triangle_selector.rs:1162`
+- [x] `is_circle_pointer_inside_triangle` (line 2509) → `triangle_selector.rs:1167`
+- [x] `line_plane_intersection` (line 2543) → `triangle_selector.rs:1189`
 
 **class `TriangleSelector`**
 
-- [x] `verify_triangle_midpoints` (line 157) → `triangle_selector.rs:1086`
-- [x] `verify_triangle_neighbors` (line 174) → `triangle_selector.rs:1104`
-- [x] `get_orig_size_vertices` (line 221) → `triangle_selector.rs:1050`
+- [x] `verify_triangle_midpoints` (line 157) → `triangle_selector.rs:1375`
+- [x] `verify_triangle_neighbors` (line 174) → `triangle_selector.rs:1400`
+- [x] `get_orig_size_vertices` (line 221) → `triangle_selector.rs:1327`
 - [~] `select_unsplit_triangle` (line 245) → `triangle_selector.rs` — another overload of the name is ported
-- [x] `select_unsplit_triangle` (line 278) → `triangle_selector.rs:1177`
-- [x] `select_patch` (line 289) → `triangle_selector.rs:1194`
-- [x] `is_facet_clipped` (line 365) → `triangle_selector.rs:1285`
-- [x] `seed_fill_select_triangles` (line 374) → `triangle_selector.rs:1301`
-- [x] `precompute_all_neighbors_recursive` (line 430) → `triangle_selector.rs:1376`
-- [x] `precompute_all_neighbors` (line 459) → `triangle_selector.rs:1405`
-- [x] `append_touching_subtriangles` (line 475) → `triangle_selector.rs:1431`
-- [x] `append_touching_edges` (line 500) → `triangle_selector.rs:1466`
-- [x] `append_touching_its` (line 534) → `triangle_selector.rs:1509`
-- [x] `bucket_fill_select_triangles` (line 549) → `triangle_selector.rs:1532`
-- [x] `select_triangle` (line 622) → `triangle_selector.rs:1615`
-- [ ] `neighbor_child` (line 654) → `triangle_selector.rs`
-- [ ] `neighbor_child` (line 693) → `triangle_selector.rs`
-- [ ] `triangle_subtriangles` (line 698) → `triangle_selector.rs`
-- [ ] `triangle_subtriangles` (line 703) → `triangle_selector.rs`
-- [ ] `triangle_midpoint` (line 734) → `triangle_selector.rs`
-- [ ] `triangle_midpoint` (line 767) → `triangle_selector.rs`
-- [~] `triangle_midpoint_or_allocate` (line 772) → `triangle_selector.rs:1816` — partial
-- [x] `child_neighbors` (line 813) → `triangle_selector.rs:1849`
-- [x] `child_neighbors_propagated` (line 900) → `triangle_selector.rs:1933`
-- [x] `select_triangle_recursive` (line 972) → `triangle_selector.rs:2007`
-- [x] `set_facet` (line 1025) → `triangle_selector.rs:2066`
-- [ ] `set_facets_with_subdivision` (line 1033) → `triangle_selector.rs`
-- [ ] `facet_vertices` (line 1143) → `triangle_selector.rs`
-- [ ] `region_paint_canceled` (line 1159) → `triangle_selector.rs`
-- [ ] `paint_region` (line 1170) → `triangle_selector.rs`
-- [ ] `paint_region_recursive` (line 1242) → `triangle_selector.rs`
-- [x] `split_triangle` (line 1307) → `triangle_selector.rs:2080`
-- [x] `undivide_triangle` (line 1481) → `triangle_selector.rs:2138`
-- [x] `remove_useless_children` (line 1519) → `triangle_selector.rs:2183`
-- [x] `garbage_collect` (line 1557) → `triangle_selector.rs:2231`
-- [x] `reset` (line 1617) → `triangle_selector.rs:2345`
-- [x] `set_edge_limit` (line 1636) → `triangle_selector.rs:2368`
-- [x] `push_triangle` (line 1641) → `triangle_selector.rs:2374`
-- [x] `perform_split` (line 1675) → `triangle_selector.rs:2410`
-- [x] `has_facets` (line 1742) → `triangle_selector.rs:2504`
-- [x] `num_facets` (line 1750) → `triangle_selector.rs:2515`
-- [x] `get_facets` (line 1759) → `triangle_selector.rs:2527`
+- [v] `select_unsplit_triangle` (line 278) → `triangle_selector.rs:1476` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `select_patch` (line 289) → `triangle_selector.rs:1493` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `is_facet_clipped` (line 365) → `triangle_selector.rs:1585`
+- [v] `seed_fill_select_triangles` (line 374) → `triangle_selector.rs:1601` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `precompute_all_neighbors_recursive` (line 430) → `triangle_selector.rs:1678`
+- [x] `precompute_all_neighbors` (line 459) → `triangle_selector.rs:1707`
+- [x] `append_touching_subtriangles` (line 475) → `triangle_selector.rs:1733`
+- [x] `append_touching_edges` (line 500) → `triangle_selector.rs:1768`
+- [x] `append_touching_its` (line 534) → `triangle_selector.rs:1811`
+- [v] `bucket_fill_select_triangles` (line 549) → `triangle_selector.rs:1834` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `select_triangle` (line 622) → `triangle_selector.rs:1922`
+- [v] `neighbor_child` (line 654) → `triangle_selector.rs:1973` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `neighbor_child` (line 693) → `triangle_selector.rs:2125` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `triangle_subtriangles` (line 698) → `triangle_selector.rs:2134` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `triangle_subtriangles` (line 703) → `triangle_selector.rs:2031` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `triangle_midpoint` (line 734) → `triangle_selector.rs:2076` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `triangle_midpoint` (line 767) → `triangle_selector.rs:2145` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `triangle_midpoint_or_allocate` (line 772) → `triangle_selector.rs:2155` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `child_neighbors` (line 813) → `triangle_selector.rs:2195`
+- [x] `child_neighbors_propagated` (line 900) → `triangle_selector.rs:2279`
+- [x] `select_triangle_recursive` (line 972) → `triangle_selector.rs:2353`
+- [x] `set_facet` (line 1025) → `triangle_selector.rs:2415`
+- [v] `set_facets_with_subdivision` (line 1033) → `triangle_selector.rs:2438` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `facet_vertices` (line 1143) → `triangle_selector.rs:2605` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `region_paint_canceled` (line 1159) → `triangle_selector.rs:2614` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `paint_region` (line 1170) → `triangle_selector.rs:2643` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `paint_region_recursive` (line 1242) → `triangle_selector.rs:2741` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `split_triangle` (line 1307) → `triangle_selector.rs:2819` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `undivide_triangle` (line 1481) → `triangle_selector.rs:2877`
+- [v] `remove_useless_children` (line 1519) → `triangle_selector.rs:2922` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `garbage_collect` (line 1557) → `triangle_selector.rs:2970`
+- [x] `reset` (line 1617) → `triangle_selector.rs:3084`
+- [x] `set_edge_limit` (line 1636) → `triangle_selector.rs:3107`
+- [x] `push_triangle` (line 1641) → `triangle_selector.rs:3113`
+- [x] `perform_split` (line 1675) → `triangle_selector.rs:3149`
+- [v] `has_facets` (line 1742) → `triangle_selector.rs:3243` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `num_facets` (line 1750) → `triangle_selector.rs:3254` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `get_facets` (line 1759) → `triangle_selector.rs:3266` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
 - [~] `get_facets` (line 1781) → `triangle_selector.rs` — another overload of the name is ported
-- [x] `get_facets_strict` (line 1812) → `triangle_selector.rs:2585`
-- [x] `get_facets_strict_recursive` (line 1838) → `triangle_selector.rs:2625`
-- [x] `get_facets_split_by_tjoints` (line 1854) → `triangle_selector.rs:2642`
-- [x] `get_seed_fill_contour` (line 1938) → `triangle_selector.rs:2723`
-- [x] `get_seed_fill_mesh` (line 1949) → `triangle_selector.rs:2735`
-- [x] `get_seed_fill_its_recursive` (line 1960) → `triangle_selector.rs:2748`
-- [x] `get_seed_fill_contour_recursive` (line 2002) → `triangle_selector.rs:2797`
-- [~] `serialize` (line 2036) → `triangle_selector.rs:2873` — divergent
-- [x] `deserialize` (line 2115) → `triangle_selector.rs:2949`
+- [v] `get_facets_strict` (line 1812) → `triangle_selector.rs:3362` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `get_facets_strict_recursive` (line 1838) → `triangle_selector.rs:3402`
+- [x] `get_facets_split_by_tjoints` (line 1854) → `triangle_selector.rs:3419`
+- [v] `get_seed_fill_contour` (line 1938) → `triangle_selector.rs:3500` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `get_seed_fill_mesh` (line 1949) → `triangle_selector.rs:3512` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [x] `get_seed_fill_its_recursive` (line 1960) → `triangle_selector.rs:3525`
+- [x] `get_seed_fill_contour_recursive` (line 2002) → `triangle_selector.rs:3574`
+- [v] `serialize` (line 2036) → `triangle_selector.rs:3653` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates) (the body reads as divergent to the estimate)
+- [v] `deserialize` (line 2115) → `triangle_selector.rs:3738` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
 - [~] `has_facets` (line 2257) → `triangle_selector.rs` — another overload of the name is ported
-- [x] `seed_fill_unselect_all_triangles` (line 2330) → `triangle_selector.rs:3191`
-- [x] `seed_fill_apply_on_triangles` (line 2337) → `triangle_selector.rs:3201`
-- [ ] `fill_unpainted` (line 2350) → `triangle_selector.rs`
-- [x] `shift_states_above` (line 2360) → `triangle_selector.rs:3218`
-- [ ] `replace_state` (line 2374) → `triangle_selector.rs`
+- [x] `seed_fill_unselect_all_triangles` (line 2330) → `triangle_selector.rs:4042`
+- [v] `seed_fill_apply_on_triangles` (line 2337) → `triangle_selector.rs:4052` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `fill_unpainted` (line 2350) → `triangle_selector.rs:4070` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `shift_states_above` (line 2360) → `triangle_selector.rs:4083` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `replace_state` (line 2374) → `triangle_selector.rs:4102` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
 
 **class `TriangleSelector::Capsule2D`**
 
@@ -13785,7 +13785,7 @@ Rust file: `triangle_selector.rs`. Status: **partial**. Not listed: 13 construct
 
 **class `TriangleSelector::Capsule3D`**
 
-- [x] `is_facet_visible` (line 191) → `triangle_selector.rs:915`
+- [v] `is_facet_visible` (line 191) → `triangle_selector.rs:1037` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
 - [~] `is_mesh_point_inside` (line 2458) → `triangle_selector.rs` — another overload of the name is ported
 - [~] `is_edge_inside_cursor` (line 2560) → `triangle_selector.rs` — another overload of the name is ported
 
@@ -13797,31 +13797,31 @@ Rust file: `triangle_selector.rs`. Status: **partial**. Not listed: 13 construct
 
 **class `TriangleSelector::ClippingPlane`**
 
-- [x] `is_active` (line 40) → `triangle_selector.rs:318`
-- [x] `is_mesh_point_clipped` (line 42) → `triangle_selector.rs:324`
+- [x] `is_active` (line 40) → `triangle_selector.rs:450`
+- [x] `is_mesh_point_clipped` (line 42) → `triangle_selector.rs:456`
 
 **class `TriangleSelector::Cursor`**
 
 - [~] `is_pointer_in_triangle` (line 1364) → `triangle_selector.rs` — another overload of the name is ported
 - [~] `is_facet_visible` (line 1372) → `triangle_selector.rs` — another overload of the name is ported
-- [x] `vertices_inside` (line 1382) → `triangle_selector.rs:686`
+- [x] `vertices_inside` (line 1382) → `triangle_selector.rs:808`
 
 **class `TriangleSelector::DoublePointCursor`**
 
-- [ ] `cursor_factory` (line 114) → `triangle_selector.rs`
-- [x] `is_pointer_in_triangle` (line 2537) → `triangle_selector.rs:668`
+- [v] `cursor_factory` (line 114) → `triangle_selector.rs:1088` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `is_pointer_in_triangle` (line 2537) → `triangle_selector.rs:790` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
 
 **class `TriangleSelector::HeightRange`**
 
 - [~] `is_facet_visible` (line 171) → `triangle_selector.rs` — another overload of the name is ported
 - [~] `is_pointer_in_triangle` (line 1450) → `triangle_selector.rs` — another overload of the name is ported
-- [x] `is_mesh_point_inside` (line 1455) → `triangle_selector.rs:698`
-- [x] `is_edge_inside_cursor` (line 1466) → `triangle_selector.rs:779`
+- [v] `is_mesh_point_inside` (line 1455) → `triangle_selector.rs:820` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [v] `is_edge_inside_cursor` (line 1466) → `triangle_selector.rs:901` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
 
 **class `TriangleSelector::SinglePointCursor`**
 
-- [ ] `cursor_factory` (line 86) → `triangle_selector.rs`
-- [ ] `cursor_factory` (line 95) → `triangle_selector.rs`
+- [v] `cursor_factory` (line 86) → `triangle_selector.rs:1066` — R911: tests/triangle_selector_native_parity.rs: against the pin's TriangleSelector.cpp: subdivision painting, region painting with cancel/budget/mask/edge limit, paint streams (truncated and out of range), 102 brush strokes through every cursor class, seed and bucket fill; serialized state and outputs token for token, floats bit for bit (default gates)
+- [~] `cursor_factory` (line 95) → `triangle_selector.rs` — another overload of the name is ported
 - [~] `is_pointer_in_triangle` (line 2531) → `triangle_selector.rs` — another overload of the name is ported
 
 **class `TriangleSelector::Sphere`**
@@ -13832,16 +13832,16 @@ Rust file: `triangle_selector.rs`. Status: **partial**. Not listed: 13 construct
 
 **class `TriangleSelector::Triangle`**
 
-- [x] `set_division` (line 197) → `triangle_selector.rs:374`
-- [x] `select_by_seed_fill` (line 206) → `triangle_selector.rs:395`
-- [x] `unselect_by_seed_fill` (line 212) → `triangle_selector.rs:401`
-- [x] `is_selected_by_seed_fill` (line 218) → `triangle_selector.rs:407`
-- [x] `set_state` (line 408) → `triangle_selector.rs:383`
-- [x] `get_state` (line 409) → `triangle_selector.rs:390`
-- [x] `valid` (line 418) → `triangle_selector.rs:414`
-- [x] `is_split` (line 420) → `triangle_selector.rs:420`
-- [x] `number_of_split_sides` (line 421) → `triangle_selector.rs:426`
-- [x] `special_side` (line 422) → `triangle_selector.rs:432`
+- [x] `set_division` (line 197) → `triangle_selector.rs:506`
+- [x] `select_by_seed_fill` (line 206) → `triangle_selector.rs:527`
+- [x] `unselect_by_seed_fill` (line 212) → `triangle_selector.rs:533`
+- [x] `is_selected_by_seed_fill` (line 218) → `triangle_selector.rs:539`
+- [x] `set_state` (line 408) → `triangle_selector.rs:515`
+- [x] `get_state` (line 409) → `triangle_selector.rs:522`
+- [x] `valid` (line 418) → `triangle_selector.rs:546`
+- [x] `is_split` (line 420) → `triangle_selector.rs:552`
+- [x] `number_of_split_sides` (line 421) → `triangle_selector.rs:558`
+- [x] `special_side` (line 422) → `triangle_selector.rs:564`
 
 ### `TriangleSetSampling` (.cpp+.hpp)
 

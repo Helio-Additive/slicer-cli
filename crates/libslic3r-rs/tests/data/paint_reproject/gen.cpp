@@ -13,9 +13,10 @@
 //   -DNDEBUG -std=c++17 and `-include $REPO/libslic3r/bambustudio/cgal_54_compat.hpp`), then
 //   link it with the link line of `slicer_cli` ($BUILD/CMakeFiles/slicer_cli.dir/link.txt) with
 //   main.cpp's objects replaced by gen.o.
-//   for part in planar annotation; do
+//   for part in planar annotation aabb reproject volumes; do
 //     ./gen $part > $DATA/vectors_$part.txt
 //   done
+//   gzip -9n -f $DATA/vectors_{aabb,reproject,volumes}.txt   # planar and annotation stay plain
 //
 // The painted annotations are made with the pin's TriangleSelector::set_facets_with_subdivision
 // (a split tree per painted face) and handed over serialized.
@@ -63,6 +64,7 @@ static void pdata(const AnnotationData& d) {
     pu(d.second.size()); std::printf(" "); if (d.second.empty()) std::printf("-"); for (bool b : d.second) std::printf("%d", (int) b);
 }
 static void ptrafo(const Transform3d& t) { for (int r = 0; r < 4; ++r) for (int c = 0; c < 4; ++c) pd(t.matrix()(r, c)); }
+static void ptrafof(const Transform3f& t) { for (int r = 0; r < 4; ++r) for (int c = 0; c < 4; ++c) pf(t.matrix()(r, c)); }
 
 static Vec2d rnd2(double s) { return Vec2d(range(-s, s), range(-s, s)); }
 static Vec3f rnd3(double s) { return Vec3f((float) range(-s, s), (float) range(-s, s), (float) range(-s, s)); }
@@ -277,11 +279,296 @@ static void gen_annotation() {
     }
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// The float AABB tree, the samplers and the reprojection drivers.
+// ---------------------------------------------------------------------------------------------
+
+// A closed latitude-longitude sphere, outward oriented.
+static indexed_triangle_set sphere(int rings, int segs, double radius) {
+    indexed_triangle_set m;
+    m.vertices.push_back(Vec3f(0.f, 0.f, (float) radius));
+    for (int r = 1; r < rings; ++r) {
+        double th = M_PI * double(r) / double(rings);
+        for (int s = 0; s < segs; ++s) {
+            double ph = 2. * M_PI * double(s) / double(segs) + range(-0.05, 0.05);
+            double rr = radius * (1. + range(-0.05, 0.05));
+            m.vertices.push_back(Vec3f((float) (rr * std::sin(th) * std::cos(ph)), (float) (rr * std::sin(th) * std::sin(ph)), (float) (rr * std::cos(th))));
+        }
+    }
+    m.vertices.push_back(Vec3f(0.f, 0.f, (float) -radius));
+    const int south = (int) m.vertices.size() - 1;
+    auto id = [&](int r, int s) { return 1 + (r - 1) * segs + (s % segs); };
+    for (int s = 0; s < segs; ++s) m.indices.push_back(Vec3i(0, id(1, s), id(1, s + 1)));
+    for (int r = 1; r + 1 < rings; ++r)
+        for (int s = 0; s < segs; ++s) {
+            int a = id(r, s), b = id(r + 1, s), c = id(r + 1, s + 1), d = id(r, s + 1);
+            m.indices.push_back(Vec3i(a, b, c));
+            m.indices.push_back(Vec3i(a, c, d));
+        }
+    for (int s = 0; s < segs; ++s) m.indices.push_back(Vec3i(id(rings - 1, s), south, id(rings - 1, s + 1)));
+    return m;
+}
+
+static void pbox(const AABBTreeIndirect::Tree3f::BoundingBox& b) { p3f(b.min()); p3f(b.max()); }
+
+static void gen_aabb() {
+    for (int i = 0; i < 40; ++i) {
+        indexed_triangle_set its = below(3) == 0 ? sphere(3 + (int) below(5), 4 + (int) below(6), range(1, 5)) : grid(1 + (int) below(7), 1 + (int) below(6), range(0, 1));
+        if (i % 9 == 4) { its.vertices.resize(3); its.indices.resize(1); its.indices[0] = Vec3i(0, 1, 2); }
+        auto tree = AABBTreeIndirect::build_aabb_tree_over_indexed_triangle_set(its.vertices, its.indices);
+        tag("mesh"); pmesh(its); nl();
+        tag("aabb_build"); arrow(); pu(tree.nodes().size());
+        for (auto& n : tree.nodes()) { pi(n.idx == size_t(-1) ? -1 : n.idx == size_t(-2) ? -2 : (long) n.idx); if (n.is_valid()) pbox(n.bbox); }
+        nl();
+        for (int k = 0; k < 40; ++k) {
+            Vec3f p;
+            const int kind = (int) below(4);
+            if (kind == 0) p = its.vertices[below(its.vertices.size())];                                  // on a vertex
+            else if (kind == 1) { const Vec3i& f = its.indices[below(its.indices.size())]; p = (its.vertices[f[0]] + its.vertices[f[1]]) * 0.5f; } // on an edge
+            else p = rnd3(6);
+            if (kind == 3) p += Vec3f(0.f, 0.f, 0.01f);
+            size_t hit = size_t(-1); Vec3f hp(0, 0, 0);
+            float d = AABBTreeIndirect::squared_distance_to_indexed_triangle_set(its.vertices, its.indices, tree, p, hit, hp);
+            tag("aabb_distance"); p3f(p); arrow(); pf(d); pi((long) hit); p3f(hp); nl();
+        }
+        for (int k = 0; k < 10; ++k) {
+            Vec3f a = rnd3(4), b = a + Vec3f((float) range(0, 3), (float) range(0, 3), (float) range(0, 3));
+            AABBTreeIndirect::Tree3f::BoundingBox q(a, b);
+            std::vector<size_t> out;
+            AABBTreeIndirect::traverse(tree, AABBTreeIndirect::intersecting(q), [&out](const AABBTreeIndirect::Tree3f::Node& n) { out.push_back(n.idx); return true; });
+            tag("aabb_traverse"); pbox(q); arrow(); pu(out.size()); for (size_t x : out) pu(x); nl();
+        }
+    }
+}
+
+// The destination of a repair: the source's faces re-triangulated, some split into four, moved by
+// the inverse of dst_to_src.
+static indexed_triangle_set retriangulate(const indexed_triangle_set& its, const Transform3d& src_to_dst) {
+    indexed_triangle_set dst;
+    for (auto& v : its.vertices) dst.vertices.push_back((src_to_dst * v.cast<double>()).cast<float>());
+    for (auto& f : its.indices) {
+        if (below(3) == 0) {
+            const int a = f[0], b = f[1], c = f[2];
+            auto mid = [&](int x, int y) { dst.vertices.push_back((src_to_dst * ((its.vertices[x] + its.vertices[y]) * 0.5f).cast<double>()).cast<float>()); return (int) dst.vertices.size() - 1; };
+            const int ab = mid(a, b), bc = mid(b, c), ca = mid(c, a);
+            dst.indices.push_back(Vec3i(a, ab, ca)); dst.indices.push_back(Vec3i(ab, b, bc));
+            dst.indices.push_back(Vec3i(ca, bc, c)); dst.indices.push_back(Vec3i(ab, bc, ca));
+        } else
+            dst.indices.push_back(f);
+    }
+    return dst;
+}
+
+// The destination of a cut: faces kept (congruent), faces split into fragments, faces invented,
+// with the destination -> source face map.
+static indexed_triangle_set cut(const indexed_triangle_set& its, const Transform3d& src_to_dst, std::vector<int>& map) {
+    indexed_triangle_set dst;
+    map.clear();
+    auto add = [&](const Vec3f& v) { dst.vertices.push_back((src_to_dst * v.cast<double>()).cast<float>()); return (int) dst.vertices.size() - 1; };
+    for (int f = 0; f < (int) its.indices.size(); ++f) {
+        const Vec3f &a = its.vertices[its.indices[f][0]], &b = its.vertices[its.indices[f][1]], &c = its.vertices[its.indices[f][2]];
+        const int kind = (int) below(4);
+        if (kind <= 1) { dst.indices.push_back(Vec3i(add(a), add(b), add(c))); map.push_back(f); }
+        else if (kind == 2) {
+            const float t = (float) range(0.2, 0.8);
+            const Vec3f m = a + (b - a) * t;
+            dst.indices.push_back(Vec3i(add(a), add(m), add(c))); map.push_back(f);
+            dst.indices.push_back(Vec3i(add(m), add(b), add(c))); map.push_back(f);
+        } else {
+            const Vec3f g = (a + b + c) / 3.f;
+            dst.indices.push_back(Vec3i(add(a), add(b), add(g))); map.push_back(f);
+            dst.indices.push_back(Vec3i(add(b), add(c), add(g))); map.push_back(f);
+            dst.indices.push_back(Vec3i(add(c), add(a), add(g))); map.push_back(f);
+        }
+        if (below(12) == 0) { dst.indices.push_back(Vec3i(add(a + Vec3f(0, 0, 0.5f)), add(b + Vec3f(0, 0, 0.5f)), add(c + Vec3f(0, 0, 0.5f)))); map.push_back(-1); }
+    }
+    return dst;
+}
+
+static Transform3d rnd_pose(int i) {
+    if (i % 3 == 0) return Transform3d::Identity();
+    Vec3d rot(range(-3, 3), range(-3, 3), range(-3, 3));
+    return Geometry::assemble_transform(Vec3d(range(-20, 20), range(-20, 20), range(-20, 20)), rot, Vec3d(1, 1, 1), Vec3d(1, 1, 1));
+}
+
+struct Calls { int progress = 0; long percent_sum = 0; int last = -1; int cancel = 0; int cancel_at = 0; };
+static void pcalls(const Calls& c) { pi(c.progress); pi(c.percent_sum); pi(c.last); pi(c.cancel); }
+
+static void gen_reproject() {
+    for (int i = 0; i < 24; ++i) {
+        indexed_triangle_set its = (i % 4 == 3) ? sphere(4 + (int) below(3), 6 + (int) below(4), range(2, 4)) : grid(2 + (int) below(4), 2 + (int) below(3), i % 2 ? 0.0 : 0.3);
+        ModelVolume* vol = new_volume(its);
+        paint(its, vol->mmu_segmentation_facets);
+        if (below(2)) paint(its, vol->supported_facets);
+        if (below(3) == 0) paint(its, vol->seam_facets);
+        tag("mesh"); pmesh(its); nl();
+        tag("annotation"); pdata(vol->mmu_segmentation_facets.get_data()); nl();
+        tag("annotation2"); pdata(vol->supported_facets.get_data()); pdata(vol->seam_facets.get_data()); nl();
+        const TriangleMesh src_mesh(its);
+        const double maxd = i % 5 == 1 ? -1.0 : src_mesh.bounding_box().size().norm() / 100.0;
+
+        {
+            // the samplers on their own
+            PaintReprojector pt(src_mesh, vol->mmu_segmentation_facets, true, maxd);
+            for (int k = 0; k < 12; ++k) {
+                const int f = (int) below(its.indices.size());
+                std::array<Vec3f, 3> t = {its.vertices[its.indices[f][0]], its.vertices[its.indices[f][1]], its.vertices[its.indices[f][2]]};
+                if (k % 3 == 1) { t[1] = (t[0] + t[1]) * 0.5f; }
+                if (k % 3 == 2) { t[0] = (t[0] + t[1] + t[2]) / 3.f; }
+                auto m = pt.measure_point_sample(t, t);
+                tag("measure_point_sample"); pd(maxd); ptri(t); arrow(); pi((int) m.dominant_state); pd(m.surface_area); pd(m.error_area); pu(pt.fallback_count()); nl();
+                auto roots = pt.resolve_source_roots(f, t);
+                auto mo = pt.measure_overlap(roots, t, t);
+                tag("measure_overlap"); pi(f); ptri(t); arrow(); pu(roots.size()); for (int r : roots) pi(r); pi((int) mo.dominant_state); pd(mo.surface_area); pd(mo.error_area); pu(pt.rebound_count()); pu(pt.fallback_count()); nl();
+            }
+            const double band = i % 4 == 2 ? -1.0 : maxd;
+            PaintRegionSource rs(src_mesh, vol->mmu_segmentation_facets.get_data(), band);
+            tag("region_source"); pd(band); arrow(); pi(rs.empty()); pu(rs.leaf_count()); pf(rs.finest_leaf_edge()); pu(rs.states().size());
+            for (auto& st : rs.states()) { pi((int) st.state); pd(st.area); pbox(st.bbox); }
+            nl();
+            for (int k = 0; k < 12; ++k) {
+                const int f = (int) below(its.indices.size());
+                std::array<Vec3f, 3> t = {its.vertices[its.indices[f][0]], its.vertices[its.indices[f][1]], its.vertices[its.indices[f][2]]};
+                if (k % 2) for (auto& v : t) v = (v + (t[0] + t[1] + t[2]) / 3.f) * 0.5f;
+                const int state = 1 + (int) below(5);
+                tag("coverage"); pd(band); pi(state); ptri(t); arrow(); pi((int) rs.coverage(EnforcerBlockerType(state), t)); nl();
+            }
+        }
+        if (i % 2 == 0) {
+            // reproject_one_annotation, point sampling, onto a re-triangulated copy
+            const Transform3d dst_to_src = rnd_pose(i);
+            const indexed_triangle_set dst = retriangulate(its, dst_to_src.inverse());
+            const TriangleMesh dst_mesh(dst);
+            PaintKeepPrepared out;
+            Calls calls; calls.cancel_at = i % 7 == 6 ? 1 + (int) below(3) : 0;
+            PaintReprojectProgressCallback progress = [&calls](int p, const char*) { ++calls.progress; calls.percent_sum += p; calls.last = p; };
+            PaintReprojectCancelCallback cancel = nullptr;
+            if (calls.cancel_at > 0) cancel = [&calls]() { return ++calls.cancel >= calls.cancel_at; };
+            tag("mesh"); pmesh(dst); nl();
+            tag("reproject_point"); ptrafo(dst_to_src); pd(maxd); pi(calls.cancel_at); arrow();
+            bool ok = reproject_one_annotation(vol->mmu_segmentation_facets, out.mmu, src_mesh, dst_mesh, dst_to_src, nullptr, ReprojectMode::PointNearest, "mmu", progress, cancel, maxd, nullptr, 1e-6);
+            pi(ok); pdata(out.mmu.get_data()); pcalls(calls); nl();
+        }
+        {
+            // reproject_one_annotation, coplanar overlap, onto a cut copy
+            const Transform3d dst_to_src = rnd_pose(i + 1);
+            std::vector<int> map;
+            const indexed_triangle_set dst = cut(its, dst_to_src.inverse(), map);
+            const TriangleMesh dst_mesh(dst);
+            PaintKeepPrepared out;
+            tag("mesh"); pmesh(dst); nl();
+            tag("reproject_overlap"); ptrafo(dst_to_src); pu(map.size()); for (int m : map) pi(m); arrow();
+            bool ok = reproject_one_annotation(vol->mmu_segmentation_facets, out.mmu, src_mesh, dst_mesh, dst_to_src, &map, ReprojectMode::OverlapCoplanar, "mmu");
+            pi(ok); pdata(out.mmu.get_data()); nl();
+
+            // reproject_paint (the cut path) onto the same copy
+            ModelVolume* dvol = new_volume(dst);
+            Calls calls; calls.cancel_at = i % 6 == 5 ? 1 + (int) below(3) : 0;
+            PaintReprojectProgressCallback progress = [&calls](int p, const char*) { ++calls.progress; calls.percent_sum += p; calls.last = p; };
+            PaintReprojectCancelCallback cancel = nullptr;
+            if (calls.cancel_at > 0) cancel = [&calls]() { return ++calls.cancel >= calls.cancel_at; };
+            tag("reproject_paint"); pi(calls.cancel_at); arrow();
+            ok = reproject_paint(*vol, *dvol, map, dst_to_src, progress, cancel);
+            pi(ok); pdata(dvol->supported_facets.get_data()); pdata(dvol->seam_facets.get_data()); pdata(dvol->mmu_segmentation_facets.get_data()); pdata(dvol->fuzzy_skin_facets.get_data()); pcalls(calls); nl();
+        }
+        {
+            // reproject_paint_geometric onto a re-triangulated copy, with and without a world matrix
+            const Transform3d dst_to_src = rnd_pose(i + 2);
+            const indexed_triangle_set dst = retriangulate(its, dst_to_src.inverse());
+            const TriangleMesh dst_mesh(dst);
+            const int wkind = (int) below(3);
+            Transform3d world = Transform3d::Identity();
+            if (wkind == 1) { const double s = range(0.5, 3); world = Geometry::assemble_transform(Vec3d(range(-5, 5), range(-5, 5), 0), Vec3d::Zero(), Vec3d(s, s, s)); }
+            if (wkind == 2) world = Geometry::assemble_transform(Vec3d(range(-5, 5), range(-5, 5), 0), Vec3d(range(-3, 3), range(-3, 3), range(-3, 3)), Vec3d(range(0.5, 3), range(0.5, 3), range(0.5, 3)));
+            PaintKeepPrepared out;
+            Calls calls; calls.cancel_at = i % 5 == 4 ? 1 + (int) below(3) : 0;
+            PaintReprojectProgressCallback progress = [&calls](int p, const char*) { ++calls.progress; calls.percent_sum += p; calls.last = p; };
+            PaintReprojectCancelCallback cancel = nullptr;
+            if (calls.cancel_at > 0) cancel = [&calls]() { return ++calls.cancel >= calls.cancel_at; };
+            tag("mesh"); pmesh(dst); nl();
+            tag("reproject_paint_geometric"); ptrafo(dst_to_src); pi(wkind); if (wkind) ptrafo(world); pi(calls.cancel_at); arrow();
+            bool ok = reproject_paint_geometric(src_mesh, vol->supported_facets, vol->seam_facets, vol->mmu_segmentation_facets, vol->fuzzy_skin_facets,
+                                                dst_mesh, dst_to_src, out.supported, out.seam, out.mmu, out.fuzzy, progress, cancel, wkind ? &world : nullptr);
+            pi(ok); pdata(out.supported.get_data()); pdata(out.seam.get_data()); pdata(out.mmu.get_data()); pdata(out.fuzzy.get_data()); pcalls(calls); nl();
+            RegionEdgeLimit el(dst_mesh, wkind ? &world : nullptr);
+            tag("region_edge_limit"); pi(wkind); if (wkind) ptrafo(world); arrow(); pf(el.value()); pi(el.trafo() != nullptr); if (el.trafo()) ptrafof(*el.trafo()); nl();
+        }
+    }
+}
+
+
+// Boolean / merge: several operands, each with its paint, its filament and its pose, onto a
+// destination that is their concatenation (a merge) or a re-triangulation of it (a boolean).
+static void gen_volumes() {
+    for (int i = 0; i < 30; ++i) {
+        const int nops = 1 + (int) below(3);
+        std::vector<indexed_triangle_set> meshes(nops);
+        std::vector<ModelVolume*> vols(nops);
+        std::vector<PaintSourceVolume> sources(nops);
+        const bool unpainted = i % 5 == 3; // the filament-only fast path
+        indexed_triangle_set combined;
+        for (int k = 0; k < nops; ++k) {
+            meshes[k] = below(3) == 0 ? sphere(3 + (int) below(3), 5 + (int) below(4), range(1, 3)) : grid(2 + (int) below(3), 2 + (int) below(3), range(0, 0.3));
+            vols[k] = new_volume(meshes[k]);
+            if (!unpainted) {
+                if (below(3) != 0) paint(meshes[k], vols[k]->mmu_segmentation_facets);
+                if (below(3) == 0) paint(meshes[k], vols[k]->supported_facets);
+                if (below(4) == 0) paint(meshes[k], vols[k]->fuzzy_skin_facets);
+            }
+            PaintSourceVolume& src = sources[k];
+            src.mesh = &vols[k]->mesh();
+            src.supported = &vols[k]->supported_facets;
+            src.seam = below(4) == 0 ? nullptr : &vols[k]->seam_facets;
+            src.mmu = &vols[k]->mmu_segmentation_facets;
+            src.fuzzy = &vols[k]->fuzzy_skin_facets;
+            src.base_filament = below(3) == 0 ? 0 : 1 + (int) below(4);
+            Vec3d off(range(-1.5, 1.5), range(-1.5, 1.5), range(-0.5, 0.5));
+            src.source_to_destination = k == 0 && i % 2 ? Transform3d::Identity()
+                : Geometry::assemble_transform(off, Vec3d(0, 0, range(-0.5, 0.5)), Vec3d(1, 1, 1), Vec3d(i % 7 == 2 && k == 1 ? -1 : 1, 1, 1));
+            TriangleMesh m(meshes[k]);
+            m.transform(src.source_to_destination, true);
+            its_merge(combined, m.its);
+        }
+        const int kind = (int) below(3);
+        const indexed_triangle_set dst = kind == 0 ? combined : retriangulate(combined, Transform3d::Identity());
+        for (int k = 0; k < nops; ++k) {
+            tag("mesh"); pmesh(meshes[k]); nl();
+            tag("operand"); pdata(vols[k]->supported_facets.get_data()); pdata(vols[k]->seam_facets.get_data()); pdata(vols[k]->mmu_segmentation_facets.get_data()); pdata(vols[k]->fuzzy_skin_facets.get_data());
+            pi(sources[k].seam != nullptr); pi(sources[k].base_filament); ptrafo(sources[k].source_to_destination); nl();
+        }
+        tag("mesh"); pmesh(dst); nl();
+        const bool concatenated = kind == 0 && below(4) != 0;
+        PaintKeepPrepared out;
+        tag("reproject_paint_from_volumes"); pi(concatenated); arrow();
+        bool ok = reproject_paint_from_volumes(TriangleMesh(dst), sources, out.supported, out.seam, out.mmu, out.fuzzy, nullptr, nullptr, nullptr, concatenated);
+        pi(ok); pdata(out.supported.get_data()); pdata(out.seam.get_data()); pdata(out.mmu.get_data()); pdata(out.fuzzy.get_data()); nl();
+
+        // measure_operand on the first operand, as the ranking builds it
+        BooleanOperand op;
+        op.mesh = TriangleMesh(meshes[0]);
+        op.mesh.transform(sources[0].source_to_destination, true);
+        op.tree = AABBTreeIndirect::build_aabb_tree_over_indexed_triangle_set(op.mesh.its.vertices, op.mesh.its.indices);
+        op.bbox = op.mesh.bounding_box();
+        op.extent = op.bbox.size().norm();
+        for (int k = 0; k < 8; ++k) {
+            const int f = (int) below(dst.indices.size());
+            const std::array<Vec3f, 4> samples = face_samples(dst, f);
+            const OperandHit hit = measure_operand(op, 0, samples);
+            tag("measure_operand"); pi(f); arrow(); pd(operand_band(op)); pd(operand_reach(op)); pi(hit.op); pf(hit.distance); pi(hit.covers); nl();
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) return 1;
+    set_logging_level(0); // the reprojection logs its statistics; keep them off the vectors
     std::string what = argv[1];
     if (what == "planar") gen_planar();
     else if (what == "annotation") { g_state ^= 0x1111; gen_annotation(); }
+    else if (what == "aabb") { g_state ^= 0x5555; gen_aabb(); }
+    else if (what == "reproject") { g_state ^= 0x6666; gen_reproject(); }
+    else if (what == "volumes") { g_state ^= 0x7777; gen_volumes(); }
     else return 1;
     return 0;
 }

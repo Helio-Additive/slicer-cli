@@ -1877,7 +1877,6 @@ impl Print {
             }
         }
 
-        crate::clipper_utils::geo_calls_report();
         if crate::probe_enabled("SLICE_PHASE_TIMING") {
             let total = export_t0.elapsed();
             eprintln!(

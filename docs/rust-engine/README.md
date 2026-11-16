@@ -131,7 +131,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R910) |
+| Fixture | As brought over (R808) | Now (R911) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 187,312 (98.12%) |
 | Benchy arachne | 32,769 (13.68%) | 240,533 (98.85%) |
@@ -141,7 +141,7 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R910:
+missing most often. Lines of the oracle's body the port has verbatim, at R911:
 Benchy classic 193,465 of 196,495 (98.5%), Benchy arachne 246,043 of 248,190
 (99.1%), Majora 3,008,936 of 3,024,752 (99.5%).
 
@@ -224,11 +224,6 @@ perimeter generator that lead to the fill boundary (`last`, `notfilled`,
 `t_*` inside the top-one-wall branch), and `FBISL=<layer>` every point of one
 layer; the C++ twin is the same `fprintf` at the same places of a probed
 `PerimeterGenerator.cpp`.
-
-`GEOCALLS=1` prints, at the end of the export, `GEOCALLS <count> <file>:<line>` for
-every call site that reached a `clipper_utils` helper computing on the geo-clipper
-grid (1 um) and not at coord_t. The table is empty on the three fixtures (R856);
-on a new job each line is a call to port to the `_clib` helper of the same name.
 
 `ARCP=1` prints every arc as it is written: start, end and centre in scaled units and the
 radius; the C++ twin is one `fprintf` after GCode.cpp:8041.

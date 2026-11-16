@@ -40,8 +40,8 @@ The engine's own `clipper.cpp` is vendored and compiled; `libslic3r/clipper.cpp`
 | `cz_smooth_compensation_banded` | `elephant_foot_compensation.rs` | the banded solve of ElephantFootCompensation.cpp |
 | `medial_axis_native` | `geometry/expolygon.rs` | `ExPolygon::medial_axis` (MedialAxis.cpp over boost Voronoi), gate `MEDIALAXIS_NATIVE` |
 
-Geometry helpers of `clipper_utils.rs` without `_clib` in the name compute in pure Rust on a 1 um grid; none
-is left on the fixtures' path (`GEOCALLS=1` lists them, README "Probes").
+Every geometry helper of `clipper_utils.rs` runs on the Rust ClipperLib (`clipper.rs`) since R910-R911; the
+helpers that went through geo-clipper follow ClipperUtils.cpp there, and geo-clipper is out of the crate.
 
 ### `clipper2-z-sys` (Clipper2)
 
@@ -109,17 +109,14 @@ calls nothing else for it. Not ported, not reached: clipper.rectclip.cpp, `Clipp
 
 ### C++ that comes in through published crates
 
-`cargo tree -e normal -p slicer-cli-rust` lists one C++ library, the last C++ in the engine's tree (`clipper2c-sys`
-through the `clipper2` crate left in R906):
-
-| Crate | Through | What uses it |
-|-|-|-|
-| `clipper-sys` (Clipper 6) | `geo-clipper` | the helpers of `clipper_utils.rs` without `_clib` in the name; none on the fixtures' path since R856 (`GEOCALLS=1`) |
-
-Sixteen functions of `clipper_utils.rs` call it (R906 survey): `union`, `xor`, the polyline offsets, `offset_polygon`,
-`offset_expolygon(s)`, `offset_polygons` and their round and miter variants, `intersection_base`, and the gate-off
-arms of `union_ex`, `intersection`, `difference`. All have a twin on the Rust ClipperLib (`*_clib`) or need a thin
-wrapper on it; the callers are supports, SLA, interlocking and some fill branches.
+None since R911. `cargo tree -e normal -p slicer-cli-rust` lists no C++ library: the last one, `clipper-sys`
+(Clipper 6, through `geo-clipper`), served sixteen helpers of `clipper_utils.rs` (`union`, `xor`, the polyline
+offsets, `offset_polygon`, `offset_expolygon(s)`, `offset_polygons` and their round and miter variants,
+`intersection_base`, and the old arms of `union_ex`, `intersection`, `difference`). R910 put them on the Rust
+ClipperLib following ClipperUtils.cpp (415-419, 567-571, 737-838; compared with the pin in
+`tests/clipper_utils_geo_free_native_parity.rs`) behind `GEO_CLIPPER_CLIB`, and R911 removed that gate, the geo
+arms and both crates. The four `*-sys` crates of this repository remain dev-dependencies only, as the C++
+reference of their tests.
 
 ## 2. Child processes
 

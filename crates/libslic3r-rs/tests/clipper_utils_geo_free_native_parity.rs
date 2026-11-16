@@ -1,10 +1,10 @@
-//! The GEO_CLIPPER_CLIB arms of `src/clipper_utils.rs` (R910) against the ClipperUtils.cpp
-//! functions they follow: the helpers that ran on geo-clipper until R910 (`union`, `xor`,
+//! The helpers of `src/clipper_utils.rs` that ran on geo-clipper until R910, against the
+//! ClipperUtils.cpp functions they follow on the Rust ClipperLib since (`union`, `xor`,
 //! `offset_polyline`, `offset_polyline_miter`, `offset_polygon`, `offset_polygons`,
 //! `offset_polygons_round`, `offset_expolygon`, `offset_expolygons`,
 //! `offset_expolygons_miter_limit`, `offset_expolygons_round`, `polygons_overlap` through
-//! `intersection_base`) and the geo arms of `union_ex`, `union_polygons_ex`, `intersection` and
-//! `difference`, which now take their ClipperLib arm.
+//! `intersection_base`), and `union_ex`, `union_polygons_ex`, `intersection` and `difference`,
+//! whose geo arms are gone too.
 //!
 //! The reference is the pin's ClipperUtils.cpp text, copied into the shim of `clipper-z-sys`
 //! (namespace `cu_pin` of clipper_z_shim.cpp) and compiled on the pin's clipper.cpp: the
@@ -489,20 +489,6 @@ fn cases(default: u64) -> u64 {
     std::env::var("GEO_FREE_PARITY_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
-/// The arms under test are the gate's on arm; with `GEO_CLIPPER_CLIB=0` the helpers run on
-/// geo-clipper and there is nothing to compare, unless `GEO_FREE_PARITY_COMPARE_GEO=1` asks
-/// to compare the geo arms all the same (they fail: that is what the gate fixes).
-fn gate_on() -> bool {
-    if std::env::var("GEO_FREE_PARITY_COMPARE_GEO").map(|v| v == "1").unwrap_or(false) {
-        return true;
-    }
-    if std::env::var("GEO_CLIPPER_CLIB").map(|v| v == "0").unwrap_or(false) {
-        eprintln!("GEO_CLIPPER_CLIB=0: the helpers run on geo-clipper; nothing compared");
-        return false;
-    }
-    true
-}
-
 /// How many cases a test compared and how many of them had a result that is not empty; a
 /// test whose inputs hardly ever give a result compares nothing, so one case in ten at least
 /// has to give one. `GEO_FREE_PARITY_STATS=<file>` appends a line per test to that file.
@@ -578,9 +564,6 @@ fn cpp_boolean(subject: &[(Path, Paths)], clip: &[(Path, Paths)], op: i32) -> Ve
 /// `union` against `union_ex(const ExPolygons&, const ExPolygons&)` (ClipperUtils.cpp:824-831).
 #[test]
 fn union_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("union");
     for i in 0..cases(12_000) {
         let mut s = case_seed(101, i);
@@ -599,9 +582,6 @@ fn union_matches_cpp() {
 /// `xor` against `xor_ex(const ExPolygons&, const ExPolygons&)` (ClipperUtils.cpp:836-838).
 #[test]
 fn xor_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("xor");
     for i in 0..cases(12_000) {
         let mut s = case_seed(102, i);
@@ -622,9 +602,6 @@ fn xor_matches_cpp() {
 /// that is empty.
 #[test]
 fn intersection_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("intersection");
     for i in 0..cases(12_000) {
         let mut s = case_seed(103, i);
@@ -652,9 +629,6 @@ fn intersection_matches_cpp() {
 /// returns its subject as it is (an early return of every arm), where the C++ unions it.
 #[test]
 fn difference_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("difference");
     for i in 0..cases(12_000) {
         let mut s = case_seed(104, i);
@@ -679,9 +653,6 @@ fn difference_matches_cpp() {
 /// PolygonsProvider yields the paths the ExPolygonsProvider of hole-less expolygons does.
 #[test]
 fn union_ex_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("union_ex");
     for i in 0..cases(12_000) {
         let mut s = case_seed(105, i);
@@ -726,9 +697,6 @@ fn polyline_delta(sc: Scene, s: &mut u64) -> f64 {
 /// (ClipperUtils.cpp:418-419, ClipperUtils.hpp:346: jtSquare, miter limit 0, etOpenButt).
 #[test]
 fn offset_polyline_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_polyline");
     for i in 0..cases(12_000) {
         let mut s = case_seed(106, i);
@@ -747,9 +715,6 @@ fn offset_polyline_matches_cpp() {
 /// (ClipperUtils.cpp:418-419, etOpenButt).
 #[test]
 fn offset_polyline_miter_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_polyline_miter");
     for i in 0..cases(12_000) {
         let mut s = case_seed(107, i);
@@ -794,9 +759,6 @@ fn cpp_offset_ex_expolygons(expolygons: &[(Path, Paths)], delta_scaled: f64, joi
 /// `offset_polygon` against `offset_ex(const Polygon&, delta, joinType)` (ClipperUtils.hpp:358-364).
 #[test]
 fn offset_polygon_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_polygon");
     for i in 0..cases(12_000) {
         let mut s = case_seed(108, i);
@@ -814,9 +776,6 @@ fn offset_polygon_matches_cpp() {
 /// `offset_polygons` against `offset_ex(const Polygons&, delta, joinType)` (ClipperUtils.cpp:415-416).
 #[test]
 fn offset_polygons_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_polygons");
     for i in 0..cases(12_000) {
         let mut s = case_seed(109, i);
@@ -836,9 +795,6 @@ fn offset_polygons_matches_cpp() {
 /// (ClipperUtils.cpp:415-416).
 #[test]
 fn offset_polygons_round_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_polygons_round");
     for i in 0..cases(12_000) {
         let mut s = case_seed(110, i);
@@ -857,9 +813,6 @@ fn offset_polygons_round_matches_cpp() {
 /// `offset_expolygon` against `offset_ex(const ExPolygon&, delta, joinType)` (ClipperUtils.cpp:567-569).
 #[test]
 fn offset_expolygon_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_expolygon");
     for i in 0..cases(12_000) {
         let mut s = case_seed(111, i);
@@ -878,9 +831,6 @@ fn offset_expolygon_matches_cpp() {
 /// `offset_expolygons` against `offset_ex(const ExPolygons&, delta, joinType)` (ClipperUtils.cpp:570-571).
 #[test]
 fn offset_expolygons_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_expolygons");
     for i in 0..cases(12_000) {
         let mut s = case_seed(112, i);
@@ -900,9 +850,6 @@ fn offset_expolygons_matches_cpp() {
 /// miterLimit)` (ClipperUtils.cpp:570-571).
 #[test]
 fn offset_expolygons_miter_limit_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_expolygons_miter_limit");
     for i in 0..cases(12_000) {
         let mut s = case_seed(113, i);
@@ -922,9 +869,6 @@ fn offset_expolygons_miter_limit_matches_cpp() {
 /// tolerance)` (ClipperUtils.cpp:570-571).
 #[test]
 fn offset_expolygons_round_matches_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("offset_expolygons_round");
     for i in 0..cases(12_000) {
         let mut s = case_seed(114, i);
@@ -943,9 +887,6 @@ fn offset_expolygons_round_matches_cpp() {
 /// `grow` and `shrink`, which are `offset_expolygons` with `+|d|` and `-|d|`.
 #[test]
 fn grow_shrink_match_cpp() {
-    if !gate_on() {
-        return;
-    }
     let mut tally = Tally::new("grow_shrink");
     for i in 0..cases(6_000) {
         let mut s = case_seed(115, i);

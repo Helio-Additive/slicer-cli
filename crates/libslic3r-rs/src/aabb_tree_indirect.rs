@@ -1419,6 +1419,551 @@ pub fn get_candidate_idxs(tree: &Tree, v: Point3F, candidates: &mut Vec<usize>, 
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tree<3, float> (`AABBTreeIndirect::Tree3f`) in float.
+//
+// `Tree` above stores its boxes and centroids in double. A tree built over float vertices
+// compares, extends and measures in float in the C++ (`Tree<3, float>`, `Eigen::AlignedBox<float,
+// 3>`), and the split dimension, the partition and the traversal order follow from those float
+// values; this is that tree. Floating point follows the C++ build (clang, `-ffp-contract=on`,
+// Eigen 5): `Vec3f::dot` is `fma(a.z, b.z, a.x * b.x + a.y * b.y)`, `squaredNorm` is
+// `(x * x + y * y) + z * z` unfused, the box's exterior distance accumulates
+// `dist2 += aux * aux` fused, and coefficient-wise vector sums do not fuse.
+// ---------------------------------------------------------------------------
+
+use crate::triangle_mesh::{Vec3f, Vec3i};
+
+/// `Eigen::AlignedBox<float, 3>` (`Tree3f::BoundingBox`). The default box is empty: min at
+/// `FLT_MAX`, max at `-FLT_MAX` (`AlignedBox()` calls `setEmpty()`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoundingBox3f {
+    pub min: Vec3f,
+    pub max: Vec3f,
+}
+
+impl Default for BoundingBox3f {
+    fn default() -> Self {
+        // Eigen AlignedBox::setEmpty(): m_min = highest, m_max = lowest
+        BoundingBox3f { min: Vec3f::new(f32::MAX, f32::MAX, f32::MAX), max: Vec3f::new(f32::MIN, f32::MIN, f32::MIN) }
+    }
+}
+
+/// `std::min(a, b)` as Eigen's `cwiseMin` takes it: `b < a ? b : a`.
+#[inline]
+fn std_min_f32(a: f32, b: f32) -> f32 {
+    if b < a {
+        b
+    } else {
+        a
+    }
+}
+
+/// `std::max(a, b)`: `a < b ? b : a`.
+#[inline]
+fn std_max_f32(a: f32, b: f32) -> f32 {
+    if a < b {
+        b
+    } else {
+        a
+    }
+}
+
+impl BoundingBox3f {
+    /// `AlignedBox(const OtherVectorType1 &_min, const OtherVectorType2 &_max)`
+    pub fn new(min: Vec3f, max: Vec3f) -> Self {
+        BoundingBox3f { min, max }
+    }
+
+    /// `AlignedBox::extend(const MatrixBase &p)`: `m_min = m_min.cwiseMin(p); m_max = m_max.cwiseMax(p)`
+    pub fn extend(&mut self, p: &Vec3f) {
+        self.min = Vec3f::new(std_min_f32(self.min.x, p.x), std_min_f32(self.min.y, p.y), std_min_f32(self.min.z, p.z));
+        self.max = Vec3f::new(std_max_f32(self.max.x, p.x), std_max_f32(self.max.y, p.y), std_max_f32(self.max.z, p.z));
+    }
+
+    /// `AlignedBox::extend(const AlignedBox &b)`
+    pub fn extend_box(&mut self, b: &BoundingBox3f) {
+        self.min = Vec3f::new(std_min_f32(self.min.x, b.min.x), std_min_f32(self.min.y, b.min.y), std_min_f32(self.min.z, b.min.z));
+        self.max = Vec3f::new(std_max_f32(self.max.x, b.max.x), std_max_f32(self.max.y, b.max.y), std_max_f32(self.max.z, b.max.z));
+    }
+
+    /// `AlignedBox::diagonal()` (= `sizes()`): `m_max - m_min`
+    pub fn diagonal(&self) -> Vec3f {
+        self.max - self.min
+    }
+
+    /// `AlignedBox::center()`: `(m_min + m_max) / 2`
+    pub fn center(&self) -> Vec3f {
+        let s = self.min + self.max;
+        Vec3f::new(s.x / 2.0, s.y / 2.0, s.z / 2.0)
+    }
+
+    /// `AlignedBox::contains(const MatrixBase &p)`
+    pub fn contains(&self, p: &Vec3f) -> bool {
+        (self.min.x <= p.x && self.min.y <= p.y && self.min.z <= p.z) && (p.x <= self.max.x && p.y <= self.max.y && p.z <= self.max.z)
+    }
+
+    /// `AlignedBox::intersects(const AlignedBox &b)`
+    pub fn intersects(&self, b: &BoundingBox3f) -> bool {
+        (self.min.x <= b.max.x && self.min.y <= b.max.y && self.min.z <= b.max.z) && (b.min.x <= self.max.x && b.min.y <= self.max.y && b.min.z <= self.max.z)
+    }
+
+    /// `AlignedBox::squaredExteriorDistance(const MatrixBase &p)`: per axis outside the box,
+    /// `aux = m_min[k] - p[k]` (or `p[k] - m_max[k]`) and `dist2 += aux * aux`, fused.
+    pub fn squared_exterior_distance(&self, p: &Vec3f) -> f32 {
+        let mut dist2 = 0.0f32;
+        for k in 0..3 {
+            if self.min[k] > p[k] {
+                let aux = self.min[k] - p[k];
+                dist2 = aux.mul_add(aux, dist2);
+            } else if p[k] > self.max[k] {
+                let aux = p[k] - self.max[k];
+                dist2 = aux.mul_add(aux, dist2);
+            }
+        }
+        dist2
+    }
+}
+
+/// `Tree<3, float>::Node` (AABBTreeIndirect.hpp:56-72)
+#[derive(Debug, Clone, Copy)]
+pub struct NodeF {
+    pub idx: usize,
+    pub bbox: BoundingBox3f,
+}
+
+impl Default for NodeF {
+    fn default() -> Self {
+        NodeF { idx: constants::NPOS, bbox: BoundingBox3f::default() }
+    }
+}
+
+impl NodeF {
+    /// AABBTreeIndirect.hpp:63
+    pub fn is_valid(&self) -> bool {
+        self.idx != constants::NPOS
+    }
+    /// AABBTreeIndirect.hpp:64
+    pub fn is_inner(&self) -> bool {
+        self.idx == constants::INNER
+    }
+    /// AABBTreeIndirect.hpp:65
+    pub fn is_leaf(&self) -> bool {
+        !self.is_inner()
+    }
+}
+
+/// The source node of a `Tree<3, float>` build (AABBTreeIndirect.hpp:76-84): an index, a float
+/// box and a float centroid.
+pub trait SourceNodeF {
+    fn idx(&self) -> usize;
+    fn bbox(&self) -> BoundingBox3f;
+    fn centroid(&self) -> Vec3f;
+}
+
+/// `AABBTreeIndirect::Tree<3, float>` (`Tree3f`), AABBTreeIndirect.hpp:38-214, in float.
+#[derive(Debug, Clone, Default)]
+pub struct TreeF {
+    nodes: Vec<NodeF>,
+}
+
+impl TreeF {
+    pub fn new() -> Self {
+        TreeF { nodes: Vec::new() }
+    }
+
+    /// AABBTreeIndirect.hpp:74
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+    }
+
+    /// AABBTreeIndirect.hpp:85-90 `build(std::vector<SourceNode> &&input)`
+    pub fn build<S: SourceNodeF>(&mut self, mut input: Vec<S>) {
+        self.build_modify_input(&mut input);
+        input.clear();
+    }
+
+    /// AABBTreeIndirect.hpp:92-102
+    pub fn build_modify_input<S: SourceNodeF>(&mut self, input: &mut [S]) {
+        if input.is_empty() {
+            self.clear();
+        } else {
+            // Allocate enough memory for a full binary tree.
+            self.nodes = vec![NodeF::default(); next_highest_power_of_2(input.len()) * 2 - 1];
+            let right = input.len() - 1;
+            self.build_recursive(input, 0, 0, right);
+        }
+    }
+
+    /// AABBTreeIndirect.hpp:104
+    pub fn nodes(&self) -> &[NodeF] {
+        &self.nodes
+    }
+    /// AABBTreeIndirect.hpp:105
+    pub fn node(&self, idx: usize) -> &NodeF {
+        &self.nodes[idx]
+    }
+    /// AABBTreeIndirect.hpp:106
+    pub fn empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+    /// AABBTreeIndirect.hpp:109
+    pub fn left_child_idx(idx: usize) -> usize {
+        idx * 2 + 1
+    }
+    /// AABBTreeIndirect.hpp:110
+    pub fn right_child_idx(idx: usize) -> usize {
+        Self::left_child_idx(idx) + 1
+    }
+
+    /// AABBTreeIndirect.hpp:122-150
+    fn build_recursive<S: SourceNodeF>(&mut self, input: &mut [S], node: usize, left: usize, right: usize) {
+        debug_assert!(node < self.nodes.len());
+        debug_assert!(left <= right);
+
+        if left == right {
+            // Insert a node into the balanced tree.
+            self.nodes[node].idx = input[left].idx();
+            self.nodes[node].bbox = input[left].bbox();
+            return;
+        }
+
+        // Calculate bounding box of the input.
+        let mut bbox = input[left].bbox();
+        for i in (left + 1)..=right {
+            bbox.extend_box(&input[i].bbox());
+        }
+        // bbox.diagonal().maxCoeff(&dimension): the first index of the largest coefficient
+        let d = bbox.diagonal();
+        let mut dimension = 0usize;
+        for k in 1..3 {
+            if d[k] > d[dimension] {
+                dimension = k;
+            }
+        }
+
+        // Partition the input to left / right pieces of the same length to produce a balanced tree.
+        let center = (left + right) / 2;
+        Self::partition_input(input, dimension, left, right, center);
+        // Insert an inner node into the tree.
+        self.nodes[node].idx = constants::INNER;
+        self.nodes[node].bbox = bbox;
+        self.build_recursive(input, node * 2 + 1, left, center);
+        self.build_recursive(input, node * 2 + 2, center + 1, right);
+    }
+
+    /// AABBTreeIndirect.hpp:152-210 (QuickSelect)
+    fn partition_input<S: SourceNodeF>(input: &mut [S], dimension: usize, mut left: usize, mut right: usize, k: usize) {
+        while left < right {
+            let center = (left + right) / 2;
+            let pivot;
+            {
+                // Bubble sort the input[left], input[center], input[right], so that a median of the three values
+                // will end up in input[center].
+                let mut left_value = input[left].centroid()[dimension];
+                let mut center_value = input[center].centroid()[dimension];
+                let mut right_value = input[right].centroid()[dimension];
+                if left_value > center_value {
+                    input.swap(left, center);
+                    std::mem::swap(&mut left_value, &mut center_value);
+                }
+                if left_value > right_value {
+                    input.swap(left, right);
+                    right_value = left_value;
+                }
+                if center_value > right_value {
+                    input.swap(center, right);
+                    center_value = right_value;
+                }
+                pivot = center_value;
+            }
+            if right <= left + 2 {
+                // The <left, right> interval is already sorted.
+                break;
+            }
+            let mut i = left;
+            let mut j = right - 1;
+            input.swap(center, j);
+            // Partition the set based on the pivot.
+            loop {
+                // Skip left points that are already at correct positions.
+                // Search will certainly stop at position (right - 1), which stores the pivot.
+                loop {
+                    i += 1;
+                    if !(input[i].centroid()[dimension] < pivot) {
+                        break;
+                    }
+                }
+                // Skip right points that are already at correct positions.
+                loop {
+                    j -= 1;
+                    if !(input[j].centroid()[dimension] > pivot && i < j) {
+                        break;
+                    }
+                }
+                if i >= j {
+                    break;
+                }
+                input.swap(i, j);
+            }
+            // Restore pivot to the center of the sequence.
+            input.swap(i, right - 1);
+            // Which side the kth element is in?
+            if k < i {
+                right = i - 1;
+            } else if k == i {
+                // Sequence is partitioned, kth element is at its place.
+                break;
+            } else {
+                left = i + 1;
+            }
+        }
+    }
+}
+
+/// The input node of `build_aabb_tree_over_indexed_triangle_set` (AABBTreeIndirect.hpp:704-712)
+struct TriangleInputF {
+    m_idx: usize,
+    m_bbox: BoundingBox3f,
+    m_centroid: Vec3f,
+}
+
+impl SourceNodeF for TriangleInputF {
+    fn idx(&self) -> usize {
+        self.m_idx
+    }
+    fn bbox(&self) -> BoundingBox3f {
+        self.m_bbox
+    }
+    fn centroid(&self) -> Vec3f {
+        self.m_centroid
+    }
+}
+
+/// AABBTreeIndirect.hpp:686-736 `build_aabb_tree_over_indexed_triangle_set` over float vertices
+/// (`Tree3f`). The centroid `(1./3.) * (v1 + v2 + v3)` is `float(1./3.) * ((v1 + v2) + v3)`.
+pub fn build_aabb_tree_over_indexed_triangle_set_f(vertices: &[Vec3f], faces: &[Vec3i], eps: f32) -> TreeF {
+    let mut input: Vec<TriangleInputF> = Vec::with_capacity(faces.len());
+    let veps = Vec3f::new(eps, eps, eps);
+    let third = (1.0f64 / 3.0f64) as f32;
+    for (i, face) in faces.iter().enumerate() {
+        let v1 = vertices[face[0] as usize];
+        let v2 = vertices[face[1] as usize];
+        let v3 = vertices[face[2] as usize];
+        let s = (v1 + v2) + v3;
+        let mut bbox = BoundingBox3f::new(v1, v1);
+        bbox.extend(&v2);
+        bbox.extend(&v3);
+        bbox.min -= veps;
+        bbox.max += veps;
+        input.push(TriangleInputF { m_idx: i, m_bbox: bbox, m_centroid: Vec3f::new(third * s.x, third * s.y, third * s.z) });
+    }
+    let mut out = TreeF::new();
+    out.build(input);
+    out
+}
+
+/// `Vec3f::dot`, `fma(a.z, b.z, a.x * b.x + a.y * b.y)` (R880)
+#[inline]
+fn dot_f(a: &Vec3f, b: &Vec3f) -> f32 {
+    a.z.mul_add(b.z, a.x * b.x + a.y * b.y)
+}
+
+/// AABBTreeIndirect.hpp:473-521 `closest_point_to_triangle` with `Vector = Vec3f`
+pub fn closest_point_to_triangle_f(p: &Vec3f, a: &Vec3f, b: &Vec3f, c: &Vec3f) -> Vec3f {
+    // Check if P in vertex region outside A
+    let ab = b - a;
+    let ac = c - a;
+    let ap = p - a;
+    let d1 = dot_f(&ab, &ap);
+    let d2 = dot_f(&ac, &ap);
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return *a;
+    }
+    // Check if P in vertex region outside B
+    let bp = p - b;
+    let d3 = dot_f(&ab, &bp);
+    let d4 = dot_f(&ac, &bp);
+    if d3 >= 0.0 && d4 <= d3 {
+        return *b;
+    }
+    // Check if P in edge region of AB, if so return projection of P onto AB
+    let vc = d1.mul_add(d4, -(d3 * d2));
+    if a != b && vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        let v = d1 / (d1 - d3);
+        return Vec3f::new(a.x + v * ab.x, a.y + v * ab.y, a.z + v * ab.z);
+    }
+    // Check if P in vertex region outside C
+    let cp = p - c;
+    let d5 = dot_f(&ab, &cp);
+    let d6 = dot_f(&ac, &cp);
+    if d6 >= 0.0 && d5 <= d6 {
+        return *c;
+    }
+    // Check if P in edge region of AC, if so return projection of P onto AC
+    let vb = d5.mul_add(d2, -(d1 * d6));
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        let w = d2 / (d2 - d6);
+        return Vec3f::new(a.x + w * ac.x, a.y + w * ac.y, a.z + w * ac.z);
+    }
+    // Check if P in edge region of BC, if so return projection of P onto BC
+    let va = d3.mul_add(d6, -(d5 * d4));
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        let cb = c - b;
+        return Vec3f::new(b.x + w * cb.x, b.y + w * cb.y, b.z + w * cb.z);
+    }
+    // P inside face region. Compute Q through its barycentric coordinates (u,v,w)
+    let denom = 1.0f32 / ((va + vb) + vc);
+    let v = vb * denom;
+    let w = vc * denom;
+    // a + ab * v + ac * w, coefficient by coefficient, not fused
+    Vec3f::new((a.x + ab.x * v) + ac.x * w, (a.y + ab.y * v) + ac.y * w, (a.z + ab.z * v) + ac.z * w)
+}
+
+/// AABBTreeIndirect.hpp:570-651 `squared_distance_to_indexed_primitives_recursive` over an
+/// `IndexedTriangleSetDistancer` (539-548) with `VectorType = Vec3f`.
+#[allow(clippy::too_many_arguments)]
+fn squared_distance_to_indexed_triangles_recursive_f(
+    vertices: &[Vec3f],
+    faces: &[Vec3i],
+    tree: &TreeF,
+    origin: &Vec3f,
+    node_idx: usize,
+    low_sqr_d: f32,
+    mut up_sqr_d: f32,
+    i: &mut usize,
+    c: &mut Vec3f,
+) -> f32 {
+    if low_sqr_d > up_sqr_d {
+        return low_sqr_d;
+    }
+
+    // Save the best achieved hit.
+    let set_min = |sqr_d_candidate: f32, i_candidate: usize, c_candidate: &Vec3f, i: &mut usize, c: &mut Vec3f, up_sqr_d: &mut f32| {
+        if sqr_d_candidate < *up_sqr_d {
+            *i = i_candidate;
+            *c = *c_candidate;
+            *up_sqr_d = sqr_d_candidate;
+        }
+    };
+
+    let node = *tree.node(node_idx);
+    debug_assert!(node.is_valid());
+    if node.is_leaf() {
+        // IndexedTriangleSetDistancer::closest_point_to_origin
+        let triangle = &faces[node.idx];
+        let c_candidate = closest_point_to_triangle_f(origin, &vertices[triangle[0] as usize], &vertices[triangle[1] as usize], &vertices[triangle[2] as usize]);
+        let diff = origin - c_candidate;
+        let sqr_dist = (diff.x * diff.x + diff.y * diff.y) + diff.z * diff.z;
+        set_min(sqr_dist, node.idx, &c_candidate, i, c, &mut up_sqr_d);
+    } else {
+        let left_node_idx = node_idx * 2 + 1;
+        let right_node_idx = left_node_idx + 1;
+        let node_left = *tree.node(left_node_idx);
+        let node_right = *tree.node(right_node_idx);
+        debug_assert!(node_left.is_valid());
+        debug_assert!(node_right.is_valid());
+
+        let mut looked_left = false;
+        let mut looked_right = false;
+        macro_rules! look_left {
+            () => {{
+                let mut i_left: usize = 0;
+                let mut c_left = *c;
+                let sqr_d_left = squared_distance_to_indexed_triangles_recursive_f(vertices, faces, tree, origin, left_node_idx, low_sqr_d, up_sqr_d, &mut i_left, &mut c_left);
+                set_min(sqr_d_left, i_left, &c_left, i, c, &mut up_sqr_d);
+                looked_left = true;
+                let _ = looked_left;
+            }};
+        }
+        macro_rules! look_right {
+            () => {{
+                let mut i_right: usize = 0;
+                let mut c_right = *c;
+                let sqr_d_right = squared_distance_to_indexed_triangles_recursive_f(vertices, faces, tree, origin, right_node_idx, low_sqr_d, up_sqr_d, &mut i_right, &mut c_right);
+                set_min(sqr_d_right, i_right, &c_right, i, c, &mut up_sqr_d);
+                looked_right = true;
+                let _ = looked_right;
+            }};
+        }
+
+        // must look left or right if in box
+        if node_left.bbox.contains(origin) {
+            look_left!();
+        }
+        if node_right.bbox.contains(origin) {
+            look_right!();
+        }
+        // if haven't looked left and could be less than current min, then look
+        let left_up_sqr_d = node_left.bbox.squared_exterior_distance(origin);
+        let right_up_sqr_d = node_right.bbox.squared_exterior_distance(origin);
+        if left_up_sqr_d < right_up_sqr_d {
+            if !looked_left && left_up_sqr_d < up_sqr_d {
+                look_left!();
+            }
+            if !looked_right && right_up_sqr_d < up_sqr_d {
+                look_right!();
+            }
+        } else {
+            if !looked_right && right_up_sqr_d < up_sqr_d {
+                look_right!();
+            }
+            if !looked_left && left_up_sqr_d < up_sqr_d {
+                look_left!();
+            }
+        }
+    }
+    up_sqr_d
+}
+
+/// AABBTreeIndirect.hpp:809-834 `squared_distance_to_indexed_triangle_set` with float vertices, a
+/// `Tree3f` and a `Vec3f` point: the squared distance to the closest point (in float), or -1 if
+/// the tree is empty.
+pub fn squared_distance_to_indexed_triangle_set_f(vertices: &[Vec3f], faces: &[Vec3i], tree: &TreeF, point: &Vec3f, hit_idx_out: &mut usize, hit_point_out: &mut Vec3f) -> f32 {
+    if tree.empty() {
+        -1.0
+    } else {
+        squared_distance_to_indexed_triangles_recursive_f(vertices, faces, tree, point, 0, 0.0, f32::INFINITY, hit_idx_out, hit_point_out)
+    }
+}
+
+/// AABBTreeIndirect.hpp:994-1006 `traverse` over a `Tree3f`
+pub fn traverse_f<P, F>(tree: &TreeF, mut pred: P, mut callback: F)
+where
+    P: FnMut(&NodeF) -> bool,
+    F: FnMut(&NodeF) -> bool,
+{
+    if tree.empty() {
+        return;
+    }
+    traverse_recurse_f(tree, 0, &mut pred, &mut callback);
+}
+
+/// AABBTreeIndirect.hpp:960-990 `detail::traverse_recurse` over a `Tree3f`
+fn traverse_recurse_f<P, F>(tree: &TreeF, idx: usize, pred: &mut P, callback: &mut F) -> bool
+where
+    P: FnMut(&NodeF) -> bool,
+    F: FnMut(&NodeF) -> bool,
+{
+    debug_assert!(tree.node(idx).is_valid());
+    if !pred(tree.node(idx)) {
+        // Continue traversal.
+        return true;
+    }
+    if tree.node(idx).is_leaf() {
+        // Callback returns true to continue traversal, false to stop traversal.
+        callback(tree.node(idx))
+    } else {
+        traverse_recurse_f(tree, TreeF::left_child_idx(idx), pred, callback) && traverse_recurse_f(tree, TreeF::right_child_idx(idx), pred, callback)
+    }
+}
+
+/// AABBTreeIndirect.hpp:926-939 `intersecting(const Eigen::AlignedBox<float, 3> &)`: the predicate
+/// `box.intersects(node.bbox)`.
+pub fn intersecting_f(bbox: BoundingBox3f) -> impl FnMut(&NodeF) -> bool {
+    move |node: &NodeF| bbox.intersects(&node.bbox)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

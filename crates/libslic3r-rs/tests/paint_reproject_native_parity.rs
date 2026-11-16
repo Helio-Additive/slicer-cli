@@ -7,13 +7,25 @@
 //! and requires the same result, floating point numbers bit for bit.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use slicer::geometry::Point3F;
 use slicer::model::FacetsAnnotation;
 use slicer::paint_reproject::*;
 use slicer::texture_painting::EXTRUDER_MAX;
 use slicer::triangle_mesh::{indexed_triangle_set, Triangle, TriangleMesh, Vec3f, Vec3i};
-use slicer::triangle_selector::{EnforcerBlockerType, TriangleSelector};
+use slicer::aabb_tree_indirect::{build_aabb_tree_over_indexed_triangle_set_f, intersecting_f, squared_distance_to_indexed_triangle_set_f, traverse_f, BoundingBox3f, NodeF};
+use slicer::triangle_selector::{EnforcerBlockerType, RegionCoverage, Transform3f, TriangleSelector};
+
+/// The vectors are kept gzipped (`gzip -9n` of the generator's output).
+fn read_vectors(rel: &str) -> String {
+    use std::io::Read as _;
+    let path = format!("{}/tests/data/{}.txt.gz", env!("CARGO_MANIFEST_DIR"), rel);
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut text).expect("gzip");
+    text
+}
 
 struct Tok<'a>(std::str::SplitWhitespace<'a>);
 
@@ -291,4 +303,471 @@ fn annotation_splicing_and_cut_classification_match_the_pin() {
             ("face_samples", 180),
         ],
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The float AABB tree, the samplers and the reprojection drivers: each answer is compared as the
+// generator prints it.
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Default)]
+struct Out(String);
+
+impl Out {
+    fn d(&mut self, v: f64) {
+        write!(self.0, " {:016x}", v.to_bits()).unwrap();
+    }
+    fn f(&mut self, v: f32) {
+        write!(self.0, " {:08x}", v.to_bits()).unwrap();
+    }
+    fn i(&mut self, v: i64) {
+        write!(self.0, " {}", v).unwrap();
+    }
+    fn v3(&mut self, v: &Vec3f) {
+        self.f(v.x);
+        self.f(v.y);
+        self.f(v.z);
+    }
+    fn bx(&mut self, b: &BoundingBox3f) {
+        self.v3(&b.min);
+        self.v3(&b.max);
+    }
+    fn data(&mut self, d: &AnnotationData) {
+        self.i(d.0.len() as i64);
+        for p in &d.0 {
+            self.i(p.0 as i64);
+            self.i(p.1 as i64);
+        }
+        self.i(d.1.len() as i64);
+        self.0.push(' ');
+        if d.1.is_empty() {
+            self.0.push('-');
+        }
+        for &b in &d.1 {
+            self.0.push(if b { '1' } else { '0' });
+        }
+    }
+    fn trafof(&mut self, t: &Transform3f) {
+        for r in 0..4 {
+            for c in 0..4 {
+                self.f(t[(r, c)]);
+            }
+        }
+    }
+}
+
+fn check(at: &str, got: &Out, want: &str) {
+    let g: Vec<&str> = got.0.split_whitespace().collect();
+    let w: Vec<&str> = want.split_whitespace().collect();
+    if g != w {
+        let k = g.iter().zip(w.iter()).position(|(a, b)| a != b).unwrap_or(g.len().min(w.len()));
+        panic!(
+            "{at}: answers differ at token {k} (got {} tokens, want {}): got {:?}, want {:?}",
+            g.len(),
+            w.len(),
+            &g[k.saturating_sub(3)..(k + 3).min(g.len())],
+            &w[k.saturating_sub(3)..(k + 3).min(w.len())]
+        );
+    }
+}
+
+/// gen.cpp `Calls`: what the progress and cancel callbacks saw
+#[derive(Default)]
+struct Calls {
+    progress: i64,
+    percent_sum: i64,
+    last: i64,
+    cancel: i32,
+    cancel_at: i32,
+}
+
+impl Calls {
+    fn new(cancel_at: i32) -> Self {
+        Calls { last: -1, cancel_at, ..Default::default() }
+    }
+    fn put(&self, o: &mut Out) {
+        o.i(self.progress);
+        o.i(self.percent_sum);
+        o.i(self.last);
+        o.i(self.cancel as i64);
+    }
+}
+
+struct ReprojectState {
+    mesh: indexed_triangle_set,
+    src: &'static indexed_triangle_set,
+    mmu: FacetsAnnotation,
+    supported: FacetsAnnotation,
+    seam: FacetsAnnotation,
+    projector: Option<PaintReprojector<'static>>,
+    region: Option<PaintRegionSource>,
+    map: Vec<i32>,
+    dst_to_src: Transform3d,
+}
+
+fn run_reproject_line(st: &mut ReprojectState, tag: &str, t: &mut Tok, want: &str, at: &str) {
+    let mut o = Out::default();
+    match tag {
+        "mesh" => {
+            st.mesh = t.mesh();
+            return;
+        }
+        "annotation" => {
+            st.mmu = FacetsAnnotation { data: t.data() };
+            st.src = Box::leak(Box::new(st.mesh.clone()));
+            st.projector = None;
+            st.region = None;
+            return;
+        }
+        "annotation2" => {
+            st.supported = FacetsAnnotation { data: t.data() };
+            st.seam = FacetsAnnotation { data: t.data() };
+            return;
+        }
+        "aabb_build" => {
+            let tree = build_aabb_tree_over_indexed_triangle_set_f(&st.mesh.vertices, &st.mesh.indices, 0.0);
+            o.i(tree.nodes().len() as i64);
+            for n in tree.nodes() {
+                o.i(if n.idx == usize::MAX { -1 } else if n.idx == usize::MAX - 1 { -2 } else { n.idx as i64 });
+                if n.is_valid() {
+                    o.bx(&n.bbox);
+                }
+            }
+        }
+        "aabb_distance" => {
+            let p = t.v3();
+            let tree = build_aabb_tree_over_indexed_triangle_set_f(&st.mesh.vertices, &st.mesh.indices, 0.0);
+            let mut hit = usize::MAX;
+            let mut hp = Vec3f::zeros();
+            let d = squared_distance_to_indexed_triangle_set_f(&st.mesh.vertices, &st.mesh.indices, &tree, &p, &mut hit, &mut hp);
+            o.f(d);
+            o.i(if hit == usize::MAX { -1 } else { hit as i64 });
+            o.v3(&hp);
+        }
+        "aabb_traverse" => {
+            let q = BoundingBox3f::new(t.v3(), t.v3());
+            let tree = build_aabb_tree_over_indexed_triangle_set_f(&st.mesh.vertices, &st.mesh.indices, 0.0);
+            let mut out: Vec<usize> = Vec::new();
+            traverse_f(&tree, intersecting_f(q), |n: &NodeF| {
+                out.push(n.idx);
+                true
+            });
+            o.i(out.len() as i64);
+            for x in out {
+                o.i(x as i64);
+            }
+        }
+        "measure_point_sample" => {
+            let maxd = t.d();
+            let tri = t.tri();
+            let src = st.src;
+            let mmu = &st.mmu;
+            let pt = st.projector.get_or_insert_with(|| PaintReprojector::new(src, mmu, true, maxd));
+            let m = pt.measure_point_sample(&tri, &tri);
+            o.i(m.dominant_state.0 as i64);
+            o.d(m.surface_area);
+            o.d(m.error_area);
+            o.i(pt.fallback_count() as i64);
+        }
+        "measure_overlap" => {
+            let f = t.i();
+            let tri = t.tri();
+            let pt = st.projector.as_mut().expect("a projector");
+            let roots = pt.resolve_source_roots(f, &tri);
+            let m = pt.measure_overlap(&roots, &tri, &tri);
+            o.i(roots.len() as i64);
+            for r in &roots {
+                o.i(*r as i64);
+            }
+            o.i(m.dominant_state.0 as i64);
+            o.d(m.surface_area);
+            o.d(m.error_area);
+            o.i(pt.rebound_count() as i64);
+            o.i(pt.fallback_count() as i64);
+        }
+        "region_source" => {
+            let band = t.d();
+            let rs = PaintRegionSource::new(st.src, &st.mmu.data, band, None);
+            o.i(rs.empty() as i64);
+            o.i(rs.leaf_count() as i64);
+            o.f(rs.finest_leaf_edge());
+            o.i(rs.states().len() as i64);
+            for s in rs.states() {
+                o.i(s.state.0 as i64);
+                o.d(s.area);
+                o.bx(&s.bbox);
+            }
+            st.region = Some(rs);
+        }
+        "coverage" => {
+            let _band = t.d();
+            let state = t.i();
+            let tri = t.tri();
+            let c = st.region.as_ref().unwrap().coverage(EnforcerBlockerType(state as i8), &tri);
+            o.i(match c {
+                RegionCoverage::None => 0,
+                RegionCoverage::Partial => 1,
+                RegionCoverage::Full => 2,
+            });
+        }
+        "reproject_point" => {
+            let dst_to_src = t.trafo();
+            let maxd = t.d();
+            let mut calls = Calls::new(t.i());
+            let mut out = FacetsAnnotation::default();
+            let ok = {
+                let calls = std::cell::RefCell::new(&mut calls);
+                let mut progress = |p: i32, _m: Option<&str>| {
+                    let mut c = calls.borrow_mut();
+                    c.progress += 1;
+                    c.percent_sum += p as i64;
+                    c.last = p as i64;
+                };
+                let mut cancel = || {
+                    let mut c = calls.borrow_mut();
+                    c.cancel += 1;
+                    c.cancel >= c.cancel_at
+                };
+                let cancel_at = calls.borrow().cancel_at;
+                let cancel_cb: Option<&mut PaintReprojectCancelCallback> = if cancel_at > 0 { Some(&mut cancel) } else { None };
+                reproject_one_annotation(&st.mmu, &mut out, st.src, &st.mesh, &dst_to_src, None, ReprojectMode::PointNearest, "mmu", Some(&mut progress), cancel_cb, maxd, None, 1e-6)
+            };
+            o.i(ok as i64);
+            o.data(&out.data);
+            calls.put(&mut o);
+        }
+        "reproject_overlap" => {
+            st.dst_to_src = t.trafo();
+            let n = t.u();
+            st.map = (0..n).map(|_| t.i()).collect();
+            let mut out = FacetsAnnotation::default();
+            let ok = reproject_one_annotation(&st.mmu, &mut out, st.src, &st.mesh, &st.dst_to_src, Some(&st.map), ReprojectMode::OverlapCoplanar, "mmu", None, None, -1.0, None, REPROJECT_ABSOLUTE_ERROR_EPSILON);
+            o.i(ok as i64);
+            o.data(&out.data);
+        }
+        "reproject_paint" => {
+            let mut calls = Calls::new(t.i());
+            let src = ModelVolume { mesh: st.src.clone(), supported_facets: st.supported.clone(), seam_facets: st.seam.clone(), mmu_segmentation_facets: st.mmu.clone(), fuzzy_skin_facets: FacetsAnnotation::default() };
+            let mut dst = ModelVolume { mesh: st.mesh.clone(), ..Default::default() };
+            let ok = {
+                let calls = std::cell::RefCell::new(&mut calls);
+                let mut progress = |p: i32, _m: Option<&str>| {
+                    let mut c = calls.borrow_mut();
+                    c.progress += 1;
+                    c.percent_sum += p as i64;
+                    c.last = p as i64;
+                };
+                let mut cancel = || {
+                    let mut c = calls.borrow_mut();
+                    c.cancel += 1;
+                    c.cancel >= c.cancel_at
+                };
+                let cancel_at = calls.borrow().cancel_at;
+                let cancel_cb: Option<&mut PaintReprojectCancelCallback> = if cancel_at > 0 { Some(&mut cancel) } else { None };
+                reproject_paint(&src, &mut dst, &st.map, &st.dst_to_src, Some(&mut progress), cancel_cb)
+            };
+            o.i(ok as i64);
+            o.data(&dst.supported_facets.data);
+            o.data(&dst.seam_facets.data);
+            o.data(&dst.mmu_segmentation_facets.data);
+            o.data(&dst.fuzzy_skin_facets.data);
+            calls.put(&mut o);
+        }
+        "reproject_paint_geometric" => {
+            let dst_to_src = t.trafo();
+            let wkind = t.i();
+            let world = if wkind != 0 { Some(t.trafo()) } else { None };
+            let mut calls = Calls::new(t.i());
+            let (mut a, mut b, mut c, mut d) = (FacetsAnnotation::default(), FacetsAnnotation::default(), FacetsAnnotation::default(), FacetsAnnotation::default());
+            let fuzzy = FacetsAnnotation::default();
+            let ok = {
+                let calls = std::cell::RefCell::new(&mut calls);
+                let mut progress = |p: i32, _m: Option<&str>| {
+                    let mut c = calls.borrow_mut();
+                    c.progress += 1;
+                    c.percent_sum += p as i64;
+                    c.last = p as i64;
+                };
+                let mut cancel = || {
+                    let mut c = calls.borrow_mut();
+                    c.cancel += 1;
+                    c.cancel >= c.cancel_at
+                };
+                let cancel_at = calls.borrow().cancel_at;
+                let cancel_cb: Option<&mut PaintReprojectCancelCallback> = if cancel_at > 0 { Some(&mut cancel) } else { None };
+                reproject_paint_geometric(st.src, &st.supported, &st.seam, &st.mmu, &fuzzy, &st.mesh, &dst_to_src, &mut a, &mut b, &mut c, &mut d, Some(&mut progress), cancel_cb, world.as_ref())
+            };
+            o.i(ok as i64);
+            o.data(&a.data);
+            o.data(&b.data);
+            o.data(&c.data);
+            o.data(&d.data);
+            calls.put(&mut o);
+        }
+        "region_edge_limit" => {
+            let wkind = t.i();
+            let world = if wkind != 0 { Some(t.trafo()) } else { None };
+            let el = RegionEdgeLimit::new(&st.mesh, world.as_ref());
+            o.f(el.value());
+            o.i(el.trafo().is_some() as i64);
+            if let Some(tr) = el.trafo() {
+                o.trafof(tr);
+            }
+        }
+        other => panic!("{at}: unknown tag {other}"),
+    }
+    t.end();
+    check(at, &o, want);
+}
+
+fn run_reproject(text: &str) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    let mut st = ReprojectState {
+        mesh: indexed_triangle_set::default(),
+        src: Box::leak(Box::new(indexed_triangle_set::default())),
+        mmu: FacetsAnnotation::default(),
+        supported: FacetsAnnotation::default(),
+        seam: FacetsAnnotation::default(),
+        projector: None,
+        region: None,
+        map: Vec::new(),
+        dst_to_src: Transform3d::identity(),
+    };
+    for (lineno, line) in text.lines().enumerate() {
+        let (args, want) = match line.find(" ->") {
+            Some(k) => (&line[..k], &line[k + 3..]),
+            None => (line, ""),
+        };
+        let mut t = Tok(args.split_whitespace());
+        let tag = t.s();
+        *counts.entry(tag.to_string()).or_insert(0) += 1;
+        let at = format!("line {} ({})", lineno + 1, tag);
+        run_reproject_line(&mut st, tag, &mut t, want, &at);
+    }
+    counts
+}
+
+#[test]
+fn float_aabb_tree_matches_the_pin() {
+    let counts = run_reproject(&read_vectors("paint_reproject/vectors_aabb"));
+    expect(&counts, &[("mesh", 40), ("aabb_build", 40), ("aabb_distance", 1600), ("aabb_traverse", 400)]);
+}
+
+#[test]
+fn samplers_and_reprojection_match_the_pin() {
+    let counts = run_reproject(&read_vectors("paint_reproject/vectors_reproject"));
+    eprintln!("{counts:?}");
+    assert_eq!(counts["reproject_paint_geometric"], 24);
+    assert_eq!(counts["reproject_paint"], 24);
+    assert_eq!(counts["reproject_point"], 12);
+}
+
+struct Operand {
+    mesh: indexed_triangle_set,
+    supported: FacetsAnnotation,
+    seam: FacetsAnnotation,
+    mmu: FacetsAnnotation,
+    fuzzy: FacetsAnnotation,
+    has_seam: bool,
+    base_filament: i32,
+    trafo: Transform3d,
+}
+
+fn run_volumes(text: &str) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    let mut mesh = indexed_triangle_set::default();
+    let mut operands: Vec<Operand> = Vec::new();
+    let mut case_ops: Vec<Operand> = Vec::new();
+    let mut dst = indexed_triangle_set::default();
+    for (lineno, line) in text.lines().enumerate() {
+        let (args, want) = match line.find(" ->") {
+            Some(k) => (&line[..k], &line[k + 3..]),
+            None => (line, ""),
+        };
+        let mut t = Tok(args.split_whitespace());
+        let tag = t.s();
+        *counts.entry(tag.to_string()).or_insert(0) += 1;
+        let at = format!("line {} ({})", lineno + 1, tag);
+        let mut o = Out::default();
+        match tag {
+            "mesh" => {
+                mesh = t.mesh();
+                t.end();
+                continue;
+            }
+            "operand" => {
+                let (supported, seam, mmu, fuzzy) = (t.data(), t.data(), t.data(), t.data());
+                let has_seam = t.i() != 0;
+                let base_filament = t.i();
+                let trafo = t.trafo();
+                t.end();
+                operands.push(Operand {
+                    mesh: mesh.clone(),
+                    supported: FacetsAnnotation { data: supported },
+                    seam: FacetsAnnotation { data: seam },
+                    mmu: FacetsAnnotation { data: mmu },
+                    fuzzy: FacetsAnnotation { data: fuzzy },
+                    has_seam,
+                    base_filament,
+                    trafo,
+                });
+                continue;
+            }
+            "reproject_paint_from_volumes" => {
+                let concatenated = t.i() != 0;
+                t.end();
+                dst = mesh.clone();
+                case_ops = std::mem::take(&mut operands);
+                let sources: Vec<PaintSourceVolume> = case_ops
+                    .iter()
+                    .map(|op| PaintSourceVolume {
+                        mesh: Some(&op.mesh),
+                        supported: Some(&op.supported),
+                        seam: if op.has_seam { Some(&op.seam) } else { None },
+                        mmu: Some(&op.mmu),
+                        fuzzy: Some(&op.fuzzy),
+                        source_to_destination: op.trafo,
+                        base_filament: op.base_filament,
+                    })
+                    .collect();
+                let (mut a, mut b, mut c, mut d) = (FacetsAnnotation::default(), FacetsAnnotation::default(), FacetsAnnotation::default(), FacetsAnnotation::default());
+                let ok = reproject_paint_from_volumes(&dst, &sources, &mut a, &mut b, &mut c, &mut d, None, None, None, concatenated);
+                o.i(ok as i64);
+                o.data(&a.data);
+                o.data(&b.data);
+                o.data(&c.data);
+                o.data(&d.data);
+            }
+            "measure_operand" => {
+                let f = t.i();
+                t.end();
+                let first = &case_ops[0];
+                let mut m = first.mesh.clone();
+                its_transform_fixed(&mut m, &first.trafo, true);
+                let tree = build_aabb_tree_over_indexed_triangle_set_f(&m.vertices, &m.indices, 0.0);
+                let bbox = mesh_bounding_box(&m);
+                let e = bbox.1 - bbox.0;
+                let extent = ((e.x * e.x + e.y * e.y) + e.z * e.z).sqrt();
+                let op = BooleanOperand { mesh: m, ann: PaintKeepPrepared::default(), base_filament: 0, tree, bbox, extent };
+                let samples = face_samples(&dst, f);
+                let hit = measure_operand(&op, 0, &samples);
+                o.d(operand_band(&op));
+                o.d(operand_reach(&op));
+                o.i(hit.op as i64);
+                o.f(hit.distance);
+                o.i(hit.covers as i64);
+            }
+            other => panic!("{at}: unknown tag {other}"),
+        }
+        check(&at, &o, want);
+    }
+    counts
+}
+
+#[test]
+fn boolean_and_merge_reprojection_match_the_pin() {
+    let counts = run_volumes(&read_vectors("paint_reproject/vectors_volumes"));
+    eprintln!("{counts:?}");
+    assert_eq!(counts["reproject_paint_from_volumes"], 30);
+    assert_eq!(counts["measure_operand"], 240);
 }

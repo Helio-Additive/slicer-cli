@@ -2553,20 +2553,20 @@ fn detect_bridge_directions_impl(
                 .iter()
                 .map(|p| ExPolygon::new(p.clone()))
                 .collect();
-            // R737: `grow` routes to the geo-clipper backend, and on benchy layer 2
-            // this ONE offset of a 1205-point anchor costs 65 ms — 0.131 s of a
-            // 1.24 s slice after R736's memo, and +0.213 s more under
-            // CLIPPER_UNION_GEO (that gate's ENTIRE `process_external_surfaces`
-            // cost is this call on this layer). The vendored-ClipperLib twin is
-            // the R725/R728 "faithful AND fast" path.
+            // R737: `grow` routed to the geo-clipper backend then (ClipperLib since
+            // R910), and on benchy layer 2 this ONE offset of a 1205-point anchor
+            // cost 65 ms — 0.131 s of a 1.24 s slice after R736's memo, and
+            // +0.213 s more under CLIPPER_UNION_GEO (that gate's ENTIRE
+            // `process_external_surfaces` cost is this call on this layer). The
+            // vendored-ClipperLib twin is the R725/R728 "faithful AND fast" path.
             //
-            // UNIT HAZARD: geo `offset_expolygons` multiplies BOTH the input
-            // coordinates and `delta` by `geo_clipper_scale()`, so its delta is in
-            // the same units as the input — here SCALED units (epsilon_mm is
-            // SCALED_EPSILON = 10 scaled units, see the R596 note above, NOT mm).
-            // `offset_expolygons_clib` would treat it as mm and multiply by 1e5,
-            // turning a 1e-4 mm epsilon into 10 mm. The correct twin is the
-            // _scaled variant, which takes the final delta as-is.
+            // UNITS: `epsilon_mm` is SCALED_EPSILON = 10 scaled units (see the R596
+            // note above), NOT mm. `grow` / `offset_expolygons` take their delta in
+            // mm (the geo backend unscaled the coordinates to mm and scaled the
+            // delta with them; the ClipperLib helpers since R910 multiply it by
+            // 1e5), so the BRIDGE_ANCHOR_GROW_CLIB=0 arm grows by 10 mm, not by 10
+            // units. `offset_expolygons_clib` would do the same; the correct twin
+            // is the _scaled variant, which takes the final delta as-is.
             // SHIPPED ON (R737): faithful (native uses real ClipperLib at coord_t),
             // bit-identical on benchy/arachne/cube, +2 in-order on majora, and
             // 0.900x on benchy / 0.70x on arachne. BRIDGE_ANCHOR_GROW_CLIB=0 reverts.

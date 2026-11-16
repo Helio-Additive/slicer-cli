@@ -61,5 +61,16 @@
    "DynamicConfig::size",
    "ReverseLineReader::getline"
   ]
+ },
+ {
+  "unit": "TriangleSelector",
+  "round": "911",
+  "functions": [
+   "TriangleSelector::triangle_midpoint_or_allocate",
+   "TriangleSelector::Cursor::is_pointer_in_triangle",
+   "TriangleSelector::HeightRange::is_facet_visible",
+   "TriangleSelector::HeightRange::is_pointer_in_triangle",
+   "TriangleSelector::Sphere::is_facet_visible"
+  ]
  }
 ]
