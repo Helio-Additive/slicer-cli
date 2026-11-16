@@ -327,6 +327,38 @@ CzZPaths cz_ref_offset_z(const int32_t *xyz, const int32_t *lens, const int32_t 
                          int32_t use_polytree, int32_t *node_info, int32_t node_info_cap,
                          int32_t *num_nodes, int32_t *total);
 
+// R910 — reference exports for the GEO_CLIPPER_CLIB arms of clipper_utils.rs; called
+// by tests only. Each runs the pin's ClipperUtils.cpp function named (copied into
+// clipper_z_shim.cpp, namespace cu_pin), with `delta` handed to its `float`
+// parameter as the C++ callers hand a double.
+//
+// ExPolygons in: flat (x,y) int32 pairs, per-path point counts and per-path is_hole
+// (0 = a contour, which starts an expolygon; otherwise a hole of the expolygon before
+// it). ExPolygons out: grouped like cz_union_ex (z = 0 on a contour, z = 1 on a hole).
+// join_type: 0=jtMiter, 1=jtRound, 2=jtSquare. end_type: 0=etClosedPolygon,
+// 1=etClosedLine, 2=etOpenButt, 3=etOpenSquare, 4=etOpenRound. Free via cz_free_zpaths.
+//
+// offset_ex(const Polygons&, float delta, joinType, miterLimit) (ClipperUtils.cpp:415-416).
+CzZPaths cz_ref_cu_offset_ex_polygons(const int32_t *xy, const int32_t *lens, int32_t num,
+                                      double delta, int32_t join_type, double miter_limit);
+// which == 0: offset_ex(const ExPolygon&, ...) (ClipperUtils.cpp:567-569) of the first
+// expolygon; otherwise offset_ex(const ExPolygons&, ...) (ClipperUtils.cpp:570-571).
+CzZPaths cz_ref_cu_offset_ex_expolygons(const int32_t *xy, const int32_t *lens, const int32_t *is_hole,
+                                        int32_t num, double delta, int32_t join_type,
+                                        double miter_limit, int32_t which);
+// offset(const Polyline&, float delta, joinType, miterLimit, end_type)
+// (ClipperUtils.cpp:418-419); flat paths out (z = 0).
+CzZPaths cz_ref_cu_offset_polyline(const int32_t *xy, int32_t n, double delta, int32_t join_type,
+                                   double miter_limit, int32_t end_type);
+// op 0: intersection_ex(const ExPolygons&, const ExPolygons&) (ClipperUtils.cpp:802-803);
+// 1: union_ex(const ExPolygons&, const ExPolygons&) (ClipperUtils.cpp:824-831);
+// 2: diff_ex(const ExPolygons&, const ExPolygons&) (ClipperUtils.cpp:755-756);
+// otherwise xor_ex(const ExPolygons&, const ExPolygons&) (ClipperUtils.cpp:836-838);
+// all with ApplySafetyOffset::No.
+CzZPaths cz_ref_cu_boolean_ex(const int32_t *subj_xy, const int32_t *subj_lens, const int32_t *subj_is_hole,
+                              int32_t subj_num, const int32_t *clip_xy, const int32_t *clip_lens,
+                              const int32_t *clip_is_hole, int32_t clip_num, int32_t op);
+
 #ifdef __cplusplus
 }
 #endif

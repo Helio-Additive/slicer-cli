@@ -40,7 +40,26 @@
   "unit": "Format/AssemblyStepsJson",
   "round": "909",
   "functions": [
-   "set_items"
+   "AssemblyStepJson::set_items"
+  ]
+ },
+ {
+  "unit": "Config",
+  "round": "910",
+  "functions": [
+   "ConfigBase::option",
+   "ConfigBase::option_throw",
+   "ConfigOptionResolver::option",
+   "ConfigOptionResolver::option_throw",
+   "ConfigOptionVector::size",
+   "DynamicConfig::optptr",
+   "DynamicConfig::opt_bool",
+   "DynamicConfig::erase",
+   "DynamicConfig::opt",
+   "DynamicConfig::opt_int",
+   "DynamicConfig::opt_enum",
+   "DynamicConfig::size",
+   "ReverseLineReader::getline"
   ]
  }
 ]

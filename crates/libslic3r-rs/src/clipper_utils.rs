@@ -1,7 +1,9 @@
 //! Clipper polygon boolean operations module.
 //!
 //! This module provides polygon boolean operations (union, intersection, difference, XOR)
-//! and offset operations using the geo-clipper library.
+//! and offset operations, ports of ClipperUtils.cpp on the Rust port of ClipperLib
+//! (`crate::clipper`). The geo-clipper library is left only in the arms that
+//! `GEO_CLIPPER_CLIB=0` (and the older routing gates) select.
 //!
 //! These operations are essential for:
 //! - Computing perimeter offsets
@@ -79,16 +81,45 @@ fn geo_clipper_scale() -> f64 {
     })
 }
 
+/// R910 — GEO_CLIPPER_CLIB (faithful, on): every helper of this file that ran on
+/// geo-clipper (`clipper-sys`, Clipper 6 in C++, at [`geo_clipper_scale`]) follows
+/// the ClipperUtils.cpp function it stands for on the Rust ClipperLib
+/// (`crate::clipper`) instead, at coord_t:
+///
+/// | helper | ClipperUtils (pin) |
+/// |-|-|
+/// | [`union`] | `union_ex(const ExPolygons&, const ExPolygons&)`, ClipperUtils.cpp:824-831 |
+/// | [`xor`] | `xor_ex(const ExPolygons&, const ExPolygons&)`, ClipperUtils.cpp:836-838 |
+/// | [`offset_polyline`], [`offset_polyline_miter`] | `offset(const Polyline&, ...)`, ClipperUtils.cpp:418-419 |
+/// | [`offset_polygon`] | `offset_ex(const Polygon&, ...)`, ClipperUtils.hpp:358-364 |
+/// | [`offset_polygons`], [`offset_polygons_round`] | `offset_ex(const Polygons&, ...)`, ClipperUtils.cpp:415-416 |
+/// | [`offset_expolygon`] | `offset_ex(const ExPolygon&, ...)`, ClipperUtils.cpp:567-569 |
+/// | [`offset_expolygons`] and its miter and round variants | `offset_ex(const ExPolygons&, ...)`, ClipperUtils.cpp:570-571 |
+/// | `intersection_base` | `intersection_ex(const ExPolygons&, const ExPolygons&)`, ClipperUtils.cpp:802-803 |
+///
+/// and the geo arms of [`union_ex`], [`union_polygons_ex`], [`intersection`],
+/// [`difference`] (gates CLIPPER_UNION_GEO, CLIPPER_INT, CLIPPER_DIFF_GEO) and of
+/// the reconstruction of the `_clib` booleans and offsets (gate F1_UNION) take
+/// their ClipperLib arm. The deltas keep each helper's unit: millimetres for the
+/// closed offsets (the scaled `float` the C++ receives is [`mm_to_scaled_f32`]),
+/// scaled units for the polyline offsets (rounded to `float` as the C++
+/// parameter does). `GEO_CLIPPER_CLIB=0` restores every geo arm as it was.
+#[inline]
+fn geo_clipper_clib() -> bool {
+    crate::faithful_gate("GEO_CLIPPER_CLIB")
+}
+
 /// GEOCALLS (diagnostics only): counts, per call site outside this file, the calls
 /// that reach a helper computing on the geo-clipper grid. `geo_calls_report`
-/// prints them. Nothing here changes output.
+/// prints them. Nothing here changes output. Under GEO_CLIPPER_CLIB no helper
+/// computes on that grid, and nothing is counted.
 static GEO_CALLS: std::sync::Mutex<Option<std::collections::HashMap<(&'static str, u32), u64>>> =
     std::sync::Mutex::new(None);
 
 #[track_caller]
 #[inline]
 fn geo_note() {
-    if crate::probe_enabled("GEOCALLS") {
+    if crate::probe_enabled("GEOCALLS") && !geo_clipper_clib() {
         let l = std::panic::Location::caller();
         let mut g = GEO_CALLS.lock().unwrap();
         *g.get_or_insert_with(Default::default).entry((l.file(), l.line())).or_insert(0) += 1;
@@ -298,6 +329,19 @@ fn expolygons_to_geo_multi(expolys: &[ExPolygon]) -> MultiPolygon<f64> {
 // (geo-clipper) at GEO_CLIPPER_SCALE and is not byte-identical.
 #[track_caller]
 pub fn union(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:824-831 `union_ex(poly1, poly2)` unions
+    // the two sets appended, `union_ex(const ExPolygons&)` (ClipperUtils.cpp:815-816):
+    // PolyTreeToExPolygons(clipper_do_polytree(ctUnion, ExPolygonsProvider(subject),
+    // EmptyPathsProvider(), pftNonZero)), which `union_ex_clib(_, 1)` is. No early
+    // return: the C++ runs the union for an empty operand too.
+    if geo_clipper_clib() {
+        let mut loops: Vec<Polygon> = Vec::new();
+        for e in subject.iter().chain(clip.iter()) {
+            loops.push(e.contour.clone());
+            loops.extend(e.holes.iter().cloned());
+        }
+        return union_ex_clib(&loops, 1);
+    }
     geo_note();
     if subject.is_empty() {
         return clip.to_vec();
@@ -339,7 +383,8 @@ pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
 
     // R728 — see `union_polygons_ex`. Nothing in the `_clib` family calls this
     // wrapper (verified by brace-counting scan), so it can dispatch directly.
-    if crate::faithful_gate("CLIPPER_UNION_GEO") {
+    // GEO_CLIPPER_CLIB takes this arm whatever CLIPPER_UNION_GEO says.
+    if crate::faithful_gate("CLIPPER_UNION_GEO") || geo_clipper_clib() {
         let mut loops: Vec<Polygon> = Vec::new();
         for e in polygons {
             loops.push(e.contour.clone());
@@ -393,8 +438,8 @@ pub fn union_polygons_ex(polygons: &[Polygon]) -> ExPolygons {
     // (102,645 -> 105,828; Sparse infill 28.5% -> 40.7%), arachne +1,651
     // (35,698 -> 37,349), majora +2,560 (471,204 -> 473,764), cube 0.
     // **Total +7,394.** Majora slice time is 0.984x — the gate is free there.
-    // CLIPPER_UNION_GEO=0 restores the geo backend.
-    if crate::faithful_gate("CLIPPER_UNION_GEO") {
+    // CLIPPER_UNION_GEO=0 restores the geo backend, unless GEO_CLIPPER_CLIB.
+    if crate::faithful_gate("CLIPPER_UNION_GEO") || geo_clipper_clib() {
         return union_ex_clib(polygons, 1);
     }
     union_polygons_ex_geo(polygons)
@@ -445,7 +490,8 @@ pub fn intersection(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
         return vec![];
     }
 
-    if crate::faithful_gate("CLIPPER_INT") {
+    // GEO_CLIPPER_CLIB takes this arm whatever CLIPPER_INT says.
+    if crate::faithful_gate("CLIPPER_INT") || geo_clipper_clib() {
         return intersection_clib(subject, clip);
     }
 
@@ -474,8 +520,9 @@ pub fn difference(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     }
 
     // R728 — `difference_clib` is a signature-identical drop-in running the
-    // vendored ClipperLib at coord_t.
-    if crate::faithful_gate("CLIPPER_DIFF_GEO") {
+    // vendored ClipperLib at coord_t. GEO_CLIPPER_CLIB takes this arm whatever
+    // CLIPPER_DIFF_GEO says.
+    if crate::faithful_gate("CLIPPER_DIFF_GEO") || geo_clipper_clib() {
         return difference_clib(subject, clip);
     }
 
@@ -496,6 +543,18 @@ pub fn difference(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
 /// Compute the XOR of two sets of polygons.
 #[track_caller]
 pub fn xor(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:836-838 `xor_ex(const ExPolygons&, const
+    // ExPolygons&, ApplySafetyOffset::No)` = `_clipper_ex(ctXor, ...)`, empty
+    // operands included.
+    if geo_clipper_clib() {
+        return _clipper_ex(
+            crate::clipper::ClipType::ctXor,
+            &clib_expolygons_paths(subject),
+            &clib_expolygons_paths(clip),
+            ApplySafetyOffset::No,
+            crate::clipper::PolyFillType::pftNonZero,
+        );
+    }
     geo_note();
     if subject.is_empty() {
         return clip.to_vec();
@@ -535,6 +594,19 @@ pub fn xor(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
 /// the geo-clipper backend operates in mm.
 #[track_caller]
 pub fn offset_polyline(polyline: &Polyline, delta_scaled: CoordF) -> Vec<Polygon> {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:418-419 with the defaults of
+    // ClipperUtils.hpp:346 (DefaultLineJoinType = jtSquare, DefaultLineMiterLimit =
+    // 0, DefaultEndType = etOpenButt); the `float delta` parameter rounds the
+    // scaled delta to f32. The C++ has no early return for a short polyline.
+    if geo_clipper_clib() {
+        return clib_polygons_from_paths(&offset_polyline_path(
+            &clib_path_of_points(polyline.points()),
+            (delta_scaled as f32) as f64,
+            crate::clipper::JoinType::jtSquare,
+            0.0,
+            crate::clipper::EndType::etOpenButt,
+        ));
+    }
     geo_note();
     if polyline.points().len() < 2 {
         return Vec::new();
@@ -581,6 +653,18 @@ pub fn offset_polyline_miter(
     delta_scaled: CoordF,
     miter_limit: CoordF,
 ) -> Vec<Polygon> {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:418-419 with jtMiter, the caller's miter
+    // limit and DefaultEndType = etOpenButt; delta rounded to f32 as the `float`
+    // parameter does.
+    if geo_clipper_clib() {
+        return clib_polygons_from_paths(&offset_polyline_path(
+            &clib_path_of_points(polyline.points()),
+            (delta_scaled as f32) as f64,
+            crate::clipper::JoinType::jtMiter,
+            miter_limit,
+            crate::clipper::EndType::etOpenButt,
+        ));
+    }
     geo_note();
     if polyline.points().len() < 2 {
         return Vec::new();
@@ -631,6 +715,12 @@ fn unscale_delta(delta_scaled: CoordF) -> CoordF {
 // offset directly at GEO_CLIPPER_SCALE precision and is not byte-identical.
 #[track_caller]
 pub fn offset_polygon(polygon: &Polygon, delta: CoordF, join_type: OffsetJoinType) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.hpp:358-364 `offset_ex(const Polygon&, delta,
+    // joinType, DefaultMiterLimit)` = `offset_ex(Polygons{ polygon }, ...)`
+    // (ClipperUtils.cpp:415-416), which `offset_ex_polygons_clib` is.
+    if geo_clipper_clib() {
+        return offset_ex_polygons_clib(std::slice::from_ref(polygon), mm_to_scaled_f32(delta), join_type);
+    }
     geo_note();
     let geo_poly = polygon_to_geo(polygon);
     let jt = join_type.into();
@@ -655,6 +745,13 @@ pub fn offset_expolygon(
     delta: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:567-569 `offset_ex(const ExPolygon&, delta,
+    // joinType, DefaultMiterLimit)` — `expolygon_offset`, then
+    // ClipperPaths_to_Slic3rExPolygons with its default `do_union = false`: one
+    // pftEvenOdd union into a PolyTree.
+    if geo_clipper_clib() {
+        return offset_ex_expolygon_clib(expolygon, mm_to_scaled_f32(delta), join_type, CLIB_MITER_LIMIT);
+    }
     geo_note();
     let geo_poly = expolygon_to_geo(expolygon);
     let jt = join_type.into();
@@ -679,6 +776,11 @@ pub fn offset_expolygons(
     delta: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:570-571 `offset_ex(const ExPolygons&,
+    // delta, joinType, DefaultMiterLimit)`.
+    if geo_clipper_clib() {
+        return offset_ex_expolygons_clib_ml(expolygons, mm_to_scaled_f32(delta), join_type, CLIB_MITER_LIMIT);
+    }
     geo_note();
     if expolygons.is_empty() {
         return vec![];
@@ -711,6 +813,11 @@ pub fn offset_expolygons_miter_limit(
     delta: CoordF,
     miter_limit: f64,
 ) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:570-571 `offset_ex(const ExPolygons&,
+    // delta, jtMiter, miterLimit)`.
+    if geo_clipper_clib() {
+        return offset_ex_expolygons_clib_ml(expolygons, mm_to_scaled_f32(delta), OffsetJoinType::Miter, miter_limit);
+    }
     geo_note();
     if expolygons.is_empty() {
         return vec![];
@@ -741,6 +848,11 @@ pub fn offset_polygons(
     delta: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:415-416 `offset_ex(const Polygons&, delta,
+    // joinType, DefaultMiterLimit)`, which `offset_ex_polygons_clib` is.
+    if geo_clipper_clib() {
+        return offset_ex_polygons_clib(polygons, mm_to_scaled_f32(delta), join_type);
+    }
     geo_note();
     if polygons.is_empty() {
         return vec![];
@@ -772,6 +884,17 @@ pub fn offset_polygons_round(
     delta: CoordF,
     arc_tolerance_mm: CoordF,
 ) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:415-416 `offset_ex(const Polygons&, delta,
+    // jtRound, miterLimit)`, where `miterLimit` is the arc tolerance in scaled
+    // units (raw_offset, ClipperUtils.cpp:279-282); it is a `double` there.
+    if geo_clipper_clib() {
+        return offset_ex_polygons_clib_ml(
+            polygons,
+            mm_to_scaled_f32(delta),
+            OffsetJoinType::Round,
+            arc_tolerance_mm * crate::SCALING_FACTOR,
+        );
+    }
     geo_note();
     if polygons.is_empty() {
         return vec![];
@@ -802,6 +925,17 @@ pub fn offset_expolygons_round(
     delta: CoordF,
     arc_tolerance_mm: CoordF,
 ) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:570-571 `offset_ex(const ExPolygons&,
+    // delta, jtRound, miterLimit)`, `miterLimit` the arc tolerance in scaled units
+    // (offset_expolygon_inner, ClipperUtils.cpp:443-446).
+    if geo_clipper_clib() {
+        return offset_ex_expolygons_clib_ml(
+            expolygons,
+            mm_to_scaled_f32(delta),
+            OffsetJoinType::Round,
+            arc_tolerance_mm * crate::SCALING_FACTOR,
+        );
+    }
     geo_note();
     if expolygons.is_empty() {
         return vec![];
@@ -903,6 +1037,11 @@ pub fn polygons_overlap(a: &[ExPolygon], b: &[ExPolygon]) -> bool {
 /// Helper intersection that doesn't conflict with trait method
 #[track_caller]
 fn intersection_base(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    // GEO_CLIPPER_CLIB: ClipperUtils.cpp:802-803 `intersection_ex(const ExPolygons&,
+    // const ExPolygons&)`, which `intersection_clib` is.
+    if geo_clipper_clib() {
+        return intersection_clib(subject, clip);
+    }
     geo_note();
     if subject.is_empty() || clip.is_empty() {
         return vec![];
@@ -1538,6 +1677,20 @@ pub fn clipper_union<TResult: ClipperResult>(
     retval
 }
 
+/// ClipperUtils.cpp:352-357
+/// C++: ExPolygons ClipperPaths_to_Slic3rExPolygons(const ClipperLib::Paths &input, bool do_union)
+///
+/// Perform union of input polygons using the positive rule, convert to ExPolygons.
+/// `do_union` defaults to false (ClipperUtils.hpp:337): pftEvenOdd.
+#[doc(hidden)]
+pub fn clipper_paths_to_slic3r_ex_polygons(input: &crate::clipper::Paths, do_union: bool) -> ExPolygons {
+    //FIXME is there any benefit of not doing the boolean / using pftEvenOdd?
+    poly_tree_to_ex_polygons(&clipper_union::<crate::clipper::PolyTree>(
+        input,
+        if do_union { crate::clipper::PolyFillType::pftNonZero } else { crate::clipper::PolyFillType::pftEvenOdd },
+    ))
+}
+
 /// ClipperUtils.cpp:359-364
 /// C++: template<typename PathsProvider> static ClipperLib::Paths raw_offset_polyline(PathsProvider &&paths, float offset, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::EndType end_type = ClipperLib::etOpenButt)
 #[doc(hidden)]
@@ -1657,6 +1810,28 @@ pub fn offset_polyline_paths(polyline: &crate::clipper::Path, delta: f64, miter_
         return crate::clipper::Paths::new();
     }
     clipper_union::<crate::clipper::Paths>(&raw, crate::clipper::PolyFillType::pftNonZero)
+}
+
+/// ClipperUtils.cpp:418-419
+/// C++: Slic3r::Polygons offset(const Slic3r::Polyline &polyline, const float delta, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::EndType end_type)
+///
+/// As the C++ has it, unlike [`offset_polyline_paths`] (the shim's routine): any
+/// join type and end type, and no early return for a polyline of fewer than two
+/// points (ClipperOffset draws a square or a circle around a single point).
+/// `delta` is the f64 of the `float` parameter; the C++ asserts it positive.
+#[doc(hidden)]
+pub fn offset_polyline_path(
+    polyline: &crate::clipper::Path,
+    delta: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+    end_type: crate::clipper::EndType,
+) -> crate::clipper::Paths {
+    debug_assert!(delta > 0.0);
+    clipper_union::<crate::clipper::Paths>(
+        &raw_offset_polyline(&vec![polyline.clone()], delta, join_type, miter_limit, end_type),
+        crate::clipper::PolyFillType::pftNonZero,
+    )
 }
 
 /// ClipperUtils.cpp:436-501
@@ -1813,6 +1988,48 @@ pub fn expolygons_offset(
     }
 }
 
+/// ClipperUtils.cpp:550-557
+/// C++: template<typename ExPolygonVector> static ClipperLib::PolyTree expolygons_offset_pt(const ExPolygonVector &expolygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)
+///
+/// See comment on expolygons_offset_raw. In addition, the polygons are always united to conver to polytree.
+#[doc(hidden)]
+pub fn expolygons_offset_pt(
+    expolygons: &[(crate::clipper::Path, crate::clipper::Paths)],
+    delta: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> crate::clipper::PolyTree {
+    let (output, _expolygons_collected) = expolygons_offset_raw(expolygons, delta, join_type, miter_limit);
+    // Unite the offsetted expolygons for both the
+    clipper_union::<crate::clipper::PolyTree>(&output, crate::clipper::PolyFillType::pftNonZero)
+}
+
+/// ClipperUtils.cpp:567-569
+/// C++: Slic3r::ExPolygons offset_ex(const Slic3r::ExPolygon &expolygon, const float delta, ClipperLib::JoinType joinType, double miterLimit)
+#[doc(hidden)]
+pub fn offset_ex_expolygon_paths(
+    contour: &crate::clipper::Path,
+    holes: &crate::clipper::Paths,
+    delta: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> ExPolygons {
+    //FIXME one may spare one Clipper Union call.
+    clipper_paths_to_slic3r_ex_polygons(&expolygon_offset(contour, holes, delta, join_type, miter_limit), false)
+}
+
+/// ClipperUtils.cpp:570-571
+/// C++: Slic3r::ExPolygons offset_ex(const Slic3r::ExPolygons &expolygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)
+#[doc(hidden)]
+pub fn offset_ex_expolygons_paths(
+    expolygons: &[(crate::clipper::Path, crate::clipper::Paths)],
+    delta: f64,
+    join_type: crate::clipper::JoinType,
+    miter_limit: f64,
+) -> ExPolygons {
+    poly_tree_to_ex_polygons(&expolygons_offset_pt(expolygons, delta, join_type, miter_limit))
+}
+
 /// ClipperUtils.cpp:581-584
 /// C++: ExPolygons offset2_ex(const ExPolygons &expolygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)
 ///
@@ -1870,6 +2087,40 @@ pub fn clipper_do_polytree(
         return clipper_union::<crate::clipper::PolyTree>(&output, fill_type);
     }
     crate::clipper::PolyTree::new()
+}
+
+/// ClipperUtils.cpp:655-667
+/// C++: template<typename PathProvider1, typename PathProvider2> inline ClipperLib::PolyTree clipper_do_polytree(const ClipperLib::ClipType clipType, PathProvider1 &&subject, PathProvider2 &&clip, const ClipperLib::PolyFillType fillType, const ApplySafetyOffset do_safety_offset)
+#[doc(hidden)]
+pub fn clipper_do_polytree_safety_offset(
+    clip_type: crate::clipper::ClipType,
+    subject: &crate::clipper::Paths,
+    clip: &crate::clipper::Paths,
+    fill_type: crate::clipper::PolyFillType,
+    do_safety_offset: ApplySafetyOffset,
+) -> crate::clipper::PolyTree {
+    debug_assert!(do_safety_offset == ApplySafetyOffset::No || clip_type != crate::clipper::ClipType::ctUnion);
+    if do_safety_offset == ApplySafetyOffset::Yes {
+        clipper_do_polytree(clip_type, subject, &safety_offset(clip), fill_type)
+    } else {
+        clipper_do_polytree(clip_type, subject, clip, fill_type)
+    }
+}
+
+/// ClipperUtils.cpp:737-739
+/// C++: template <typename TSubject, typename TClip> static ExPolygons _clipper_ex(ClipperLib::ClipType clipType, TSubject &&subject, TClip &&clip, ApplySafetyOffset do_safety_offset, ClipperLib::PolyFillType fill_type = ClipperLib::pftNonZero)
+///
+/// What `diff_ex`, `intersection_ex` and `xor_ex` of ExPolygons run
+/// (ClipperUtils.cpp:755-756, 802-803, 836-838).
+#[doc(hidden)]
+pub fn _clipper_ex(
+    clip_type: crate::clipper::ClipType,
+    subject: &crate::clipper::Paths,
+    clip: &crate::clipper::Paths,
+    do_safety_offset: ApplySafetyOffset,
+    fill_type: crate::clipper::PolyFillType,
+) -> ExPolygons {
+    poly_tree_to_ex_polygons(&clipper_do_polytree_safety_offset(clip_type, subject, clip, fill_type, do_safety_offset))
 }
 
 /// The shim's `cz_union_ex_safety`, which stands for
@@ -2394,7 +2645,8 @@ fn offset_expolygons_clib_impl(
     // ClipperLib. Under F1_UNION (the gated byte-match path) reconstruct the same
     // NonZero union via the vertex-exact vendored ClipperLib (union_ex_clib @ i32/1e5)
     // so the clib offset output stays full-resolution. Default path byte-unchanged.
-    if crate::faithful_gate("F1_UNION") {
+    // GEO_CLIPPER_CLIB takes the ClipperLib reconstruction whatever F1_UNION says.
+    if crate::faithful_gate("F1_UNION") || geo_clipper_clib() {
         return polytree_ex_clib(&all_paths);
     }
     union_polygons_ex_geo(&all_paths)
@@ -2449,6 +2701,18 @@ pub fn offset_ex_polygons_clib(
     delta_scaled: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    offset_ex_polygons_clib_ml(polygons, delta_scaled, join_type, CLIB_MITER_LIMIT)
+}
+
+/// [`offset_ex_polygons_clib`] with the `miterLimit` argument of the C++
+/// `offset_ex(const Polygons&, ...)` (ClipperUtils.cpp:415-416) spelled out: the
+/// unitless miter limit for jtMiter, the arc tolerance in scaled units for jtRound.
+pub fn offset_ex_polygons_clib_ml(
+    polygons: &[Polygon],
+    delta_scaled: CoordF,
+    join_type: OffsetJoinType,
+    miter_limit: f64,
+) -> ExPolygons {
     if polygons.is_empty() {
         return vec![];
     }
@@ -2465,8 +2729,68 @@ pub fn offset_ex_polygons_clib(
         &clib_read_closed_paths(&xy, &lens),
         delta_scaled,
         clib_join_type(jt),
-        CLIB_MITER_LIMIT,
+        miter_limit,
     ));
+}
+
+/// The points of a ring or a polyline as a `ClipperLib::Path` (cInt = i32).
+fn clib_path_of_points(points: &[Point]) -> crate::clipper::Path {
+    points
+        .iter()
+        .map(|p| {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            crate::clipper::IntPoint::new(p.x as i32, p.y as i32)
+        })
+        .collect()
+}
+
+/// `ClipperUtils::ExPolygonsProvider` (ClipperUtils.hpp): the contour, then the
+/// holes, of each expolygon, empty rings included.
+fn clib_expolygons_paths(expolygons: &[ExPolygon]) -> crate::clipper::Paths {
+    let mut out = crate::clipper::Paths::new();
+    for e in expolygons {
+        out.push(clib_path_of_points(e.contour.points()));
+        for hole in &e.holes {
+            out.push(clib_path_of_points(hole.points()));
+        }
+    }
+    out
+}
+
+/// An expolygon as the contour and holes `offset_expolygon_inner` reads.
+fn clib_expolygon_rings(expolygon: &ExPolygon) -> (crate::clipper::Path, crate::clipper::Paths) {
+    (
+        clib_path_of_points(expolygon.contour.points()),
+        expolygon.holes.iter().map(|h| clib_path_of_points(h.points())).collect(),
+    )
+}
+
+/// `offset_ex(const ExPolygon&, float delta, joinType, miterLimit)`
+/// (ClipperUtils.cpp:567-569). `delta_scaled` is the f64 of the C++ `float`;
+/// `miter_limit` as for [`offset_ex_polygons_clib_ml`].
+pub fn offset_ex_expolygon_clib(
+    expolygon: &ExPolygon,
+    delta_scaled: CoordF,
+    join_type: OffsetJoinType,
+    miter_limit: f64,
+) -> ExPolygons {
+    let (contour, holes) = clib_expolygon_rings(expolygon);
+    offset_ex_expolygon_paths(&contour, &holes, delta_scaled, clib_join_type(clib_join_code(join_type)), miter_limit)
+}
+
+/// `offset_ex(const ExPolygons&, float delta, joinType, miterLimit)`
+/// (ClipperUtils.cpp:570-571): each expolygon offset by `offset_expolygon_inner`,
+/// then one pftNonZero union into a PolyTree. `delta_scaled` is the f64 of the C++
+/// `float`; `miter_limit` as for [`offset_ex_polygons_clib_ml`].
+pub fn offset_ex_expolygons_clib_ml(
+    expolygons: &[ExPolygon],
+    delta_scaled: CoordF,
+    join_type: OffsetJoinType,
+    miter_limit: f64,
+) -> ExPolygons {
+    let rings: Vec<(crate::clipper::Path, crate::clipper::Paths)> = expolygons.iter().map(clib_expolygon_rings).collect();
+    offset_ex_expolygons_paths(&rings, delta_scaled, clib_join_type(clib_join_code(join_type)), miter_limit)
 }
 
 /// Flatten a set of ExPolygons into the flat (x,y i32 pairs + per-path lengths)
@@ -2628,7 +2952,8 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
     // i32/1e5) — same NonZero union + PolyTree->ExPolygons nesting, full-resolution, the
     // faithful match to C++ diff_ex's clipper_do_polytree re-union. Default byte-unchanged
     // (mirrors offset_expolygons_clib's gated reconstruction).
-    if crate::faithful_gate("F1_UNION") {
+    // GEO_CLIPPER_CLIB takes the ClipperLib reconstruction whatever F1_UNION says.
+    if crate::faithful_gate("F1_UNION") || geo_clipper_clib() {
         return polytree_ex_clib(&all_paths);
     }
     union_polygons_ex_geo(&all_paths)
@@ -2665,7 +2990,8 @@ pub fn intersection_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygon
         return vec![];
     }
 
-    if crate::faithful_gate("F1_UNION") {
+    // GEO_CLIPPER_CLIB takes the ClipperLib reconstruction whatever F1_UNION says.
+    if crate::faithful_gate("F1_UNION") || geo_clipper_clib() {
         return polytree_ex_clib(&all_paths);
     }
     union_polygons_ex_geo(&all_paths)
@@ -2730,7 +3056,8 @@ pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPo
     if all_paths.is_empty() {
         return vec![];
     }
-    if crate::faithful_gate("F1_UNION") {
+    // GEO_CLIPPER_CLIB takes the ClipperLib reconstruction whatever F1_UNION says.
+    if crate::faithful_gate("F1_UNION") || geo_clipper_clib() {
         return polytree_ex_clib(&all_paths);
     }
     union_polygons_ex_geo(&all_paths)

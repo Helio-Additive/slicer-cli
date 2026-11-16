@@ -27,7 +27,8 @@
 //! FIDELITY-NOTE: `resample_face_colors` (TextureToColor.cpp:631-657, reached only after a mesh
 //! repair) looks the old faces up with the crate's `aabb_tree_indirect`, which works in doubles;
 //! C++ instantiates `AABBTreeIndirect` with `Vec3f` there. Where two old faces are at distances
-//! from a centroid that differ only below float precision, the face found can differ.
+//! from a centroid that differ only below float precision, the face found can differ (it did not
+//! in the 60 calls with a repair callback of tests/texture_to_color_texture_to_color_native_parity.rs).
 //!
 //! FIDELITY-NOTE: `MeshRepairCache* mesh_repair_cache` of the settings, written through a const
 //! reference in C++, is an `Arc<Mutex<MeshRepairCache>>`.

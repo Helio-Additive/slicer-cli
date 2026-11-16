@@ -680,6 +680,18 @@ impl FacetsAnnotation {
         self.data.0.len()
     }
 
+    /// Model.cpp:4657-4666 `bool FacetsAnnotation::set(const TriangleSelector& selector)`: the
+    /// selector's serialization replaces the data when it differs. `touch()` has no counterpart
+    /// here (no timestamp is kept).
+    pub fn set(&mut self, selector: &crate::triangle_selector::TriangleSelector) -> bool {
+        let sel_map = selector.serialize();
+        if sel_map != self.data {
+            self.data = sel_map;
+            return true;
+        }
+        false
+    }
+
     /// Model.cpp:4256-4261 `void FacetsAnnotation::reset()`
     pub fn reset(&mut self) {
         self.data.0.clear();

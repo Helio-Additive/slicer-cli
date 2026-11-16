@@ -11,20 +11,20 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**44.5% of the named C++ functions are ported or verified (4261 of 9574); 31.9% by size of body.**
+**45.3% of the named C++ functions are ported or verified (4336 of 9574); 32.6% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 2555 | 26.7% | 40.1% |
-| partial `[~]` | 2758 | 28.8% | 28.0% |
-| ported `[x]` | 3610 | 37.7% | 25.8% |
-| verified `[v]` | 651 | 6.8% | 6.1% |
+| not started `[ ]` | 2506 | 26.2% | 39.6% |
+| partial `[~]` | 2732 | 28.5% | 27.8% |
+| ported `[x]` | 3393 | 35.4% | 24.2% |
+| verified `[v]` | 943 | 9.8% | 8.5% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
-| no Rust file of that name | 6 |
-| partial | 243 |
+| no Rust file of that name | 4 |
+| partial | 245 |
 | every named function ported | 56 |
 | every named function verified | 12 |
 
@@ -50,7 +50,7 @@ the end; the goal is none.
 - The percentage counts every named function with a body, accessors included, in all four tiers (tier 4 is
   SLA, which `slicer_cli` does not use).
 
-Entries of `port_checklist_verified.json` that match no function now: `create_from_json` in `Format/AssemblyStepsJson`, `from_json` in `Format/AssemblyStepsJson`, `from_json_string` in `Format/AssemblyStepsJson`, `get_assembly_part_number_label_font_size` in `Format/AssemblyStepsJson`, `get_camera_ref_viewport_h` in `Format/AssemblyStepsJson`, `get_camera_ref_viewport_w` in `Format/AssemblyStepsJson`, `load` in `Format/AssemblyStepsJson`, `load_assembly_part_number_label_font_size` in `Format/AssemblyStepsJson`, `load_camera_ref_viewport` in `Format/AssemblyStepsJson`, `load_from_string` in `Format/AssemblyStepsJson`, `load_pdf_export_params` in `Format/AssemblyStepsJson`, `to_json` in `Format/AssemblyStepsJson`, `to_json_string` in `Format/AssemblyStepsJson`, `from_json_string` in `Format/AssemblyTreeJson`, `to_json_string` in `Format/AssemblyTreeJson`, `AsPath` in `clipper2/clipper.core`, `Contains` in `clipper2/clipper.core`, `Height` in `clipper2/clipper.core`, `Intersects` in `clipper2/clipper.core`, `InvalidRect` in `clipper2/clipper.core`, `IsEmpty` in `clipper2/clipper.core`, `IsValid` in `clipper2/clipper.core`, `Negate` in `clipper2/clipper.core`, `Width` in `clipper2/clipper.core`, `AddChild` in `clipper2/clipper.engine`, `AddClip` in `clipper2/clipper.engine`, `AddLocalMaxPoly` in `clipper2/clipper.engine`, `AddLocalMinPoly` in `clipper2/clipper.engine`, `AddNewIntersectNode` in `clipper2/clipper.engine`, `AddOpenSubject` in `clipper2/clipper.engine`, `AddOutPt` in `clipper2/clipper.engine`, `AddPath` in `clipper2/clipper.engine`, `AddPaths` in `clipper2/clipper.engine`, `AddSubject` in `clipper2/clipper.engine`, `AddTrialHorzJoin` in `clipper2/clipper.engine`, `AdjustCurrXAndCopyToSEL` in `clipper2/clipper.engine`, `BuildIntersectList` in `clipper2/clipper.engine`, `BuildPaths64` in `clipper2/clipper.engine`, `BuildTree64` in `clipper2/clipper.engine`, `CheckBounds` in `clipper2/clipper.engine`, `CheckJoinLeft` in `clipper2/clipper.engine`, `CheckJoinRight` in `clipper2/clipper.engine`, `CheckSplitOwner` in `clipper2/clipper.engine`, `Child` in `clipper2/clipper.engine`, `CleanCollinear` in `clipper2/clipper.engine`, `CleanUp` in `clipper2/clipper.engine`, `Clear` in `clipper2/clipper.engine`, `ConvertHorzSegsToJoins` in `clipper2/clipper.engine`, `Count` in `clipper2/clipper.engine`, `DeleteEdges` in `clipper2/clipper.engine`, `DeleteFromAEL` in `clipper2/clipper.engine`, `DisposeAllOutRecs` in `clipper2/clipper.engine`, `DisposeVerticesAndLocalMinima` in `clipper2/clipper.engine`, `DoHorizontal` in `clipper2/clipper.engine`, `DoIntersections` in `clipper2/clipper.engine`, `DoMaxima` in `clipper2/clipper.engine`, `DoSplitOp` in `clipper2/clipper.engine`, `DoTopOfScanbeam` in `clipper2/clipper.engine`, `ErrorCode` in `clipper2/clipper.engine`, `Execute` in `clipper2/clipper.engine`, `ExecuteInternal` in `clipper2/clipper.engine`, `FixSelfIntersects` in `clipper2/clipper.engine`, `InsertLeftEdge` in `clipper2/clipper.engine`, `InsertLocalMinimaIntoAEL` in `clipper2/clipper.engine`, `InsertScanline` in `clipper2/clipper.engine`, `IntersectEdges` in `clipper2/clipper.engine`, `IsContributingClosed` in `clipper2/clipper.engine`, `IsContributingOpen` in `clipper2/clipper.engine`, `IsHole` in `clipper2/clipper.engine`, `JoinOutrecPaths` in `clipper2/clipper.engine`, `Level` in `clipper2/clipper.engine`, `NewOutRec` in `clipper2/clipper.engine`, `PopHorz` in `clipper2/clipper.engine`, `PopLocalMinima` in `clipper2/clipper.engine`, `PopScanline` in `clipper2/clipper.engine`, `PreserveCollinear` in `clipper2/clipper.engine`, `ProcessHorzJoins` in `clipper2/clipper.engine`, `ProcessIntersectList` in `clipper2/clipper.engine`, `PushHorz` in `clipper2/clipper.engine`, `RecursiveCheckOwners` in `clipper2/clipper.engine`, `Reset` in `clipper2/clipper.engine`, `ResetHorzDirection` in `clipper2/clipper.engine`, `ReverseSolution` in `clipper2/clipper.engine`, `SetWindCountForClosedPathEdge` in `clipper2/clipper.engine`, `SetWindCountForOpenPathEdge` in `clipper2/clipper.engine`, `SetZ` in `clipper2/clipper.engine`, `SetZCallback` in `clipper2/clipper.engine`, `Split` in `clipper2/clipper.engine`, `StartOpenPath` in `clipper2/clipper.engine`, `SwapPositionsInAEL` in `clipper2/clipper.engine`, `UpdateEdgeIntoAEL` in `clipper2/clipper.engine`.
+Entries of `port_checklist_verified.json` that match no function now: `AsPath` in `clipper2/clipper.core`, `Contains` in `clipper2/clipper.core`, `Height` in `clipper2/clipper.core`, `Intersects` in `clipper2/clipper.core`, `InvalidRect` in `clipper2/clipper.core`, `IsEmpty` in `clipper2/clipper.core`, `IsValid` in `clipper2/clipper.core`, `Negate` in `clipper2/clipper.core`, `Width` in `clipper2/clipper.core`, `AddChild` in `clipper2/clipper.engine`, `AddClip` in `clipper2/clipper.engine`, `AddLocalMaxPoly` in `clipper2/clipper.engine`, `AddLocalMinPoly` in `clipper2/clipper.engine`, `AddNewIntersectNode` in `clipper2/clipper.engine`, `AddOpenSubject` in `clipper2/clipper.engine`, `AddOutPt` in `clipper2/clipper.engine`, `AddPath` in `clipper2/clipper.engine`, `AddPaths` in `clipper2/clipper.engine`, `AddSubject` in `clipper2/clipper.engine`, `AddTrialHorzJoin` in `clipper2/clipper.engine`, `AdjustCurrXAndCopyToSEL` in `clipper2/clipper.engine`, `BuildIntersectList` in `clipper2/clipper.engine`, `BuildPaths64` in `clipper2/clipper.engine`, `BuildTree64` in `clipper2/clipper.engine`, `CheckBounds` in `clipper2/clipper.engine`, `CheckJoinLeft` in `clipper2/clipper.engine`, `CheckJoinRight` in `clipper2/clipper.engine`, `CheckSplitOwner` in `clipper2/clipper.engine`, `Child` in `clipper2/clipper.engine`, `CleanCollinear` in `clipper2/clipper.engine`, `CleanUp` in `clipper2/clipper.engine`, `Clear` in `clipper2/clipper.engine`, `ConvertHorzSegsToJoins` in `clipper2/clipper.engine`, `Count` in `clipper2/clipper.engine`, `DeleteEdges` in `clipper2/clipper.engine`, `DeleteFromAEL` in `clipper2/clipper.engine`, `DisposeAllOutRecs` in `clipper2/clipper.engine`, `DisposeVerticesAndLocalMinima` in `clipper2/clipper.engine`, `DoHorizontal` in `clipper2/clipper.engine`, `DoIntersections` in `clipper2/clipper.engine`, `DoMaxima` in `clipper2/clipper.engine`, `DoSplitOp` in `clipper2/clipper.engine`, `DoTopOfScanbeam` in `clipper2/clipper.engine`, `ErrorCode` in `clipper2/clipper.engine`, `Execute` in `clipper2/clipper.engine`, `ExecuteInternal` in `clipper2/clipper.engine`, `FixSelfIntersects` in `clipper2/clipper.engine`, `InsertLeftEdge` in `clipper2/clipper.engine`, `InsertLocalMinimaIntoAEL` in `clipper2/clipper.engine`, `InsertScanline` in `clipper2/clipper.engine`, `IntersectEdges` in `clipper2/clipper.engine`, `IsContributingClosed` in `clipper2/clipper.engine`, `IsContributingOpen` in `clipper2/clipper.engine`, `IsHole` in `clipper2/clipper.engine`, `JoinOutrecPaths` in `clipper2/clipper.engine`, `Level` in `clipper2/clipper.engine`, `NewOutRec` in `clipper2/clipper.engine`, `PopHorz` in `clipper2/clipper.engine`, `PopLocalMinima` in `clipper2/clipper.engine`, `PopScanline` in `clipper2/clipper.engine`, `PreserveCollinear` in `clipper2/clipper.engine`, `ProcessHorzJoins` in `clipper2/clipper.engine`, `ProcessIntersectList` in `clipper2/clipper.engine`, `PushHorz` in `clipper2/clipper.engine`, `RecursiveCheckOwners` in `clipper2/clipper.engine`, `Reset` in `clipper2/clipper.engine`, `ResetHorzDirection` in `clipper2/clipper.engine`, `ReverseSolution` in `clipper2/clipper.engine`, `SetWindCountForClosedPathEdge` in `clipper2/clipper.engine`, `SetWindCountForOpenPathEdge` in `clipper2/clipper.engine`, `SetZ` in `clipper2/clipper.engine`, `SetZCallback` in `clipper2/clipper.engine`, `Split` in `clipper2/clipper.engine`, `StartOpenPath` in `clipper2/clipper.engine`, `SwapPositionsInAEL` in `clipper2/clipper.engine`, `UpdateEdgeIntoAEL` in `clipper2/clipper.engine`.
 
 ## Files
 
@@ -112,13 +112,13 @@ Entries of `port_checklist_verified.json` that match no function now: `create_fr
 | `clipper2/clipper.rectclip` | 1 | `clipper2/clipper_rectclip.rs` | partial | 31 | 0 | 1 | 0 | 30 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 3 | 9 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
-| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 35 | 163 | 29 | 0 |
+| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 32 | 163 | 30 | 2 |
 | `ClipperZUtils` | 1 | `clipper_z_utils.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `clonable_ptr` | 1 | `clonable_ptr.rs` | partial | 7 | 3 | 1 | 3 | 0 |
 | `Color` | 1 | `color.rs` | partial | 97 | 10 | 15 | 72 | 0 |
 | `ColorDecomposeRecipe` | 1 | `color_decompose_recipe.rs` | verified | 18 | 0 | 0 | 0 | 18 |
 | `CommonDefs` | 3 | `common_defs.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `Config` | 1 | `config.rs` | partial | 327 | 2 | 109 | 216 | 0 |
+| `Config` | 1 | `config.rs` | partial | 327 | 2 | 77 | 46 | 202 |
 | `CSGMesh/CSGMesh` | 3 | `csg_mesh/csg_mesh.rs` | ported | 4 | 0 | 0 | 4 | 0 |
 | `CSGMesh/CSGMeshCopy` | 3 | `csg_mesh/csg_mesh_copy.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `CSGMesh/ModelToCSGMesh` | 3 | `csg_mesh/model_to_csg_mesh.rs` | ported | 1 | 0 | 0 | 1 | 0 |
@@ -182,8 +182,8 @@ Entries of `port_checklist_verified.json` that match no function now: `create_fr
 | `format` | 1 | `format/format.rs` | partial | 4 | 0 | 2 | 0 | 2 |
 | `Format/3mf` | 3 | none | not started | 111 | 4 | 107 | 0 | 0 |
 | `Format/AMF` | 3 | `format/amf.rs` | partial | 16 | 0 | 10 | 6 | 0 |
-| `Format/AssemblyStepsJson` | 3 | `format/assembly_steps_json.rs` | partial | 82 | 0 | 1 | 54 | 27 |
-| `Format/AssemblyTreeJson` | 3 | `format/assembly_tree_json.rs` | ported | 6 | 0 | 0 | 4 | 2 |
+| `Format/AssemblyStepsJson` | 3 | `format/assembly_steps_json.rs` | partial | 82 | 0 | 1 | 18 | 63 |
+| `Format/AssemblyTreeJson` | 3 | `format/assembly_tree_json.rs` | ported | 6 | 0 | 0 | 2 | 4 |
 | `Format/AssimpImport` | 3 | none | not started | 16 | 16 | 0 | 0 | 0 |
 | `Format/bbs_3mf` | 1 | `format/bbs_3mf.rs` | partial | 205 | 108 | 78 | 19 | 0 |
 | `Format/ModelIO` | 3 | `format/model_io.rs` | ported | 0 | 0 | 0 | 0 | 0 |
@@ -257,7 +257,7 @@ Entries of `port_checklist_verified.json` that match no function now: `create_fr
 | `MinAreaBoundingBox` | 1 | `min_area_bounding_box.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `MinimumSpanningTree` | 3 | `minimum_spanning_tree.rs` | ported | 6 | 0 | 0 | 6 | 0 |
 | `miniz_extension` | 1 | `miniz_extension.rs` | partial | 9 | 6 | 1 | 2 | 0 |
-| `Model` | 1 | `model.rs` | partial | 374 | 236 | 130 | 8 | 0 |
+| `Model` | 1 | `model.rs` | partial | 374 | 231 | 135 | 8 | 0 |
 | `ModelArrange` | 1 | `model_arrange.rs` | partial | 14 | 9 | 3 | 2 | 0 |
 | `MTUtils` | 1 | `mt_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 14 | 38 | 1 |
@@ -276,7 +276,7 @@ Entries of `port_checklist_verified.json` that match no function now: `create_fr
 | `Optimize/Optimizer` | 3 | `optimize/optimizer.rs` | partial | 15 | 3 | 2 | 10 | 0 |
 | `Orient` | 1 | `orient.rs` | partial | 22 | 6 | 9 | 7 | 0 |
 | `OverhangDetector` | 2 | `overhang_detector.rs` | partial | 15 | 0 | 3 | 12 | 0 |
-| `PaintReproject` | 3 | none | not started | 50 | 44 | 6 | 0 | 0 |
+| `PaintReproject` | 3 | `paint_reproject.rs` | partial | 50 | 29 | 5 | 0 | 16 |
 | `ParameterUtils` | 1 | `parameter_utils.rs` | partial | 3 | 1 | 1 | 1 | 0 |
 | `pchheader` | 3 | `pchheader.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `PerfTrace` | 3 | `perf_trace.rs` | verified | 1 | 0 | 0 | 0 | 1 |
@@ -348,17 +348,17 @@ Entries of `port_checklist_verified.json` that match no function now: `create_fr
 | `Technologies` | 1 | `technologies.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `Tesselate` | 1 | `tesselate.rs` | partial | 18 | 7 | 1 | 10 | 0 |
 | `TextConfiguration` | 3 | `text_configuration.rs` | partial | 4 | 0 | 3 | 1 | 0 |
-| `TexturePainting` | 3 | none | not started | 25 | 25 | 0 | 0 | 0 |
+| `TexturePainting` | 3 | `texture_painting.rs` | partial | 25 | 0 | 1 | 4 | 20 |
 | `TextureToColor/Callbacks` | 3 | `texture_to_color/callbacks.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `TextureToColor/CgalUtils` | 3 | `texture_to_color/cgal_utils.rs` | partial | 5 | 0 | 1 | 0 | 4 |
 | `TextureToColor/ColorUtils` | 3 | `texture_to_color/color_utils.rs` | partial | 37 | 1 | 1 | 3 | 32 |
 | `TextureToColor/Repair` | 3 | `texture_to_color/repair.rs` | ported | 3 | 0 | 0 | 2 | 1 |
-| `TextureToColor/TextureToColor` | 3 | `texture_to_color/texture_to_color.rs` | ported | 15 | 0 | 0 | 15 | 0 |
+| `TextureToColor/TextureToColor` | 3 | `texture_to_color/texture_to_color.rs` | ported | 15 | 0 | 0 | 1 | 14 |
 | `TextureToColor/TriMesh` | 3 | `texture_to_color/tri_mesh.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Thread` | 1 | `thread.rs` | partial | 24 | 3 | 15 | 6 | 0 |
 | `Time` | 1 | `time.rs` | partial | 22 | 7 | 8 | 7 | 0 |
 | `Timer` | 1 | `timer.rs` | partial | 10 | 0 | 1 | 9 | 0 |
-| `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 32 | 42 | 62 | 0 |
+| `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 31 | 43 | 62 | 0 |
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 16 | 13 | 15 | 1 |
 | `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 18 | 21 | 64 | 0 |
@@ -2183,38 +2183,38 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 130) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 131) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 133) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:3515`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:3842`
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 144) → `fill/fill_floating_concentric.rs` — not in the paired file
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 152) → `fill/fill_floating_concentric.rs` — not in the paired file
 - [~] `clip_clipper_polygons_with_subject_bbox` (line 161) → `fill/fill_floating_concentric.rs` — not in the paired file
-- [x] `PolyTreeToExPolygons` (line 175) → `clipper_utils.rs:1359`
-- [x] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs:1399`
+- [x] `PolyTreeToExPolygons` (line 175) → `clipper_utils.rs:1498`
+- [x] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs:1538`
 - [~] `has_duplicate_points` (line 233) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
 - [~] `has_duplicate_points` (line 250) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
-- [x] `raw_offset` (line 273) → `clipper_utils.rs:1423`
-- [x] `safety_offset` (line 304) → `clipper_utils.rs:1468`
-- [x] `clipper_do` (line 310) → `clipper_utils.rs:1485`
+- [x] `raw_offset` (line 273) → `clipper_utils.rs:1562`
+- [x] `safety_offset` (line 304) → `clipper_utils.rs:1607`
+- [x] `clipper_do` (line 310) → `clipper_utils.rs:1624`
 - [~] `clipper_do` (line 325) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `clipper_union` (line 340) → `clipper_utils.rs:1529`
-- [ ] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs`
+- [x] `clipper_union` (line 340) → `clipper_utils.rs:1668`
+- [x] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs:1686`
 - [~] `offset_ex` (line 358) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1544`
-- [x] `expand_paths` (line 367) → `clipper_utils.rs:1558`
+- [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1697`
+- [x] `expand_paths` (line 367) → `clipper_utils.rs:1711`
 - [~] `union_safety_offset` (line 370) → `bridge_detector.rs` — not in the paired file
 - [~] `union_safety_offset` (line 371) → `bridge_detector.rs` — not in the paired file
 - [~] `union_safety_offset_ex` (line 372) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:4039`
-- [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:1327`
-- [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:1347`
+- [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:4366`
+- [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:1466`
+- [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:1486`
 - [~] `expand` (line 381) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
-- [x] `shrink_paths` (line 382) → `clipper_utils.rs:1575`
+- [x] `shrink_paths` (line 382) → `clipper_utils.rs:1728`
 - [~] `expand` (line 383) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `expand_ex` (line 385) → `clipper_utils.rs`
-- [x] `shrink` (line 388) → `clipper_utils.rs:832`
+- [x] `shrink` (line 388) → `clipper_utils.rs:966`
 - [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs` — not in the paired file
 - [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs` — not in the paired file
-- [x] `offset_paths` (line 400) → `clipper_utils.rs:1621`
-- [x] `closing` (line 407) → `clipper_utils.rs:1115`
+- [x] `offset_paths` (line 400) → `clipper_utils.rs:1774`
+- [x] `closing` (line 407) → `clipper_utils.rs:1254`
 - [ ] `closing_ex` (line 410) → `clipper_utils.rs`
 - [~] `offset` (line 410) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [ ] `closing_ex` (line 412) → `clipper_utils.rs`
@@ -2225,24 +2225,24 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `offset` (line 420) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `opening` (line 422) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `contour_to_polygons` (line 423) → `clipper_utils.rs`
-- [x] `opening` (line 424) → `clipper_utils.rs:934`
+- [x] `opening` (line 424) → `clipper_utils.rs:1073`
 - [~] `opening` (line 426) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 429) → `clipper_utils.rs`
-- [x] `opening_ex` (line 430) → `clipper_utils.rs:949`
-- [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1667`
-- [~] `diff_ex` (line 470) → `clipper_utils.rs:966` — partial
+- [x] `opening_ex` (line 430) → `clipper_utils.rs:1088`
+- [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1842`
+- [~] `diff_ex` (line 470) → `clipper_utils.rs:1105` — partial
 - [~] `diff_ex` (line 480) → `fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 488) → `fill/fill_radial_zig_zag.rs` — not in the paired file
 - [ ] `diff_ln` (line 496) → `clipper_utils.rs`
 - [~] `offset_expolygon_inner` (line 508) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `offset_expolygon_inner` (line 510) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `expolygon_offset` (line 513) → `clipper_utils.rs:1759`
-- [x] `expolygons_offset_raw` (line 524) → `clipper_utils.rs:1776`
+- [x] `expolygon_offset` (line 513) → `clipper_utils.rs:1934`
+- [x] `expolygons_offset_raw` (line 524) → `clipper_utils.rs:1951`
 - [~] `intersection_ln` (line 536) → `bridge_detector.rs, internal_bridge_detector.rs` — not in the paired file
-- [x] `expolygons_offset` (line 539) → `clipper_utils.rs:1799`
+- [x] `expolygons_offset` (line 539) → `clipper_utils.rs:1974`
 - [~] `intersection_ln` (line 541) → `bridge_detector.rs, internal_bridge_detector.rs` — not in the paired file
-- [ ] `expolygons_offset_pt` (line 552) → `clipper_utils.rs`
+- [v] `expolygons_offset_pt` (line 552) → `clipper_utils.rs:1996` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
 - [~] `offset` (line 559) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `offset` (line 561) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `offset` (line 563) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
@@ -2251,7 +2251,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `offset_ex` (line 570) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset_ex` (line 572) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset_ex` (line 574) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset2` (line 577) → `clipper_utils.rs:1139` — divergent
+- [~] `offset2` (line 577) → `clipper_utils.rs:1278` — divergent
 - [ ] `offset2_ex` (line 581) → `clipper_utils.rs`
 - [ ] `offset2_ex` (line 585) → `clipper_utils.rs`
 - [~] `closing` (line 592) → `clipper_utils.rs` — another overload of the name is ported
@@ -2263,7 +2263,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `opening` (line 619) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `opening` (line 625) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `traverse_pt` (line 625) → `clipper_utils.rs`
-- [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:1858`
+- [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:2075`
 - [ ] `traverse_pt` (line 653) → `clipper_utils.rs`
 - [~] `clipper_do_polytree` (line 656) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `_clipper` (line 670) → `clipper_utils.rs`
@@ -2285,13 +2285,13 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `intersection` (line 707) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `intersection` (line 709) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `intersection` (line 711) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
-- [x] `intersection` (line 714) → `clipper_utils.rs:443`
+- [x] `intersection` (line 714) → `clipper_utils.rs:488`
 - [~] `union_` (line 721) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
 - [~] `union_` (line 723) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
 - [~] `union_` (line 725) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
-- [~] `union_` (line 727) → `clipper_utils.rs:300` — partial
+- [~] `union_` (line 727) → `clipper_utils.rs:331` — partial
 - [~] `union_` (line 735) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
-- [ ] `_clipper_ex` (line 738) → `clipper_utils.rs`
+- [v] `_clipper_ex` (line 738) → `clipper_utils.rs:2116` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
 - [~] `diff_ex` (line 741) → `fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 743) → `fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 745) → `fill/fill_radial_zig_zag.rs` — not in the paired file
@@ -2318,16 +2318,16 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `intersection_ex` (line 802) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_ex` (line 804) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_ex` (line 806) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 808) → `clipper_utils.rs:1054` — partial
+- [~] `intersection_ex` (line 808) → `clipper_utils.rs:1193` — partial
 - [~] `intersection_ex` (line 810) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `union_ex` (line 813) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `union_ex` (line 815) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `union_ex` (line 817) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `union_ex` (line 822) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `union_ex` (line 825) → `clipper_utils.rs:332` — divergent
+- [~] `union_ex` (line 825) → `clipper_utils.rs:376` — divergent
 - [ ] `xor_ex` (line 833) → `clipper_utils.rs`
 - [ ] `xor_ex` (line 836) → `clipper_utils.rs`
-- [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:1900`
+- [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:2151`
 - [ ] `_clipper_pl_recombine` (line 854) → `clipper_utils.rs`
 - [ ] `_clipper_pl_closed` (line 890) → `clipper_utils.rs`
 - [~] `diff_pl` (line 909) → `clipper_utils.rs` — another overload of the name is ported
@@ -2336,7 +2336,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `diff_pl` (line 915) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `diff_pl` (line 917) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `diff_pl` (line 919) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `diff_pl` (line 921) → `clipper_utils.rs:3583`
+- [x] `diff_pl` (line 921) → `clipper_utils.rs:3910`
 - [~] `intersection_pl` (line 923) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_pl` (line 925) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_pl` (line 927) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
@@ -2344,7 +2344,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `intersection_pl` (line 931) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_pl` (line 933) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_pl` (line 935) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [x] `intersection_pl` (line 937) → `clipper_utils.rs:3613`
+- [x] `intersection_pl` (line 937) → `clipper_utils.rs:3940`
 - [ ] `_clipper_ln` (line 940) → `clipper_utils.rs`
 - [ ] `union_pt` (line 962) → `clipper_utils.rs`
 - [ ] `union_pt` (line 966) → `clipper_utils.rs`
@@ -2355,9 +2355,9 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `simplify_polygons` (line 1026) → `arachne/wall_tool_paths.rs, clipper.rs, emboss.rs` — not in the paired file
 - [ ] `simplify_polygons_ex` (line 1043) → `clipper_utils.rs`
 - [ ] `top_level_islands` (line 1059) → `clipper_utils.rs`
-- [x] `fix_after_outer_offset` (line 1077) → `clipper_utils.rs:1923`
-- [x] `fix_after_inner_offset` (line 1095) → `clipper_utils.rs:1943`
-- [~] `mittered_offset_path_scaled` (line 1120) → `clipper_utils.rs:2002` — partial
+- [x] `fix_after_outer_offset` (line 1077) → `clipper_utils.rs:2174`
+- [x] `fix_after_inner_offset` (line 1095) → `clipper_utils.rs:2194`
+- [~] `mittered_offset_path_scaled` (line 1120) → `clipper_utils.rs:2253` — partial
 - [~] `variable_offset_inner` (line 1260) → `clipper2_utils.rs` — not in the paired file
 - [~] `variable_offset_outer` (line 1302) → `clipper2_utils.rs` — not in the paired file
 - [~] `variable_offset_outer_ex` (line 1344) → `clipper2_utils.rs` — not in the paired file
@@ -2611,432 +2611,432 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 
 **free functions**
 
-- [x] `escape_string_cstyle` (line 60) → `config.rs:200`
-- [x] `escape_strings_cstyle` (line 86) → `config.rs:233`
-- [x] `looks_like_enum_value` (line 90) → `config.rs:32`
-- [~] `enum_looks_like_true_value` (line 101) → `config.rs:52` — partial
-- [~] `unescape_string_cstyle` (line 137) → `config.rs:292` — partial
-- [x] `unescape_strings_cstyle` (line 160) → `config.rs:334`
-- [x] `escape_ampersand` (line 231) → `config.rs:443`
-- [x] `describe_option_values` (line 539) → `config.rs:5317`
-- [x] `is_whitespace` (line 1319) → `config.rs:469`
-- [x] `is_end_of_line` (line 1320) → `config.rs:474`
-- [x] `is_end_of_gcode_line` (line 1321) → `config.rs:479`
-- [x] `is_end_of_word` (line 1322) → `config.rs:484`
-- [x] `skip_word` (line 1324) → `config.rs:491`
-- [x] `skip_whitespaces` (line 1330) → `config.rs:502`
-- [~] `dynamic_config_iterate` (line 1883) → `config.rs:7661` — partial
+- [v] `escape_string_cstyle` (line 60) → `config.rs:200` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `escape_strings_cstyle` (line 86) → `config.rs:233` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `looks_like_enum_value` (line 90) → `config.rs:32` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `enum_looks_like_true_value` (line 101) → `config.rs:52` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `unescape_string_cstyle` (line 137) → `config.rs:292` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `unescape_strings_cstyle` (line 160) → `config.rs:334` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `escape_ampersand` (line 231) → `config.rs:443` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `describe_option_values` (line 539) → `config.rs:5395` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_whitespace` (line 1319) → `config.rs:469` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_end_of_line` (line 1320) → `config.rs:474` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_end_of_gcode_line` (line 1321) → `config.rs:479` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_end_of_word` (line 1322) → `config.rs:484` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `skip_word` (line 1324) → `config.rs:491` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `skip_whitespaces` (line 1330) → `config.rs:502` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `dynamic_config_iterate` (line 1883) → `config.rs:8584` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 
 **class `ConfigBase`**
 
-- [x] `apply_only` (line 454) → `config.rs:5662`
-- [x] `equals` (line 497) → `config.rs:5719`
-- [x] `diff` (line 511) → `config.rs:5739`
-- [x] `equal` (line 524) → `config.rs:5755`
-- [x] `opt_serialize` (line 565) → `config.rs:5770`
+- [v] `apply_only` (line 454) → `config.rs:6566` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `equals` (line 497) → `config.rs:6623` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `diff` (line 511) → `config.rs:6643` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `equal` (line 524) → `config.rs:6659` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `opt_serialize` (line 565) → `config.rs:6674` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set` (line 583) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 595) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [x] `set_deserialize_nothrow` (line 606) → `config.rs:5858`
-- [x] `set_deserialize` (line 624) → `config.rs:5882`
+- [v] `set_deserialize_nothrow` (line 606) → `config.rs:6762` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_deserialize` (line 624) → `config.rs:6786` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set_deserialize` (line 630) → `print_config.rs, region_config.rs` — not in the paired file
-- [x] `set_deserialize_raw` (line 636) → `config.rs:5919`
-- [x] `get_abs_value_at` (line 721) → `config.rs:6029`
-- [x] `get_abs_value` (line 749) → `config.rs:6057`
+- [v] `set_deserialize_raw` (line 636) → `config.rs:6823` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `get_abs_value_at` (line 721) → `config.rs:6933` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `get_abs_value` (line 749) → `config.rs:6961` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `get_abs_value` (line 792) → `config.rs` — another overload of the name is ported
-- [~] `setenv_` (line 803) → `config.rs:6123` — partial
-- [x] `load_string_map` (line 822) → `config.rs:6143`
-- [x] `load` (line 859) → `config.rs:6181`
-- [x] `load_from_json` (line 876) → `config.rs:6195`
+- [v] `setenv_` (line 803) → `config.rs:7027` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_string_map` (line 822) → `config.rs:7054` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load` (line 859) → `config.rs:7092` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_from_json` (line 876) → `config.rs:7106` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `load_from_json` (line 885) → `config.rs` — another overload of the name is ported
-- [x] `load_from_ini` (line 1245) → `config.rs:6570`
-- [~] `load_from_ini_string` (line 1257) → `config.rs:6585` — partial
-- [~] `load_from_ini_string_commented` (line 1267) → `config.rs:6593` — partial
+- [v] `load_from_ini` (line 1245) → `config.rs:7489` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_from_ini_string` (line 1257) → `config.rs:7504` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `load_from_ini_string_commented` (line 1267) → `config.rs:7512` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `load` (line 1304) → `app_config.rs, format/assembly_steps_json.rs, format/step.rs` — not in the paired file
-- [x] `load_from_gcode_string_legacy` (line 1337) → `config.rs:6666`
-- [x] `load_from_gcode_file` (line 1472) → `config.rs:6780`
-- [~] `save_to_json` (line 1583) → `config.rs:6895` — partial
-- [~] `save` (line 1638) → `config.rs:6979` — partial
-- [x] `null_nullables` (line 1651) → `config.rs:7011`
-- [x] `handle_legacy` (line 2547) → `config.rs:5635`
+- [v] `load_from_gcode_string_legacy` (line 1337) → `config.rs:7589` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_from_gcode_file` (line 1472) → `config.rs:7703` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `save_to_json` (line 1583) → `config.rs:7818` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `save` (line 1638) → `config.rs:7902` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `null_nullables` (line 1651) → `config.rs:7934` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `handle_legacy` (line 2547) → `config.rs:6539` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `option` (line 2554) → `config.rs` — another overload of the name is ported
 - [~] `option` (line 2558) → `config.rs` — another overload of the name is ported
 - [~] `option_throw` (line 2564) → `config.rs` — another overload of the name is ported
 - [~] `option_throw` (line 2573) → `config.rs` — another overload of the name is ported
-- [x] `apply` (line 2584) → `config.rs:5656`
+- [v] `apply` (line 2584) → `config.rs:6560` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set` (line 2603) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 2607) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 2609) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [x] `set_deserialize_strict` (line 2617) → `config.rs:5899`
+- [v] `set_deserialize_strict` (line 2617) → `config.rs:6803` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set_deserialize_strict` (line 2634) → `config.rs` — another overload of the name is ported
 
 **class `ConfigDef`**
 
-- [x] `add` (line 333) → `config.rs:5085`
-- [x] `add_nullable` (line 344) → `config.rs:5096`
-- [x] `has` (line 2455) → `config.rs:5065`
-- [~] `get` (line 2456) → `config.rs:5070` — partial
-- [x] `keys` (line 2460) → `config.rs:5075`
+- [x] `add` (line 333) → `config.rs:5163`
+- [x] `add_nullable` (line 344) → `config.rs:5174`
+- [v] `has` (line 2455) → `config.rs:5143` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `get` (line 2456) → `config.rs:5148` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `keys` (line 2460) → `config.rs:5153` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 
 **class `ConfigOption`**
 
-- [x] `getInt` (line 276) → `config.rs:1496`
-- [x] `getFloat` (line 277) → `config.rs:1500`
-- [x] `getBool` (line 278) → `config.rs:1504`
-- [x] `setInt` (line 279) → `config.rs:1508`
-- [x] `is_scalar` (line 283) → `config.rs:1520`
-- [x] `is_vector` (line 284) → `config.rs:1524`
-- [x] `nullable` (line 286) → `config.rs:2747`
+- [v] `getInt` (line 276) → `config.rs:1551` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `getFloat` (line 277) → `config.rs:1555` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `getBool` (line 278) → `config.rs:1559` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `setInt` (line 279) → `config.rs:1563` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_scalar` (line 283) → `config.rs:1575` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_vector` (line 284) → `config.rs:1579` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `nullable` (line 286) → `config.rs:2802` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `is_nil` (line 288) → `config.rs` — another overload of the name is ported
-- [x] `overriden_by` (line 291) → `config.rs:1537`
-- [x] `apply_override` (line 296) → `config.rs:1546`
+- [v] `overriden_by` (line 291) → `config.rs:1592` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `apply_override` (line 296) → `config.rs:1601` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 
 **class `ConfigOptionBool`**
 
-- [x] `static_type` (line 1853) → `config.rs:4188`
+- [x] `static_type` (line 1853) → `config.rs:4248`
 - [~] `type` (line 1854) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `getBool` (line 1855) → `config.rs:4202`
-- [x] `clone` (line 1856) → `config.rs:3206`
-- [x] `serialize` (line 1861) → `config.rs:4598`
-- [~] `deserialize` (line 1866) → `config.rs:4121` — partial
+- [v] `getBool` (line 1855) → `config.rs:4262` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `clone` (line 1856) → `config.rs:3261` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1861) → `config.rs:4658` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1866) → `config.rs:4181` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `serialize` (line 1882) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionBoolsTempl`**
 
-- [x] `static_type` (line 1896) → `config.rs:4329`
+- [x] `static_type` (line 1896) → `config.rs:4389`
 - [~] `type` (line 1897) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1898) → `config.rs:3719`
-- [x] `nullable` (line 1903) → `config.rs:4348`
-- [x] `nil_value` (line 1905) → `config.rs:4264`
-- [x] `is_nil` (line 1907) → `config.rs:4714`
+- [v] `clone` (line 1898) → `config.rs:3779` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `nullable` (line 1903) → `config.rs:4408` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `nil_value` (line 1905) → `config.rs:4324`
+- [v] `is_nil` (line 1907) → `config.rs:4792` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `is_nil` (line 1908) → `config.rs` — another overload of the name is ported
-- [x] `set_at_to_nil` (line 1909) → `config.rs:4395`
-- [x] `get_at` (line 1921) → `config.rs:4272`
-- [x] `serialize` (line 1923) → `config.rs:3598`
-- [x] `vserialize` (line 1934) → `config.rs:4381`
-- [x] `deserialize_with_substitutions` (line 1945) → `config.rs:4276`
-- [x] `deserialize` (line 1974) → `config.rs:4372`
-- [x] `serialize_single_value` (line 1980) → `config.rs:2910`
+- [v] `set_at_to_nil` (line 1909) → `config.rs:4867` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [x] `get_at` (line 1921) → `config.rs:4332`
+- [v] `serialize` (line 1923) → `config.rs:3653` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 1934) → `config.rs:4441` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize_with_substitutions` (line 1945) → `config.rs:4336` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1974) → `config.rs:4432` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize_single_value` (line 1980) → `config.rs:2965` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 1992) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionDef`**
 
-- [x] `cli_args` (line 252) → `config.rs:4955`
-- [x] `create_empty_option` (line 272) → `config.rs:4973`
-- [x] `create_default_option` (line 309) → `config.rs:5010`
-- [x] `set_default_value` (line 2263) → `config.rs:4933`
-- [x] `get_default_value` (line 2264) → `config.rs:4939`
+- [v] `cli_args` (line 252) → `config.rs:5033` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `create_empty_option` (line 272) → `config.rs:5051` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `create_default_option` (line 309) → `config.rs:5088` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `set_default_value` (line 2263) → `config.rs:5011`
+- [x] `get_default_value` (line 2264) → `config.rs:5017`
 - [ ] `load_option_from_archive` (line 2271) → `config.rs`
 - [ ] `save_option_to_archive` (line 2307) → `config.rs`
-- [x] `has_enum_value` (line 2415) → `config.rs:4944`
+- [v] `has_enum_value` (line 2415) → `config.rs:5022` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 
 **class `ConfigOptionEnum`**
 
-- [x] `static_type` (line 2011) → `config.rs:4541`
+- [x] `static_type` (line 2011) → `config.rs:4601`
 - [~] `type` (line 2012) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 2013) → `config.rs:4206`
-- [x] `getInt` (line 2017) → `config.rs:4484`
-- [x] `setInt` (line 2018) → `config.rs:4488`
-- [x] `set` (line 2028) → `config.rs:4585`
-- [x] `serialize` (line 2035) → `config.rs:4512`
-- [x] `deserialize` (line 2042) → `config.rs:4517`
-- [x] `has` (line 2048) → `config.rs:4437`
-- [x] `from_string` (line 2061) → `config.rs:4454`
+- [v] `clone` (line 2013) → `config.rs:4266` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `getInt` (line 2017) → `config.rs:4544` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `setInt` (line 2018) → `config.rs:4548` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set` (line 2028) → `config.rs:4645` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 2035) → `config.rs:4572` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 2042) → `config.rs:4577` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `has` (line 2048) → `config.rs:4497` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `from_string` (line 2061) → `config.rs:4514`
 
 **class `ConfigOptionEnumGeneric`**
 
-- [x] `static_type` (line 2083) → `config.rs:4551`
+- [x] `static_type` (line 2083) → `config.rs:4611`
 - [~] `type` (line 2084) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 2085) → `config.rs:3881`
-- [x] `set` (line 2098) → `config.rs:4500`
+- [v] `clone` (line 2085) → `config.rs:3941` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set` (line 2098) → `config.rs:4560` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 2105) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 2113) → `config.rs:4607` — partial
+- [v] `deserialize` (line 2113) → `config.rs:4667` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `serialize` (line 2125) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionEnumsGenericTempl`**
 
-- [x] `static_type` (line 2141) → `config.rs:4692`
+- [x] `static_type` (line 2141) → `config.rs:4770`
 - [~] `type` (line 2142) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 2143) → `config.rs:1583`
-- [x] `nullable` (line 2153) → `config.rs:4710`
-- [x] `set` (line 2155) → `config.rs:1859`
-- [x] `serialize` (line 2162) → `config.rs:4737`
-- [x] `vserialize` (line 2173) → `config.rs:4775`
-- [x] `deserialize` (line 2185) → `config.rs:4748`
-- [~] `serialize_single_value` (line 2210) → `config.rs:3939` — divergent
+- [v] `clone` (line 2143) → `config.rs:1638` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `nullable` (line 2153) → `config.rs:4788` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set` (line 2155) → `config.rs:1914` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 2162) → `config.rs:4815` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 2173) → `config.rs:4853` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 2185) → `config.rs:4826` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize_single_value` (line 2210) → `config.rs:3999` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as divergent to the estimate)
 - [~] `serialize` (line 2226) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionFloat`**
 
-- [x] `static_type` (line 828) → `config.rs:2561`
+- [x] `static_type` (line 828) → `config.rs:2616`
 - [~] `type` (line 829) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `getFloat` (line 830) → `config.rs:3403`
-- [x] `clone` (line 831) → `config.rs:3407`
-- [x] `serialize` (line 835) → `config.rs:2583`
-- [~] `deserialize` (line 842) → `config.rs:2587` — partial
+- [v] `getFloat` (line 830) → `config.rs:3458` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `clone` (line 831) → `config.rs:3462` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 835) → `config.rs:2638` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 842) → `config.rs:2642` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `serialize` (line 858) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionFloatOrPercent`**
 
-- [x] `static_type` (line 1304) → `config.rs:3390`
+- [x] `static_type` (line 1304) → `config.rs:3445`
 - [~] `type` (line 1305) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1306) → `config.rs:3793`
-- [x] `hash` (line 1317) → `config.rs:3422`
-- [x] `get_abs_value` (line 1322) → `config.rs:3380`
-- [~] `set` (line 1325) → `config.rs:1809` — partial
+- [v] `clone` (line 1306) → `config.rs:3853` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `hash` (line 1317) → `config.rs:3477` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `get_abs_value` (line 1322) → `config.rs:3435` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set` (line 1325) → `config.rs:1864` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `serialize` (line 1332) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 1341) → `config.rs:3452` — partial
+- [v] `deserialize` (line 1341) → `config.rs:3507` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `serialize` (line 1352) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionFloatsOrPercentsTempl`**
 
-- [x] `static_type` (line 1365) → `config.rs:3560`
+- [x] `static_type` (line 1365) → `config.rs:3615`
 - [~] `type` (line 1366) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1367) → `config.rs:3964`
-- [x] `nullable` (line 1378) → `config.rs:3585`
-- [x] `nil_value` (line 1380) → `config.rs:3258`
+- [v] `clone` (line 1367) → `config.rs:4024` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `nullable` (line 1378) → `config.rs:3640` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `nil_value` (line 1380) → `config.rs:3313`
 - [~] `is_nil` (line 1382) → `config.rs` — another overload of the name is ported
 - [~] `is_nil` (line 1383) → `config.rs` — another overload of the name is ported
-- [x] `set_at_to_nil` (line 1384) → `config.rs:3653`
-- [x] `serialize` (line 1390) → `config.rs:4361`
-- [x] `vserialize` (line 1401) → `config.rs:3639`
-- [~] `deserialize` (line 1413) → `config.rs:2771` — divergent
-- [x] `serialize_single_value` (line 1444) → `config.rs:3507`
-- [x] `vectors_equal` (line 1457) → `config.rs:2686`
-- [x] `vectors_lower` (line 1469) → `config.rs:3542`
+- [v] `set_at_to_nil` (line 1384) → `config.rs:4455` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `serialize` (line 1390) → `config.rs:4421` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 1401) → `config.rs:3694` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1413) → `config.rs:2826` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as divergent to the estimate)
+- [v] `serialize_single_value` (line 1444) → `config.rs:3562` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vectors_equal` (line 1457) → `config.rs:2741` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vectors_lower` (line 1469) → `config.rs:3597` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 1484) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionFloatsTempl`**
 
-- [x] `static_type` (line 871) → `config.rs:2722`
+- [x] `static_type` (line 871) → `config.rs:2777`
 - [~] `type` (line 872) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 873) → `config.rs:4564`
-- [x] `nullable` (line 883) → `config.rs:2944`
-- [x] `nil_value` (line 885) → `config.rs:3495`
-- [x] `is_nil` (line 887) → `config.rs:3589`
+- [v] `clone` (line 873) → `config.rs:4624` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `nullable` (line 883) → `config.rs:2999` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `nil_value` (line 885) → `config.rs:3550`
+- [v] `is_nil` (line 887) → `config.rs:3644` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `is_nil` (line 888) → `config.rs` — another overload of the name is ported
-- [x] `set_at_to_nil` (line 889) → `config.rs:3011`
-- [x] `serialize` (line 895) → `config.rs:2760`
-- [x] `vserialize` (line 906) → `config.rs:2779`
-- [~] `deserialize` (line 918) → `config.rs:3609` — partial
-- [x] `serialize_single_value` (line 948) → `config.rs:2670`
-- [x] `vectors_equal` (line 959) → `config.rs:3525`
-- [x] `vectors_lower` (line 971) → `config.rs:2704`
+- [v] `set_at_to_nil` (line 889) → `config.rs:3404` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `serialize` (line 895) → `config.rs:2815` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 906) → `config.rs:2834` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 918) → `config.rs:3664` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `serialize_single_value` (line 948) → `config.rs:2725` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vectors_equal` (line 959) → `config.rs:3580` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vectors_lower` (line 971) → `config.rs:2759` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 986) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionInt`**
 
-- [x] `static_type` (line 999) → `config.rs:2825`
+- [x] `static_type` (line 999) → `config.rs:2880`
 - [~] `type` (line 1000) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `getInt` (line 1001) → `config.rs:4568`
-- [x] `setInt` (line 1002) → `config.rs:4572`
-- [x] `clone` (line 1003) → `config.rs:2736`
-- [x] `serialize` (line 1006) → `config.rs:4210`
-- [~] `deserialize` (line 1013) → `config.rs:2856` — partial
+- [v] `getInt` (line 1001) → `config.rs:4628` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `setInt` (line 1002) → `config.rs:4632` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `clone` (line 1003) → `config.rs:2791` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1006) → `config.rs:4270` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1013) → `config.rs:2911` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `serialize` (line 1029) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionIntsGroups`**
 
-- [x] `static_type` (line 1749) → `config.rs:4081`
+- [x] `static_type` (line 1749) → `config.rs:4141`
 - [~] `type` (line 1750) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1751) → `config.rs:2848`
-- [x] `nullable` (line 1775) → `config.rs:4106`
-- [x] `is_nil` (line 1776) → `config.rs:1532`
-- [x] `serialize` (line 1778) → `config.rs:4110`
-- [x] `vserialize` (line 1790) → `config.rs:4145`
-- [~] `deserialize` (line 1801) → `config.rs:3324` — divergent
-- [x] `vserialize_single` (line 1819) → `config.rs:3928`
-- [x] `serialize_single_value` (line 1832) → `config.rs:4070`
+- [v] `clone` (line 1751) → `config.rs:2903` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `nullable` (line 1775) → `config.rs:4166` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_nil` (line 1776) → `config.rs:1587` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1778) → `config.rs:4170` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 1790) → `config.rs:4205` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1801) → `config.rs:3379` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as divergent to the estimate)
+- [v] `vserialize_single` (line 1819) → `config.rs:3988` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize_single_value` (line 1832) → `config.rs:4130` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 1843) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionIntsTempl`**
 
-- [x] `static_type` (line 1042) → `config.rs:2925`
+- [x] `static_type` (line 1042) → `config.rs:2980`
 - [~] `type` (line 1043) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1044) → `config.rs:2940`
-- [x] `nullable` (line 1049) → `config.rs:3297`
-- [x] `nil_value` (line 1051) → `config.rs:4660`
-- [x] `is_nil` (line 1053) → `config.rs:4352`
+- [v] `clone` (line 1044) → `config.rs:2995` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `nullable` (line 1049) → `config.rs:3352` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `nil_value` (line 1051) → `config.rs:4738`
+- [v] `is_nil` (line 1053) → `config.rs:4412` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `is_nil` (line 1054) → `config.rs` — another overload of the name is ported
-- [x] `set_at_to_nil` (line 1055) → `config.rs:3349`
-- [x] `serialize` (line 1061) → `config.rs:2957`
-- [x] `vserialize` (line 1072) → `config.rs:2997`
-- [~] `deserialize` (line 1084) → `config.rs:2968` — partial
-- [x] `serialize_single_value` (line 1108) → `config.rs:4673`
+- [v] `set_at_to_nil` (line 1055) → `config.rs:3708` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `serialize` (line 1061) → `config.rs:3012` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 1072) → `config.rs:3052` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1084) → `config.rs:3023` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `serialize_single_value` (line 1108) → `config.rs:4751` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 1119) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPercent`**
 
-- [x] `static_type` (line 1209) → `config.rs:3188`
+- [x] `static_type` (line 1209) → `config.rs:3243`
 - [~] `type` (line 1210) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1211) → `config.rs:3286`
-- [x] `get_abs_value` (line 1216) → `config.rs:3182`
-- [~] `serialize` (line 1218) → `config.rs:3210` — partial
-- [~] `deserialize` (line 1227) → `config.rs:3216` — partial
+- [v] `clone` (line 1211) → `config.rs:3341` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `get_abs_value` (line 1216) → `config.rs:3237` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1218) → `config.rs:3265` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `deserialize` (line 1227) → `config.rs:3271` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `serialize` (line 1238) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPercentsTempl`**
 
-- [x] `static_type` (line 1251) → `config.rs:3272`
+- [x] `static_type` (line 1251) → `config.rs:3327`
 - [~] `type` (line 1252) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1253) → `config.rs:3574`
-- [x] `serialize` (line 1258) → `config.rs:3310`
-- [x] `vserialize` (line 1272) → `config.rs:3332`
+- [v] `clone` (line 1253) → `config.rs:3629` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1258) → `config.rs:3365` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 1272) → `config.rs:3387` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 1291) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPoint`**
 
-- [x] `static_type` (line 1496) → `config.rs:3705`
+- [x] `static_type` (line 1496) → `config.rs:3765`
 - [~] `type` (line 1497) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1498) → `config.rs:4095`
-- [x] `serialize` (line 1503) → `config.rs:3723`
-- [~] `deserialize` (line 1512) → `config.rs:3730` — divergent
+- [v] `clone` (line 1498) → `config.rs:4155` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1503) → `config.rs:3783` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1512) → `config.rs:3790` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as divergent to the estimate)
 - [~] `serialize` (line 1522) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPoint3`**
 
-- [x] `static_type` (line 1611) → `config.rs:3867`
+- [x] `static_type` (line 1611) → `config.rs:3927`
 - [~] `type` (line 1612) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1613) → `config.rs:4480`
-- [x] `serialize` (line 1619) → `config.rs:3885`
-- [~] `deserialize` (line 1630) → `config.rs:3894` — partial
+- [v] `clone` (line 1613) → `config.rs:4540` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1619) → `config.rs:3945` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1630) → `config.rs:3954` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `serialize` (line 1640) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPoints`**
 
-- [x] `static_type` (line 1533) → `config.rs:3778`
+- [x] `static_type` (line 1533) → `config.rs:3838`
 - [~] `type` (line 1534) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1535) → `config.rs:4344`
-- [x] `is_nil` (line 1540) → `config.rs:2751`
-- [x] `serialize` (line 1542) → `config.rs:3797`
-- [x] `vserialize` (line 1554) → `config.rs:3822`
-- [~] `deserialize` (line 1569) → `config.rs:3808` — partial
+- [v] `clone` (line 1535) → `config.rs:4404` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_nil` (line 1540) → `config.rs:2806` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1542) → `config.rs:3857` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 1554) → `config.rs:3882` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1569) → `config.rs:3868` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `save` (line 1592) → `app_config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `load` (line 1597) → `app_config.rs, format/assembly_steps_json.rs, format/step.rs` — not in the paired file
 
 **class `ConfigOptionPointsGroups`**
 
-- [x] `static_type` (line 1650) → `config.rs:3950`
+- [x] `static_type` (line 1650) → `config.rs:4010`
 - [~] `type` (line 1651) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1652) → `config.rs:2579`
-- [x] `nullable` (line 1662) → `config.rs:3975`
-- [x] `is_nil` (line 1663) → `config.rs:3301`
-- [x] `serialize` (line 1665) → `config.rs:3979`
-- [x] `vserialize` (line 1677) → `config.rs:4008`
-- [~] `deserialize` (line 1688) → `config.rs:3990` — partial
-- [~] `vserialize_single` (line 1714) → `config.rs:4061` — partial
-- [x] `serialize_single_value` (line 1728) → `config.rs:4314`
+- [v] `clone` (line 1652) → `config.rs:2634` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `nullable` (line 1662) → `config.rs:4035` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_nil` (line 1663) → `config.rs:3356` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1665) → `config.rs:4039` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 1677) → `config.rs:4068` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1688) → `config.rs:4050` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `vserialize_single` (line 1714) → `config.rs:4121` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `serialize_single_value` (line 1728) → `config.rs:4374` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 1739) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionResolver`**
 
-- [x] `has` (line 2490) → `config.rs:5230`
-- [x] `option` (line 2492) → `config.rs:5235`
+- [v] `has` (line 2490) → `config.rs:5308` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `option` (line 2492) → `config.rs:5313`
 - [~] `option` (line 2495) → `config.rs` — another overload of the name is ported
-- [x] `option_throw` (line 2501) → `config.rs:5240`
+- [x] `option_throw` (line 2501) → `config.rs:5318`
 - [~] `option_throw` (line 2510) → `config.rs` — another overload of the name is ported
 
 **class `ConfigOptionSingle`**
 
-- [~] `set` (line 315) → `config.rs:3431` — partial
-- [x] `hash` (line 335) → `config.rs:4508`
-- [x] `serialize` (line 339) → `config.rs:2852`
+- [v] `set` (line 315) → `config.rs:3486` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `hash` (line 335) → `config.rs:4568` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 339) → `config.rs:2907` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 
 **class `ConfigOptionString`**
 
-- [x] `static_type` (line 1131) → `config.rs:3047`
+- [x] `static_type` (line 1131) → `config.rs:3102`
 - [~] `type` (line 1132) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1133) → `config.rs:3061`
-- [x] `empty` (line 1137) → `config.rs:3041`
-- [x] `serialize` (line 1139) → `config.rs:3065`
-- [x] `deserialize` (line 1144) → `config.rs:3069`
+- [v] `clone` (line 1133) → `config.rs:3116` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `empty` (line 1137) → `config.rs:3096` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1139) → `config.rs:3120` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1144) → `config.rs:3124` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 1152) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionStrings`**
 
-- [x] `static_type` (line 1165) → `config.rs:3113`
+- [x] `static_type` (line 1165) → `config.rs:3168`
 - [~] `type` (line 1166) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [x] `clone` (line 1167) → `config.rs:3128`
-- [x] `is_nil` (line 1171) → `config.rs:2948`
-- [x] `serialize` (line 1173) → `config.rs:3132`
-- [x] `vserialize` (line 1178) → `config.rs:3147`
-- [x] `deserialize` (line 1191) → `config.rs:3136`
+- [v] `clone` (line 1167) → `config.rs:3183` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `is_nil` (line 1171) → `config.rs:3003` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 1173) → `config.rs:3187` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `vserialize` (line 1178) → `config.rs:3202` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `deserialize` (line 1191) → `config.rs:3191` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 1200) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionVector`**
 
-- [~] `set` (line 400) → `config.rs:4724` — partial
+- [v] `set` (line 400) → `config.rs:4802` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `set` (line 412) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [x] `set_at` (line 431) → `config.rs:1888`
-- [x] `set_at_to_nil` (line 453) → `config.rs:4159`
-- [x] `append` (line 455) → `config.rs:1912`
+- [v] `set_at` (line 431) → `config.rs:1943` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_at_to_nil` (line 453) → `config.rs:4219` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `append` (line 455) → `config.rs:1967` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set` (line 471) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [x] `set_with_restore` (line 492) → `config.rs:1952`
-- [x] `set_with_restore_2` (line 522) → `config.rs:1993`
-- [x] `set_only_diff` (line 573) → `config.rs:2055`
-- [x] `set_to_index` (line 602) → `config.rs:2096`
-- [x] `set_with_nil` (line 626) → `config.rs:2126`
-- [x] `set_with_default` (line 662) → `config.rs:2178`
-- [x] `resize` (line 692) → `config.rs:2226`
+- [v] `set_with_restore` (line 492) → `config.rs:2007` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_with_restore_2` (line 522) → `config.rs:2048` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_only_diff` (line 573) → `config.rs:2110` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_to_index` (line 602) → `config.rs:2151` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_with_nil` (line 626) → `config.rs:2181` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_with_default` (line 662) → `config.rs:2233` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `resize` (line 692) → `config.rs:2281` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `clear` (line 725) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [~] `size` (line 726) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 727) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [x] `hash` (line 740) → `config.rs:2271`
-- [x] `overriden_by` (line 751) → `config.rs:2282`
-- [x] `apply_override` (line 773) → `config.rs:2310`
+- [v] `hash` (line 740) → `config.rs:2326` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `overriden_by` (line 751) → `config.rs:2337` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `apply_override` (line 773) → `config.rs:2365` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 819) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionVectorBase`**
 
-- [x] `scalar_type` (line 385) → `config.rs:1648`
+- [x] `scalar_type` (line 385) → `config.rs:1703`
 
 **class `ConfigSubstitutionContext`**
 
-- [x] `empty` (line 258) → `config.rs:1473`
+- [v] `empty` (line 258) → `config.rs:1525` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 
 **class `DynamicConfig`**
 
-- [x] `remove_nil_options` (line 1681) → `config.rs:7195`
+- [v] `remove_nil_options` (line 1681) → `config.rs:8118` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `optptr` (line 1693) → `config.rs` — another overload of the name is ported
-- [x] `optptr` (line 1716) → `config.rs:7605`
-- [x] `read_cli` (line 1722) → `config.rs:7475`
-- [x] `keys` (line 1846) → `config.rs:7643`
-- [x] `equals` (line 1910) → `config.rs:7234`
-- [x] `diff` (line 1918) → `config.rs:7240`
-- [x] `equal` (line 1932) → `config.rs:7259`
+- [x] `optptr` (line 1716) → `config.rs:8528`
+- [v] `read_cli` (line 1722) → `config.rs:8398` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `keys` (line 1846) → `config.rs:8566` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `equals` (line 1910) → `config.rs:8157` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `diff` (line 1918) → `config.rs:8163` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `equal` (line 1932) → `config.rs:8182` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `opt_bool` (line 1967) → `config.rs` — another overload of the name is ported
-- [x] `swap` (line 2745) → `config.rs:7179`
-- [x] `clear` (line 2750) → `config.rs:7184`
-- [~] `erase` (line 2755) → `config.rs:7189` — partial
-- [x] `def` (line 2769) → `config.rs:7614`
+- [v] `swap` (line 2745) → `config.rs:8102` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `clear` (line 2750) → `config.rs:8107` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `erase` (line 2755) → `config.rs:8112` — read against the C++ in R910 (the estimate says partial)
+- [x] `def` (line 2769) → `config.rs:8537`
 - [~] `opt` (line 2770) → `config.rs` — another overload of the name is ported
-- [x] `opt` (line 2772) → `config.rs:7216`
-- [x] `empty` (line 2780) → `config.rs:7221`
-- [~] `set_key_value` (line 2785) → `config.rs:7228` — partial
-- [x] `opt_int` (line 2818) → `config.rs:7380`
+- [x] `opt` (line 2772) → `config.rs:8139`
+- [v] `empty` (line 2780) → `config.rs:8144` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_key_value` (line 2785) → `config.rs:8151` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [x] `opt_int` (line 2818) → `config.rs:8303`
 - [~] `opt_int` (line 2820) → `config.rs` — another overload of the name is ported
-- [x] `opt_enum` (line 2827) → `config.rs:7425`
+- [x] `opt_enum` (line 2827) → `config.rs:8348`
 - [~] `opt_enum` (line 2829) → `config.rs` — another overload of the name is ported
-- [x] `opt_enum_nullable` (line 2830) → `config.rs:7440`
-- [x] `opt_bool` (line 2833) → `config.rs:7450`
-- [x] `opt_bool_nullable` (line 2835) → `config.rs:7465`
-- [x] `cbegin` (line 2841) → `config.rs:7593`
+- [x] `opt_enum_nullable` (line 2830) → `config.rs:8363`
+- [x] `opt_bool` (line 2833) → `config.rs:8373`
+- [x] `opt_bool_nullable` (line 2835) → `config.rs:8388`
+- [x] `cbegin` (line 2841) → `config.rs:8516`
 - [~] `cend` (line 2842) → `mutable_polygon.rs` — not in the paired file
-- [x] `size` (line 2843) → `config.rs:7598`
+- [x] `size` (line 2843) → `config.rs:8521`
 - [~] `serialize` (line 2849) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `FloatOrPercent`**
 
-- [x] `get_abs_value` (line 38) → `config.rs:159`
-- [x] `serialize` (line 42) → `config.rs:3444`
+- [v] `get_abs_value` (line 38) → `config.rs:159` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `serialize` (line 42) → `config.rs:3499` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 
 **class `ReverseLineReader`**
 
-- [~] `getline` (line 1421) → `config.rs:7761` — partial
+- [x] `getline` (line 1421) → `config.rs:8684` — read against the C++ in R910 (the estimate says partial)
 
 **class `StaticConfig`**
 
-- [x] `set_defaults` (line 1855) → `config.rs:7705`
-- [x] `keys` (line 1869) → `config.rs:7724`
+- [x] `set_defaults` (line 1855) → `config.rs:8628`
+- [v] `keys` (line 1869) → `config.rs:8647` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 
 ### `CSGMesh/CSGMesh` (.hpp)
 
@@ -5198,7 +5198,7 @@ Rust file: none. Status: **not started**.
 **class `_3MF_Importer`**
 
 - [~] `version` (line 559) → `format/three_mf.rs, libslic3r.rs` — a function of this name is in another Rust file
-- [~] `parse_error` (line 565) → `format/three_mf.rs` — a function of this name is in another Rust file
+- [~] `parse_error` (line 565) → `config.rs, format/three_mf.rs` — a function of this name is in another Rust file
 - [~] `parse_error_message` (line 566) → `format/three_mf.rs` — a function of this name is in another Rust file
 - [~] `load_model_from_file` (line 681) → `format/three_mf.rs` — a function of this name is in another Rust file
 - [~] `_destroy_xml_parser` (line 708) → `format/three_mf.rs` — a function of this name is in another Rust file
@@ -5346,67 +5346,67 @@ Rust file: `format/assembly_steps_json.rs`. Status: **partial**.
 
 **class `ArrowSvgNote`**
 
-- [x] `to_json` (line 185) → `format/assembly_steps_json.rs:1326`
-- [x] `from_json` (line 208) → `format/assembly_steps_json.rs:1350`
+- [v] `to_json` (line 185) → `format/assembly_steps_json.rs:1326` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 208) → `format/assembly_steps_json.rs:1350` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `ArrowSvgRay`**
 
-- [x] `to_json` (line 170) → `format/assembly_steps_json.rs:1309`
-- [x] `from_json` (line 177) → `format/assembly_steps_json.rs:1316`
+- [v] `to_json` (line 170) → `format/assembly_steps_json.rs:1309` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 177) → `format/assembly_steps_json.rs:1316` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `AssembleBaseInfo`**
 
-- [x] `to_json` (line 561) → `format/assembly_steps_json.rs:1746`
-- [x] `from_json` (line 575) → `format/assembly_steps_json.rs:1763`
-- [x] `create_from_json` (line 595) → `format/assembly_steps_json.rs:1778`
+- [v] `to_json` (line 561) → `format/assembly_steps_json.rs:1746` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 575) → `format/assembly_steps_json.rs:1763` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `create_from_json` (line 595) → `format/assembly_steps_json.rs:1778` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `AssembleSingleInfo`**
 
 - [x] `get_type` (line 223) → `format/assembly_steps_json.rs:749`
-- [x] `to_json` (line 613) → `format/assembly_steps_json.rs:1798`
-- [x] `from_json` (line 622) → `format/assembly_steps_json.rs:1809`
+- [v] `to_json` (line 613) → `format/assembly_steps_json.rs:1798` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 622) → `format/assembly_steps_json.rs:1809` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `AssembleSub`**
 
 - [x] `get_type` (line 254) → `format/assembly_steps_json.rs:793`
-- [x] `to_json` (line 630) → `format/assembly_steps_json.rs:1819`
-- [x] `from_json` (line 661) → `format/assembly_steps_json.rs:1854`
+- [v] `to_json` (line 630) → `format/assembly_steps_json.rs:1819` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 661) → `format/assembly_steps_json.rs:1854` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `AssemblyNote`**
 
-- [x] `to_json` (line 333) → `format/assembly_steps_json.rs:1489`
-- [x] `from_json` (line 385) → `format/assembly_steps_json.rs:1541`
+- [v] `to_json` (line 333) → `format/assembly_steps_json.rs:1489` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 385) → `format/assembly_steps_json.rs:1541` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `AssemblyStepJson`**
 
 - [~] `set_items` (line 373) → `format/assembly_steps_json.rs` — another overload of the name is ported
 - [x] `set_items` (line 374) → `format/assembly_steps_json.rs:1063`
 - [x] `set_pdf_export_params` (line 376) → `format/assembly_steps_json.rs:1073`
-- [x] `get_assembly_part_number_label_font_size` (line 377) → `format/assembly_steps_json.rs:1078`
+- [v] `get_assembly_part_number_label_font_size` (line 377) → `format/assembly_steps_json.rs:1078` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 - [x] `set_assembly_part_number_label_font_size` (line 378) → `format/assembly_steps_json.rs:1083`
-- [x] `get_camera_ref_viewport_w` (line 380) → `format/assembly_steps_json.rs:1088`
-- [x] `get_camera_ref_viewport_h` (line 381) → `format/assembly_steps_json.rs:1093`
+- [v] `get_camera_ref_viewport_w` (line 380) → `format/assembly_steps_json.rs:1088` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `get_camera_ref_viewport_h` (line 381) → `format/assembly_steps_json.rs:1093` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 - [x] `set_camera_ref_viewport` (line 382) → `format/assembly_steps_json.rs:1098`
 - [x] `get_debug_file_path` (line 698) → `format/assembly_steps_json.rs:1899`
-- [x] `load_pdf_export_params` (line 702) → `format/assembly_steps_json.rs:1907`
-- [x] `load_assembly_part_number_label_font_size` (line 713) → `format/assembly_steps_json.rs:1920`
-- [x] `load_camera_ref_viewport` (line 721) → `format/assembly_steps_json.rs:1929`
-- [x] `load` (line 729) → `format/assembly_steps_json.rs:1937`
-- [x] `load_from_string` (line 759) → `format/assembly_steps_json.rs:1971`
-- [x] `to_json_string` (line 781) → `format/assembly_steps_json.rs:1998`
+- [v] `load_pdf_export_params` (line 702) → `format/assembly_steps_json.rs:1907` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `load_assembly_part_number_label_font_size` (line 713) → `format/assembly_steps_json.rs:1920` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `load_camera_ref_viewport` (line 721) → `format/assembly_steps_json.rs:1929` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `load` (line 729) → `format/assembly_steps_json.rs:1937` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `load_from_string` (line 759) → `format/assembly_steps_json.rs:1971` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `to_json_string` (line 781) → `format/assembly_steps_json.rs:1998` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 - [x] `save` (line 808) → `format/assembly_steps_json.rs:2026`
 
 **class `AssemblyStepsTreeData`**
 
 - [x] `empty` (line 338) → `format/assembly_steps_json.rs:1025`
 - [x] `clear` (line 339) → `format/assembly_steps_json.rs:1030`
-- [x] `to_json_string` (line 1101) → `format/assembly_steps_json.rs:2397`
-- [x] `from_json_string` (line 1155) → `format/assembly_steps_json.rs:2463`
+- [v] `to_json_string` (line 1101) → `format/assembly_steps_json.rs:2397` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json_string` (line 1155) → `format/assembly_steps_json.rs:2463` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `CircleNote`**
 
-- [x] `to_json` (line 253) → `format/assembly_steps_json.rs:1399`
-- [x] `from_json` (line 261) → `format/assembly_steps_json.rs:1407`
+- [v] `to_json` (line 253) → `format/assembly_steps_json.rs:1399` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 261) → `format/assembly_steps_json.rs:1407` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `KeyFrame`**
 
@@ -5414,8 +5414,8 @@ Rust file: `format/assembly_steps_json.rs`. Status: **partial**.
 - [x] `is_start` (line 173) → `format/assembly_steps_json.rs:691`
 - [x] `is_transition` (line 176) → `format/assembly_steps_json.rs:696`
 - [x] `clone_from` (line 179) → `format/assembly_steps_json.rs:701`
-- [x] `to_json` (line 454) → `format/assembly_steps_json.rs:1615`
-- [x] `from_json` (line 501) → `format/assembly_steps_json.rs:1668`
+- [v] `to_json` (line 454) → `format/assembly_steps_json.rs:1615` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 501) → `format/assembly_steps_json.rs:1668` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `KeyFrameEntry`**
 
@@ -5426,23 +5426,23 @@ Rust file: `format/assembly_steps_json.rs`. Status: **partial**.
 
 **class `PartNumberLabel`**
 
-- [x] `to_json` (line 304) → `format/assembly_steps_json.rs:1456`
-- [x] `from_json` (line 316) → `format/assembly_steps_json.rs:1468`
+- [v] `to_json` (line 304) → `format/assembly_steps_json.rs:1456` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 316) → `format/assembly_steps_json.rs:1468` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `PlainArrowNote`**
 
-- [x] `to_json` (line 287) → `format/assembly_steps_json.rs:1437`
-- [x] `from_json` (line 295) → `format/assembly_steps_json.rs:1445`
+- [v] `to_json` (line 287) → `format/assembly_steps_json.rs:1437` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 295) → `format/assembly_steps_json.rs:1445` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `RectangleNote`**
 
-- [x] `to_json` (line 270) → `format/assembly_steps_json.rs:1418`
-- [x] `from_json` (line 278) → `format/assembly_steps_json.rs:1426`
+- [v] `to_json` (line 270) → `format/assembly_steps_json.rs:1418` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 278) → `format/assembly_steps_json.rs:1426` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `TextLabelNote`**
 
-- [x] `to_json` (line 232) → `format/assembly_steps_json.rs:1376`
-- [x] `from_json` (line 242) → `format/assembly_steps_json.rs:1386`
+- [v] `to_json` (line 232) → `format/assembly_steps_json.rs:1376` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `from_json` (line 242) → `format/assembly_steps_json.rs:1386` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 ### `Format/AssemblyTreeJson` (.cpp+.hpp)
 
@@ -5457,8 +5457,8 @@ Rust file: `format/assembly_tree_json.rs`. Status: **ported**.
 
 - [x] `empty` (line 27) → `format/assembly_tree_json.rs:142`
 - [x] `clear` (line 28) → `format/assembly_tree_json.rs:147`
-- [x] `to_json_string` (line 39) → `format/assembly_tree_json.rs:193`
-- [x] `from_json_string` (line 51) → `format/assembly_tree_json.rs:207`
+- [v] `to_json_string` (line 39) → `format/assembly_tree_json.rs:193` — R909: tests/assembly_tree_json_native_parity.rs: 40 trees written and 194 documents read (102 accepted) against AssemblyTreeJson.cpp built with the bundled nlohmann 3.10.4; texts and type_error texts equal
+- [v] `from_json_string` (line 51) → `format/assembly_tree_json.rs:207` — R909: tests/assembly_tree_json_native_parity.rs: 40 trees written and 194 documents read (102 accepted) against AssemblyTreeJson.cpp built with the bundled nlohmann 3.10.4; texts and type_error texts equal
 
 ### `Format/AssimpImport` (.cpp+.hpp)
 
@@ -5562,7 +5562,7 @@ Rust file: `format/bbs_3mf.rs`. Status: **partial**. Not listed: 16 constructors
 - [~] `version` (line 1523) → `format/three_mf.rs, libslic3r.rs` — not in the paired file
 - [ ] `has_texture_resources` (line 1529) → `format/bbs_3mf.rs`
 - [ ] `has_unit` (line 1532) → `format/bbs_3mf.rs`
-- [~] `parse_error` (line 1541) → `format/three_mf.rs` — not in the paired file
+- [~] `parse_error` (line 1541) → `config.rs, format/three_mf.rs` — not in the paired file
 - [~] `parse_error_message` (line 1542) → `format/three_mf.rs` — not in the paired file
 - [~] `load_model_from_file` (line 1752) → `format/three_mf.rs` — not in the paired file
 - [ ] `get_thumbnail` (line 1823) → `format/bbs_3mf.rs`
@@ -7989,8 +7989,8 @@ Rust file: `internal_bridge_detector.rs`. Status: **partial**. Not listed: 2 con
 **class `InternalBridgeDetector`**
 
 - [~] `initialize` (line 19) → `internal_bridge_detector.rs:99` — partial
-- [~] `detect_angle` (line 44) → `internal_bridge_detector.rs:120` — partial
-- [x] `bridge_direction_candidates` (line 113) → `internal_bridge_detector.rs:258`
+- [~] `detect_angle` (line 44) → `internal_bridge_detector.rs:123` — partial
+- [x] `bridge_direction_candidates` (line 113) → `internal_bridge_detector.rs:262`
 
 ### `IntersectionPoints` (.cpp+.hpp)
 
@@ -8721,10 +8721,10 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `set_enforcer_block_type_limit` (line 4634) → `model.rs`
 - [~] `get_facets_strict` (line 4644) → `triangle_selector.rs` — not in the paired file
 - [~] `has_facets` (line 4652) → `triangle_selector.rs` — not in the paired file
-- [~] `set` (line 4657) → `app_config.rs, color.rs, config.rs` — not in the paired file
-- [x] `reset` (line 4668) → `model.rs:684`
-- [~] `get_triangle_as_string` (line 4678) → `model.rs:693` — partial
-- [~] `set_triangle_from_string` (line 4704) → `model.rs:730` — partial
+- [~] `set` (line 4657) → `model.rs:686` — partial
+- [x] `reset` (line 4668) → `model.rs:696`
+- [~] `get_triangle_as_string` (line 4678) → `model.rs:705` — partial
+- [~] `set_triangle_from_string` (line 4704) → `model.rs:742` — partial
 - [~] `equals` (line 4736) → `config.rs, support/tree_support.rs` — not in the paired file
 
 **class `GlobalFeatureFilaments`**
@@ -8773,7 +8773,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `bounding_box_in_assembly_view` (line 828) → `model.rs`
 - [ ] `update_print_volume_state` (line 840) → `model.rs`
 - [ ] `center_instances_around_point` (line 852) → `model.rs`
-- [~] `mesh` (line 874) → `format/step.rs, print_object.rs` — not in the paired file
+- [~] `mesh` (line 874) → `format/step.rs, print_object.rs, texture_painting.rs` — not in the paired file
 - [ ] `duplicate_objects_grid` (line 882) → `model.rs`
 - [ ] `looks_like_multipart_object` (line 900) → `model.rs`
 - [ ] `convert_multipart_object` (line 928) → `model.rs`
@@ -8866,7 +8866,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `transform_polygon` (line 4076) → `model.rs`
 - [ ] `get_auto_brim_width` (line 4439) → `model.rs`
 - [ ] `convex_hull_2d` (line 4458) → `model.rs`
-- [ ] `invalidate_convex_hull_2d` (line 4475) → `model.rs`
+- [~] `invalidate_convex_hull_2d` (line 4475) → `texture_painting.rs` — not in the paired file
 - [ ] `get_auto_brim_width` (line 4521) → `model.rs`
 - [ ] `get_arrange_polygon` (line 4530) → `model.rs`
 - [ ] `apply_arrange_result` (line 4590) → `model.rs`
@@ -8887,7 +8887,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `get_config_value` (line 402) → `model.rs`
 - [ ] `is_multiparts` (line 417) → `model.rs`
 - [ ] `has_custom_layering` (line 428) → `model.rs`
-- [ ] `invalidate_bounding_box` (line 443) → `model.rs`
+- [~] `invalidate_bounding_box` (line 443) → `texture_painting.rs` — not in the paired file
 - [~] `translate` (line 478) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `scale` (line 481) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
 - [~] `scale` (line 482) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
@@ -8917,7 +8917,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `delete_instance` (line 1632) → `model.rs`
 - [ ] `delete_last_instance` (line 1640) → `model.rs`
 - [ ] `clear_instances` (line 1645) → `model.rs`
-- [~] `mesh` (line 1677) → `format/step.rs, print_object.rs` — not in the paired file
+- [~] `mesh` (line 1677) → `format/step.rs, print_object.rs, texture_painting.rs` — not in the paired file
 - [ ] `raw_mesh` (line 1692) → `model.rs`
 - [ ] `raw_indexed_triangle_set` (line 1708) → `model.rs`
 - [ ] `full_raw_mesh_bounding_box` (line 1750) → `model.rs`
@@ -8977,14 +8977,14 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `is_cut_connector` (line 984) → `model.rs`
 - [ ] `invalidate_cut_info` (line 985) → `model.rs`
 - [ ] `mesh_ptr` (line 989) → `model.rs`
-- [~] `set_mesh` (line 990) → `print_object.rs` — not in the paired file
-- [~] `set_mesh` (line 991) → `print_object.rs` — not in the paired file
-- [~] `set_mesh` (line 992) → `print_object.rs` — not in the paired file
-- [~] `set_mesh` (line 993) → `print_object.rs` — not in the paired file
-- [~] `set_mesh` (line 994) → `print_object.rs` — not in the paired file
-- [~] `set_mesh` (line 995) → `print_object.rs` — not in the paired file
+- [~] `set_mesh` (line 990) → `print_object.rs, texture_painting.rs` — not in the paired file
+- [~] `set_mesh` (line 991) → `print_object.rs, texture_painting.rs` — not in the paired file
+- [~] `set_mesh` (line 992) → `print_object.rs, texture_painting.rs` — not in the paired file
+- [~] `set_mesh` (line 993) → `print_object.rs, texture_painting.rs` — not in the paired file
+- [~] `set_mesh` (line 994) → `print_object.rs, texture_painting.rs` — not in the paired file
+- [~] `set_mesh` (line 995) → `print_object.rs, texture_painting.rs` — not in the paired file
 - [ ] `reset_mesh` (line 996) → `model.rs`
-- [~] `get_object` (line 1025) → `model.rs` — another overload of the name is ported
+- [~] `get_object` (line 1025) → `texture_painting.rs` — not in the paired file
 - [~] `type` (line 1026) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
 - [~] `set_type` (line 1027) → `surface.rs, surface_collection.rs` — not in the paired file
 - [~] `is_model_part` (line 1028) → `format/assembly_steps_json.rs` — not in the paired file
@@ -9000,7 +9000,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `scale` (line 1089) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
 - [ ] `scale_geometry_after_creation` (line 1096) → `model.rs`
 - [ ] `set_convex_hull_shared_ptr` (line 1107) → `model.rs`
-- [ ] `invalidate_convex_hull_2d` (line 1110) → `model.rs`
+- [~] `invalidate_convex_hull_2d` (line 1110) → `texture_painting.rs` — not in the paired file
 - [ ] `is_assemble_initialized` (line 1131) → `model.rs`
 - [~] `get_offset` (line 1134) → `geometry/geometry.rs` — not in the paired file
 - [~] `set_offset` (line 1136) → `geometry/geometry.rs` — not in the paired file
@@ -9045,8 +9045,8 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `get_extruders` (line 3416) → `model.rs`
 - [ ] `update_extruder_count` (line 3468) → `model.rs`
 - [ ] `update_extruder_count_when_delete_filament` (line 3483) → `model.rs`
-- [ ] `center_geometry_after_creation` (line 3513) → `model.rs`
-- [ ] `calculate_convex_hull` (line 3531) → `model.rs`
+- [~] `center_geometry_after_creation` (line 3513) → `texture_painting.rs` — not in the paired file
+- [~] `calculate_convex_hull` (line 3531) → `texture_painting.rs` — not in the paired file
 - [ ] `calculate_convex_hull_2d` (line 3538) → `model.rs`
 - [ ] `set_transformation` (line 3618) → `model.rs`
 - [ ] `set_transformation` (line 3622) → `model.rs`
@@ -9857,75 +9857,75 @@ Rust file: `overhang_detector.rs`. Status: **partial**. Not listed: 5 constructo
 
 ### `PaintReproject` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `paint_reproject.rs`. Status: **partial**. Not listed: 5 constructors.
 
 **free functions**
 
-- [ ] `cross_2d` (line 37)
-- [ ] `project_to_2d` (line 42)
-- [ ] `polygon_signed_area` (line 51)
-- [ ] `clip_polygon_by_triangle` (line 59)
-- [ ] `triangle_overlap_area` (line 105)
-- [ ] `dominant_projection_axis` (line 123)
-- [ ] `transform_triangle` (line 131)
-- [ ] `reproject_one_annotation` (line 943)
-- [ ] `reproject_one_annotation_by_region` (line 1309)
-- [ ] `count_valid_nodes` (line 1385)
-- [ ] `classify_cut_faces` (line 1439)
-- [ ] `annotation_bit_ranges` (line 1501)
-- [ ] `extract_source_roots` (line 1530)
-- [ ] `splice_congruent_paint` (line 1555)
-- [ ] `reproject_paint` (line 1582)
-- [ ] `reproject_paint_geometric` (line 1725)
-- [ ] `fill_operand_colour` (line 1885)
-- [ ] `append_shifted_annotation` (line 1895)
-- [ ] `operand_band` (line 1917)
-- [ ] `operand_reach` (line 1923)
-- [ ] `measure_operand` (line 1934)
-- [ ] `face_samples` (line 1970)
-- [ ] `rank_operands_per_face` (line 1985)
-- [ ] `paint_by_operand_filament` (line 2103)
-- [ ] `reproject_paint_from_volumes` (line 2200)
+- [v] `cross_2d` (line 37) → `paint_reproject.rs:52` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `project_to_2d` (line 42) → `paint_reproject.rs:57` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `polygon_signed_area` (line 51) → `paint_reproject.rs:66` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `clip_polygon_by_triangle` (line 59) → `paint_reproject.rs:83` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `triangle_overlap_area` (line 105) → `paint_reproject.rs:141` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `dominant_projection_axis` (line 123) → `paint_reproject.rs:160` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit (the body reads as partial to the estimate)
+- [v] `transform_triangle` (line 131) → `paint_reproject.rs:192` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit (the body reads as partial to the estimate)
+- [ ] `reproject_one_annotation` (line 943) → `paint_reproject.rs`
+- [ ] `reproject_one_annotation_by_region` (line 1309) → `paint_reproject.rs`
+- [v] `count_valid_nodes` (line 1385) → `paint_reproject.rs:264` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `classify_cut_faces` (line 1439) → `paint_reproject.rs:310` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `annotation_bit_ranges` (line 1501) → `paint_reproject.rs:363` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `extract_source_roots` (line 1530) → `paint_reproject.rs:390` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `splice_congruent_paint` (line 1555) → `paint_reproject.rs:413` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [ ] `reproject_paint` (line 1582) → `paint_reproject.rs`
+- [ ] `reproject_paint_geometric` (line 1725) → `paint_reproject.rs`
+- [ ] `fill_operand_colour` (line 1885) → `paint_reproject.rs`
+- [v] `append_shifted_annotation` (line 1895) → `paint_reproject.rs:440` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [ ] `operand_band` (line 1917) → `paint_reproject.rs`
+- [ ] `operand_reach` (line 1923) → `paint_reproject.rs`
+- [ ] `measure_operand` (line 1934) → `paint_reproject.rs`
+- [v] `face_samples` (line 1970) → `paint_reproject.rs:455` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [ ] `rank_operands_per_face` (line 1985) → `paint_reproject.rs`
+- [ ] `paint_by_operand_filament` (line 2103) → `paint_reproject.rs`
+- [ ] `reproject_paint_from_volumes` (line 2200) → `paint_reproject.rs`
 
 **class `DestinationInSourceFrame`**
 
-- [~] `triangle` (line 1194) → `aabb_mesh.rs` — a function of this name is in another Rust file
-- [ ] `to_source` (line 1199)
+- [v] `triangle` (line 1194) → `paint_reproject.rs:249` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
+- [v] `to_source` (line 1199) → `paint_reproject.rs:254` — R910: tests/paint_reproject_native_parity.rs: PaintReproject.cpp included with paint made by the pin's TriangleSelector: planar helpers (cross, projection, clipping, overlap areas, projection axis, transforms) and annotation helpers (node counts, bit ranges, source roots, splicing, shifting, cut-face classification, face samples), bit for bit
 
 **class `DestinationSeedIndex`**
 
-- [ ] `ensure_tree` (line 1256)
-- [ ] `seeds` (line 1266)
+- [ ] `ensure_tree` (line 1256) → `paint_reproject.rs`
+- [ ] `seeds` (line 1266) → `paint_reproject.rs`
 
 **class `PaintRegionSource`**
 
-- [~] `empty` (line 749) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
-- [ ] `leaf_count` (line 750)
-- [ ] `finest_leaf_edge` (line 756)
-- [~] `coverage` (line 763) → `bridge_detector.rs` — a function of this name is in another Rust file
-- [ ] `collect_leaves` (line 863)
-- [ ] `leaf_triangle` (line 900)
+- [~] `empty` (line 749) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [ ] `leaf_count` (line 750) → `paint_reproject.rs`
+- [ ] `finest_leaf_edge` (line 756) → `paint_reproject.rs`
+- [~] `coverage` (line 763) → `bridge_detector.rs` — not in the paired file
+- [ ] `collect_leaves` (line 863) → `paint_reproject.rs`
+- [ ] `leaf_triangle` (line 900) → `paint_reproject.rs`
 
 **class `PaintReprojector`**
 
-- [ ] `source_node_count` (line 173)
-- [ ] `fallback_count` (line 178)
-- [ ] `rebound_count` (line 183)
-- [ ] `resolve_source_roots` (line 195)
-- [ ] `measure_overlap` (line 282)
-- [ ] `measure_point_sample` (line 401)
-- [~] `triangle_vertices` (line 515) → `geometry/aabb_tree.rs, triangle_mesh.rs` — a function of this name is in another Rust file
-- [ ] `sample_state` (line 528)
-- [ ] `root_overlap_area` (line 547)
-- [ ] `collect_overlap_areas` (line 578)
-- [ ] `projection_axis` (line 609)
-- [ ] `normals_parallel` (line 616)
-- [ ] `projection_axis` (line 633)
+- [ ] `source_node_count` (line 173) → `paint_reproject.rs`
+- [ ] `fallback_count` (line 178) → `paint_reproject.rs`
+- [ ] `rebound_count` (line 183) → `paint_reproject.rs`
+- [ ] `resolve_source_roots` (line 195) → `paint_reproject.rs`
+- [ ] `measure_overlap` (line 282) → `paint_reproject.rs`
+- [ ] `measure_point_sample` (line 401) → `paint_reproject.rs`
+- [~] `triangle_vertices` (line 515) → `geometry/aabb_tree.rs, triangle_mesh.rs` — not in the paired file
+- [ ] `sample_state` (line 528) → `paint_reproject.rs`
+- [ ] `root_overlap_area` (line 547) → `paint_reproject.rs`
+- [ ] `collect_overlap_areas` (line 578) → `paint_reproject.rs`
+- [ ] `projection_axis` (line 609) → `paint_reproject.rs`
+- [ ] `normals_parallel` (line 616) → `paint_reproject.rs`
+- [ ] `projection_axis` (line 633) → `paint_reproject.rs`
 
 **class `RegionEdgeLimit`**
 
-- [~] `value` (line 1161) → `format/assembly_tree_json.rs, g_code_reader.rs, int128.rs` — a function of this name is in another Rust file
-- [~] `trafo` (line 1162) → `sla/agg_raster.rs` — a function of this name is in another Rust file
+- [~] `value` (line 1161) → `format/assembly_tree_json.rs, g_code_reader.rs, int128.rs` — not in the paired file
+- [~] `trafo` (line 1162) → `sla/agg_raster.rs` — not in the paired file
 
 ### `ParameterUtils` (.cpp+.hpp)
 
@@ -10103,7 +10103,7 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 
 **class `utf8_char_skipper_parser`**
 
-- [~] `parse` (line 1129) → `debug/compare.rs, format/assembly_steps_json.rs, format/format.rs` — not in the paired file
+- [~] `parse` (line 1129) → `config.rs, debug/compare.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `what` (line 1173) → `clipper2/clipper_core.rs, config.rs, filament_group_utils.rs` — not in the paired file
 
 ### `Platform` (.cpp+.hpp)
@@ -10870,9 +10870,9 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `has_auto_brim` (line 943) → `print.rs`
 - [ ] `single_diameter_layering_nozzle` (line 984) → `print.rs`
 - [x] `objects` (line 994) → `print.rs:543`
-- [~] `get_object` (line 995) → `model.rs` — not in the paired file
-- [~] `get_object` (line 996) → `model.rs` — not in the paired file
-- [~] `get_object` (line 999) → `model.rs` — not in the paired file
+- [~] `get_object` (line 995) → `model.rs, texture_painting.rs` — not in the paired file
+- [~] `get_object` (line 996) → `model.rs, texture_painting.rs` — not in the paired file
+- [~] `get_object` (line 999) → `model.rs, texture_painting.rs` — not in the paired file
 - [ ] `statistics_by_extruder` (line 1027) → `print.rs`
 - [ ] `is_sequential_print` (line 1038) → `print.rs`
 - [ ] `set_extruder_filament_info` (line 1072) → `print.rs`
@@ -12374,7 +12374,7 @@ Rust file: `sla_print.rs`. Status: **partial**. Not listed: 7 constructors, 2 de
 - [~] `empty` (line 449) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `finished` (line 459) → `gcode/wipe_tower.rs` — not in the paired file
 - [ ] `get_print_object_by_model_object_id` (line 464) → `sla_print.rs`
-- [~] `get_object` (line 469) → `model.rs` — not in the paired file
+- [~] `get_object` (line 469) → `model.rs, texture_painting.rs` — not in the paired file
 - [ ] `set_task` (line 510) → `sla_print.rs`
 - [~] `finalize` (line 598) → `cut_utils.rs, fill/fill_base.rs, gcode/g_code_processor.rs` — not in the paired file
 - [ ] `output_filename` (line 610) → `sla_print.rs`
@@ -13258,38 +13258,38 @@ Rust file: `text_configuration.rs`. Status: **partial**. Not listed: 1 construct
 
 ### `TexturePainting` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `texture_painting.rs`. Status: **partial**. Not listed: 1 operators.
 
 **free functions**
 
-- [ ] `make_mesh_repair_cache` (line 29)
-- [ ] `decode_texture_image` (line 34)
-- [ ] `build_tex2color_mesh` (line 61)
-- [ ] `extract_painted_mesh` (line 112)
-- [ ] `make_tex2color_settings` (line 138)
-- [ ] `take_prepared_cache` (line 159)
-- [ ] `mesh_repair_cache_can_skip_input` (line 176)
-- [ ] `mesh_repair_cache_win10_failed` (line 183)
-- [ ] `copy_prepared_mesh_from_cache` (line 188)
-- [ ] `bind_paint_callbacks` (line 200)
-- [ ] `painting_from_repair_cache` (line 216)
-- [ ] `cluster_from_repair_cache` (line 247)
-- [ ] `build_multi_texture_atlas` (line 266)
-- [ ] `texture_to_painting` (line 401)
-- [ ] `face_colors_to_painting` (line 461)
-- [ ] `standard_3mf_colors_to_painting` (line 507)
-- [ ] `compute_delta_e` (line 615)
-- [ ] `compute_delta_e` (line 628)
-- [ ] `match_clusters_to_filaments` (line 635)
-- [ ] `apply_painted_mesh_to_volume` (line 659)
-- [ ] `decode_texture_to_pixels` (line 789)
-- [ ] `sample_face_from_uvs` (line 814)
-- [ ] `sample_face_from_texture` (line 858)
-- [ ] `sample_original_face_colors` (line 870)
+- [x] `make_mesh_repair_cache` (line 29) → `texture_painting.rs:383`
+- [v] `decode_texture_image` (line 34) → `texture_painting.rs:389` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit (the body reads as partial to the estimate)
+- [v] `build_tex2color_mesh` (line 61) → `texture_painting.rs:424` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `extract_painted_mesh` (line 112) → `texture_painting.rs:463` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [x] `make_tex2color_settings` (line 138) → `texture_painting.rs:486`
+- [v] `take_prepared_cache` (line 159) → `texture_painting.rs:503` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `mesh_repair_cache_can_skip_input` (line 176) → `texture_painting.rs:521` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `mesh_repair_cache_win10_failed` (line 183) → `texture_painting.rs:526` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `copy_prepared_mesh_from_cache` (line 188) → `texture_painting.rs:535` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [x] `bind_paint_callbacks` (line 200) → `texture_painting.rs:554`
+- [v] `painting_from_repair_cache` (line 216) → `texture_painting.rs:573` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `cluster_from_repair_cache` (line 247) → `texture_painting.rs:620` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `build_multi_texture_atlas` (line 266) → `texture_painting.rs:657` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `texture_to_painting` (line 401) → `texture_painting.rs:805` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `face_colors_to_painting` (line 461) → `texture_painting.rs:871` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `standard_3mf_colors_to_painting` (line 507) → `texture_painting.rs:929` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `compute_delta_e` (line 615) → `texture_painting.rs:1066` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [~] `compute_delta_e` (line 628) → `texture_painting.rs` — another overload of the name is ported
+- [v] `match_clusters_to_filaments` (line 635) → `texture_painting.rs:1077` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `apply_painted_mesh_to_volume` (line 659) → `texture_painting.rs:1101` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `decode_texture_to_pixels` (line 789) → `texture_painting.rs:1193` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `sample_face_from_uvs` (line 814) → `texture_painting.rs:1212` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `sample_face_from_texture` (line 858) → `texture_painting.rs:1261` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
+- [v] `sample_original_face_colors` (line 870) → `texture_painting.rs:1278` — R910: tests/texture_painting_native_parity.rs: TexturePainting.cpp linked from the engine build: decoding, atlas, sampling, painting from textures, face colors and 3MF colors, repair-cache paths, delta E and filament matching, applying to a real ModelVolume, bit for bit
 
 **class `TexturedMesh`**
 
-- [ ] `has_face_uvs` (line 54)
+- [x] `has_face_uvs` (line 54) → `texture_painting.rs:130`
 
 ### `TextureToColor/Callbacks` (.hpp)
 
@@ -13369,24 +13369,24 @@ Rust file: `texture_to_color/texture_to_color.rs`. Status: **ported**.
 
 **free functions**
 
-- [x] `SaveToOFF` (line 27) → `texture_to_color/texture_to_color.rs:239`
-- [x] `count_cluster_label_usage` (line 59) → `texture_to_color/texture_to_color.rs:272`
-- [x] `discard_unused_cluster_centers` (line 70) → `texture_to_color/texture_to_color.rs:284`
-- [x] `ensure_all_cluster_centers_used` (line 115) → `texture_to_color/texture_to_color.rs:322`
-- [x] `get_pixel_color` (line 187) → `texture_to_color/texture_to_color.rs:404`
-- [x] `sample_face_color` (line 247) → `texture_to_color/texture_to_color.rs:456`
-- [x] `linear_subdivision` (line 265) → `texture_to_color/texture_to_color.rs:485`
-- [x] `quantize_vertex_colors` (line 387) → `texture_to_color/texture_to_color.rs:595`
-- [x] `quantize_colors` (line 410) → `texture_to_color/texture_to_color.rs:621`
-- [x] `adaptive_split_by_vertex_clusters` (line 457) → `texture_to_color/texture_to_color.rs:662`
-- [x] `repair_cluster_smooth` (line 591) → `texture_to_color/texture_to_color.rs:831`
-- [x] `TextureToColor` (line 864) → `texture_to_color/texture_to_color.rs:1086`
-- [x] `ClusterAndSmooth` (line 1047) → `texture_to_color/texture_to_color.rs:1285`
+- [v] `SaveToOFF` (line 27) → `texture_to_color/texture_to_color.rs:240` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `count_cluster_label_usage` (line 59) → `texture_to_color/texture_to_color.rs:273` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `discard_unused_cluster_centers` (line 70) → `texture_to_color/texture_to_color.rs:285` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `ensure_all_cluster_centers_used` (line 115) → `texture_to_color/texture_to_color.rs:323` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `get_pixel_color` (line 187) → `texture_to_color/texture_to_color.rs:405` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `sample_face_color` (line 247) → `texture_to_color/texture_to_color.rs:457` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `linear_subdivision` (line 265) → `texture_to_color/texture_to_color.rs:486` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `quantize_vertex_colors` (line 387) → `texture_to_color/texture_to_color.rs:596` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `quantize_colors` (line 410) → `texture_to_color/texture_to_color.rs:622` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `adaptive_split_by_vertex_clusters` (line 457) → `texture_to_color/texture_to_color.rs:663` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `repair_cluster_smooth` (line 591) → `texture_to_color/texture_to_color.rs:832` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `TextureToColor` (line 864) → `texture_to_color/texture_to_color.rs:1087` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [v] `ClusterAndSmooth` (line 1047) → `texture_to_color/texture_to_color.rs:1286` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
 
 **class `MeshRepairCache`**
 
-- [x] `matches_input` (line 44) → `texture_to_color/texture_to_color.rs:156`
-- [x] `invalidate_prepared_mesh` (line 58) → `texture_to_color/texture_to_color.rs:172`
+- [v] `matches_input` (line 44) → `texture_to_color/texture_to_color.rs:157` — R910: tests/texture_to_color_texture_to_color_native_parity.rs: TextureToColor.cpp included unchanged with the pin's ColorUtils.cpp and OpenCV: 960 pixel and 480 face samples, cluster bookkeeping, subdivision, quantization, adaptive split, 100 repair/cluster/smooth runs, 32 TextureToColor and 24 ClusterAndSmooth runs with their progress reports and cancel calls, bit for bit
+- [x] `invalidate_prepared_mesh` (line 58) → `texture_to_color/texture_to_color.rs:173`
 
 ### `TextureToColor/TriMesh` (.hpp)
 
@@ -13583,7 +13583,7 @@ Rust file: `triangle_mesh.rs`. Status: **partial**. Not listed: 6 constructors, 
 - [~] `empty` (line 150) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `release_optional` (line 159) → `triangle_mesh.rs`
 - [ ] `restore_optional` (line 161) → `triangle_mesh.rs`
-- [ ] `set_init_shift` (line 165) → `triangle_mesh.rs`
+- [~] `set_init_shift` (line 165) → `texture_painting.rs` — not in the paired file
 - [ ] `get_init_shift` (line 166) → `triangle_mesh.rs`
 - [ ] `from_stl` (line 204) → `triangle_mesh.rs`
 - [~] `ReadSTLFile` (line 237) → `stl.rs` — not in the paired file

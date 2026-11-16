@@ -52,10 +52,20 @@ fn clib_offset_is_vertex_exact_geo_densifies() {
         "ClipperLib offset must be ~vertex-exact (<= {n} input pts), got {clib_pts}"
     );
     // geo-clipper over-emits on this dense contour.
-    assert!(
-        clib_pts < geo_pts,
-        "ClipperLib ({clib_pts}) must emit fewer vertices than geo-clipper ({geo_pts})"
-    );
+    if slicer::faithful_gate("GEO_CLIPPER_CLIB") {
+        // Since R910 `offset_expolygons` follows ClipperUtils.cpp:570-571 on the Rust ClipperLib
+        // (gate GEO_CLIPPER_CLIB); it is vertex-exact too.
+        assert!(
+            geo_pts <= n + 2,
+            "offset_expolygons on ClipperLib must be ~vertex-exact (<= {n} input pts), got {geo_pts}"
+        );
+    } else {
+        // GEO_CLIPPER_CLIB=0: the former geo-clipper arm, which densifies.
+        assert!(
+            clib_pts < geo_pts,
+            "ClipperLib ({clib_pts}) must emit fewer vertices than geo-clipper ({geo_pts})"
+        );
+    }
 
     // Area parity: area-invariant swap (material must stay at parity).
     let geo_area: CoordF = geo.iter().map(|p| p.area().abs()).sum();

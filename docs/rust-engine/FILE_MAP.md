@@ -36,34 +36,34 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | | |
 |-|-|
 | C++ units | 310 |
-| with a Rust file of the same name | 304 (98%) |
-| of those, same words | 303 |
+| with a Rust file of the same name | 306 (99%) |
+| of those, same words | 305 |
 | of those, same letters but other word breaks | 1 |
 | of those, in another directory than the C++ file | 7 |
-| C++ units with no Rust file | 6 |
+| C++ units with no Rust file | 4 |
 | Rust files with no C++ file of that name | 59 (plus 23 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 4461 (49%) |
-| estimate: faithful | 3792 (85% of matched) |
-| estimate: partial | 428 (10% of matched) |
+| matched to a Rust function in the paired file | 4505 (50%) |
+| estimate: faithful | 3828 (85% of matched) |
+| estimate: partial | 436 (10% of matched) |
 | estimate: divergent | 216 (5% of matched) |
 | estimate: stub | 25 (1% of matched) |
-| missing in the paired Rust file | 4383 |
-| of those, a function of that name exists in another Rust file | 1593 |
+| missing in the paired Rust file | 4414 |
+| of those, a function of that name exists in another Rust file | 1604 |
 | of the rest, another overload of the name is ported | 353 |
-| of the rest, under 25 tokens (accessors, one-liners) | 649 |
-| of the rest, 25 tokens or more | 1788 |
-| in a C++ unit with no Rust file | 208 |
-| Rust functions with no C++ function of that name in the pair | 5583 |
+| of the rest, under 25 tokens (accessors, one-liners) | 654 |
+| of the rest, 25 tokens or more | 1803 |
+| in a C++ unit with no Rust file | 133 |
+| Rust functions with no C++ function of that name in the pair | 5649 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 3312 | 2798 | 334 | 166 | 14 | 3539 |
+| 1 | 180 | 180 | 6851 | 3316 | 2797 | 339 | 166 | 14 | 3535 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
-| 3 | 92 | 86 | 1374 | 756 | 653 | 55 | 43 | 5 | 618 |
+| 3 | 92 | 88 | 1374 | 796 | 690 | 58 | 43 | 5 | 578 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
 
 ## Biggest gaps
@@ -73,7 +73,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 
 | Tier | C++ unit | Rust file | C++ fns | faithful | partial | divergent | stub | missing | missing, real |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | `Model` | `model.rs` | 374 | 8 | 3 | 0 | 0 | 363 | 163 |
+| 1 | `Model` | `model.rs` | 374 | 8 | 4 | 0 | 0 | 362 | 161 |
 | 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 3 | 0 | 0 | 0 | 138 | 114 |
 | 1 | `Print` | `print.rs` | 236 | 5 | 1 | 6 | 1 | 223 | 93 |
 | 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 55 | 17 | 13 | 0 | 133 | 82 |
@@ -84,7 +84,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 99 | 22 | 10 | 3 | 79 | 44 |
 | 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 14 | 8 | 11 | 0 | 52 | 42 |
 | 1 | `Preset` | `preset.rs` | 108 | 12 | 0 | 0 | 0 | 96 | 42 |
-| 1 | `ClipperUtils` | `clipper_utils.rs` | 227 | 29 | 4 | 2 | 0 | 192 | 28 |
+| 1 | `ClipperUtils` | `clipper_utils.rs` | 227 | 32 | 4 | 2 | 0 | 189 | 25 |
 | 1 | `utils` | `utils.rs` | 66 | 23 | 7 | 11 | 4 | 21 | 12 |
 | 1 | `FilamentGroup` | `filament_group.rs` | 49 | 22 | 0 | 4 | 0 | 23 | 19 |
 | 1 | `PrintApply` | `print_apply.rs` | 44 | 3 | 1 | 0 | 0 | 40 | 22 |
@@ -112,7 +112,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `ExtrusionEntity` | `extrusion_entity.rs` | 125 | 89 | 1 | 5 | 0 | 30 | 2 |
 | 1 | `GCode/PrintExtents` | `gcode/print_extents.rs` | 10 | 2 | 1 | 1 | 1 | 5 | 5 |
 | 1 | `Time` | `time.rs` | 22 | 7 | 1 | 2 | 0 | 12 | 5 |
-| 1 | `Config` | `config.rs` | 327 | 216 | 28 | 4 | 0 | 79 | 2 |
+| 1 | `Config` | `config.rs` | 327 | 212 | 32 | 4 | 0 | 79 | 2 |
 | 1 | `Fill/FillAdaptive` | `fill/fill_adaptive.rs` | 32 | 16 | 1 | 2 | 0 | 13 | 4 |
 | 1 | `GCode/SeamPlacer` | `gcode/seam_placer.rs` | 45 | 32 | 7 | 1 | 0 | 5 | 5 |
 | 1 | `GCodeWriter` | `g_code_writer.rs` | 84 | 64 | 5 | 3 | 0 | 12 | 3 |
@@ -159,8 +159,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | Tier | C++ unit | Files | Functions | Body tokens |
 |-|-|-|-|-|
 | 3 | `Format/3mf` | .cpp+.hpp | 111 | 16175 |
-| 3 | `PaintReproject` | .cpp+.hpp | 50 | 13403 |
-| 3 | `TexturePainting` | .cpp+.hpp | 25 | 6346 |
 | 3 | `Format/AssimpImport` | .cpp+.hpp | 16 | 2074 |
 | 3 | `MeshBooleanOpenMeshCraft` | .cpp | 6 | 995 |
 | 3 | `Win10ModelRepair` | .hpp | 0 | 0 |
@@ -1522,16 +1520,16 @@ Rust only:
 
 ### `ClipperUtils` (.cpp+.hpp) and `clipper_utils.rs`
 
-Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 152. Matched 35: faithful 29, partial 4, divergent 2, stub 0.
+Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 166. Matched 38: faithful 32, partial 4, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `diff_ex` :470 and `diff_ex` :966 (40%, 4.85x)
-- divergent: `offset2` :577 and `offset2` :1139 (25%, 2.03x)
-- partial: `union_` :727 and `union` :300 (40%, 3.17x)
-- partial: `intersection_ex` :808 and `intersection_ex` :1054 (33%, 3.12x)
-- divergent: `union_ex` :825 and `union_ex` :332 (20%, 5.24x)
-- partial: `mittered_offset_path_scaled` :1120 and `mittered_offset_path_scaled` :2002 (33%, 1.11x)
+- partial: `diff_ex` :470 and `diff_ex` :1105 (40%, 4.85x)
+- divergent: `offset2` :577 and `offset2` :1278 (25%, 2.03x)
+- partial: `union_` :727 and `union` :331 (40%, 5.9x)
+- partial: `intersection_ex` :808 and `intersection_ex` :1193 (33%, 3.12x)
+- divergent: `union_ex` :825 and `union_ex` :376 (20%, 5.38x)
+- partial: `mittered_offset_path_scaled` :1120 and `mittered_offset_path_scaled` :2253 (33%, 1.11x)
 
 Missing in the Rust file:
 
@@ -1589,7 +1587,6 @@ Missing in the Rust file:
 - `SurfacesPtrProvider::end` :308 (9 tokens) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
 - `SurfacesPtrProvider::size` :309 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clipper_do` :325 (87 tokens, overload)
-- `ClipperPaths_to_Slic3rExPolygons` :354 (26 tokens)
 - `offset_ex` :358 (26 tokens) — in `bridge_detector.rs`, `emboss.rs`, `fill/fill_conformal.rs`
 - `union_safety_offset` :370 (10 tokens) — in `bridge_detector.rs`
 - `union_safety_offset` :371 (10 tokens) — in `bridge_detector.rs`
@@ -1619,7 +1616,6 @@ Missing in the Rust file:
 - `offset_expolygon_inner` :510 (18 tokens, overload)
 - `intersection_ln` :536 (14 tokens) — in `bridge_detector.rs`, `internal_bridge_detector.rs`
 - `intersection_ln` :541 (26 tokens) — in `bridge_detector.rs`, `internal_bridge_detector.rs`
-- `expolygons_offset_pt` :552 (31 tokens)
 - `offset` :559 (17 tokens) — in `bounding_box.rs`, `bridge_detector.rs`, `geometry/voronoi_offset.rs`
 - `offset` :561 (17 tokens) — in `bounding_box.rs`, `bridge_detector.rs`, `geometry/voronoi_offset.rs`
 - `offset` :563 (17 tokens) — in `bounding_box.rs`, `bridge_detector.rs`, `geometry/voronoi_offset.rs`
@@ -1664,7 +1660,6 @@ Missing in the Rust file:
 - `union_` :723 (27 tokens, overload) — in `bridge_detector.rs`, `clipper2/clipper_h.rs`, `clipper2/clipper_minkowski.rs`
 - `union_` :725 (37 tokens, overload) — in `bridge_detector.rs`, `clipper2/clipper_h.rs`, `clipper2/clipper_minkowski.rs`
 - `union_` :735 (28 tokens, overload) — in `bridge_detector.rs`, `clipper2/clipper_h.rs`, `clipper2/clipper_minkowski.rs`
-- `_clipper_ex` :738 (35 tokens)
 - `diff_ex` :741 (26 tokens, overload) — in `fill/fill_radial_zig_zag.rs`
 - `diff_ex` :743 (26 tokens, overload) — in `fill/fill_radial_zig_zag.rs`
 - `diff_ex` :745 (28 tokens, overload) — in `fill/fill_radial_zig_zag.rs`
@@ -1730,123 +1725,134 @@ Missing in the Rust file:
 
 Rust only:
 
-- `geo_clipper_scale` :64
-- `geo_note` :90
-- `geo_calls_report` :99
-- `JoinType::from` :149 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `polygon_to_geo` :159
-- `expolygon_to_geo` :181
-- `geo_to_polygon` :225
-- `geo_to_expolygon` :246
-- `geo_multi_to_expolygons` :275
-- `polygons_to_geo_multi` :280
-- `expolygons_to_geo_multi` :285
-- `union_polygons_ex` :379
-- `union_polygons_ex_geo` :410
-- `difference` :468
-- `xor` :498
-- `offset_polyline` :537
-- `offset_polyline_miter` :579
-- `unscale_delta` :611
-- `offset_polygon` :633
-- `offset_expolygon` :653
-- `offset_expolygons` :677
-- `offset_expolygons_miter_limit` :709
-- `offset_polygons` :739
-- `offset_polygons_round` :770
-- `offset_expolygons_round` :800
-- `grow` :841
-- `scale_faithful` :859
-- `offset_delta_mm_from_scaled_f32` :868
-- `simplify` :877 — C++ has it in `Arachne/WallToolPaths`, `Arachne/utils/ExtrusionLine`, `ExPolygon`
-- `remove_small` :890 — C++ has it in `Polygon`
-- `polygons_overlap` :899
-- `intersection_base` :905
-- `total_area` :921
-- `diff_ex_surfaces_expolygons` :998
-- `diff_ex_polygons_surfaces` :1023
-- `intersection_surfaces` :1068
-- `intersection_surfaces_expolygons` :1082
-- `to_polygons` :1096 — C++ has it in `ExPolygon`, `NSVGUtils`, `Polygon`
-- `clib_join_code` :1185
-- `assert_i32_scaled` :1199
-- `clib_read_closed_paths` :1234
-- `clib_read_closed_paths_or_null` :1252
-- `clib_polygons_from_paths` :1263
-- `clib_fill_type` :1276
-- `clib_join_type` :1289
-- `Paths::execute` :1315 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
-- `PolyTree::execute` :1335 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
-- `clipper_do_safety_offset` :1506
-- `offset_polyline_paths` :1645
-- `offset2_ex_paths` :1823
-- `union_safety_offset_ex_paths` :1885
-- `variable_offset_inner_ex_paths` :2158
-- `clib_offset_expolygon_paths_prescaled` :2205
-- `clib_offset_expolygon_paths` :2238
-- `clib_offset_expolygon_paths_scaled` :2278
-- `offset_expolygons_clib_scaled` :2317
-- `offset_expolygons_clib` :2325
-- `offset_expolygons_clib_raw_scaled` :2337
-- `offset_expolygons_clib_raw_scaled_counted` :2348
-- `offset_expolygons_clib_impl` :2365
-- `shrink_clib` :2404
-- `grow_clib` :2413
-- `offset2_clib` :2425
-- `offset_ex_polygons_clib` :2447
-- `clib_flatten_expolygons` :2476
-- `clib_flatten_polygons` :2501
-- `difference_polygons_clib` :2527
-- `clib_boolean_polygons_raw` :2552
-- `diff_polygons_raw_clib` :2572
-- `intersection_polygons_raw_clib` :2578
-- `difference_clib` :2596
-- `intersection_clib` :2646
-- `intersection_clib_safety` :2686
-- `difference_clib_safety` :2708
-- `union_flat_clib` :2756
-- `variable_offset_inner_ex_clib` :2788
-- `unionprof_report` :2827
-- `union_ex_clib` :2849
-- `polytree_ex_clib` :2861
-- `union_ex_clib_impl` :2867
-- `union_safety_offset_ex_clib` :2931
-- `offset2_ex_clib` :2966
-- `offset2_ex_clib_miter` :2978
-- `simplify_polygons_clib` :3048
-- `offset_polygons_clib` :3086
-- `offset_polygons_clib_ml` :3093
-- `detect_gaps` :3148
-- `extract_centerlines` :3205
-- `intersect_polylines_with_expolygons` :3279
-- `clip_polyline_to_expolygons` :3298
-- `clip_segment_to_expolygons` :3349
-- `point_in_expolygons` :3411
-- `clip_clipper_polygon_with_subject_bbox_points` :3437
-- `clip_clipper_polygons_with_subject_bbox_expolygon` :3532
-- `clip_clipper_polygons_with_subject_bbox_polygons` :3559
-- `intersection_pl_clib` :3640
-- `diff_pl_clib` :3672
-- `intersection_polyline_with_expolygons` :3704
-- `intersection_segment_with_expolygons` :3754
-- `diff_polyline_from_expolygons` :3896
-- `diff_segment_from_expolygons` :3946
-- `polygons_to_polylines` :4007
-- `expolygons_to_polylines` :4015
-- `union_safety_offset_ex_expolygons` :4076
-- `polygons_ops_clib` :4085
-- `mm_to_scaled_f32` :4091
-- `polygons_as_paths` :4097
-- `shrink_polygons_clib` :4103
-- `closing_polygons_clib` :4109
-- `opening_polygons_clib` :4116
-- `diff_polygons` :4126
-- `diff_ex_polygons_polygons` :4146
-- `intersection_ex_polygons_polygons` :4171
-- `intersection_ex_expolygons_polygons` :4193
-- `expand_polygons` :4214
-- `opening_polygons_2` :4232
-- `clip_clipper_polygons_with_subject_bbox_expolygons` :4253
+- `geo_clipper_scale` :66
+- `geo_clipper_clib` :108
+- `geo_note` :121
+- `geo_calls_report` :130
+- `JoinType::from` :180 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `polygon_to_geo` :190
+- `expolygon_to_geo` :212
+- `geo_to_polygon` :256
+- `geo_to_expolygon` :277
+- `geo_multi_to_expolygons` :306
+- `polygons_to_geo_multi` :311
+- `expolygons_to_geo_multi` :316
+- `union_polygons_ex` :424
+- `union_polygons_ex_geo` :455
+- `difference` :514
+- `xor` :545
+- `offset_polyline` :596
+- `offset_polyline_miter` :651
+- `unscale_delta` :695
+- `offset_polygon` :717
+- `offset_expolygon` :743
+- `offset_expolygons` :774
+- `offset_expolygons_miter_limit` :811
+- `offset_polygons` :846
+- `offset_polygons_round` :882
+- `offset_expolygons_round` :923
+- `grow` :975
+- `scale_faithful` :993
+- `offset_delta_mm_from_scaled_f32` :1002
+- `simplify` :1011 — C++ has it in `Arachne/WallToolPaths`, `Arachne/utils/ExtrusionLine`, `ExPolygon`
+- `remove_small` :1024 — C++ has it in `Polygon`
+- `polygons_overlap` :1033
+- `intersection_base` :1039
+- `total_area` :1060
+- `diff_ex_surfaces_expolygons` :1137
+- `diff_ex_polygons_surfaces` :1162
+- `intersection_surfaces` :1207
+- `intersection_surfaces_expolygons` :1221
+- `to_polygons` :1235 — C++ has it in `ExPolygon`, `NSVGUtils`, `Polygon`
+- `clib_join_code` :1324
+- `assert_i32_scaled` :1338
+- `clib_read_closed_paths` :1373
+- `clib_read_closed_paths_or_null` :1391
+- `clib_polygons_from_paths` :1402
+- `clib_fill_type` :1415
+- `clib_join_type` :1428
+- `Paths::execute` :1454 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `PolyTree::execute` :1474 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `clipper_do_safety_offset` :1645
+- `offset_polyline_paths` :1798
+- `offset_polyline_path` :1823
+- `offset_ex_expolygon_paths` :2010
+- `offset_ex_expolygons_paths` :2024
+- `offset2_ex_paths` :2040
+- `clipper_do_polytree_safety_offset` :2095
+- `union_safety_offset_ex_paths` :2136
+- `variable_offset_inner_ex_paths` :2409
+- `clib_offset_expolygon_paths_prescaled` :2456
+- `clib_offset_expolygon_paths` :2489
+- `clib_offset_expolygon_paths_scaled` :2529
+- `offset_expolygons_clib_scaled` :2568
+- `offset_expolygons_clib` :2576
+- `offset_expolygons_clib_raw_scaled` :2588
+- `offset_expolygons_clib_raw_scaled_counted` :2599
+- `offset_expolygons_clib_impl` :2616
+- `shrink_clib` :2656
+- `grow_clib` :2665
+- `offset2_clib` :2677
+- `offset_ex_polygons_clib` :2699
+- `offset_ex_polygons_clib_ml` :2710
+- `clib_path_of_points` :2737
+- `clib_expolygons_paths` :2750
+- `clib_expolygon_rings` :2762
+- `offset_ex_expolygon_clib` :2772
+- `offset_ex_expolygons_clib_ml` :2786
+- `clib_flatten_expolygons` :2800
+- `clib_flatten_polygons` :2825
+- `difference_polygons_clib` :2851
+- `clib_boolean_polygons_raw` :2876
+- `diff_polygons_raw_clib` :2896
+- `intersection_polygons_raw_clib` :2902
+- `difference_clib` :2920
+- `intersection_clib` :2971
+- `intersection_clib_safety` :3012
+- `difference_clib_safety` :3034
+- `union_flat_clib` :3083
+- `variable_offset_inner_ex_clib` :3115
+- `unionprof_report` :3154
+- `union_ex_clib` :3176
+- `polytree_ex_clib` :3188
+- `union_ex_clib_impl` :3194
+- `union_safety_offset_ex_clib` :3258
+- `offset2_ex_clib` :3293
+- `offset2_ex_clib_miter` :3305
+- `simplify_polygons_clib` :3375
+- `offset_polygons_clib` :3413
+- `offset_polygons_clib_ml` :3420
+- `detect_gaps` :3475
+- `extract_centerlines` :3532
+- `intersect_polylines_with_expolygons` :3606
+- `clip_polyline_to_expolygons` :3625
+- `clip_segment_to_expolygons` :3676
+- `point_in_expolygons` :3738
+- `clip_clipper_polygon_with_subject_bbox_points` :3764
+- `clip_clipper_polygons_with_subject_bbox_expolygon` :3859
+- `clip_clipper_polygons_with_subject_bbox_polygons` :3886
+- `intersection_pl_clib` :3967
+- `diff_pl_clib` :3999
+- `intersection_polyline_with_expolygons` :4031
+- `intersection_segment_with_expolygons` :4081
+- `diff_polyline_from_expolygons` :4223
+- `diff_segment_from_expolygons` :4273
+- `polygons_to_polylines` :4334
+- `expolygons_to_polylines` :4342
+- `union_safety_offset_ex_expolygons` :4403
+- `polygons_ops_clib` :4412
+- `mm_to_scaled_f32` :4418
+- `polygons_as_paths` :4424
+- `shrink_polygons_clib` :4430
+- `closing_polygons_clib` :4436
+- `opening_polygons_clib` :4443
+- `diff_polygons` :4453
+- `diff_ex_polygons_polygons` :4473
+- `intersection_ex_polygons_polygons` :4498
+- `intersection_ex_expolygons_polygons` :4520
+- `expand_polygons` :4541
+- `opening_polygons_2` :4559
+- `clip_clipper_polygons_with_subject_bbox_expolygons` :4580
 
 ### `ClipperZUtils` (.hpp) and `clipper_z_utils.rs`
 
@@ -1974,42 +1980,46 @@ Rust only:
 
 ### `Config` (.cpp+.hpp) and `config.rs`
 
-Tier 1. C++ functions 327 (plus 103 constructors, 2 destructors, 64 operators), Rust functions 572. Matched 248: faithful 216, partial 28, divergent 4, stub 0.
+Tier 1. C++ functions 327 (plus 103 constructors, 2 destructors, 64 operators), Rust functions 599. Matched 248: faithful 212, partial 32, divergent 4, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `enum_looks_like_true_value` :101 and `enum_looks_like_true_value` :52 (33%, 0.91x)
 - partial: `unescape_string_cstyle` :137 and `unescape_string_cstyle` :292 (50%, 0.95x)
-- partial: `ConfigOptionSingle::set` :315 and `ConfigOptionFloatOrPercent::set` :3431 (50%, 1.25x)
-- partial: `ConfigOptionVector::set` :400 and `ConfigOptionEnumsGenericTempl::set` :4724 (50%, 1.24x)
-- partial: `ConfigBase::setenv_` :803 and `ConfigBase::setenv_` :6123 (50%, 0.71x)
-- partial: `ConfigOptionFloat::deserialize` :842 and `ConfigOptionFloat::deserialize` :2587 (40%, 1.34x)
-- partial: `ConfigOptionFloatsTempl::deserialize` :918 and `ConfigOptionFloatsOrPercentsTempl::deserialize` :3609 (64%, 1.19x)
-- partial: `ConfigOptionInt::deserialize` :1013 and `ConfigOptionInt::deserialize` :2856 (40%, 1.34x)
-- partial: `ConfigOptionIntsTempl::deserialize` :1084 and `ConfigOptionIntsTempl::deserialize` :2968 (64%, 1.05x)
-- partial: `ConfigOptionPercent::serialize` :1218 and `ConfigOptionPercent::serialize` :3210 (50%, 0.71x)
-- partial: `ConfigOptionPercent::deserialize` :1227 and `ConfigOptionPercent::deserialize` :3216 (40%, 1.34x)
-- partial: `ConfigBase::load_from_ini_string` :1257 and `ConfigBase::load_from_ini_string` :6585 (40%, 0.63x)
-- partial: `ConfigBase::load_from_ini_string_commented` :1267 and `ConfigBase::load_from_ini_string_commented` :6593 (50%, 0.96x)
-- partial: `ConfigOptionFloatOrPercent::set` :1325 and `ConfigOptionSingle::set` :1809 (40%, 0.78x)
-- partial: `ConfigOptionFloatOrPercent::deserialize` :1341 and `ConfigOptionFloatOrPercent::deserialize` :3452 (44%, 1.15x)
-- divergent: `ConfigOptionFloatsOrPercentsTempl::deserialize` :1413 and `ConfigOptionFloatsTempl::deserialize` :2771 (14%, 0.12x)
-- partial: `ReverseLineReader::getline` :1421 and `ReverseLineReader::getline` :7761 (53%, 1.33x)
-- divergent: `ConfigOptionPoint::deserialize` :1512 and `ConfigOptionPoint::deserialize` :3730 (28%, 1.05x)
-- partial: `ConfigOptionPoints::deserialize` :1569 and `ConfigOptionPoints::deserialize` :3808 (30%, 0.33x)
-- partial: `ConfigBase::save_to_json` :1583 and `ConfigBase::save_to_json` :6895 (55%, 1.87x)
-- partial: `ConfigOptionPoint3::deserialize` :1630 and `ConfigOptionPoint3::deserialize` :3894 (38%, 1.05x)
-- partial: `ConfigBase::save` :1638 and `ConfigBase::save` :6979 (46%, 1.81x)
-- partial: `ConfigOptionPointsGroups::deserialize` :1688 and `ConfigOptionPointsGroups::deserialize` :3990 (42%, 0.42x)
-- partial: `ConfigOptionPointsGroups::vserialize_single` :1714 and `ConfigOptionIntsGroups::vserialize_single` :4061 (50%, 0.57x)
-- divergent: `ConfigOptionIntsGroups::deserialize` :1801 and `ConfigOptionPercentsTempl::deserialize` :3324 (20%, 0.17x)
-- partial: `ConfigOptionBool::deserialize` :1866 and `ConfigOptionIntsGroups::deserialize` :4121 (75%, 2.15x)
-- partial: `dynamic_config_iterate` :1883 and `dynamic_config_iterate` :7661 (50%, 0.98x)
-- partial: `ConfigOptionEnumGeneric::deserialize` :2113 and `ConfigOptionEnumGeneric::deserialize` :4607 (50%, 1.0x)
-- divergent: `ConfigOptionEnumsGenericTempl::serialize_single_value` :2210 and `ConfigOptionPointsGroups::serialize_single_value` :3939 (28%, 0.67x)
-- partial: `ConfigDef::get` :2456 and `ConfigDef::get` :5070 (50%, 0.23x)
-- partial: `DynamicConfig::erase` :2755 and `DynamicConfig::erase` :7189 (50%, 0.34x)
-- partial: `DynamicConfig::set_key_value` :2785 and `DynamicConfig::set_key_value` :7228 (60%, 0.34x)
+- partial: `ConfigOption::overriden_by` :291 and `ConfigOption::overriden_by` :1592 (33%, 0.31x)
+- partial: `ConfigOptionSingle::set` :315 and `ConfigOptionFloatOrPercent::set` :3486 (50%, 1.25x)
+- partial: `ConfigOptionVector::set` :400 and `ConfigOptionEnumsGenericTempl::set` :4802 (50%, 1.24x)
+- partial: `ConfigOptionFloat::deserialize` :842 and `ConfigOptionFloat::deserialize` :2642 (40%, 1.34x)
+- partial: `ConfigOptionFloatsTempl::set_at_to_nil` :889 and `ConfigOptionPercentsTempl::set_at_to_nil` :3404 (50%, 0.47x)
+- partial: `ConfigOptionFloatsTempl::deserialize` :918 and `ConfigOptionFloatsOrPercentsTempl::deserialize` :3664 (64%, 1.19x)
+- partial: `ConfigOptionInt::deserialize` :1013 and `ConfigOptionInt::deserialize` :2911 (40%, 1.34x)
+- partial: `ConfigOptionIntsTempl::set_at_to_nil` :1055 and `ConfigOptionFloatsOrPercentsTempl::set_at_to_nil` :3708 (50%, 0.47x)
+- partial: `ConfigOptionIntsTempl::deserialize` :1084 and `ConfigOptionIntsTempl::deserialize` :3023 (64%, 1.05x)
+- partial: `ConfigOptionPercent::serialize` :1218 and `ConfigOptionPercent::serialize` :3265 (50%, 0.71x)
+- partial: `ConfigOptionPercent::deserialize` :1227 and `ConfigOptionPercent::deserialize` :3271 (40%, 1.34x)
+- partial: `ConfigBase::load_from_ini_string` :1257 and `ConfigBase::load_from_ini_string` :7504 (40%, 0.63x)
+- partial: `ConfigBase::load_from_ini_string_commented` :1267 and `ConfigBase::load_from_ini_string_commented` :7512 (50%, 0.96x)
+- partial: `ConfigOptionFloatOrPercent::set` :1325 and `ConfigOptionSingle::set` :1864 (40%, 0.78x)
+- partial: `ConfigOptionFloatOrPercent::deserialize` :1341 and `ConfigOptionFloatOrPercent::deserialize` :3507 (44%, 1.15x)
+- partial: `ConfigOptionFloatsOrPercentsTempl::set_at_to_nil` :1384 and `ConfigOptionBoolsTempl::set_at_to_nil` :4455 (50%, 0.47x)
+- divergent: `ConfigOptionFloatsOrPercentsTempl::deserialize` :1413 and `ConfigOptionFloatsTempl::deserialize` :2826 (14%, 0.12x)
+- partial: `ReverseLineReader::getline` :1421 and `ReverseLineReader::getline` :8684 (53%, 1.33x)
+- divergent: `ConfigOptionPoint::deserialize` :1512 and `ConfigOptionPoint::deserialize` :3790 (28%, 1.05x)
+- partial: `ConfigOptionPoints::deserialize` :1569 and `ConfigOptionPoints::deserialize` :3868 (30%, 0.33x)
+- partial: `ConfigBase::save_to_json` :1583 and `ConfigBase::save_to_json` :7818 (55%, 1.87x)
+- partial: `ConfigOptionPoint3::deserialize` :1630 and `ConfigOptionPoint3::deserialize` :3954 (38%, 1.05x)
+- partial: `ConfigBase::save` :1638 and `ConfigBase::save` :7902 (46%, 1.81x)
+- partial: `ConfigOptionPointsGroups::deserialize` :1688 and `ConfigOptionPointsGroups::deserialize` :4050 (42%, 0.42x)
+- partial: `ConfigOptionPointsGroups::vserialize_single` :1714 and `ConfigOptionIntsGroups::vserialize_single` :4121 (50%, 0.39x)
+- divergent: `ConfigOptionIntsGroups::deserialize` :1801 and `ConfigOptionPercentsTempl::deserialize` :3379 (20%, 0.17x)
+- partial: `ConfigOptionBool::deserialize` :1866 and `ConfigOptionIntsGroups::deserialize` :4181 (75%, 2.15x)
+- partial: `dynamic_config_iterate` :1883 and `dynamic_config_iterate` :8584 (50%, 0.98x)
+- partial: `ConfigOptionBoolsTempl::set_at_to_nil` :1909 and `ConfigOptionEnumsGenericTempl::set_at_to_nil` :4867 (50%, 0.47x)
+- partial: `ConfigOptionEnumGeneric::deserialize` :2113 and `ConfigOptionEnumGeneric::deserialize` :4667 (50%, 1.0x)
+- divergent: `ConfigOptionEnumsGenericTempl::serialize_single_value` :2210 and `ConfigOptionPointsGroups::serialize_single_value` :3999 (28%, 0.67x)
+- partial: `ConfigDef::get` :2456 and `ConfigDef::get` :5148 (50%, 0.23x)
+- partial: `DynamicConfig::erase` :2755 and `DynamicConfig::erase` :8112 (50%, 0.34x)
+- partial: `DynamicConfig::set_key_value` :2785 and `DynamicConfig::set_key_value` :8151 (60%, 0.34x)
 
 Missing in the Rust file:
 
@@ -2103,322 +2113,349 @@ Rust only:
 - `FloatOrPercent::default` :169
 - `FloatOrPercent::eq` :176
 - `FloatOrPercent::partial_cmp` :183
-- `is_space_byte` :523
-- `boost_trim` :528
-- `getline_split` :542
-- `bytes_to_string` :550
-- `ostream_double` :555
-- `ostream_int` :564
-- `hex_digit_value` :576 — C++ has it in `Format/ResourcePathUtils`
-- `ldexp` :587
-- `strtod_c` :611
-- `istream_double` :805
-- `istream_int` :886
-- `sscanf_doubles` :954
-- `std_hash_double` :1011
-- `std_hash_int` :1020
-- `boost_hash_combine` :1026
-- `std_hash_string` :1039
-- `std_hash_float_or_percent` :1176
-- `std_hash_vec2d` :1186
-- `std_hash_vec3d` :1193
-- `std_hash_vec2ds` :1201
-- `std_hash_vector_int` :1217
-- `ConfigurationError::new` :1275
-- `ConfigurationError::with_kind` :1280
-- `ConfigurationError::what` :1285 — C++ has it in `FilamentGroupUtils`, `PlaceholderParser`, `PrintBase`
-- `ConfigurationError::is_configuration_error` :1291
-- `ConfigurationError::fmt` :1297
-- `UnknownOptionException::new` :1311
-- `UnknownOptionException::with_key` :1316
-- `NoDefinitionException::new` :1329
-- `NoDefinitionException::with_key` :1334
-- `BadOptionTypeException::new` :1347
-- `BadOptionTypeException::with_message` :1352
-- `BadOptionValueException::new` :1362
-- `BadOptionValueException::with_message` :1367
-- `ConfigSubstitution::operator_lt` :1437
-- `ConfigSubstitution::operator_eq` :1445
-- `ConfigSubstitutionContext::new` :1468
-- `ConfigOption::operator_ne` :1514
-- `ConfigOption::nullable` :1528
-- `ConfigOption::as_vector_base` :1560
-- `ConfigOption::as_vector_base_mut` :1564
-- `ConfigOption::single_value_any` :1568
-- `ConfigOption::vector_values_any` :1572
-- `ConfigOption::vector_values_any_mut` :1576
-- `single_ref` :1664
-- `f64::from_single` :1671
-- `f64::std_hash` :1674
-- `f64::value_initialized` :1677
-- `i32::from_single` :1683
-- `i32::std_hash` :1691
-- `i32::value_initialized` :1694
-- `String::from_single` :1700
-- `String::std_hash` :1703
-- `String::value_initialized` :1706
-- `FloatOrPercent::from_single` :1712
-- `FloatOrPercent::std_hash` :1722
-- `FloatOrPercent::value_initialized` :1725
-- `Vec2d::from_single` :1731
-- `Vec2d::std_hash` :1734
-- `Vec2d::value_initialized` :1737
-- `Vec3d::from_single` :1743
-- `Vec3d::std_hash` :1746
-- `Vec3d::value_initialized` :1749
-- `Vec2ds::from_single` :1755
-- `Vec2ds::std_hash` :1758
-- `Vec2ds::value_initialized` :1761
-- `Vec::from_single` :1767
-- `Vec::std_hash` :1770
-- `Vec::value_initialized` :1773
-- `u8::from_single` :1779
-- `u8::std_hash` :1783
-- `u8::value_initialized` :1786
-- `bool::from_single` :1792
-- `bool::std_hash` :1795
-- `bool::value_initialized` :1798
-- `ConfigOptionSingle::operator_eq` :1818
-- `ConfigOptionSingle::hash` :1826 — C++ has it in `SLAPrintSteps`
-- `vector_ref` :1831
-- `vector_mut` :1837
-- `is_nil_of` :1843
-- `ConfigOptionVector::scalar_type` :1854
-- `ConfigOptionVector::set_from_options` :1868
-- `ConfigOptionVector::set_range` :1929
-- `ConfigOptionVector::get_at` :2205
-- `ConfigOptionVector::get_at_mut` :2215
-- `ConfigOptionVector::operator_eq` :2263
-- `lexicographical_less` :2516
-- `float_or_percent_less` :2531
-- `ConfigOptionFloat::new` :2543
-- `ConfigOptionFloat::with_value` :2547
-- `ConfigOptionFloat::static_type` :2551
-- `ConfigOptionFloat::operator_lt` :2555
-- `ConfigOptionFloat::r#type` :2571
-- `ConfigOptionFloat::get_float` :2575
-- `ConfigOptionFloatsTempl::new` :2609
-- `ConfigOptionFloatsTempl::with_size` :2613
-- `ConfigOptionFloatsTempl::from_values` :2617
-- `ConfigOptionFloatsTempl::static_type` :2621
-- `ConfigOptionFloatsTempl::operator_lt` :2625
-- `ConfigOptionFloatsTempl::nil_value` :2629
-- `ConfigOptionFloatsTempl::get_at` :2633
-- `ConfigOptionFloatsTempl::get_at_mut` :2637
-- `ConfigOptionFloatsTempl::deserialize_values` :2643
-- `ConfigOptionFloatsTempl::r#type` :2732
-- `ConfigOptionFloatsTempl::operator_eq` :2740
-- `ConfigOptionFloatsTempl::is_nil_at` :2789
-- `ConfigOptionFloatsTempl::set_at_to_nil` :2793
-- `ConfigOptionInt::new` :2807
-- `ConfigOptionInt::with_value` :2811
-- `ConfigOptionInt::with_double` :2815
-- `ConfigOptionInt::static_type` :2819
-- `ConfigOptionInt::r#type` :2835
-- `ConfigOptionInt::get_int` :2839
-- `ConfigOptionInt::set_int` :2843
-- `ConfigOptionIntsTempl::new` :2878
-- `ConfigOptionIntsTempl::with_size` :2882
-- `ConfigOptionIntsTempl::from_values` :2886
-- `ConfigOptionIntsTempl::static_type` :2890
-- `ConfigOptionIntsTempl::operator_lt` :2894
-- `ConfigOptionIntsTempl::nil_value` :2898
-- `ConfigOptionIntsTempl::get_at` :2902
-- `ConfigOptionIntsTempl::get_at_mut` :2906
-- `ConfigOptionIntsTempl::r#type` :2936
-- `ConfigOptionIntsTempl::is_nil_at` :3007
-- `ConfigOptionString::new` :3025
-- `ConfigOptionString::with_value` :3029
-- `ConfigOptionString::static_type` :3033
-- `ConfigOptionString::operator_lt` :3037
-- `ConfigOptionString::r#type` :3057
-- `ConfigOptionStrings::new` :3083
-- `ConfigOptionStrings::with_size` :3087
-- `ConfigOptionStrings::from_values` :3091
-- `ConfigOptionStrings::static_type` :3095
-- `ConfigOptionStrings::operator_lt` :3099
-- `ConfigOptionStrings::get_at` :3103
-- `ConfigOptionStrings::get_at_mut` :3107
-- `ConfigOptionStrings::r#type` :3124
-- `ConfigOptionStrings::is_nil_at` :3151
-- `ConfigOptionStrings::set_at_to_nil` :3155
-- `ConfigOptionPercent::new` :3166
-- `ConfigOptionPercent::with_value` :3170
-- `ConfigOptionPercent::static_type` :3174
-- `ConfigOptionPercent::operator_lt` :3178
-- `ConfigOptionPercent::r#type` :3198
-- `ConfigOptionPercent::get_float` :3202
-- `ConfigOptionPercentsTempl::new` :3238
-- `ConfigOptionPercentsTempl::with_size` :3242
-- `ConfigOptionPercentsTempl::from_values` :3246
-- `ConfigOptionPercentsTempl::static_type` :3250
-- `ConfigOptionPercentsTempl::operator_lt` :3254
-- `ConfigOptionPercentsTempl::get_at` :3262
-- `ConfigOptionPercentsTempl::get_at_mut` :3266
-- `ConfigOptionPercentsTempl::r#type` :3282
-- `ConfigOptionPercentsTempl::operator_eq` :3290
-- `ConfigOptionPercentsTempl::is_nil_at` :3345
-- `ConfigOptionFloatOrPercent::new` :3364
-- `ConfigOptionFloatOrPercent::with_value` :3368
-- `ConfigOptionFloatOrPercent::static_type` :3372
-- `ConfigOptionFloatOrPercent::operator_lt` :3376
-- `ConfigOptionFloatOrPercent::r#type` :3399
-- `ConfigOptionFloatOrPercent::operator_eq` :3411
-- `ConfigOptionFloatsOrPercentsTempl::new` :3475
-- `ConfigOptionFloatsOrPercentsTempl::with_size` :3479
-- `ConfigOptionFloatsOrPercentsTempl::from_values` :3483
-- `ConfigOptionFloatsOrPercentsTempl::static_type` :3487
-- `ConfigOptionFloatsOrPercentsTempl::operator_lt` :3491
-- `ConfigOptionFloatsOrPercentsTempl::get_at` :3499
-- `ConfigOptionFloatsOrPercentsTempl::get_at_mut` :3503
-- `ConfigOptionFloatsOrPercentsTempl::r#type` :3570
-- `ConfigOptionFloatsOrPercentsTempl::operator_eq` :3578
-- `ConfigOptionFloatsOrPercentsTempl::is_nil_at` :3649
-- `serialize_point_x` :3660
-- `deserialize_point_x` :3667
-- `ConfigOptionPoint::new` :3691
-- `ConfigOptionPoint::with_value` :3695
-- `ConfigOptionPoint::static_type` :3699
-- `ConfigOptionPoint::r#type` :3715
-- `ConfigOptionPoints::new` :3747
-- `ConfigOptionPoints::with_size` :3751
-- `ConfigOptionPoints::from_values` :3755
-- `ConfigOptionPoints::static_type` :3759
-- `ConfigOptionPoints::operator_lt` :3764
-- `ConfigOptionPoints::get_at` :3768
-- `ConfigOptionPoints::get_at_mut` :3772
-- `ConfigOptionPoints::r#type` :3789
-- `ConfigOptionPoints::is_nil_at` :3832
-- `ConfigOptionPoints::set_at_to_nil` :3836
-- `ConfigOptionPoint3::new` :3847
-- `ConfigOptionPoint3::with_value` :3851
-- `ConfigOptionPoint3::static_type` :3855
-- `ConfigOptionPoint3::operator_lt` :3859
-- `ConfigOptionPoint3::r#type` :3877
-- `ConfigOptionPointsGroups::new` :3912
-- `ConfigOptionPointsGroups::from_values` :3916
-- `ConfigOptionPointsGroups::static_type` :3920
-- `ConfigOptionPointsGroups::get_at` :3924
-- `ConfigOptionPointsGroups::r#type` :3960
-- `ConfigOptionPointsGroups::operator_eq` :3968
-- `ConfigOptionPointsGroups::is_nil_at` :4018
-- `ConfigOptionPointsGroups::set_at_to_nil` :4022
-- `ConfigOptionIntsGroups::new` :4033
-- `ConfigOptionIntsGroups::from_values` :4037
-- `ConfigOptionIntsGroups::static_type` :4041
-- `ConfigOptionIntsGroups::operator_lt` :4046
-- `ConfigOptionIntsGroups::get_at` :4057
-- `ConfigOptionIntsGroups::r#type` :4091
-- `ConfigOptionIntsGroups::operator_eq` :4099
-- `ConfigOptionIntsGroups::is_nil_at` :4155
-- `ConfigOptionBool::new` :4170
-- `ConfigOptionBool::with_value` :4174
-- `ConfigOptionBool::static_type` :4178
-- `ConfigOptionBool::operator_lt` :4182
-- `ConfigOptionBool::r#type` :4198
-- `ConfigOptionBool::deserialize` :4214 — C++ has it in `MultiNozzleUtils`, `Support/SupportMaterial`, `TriangleSelector`
-- `ConfigOptionBoolsTempl::new` :4240
-- `ConfigOptionBoolsTempl::with_size` :4244
-- `ConfigOptionBoolsTempl::from_bools` :4248
-- `ConfigOptionBoolsTempl::from_values` :4252
-- `ConfigOptionBoolsTempl::static_type` :4256
-- `ConfigOptionBoolsTempl::operator_lt` :4260
-- `ConfigOptionBoolsTempl::get_at_mut` :4268
-- `ConfigOptionBoolsTempl::r#type` :4340
-- `ConfigOptionBoolsTempl::is_nil_at` :4391
-- `ConfigOptionEnum::new` :4421
-- `ConfigOptionEnum::with_value` :4425
-- `ConfigOptionEnum::static_type` :4429
-- `ConfigOptionEnum::operator_lt` :4433
-- `ConfigOptionEnum::get_enum_names` :4446
-- `ConfigOptionEnum::get_enum_values` :4450
-- `ConfigOptionEnum::static_type` :4467
-- `ConfigOptionEnum::r#type` :4476
-- `ConfigOptionEnum::operator_eq` :4493
-- `ConfigOptionEnumGeneric::new` :4533
-- `ConfigOptionEnumGeneric::with_value` :4537
-- `ConfigOptionEnumGeneric::operator_lt` :4545
-- `ConfigOptionEnumGeneric::r#type` :4560
-- `ConfigOptionEnumGeneric::operator_eq` :4577
-- `ConfigOptionEnumGeneric::hash` :4594 — C++ has it in `SLAPrintSteps`
-- `ConfigOptionEnumsGenericTempl::new` :4633
-- `ConfigOptionEnumsGenericTempl::with_size` :4637
-- `ConfigOptionEnumsGenericTempl::from_values` :4641
-- `ConfigOptionEnumsGenericTempl::static_type` :4645
-- `ConfigOptionEnumsGenericTempl::operator_lt` :4649
-- `ConfigOptionEnumsGenericTempl::operator_eq_ints` :4653
-- `ConfigOptionEnumsGenericTempl::get_at` :4664
-- `ConfigOptionEnumsGenericTempl::get_at_mut` :4668
-- `ConfigOptionEnumsGenericTempl::r#type` :4702
-- `ConfigOptionEnumsGenericTempl::clone` :4706 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Fill/Fill3DHoneycomb`
-- `ConfigOptionEnumsGenericTempl::is_nil_at` :4785
-- `ConfigOptionEnumsGenericTempl::set_at_to_nil` :4789
-- `ConfigOptionDef::default` :4887
-- `ConfigDef::new` :5060
-- `ConfigDef::print_cli_help` :5103
-- `ConfigOptionResolverTyped::option_typed` :5260
-- `ConfigOptionResolverTyped::option_throw_typed` :5268
-- `c_atoi` :5361
-- `iequals` :5380
-- `json_type_name` :5385
-- `json_to_string` :5399
-- `parse_str_arr` :5410
-- `property_tree_read_ini` :5463
-- `json_dump_string` :5543
-- `SetDeserializeItem::new` :5571
-- `SetDeserializeItem::from_bool` :5575
-- `SetDeserializeItem::from_int` :5579
-- `SetDeserializeItem::from_float` :5583
-- `SetDeserializeItem::from_double` :5591
-- `option_throw_typed_mut` :5601
-- `ConfigBase::option_mut` :5640
-- `ConfigBase::option_throw_mut` :5645
-- `ConfigBase::set_bool` :5792 — C++ has it in `AppConfig`
-- `ConfigBase::set_int` :5798
-- `ConfigBase::set_double` :5826
-- `ConfigBase::set_string` :5851
-- `ConfigBase::set_deserialize_items` :5905
-- `ConfigBase::set_deserialize_strict_items` :5913
-- `ConfigBase::get_abs_value_over` :6108
-- `ConfigBase::load_from_json_with_context` :6213
-- `ConfigBase::load_tree` :6649
-- `different_settings_to_system_mut` :7026
-- `ConfigBaseTyped::option_typed_mut` :7039
-- `ConfigBaseTyped::option_throw_typed_mut` :7047
-- `DynamicConfig::default` :7072
-- `DynamicConfig::clone` :7079 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Fill/Fill3DHoneycomb`
-- `DynamicConfig::new` :7088
-- `DynamicConfig::with_def` :7094
-- `DynamicConfig::from_config` :7100 — C++ has it in `Model`
-- `DynamicConfig::assign` :7111 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
-- `DynamicConfig::assign_move` :7119
-- `DynamicConfig::operator_add_assign` :7130
-- `DynamicConfig::operator_add_assign_move` :7149
-- `DynamicConfig::operator_eq` :7156
-- `DynamicConfig::operator_ne` :7174
-- `DynamicConfig::opt_mut` :7211
-- `DynamicConfig::opt_expect` :7276
-- `DynamicConfig::opt_expect_mut` :7280
-- `DynamicConfig::opt_string_mut` :7287
-- `DynamicConfig::opt_string` :7294
-- `DynamicConfig::opt_string_at_mut` :7301
-- `DynamicConfig::opt_string_at` :7308
-- `DynamicConfig::opt_float_mut` :7315
-- `DynamicConfig::opt_float` :7324
-- `DynamicConfig::opt_float_at_mut` :7338
-- `DynamicConfig::opt_float_at` :7348
-- `DynamicConfig::opt_float_nullable_mut` :7355
-- `DynamicConfig::opt_float_nullable` :7362
-- `DynamicConfig::opt_int_mut` :7372
-- `DynamicConfig::opt_int_at_mut` :7388
-- `DynamicConfig::opt_int_at` :7397
-- `DynamicConfig::opt_int_nullable_mut` :7409
-- `DynamicConfig::opt_int_nullable` :7416
-- `DynamicConfig::opt_enum_at` :7430
-- `DynamicConfig::opt_bool_at` :7457
-- `DynamicConfig::optptr_mut` :7619
-- `DynamicConfig::handle_legacy` :7652 — C++ has it in `PrintConfig`
-- `ReverseLineReader::new` :7754
+- `is_space_byte` :524
+- `boost_trim` :529
+- `getline_split` :543
+- `bytes_to_string` :551
+- `ostream_double` :556
+- `ostream_int` :565
+- `hex_digit_value` :577 — C++ has it in `Format/ResourcePathUtils`
+- `ldexp` :588
+- `nan_payload` :610
+- `strtod_c` :631
+- `istream_double` :836
+- `istream_int` :917
+- `scanf_float_field` :983
+- `sscanf_doubles` :1006
+- `std_hash_double` :1063
+- `std_hash_int` :1072
+- `boost_hash_combine` :1078
+- `std_hash_string` :1091
+- `std_hash_float_or_percent` :1228
+- `std_hash_vec2d` :1238
+- `std_hash_vec3d` :1245
+- `std_hash_vec2ds` :1253
+- `std_hash_vector_int` :1269
+- `ConfigurationError::new` :1327
+- `ConfigurationError::with_kind` :1332
+- `ConfigurationError::what` :1337 — C++ has it in `FilamentGroupUtils`, `PlaceholderParser`, `PrintBase`
+- `ConfigurationError::is_configuration_error` :1343
+- `ConfigurationError::fmt` :1349
+- `UnknownOptionException::new` :1363
+- `UnknownOptionException::with_key` :1368
+- `NoDefinitionException::new` :1381
+- `NoDefinitionException::with_key` :1386
+- `BadOptionTypeException::new` :1399
+- `BadOptionTypeException::with_message` :1404
+- `BadOptionValueException::new` :1414
+- `BadOptionValueException::with_message` :1419
+- `ConfigSubstitution::operator_lt` :1489
+- `ConfigSubstitution::operator_eq` :1497
+- `ConfigSubstitutionContext::new` :1520
+- `ConfigOption::operator_ne` :1569
+- `ConfigOption::nullable` :1583
+- `ConfigOption::as_vector_base` :1615
+- `ConfigOption::as_vector_base_mut` :1619
+- `ConfigOption::single_value_any` :1623
+- `ConfigOption::vector_values_any` :1627
+- `ConfigOption::vector_values_any_mut` :1631
+- `single_ref` :1719
+- `f64::from_single` :1726
+- `f64::std_hash` :1729
+- `f64::value_initialized` :1732
+- `i32::from_single` :1738
+- `i32::std_hash` :1746
+- `i32::value_initialized` :1749
+- `String::from_single` :1755
+- `String::std_hash` :1758
+- `String::value_initialized` :1761
+- `FloatOrPercent::from_single` :1767
+- `FloatOrPercent::std_hash` :1777
+- `FloatOrPercent::value_initialized` :1780
+- `Vec2d::from_single` :1786
+- `Vec2d::std_hash` :1789
+- `Vec2d::value_initialized` :1792
+- `Vec3d::from_single` :1798
+- `Vec3d::std_hash` :1801
+- `Vec3d::value_initialized` :1804
+- `Vec2ds::from_single` :1810
+- `Vec2ds::std_hash` :1813
+- `Vec2ds::value_initialized` :1816
+- `Vec::from_single` :1822
+- `Vec::std_hash` :1825
+- `Vec::value_initialized` :1828
+- `u8::from_single` :1834
+- `u8::std_hash` :1838
+- `u8::value_initialized` :1841
+- `bool::from_single` :1847
+- `bool::std_hash` :1850
+- `bool::value_initialized` :1853
+- `ConfigOptionSingle::operator_eq` :1873
+- `ConfigOptionSingle::hash` :1881 — C++ has it in `SLAPrintSteps`
+- `vector_ref` :1886
+- `vector_mut` :1892
+- `is_nil_of` :1898
+- `ConfigOptionVector::scalar_type` :1909
+- `ConfigOptionVector::set_from_options` :1923
+- `ConfigOptionVector::set_range` :1984
+- `ConfigOptionVector::get_at` :2260
+- `ConfigOptionVector::get_at_mut` :2270
+- `ConfigOptionVector::operator_eq` :2318
+- `lexicographical_less` :2571
+- `float_or_percent_less` :2586
+- `ConfigOptionFloat::new` :2598
+- `ConfigOptionFloat::with_value` :2602
+- `ConfigOptionFloat::static_type` :2606
+- `ConfigOptionFloat::operator_lt` :2610
+- `ConfigOptionFloat::r#type` :2626
+- `ConfigOptionFloat::get_float` :2630
+- `ConfigOptionFloatsTempl::new` :2664
+- `ConfigOptionFloatsTempl::with_size` :2668
+- `ConfigOptionFloatsTempl::from_values` :2672
+- `ConfigOptionFloatsTempl::static_type` :2676
+- `ConfigOptionFloatsTempl::operator_lt` :2680
+- `ConfigOptionFloatsTempl::nil_value` :2684
+- `ConfigOptionFloatsTempl::get_at` :2688
+- `ConfigOptionFloatsTempl::get_at_mut` :2692
+- `ConfigOptionFloatsTempl::deserialize_values` :2698
+- `ConfigOptionFloatsTempl::r#type` :2787
+- `ConfigOptionFloatsTempl::operator_eq` :2795
+- `ConfigOptionFloatsTempl::is_nil_at` :2844
+- `ConfigOptionFloatsTempl::set_at_to_nil` :2848
+- `ConfigOptionInt::new` :2862
+- `ConfigOptionInt::with_value` :2866
+- `ConfigOptionInt::with_double` :2870
+- `ConfigOptionInt::static_type` :2874
+- `ConfigOptionInt::r#type` :2890
+- `ConfigOptionInt::get_int` :2894
+- `ConfigOptionInt::set_int` :2898
+- `ConfigOptionIntsTempl::new` :2933
+- `ConfigOptionIntsTempl::with_size` :2937
+- `ConfigOptionIntsTempl::from_values` :2941
+- `ConfigOptionIntsTempl::static_type` :2945
+- `ConfigOptionIntsTempl::operator_lt` :2949
+- `ConfigOptionIntsTempl::nil_value` :2953
+- `ConfigOptionIntsTempl::get_at` :2957
+- `ConfigOptionIntsTempl::get_at_mut` :2961
+- `ConfigOptionIntsTempl::r#type` :2991
+- `ConfigOptionIntsTempl::is_nil_at` :3062
+- `ConfigOptionIntsTempl::set_at_to_nil` :3066
+- `ConfigOptionString::new` :3080
+- `ConfigOptionString::with_value` :3084
+- `ConfigOptionString::static_type` :3088
+- `ConfigOptionString::operator_lt` :3092
+- `ConfigOptionString::r#type` :3112
+- `ConfigOptionStrings::new` :3138
+- `ConfigOptionStrings::with_size` :3142
+- `ConfigOptionStrings::from_values` :3146
+- `ConfigOptionStrings::static_type` :3150
+- `ConfigOptionStrings::operator_lt` :3154
+- `ConfigOptionStrings::get_at` :3158
+- `ConfigOptionStrings::get_at_mut` :3162
+- `ConfigOptionStrings::r#type` :3179
+- `ConfigOptionStrings::is_nil_at` :3206
+- `ConfigOptionStrings::set_at_to_nil` :3210
+- `ConfigOptionPercent::new` :3221
+- `ConfigOptionPercent::with_value` :3225
+- `ConfigOptionPercent::static_type` :3229
+- `ConfigOptionPercent::operator_lt` :3233
+- `ConfigOptionPercent::r#type` :3253
+- `ConfigOptionPercent::get_float` :3257
+- `ConfigOptionPercentsTempl::new` :3293
+- `ConfigOptionPercentsTempl::with_size` :3297
+- `ConfigOptionPercentsTempl::from_values` :3301
+- `ConfigOptionPercentsTempl::static_type` :3305
+- `ConfigOptionPercentsTempl::operator_lt` :3309
+- `ConfigOptionPercentsTempl::get_at` :3317
+- `ConfigOptionPercentsTempl::get_at_mut` :3321
+- `ConfigOptionPercentsTempl::r#type` :3337
+- `ConfigOptionPercentsTempl::operator_eq` :3345
+- `ConfigOptionPercentsTempl::is_nil_at` :3400
+- `ConfigOptionFloatOrPercent::new` :3419
+- `ConfigOptionFloatOrPercent::with_value` :3423
+- `ConfigOptionFloatOrPercent::static_type` :3427
+- `ConfigOptionFloatOrPercent::operator_lt` :3431
+- `ConfigOptionFloatOrPercent::r#type` :3454
+- `ConfigOptionFloatOrPercent::operator_eq` :3466
+- `ConfigOptionFloatsOrPercentsTempl::new` :3530
+- `ConfigOptionFloatsOrPercentsTempl::with_size` :3534
+- `ConfigOptionFloatsOrPercentsTempl::from_values` :3538
+- `ConfigOptionFloatsOrPercentsTempl::static_type` :3542
+- `ConfigOptionFloatsOrPercentsTempl::operator_lt` :3546
+- `ConfigOptionFloatsOrPercentsTempl::get_at` :3554
+- `ConfigOptionFloatsOrPercentsTempl::get_at_mut` :3558
+- `ConfigOptionFloatsOrPercentsTempl::r#type` :3625
+- `ConfigOptionFloatsOrPercentsTempl::operator_eq` :3633
+- `ConfigOptionFloatsOrPercentsTempl::is_nil_at` :3704
+- `serialize_point_x` :3715
+- `deserialize_point_x` :3722
+- `ConfigOptionPoint::new` :3746
+- `ConfigOptionPoint::with_value` :3750
+- `ConfigOptionPoint::static_type` :3754
+- `ConfigOptionPoint::operator_lt` :3759
+- `ConfigOptionPoint::r#type` :3775
+- `ConfigOptionPoints::new` :3807
+- `ConfigOptionPoints::with_size` :3811
+- `ConfigOptionPoints::from_values` :3815
+- `ConfigOptionPoints::static_type` :3819
+- `ConfigOptionPoints::operator_lt` :3824
+- `ConfigOptionPoints::get_at` :3828
+- `ConfigOptionPoints::get_at_mut` :3832
+- `ConfigOptionPoints::r#type` :3849
+- `ConfigOptionPoints::is_nil_at` :3892
+- `ConfigOptionPoints::set_at_to_nil` :3896
+- `ConfigOptionPoint3::new` :3907
+- `ConfigOptionPoint3::with_value` :3911
+- `ConfigOptionPoint3::static_type` :3915
+- `ConfigOptionPoint3::operator_lt` :3919
+- `ConfigOptionPoint3::r#type` :3937
+- `ConfigOptionPointsGroups::new` :3972
+- `ConfigOptionPointsGroups::from_values` :3976
+- `ConfigOptionPointsGroups::static_type` :3980
+- `ConfigOptionPointsGroups::get_at` :3984
+- `ConfigOptionPointsGroups::r#type` :4020
+- `ConfigOptionPointsGroups::operator_eq` :4028
+- `ConfigOptionPointsGroups::is_nil_at` :4078
+- `ConfigOptionPointsGroups::set_at_to_nil` :4082
+- `ConfigOptionIntsGroups::new` :4093
+- `ConfigOptionIntsGroups::from_values` :4097
+- `ConfigOptionIntsGroups::static_type` :4101
+- `ConfigOptionIntsGroups::operator_lt` :4106
+- `ConfigOptionIntsGroups::get_at` :4117
+- `ConfigOptionIntsGroups::r#type` :4151
+- `ConfigOptionIntsGroups::operator_eq` :4159
+- `ConfigOptionIntsGroups::is_nil_at` :4215
+- `ConfigOptionBool::new` :4230
+- `ConfigOptionBool::with_value` :4234
+- `ConfigOptionBool::static_type` :4238
+- `ConfigOptionBool::operator_lt` :4242
+- `ConfigOptionBool::r#type` :4258
+- `ConfigOptionBool::deserialize` :4274 — C++ has it in `MultiNozzleUtils`, `Support/SupportMaterial`, `TriangleSelector`
+- `ConfigOptionBoolsTempl::new` :4300
+- `ConfigOptionBoolsTempl::with_size` :4304
+- `ConfigOptionBoolsTempl::from_bools` :4308
+- `ConfigOptionBoolsTempl::from_values` :4312
+- `ConfigOptionBoolsTempl::static_type` :4316
+- `ConfigOptionBoolsTempl::operator_lt` :4320
+- `ConfigOptionBoolsTempl::get_at_mut` :4328
+- `ConfigOptionBoolsTempl::r#type` :4400
+- `ConfigOptionBoolsTempl::is_nil_at` :4451
+- `ConfigOptionEnum::new` :4481
+- `ConfigOptionEnum::with_value` :4485
+- `ConfigOptionEnum::static_type` :4489
+- `ConfigOptionEnum::operator_lt` :4493
+- `ConfigOptionEnum::get_enum_names` :4506
+- `ConfigOptionEnum::get_enum_values` :4510
+- `ConfigOptionEnum::static_type` :4527
+- `ConfigOptionEnum::r#type` :4536
+- `ConfigOptionEnum::operator_eq` :4553
+- `ConfigOptionEnumGeneric::new` :4593
+- `ConfigOptionEnumGeneric::with_value` :4597
+- `ConfigOptionEnumGeneric::operator_lt` :4605
+- `ConfigOptionEnumGeneric::r#type` :4620
+- `ConfigOptionEnumGeneric::operator_eq` :4637
+- `ConfigOptionEnumGeneric::hash` :4654 — C++ has it in `SLAPrintSteps`
+- `ints_of` :4680
+- `ConfigOptionEnumsGenericTempl::new` :4708
+- `ConfigOptionEnumsGenericTempl::with_size` :4712
+- `ConfigOptionEnumsGenericTempl::from_values` :4716
+- `ConfigOptionEnumsGenericTempl::static_type` :4720
+- `ConfigOptionEnumsGenericTempl::operator_lt` :4726
+- `ConfigOptionEnumsGenericTempl::operator_eq_ints` :4731
+- `ConfigOptionEnumsGenericTempl::get_at` :4742
+- `ConfigOptionEnumsGenericTempl::get_at_mut` :4746
+- `ConfigOptionEnumsGenericTempl::r#type` :4780
+- `ConfigOptionEnumsGenericTempl::clone` :4784 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Fill/Fill3DHoneycomb`
+- `ConfigOptionEnumsGenericTempl::is_nil_at` :4863
+- `ConfigOptionDef::default` :4965
+- `ConfigDef::new` :5138
+- `ConfigDef::print_cli_help` :5181
+- `ConfigOptionResolverTyped::option_typed` :5338
+- `ConfigOptionResolverTyped::option_throw_typed` :5346
+- `c_atoi` :5439
+- `iequals` :5458
+- `token_type_name` :5492
+- `Lexer::new` :5547
+- `Lexer::get_character` :5564
+- `Lexer::get_codepoint` :5574
+- `Lexer::next_byte_in_range` :5593
+- `Lexer::scan_string` :5610
+- `Lexer::scan_number` :5778
+- `Lexer::scan_literal` :5936
+- `Lexer::reset` :5948 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `Lexer::get` :5955 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `Lexer::unget` :5975
+- `Lexer::add` :5992 — C++ has it in `GCode/SpiralVase`, `PrintApply`, `SLA/Pad`
+- `Lexer::get_token_string` :5997
+- `Lexer::skip_bom` :6010
+- `Lexer::skip_whitespace` :6021
+- `Lexer::scan` :6032
+- `Parser::new` :6076
+- `Parser::get_token` :6083
+- `Parser::exception_message` :6089
+- `Parser::parse_error` :6111 — C++ has it in `Format/3mf`, `Format/bbs_3mf`
+- `Parser::handle_value` :6123
+- `Parser::sax_parse_internal` :6135
+- `parse` :6282 — C++ has it in `PlaceholderParser`, `Semver`
+- `json_type_name` :6289
+- `json_to_string` :6303
+- `parse_str_arr` :6314
+- `property_tree_read_ini` :6367
+- `json_dump_string` :6447
+- `SetDeserializeItem::new` :6475
+- `SetDeserializeItem::from_bool` :6479
+- `SetDeserializeItem::from_int` :6483
+- `SetDeserializeItem::from_float` :6487
+- `SetDeserializeItem::from_double` :6495
+- `option_throw_typed_mut` :6505
+- `ConfigBase::option_mut` :6544
+- `ConfigBase::option_throw_mut` :6549
+- `ConfigBase::set_bool` :6696 — C++ has it in `AppConfig`
+- `ConfigBase::set_int` :6702
+- `ConfigBase::set_double` :6730
+- `ConfigBase::set_string` :6755
+- `ConfigBase::set_deserialize_items` :6809
+- `ConfigBase::set_deserialize_strict_items` :6817
+- `ConfigBase::get_abs_value_over` :7012
+- `ConfigBase::load_from_json_with_context` :7125
+- `ConfigBase::load_tree` :7572
+- `different_settings_to_system_mut` :7949
+- `ConfigBaseTyped::option_typed_mut` :7962
+- `ConfigBaseTyped::option_throw_typed_mut` :7970
+- `DynamicConfig::default` :7995
+- `DynamicConfig::clone` :8002 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Fill/Fill3DHoneycomb`
+- `DynamicConfig::new` :8011
+- `DynamicConfig::with_def` :8017
+- `DynamicConfig::from_config` :8023 — C++ has it in `Model`
+- `DynamicConfig::assign` :8034 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
+- `DynamicConfig::assign_move` :8042
+- `DynamicConfig::operator_add_assign` :8053
+- `DynamicConfig::operator_add_assign_move` :8072
+- `DynamicConfig::operator_eq` :8079
+- `DynamicConfig::operator_ne` :8097
+- `DynamicConfig::opt_mut` :8134
+- `DynamicConfig::opt_expect` :8199
+- `DynamicConfig::opt_expect_mut` :8203
+- `DynamicConfig::opt_string_mut` :8210
+- `DynamicConfig::opt_string` :8217
+- `DynamicConfig::opt_string_at_mut` :8224
+- `DynamicConfig::opt_string_at` :8231
+- `DynamicConfig::opt_float_mut` :8238
+- `DynamicConfig::opt_float` :8247
+- `DynamicConfig::opt_float_at_mut` :8261
+- `DynamicConfig::opt_float_at` :8271
+- `DynamicConfig::opt_float_nullable_mut` :8278
+- `DynamicConfig::opt_float_nullable` :8285
+- `DynamicConfig::opt_int_mut` :8295
+- `DynamicConfig::opt_int_at_mut` :8311
+- `DynamicConfig::opt_int_at` :8320
+- `DynamicConfig::opt_int_nullable_mut` :8332
+- `DynamicConfig::opt_int_nullable` :8339
+- `DynamicConfig::opt_enum_at` :8353
+- `DynamicConfig::opt_bool_at` :8380
+- `DynamicConfig::optptr_mut` :8542
+- `DynamicConfig::handle_legacy` :8575 — C++ has it in `PrintConfig`
+- `ReverseLineReader::new` :8677
 
 ### `CustomGCode` (.cpp+.hpp) and `custom_g_code.rs`
 
@@ -3913,7 +3950,7 @@ Missing in the Rust file:
 - `_BBS_3MF_Importer::version` :1523 (5 tokens) — in `format/three_mf.rs`, `libslic3r.rs`
 - `_BBS_3MF_Importer::has_texture_resources` :1529 (9 tokens)
 - `_BBS_3MF_Importer::has_unit` :1532 (5 tokens)
-- `_BBS_3MF_Importer::parse_error` :1541 (5 tokens) — in `format/three_mf.rs`
+- `_BBS_3MF_Importer::parse_error` :1541 (5 tokens) — in `config.rs`, `format/three_mf.rs`
 - `_BBS_3MF_Importer::parse_error_message` :1542 (31 tokens) — in `format/three_mf.rs`
 - `_BBS_3MF_Importer::load_model_from_file` :1752 (384 tokens) — in `format/three_mf.rs`
 - `_BBS_3MF_Importer::get_thumbnail` :1823 (248 tokens)
@@ -6351,13 +6388,14 @@ Rust only:
 
 ### `Model` (.cpp+.hpp) and `model.rs`
 
-Tier 1. C++ functions 374 (plus 33 constructors, 2 destructors, 3 operators), Rust functions 35. Matched 11: faithful 8, partial 3, divergent 0, stub 0.
+Tier 1. C++ functions 374 (plus 33 constructors, 2 destructors, 3 operators), Rust functions 36. Matched 12: faithful 8, partial 4, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `ModelObject::add_instance` :1614 and `ModelObject::add_instance` :517 (33%, 0.88x)
-- partial: `FacetsAnnotation::get_triangle_as_string` :4678 and `FacetsAnnotation::get_triangle_as_string` :693 (50%, 0.98x)
-- partial: `FacetsAnnotation::set_triangle_from_string` :4704 and `FacetsAnnotation::set_triangle_from_string` :730 (42%, 0.67x)
+- partial: `FacetsAnnotation::set` :4657 and `FacetsAnnotation::set` :686 (60%, 0.45x)
+- partial: `FacetsAnnotation::get_triangle_as_string` :4678 and `FacetsAnnotation::get_triangle_as_string` :705 (50%, 0.98x)
+- partial: `FacetsAnnotation::set_triangle_from_string` :4704 and `FacetsAnnotation::set_triangle_from_string` :742 (42%, 0.67x)
 
 Missing in the Rust file:
 
@@ -6380,8 +6418,8 @@ Missing in the Rust file:
 - `LayerHeightProfile::assign` :209 (32 tokens) — in `config.rs`, `extrusion_entity_collection.rs`, `mutable_polygon.rs`
 - `LayerHeightProfile::get` :211 (5 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
 - `LayerHeightProfile::empty` :212 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `LayerHeightProfile::set` :213 (20 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
-- `LayerHeightProfile::set` :214 (25 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
+- `LayerHeightProfile::set` :213 (20 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
+- `LayerHeightProfile::set` :214 (25 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
 - `LayerHeightProfile::clear` :215 (14 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
 - `LayerHeightProfile::serialize` :217 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `Model::read_from_step` :226 (252 tokens)
@@ -6395,7 +6433,7 @@ Missing in the Rust file:
 - `ModelObject::get_config_value` :402 (39 tokens)
 - `ModelObject::is_multiparts` :417 (11 tokens)
 - `ModelObject::has_custom_layering` :428 (21 tokens)
-- `ModelObject::invalidate_bounding_box` :443 (14 tokens)
+- `ModelObject::invalidate_bounding_box` :443 (14 tokens) — in `texture_painting.rs`
 - `ModelObject::translate` :478 (22 tokens) — in `bounding_box.rs`, `emboss.rs`, `ex_polygon_collection.rs`
 - `ModelObject::scale` :481 (16 tokens) — in `bounding_box.rs`, `clipper2/clipper_core.rs`, `clipper2/clipper_engine.rs`
 - `ModelObject::scale` :482 (16 tokens) — in `bounding_box.rs`, `clipper2/clipper_core.rs`, `clipper2/clipper_engine.rs`
@@ -6432,7 +6470,7 @@ Missing in the Rust file:
 - `Model::update_print_volume_state` :840 (105 tokens)
 - `Model::center_instances_around_point` :852 (154 tokens)
 - `RaycastResult::serialize` :867 (13 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `Model::mesh` :874 (30 tokens) — in `format/step.rs`, `print_object.rs`
+- `Model::mesh` :874 (30 tokens) — in `format/step.rs`, `print_object.rs`, `texture_painting.rs`
 - `Model::duplicate_objects_grid` :882 (153 tokens)
 - `TextInfo::serialize` :894 (33 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `Model::looks_like_multipart_object` :900 (121 tokens)
@@ -6449,15 +6487,15 @@ Missing in the Rust file:
 - `ModelVolume::is_cut_connector` :984 (11 tokens)
 - `ModelVolume::invalidate_cut_info` :985 (8 tokens)
 - `ModelVolume::mesh_ptr` :989 (9 tokens)
-- `ModelVolume::set_mesh` :990 (15 tokens) — in `print_object.rs`
-- `ModelVolume::set_mesh` :991 (20 tokens) — in `print_object.rs`
-- `ModelVolume::set_mesh` :992 (15 tokens) — in `print_object.rs`
-- `ModelVolume::set_mesh` :993 (20 tokens) — in `print_object.rs`
-- `ModelVolume::set_mesh` :994 (6 tokens) — in `print_object.rs`
-- `ModelVolume::set_mesh` :995 (11 tokens) — in `print_object.rs`
+- `ModelVolume::set_mesh` :990 (15 tokens) — in `print_object.rs`, `texture_painting.rs`
+- `ModelVolume::set_mesh` :991 (20 tokens) — in `print_object.rs`, `texture_painting.rs`
+- `ModelVolume::set_mesh` :992 (15 tokens) — in `print_object.rs`, `texture_painting.rs`
+- `ModelVolume::set_mesh` :993 (20 tokens) — in `print_object.rs`, `texture_painting.rs`
+- `ModelVolume::set_mesh` :994 (6 tokens) — in `print_object.rs`, `texture_painting.rs`
+- `ModelVolume::set_mesh` :995 (11 tokens) — in `print_object.rs`, `texture_painting.rs`
 - `ModelVolume::reset_mesh` :996 (14 tokens)
 - `Model::convert_from_imperial_units` :1006 (113 tokens)
-- `ModelVolume::get_object` :1025 (7 tokens, overload)
+- `ModelVolume::get_object` :1025 (7 tokens, overload) — in `texture_painting.rs`
 - `ModelVolume::type` :1026 (5 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`
 - `ModelVolume::set_type` :1027 (6 tokens) — in `surface.rs`, `surface_collection.rs`
 - `ModelVolume::is_model_part` :1028 (9 tokens) — in `format/assembly_steps_json.rs`
@@ -6478,7 +6516,7 @@ Missing in the Rust file:
 - `ModelVolume::scale_geometry_after_creation` :1096 (16 tokens)
 - `Model::propose_export_file_name_and_path` :1098 (65 tokens)
 - `ModelVolume::set_convex_hull_shared_ptr` :1107 (6 tokens)
-- `ModelVolume::invalidate_convex_hull_2d` :1110 (8 tokens)
+- `ModelVolume::invalidate_convex_hull_2d` :1110 (8 tokens) — in `texture_painting.rs`
 - `Model::get_auxiliary_file_temp_path` :1117 (10 tokens)
 - `Model::get_backup_path` :1123 (525 tokens)
 - `ModelVolume::is_assemble_initialized` :1131 (5 tokens)
@@ -6561,7 +6599,7 @@ Missing in the Rust file:
 - `ModelObject::delete_instance` :1632 (36 tokens)
 - `ModelObject::delete_last_instance` :1640 (17 tokens)
 - `ModelObject::clear_instances` :1645 (29 tokens)
-- `ModelObject::mesh` :1677 (50 tokens) — in `format/step.rs`, `print_object.rs`
+- `ModelObject::mesh` :1677 (50 tokens) — in `format/step.rs`, `print_object.rs`, `texture_painting.rs`
 - `ModelInfo::load` :1688 (58 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `ModelObject::raw_mesh` :1692 (57 tokens)
 - `ModelObject::raw_indexed_triangle_set` :1708 (278 tokens)
@@ -6645,8 +6683,8 @@ Missing in the Rust file:
 - `ModelVolume::get_extruders` :3416 (340 tokens)
 - `ModelVolume::update_extruder_count` :3468 (69 tokens)
 - `ModelVolume::update_extruder_count_when_delete_filament` :3483 (167 tokens)
-- `ModelVolume::center_geometry_after_creation` :3513 (164 tokens)
-- `ModelVolume::calculate_convex_hull` :3531 (31 tokens)
+- `ModelVolume::center_geometry_after_creation` :3513 (164 tokens) — in `texture_painting.rs`
+- `ModelVolume::calculate_convex_hull` :3531 (31 tokens) — in `texture_painting.rs`
 - `ModelVolume::calculate_convex_hull_2d` :3538 (172 tokens)
 - `ModelVolume::set_transformation` :3618 (6 tokens)
 - `ModelVolume::set_transformation` :3622 (9 tokens)
@@ -6694,7 +6732,7 @@ Missing in the Rust file:
 - `Model::getThermalLength` :4426 (43 tokens)
 - `ModelInstance::get_auto_brim_width` :4439 (196 tokens)
 - `ModelInstance::convex_hull_2d` :4458 (28 tokens)
-- `ModelInstance::invalidate_convex_hull_2d` :4475 (8 tokens)
+- `ModelInstance::invalidate_convex_hull_2d` :4475 (8 tokens) — in `texture_painting.rs`
 - `getadhesionCoeff` :4481 (137 tokens)
 - `getTemperatureFromExtruder` :4498 (128 tokens)
 - `ModelInstance::get_auto_brim_width` :4521 (33 tokens)
@@ -6707,7 +6745,6 @@ Missing in the Rust file:
 - `FacetsAnnotation::set_enforcer_block_type_limit` :4634 (34 tokens)
 - `FacetsAnnotation::get_facets_strict` :4644 (29 tokens) — in `triangle_selector.rs`
 - `FacetsAnnotation::has_facets` :4652 (12 tokens) — in `triangle_selector.rs`
-- `FacetsAnnotation::set` :4657 (64 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
 - `FacetsAnnotation::equals` :4736 (44 tokens) — in `config.rs`, `support/tree_support.rs`
 - `model_object_list_equal` :4744 (73 tokens)
 - `model_object_list_extended` :4756 (73 tokens)
@@ -6750,7 +6787,7 @@ Rust only:
 - `Instance::default` :648
 - `FacetsAnnotation::is_empty` :674 — C++ has it in `PresetBundle`
 - `FacetsAnnotation::facet_count` :679
-- `load_model` :797
+- `load_model` :809
 
 ### `ModelArrange` (.cpp+.hpp) and `model_arrange.rs`
 
@@ -7291,7 +7328,7 @@ Missing in the Rust file:
 - `MyContext::process_error_message` :1027 (316 tokens)
 - `strict_real_policies_without_nan_inf::parse_nan` :1112 (5 tokens)
 - `strict_real_policies_without_nan_inf::parse_inf` :1113 (5 tokens)
-- `utf8_char_skipper_parser::parse` :1129 (189 tokens) — in `debug/compare.rs`, `format/assembly_steps_json.rs`, `format/format.rs`
+- `utf8_char_skipper_parser::parse` :1129 (189 tokens) — in `config.rs`, `debug/compare.rs`, `format/assembly_steps_json.rs`
 - `utf8_char_skipper_parser::what` :1173 (12 tokens) — in `clipper2/clipper_core.rs`, `config.rs`, `filament_group_utils.rs`
 - `process_macro` :1516 (136 tokens)
 - `PlaceholderParser::process` :1541 (54 tokens) — in `gcode/gcode_template.rs`, `gcode/pressure_equalizer.rs`, `print.rs`
@@ -8156,9 +8193,9 @@ Missing in the Rust file:
 - `Print::finished` :937 (10 tokens) — in `gcode/wipe_tower.rs`
 - `Print::has_auto_brim` :943 (41 tokens)
 - `Print::single_diameter_layering_nozzle` :984 (5 tokens)
-- `Print::get_object` :995 (8 tokens) — in `model.rs`
-- `Print::get_object` :996 (15 tokens) — in `model.rs`
-- `Print::get_object` :999 (59 tokens) — in `model.rs`
+- `Print::get_object` :995 (8 tokens) — in `model.rs`, `texture_painting.rs`
+- `Print::get_object` :996 (15 tokens) — in `model.rs`, `texture_painting.rs`
+- `Print::get_object` :999 (59 tokens) — in `model.rs`, `texture_painting.rs`
 - `Print::statistics_by_extruder` :1027 (5 tokens)
 - `Print::is_sequential_print` :1038 (21 tokens)
 - `Print::set_extruder_filament_info` :1072 (6 tokens)
@@ -9563,7 +9600,7 @@ Missing in the Rust file:
 - `TriangleMesh::empty` :150 (11 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `TriangleMesh::release_optional` :159 (5 tokens)
 - `TriangleMesh::restore_optional` :161 (2 tokens)
-- `TriangleMesh::set_init_shift` :165 (6 tokens)
+- `TriangleMesh::set_init_shift` :165 (6 tokens) — in `texture_painting.rs`
 - `TriangleMesh::get_init_shift` :166 (5 tokens)
 - `TriangleMesh::from_stl` :204 (218 tokens)
 - `TriangleMesh::ReadSTLFile` :237 (31 tokens) — in `stl.rs`
@@ -12053,17 +12090,17 @@ Tier 3. C++ functions 3 (plus 2 constructors, 0 destructors, 1 operators), Rust 
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `InternalBridgeDetector::initialize` :19 and `InternalBridgeDetector::initialize` :99 (32%, 0.29x)
-- partial: `InternalBridgeDetector::detect_angle` :44 and `InternalBridgeDetector::detect_angle` :120 (94%, 1.15x)
+- partial: `InternalBridgeDetector::initialize` :19 and `InternalBridgeDetector::initialize` :99 (32%, 0.33x)
+- partial: `InternalBridgeDetector::detect_angle` :44 and `InternalBridgeDetector::detect_angle` :123 (94%, 1.16x)
 
 Rust only:
 
 - `InternalBridgeDirection::new` :32
 - `InternalBridgeDirection::less` :42
 - `InternalBridgeDetector::new` :78
-- `line_direction` :310
-- `get_extents_rotated` :327 — C++ has it in `ExPolygon`, `MultiPoint`, `Polygon`
-- `intersection_ln` :352 — C++ has it in `ClipperUtils`
+- `line_direction` :314
+- `get_extents_rotated` :331 — C++ has it in `ExPolygon`, `MultiPoint`, `Polygon`
+- `intersection_ln` :356 — C++ has it in `ClipperUtils`
 
 ### `JumpPointSearch` (.cpp+.hpp) and `jump_point_search.rs`
 
@@ -12739,6 +12776,63 @@ Rust only:
 - `write_rgb_to_file_scaled_vec` :841
 - `write_gray_to_file_scaled_vec` :867
 
+### `PaintReproject` (.cpp+.hpp) and `paint_reproject.rs`
+
+Tier 3. C++ functions 50 (plus 5 constructors, 0 destructors, 0 operators), Rust functions 24. Matched 16: faithful 14, partial 2, divergent 0, stub 0.
+
+Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
+
+- partial: `dominant_projection_axis` :123 and `dominant_projection_axis` :160 (50%, 1.2x)
+- partial: `transform_triangle` :131 and `transform_triangle` :192 (100%, 0.49x)
+
+Missing in the Rust file:
+
+- `PaintReprojector::source_node_count` :173 (13 tokens)
+- `PaintReprojector::fallback_count` :178 (5 tokens)
+- `PaintReprojector::rebound_count` :183 (5 tokens)
+- `PaintReprojector::resolve_source_roots` :195 (469 tokens)
+- `PaintReprojector::measure_overlap` :282 (547 tokens)
+- `PaintReprojector::measure_point_sample` :401 (476 tokens)
+- `PaintReprojector::triangle_vertices` :515 (66 tokens) — in `geometry/aabb_tree.rs`, `triangle_mesh.rs`
+- `PaintReprojector::sample_state` :528 (162 tokens)
+- `PaintReprojector::root_overlap_area` :547 (257 tokens)
+- `PaintReprojector::collect_overlap_areas` :578 (166 tokens)
+- `PaintReprojector::projection_axis` :609 (8 tokens)
+- `PaintReprojector::normals_parallel` :616 (217 tokens)
+- `PaintReprojector::projection_axis` :633 (11 tokens)
+- `PaintRegionSource::empty` :749 (15 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
+- `PaintRegionSource::leaf_count` :750 (9 tokens)
+- `PaintRegionSource::finest_leaf_edge` :756 (20 tokens)
+- `PaintRegionSource::coverage` :763 (444 tokens) — in `bridge_detector.rs`
+- `PaintRegionSource::collect_leaves` :863 (316 tokens)
+- `PaintRegionSource::leaf_triangle` :900 (39 tokens)
+- `reproject_one_annotation` :943 (880 tokens)
+- `RegionEdgeLimit::value` :1161 (5 tokens) — in `format/assembly_tree_json.rs`, `g_code_reader.rs`, `int128.rs`
+- `RegionEdgeLimit::trafo` :1162 (5 tokens) — in `sla/agg_raster.rs`
+- `DestinationSeedIndex::ensure_tree` :1256 (33 tokens)
+- `DestinationSeedIndex::seeds` :1266 (121 tokens)
+- `reproject_one_annotation_by_region` :1309 (372 tokens)
+- `reproject_paint` :1582 (872 tokens)
+- `reproject_paint_geometric` :1725 (872 tokens)
+- `fill_operand_colour` :1885 (51 tokens)
+- `operand_band` :1917 (9 tokens)
+- `operand_reach` :1923 (14 tokens)
+- `measure_operand` :1934 (361 tokens)
+- `rank_operands_per_face` :1985 (1034 tokens)
+- `paint_by_operand_filament` :2103 (936 tokens)
+- `reproject_paint_from_volumes` :2200 (1756 tokens)
+
+Rust only:
+
+- `squared_norm_2d` :76
+- `cross_f32` :154
+- `transform3d_mul_vec3d` :176
+- `transform_point` :186
+- `is_approx_identity` :203
+- `DestinationInSourceFrame::new` :229
+- `DestinationInSourceFrame::vertices` :244 — C++ has it in `MinimumSpanningTree`
+- `squared_norm_f32` :303
+
 ### `PerfTrace` (.cpp+.hpp) and `perf_trace.rs`
 
 Tier 3. C++ functions 1 (plus 1 constructors, 1 destructors, 0 operators), Rust functions 3. Matched 1: faithful 1, partial 0, divergent 0, stub 0.
@@ -12923,6 +13017,41 @@ Rust only:
 - `EmbossStyleType::default` :303
 - `EmbossStyle::eq` :310
 - `TextConfiguration::default` :344
+
+### `TexturePainting` (.cpp+.hpp) and `texture_painting.rs`
+
+Tier 3. C++ functions 25 (plus 0 constructors, 0 destructors, 1 operators), Rust functions 44. Matched 24: faithful 23, partial 1, divergent 0, stub 0.
+
+Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
+
+- partial: `decode_texture_image` :34 and `decode_texture_image` :389 (36%, 0.96x)
+
+Missing in the Rust file:
+
+- `compute_delta_e` :628 (14 tokens, overload)
+
+Rust only:
+
+- `TextureImage::default` :93
+- `TexturePaintingSettings::default` :179
+- `FilamentMatch::default` :204
+- `VolumeMesh::new` :228
+- `VolumeMesh::empty` :246 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `VolumeMesh::translate` :251 — C++ has it in `BoundingBox`, `Emboss`, `ExPolygon`
+- `VolumeMesh::set_init_shift` :262 — C++ has it in `TriangleMesh`
+- `VolumeMesh::bounding_box_center` :268
+- `ModelObject::invalidate_bounding_box` :292 — C++ has it in `Model`
+- `ModelVolume::mesh` :322 — C++ has it in `Format/STEP`, `Model`
+- `ModelVolume::set_mesh` :327 — C++ has it in `Model`
+- `ModelVolume::calculate_convex_hull` :333 — C++ has it in `Model`
+- `ModelVolume::translate` :338 — C++ has it in `BoundingBox`, `Emboss`, `ExPolygon`
+- `ModelVolume::center_geometry_after_creation` :343 — C++ has it in `Model`
+- `ModelVolume::invalidate_convex_hull_2d` :361 — C++ has it in `Model`
+- `ModelVolume::get_object` :366 — C++ has it in `Model`, `Print`, `SLAPrint`
+- `is_approx_zero` :373
+- `clamp_to_uchar` :631
+- `clamp_to_size_t` :643
+- `compute_delta_e_rgb` :1071
 
 ### `TextureToColor/Callbacks` (.hpp) and `texture_to_color/callbacks.rs`
 
@@ -13109,15 +13238,15 @@ Tier 3. C++ functions 15, Rust functions 24. Matched 15: faithful 15, partial 0,
 
 Rust only:
 
-- `Mat::new` :83
-- `Mat::channels` :88
-- `Mat::empty` :93 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
-- `MeshRepairCache::default` :140
-- `TextureToColorSettings::default` :220
-- `clamp_f32` :380
-- `clamp_i32` :392
-- `edge_key` :475
-- `resample_face_colors` :798
+- `Mat::new` :84
+- `Mat::channels` :89
+- `Mat::empty` :94 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `MeshRepairCache::default` :141
+- `TextureToColorSettings::default` :221
+- `clamp_f32` :381
+- `clamp_i32` :393
+- `edge_key` :476
+- `resample_face_colors` :799
 
 ### `TextureToColor/TriMesh` (.hpp) and `texture_to_color/tri_mesh.rs`
 
@@ -14064,7 +14193,7 @@ Missing in the Rust file:
 - `SLAPrint::empty` :449 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `SLAPrint::finished` :459 (19 tokens) — in `gcode/wipe_tower.rs`
 - `SLAPrint::get_print_object_by_model_object_id` :464 (63 tokens)
-- `SLAPrint::get_object` :469 (59 tokens) — in `model.rs`
+- `SLAPrint::get_object` :469 (59 tokens) — in `model.rs`, `texture_painting.rs`
 - `SLAPrint::PrintLayer::transformed_slices` :505 (14 tokens)
 - `SLAPrint::set_task` :510 (514 tokens)
 - `SLAPrint::PrintLayer::add` :521 (9 tokens) — in `boost_polygon_voronoi.rs`, `clipper2/clipper_core.rs`, `clipper2/clipper_rectclip.rs`

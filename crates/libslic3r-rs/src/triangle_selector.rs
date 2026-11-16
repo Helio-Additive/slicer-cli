@@ -411,7 +411,7 @@ impl Triangle {
 
     // Is this triangle valid or marked to be removed?  // TriangleSelector.hpp:332
     #[inline]
-    fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         self.m_valid
     }
 

@@ -12,14 +12,15 @@
 //     -I$PIN/src/admesh -I$BUILD -I$BUILD/src/libslic3r -I$EIGEN -I$PREFIX/include \
 //     -I$PREFIX/include/opencv4 \
 //     $DATA/gen.cpp $PIN/src/libslic3r/TextureToColor/ColorUtils.cpp \
-//     $PIN/src/libslic3r/MeshDiagnostics.cpp $PIN/src/libslic3r/TriangleMeshDeal.cpp -o gen \
+//     $PIN/src/libslic3r/MeshDiagnostics.cpp $PIN/src/libslic3r/MeshRaycast.cpp -o gen \
 //     -L$PREFIX/lib -lopencv_core -ltbb -lgmp -lmpfr
-//   for part in sampling split pipeline; do
+//   for part in sampling split pipeline repair; do
 //     ./gen $part > $DATA/vectors_$part.txt
 //   done
 //
 // TextureToColor.cpp is included unchanged, so its static functions are called directly;
-// ColorUtils.cpp and MeshDiagnostics.cpp are the pin's. Of TriangleMesh.cpp the unit needs one
+// ColorUtils.cpp, MeshDiagnostics.cpp and MeshRaycast.cpp are the pin's; the logging is off (Log.cpp,
+// Boost.Log, is not linked; see the definitions below). Of TriangleMesh.cpp the unit needs one
 // constructor and, of the statistics it fills, the open and the non-manifold edges and vertices:
 // that constructor is defined below with those lines of `fill_initial_stats`
 // (TriangleMesh.cpp:46-59), so that the whole engine does not have to be linked. TBB runs on one
@@ -37,8 +38,17 @@
 #include <cstring>
 #include <tbb/global_control.h>
 #include "libslic3r/TextureToColor/TextureToColor.cpp"
+#include "libslic3r/MeshDiagnostics.hpp"
 
-namespace Slic3r { namespace log_detail { bool log_enabled(LogLevel) { return false; } } }
+// The logging is off: Log.cpp (Boost.Log) is not linked, and ColorUtils.cpp, a separate
+// translation unit, still refers to the record type, which is never made.
+namespace Slic3r { namespace log_detail {
+bool log_enabled(LogLevel) { return false; }
+void write_failed(std::ostream&) noexcept {}
+LogStream::LogStream(LogLevel level, const char*, int, const char*) : m_level(level) {}
+LogStream::~LogStream() {}
+LogStream& LogStream::operator<<(std::ostream& (*manip)(std::ostream&)) { manip(m_buf); return *this; }
+} }
 
 using namespace Slic3r;
 using namespace Slic3r::tex2color;
@@ -544,6 +554,57 @@ static void gen_pipeline() {
     }
 }
 
+// repair_cluster_smooth with a mesh repair callback (the Windows 3D repair of the application): the
+// callback reports two messages, asks the cancel callback `cancel_queries` times and then fails
+// (mode 2) or gives the repaired mesh printed on the line, which is the mesh with its vertices
+// moved (mode 0) or the mesh subdivided once with its vertices moved (mode 1). The face colors are
+// then looked up on the old faces by the centroids of the new ones.
+static void gen_repair() {
+    for (int i = 0; i < 36; ++i) {
+        TriMesh m = good_mesh(i);
+        std::vector<RGB> colors = patch_colors(m, 2 + below(5), below(40));
+        TextureToColorSettings s = rnd_settings(i);
+        s.mesh_repair_decision = i % 9 == 8 ? MeshRepairDecision::ImportWithoutRepair : MeshRepairDecision::RepairAndImport;
+        const int mode = i % 3 == 2 && i % 4 == 0 ? 2 : (int) (i % 2);
+        const int cancel_queries = (int) below(3);
+        TriMesh repaired = m;
+        if (mode == 1) {
+            std::vector<FaceUVArray> uvs(repaired.indices.size(), FaceUVArray{Vec2f(0, 0), Vec2f(0, 0), Vec2f(0, 0)});
+            linear_subdivision(repaired, uvs);
+        }
+        const double jitter = i % 5 == 0 ? 0.0 : 0.05;
+        for (auto& v : repaired.vertices) v += Vec3f((float) range(-jitter, jitter), (float) range(-jitter, jitter), (float) range(-jitter, jitter));
+        s.mesh_repair_callback = [&](const indexed_triangle_set& in, indexed_triangle_set& out, std::function<void(const char*, unsigned)> progress,
+                                     std::function<bool()> cancel, std::string* error) -> bool {
+            progress("Repairing on Windows", 10);
+            progress(nullptr, 50);
+            for (int q = 0; q < cancel_queries; ++q)
+                if (cancel()) { *error = "cancelled"; return false; }
+            if (mode == 2) { *error = "no repair"; return false; }
+            out = repaired;
+            return true;
+        };
+        MeshRepairCache cache;
+        const bool with_cache = i % 3 != 1;
+        if (with_cache) s.mesh_repair_cache = &cache;
+        for (int round = 0; round < (with_cache ? 2 : 1); ++round) {
+            Events ev;
+            Cancel cancel;
+            if (round == 0) cancel.after = i % 6 == 5 ? 4 + cancel_queries : (i % 7 == 3 ? 1 + below(6) : 0);
+            TriMesh mm = m;
+            std::vector<RGB> cc = colors, out = {{7, 7, 7}};
+            std::size_t key = m.indices.size();
+            tag("mesh"); pmesh(mm); nl();
+            tag("repair_cluster_smooth_with_callback"); pcolors(cc); psettings(s); pu(with_cache); pu(round); pu(cancel.after); pu(key);
+            pu((std::size_t) mode); pu((std::size_t) cancel_queries); pmesh(repaired); arrow();
+            bool ok = repair_cluster_smooth(mm, cc, out, s, ev.callback(), cancel.callback(), "test", key);
+            pu(ok); pmesh(mm); pcolors(cc); pcolors(out); ev.print(); pu(cancel.calls);
+            if (with_cache) pcache(cache);
+            nl();
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) return 1;
     tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
@@ -551,6 +612,7 @@ int main(int argc, char** argv) {
     if (what == "sampling") gen_sampling();
     else if (what == "split") { g_state ^= 0x1111; gen_split(); }
     else if (what == "pipeline") { g_state ^= 0x2222; gen_pipeline(); }
+    else if (what == "repair") { g_state ^= 0x3333; gen_repair(); }
     else return 1;
     return 0;
 }

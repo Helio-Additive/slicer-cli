@@ -513,10 +513,11 @@ pub fn skip_whitespaces(bytes: &[u8], start: usize) -> usize {
 //
 // FIDELITY-NOTE: `ss << double`, `iss >> double`, `iss >> int`, `sscanf("%lf")`,
 // `std::getline` and `boost::trim` are library calls in Config.hpp. What follows
-// reproduces them as they behave in the C locale with libc++ and the BSD libc
-// (the build the parity vectors of tests/config_native_parity.rs come from).
-// Where libstdc++ or the MSVC library differ on malformed input (they do: "1.5abc",
-// "nan", hexadecimal floats), this file follows libc++.
+// reproduces them as they behave in the C locale with libc++ and Apple's libc (its BSD
+// printf / vfscanf and gdtoa strtod; the build the parity vectors of
+// tests/config_native_parity.rs come from). Where libstdc++, glibc or the MSVC library
+// differ on malformed input (they do: "1.5abc", "nan(...)" payloads, hexadecimal floats,
+// "-nan" printed for a negative NaN), this file follows libc++ and Apple's libc.
 // ---------------------------------------------------------------------------
 
 /// `std::isspace` in the classic locale: what `boost::trim` and the stream sentry skip.
@@ -554,8 +555,8 @@ fn bytes_to_string(b: &[u8]) -> String {
 /// `std::ostringstream << double` with the default flags: `%g`, precision 6.
 fn ostream_double(v: f64) -> String {
     if v.is_nan() {
-        // printf prints the sign bit of a NaN.
-        return if v.is_sign_negative() { "-nan".to_string() } else { "nan".to_string() };
+        // The BSD printf of Apple's libc prints "nan" whatever the sign bit (glibc: "-nan").
+        return "nan".to_string();
     }
     crate::locales_utils::general_format(v, 6)
 }
@@ -605,6 +606,25 @@ fn ldexp(mut x: f64, mut e: i64) -> f64 {
     x * 2f64.powi(e as i32)
 }
 
+/// The payload of "nan(n-char-sequence)" in Apple's `strtod`, see strtod_c.
+fn nan_payload(seq: &[u8]) -> u64 {
+    let (digits, base) = if seq.starts_with(b"0x") {
+        (&seq[2..], 16u64)
+    } else if seq.starts_with(b"0") {
+        (&seq[1..], 8u64)
+    } else {
+        (seq, 10u64)
+    };
+    let mut v: u64 = 0;
+    for &c in digits {
+        match hex_digit_value(c) {
+            Some(d) if (d as u64) < base => v = v.wrapping_mul(base).wrapping_add(d as u64),
+            _ => return 0,
+        }
+    }
+    v
+}
+
 /// C `strtod` of the BSD libc (gdtoa) in the C locale, over the bytes of `s` (the end of the
 /// slice is the terminating NUL). Leading white space, a sign, then one of: `inf`/`infinity`,
 /// `nan` with an optional `(n-char-sequence)`, a hexadecimal float, a decimal float.
@@ -634,19 +654,25 @@ fn strtod_c(s: &[u8]) -> Strtod {
         }
         return Strtod { value: apply_sign(f64::INFINITY), consumed: end, erange: false };
     }
-    // nan, nan(...)
+    // nan, nan(...): everything up to the first ')' belongs to the number. The payload is the
+    // text between the parentheses read as an unsigned integer ("0x" hexadecimal, a leading "0"
+    // octal, else decimal; wrapping at 64 bits; any other character makes it 0), kept in the
+    // 51 bits below the quiet bit. That is what Apple's libc does (probed on macOS 26).
     if lower(i) == b'n' && lower(i + 1) == b'a' && lower(i + 2) == b'n' {
         let mut end = i + 3;
+        let mut payload: u64 = 0;
         if end < n && s[end] == b'(' {
             let mut k = end + 1;
             while k < n && s[k] != b')' {
                 k += 1;
             }
             if k < n {
+                payload = nan_payload(&s[end + 1..k]);
                 end = k + 1;
             }
         }
-        return Strtod { value: apply_sign(f64::NAN), consumed: end, erange: false };
+        let value = f64::from_bits(0x7ff8_0000_0000_0000 | (payload & 0x0007_ffff_ffff_ffff));
+        return Strtod { value: apply_sign(value), consumed: end, erange: false };
     }
     // hexadecimal float
     if i + 1 < n && s[i] == b'0' && (s[i + 1] == b'x' || s[i + 1] == b'X') {
@@ -715,6 +741,7 @@ fn strtod_c(s: &[u8]) -> Strtod {
             }
             // Round the 128-bit integer to 53 bits (ties to even, the sticky bit breaks ties),
             // unless the result is subnormal, where the rounding position moves.
+            let mut inexact = false;
             let value = if mant == 0 {
                 0.0
             } else {
@@ -722,6 +749,7 @@ fn strtod_c(s: &[u8]) -> Strtod {
                 let top_exp = bits - 1 + exp2; // exponent of the leading bit
                 if top_exp < -1075 {
                     // below half of the smallest subnormal
+                    inexact = true;
                     0.0
                 } else if top_exp > 1023 {
                     f64::INFINITY
@@ -735,6 +763,7 @@ fn strtod_c(s: &[u8]) -> Strtod {
                         let mut q = mant >> shift;
                         let rem = mant & ((1u128 << shift) - 1);
                         let half = 1u128 << (shift - 1);
+                        inexact = rem != 0;
                         if rem > half || (rem == half && (q & 1) == 1) {
                             q += 1;
                         }
@@ -742,7 +771,9 @@ fn strtod_c(s: &[u8]) -> Strtod {
                     }
                 }
             };
-            let erange = value.is_infinite() || (mant != 0 && value.abs() < f64::MIN_POSITIVE);
+            // ERANGE: an overflow, or an underflow that lost bits (an exact subnormal such as
+            // 0x1p-1074 is not one).
+            let erange = value.is_infinite() || (inexact && value.abs() < f64::MIN_POSITIVE);
             return Strtod { value: apply_sign(value), consumed: end, erange };
         }
         // "0x" without a hexadecimal digit: the "0" alone is the number.
@@ -946,6 +977,27 @@ fn istream_int(s: &[u8]) -> IstreamResult<i32> {
     }
 }
 
+/// The text a `%lf` of the BSD `vfscanf` (`parsefloat()`) hands to `strtod`: what strtod would
+/// take, except in "nan(...)", where only letters, digits and '_' may stand between the
+/// parentheses; anything else (or no ')') ends the field after "nan".
+fn scanf_float_field(s: &[u8]) -> &[u8] {
+    let mut k = 0usize;
+    if k < s.len() && (s[k] == b'+' || s[k] == b'-') {
+        k += 1;
+    }
+    if s.len() >= k + 4 && s[k..k + 3].eq_ignore_ascii_case(b"nan") && s[k + 3] == b'(' {
+        let mut q = k + 4;
+        while q < s.len() && (s[q].is_ascii_alphanumeric() || s[q] == b'_') {
+            q += 1;
+        }
+        if q < s.len() && s[q] == b')' {
+            return &s[..q + 1];
+        }
+        return &s[..k + 3];
+    }
+    s
+}
+
 /// `sscanf(str.data(), " %lf SEP %lf [SEP %lf] %c", ...)` as ConfigOptionPoint::deserialize and
 /// ConfigOptionPoint3::deserialize call it: white space, a double, white space, the separator,
 /// ..., white space and one more character. `out` receives every double that was converted
@@ -968,7 +1020,7 @@ fn sscanf_doubles(str: &[u8], sep: u8, out: &mut [f64]) -> i32 {
             // input failure before the first conversion is EOF (-1)
             return if assigned == 0 { -1 } else { assigned };
         }
-        let r = strtod_c(&s[i..]);
+        let r = strtod_c(scanf_float_field(&s[i..]));
         if r.consumed == 0 {
             return assigned;
         }
@@ -1481,7 +1533,10 @@ impl ConfigSubstitutionContext {
 
 /// Config.hpp:265-302: a generic value of a configuration option. The virtual methods of the
 /// C++ class are the methods of this trait; the concrete classes below carry the C++ names.
-pub trait ConfigOption: std::any::Any {
+///
+/// `Send + Sync`: a ConfigDef holds default options and lives in a `static`, as the C++
+/// definitions are static objects; every option class is plain data.
+pub trait ConfigOption: std::any::Any + Send + Sync {
     /// Config.hpp:270 `virtual ConfigOptionType type() const = 0;`
     fn r#type(&self) -> ConfigOptionType;
     /// Config.hpp:271 `virtual std::string serialize() const = 0;` (some classes throw).
@@ -1535,7 +1590,7 @@ pub trait ConfigOption: std::any::Any {
     /// Config.hpp:291-294: is this option overridden by another option?
     /// An option overrides another option if it is not nil and not equal.
     fn overriden_by(&self, rhs: &dyn ConfigOption) -> CfgResult<bool> {
-        debug_assert!(!self.nullable() && !rhs.nullable());
+        // assert(!self.nullable() && !rhs.nullable()): an `assert` of the C++, compiled out in the reference build (-DNDEBUG).
         self.operator_ne(rhs)
     }
     /// Config.hpp:296-301: apply an override option, possibly a nullable one.
@@ -2791,7 +2846,7 @@ impl<const NULLABLE: bool> ConfigOptionVectorBase for ConfigOptionFloatsTempl<NU
     }
     /// Config.hpp:889-893
     fn set_at_to_nil(&mut self, i: usize) {
-        debug_assert!(self.nullable() && i < self.values.len());
+        // assert(self.nullable() && i < self.values.len()): an `assert` of the C++, compiled out in the reference build (-DNDEBUG).
         self.values[i] = Self::nil_value();
     }
 }
@@ -3009,7 +3064,7 @@ impl<const NULLABLE: bool> ConfigOptionVectorBase for ConfigOptionIntsTempl<NULL
     }
     /// Config.hpp:1055-1059
     fn set_at_to_nil(&mut self, i: usize) {
-        debug_assert!(self.nullable() && i < self.values.len());
+        // assert(self.nullable() && i < self.values.len()): an `assert` of the C++, compiled out in the reference build (-DNDEBUG).
         self.values[i] = Self::nil_value();
     }
 }
@@ -3347,7 +3402,7 @@ impl<const NULLABLE: bool> ConfigOptionVectorBase for ConfigOptionPercentsTempl<
     }
     /// Config.hpp:889-893 (inherited)
     fn set_at_to_nil(&mut self, i: usize) {
-        debug_assert!(self.nullable() && i < self.values.len());
+        // assert(self.nullable() && i < self.values.len()): an `assert` of the C++, compiled out in the reference build (-DNDEBUG).
         self.values[i] = Self::nil_value();
     }
 }
@@ -3651,7 +3706,7 @@ impl<const NULLABLE: bool> ConfigOptionVectorBase for ConfigOptionFloatsOrPercen
     }
     /// Config.hpp:1384-1388
     fn set_at_to_nil(&mut self, i: usize) {
-        debug_assert!(self.nullable() && i < self.values.len());
+        // assert(self.nullable() && i < self.values.len()): an `assert` of the C++, compiled out in the reference build (-DNDEBUG).
         self.values[i] = Self::nil_value();
     }
 }
@@ -3698,6 +3753,11 @@ impl ConfigOptionPoint {
     /// Config.hpp:1496
     pub fn static_type() -> ConfigOptionType {
         ConfigOptionType::CoPoint
+    }
+    /// Config.hpp:1501 `bool operator< (const ConfigOptionPoint &rhs) const throw()`: the
+    /// `operator<(const Vec2d&, const Vec2d&)` of Point.hpp:80.
+    pub fn operator_lt(&self, rhs: &Self) -> bool {
+        self.value.x < rhs.value.x || (self.value.x == rhs.value.x && self.value.y < rhs.value.y)
     }
 }
 
@@ -3927,7 +3987,7 @@ impl ConfigOptionPointsGroups {
     /// Config.hpp:1714-1726 `std::vector<std::string> vserialize_single(int idx) const`
     pub fn vserialize_single(&self, idx: i32) -> Vec<String> {
         let mut ret = Vec::new();
-        debug_assert!((idx as usize) < self.values.len());
+        // assert((idx as usize) < self.values.len()): an `assert` of the C++, compiled out in the reference build (-DNDEBUG).
         for iter in &self.values[idx as usize] {
             let mut ss = String::new();
             serialize_point_x(&mut ss, iter);
@@ -4060,7 +4120,7 @@ impl ConfigOptionIntsGroups {
     /// Config.hpp:1819-1829 `std::vector<std::string> vserialize_single(int idx) const`
     pub fn vserialize_single(&self, idx: i32) -> Vec<String> {
         let mut ret = Vec::new();
-        debug_assert!((idx as usize) < self.values.len());
+        // assert((idx as usize) < self.values.len()): an `assert` of the C++, compiled out in the reference build (-DNDEBUG).
         for iter in &self.values[idx as usize] {
             ret.push(ostream_int(*iter));
         }
@@ -4393,14 +4453,14 @@ impl<const NULLABLE: bool> ConfigOptionVectorBase for ConfigOptionBoolsTempl<NUL
     }
     /// Config.hpp:1909-1913
     fn set_at_to_nil(&mut self, i: usize) {
-        debug_assert!(self.nullable() && i < self.values.len());
+        // assert(self.nullable() && i < self.values.len()): an `assert` of the C++, compiled out in the reference build (-DNDEBUG).
         self.values[i] = Self::nil_value();
     }
 }
 
 /// The enum types `T` of `ConfigOptionEnum<T>`: the two static maps the C++ specializes per
 /// enum (Config.hpp:2057-2059) and the conversion from and to `int`.
-pub trait ConfigEnum: Copy + PartialEq + 'static {
+pub trait ConfigEnum: Copy + PartialEq + Send + Sync + 'static {
     /// Config.hpp:2057 `static const t_config_enum_names& get_enum_names();`
     fn get_enum_names() -> &'static t_config_enum_names;
     /// Config.hpp:2059 `static const t_config_enum_values& get_enum_values();`
@@ -4615,6 +4675,21 @@ impl ConfigOption for ConfigOptionEnumGeneric {
     }
 }
 
+/// The `values` of a `const ConfigOptionInts&`: a ConfigOptionInts or one of the enums classes,
+/// which derive from it in the C++.
+fn ints_of(rhs: &dyn ConfigOption) -> &Vec<i32> {
+    if let Some(o) = rhs.as_any().downcast_ref::<ConfigOptionInts>() {
+        &o.values
+    } else if let Some(o) = rhs.as_any().downcast_ref::<ConfigOptionEnumsGeneric>() {
+        &o.values
+    } else {
+        &rhs.as_any()
+            .downcast_ref::<ConfigOptionEnumsGenericNullable>()
+            .expect("const ConfigOptionInts&: not a ConfigOptionInts or a class derived from it")
+            .values
+    }
+}
+
 /// Config.hpp:2128-2227 `template <bool NULLABLE> class ConfigOptionEnumsGenericTempl : public ConfigOptionInts`
 /// (BBS). The base class is the non-nullable ConfigOptionInts whatever NULLABLE is.
 #[derive(Debug)]
@@ -4645,16 +4720,19 @@ impl<const NULLABLE: bool> ConfigOptionEnumsGenericTempl<NULLABLE> {
     pub fn static_type() -> ConfigOptionType {
         ConfigOptionType::CoEnums
     }
-    /// Config.hpp:2145 `bool operator< (const ConfigOptionInts& rhs) const throw()`
-    pub fn operator_lt(&self, rhs: &ConfigOptionInts) -> bool {
-        self.values < rhs.values
+    /// Config.hpp:2145 `bool operator< (const ConfigOptionInts& rhs) const throw()`. `rhs` is a
+    /// ConfigOptionInts or a class derived from it (ConfigOptionEnumsGeneric,
+    /// ConfigOptionEnumsGenericNullable), as the C++ reference may be.
+    pub fn operator_lt(&self, rhs: &dyn ConfigOption) -> bool {
+        self.values < *ints_of(rhs)
     }
-    /// Config.hpp:2147-2152 `bool operator==(const ConfigOptionInts& rhs) const`
-    pub fn operator_eq_ints(&self, rhs: &ConfigOptionInts) -> CfgResult<bool> {
+    /// Config.hpp:2147-2152 `bool operator==(const ConfigOptionInts& rhs) const`: `rhs` as in
+    /// operator_lt; the virtual `type()` of a derived class is coEnums.
+    pub fn operator_eq_ints(&self, rhs: &dyn ConfigOption) -> CfgResult<bool> {
         if rhs.r#type() != self.r#type() {
             return Err(ConfigurationError::new("ConfigOptionEnumsGeneric: Comparing incompatible types"));
         }
-        Ok(self.values == rhs.values)
+        Ok(self.values == *ints_of(rhs))
     }
     /// Config.hpp:1051 (ConfigOptionInts::nil_value)
     pub fn nil_value() -> i32 {
@@ -5379,6 +5457,832 @@ fn c_atoi(s: &[u8]) -> i32 {
 /// `boost::iequals` for ASCII keys.
 fn iequals(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
+}
+
+/// What `ifs >> j` of nlohmann::json 3.10.4 (src/nlohmann at the pin) does with the bytes of a
+/// file: `parser(input_adapter(ifs)).parse(false, j)`, i.e. detail/input/lexer.hpp and
+/// detail/input/parser.hpp with no callback, exceptions on, comments not skipped and the strict
+/// flag off (what follows the first value is not read). The DOM it builds is held as a
+/// serde_json::Value (an object is sorted by key as the std::map of nlohmann::json is when it is
+/// iterated; a later duplicate key replaces the earlier value, as `operator[]` does).
+mod nlohmann_json {
+    /// lexer_base::token_type (lexer.hpp:34-52)
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum TokenType {
+        Uninitialized,
+        LiteralTrue,
+        LiteralFalse,
+        LiteralNull,
+        ValueString,
+        ValueUnsigned,
+        ValueInteger,
+        ValueFloat,
+        BeginArray,
+        BeginObject,
+        EndArray,
+        EndObject,
+        NameSeparator,
+        ValueSeparator,
+        ParseError,
+        EndOfInput,
+        LiteralOrValue,
+    }
+
+    /// lexer_base::token_type_name (lexer.hpp:54-94)
+    fn token_type_name(t: TokenType) -> &'static str {
+        use TokenType::*;
+        match t {
+            Uninitialized => "<uninitialized>",
+            LiteralTrue => "true literal",
+            LiteralFalse => "false literal",
+            LiteralNull => "null literal",
+            ValueString => "string literal",
+            ValueUnsigned | ValueInteger | ValueFloat => "number literal",
+            BeginArray => "'['",
+            BeginObject => "'{'",
+            EndArray => "']'",
+            EndObject => "'}'",
+            NameSeparator => "':'",
+            ValueSeparator => "','",
+            ParseError => "<parse error>",
+            EndOfInput => "end of input",
+            LiteralOrValue => "'[', '{', or a literal",
+        }
+    }
+
+    /// position_t (position_t.hpp)
+    #[derive(Clone, Copy, Default)]
+    struct Position {
+        chars_read_total: usize,
+        chars_read_current_line: usize,
+        lines_read: usize,
+    }
+
+    /// `std::char_traits<char>::eof()`
+    const EOF: i32 = -1;
+
+    /// The exceptions `parse` throws: parse_error (Config.cpp catches it by its class) and the
+    /// out_of_range of a number that overflows (caught as a std::exception).
+    pub(super) enum Error {
+        Parse(String),
+        Other(String),
+    }
+
+    /// lexer<BasicJsonType, input_stream_adapter> (lexer.hpp:102-1622)
+    struct Lexer<'a> {
+        ia: &'a [u8],
+        ia_pos: usize,
+        current: i32,
+        next_unget: bool,
+        position: Position,
+        token_string: Vec<u8>,
+        token_buffer: Vec<u8>,
+        error_message: &'static str,
+        value_integer: i64,
+        value_unsigned: u64,
+        value_float: f64,
+    }
+
+    impl<'a> Lexer<'a> {
+        fn new(ia: &'a [u8]) -> Self {
+            Lexer {
+                ia,
+                ia_pos: 0,
+                current: EOF,
+                next_unget: false,
+                position: Position::default(),
+                token_string: Vec::new(),
+                token_buffer: Vec::new(),
+                error_message: "",
+                value_integer: 0,
+                value_unsigned: 0,
+                value_float: 0.0,
+            }
+        }
+
+        /// input_stream_adapter::get_character: `sb->sbumpc()`, a byte as 0..255.
+        fn get_character(&mut self) -> i32 {
+            if self.ia_pos < self.ia.len() {
+                self.ia_pos += 1;
+                self.ia[self.ia_pos - 1] as i32
+            } else {
+                EOF
+            }
+        }
+
+        /// lexer.hpp:160-190
+        fn get_codepoint(&mut self) -> i32 {
+            let mut codepoint: i32 = 0;
+            for factor in [12u32, 8, 4, 0] {
+                self.get();
+                let c = self.current;
+                if (b'0' as i32..=b'9' as i32).contains(&c) {
+                    codepoint += ((c as u32 - 0x30) << factor) as i32;
+                } else if (b'A' as i32..=b'F' as i32).contains(&c) {
+                    codepoint += ((c as u32 - 0x37) << factor) as i32;
+                } else if (b'a' as i32..=b'f' as i32).contains(&c) {
+                    codepoint += ((c as u32 - 0x57) << factor) as i32;
+                } else {
+                    return -1;
+                }
+            }
+            codepoint
+        }
+
+        /// lexer.hpp:207-228
+        fn next_byte_in_range(&mut self, ranges: &[i32]) -> bool {
+            self.add(self.current);
+            let mut k = 0;
+            while k < ranges.len() {
+                self.get();
+                if ranges[k] <= self.current && self.current <= ranges[k + 1] {
+                    self.add(self.current);
+                } else {
+                    self.error_message = "invalid string: ill-formed UTF-8 byte";
+                    return false;
+                }
+                k += 2;
+            }
+            true
+        }
+
+        /// lexer.hpp:245-829 `token_type scan_string()`
+        fn scan_string(&mut self) -> TokenType {
+            const CONTROL: [&str; 32] = [
+                "invalid string: control character U+0000 (NUL) must be escaped to \\u0000",
+                "invalid string: control character U+0001 (SOH) must be escaped to \\u0001",
+                "invalid string: control character U+0002 (STX) must be escaped to \\u0002",
+                "invalid string: control character U+0003 (ETX) must be escaped to \\u0003",
+                "invalid string: control character U+0004 (EOT) must be escaped to \\u0004",
+                "invalid string: control character U+0005 (ENQ) must be escaped to \\u0005",
+                "invalid string: control character U+0006 (ACK) must be escaped to \\u0006",
+                "invalid string: control character U+0007 (BEL) must be escaped to \\u0007",
+                "invalid string: control character U+0008 (BS) must be escaped to \\u0008 or \\b",
+                "invalid string: control character U+0009 (HT) must be escaped to \\u0009 or \\t",
+                "invalid string: control character U+000A (LF) must be escaped to \\u000A or \\n",
+                "invalid string: control character U+000B (VT) must be escaped to \\u000B",
+                "invalid string: control character U+000C (FF) must be escaped to \\u000C or \\f",
+                "invalid string: control character U+000D (CR) must be escaped to \\u000D or \\r",
+                "invalid string: control character U+000E (SO) must be escaped to \\u000E",
+                "invalid string: control character U+000F (SI) must be escaped to \\u000F",
+                "invalid string: control character U+0010 (DLE) must be escaped to \\u0010",
+                "invalid string: control character U+0011 (DC1) must be escaped to \\u0011",
+                "invalid string: control character U+0012 (DC2) must be escaped to \\u0012",
+                "invalid string: control character U+0013 (DC3) must be escaped to \\u0013",
+                "invalid string: control character U+0014 (DC4) must be escaped to \\u0014",
+                "invalid string: control character U+0015 (NAK) must be escaped to \\u0015",
+                "invalid string: control character U+0016 (SYN) must be escaped to \\u0016",
+                "invalid string: control character U+0017 (ETB) must be escaped to \\u0017",
+                "invalid string: control character U+0018 (CAN) must be escaped to \\u0018",
+                "invalid string: control character U+0019 (EM) must be escaped to \\u0019",
+                "invalid string: control character U+001A (SUB) must be escaped to \\u001A",
+                "invalid string: control character U+001B (ESC) must be escaped to \\u001B",
+                "invalid string: control character U+001C (FS) must be escaped to \\u001C",
+                "invalid string: control character U+001D (GS) must be escaped to \\u001D",
+                "invalid string: control character U+001E (RS) must be escaped to \\u001E",
+                "invalid string: control character U+001F (US) must be escaped to \\u001F",
+            ];
+            self.reset();
+            loop {
+                let c = self.get();
+                match c {
+                    EOF => {
+                        self.error_message = "invalid string: missing closing quote";
+                        return TokenType::ParseError;
+                    }
+                    0x22 => return TokenType::ValueString,
+                    0x5C => {
+                        match self.get() {
+                            0x22 => self.add(0x22),
+                            0x5C => self.add(0x5C),
+                            0x2F => self.add(0x2F),
+                            0x62 => self.add(0x08),
+                            0x66 => self.add(0x0C),
+                            0x6E => self.add(0x0A),
+                            0x72 => self.add(0x0D),
+                            0x74 => self.add(0x09),
+                            0x75 => {
+                                let codepoint1 = self.get_codepoint();
+                                let mut codepoint = codepoint1;
+                                if codepoint1 == -1 {
+                                    self.error_message = "invalid string: '\\u' must be followed by 4 hex digits";
+                                    return TokenType::ParseError;
+                                }
+                                if (0xD800..=0xDBFF).contains(&codepoint1) {
+                                    if self.get() == 0x5C && self.get() == 0x75 {
+                                        let codepoint2 = self.get_codepoint();
+                                        if codepoint2 == -1 {
+                                            self.error_message = "invalid string: '\\u' must be followed by 4 hex digits";
+                                            return TokenType::ParseError;
+                                        }
+                                        if (0xDC00..=0xDFFF).contains(&codepoint2) {
+                                            codepoint = ((codepoint1 as u32) << 10)
+                                                .wrapping_add(codepoint2 as u32)
+                                                .wrapping_sub(0x35FDC00) as i32;
+                                        } else {
+                                            self.error_message =
+                                                "invalid string: surrogate U+D800..U+DBFF must be followed by U+DC00..U+DFFF";
+                                            return TokenType::ParseError;
+                                        }
+                                    } else {
+                                        self.error_message =
+                                            "invalid string: surrogate U+D800..U+DBFF must be followed by U+DC00..U+DFFF";
+                                        return TokenType::ParseError;
+                                    }
+                                } else if (0xDC00..=0xDFFF).contains(&codepoint1) {
+                                    self.error_message = "invalid string: surrogate U+DC00..U+DFFF must follow U+D800..U+DBFF";
+                                    return TokenType::ParseError;
+                                }
+                                let cp = codepoint as u32;
+                                if cp < 0x80 {
+                                    self.add(cp as i32);
+                                } else if cp <= 0x7FF {
+                                    self.add((0xC0 | (cp >> 6)) as i32);
+                                    self.add((0x80 | (cp & 0x3F)) as i32);
+                                } else if cp <= 0xFFFF {
+                                    self.add((0xE0 | (cp >> 12)) as i32);
+                                    self.add((0x80 | ((cp >> 6) & 0x3F)) as i32);
+                                    self.add((0x80 | (cp & 0x3F)) as i32);
+                                } else {
+                                    self.add((0xF0 | (cp >> 18)) as i32);
+                                    self.add((0x80 | ((cp >> 12) & 0x3F)) as i32);
+                                    self.add((0x80 | ((cp >> 6) & 0x3F)) as i32);
+                                    self.add((0x80 | (cp & 0x3F)) as i32);
+                                }
+                            }
+                            _ => {
+                                self.error_message = "invalid string: forbidden character after backslash";
+                                return TokenType::ParseError;
+                            }
+                        }
+                    }
+                    0x00..=0x1F => {
+                        self.error_message = CONTROL[c as usize];
+                        return TokenType::ParseError;
+                    }
+                    0x20..=0x7F => self.add(c),
+                    // U+0080..U+07FF: bytes C2..DF 80..BF
+                    0xC2..=0xDF => {
+                        if !self.next_byte_in_range(&[0x80, 0xBF]) {
+                            return TokenType::ParseError;
+                        }
+                    }
+                    // U+0800..U+0FFF: bytes E0 A0..BF 80..BF
+                    0xE0 => {
+                        if !self.next_byte_in_range(&[0xA0, 0xBF, 0x80, 0xBF]) {
+                            return TokenType::ParseError;
+                        }
+                    }
+                    // U+1000..U+CFFF: bytes E1..EC 80..BF 80..BF
+                    // U+E000..U+FFFF: bytes EE..EF 80..BF 80..BF
+                    0xE1..=0xEC | 0xEE | 0xEF => {
+                        if !self.next_byte_in_range(&[0x80, 0xBF, 0x80, 0xBF]) {
+                            return TokenType::ParseError;
+                        }
+                    }
+                    // U+D000..U+D7FF: bytes ED 80..9F 80..BF
+                    0xED => {
+                        if !self.next_byte_in_range(&[0x80, 0x9F, 0x80, 0xBF]) {
+                            return TokenType::ParseError;
+                        }
+                    }
+                    // U+10000..U+3FFFF F0 90..BF 80..BF 80..BF
+                    0xF0 => {
+                        if !self.next_byte_in_range(&[0x90, 0xBF, 0x80, 0xBF, 0x80, 0xBF]) {
+                            return TokenType::ParseError;
+                        }
+                    }
+                    // U+40000..U+FFFFF F1..F3 80..BF 80..BF 80..BF
+                    0xF1..=0xF3 => {
+                        if !self.next_byte_in_range(&[0x80, 0xBF, 0x80, 0xBF, 0x80, 0xBF]) {
+                            return TokenType::ParseError;
+                        }
+                    }
+                    // U+100000..U+10FFFF F4 80..8F 80..BF 80..BF
+                    0xF4 => {
+                        if !self.next_byte_in_range(&[0x80, 0x8F, 0x80, 0xBF, 0x80, 0xBF]) {
+                            return TokenType::ParseError;
+                        }
+                    }
+                    // remaining bytes (80..C1 and F5..FF) are ill-formed
+                    _ => {
+                        self.error_message = "invalid string: ill-formed UTF-8 byte";
+                        return TokenType::ParseError;
+                    }
+                }
+            }
+        }
+
+        /// lexer.hpp:968-1311 `token_type scan_number()`: the state machine of RFC 8259 Sect. 6,
+        /// one arm per label of the C++.
+        fn scan_number(&mut self) -> TokenType {
+            #[derive(Clone, Copy)]
+            enum S {
+                Minus,
+                Zero,
+                Any1,
+                Decimal1,
+                Decimal2,
+                Exponent,
+                Sign,
+                Any2,
+                Done,
+            }
+            self.reset();
+            let mut number_type = TokenType::ValueUnsigned;
+            let is_digit = |c: i32| (b'0' as i32..=b'9' as i32).contains(&c);
+            let is_digit19 = |c: i32| (b'1' as i32..=b'9' as i32).contains(&c);
+            let mut state = match self.current {
+                c if c == b'-' as i32 => {
+                    self.add(c);
+                    S::Minus
+                }
+                c if c == b'0' as i32 => {
+                    self.add(c);
+                    S::Zero
+                }
+                c => {
+                    // '1'..'9' (scan() only calls this for '-' and digits)
+                    self.add(c);
+                    S::Any1
+                }
+            };
+            loop {
+                state = match state {
+                    S::Minus => {
+                        number_type = TokenType::ValueInteger;
+                        let c = self.get();
+                        if c == b'0' as i32 {
+                            self.add(c);
+                            S::Zero
+                        } else if is_digit19(c) {
+                            self.add(c);
+                            S::Any1
+                        } else {
+                            self.error_message = "invalid number; expected digit after '-'";
+                            return TokenType::ParseError;
+                        }
+                    }
+                    S::Zero => {
+                        let c = self.get();
+                        if c == b'.' as i32 {
+                            // add(decimal_point_char): '.' in the C locale CNumericLocalesSetter sets
+                            self.add(b'.' as i32);
+                            S::Decimal1
+                        } else if c == b'e' as i32 || c == b'E' as i32 {
+                            self.add(c);
+                            S::Exponent
+                        } else {
+                            S::Done
+                        }
+                    }
+                    S::Any1 => {
+                        let c = self.get();
+                        if is_digit(c) {
+                            self.add(c);
+                            S::Any1
+                        } else if c == b'.' as i32 {
+                            self.add(b'.' as i32);
+                            S::Decimal1
+                        } else if c == b'e' as i32 || c == b'E' as i32 {
+                            self.add(c);
+                            S::Exponent
+                        } else {
+                            S::Done
+                        }
+                    }
+                    S::Decimal1 => {
+                        number_type = TokenType::ValueFloat;
+                        let c = self.get();
+                        if is_digit(c) {
+                            self.add(c);
+                            S::Decimal2
+                        } else {
+                            self.error_message = "invalid number; expected digit after '.'";
+                            return TokenType::ParseError;
+                        }
+                    }
+                    S::Decimal2 => {
+                        let c = self.get();
+                        if is_digit(c) {
+                            self.add(c);
+                            S::Decimal2
+                        } else if c == b'e' as i32 || c == b'E' as i32 {
+                            self.add(c);
+                            S::Exponent
+                        } else {
+                            S::Done
+                        }
+                    }
+                    S::Exponent => {
+                        number_type = TokenType::ValueFloat;
+                        let c = self.get();
+                        if c == b'+' as i32 || c == b'-' as i32 {
+                            self.add(c);
+                            S::Sign
+                        } else if is_digit(c) {
+                            self.add(c);
+                            S::Any2
+                        } else {
+                            self.error_message = "invalid number; expected '+', '-', or digit after exponent";
+                            return TokenType::ParseError;
+                        }
+                    }
+                    S::Sign => {
+                        let c = self.get();
+                        if is_digit(c) {
+                            self.add(c);
+                            S::Any2
+                        } else {
+                            self.error_message = "invalid number; expected digit after exponent sign";
+                            return TokenType::ParseError;
+                        }
+                    }
+                    S::Any2 => {
+                        let c = self.get();
+                        if is_digit(c) {
+                            self.add(c);
+                            S::Any2
+                        } else {
+                            S::Done
+                        }
+                    }
+                    S::Done => break,
+                };
+            }
+            // scan_number_done:
+            self.unget();
+            // The buffer holds ASCII digits, '-', '.', 'e', 'E', '+' only.
+            let text = std::str::from_utf8(&self.token_buffer).unwrap_or("");
+            if number_type == TokenType::ValueUnsigned {
+                // strtoull(..., 10) with errno == 0
+                if let Ok(x) = text.parse::<u64>() {
+                    self.value_unsigned = x;
+                    return TokenType::ValueUnsigned;
+                }
+            } else if number_type == TokenType::ValueInteger {
+                // strtoll(..., 10) with errno == 0
+                if let Ok(x) = text.parse::<i64>() {
+                    self.value_integer = x;
+                    return TokenType::ValueInteger;
+                }
+            }
+            // strtod: correctly rounded, as the gdtoa strtod of the reference libc.
+            self.value_float = text.parse::<f64>().unwrap_or(0.0);
+            TokenType::ValueFloat
+        }
+
+        /// lexer.hpp:1318-1331 `token_type scan_literal(...)`
+        fn scan_literal(&mut self, literal_text: &[u8], return_type: TokenType) -> TokenType {
+            for &lc in &literal_text[1..] {
+                // to_char_type(get()): EOF becomes the char 0xFF
+                if self.get() as u8 != lc {
+                    self.error_message = "invalid literal";
+                    return TokenType::ParseError;
+                }
+            }
+            return_type
+        }
+
+        /// lexer.hpp:1338-1343
+        fn reset(&mut self) {
+            self.token_buffer.clear();
+            self.token_string.clear();
+            self.token_string.push(self.current as u8);
+        }
+
+        /// lexer.hpp:1355-1381 `char_int_type get()`
+        fn get(&mut self) -> i32 {
+            self.position.chars_read_total += 1;
+            self.position.chars_read_current_line += 1;
+            if self.next_unget {
+                // just reset the next_unget variable and work with current
+                self.next_unget = false;
+            } else {
+                self.current = self.get_character();
+            }
+            if self.current != EOF {
+                self.token_string.push(self.current as u8);
+            }
+            if self.current == b'\n' as i32 {
+                self.position.lines_read += 1;
+                self.position.chars_read_current_line = 0;
+            }
+            self.current
+        }
+
+        /// lexer.hpp:1392-1415 `void unget()`
+        fn unget(&mut self) {
+            self.next_unget = true;
+            self.position.chars_read_total -= 1;
+            // in case we "unget" a newline, we have to also decrement the lines_read
+            if self.position.chars_read_current_line == 0 {
+                if self.position.lines_read > 0 {
+                    self.position.lines_read -= 1;
+                }
+            } else {
+                self.position.chars_read_current_line -= 1;
+            }
+            if self.current != EOF {
+                self.token_string.pop();
+            }
+        }
+
+        /// lexer.hpp:1418-1421
+        fn add(&mut self, c: i32) {
+            self.token_buffer.push(c as u8);
+        }
+
+        /// lexer.hpp:1458-1479: escape control characters as <U+XXXX>.
+        fn get_token_string(&self) -> String {
+            let mut result: Vec<u8> = Vec::new();
+            for &c in &self.token_string {
+                if c <= 0x1F {
+                    result.extend_from_slice(format!("<U+{:04X}>", c).as_bytes());
+                } else {
+                    result.push(c);
+                }
+            }
+            String::from_utf8_lossy(&result).into_owned()
+        }
+
+        /// lexer.hpp:1497-1506 `bool skip_bom()`
+        fn skip_bom(&mut self) -> bool {
+            if self.get() == 0xEF {
+                // check if we completely parse the BOM
+                return self.get() == 0xBB && self.get() == 0xBF;
+            }
+            // the first character is not the beginning of the BOM; unget it to process is later
+            self.unget();
+            true
+        }
+
+        /// lexer.hpp:1508-1515
+        fn skip_whitespace(&mut self) {
+            loop {
+                self.get();
+                let c = self.current;
+                if !(c == b' ' as i32 || c == b'\t' as i32 || c == b'\n' as i32 || c == b'\r' as i32) {
+                    break;
+                }
+            }
+        }
+
+        /// lexer.hpp:1517-1594 `token_type scan()` (comments are not skipped)
+        fn scan(&mut self) -> TokenType {
+            // initially, skip the BOM
+            if self.position.chars_read_total == 0 && !self.skip_bom() {
+                self.error_message = "invalid BOM; must be 0xEF 0xBB 0xBF if given";
+                return TokenType::ParseError;
+            }
+            // read next character and ignore whitespace
+            self.skip_whitespace();
+            match self.current {
+                c if c == b'[' as i32 => TokenType::BeginArray,
+                c if c == b']' as i32 => TokenType::EndArray,
+                c if c == b'{' as i32 => TokenType::BeginObject,
+                c if c == b'}' as i32 => TokenType::EndObject,
+                c if c == b':' as i32 => TokenType::NameSeparator,
+                c if c == b',' as i32 => TokenType::ValueSeparator,
+                c if c == b't' as i32 => self.scan_literal(b"true", TokenType::LiteralTrue),
+                c if c == b'f' as i32 => self.scan_literal(b"false", TokenType::LiteralFalse),
+                c if c == b'n' as i32 => self.scan_literal(b"null", TokenType::LiteralNull),
+                c if c == b'"' as i32 => self.scan_string(),
+                c if c == b'-' as i32 || (b'0' as i32..=b'9' as i32).contains(&c) => self.scan_number(),
+                // end of input (the null byte is needed when parsing from string literals)
+                0 | EOF => TokenType::EndOfInput,
+                _ => {
+                    self.error_message = "invalid literal";
+                    TokenType::ParseError
+                }
+            }
+        }
+    }
+
+    /// parser<BasicJsonType, InputAdapterType> with a json_sax_dom_parser (parser.hpp).
+    struct Parser<'a> {
+        last_token: TokenType,
+        m_lexer: Lexer<'a>,
+    }
+
+    /// A value under construction (json_sax_dom_parser::ref_stack).
+    enum Building {
+        Array(Vec<serde_json::Value>),
+        Object(serde_json::Map<String, serde_json::Value>, String),
+    }
+
+    impl<'a> Parser<'a> {
+        /// parser.hpp:63-72: read first token
+        fn new(ia: &'a [u8]) -> Self {
+            let mut p = Parser { last_token: TokenType::Uninitialized, m_lexer: Lexer::new(ia) };
+            p.get_token();
+            p
+        }
+
+        /// parser.hpp:480-484
+        fn get_token(&mut self) -> TokenType {
+            self.last_token = self.m_lexer.scan();
+            self.last_token
+        }
+
+        /// parser.hpp:486-512 `std::string exception_message(...)`
+        fn exception_message(&self, expected: TokenType, context: &str) -> String {
+            let mut error_msg = String::from("syntax error ");
+            if !context.is_empty() {
+                error_msg.push_str(&format!("while parsing {} ", context));
+            }
+            error_msg.push_str("- ");
+            if self.last_token == TokenType::ParseError {
+                error_msg.push_str(&format!(
+                    "{}; last read: '{}'",
+                    self.m_lexer.error_message,
+                    self.m_lexer.get_token_string()
+                ));
+            } else {
+                error_msg.push_str(&format!("unexpected {}", token_type_name(self.last_token)));
+            }
+            if expected != TokenType::Uninitialized {
+                error_msg.push_str(&format!("; expected {}", token_type_name(expected)));
+            }
+            error_msg
+        }
+
+        /// parse_error::create(101, position, what) (exceptions.hpp:196-202, 228-232)
+        fn parse_error(&self, expected: TokenType, context: &str) -> Error {
+            let pos = self.m_lexer.position;
+            Error::Parse(format!(
+                "[json.exception.parse_error.101] parse error at line {}, column {}: {}",
+                pos.lines_read + 1,
+                pos.chars_read_current_line,
+                self.exception_message(expected, context)
+            ))
+        }
+
+        /// json_sax_dom_parser::handle_value: the value goes into the array or under the key
+        /// on top of the stack, or becomes the result.
+        fn handle_value(stack: &mut Vec<Building>, result: &mut Option<serde_json::Value>, v: serde_json::Value) {
+            match stack.last_mut() {
+                None => *result = Some(v),
+                Some(Building::Array(a)) => a.push(v),
+                Some(Building::Object(m, key)) => {
+                    m.insert(std::mem::take(key), v);
+                }
+            }
+        }
+
+        /// parser.hpp:153-478 `bool sax_parse_internal(SAX* sax)`, the states vector being the
+        /// stack of the values under construction (true = array, false = object).
+        fn sax_parse_internal(&mut self) -> Result<serde_json::Value, Error> {
+            let mut stack: Vec<Building> = Vec::new();
+            let mut result: Option<serde_json::Value> = None;
+            // value to avoid a goto (see comment where set to true)
+            let mut skip_to_state_evaluation = false;
+
+            loop {
+                if !skip_to_state_evaluation {
+                    // invariant: get_token() was called before each iteration
+                    match self.last_token {
+                        TokenType::BeginObject => {
+                            // closing } -> we are done
+                            if self.get_token() == TokenType::EndObject {
+                                Self::handle_value(&mut stack, &mut result, serde_json::Value::Object(Default::default()));
+                            } else {
+                                // parse key
+                                if self.last_token != TokenType::ValueString {
+                                    return Err(self.parse_error(TokenType::ValueString, "object key"));
+                                }
+                                let key = String::from_utf8_lossy(&self.m_lexer.token_buffer).into_owned();
+                                // parse separator (:)
+                                if self.get_token() != TokenType::NameSeparator {
+                                    return Err(self.parse_error(TokenType::NameSeparator, "object separator"));
+                                }
+                                // remember we are now inside an object
+                                stack.push(Building::Object(Default::default(), key));
+                                // parse values
+                                self.get_token();
+                                continue;
+                            }
+                        }
+                        TokenType::BeginArray => {
+                            // closing ] -> we are done
+                            if self.get_token() == TokenType::EndArray {
+                                Self::handle_value(&mut stack, &mut result, serde_json::Value::Array(Vec::new()));
+                            } else {
+                                // remember we are now inside an array
+                                stack.push(Building::Array(Vec::new()));
+                                // parse values (no need to call get_token)
+                                continue;
+                            }
+                        }
+                        TokenType::ValueFloat => {
+                            let res = self.m_lexer.value_float;
+                            if !res.is_finite() {
+                                return Err(Error::Other(format!(
+                                    "[json.exception.out_of_range.406] number overflow parsing '{}'",
+                                    self.m_lexer.get_token_string()
+                                )));
+                            }
+                            let n = serde_json::Number::from_f64(res).expect("a finite double");
+                            Self::handle_value(&mut stack, &mut result, serde_json::Value::Number(n));
+                        }
+                        TokenType::LiteralFalse => Self::handle_value(&mut stack, &mut result, serde_json::Value::Bool(false)),
+                        TokenType::LiteralNull => Self::handle_value(&mut stack, &mut result, serde_json::Value::Null),
+                        TokenType::LiteralTrue => Self::handle_value(&mut stack, &mut result, serde_json::Value::Bool(true)),
+                        TokenType::ValueInteger => {
+                            let v = serde_json::Value::Number(self.m_lexer.value_integer.into());
+                            Self::handle_value(&mut stack, &mut result, v);
+                        }
+                        TokenType::ValueString => {
+                            let v = serde_json::Value::String(String::from_utf8_lossy(&self.m_lexer.token_buffer).into_owned());
+                            Self::handle_value(&mut stack, &mut result, v);
+                        }
+                        TokenType::ValueUnsigned => {
+                            let v = serde_json::Value::Number(self.m_lexer.value_unsigned.into());
+                            Self::handle_value(&mut stack, &mut result, v);
+                        }
+                        TokenType::ParseError => {
+                            // using "uninitialized" to avoid "expected" message
+                            return Err(self.parse_error(TokenType::Uninitialized, "value"));
+                        }
+                        _ => {
+                            // the last token was unexpected
+                            return Err(self.parse_error(TokenType::LiteralOrValue, "value"));
+                        }
+                    }
+                } else {
+                    skip_to_state_evaluation = false;
+                }
+
+                // we reached this line after we successfully parsed a value
+                let is_array = match stack.last() {
+                    // empty stack: we reached the end of the hierarchy: done
+                    None => return Ok(result.expect("a parsed value")),
+                    Some(Building::Array(_)) => true,
+                    Some(Building::Object(..)) => false,
+                };
+                if is_array {
+                    // comma -> next value
+                    if self.get_token() == TokenType::ValueSeparator {
+                        // parse a new value
+                        self.get_token();
+                        continue;
+                    }
+                    // closing ]
+                    if self.last_token == TokenType::EndArray {
+                        let done = match stack.pop() {
+                            Some(Building::Array(a)) => serde_json::Value::Array(a),
+                            _ => unreachable!(),
+                        };
+                        Self::handle_value(&mut stack, &mut result, done);
+                        // We are done with this array. Before we can parse a new value, we need
+                        // to evaluate the new state first.
+                        skip_to_state_evaluation = true;
+                        continue;
+                    }
+                    return Err(self.parse_error(TokenType::EndArray, "array"));
+                }
+
+                // states.back() is false -> object
+                // comma -> next value
+                if self.get_token() == TokenType::ValueSeparator {
+                    // parse key
+                    if self.get_token() != TokenType::ValueString {
+                        return Err(self.parse_error(TokenType::ValueString, "object key"));
+                    }
+                    let key = String::from_utf8_lossy(&self.m_lexer.token_buffer).into_owned();
+                    if let Some(Building::Object(_, k)) = stack.last_mut() {
+                        *k = key;
+                    }
+                    // parse separator (:)
+                    if self.get_token() != TokenType::NameSeparator {
+                        return Err(self.parse_error(TokenType::NameSeparator, "object separator"));
+                    }
+                    // parse values
+                    self.get_token();
+                    continue;
+                }
+                // closing }
+                if self.last_token == TokenType::EndObject {
+                    let done = match stack.pop() {
+                        Some(Building::Object(m, _)) => serde_json::Value::Object(m),
+                        _ => unreachable!(),
+                    };
+                    Self::handle_value(&mut stack, &mut result, done);
+                    // We are done with this object. Before we can parse a new value, we need to
+                    // evaluate the new state first.
+                    skip_to_state_evaluation = true;
+                    continue;
+                }
+                return Err(self.parse_error(TokenType::EndObject, "object"));
+            }
+        }
+    }
+
+    /// `ifs >> j` (json.hpp:7131-7135): `parser(detail::input_adapter(i)).parse(false, j)`.
+    pub(super) fn parse(data: &[u8]) -> Result<serde_json::Value, Error> {
+        let mut p = Parser::new(data);
+        p.sax_parse_internal()
+    }
 }
 
 /// `nlohmann::json::type_name()`.
@@ -6128,12 +7032,19 @@ pub trait ConfigBase: ConfigOptionResolver {
             envname.push_str(it);
 
             // capitalize environment variable name
-            let envname: String = envname
-                .bytes()
-                .map(|c| if c <= b'z' && c >= b'a' { (c - (b'a' - b'A')) as char } else { c as char })
-                .collect();
+            let envname: Vec<u8> =
+                envname.bytes().map(|c| if c <= b'z' && c >= b'a' { c - (b'a' - b'A') } else { c }).collect();
 
-            std::env::set_var(&envname, self.opt_serialize(it)?);
+            let value = self.opt_serialize(it)?;
+            // boost::nowide::setenv(envname.c_str(), value.c_str(), 1): both texts end at their
+            // first NUL, and setenv() refuses (EINVAL, not checked) an empty name or one with '='.
+            let c_str = |b: &[u8]| -> Vec<u8> { b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())].to_vec() };
+            let name = c_str(&envname);
+            let value = c_str(value.as_bytes());
+            if name.is_empty() || name.contains(&b'=') {
+                continue;
+            }
+            std::env::set_var(bytes_to_string(&name), bytes_to_string(&value));
         }
         Ok(())
     }
@@ -6207,9 +7118,10 @@ pub trait ConfigBase: ConfigOptionResolver {
 
     /// Config.cpp:885-1243 `int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContext&, bool load_inherits_to_config, std::map<std::string, std::string>& key_values, std::string& reason)`
     ///
-    /// FIDELITY-NOTE: the JSON reader is serde_json, not nlohmann::json. The values read are the
-    /// same; the text of `reason` after a syntax error ("JsonParseError: ...") is serde_json's,
-    /// and `include` is written back with serde_json's compact form of the array.
+    /// The file is read as nlohmann::json reads it (`nlohmann_json::parse`, the same errors).
+    /// FIDELITY-NOTE: `include` is written back with serde_json's compact form of the value
+    /// (`it.value().dump()` in the C++): the same text for strings, arrays of strings and integers;
+    /// a floating point number would be printed by ryu rather than by nlohmann's dtoa.
     fn load_from_json_with_context(
         &mut self,
         file: &str,
@@ -6222,13 +7134,20 @@ pub trait ConfigBase: ConfigOptionResolver {
             log::error!("{} file not exist.", file);
             return -1;
         }
-        // boost::nowide::ifstream ifs(file); ifs >> j;
+        // boost::nowide::ifstream ifs(file); ifs >> j; (a stream that failed to open reads as empty)
         let text = std::fs::read(file).unwrap_or_default();
-        let j: serde_json::Value = match serde_json::from_slice(&text) {
+        let j: serde_json::Value = match nlohmann_json::parse(&text) {
             Ok(j) => j,
-            Err(err) => {
-                log::error!("parse {} got a nlohmann::detail::parse_error, reason = {}", file, err);
-                *reason = format!("JsonParseError: {}", err);
+            Err(nlohmann_json::Error::Parse(what)) => {
+                // catch(nlohmann::detail::parse_error &err)
+                log::error!("parse {} got a nlohmann::detail::parse_error, reason = {}", file, what);
+                *reason = format!("JsonParseError: {}", what);
+                return -1;
+            }
+            Err(nlohmann_json::Error::Other(what)) => {
+                // catch(std::exception &err): out_of_range 406 of a number that overflows
+                log::error!("parse {} got a generic exception, reason = {}", file, what);
+                *reason = format!("std::exception: {}", what);
                 return -1;
             }
         };
@@ -6596,6 +7515,10 @@ pub trait ConfigBase: ConfigOptionResolver {
         compatibility_rule: ForwardCompatibilitySubstitutionRule,
     ) -> CfgResult<ConfigSubstitutions> {
         let mut data: Vec<u8> = data.into_bytes();
+        // As in the C++, a text whose first character is none of ' ', '\t', ';', '\n' and that does
+        // not start with "generated by " never leaves the first branch (`i` stays 0): the loop does
+        // not end (Config.cpp:1272-1296). The callers pass 3MF / AMF config texts, which start
+        // with "; generated by".
         // Convert the "data" string into INI format by removing the semi-colons at the start of a line.
         // Also the "; generated by PrusaSlicer ..." comment line will be removed.
         let mut j = 0usize;

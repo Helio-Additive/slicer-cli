@@ -448,6 +448,66 @@ extern "C" {
         total: *mut i32,
     ) -> CzZPaths;
 
+    /// R910 reference export, called by tests only: the pin's
+    /// `offset_ex(const Polygons&, float delta, joinType, miterLimit)`
+    /// (ClipperUtils.cpp:415-416). `join_type`: 0=jtMiter, 1=jtRound, 2=jtSquare.
+    /// ExPolygons out, grouped like [`cz_union_ex`]. Free via [`cz_free_zpaths`].
+    pub fn cz_ref_cu_offset_ex_polygons(
+        xy: *const i32,
+        lens: *const i32,
+        num: i32,
+        delta: f64,
+        join_type: i32,
+        miter_limit: f64,
+    ) -> CzZPaths;
+    /// R910 reference export, called by tests only: the pin's `offset_ex(const
+    /// ExPolygon&, ...)` (ClipperUtils.cpp:567-569) of the first expolygon when
+    /// `which == 0`, `offset_ex(const ExPolygons&, ...)` (ClipperUtils.cpp:570-571)
+    /// otherwise. Expolygons in as for [`cz_offset2_ex`] (`is_hole`), out grouped like
+    /// [`cz_union_ex`]. Free via [`cz_free_zpaths`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn cz_ref_cu_offset_ex_expolygons(
+        xy: *const i32,
+        lens: *const i32,
+        is_hole: *const i32,
+        num: i32,
+        delta: f64,
+        join_type: i32,
+        miter_limit: f64,
+        which: i32,
+    ) -> CzZPaths;
+    /// R910 reference export, called by tests only: the pin's `offset(const
+    /// Polyline&, float delta, joinType, miterLimit, end_type)`
+    /// (ClipperUtils.cpp:418-419). `end_type`: 0=etClosedPolygon, 1=etClosedLine,
+    /// 2=etOpenButt, 3=etOpenSquare, 4=etOpenRound. Flat paths out. Free via
+    /// [`cz_free_zpaths`].
+    pub fn cz_ref_cu_offset_polyline(
+        xy: *const i32,
+        n: i32,
+        delta: f64,
+        join_type: i32,
+        miter_limit: f64,
+        end_type: i32,
+    ) -> CzZPaths;
+    /// R910 reference export, called by tests only: the pin's ExPolygons booleans
+    /// with ApplySafetyOffset::No — `op` 0 `intersection_ex` (ClipperUtils.cpp:802-803),
+    /// 1 `union_ex(poly1, poly2)` (ClipperUtils.cpp:824-831), 2 `diff_ex`
+    /// (ClipperUtils.cpp:755-756), otherwise `xor_ex` (ClipperUtils.cpp:836-838).
+    /// Expolygons in as for [`cz_offset2_ex`], out grouped like [`cz_union_ex`]. Free
+    /// via [`cz_free_zpaths`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn cz_ref_cu_boolean_ex(
+        subj_xy: *const i32,
+        subj_lens: *const i32,
+        subj_is_hole: *const i32,
+        subj_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_is_hole: *const i32,
+        clip_num: i32,
+        op: i32,
+    ) -> CzZPaths;
+
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
 

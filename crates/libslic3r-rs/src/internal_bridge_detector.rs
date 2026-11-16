@@ -9,7 +9,7 @@
 //! area) for better anchoring.
 
 // InternalBridgeDetector.cpp:1-4
-use crate::clipper_utils::{difference, offset_expolygons, OffsetJoinType};
+use crate::clipper_utils::{difference, offset_delta_mm_from_scaled_f32, offset_expolygons, OffsetJoinType};
 use crate::geometry::{
     directions_parallel, expolygons_contain, to_lines, BoundingBox, ExPolygon, ExPolygons, Line,
     Lines, Point,
@@ -100,17 +100,20 @@ impl InternalBridgeDetector {
         // InternalBridgeDetector.cpp:21
         // C++ `offset(ExPolygons, float)` returns `Polygons`; the crate variant returns
         // `ExPolygons`. The geometric region is the same; representation differs only.
-        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib (offset/diff at coord_t precision).
         // FIDELITY-NOTE(F2): `spacing` is i64 here but coord_t=int32 in C++; `float(spacing)` cast magnitude is unaffected at logic level.
+        // The C++ deltas are in scaled units (`float(this->spacing)`, `10.f`); `offset_expolygons`
+        // takes millimetres, so each goes through `offset_delta_mm_from_scaled_f32`, which gives
+        // ClipperOffset the same `float` delta. (Before R910 the scaled values were passed as
+        // millimetres; geo-clipper's float arithmetic hid it.)
         let grown = offset_expolygons(
             &self.internal_bridge_infill,
-            self.spacing as f64,
+            offset_delta_mm_from_scaled_f32(self.spacing as f64),
             OffsetJoinType::Miter,
         );
         // InternalBridgeDetector.cpp:22
         self.m_anchor_regions = difference(
             &grown,
-            &offset_expolygons(&self.fill_no_overlap, 10.0, OffsetJoinType::Miter),
+            &offset_expolygons(&self.fill_no_overlap, offset_delta_mm_from_scaled_f32(10.0), OffsetJoinType::Miter),
         );
 
         // InternalBridgeDetector.cpp:24-41 (INTERNAL_BRIDGE_DETECTOR_DEBUG_TO_SVG) omitted.
@@ -132,9 +135,10 @@ impl InternalBridgeDetector {
         }
 
         // InternalBridgeDetector.cpp:55
+        // `0.5f * float(this->spacing)`, scaled units (see initialize()).
         let clip_area = offset_expolygons(
             &self.internal_bridge_infill,
-            0.5 * self.spacing as f64,
+            offset_delta_mm_from_scaled_f32(0.5 * (self.spacing as f32) as f64),
             OffsetJoinType::Miter,
         );
 
