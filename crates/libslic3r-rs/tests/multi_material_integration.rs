@@ -572,12 +572,14 @@ fn test_wipe_tower_bounds_to_polygon() {
     // Should have 4 corners
     assert_eq!(expolygon.contour.points().len(), 4);
 
-    // Verify bounding box matches
+    // Verify bounding box matches. Scaled coordinates are 1e5 units per mm
+    // (libslic3r.h:58 `static constexpr double SCALING_FACTOR = 0.00001;`), so
+    // millimetres come back through unscale, not a 1e6 divisor.
     let bbox = expolygon.bounding_box();
-    let min_x_mm = bbox.min.x as f64 / 1_000_000.0;
-    let min_y_mm = bbox.min.y as f64 / 1_000_000.0;
-    let max_x_mm = bbox.max.x as f64 / 1_000_000.0;
-    let max_y_mm = bbox.max.y as f64 / 1_000_000.0;
+    let min_x_mm = slicer::unscale(bbox.min.x);
+    let min_y_mm = slicer::unscale(bbox.min.y);
+    let max_x_mm = slicer::unscale(bbox.max.x);
+    let max_y_mm = slicer::unscale(bbox.max.y);
 
     assert!((min_x_mm - 10.0).abs() < 0.001);
     assert!((min_y_mm - 20.0).abs() < 0.001);

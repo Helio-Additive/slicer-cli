@@ -5182,7 +5182,12 @@ lines={} grown_polys={} grown_verts={}",
             for layer in self.layers.iter_mut() {
                 for region in layer.regions_mut() {
                     region.simplify_infill_extrusion_entity();
-                    region.simplify_thin_fill_extrusion_entity();
+                    // LayerRegion.hpp simplify_infill_extrusion_path simplifies
+                    // `fills` only, which hold the thin-fill clones
+                    // (THIN_FILLS_CLONE); =0 also simplifies `thin_fills`.
+                    if !crate::faithful_gate("THIN_FILLS_CLONE") {
+                        region.simplify_thin_fill_extrusion_entity();
+                    }
                 }
             }
             self.set_step_done(PrintObjectStep::SimplifyInfill);
@@ -5281,8 +5286,14 @@ lines={} grown_polys={} grown_verts={}",
     pub fn generate_support_material(&mut self) -> Result<()> {
         use crate::support::{SupportConfig, SupportGenerator, SupportType as SupportGenType};
 
-        // PrintObject.cpp:857
+        // PrintObject.cpp:1332
         // C++: if (this->set_started(posSupportMaterial)) {
+        // set_started throws CanceledException before it looks at the step
+        // state (PrintBase.hpp:154-157, :171-172). Gate PRINT_OBJECT_STARTED_CANCEL
+        // (on unless =0); the slicing path never cancels, so G-code is unchanged.
+        if crate::faithful_gate("PRINT_OBJECT_STARTED_CANCEL") && self.canceled.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
         if self.is_step_done(PrintObjectStep::SupportMaterial) {
             return Ok(());
         }
@@ -5378,6 +5389,16 @@ lines={} grown_polys={} grown_verts={}",
         };
         use crate::print_config::IroningType;
 
+        // PrintObject.cpp:1251  `if (this->set_started(posIroning)) {`: set_started
+        // throws CanceledException first (PrintBase.hpp:154-157), and the layer
+        // loop and its end check the print again (PrintObject.cpp:1258, :1263).
+        // Gate PRINT_OBJECT_STARTED_CANCEL (on unless =0); the slicing path never
+        // cancels, so G-code is unchanged.
+        let cancel_checks = crate::faithful_gate("PRINT_OBJECT_STARTED_CANCEL");
+        if cancel_checks && self.canceled.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+
         // Map print_config IroningType to gcode ironing IroningType
         let ironing_type = match self.config.ironing_type {
             IroningType::NoIroning => {
@@ -5402,6 +5423,10 @@ lines={} grown_polys={} grown_verts={}",
         let num_layers = self.layers.len();
 
         for layer_idx in 0..num_layers {
+            // PrintObject.cpp:1258  m_print->throw_if_canceled();
+            if cancel_checks && self.canceled.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
             let has_layer_above = layer_idx + 1 < num_layers;
 
             // Collect top surface expolygons from all regions in this layer
@@ -5446,6 +5471,10 @@ lines={} grown_polys={} grown_verts={}",
             }
         }
 
+        // PrintObject.cpp:1263  m_print->throw_if_canceled();
+        if cancel_checks && self.canceled.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
         self.set_step_done(PrintObjectStep::Ironing);
         Ok(())
     }

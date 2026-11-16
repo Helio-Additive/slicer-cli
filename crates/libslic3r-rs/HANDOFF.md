@@ -9,7 +9,7 @@ are the exception). How to build, run and score it in this repository:
 
 ## Where things stand
 
-- **Parity (R912), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
+- **Parity (R913), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
   Benchy classic 187,312 lines in order (98.12%), Benchy arachne 240,533 (98.85%), Majora
   2,835,738 (98.79%), prime tower 99.6%. `docs/rust-engine/README.md` has what the numbers
   rest on and where each fixture stands; `docs/rust-engine/parity/rounds-R809-on.md` is the
@@ -51,78 +51,28 @@ are the exception). How to build, run and score it in this repository:
 
 ## Test status
 
-`cargo test -p slicer --no-run --all-targets` exits 0. Running the tests does not: the list below is what fails, as of the commit that made
-them compile again. None of these was edited to pass.
+As of R913 every engine test passes: `cargo test -p slicer --lib --tests --no-fail-fast -- --skip
+test_tree_support_many_layers` gives 2,458 passed, 0 failed (debug profile), and `cargo test -p
+slicer-cli-rust` 9 passed. R913 settled the 67 that failed in R912 one by one against the pin (a
+standalone generator calling the pin's function): most expected values of an older, invented API
+and were corrected to the C++ result with a comment saying where it comes from; the rest were
+engine code that departed from the C++ and was fixed (behind faithful gates where the slicing
+path reaches it: `FLOW_FMA`, `RAY_CIRCLE_FMA`, `AABB_LINES_PARTITION`,
+`AABB_LINES_CENTROID_TRUNC`, `PRINT_OBJECT_STARTED_CANCEL`, `THIN_FILLS_CLONE`,
+`TREE_MODEL_VOLUMES_OFFSET`).
 
-Totals, with debug assertions on (the workspace's test profile): lib 1843 passed / 45 failed / 1 hangs of 1889; integration tests
-136 passed / 41 failed / 4 ignored over 25 targets. With `--release`
-(debug assertions off) `cut_surface::tests::its_mask_size_mismatch_returns_empty` and nine of
-the ten `tree_support_integration` failures pass.
-
-**Disabled with `#[cfg(any())]` (their subject no longer exists):** 30 in `src/surface.rs`
-(the former free surface functions are private `PrintObject`/`LayerRegion` methods now); 6 in
-`tests/benchy_integration.rs`, 8 in `tests/cube_integration.rs` and 3 in
-`tests/tree_support_integration.rs` (the deleted `PrintPipeline` and `profiles` modules); 2 in
-`tests/tree_support_integration.rs` (`TreeSupport3D::generate_with_mesh`,
-`generate_with_organic_smoothing`); 3 in `tests/layer_methods_test.rs` (bodies were corrupted).
-
-**Need a fixture that is not in the repository (18):** 14 in `benchy_integration` and 4 in
-`cube_integration` read `data/test_stls/` and `data/reference_gcodes/` under this crate.
-
-**Hang:** `internal_bridge_detector::tests::test_detect_angle_no_anchors` (every profile);
-`tree_support_integration::test_tree_support_many_layers` (debug assertions off).
-
-**Fail in the lib (36 in every profile since R863; the list below is the 44 of before, less the first item):**
-- (Corrected in R863, 8 tests, now passing: the expectations were of an older engine, not of the C++.
-  `tests::test_scaling`, `flow::tests::test_scaled_values` and
-  `arachne::wall_tool_paths::tests::test_meshfix_constants` expected the 1e6 scaling or a rounded quotient
-  where `coord_t(v / SCALING_FACTOR)` truncates; `gcode::tests::{test_linear_move, test_rapid_move}` and
-  `gcode::writer::tests::{test_writer_extrude_relative_e, test_writer_extrude_absolute_e,
-  test_writer_travel}` expected untrimmed numbers, and the two extrude tests read the third argument of
-  `extrude_to` as a target where it is dE.)
-- Panics in engine code on degenerate input: `arc_fitter::tests::test_arc_fitting_empty`
-  (`points.len() - 1` on an empty list), `fill::fill3_d_honeycomb::tests::test_fill_surface_single_runs`
-  (division by zero at spacing 0), `fill::fill_plane_path::tests::{test_fill_surface_single_hilbert,
-  test_fill_surface_single_archimedean_solid}` (`assert!(queue.is_empty())` in `shortest_path.rs`),
-  `support::tree_model_volumes::tests::test_is_safe_position` (coordinates outside the i32 range).
-- Assertion mismatches: `any_ptr::tests::test_get_shared_cpy`;
-  `arachne::skeletal_trapezoidation_edge::tests::test_transition_ends`;
-  `arachne::utils::extrusion_line::tests::test_area_calculation`;
-  `arachne::utils::linear_alg2d::tests::{test_get_angle_left_pointy, test_get_angle_left_full_circle,
-  test_is_inside_corner_acute, test_is_inside_corner_obtuse, test_is_inside_corner_simple}`;
-  `arachne::utils::polyline_stitcher::tests::test_polyline_stitcher_two_lines`;
-  `arc_fitter::tests::test_arc_fitting_quarter_circle`;
-  `csg_mesh::model_to_csg_mesh::tests::test_model_to_csgmesh_do_splits`;
-  `ex_polygon_serialize::tests::serialize_polygon_matches_derive`;
-  `flow::tests::{test_parity_bridge, test_parity_typical_perimeter}`;
-  `format::bbs_3mf::tests::test_zip_unicode_path_extra_field_roundtrip`;
-  `gcode::cooling::tests::{test_multi_extruder_slowdown, test_slowdown_calculation_slowdown_needed}`;
-  `gcode::exporter::tests::{test_extrude_path_cumulative_e, test_extrude_path_multi_segment,
-  test_extrude_path_single_segment, test_feature_comment_on_role_change, test_set_extruder_with_retraction}`;
-  `geometry::circle::tests::test_ray_circle_intersections`;
-  `intersection_points::tests::test_simple_intersection`; `nsvg_utils::tests::to_coor_rounds`;
-  `png_read_write::tests::{roundtrip_gray, roundtrip_rgb}`;
-  `sla::hollowing::tests::{drain_hole_get_intersections_wall_ray, drain_hole_to_mesh_rotated_and_translated}`;
-  `triangulation::tests::test_has_self_intersection`; `utils::tests::test_split_string`.
-
-**Fail in the integration tests (23, default profile):**
-- `change_filament_context`: `small_purge_uses_single_segment`,
-  `flush_length_split_matches_cpp_formula` (4 decimals emitted, 6 expected).
-- `layer_methods_test::test_make_fills_adds_thin_fills`.
-- `multi_material_integration::test_wipe_tower_bounds_to_polygon`.
-- `print_process_test`: `test_print_cancellation`, `test_status_callback`,
-  `test_printobject_cancellation`, `test_print_object_state_tracking`, `test_state_persistence`.
-- `support_necessity_test::test_cancellation_during_support_generation`.
-- `wall_gap_geometry`: `add_extra_point_targets_the_bottom_edge` (`gaps_actually_remove_length` and
-  `two_skip_points_open_two_gaps` pass since R838, which scales the tower's points in float).
-- `tree_support_integration` (10): all stop on the `debug_assert` in `clipper_utils.rs` that
-  guards the i32 ClipperLib path. Tree-support collision geometry reaches scaled coordinates
-  near 8e9, which the assertion catches and a release build truncates silently. This looks like
-  an engine bug, so do not turn debug assertions off for tests to hide it.
-
-**Other:** three doc tests do not compile (`gcode/gcode_template.rs`, two in `enum_bitmask.rs`),
-so a plain `cargo test` ends non-zero. Cancellation is not honoured by `Print::process`,
-`PrintObject::ironing` and `generate_support_material`.
+- **Skipped:** `tree_support_integration::test_tree_support_many_layers` (slow; hangs with debug
+  assertions off). The former hang `internal_bridge_detector::tests::test_detect_angle_no_anchors`
+  was a millimetre-vs-scaled delta and runs since R910.
+- **Fixture-dependent:** `benchy_integration` reads the documented, not redistributed
+  `tests/rust-engine/fixtures/3DBenchy.stl` and says `SKIPPED` when it is missing;
+  `cube_integration` writes its own 2.792 mm cube; `arachne_infill` reads the committed
+  `tests/rust-engine/fixtures/Cube_25.6.stl`.
+- **Disabled with `#[cfg(any())]` (their subject no longer exists):** 30 in `src/surface.rs`, and
+  some in `tests/tree_support_integration.rs` and `tests/layer_methods_test.rs` (deleted
+  `PrintPipeline`/`profiles` modules, corrupted bodies).
+- **Other:** three doc tests do not compile (`gcode/gcode_template.rs`, two in
+  `enum_bitmask.rs`), so a plain `cargo test` that includes doc tests ends non-zero.
 
 ## Current track (config threading wired 2026-06-12)
 1. **Config-hierarchy threading** (DONE — steps 1–8 committed 2026-06-12) — Arc-distributed

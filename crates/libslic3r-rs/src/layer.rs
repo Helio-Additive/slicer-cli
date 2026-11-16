@@ -4103,8 +4103,18 @@ impl Layer {
         // the other fills), instead of a separate batched thin_fills block.
         // (The previous code pushed an EMPTY collection — the thin_fill clone was
         // missing — a no-op that kept gap batched at 584 vs native 816.)
+        // THIN_FILLS_CLONE (on unless =0): Fill.cpp:856-859 pushes
+        // `thin_fill->clone()` and leaves `thin_fills` as it was. The earlier
+        // arm moved them out, which the export (print.rs) relied on to not emit
+        // them twice; with the gate on the export reads `fills` only, as
+        // GCode.cpp does. =0 moves them.
+        let thin_fills_clone = crate::faithful_gate("THIN_FILLS_CLONE");
         for region in &mut self.regions {
-            let thins = std::mem::take(&mut region.thin_fills.entities);
+            let thins = if thin_fills_clone {
+                region.thin_fills.entities.clone()
+            } else {
+                std::mem::take(&mut region.thin_fills.entities)
+            };
             for thin_fill in thins {
                 let mut collection = ExtrusionEntityCollection::new();
                 collection.entities.push(thin_fill);

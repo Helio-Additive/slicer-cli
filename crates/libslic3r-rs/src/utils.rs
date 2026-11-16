@@ -179,188 +179,218 @@ pub fn convert_to_full_version(short_version: &str) -> String {
 }
 
 // ----------------------------------------------------------------------------
-// PathSanitizer (Utils.hpp:134-292)
+// PathSanitizer (Utils.hpp:131-146, utils.cpp:921-1052)
 //
-// Strips the OS user name (and a trailing numeric id) out of a path so it can be
-// logged without leaking PII, falling back to just the file name when the path
-// does not start under the user profile dir or the platform is unsupported.
-//
-// The C++ caches start_pos/id_start_pos/name_size/full as `inline static` members.
-// We mirror that with a process-wide lazily-initialized cache. The `_WIN32` branch
-// is unsupported on our wasm-safe targets (C++ returns false for unknown platforms
-// at Utils.hpp:185-187 -> falls back to file_name); we faithfully port the
-// __APPLE__/__linux__ branches.
+// Makes file paths safe to write into logs by masking the user name and user id. Usually only the
+// file name is returned; a path that only looks like it holds the user name is returned whole,
+// masked. Never splits a UTF-8 character.
 // ----------------------------------------------------------------------------
 
-struct SanitizerRange {
-    // Utils.hpp:154-157
-    start_pos: Option<usize>,
-    id_start_pos: usize,
-    name_size: usize,
-    full: String,
+/// utils.cpp:923  constexpr const char *path_separators = "\\/";
+const PATH_SEPARATORS: [u8; 2] = [b'\\', b'/'];
+
+/// utils.cpp:925  bool is_separator(char c) { return c == '\\' || c == '/'; }
+fn is_separator(c: u8) -> bool {
+    c == b'\\' || c == b'/'
 }
 
-static SANITIZER_RANGE: Mutex<Option<SanitizerRange>> = Mutex::new(None);
+/// Where the user name and user id sit in a path under the user profile, e.g.
+/// C:\Users\<name>\AppData\Roaming\BambuStudio\user\<id>\...
+/// utils.cpp:927-937
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UserPathLayout {
+    /// user profile directory
+    pub profile: String,
+    /// first byte of the user name in the profile path (`std::string::npos` is `None`)
+    pub name_pos: Option<usize>,
+    pub name_size: usize,
+    /// first byte of the user id folder
+    pub id_pos: Option<usize>,
+}
 
+impl UserPathLayout {
+    /// utils.cpp:936  bool valid() const { return name_pos != std::string::npos && name_size > 0; }
+    pub fn valid(&self) -> bool {
+        self.name_pos.is_some() && self.name_size > 0
+    }
+
+    /// The body of the lambda of utils.cpp:942-978 once the environment value is read: the
+    /// layout of `env` (USERPROFILE on Windows, HOME elsewhere) with the length of the folder
+    /// suffix of the release build (BBL_RELEASE_TO_PUBLIC, as slicer_cli builds it).
+    pub fn from_profile(env: Option<&str>, suffix_len: usize) -> Self {
+        let mut l = UserPathLayout::default();
+        // utils.cpp:969-970  if (env == nullptr) return l;
+        let env = match env {
+            Some(e) => e,
+            None => return l,
+        };
+        // utils.cpp:971  l.profile = env;
+        l.profile = env.to_string();
+        // utils.cpp:972-974  const size_t sep = l.profile.find_last_of(path_separators);
+        let sep = match l.profile.bytes().rposition(|c| PATH_SEPARATORS.contains(&c)) {
+            Some(sep) => sep,
+            None => return l,
+        };
+        // utils.cpp:975-977
+        l.name_pos = Some(sep + 1);
+        l.name_size = l.profile.len() - (sep + 1);
+        l.id_pos = Some(l.profile.len() + suffix_len + 1);
+        l
+    }
+}
+
+/// utils.cpp:939-981  const UserPathLayout &user_path_layout()
+pub fn user_path_layout() -> &'static UserPathLayout {
+    static LAYOUT: std::sync::OnceLock<UserPathLayout> = std::sync::OnceLock::new();
+    LAYOUT.get_or_init(|| {
+        // utils.cpp:944-967, the BBL_RELEASE_TO_PUBLIC branches.
+        #[cfg(windows)]
+        let (env, suffix_len) = (std::env::var("USERPROFILE").ok(), "\\AppData\\Roaming\\BambuStudio\\user".len());
+        #[cfg(target_os = "macos")]
+        let (env, suffix_len) = (std::env::var("HOME").ok(), "/Library/Application Support/BambuStudio/user".len());
+        #[cfg(all(not(windows), not(target_os = "macos")))]
+        let (env, suffix_len) = (std::env::var("HOME").ok(), "/.config/BambuStudio/user".len());
+        UserPathLayout::from_profile(env.as_deref(), suffix_len)
+    })
+}
+
+/// utils.cpp:982  bool is_utf8_continuation(char c) { return (static_cast<unsigned char>(c) & 0xC0) == 0x80; }
+fn is_utf8_continuation(c: u8) -> bool {
+    (c & 0xC0) == 0x80
+}
+
+/// Replace bytes [pos, pos + count) with '*', widened so that no UTF-8 character is cut in half.
+/// utils.cpp:984-995
+fn mask_bytes(s: &mut Vec<u8>, mut pos: usize, count: usize) {
+    if pos >= s.len() {
+        return;
+    }
+    let mut end = s.len().min(pos.saturating_add(count));
+    while pos > 0 && is_utf8_continuation(s[pos]) {
+        pos -= 1;
+    }
+    while end < s.len() && is_utf8_continuation(s[end]) {
+        end += 1;
+    }
+    // s.replace(pos, end - pos, end - pos, '*');
+    for c in &mut s[pos..end] {
+        *c = b'*';
+    }
+}
+
+/// utils.cpp:997-1001  std::string file_name_part(const std::string &path)
+fn file_name_part(path: &[u8]) -> Vec<u8> {
+    match path.iter().rposition(|c| PATH_SEPARATORS.contains(c)) {
+        None => path.to_vec(),
+        Some(sep) => path[sep + 1..].to_vec(),
+    }
+}
+
+/// utils.cpp:1003-1007  bool is_upper_of(char upper, char lower)
+/// `std::isupper` / `std::tolower` in the "C" locale: A-Z only.
+fn is_upper_of(upper: u8, lower: u8) -> bool {
+    upper.is_ascii_uppercase() && upper.to_ascii_lowercase() == lower
+}
+
+/// The argument types of the four `PathSanitizer::sanitize` overloads (Utils.hpp:141-144).
+pub trait SanitizeArg {
+    fn sanitize(self) -> String;
+}
+
+impl SanitizeArg for &str {
+    // Utils.hpp:141  static std::string sanitize(const std::string &path) { return sanitize_impl(path); }
+    fn sanitize(self) -> String {
+        PathSanitizer::sanitize_impl(self.as_bytes().to_vec())
+    }
+}
+
+impl SanitizeArg for String {
+    // Utils.hpp:142  static std::string sanitize(std::string &&path) { return sanitize_impl(std::move(path)); }
+    fn sanitize(self) -> String {
+        PathSanitizer::sanitize_impl(self.into_bytes())
+    }
+}
+
+impl SanitizeArg for Option<&str> {
+    // Utils.hpp:143  static std::string sanitize(const char *path) { return path ? sanitize_impl(path) : std::string(); }
+    fn sanitize(self) -> String {
+        match self {
+            Some(path) => PathSanitizer::sanitize_impl(path.as_bytes().to_vec()),
+            None => String::new(),
+        }
+    }
+}
+
+impl SanitizeArg for &std::path::Path {
+    // Utils.hpp:144  static std::string sanitize(const boost::filesystem::path &path) { return sanitize_impl(path.string()); }
+    fn sanitize(self) -> String {
+        PathSanitizer::sanitize_impl(self.to_string_lossy().into_owned().into_bytes())
+    }
+}
+
+/// Utils.hpp:137-146
 pub struct PathSanitizer;
 
 impl PathSanitizer {
-    // Utils.hpp:137  static std::string sanitize(const std::string &path)
-    pub fn sanitize(path: &str) -> String {
-        Self::sanitize_impl(path)
+    /// Utils.hpp:141-144 — the four overloads, by argument type.
+    pub fn sanitize<T: SanitizeArg>(path: T) -> String {
+        path.sanitize()
     }
 
-    // Utils.hpp:210  static inline std::string file_name(const std::string &name)
-    fn file_name(name: &str) -> String {
-        // boost::filesystem::path(name).filename().string()
-        std::path::Path::new(name)
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default()
+    /// utils.cpp:1011  std::string PathSanitizer::sanitize_impl(std::string raw)
+    fn sanitize_impl(raw: Vec<u8>) -> String {
+        // The bytes of a &str stay valid UTF-8: the masks never split a character and the file
+        // name part starts after an ASCII separator.
+        let out = Self::sanitize_with_layout(raw, user_path_layout());
+        String::from_utf8(out).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
     }
 
-    // Utils.hpp:159  static bool init_usrname_range()
-    // Returns the cached range (computing it once), or None when uninitializable.
-    fn init_usrname_range() -> bool {
-        let mut guard = SANITIZER_RANGE.lock().unwrap();
-        // Utils.hpp:161-163  if (start_pos != npos) return true;
-        if let Some(r) = guard.as_ref() {
-            if r.start_pos.is_some() {
-                return true;
+    /// The body of utils.cpp:1011-1050 on bytes, for a given layout (the C++ reads the static
+    /// `user_path_layout()`); lets a test give the layout a generator used.
+    pub fn sanitize_with_layout(mut raw: Vec<u8>, layout: &UserPathLayout) -> Vec<u8> {
+        let out = |b: Vec<u8>| b;
+        // utils.cpp:1013-1014  Bytes masked when the user name shows up in a path that is not under the user profile.
+        const GUESSED_NAME_SIZE: usize = 12;
+
+        // utils.cpp:1016-1018
+        if !layout.valid() || raw.is_empty() || raw.len() < layout.profile.len() {
+            return out(file_name_part(&raw));
+        }
+        let name_pos = layout.name_pos.unwrap();
+
+        // utils.cpp:1020-1027
+        let full = layout.profile.as_bytes();
+        if raw[0] != full[0] || raw[full.len() - 1] != full[full.len() - 1] {
+            if is_upper_of(raw[name_pos], full[name_pos]) {
+                mask_bytes(&mut raw, name_pos, GUESSED_NAME_SIZE);
+                return out(raw);
             }
+            return out(file_name_part(&raw));
         }
 
-        // Utils.hpp:164-188  platform-specific env var + trailing suffix length.
-        // We support __APPLE__ and __linux__; release-to-public build assumed.
-        #[cfg(target_os = "macos")]
-        let (env, len) = (
-            std::env::var("HOME").ok(),
-            "/Library/Application Support/BambuStudio/user".len(),
-        );
-        #[cfg(target_os = "linux")]
-        let (env, len) = (std::env::var("HOME").ok(), "/.config/BambuStudio/user".len());
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let (env, len): (Option<String>, usize) = (None, 0);
-
-        // Utils.hpp:189-191  if (!env) return false;
-        let env = match env {
-            Some(e) => e,
-            None => return false,
-        };
-        // Utils.hpp:192  full = std::string(env);
-        let full = env;
-        // Utils.hpp:193  size_t sep_pos = full.find_last_of("\\/");
-        let sep_pos = full.rfind(['\\', '/']);
-        // Utils.hpp:194-196  if (sep_pos == npos) return false;
-        let sep_pos = match sep_pos {
-            Some(p) => p,
-            None => return false,
-        };
-        // Utils.hpp:197-199
-        let start_pos = sep_pos + 1;
-        let name_size = full.len() - start_pos;
-        let id_start_pos = full.len() + len + 1;
-
-        // Utils.hpp:201-203  if (name_size == 0) return false;
-        if name_size == 0 {
-            return false;
-        }
-        // Utils.hpp:204-206  if (start_pos + name_size > full.length()) return false;
-        if start_pos + name_size > full.len() {
-            return false;
-        }
-        // Utils.hpp:207  return true;
-        *guard = Some(SanitizerRange {
-            start_pos: Some(start_pos),
-            id_start_pos,
-            name_size,
-            full,
-        });
-        true
-    }
-
-    // Utils.hpp:214  static std::string sanitize_impl(const std::string &raw)
-    fn sanitize_impl(raw: &str) -> String {
-        // Utils.hpp:216-218  if (!init_usrname_range()) return file_name(raw);
-        if !Self::init_usrname_range() {
-            return Self::file_name(raw);
-        }
-        let guard = SANITIZER_RANGE.lock().unwrap();
-        let r = guard.as_ref().unwrap();
-        let full = &r.full;
-        let start_pos = r.start_pos.unwrap();
-        let name_size = r.name_size;
-        let id_start_pos = r.id_start_pos;
-
-        // Operate on bytes to match std::string indexing exactly.
-        let raw_b = raw.as_bytes();
-        let full_b = full.as_bytes();
-
-        // Utils.hpp:220-222  if (raw.length() < full.length() || raw.empty()) return file_name(raw);
-        if raw_b.len() < full_b.len() || raw.is_empty() {
-            return Self::file_name(raw);
-        }
-
-        // Utils.hpp:224  std::string sanitized = raw;
-        let mut sanitized: Vec<u8> = raw_b.to_vec();
-
-        // Utils.hpp:225  if (raw[0] != full[0] || raw[full.length()-1] != full[full.length()-1])
-        if raw_b[0] != full_b[0] || raw_b[full_b.len() - 1] != full_b[full_b.len() - 1] {
-            // Utils.hpp:226-229
-            if (raw_b[start_pos] as char).is_ascii_uppercase()
-                && (raw_b[start_pos] as char).to_ascii_lowercase() == full_b[start_pos] as char
-            {
-                Self::replace_stars(&mut sanitized, start_pos, 12);
-                return Self::file_name(&String::from_utf8_lossy(&sanitized));
-            }
-            // Utils.hpp:230  return file_name(raw);
-            return Self::file_name(raw);
-        }
-
-        // Utils.hpp:233-239
-        // C++ std::string::operator[](size()) returns the null terminator '\0'
-        // (well-defined since C++11); reproduce that so an exact-length `raw`
-        // does not panic and falls through to the `else if` like the C++.
-        let raw_at_end: u8 = raw_b.get(start_pos + name_size).copied().unwrap_or(0);
-        if raw_at_end == b'\\' || raw_at_end == b'/' {
-            Self::replace_stars(&mut sanitized, start_pos, name_size);
-        } else if (raw_b[start_pos] as char).is_ascii_uppercase()
-            && (raw_b[start_pos] as char).to_ascii_lowercase() == full_b[start_pos] as char
-        {
-            Self::replace_stars(&mut sanitized, start_pos, 12);
+        // utils.cpp:1029-1036
+        let name_end = name_pos + layout.name_size;
+        if name_end == raw.len() || is_separator(raw[name_end]) {
+            mask_bytes(&mut raw, name_pos, layout.name_size);
+        } else if is_upper_of(raw[name_pos], full[name_pos]) {
+            mask_bytes(&mut raw, name_pos, GUESSED_NAME_SIZE);
         } else {
-            return Self::file_name(raw);
+            return out(file_name_part(&raw));
         }
 
-        // Utils.hpp:241-249  sanitize the trailing numeric id if present.
-        if id_start_pos < sanitized.len()
-            && (sanitized[id_start_pos - 1] == b'\\' || sanitized[id_start_pos - 1] == b'/')
-            && (sanitized[id_start_pos] as char).is_ascii_digit()
-        {
-            // Utils.hpp:244-247  find_first_of("\\/", id_start_pos)
-            let mut id_end_pos = sanitized[id_start_pos..]
+        // utils.cpp:1038-1044
+        let id_pos = layout.id_pos.unwrap();
+        if id_pos < raw.len() && is_separator(raw[id_pos - 1]) && raw[id_pos].is_ascii_digit() {
+            let id_end = raw[id_pos..]
                 .iter()
-                .position(|&c| c == b'\\' || c == b'/')
-                .map(|p| p + id_start_pos)
-                .unwrap_or(sanitized.len());
-            if id_end_pos > sanitized.len() {
-                id_end_pos = sanitized.len();
-            }
-            // Utils.hpp:248  replace(id_start_pos, id_end_pos - id_start_pos, '*'...)
-            Self::replace_stars(&mut sanitized, id_start_pos, id_end_pos - id_start_pos);
+                .position(|c| PATH_SEPARATORS.contains(c))
+                .map(|p| p + id_pos)
+                .unwrap_or(raw.len());
+            mask_bytes(&mut raw, id_pos, id_end - id_pos);
         }
 
-        // Utils.hpp:251  return file_name(sanitized);
-        Self::file_name(&String::from_utf8_lossy(&sanitized))
-    }
-
-    // std::string::replace(pos, count, std::string(count, '*'))
-    fn replace_stars(buf: &mut Vec<u8>, pos: usize, count: usize) {
-        for i in 0..count {
-            if pos + i < buf.len() {
-                buf[pos + i] = b'*';
-            }
-        }
+        // utils.cpp:1046
+        out(file_name_part(&raw))
     }
 }
 
@@ -544,6 +574,21 @@ pub fn next_highest_power_of_2(v: usize) -> usize {
     next_highest_power_of_2_u64(v as u64) as usize
 }
 
+// Utils.hpp:354-357  template<class VectorType> void reserve_more(VectorType &vector, size_t n)
+// `std::vector::reserve(size() + n)`; `Vec::reserve` takes the additional count.
+#[inline]
+pub fn reserve_more<T>(vector: &mut Vec<T>, n: usize) {
+    vector.reserve(n);
+}
+
+// Utils.hpp:359-362  template<class VectorType> void reserve_more_power_of_2(VectorType &vector, size_t n)
+// `vector.reserve(next_highest_power_of_2(vector.size() + n))`
+#[inline]
+pub fn reserve_more_power_of_2<T>(vector: &mut Vec<T>, n: usize) {
+    let target = next_highest_power_of_2(vector.len() + n);
+    vector.reserve(target.saturating_sub(vector.len()));
+}
+
 // ----------------------------------------------------------------------------
 // modulo index helpers (Utils.hpp:527-577)
 // ----------------------------------------------------------------------------
@@ -696,7 +741,33 @@ pub fn get_bbl_time_dhms(mut time_in_secs: f32) -> String {
     }
 }
 
-// Utils.hpp:731
+// Utils.hpp:568-595  inline long get_local_utc_offset_seconds(std::time_t instant)
+// Utils.hpp:597      inline long get_local_utc_offset_seconds() { return get_local_utc_offset_seconds(std::time(nullptr)); }
+// (`None` is the second overload, the current time.)
+//
+// Current UTC offset of the system time zone, in seconds east of UTC, daylight saving included.
+// The C++ breaks the instant down as UTC (gmtime_r) and as local time (localtime_r), pins
+// tm_isdst = 0 on both and diffs their mktime() readings: both wall clocks are then read with the
+// same standard offset, which cancels, and the difference is the local wall clock minus the UTC
+// wall clock of the instant, i.e. its full offset. chrono gives that difference of wall clocks
+// directly; it returns 0 where the C runtime calls fail (an instant chrono cannot place).
+pub fn get_local_utc_offset_seconds(instant: Option<i64>) -> i64 {
+    // Utils.hpp:597  std::time(nullptr)
+    let instant = instant.unwrap_or_else(|| chrono::Utc::now().timestamp());
+    // Utils.hpp:570-578  gmtime / localtime of the instant
+    let utc_tm = match chrono::DateTime::from_timestamp(instant, 0) {
+        Some(t) => t.naive_utc(),
+        None => return 0,
+    };
+    let local_tm = match chrono::TimeZone::timestamp_opt(&chrono::Local, instant, 0).single() {
+        Some(t) => t.naive_local(),
+        None => return 0,
+    };
+    // Utils.hpp:584-594  (long) std::difftime(local_as_local, utc_as_local)
+    (local_tm - utc_tm).num_seconds()
+}
+
+// Utils.hpp:599
 pub fn get_timezone_utc_hm(mut second: i64) -> String {
     // Utils.hpp:733-737
     let mut pos = true;
@@ -771,7 +842,7 @@ pub fn get_bbl_monitor_time_dhm(mut time_in_secs: f32) -> String {
     }
 }
 
-// Utils.hpp:807  Centralized function to format time from a std::tm structure.
+// Utils.hpp:672-692  Centralized function to format time from a std::tm structure.
 // This is the single source of truth for time formatting throughout the application.
 //
 // (hour, min) replace the relevant std::tm fields (tm_hour, tm_min).
@@ -791,36 +862,49 @@ pub fn format_time_hm(tm_hour: i32, tm_min: i32, use_12h_format: bool) -> String
     }
 }
 
-// Utils.hpp:827
-pub fn get_bbl_finish_time_dhm(time_in_secs: f32, use_12h_format: bool) -> String {
-    // Utils.hpp:829  if (time_in_secs < 1) return "Finished";
+// Utils.hpp:695-699
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BBLFinishTime {
+    pub time: String,
+    pub day_offset: i32,
+}
+
+// Utils.hpp:701-738  inline BBLFinishTime get_bbl_finish_time(float time_in_secs, bool use_12h_format = false)
+// std::time / std::localtime are read through chrono's local time zone.
+pub fn get_bbl_finish_time(time_in_secs: f32, use_12h_format: bool) -> BBLFinishTime {
+    // Utils.hpp:703
     if time_in_secs < 1.0 {
-        return "Finished".to_string();
+        return BBLFinishTime::default();
     }
 
-    // Utils.hpp:831-835  Get current time first (std::localtime).
-    let current = chrono::Local::now();
-    // tm_yday in C is 0-based day of year; chrono ordinal() is 1-based.
-    let current_day: i32 = current.ordinal() as i32 - 1;
-    let current_year: i32 = current.year();
+    // Utils.hpp:705-710  Get current time first
+    let current_time = chrono::Local::now().timestamp();
+    let current_tm = match chrono::TimeZone::timestamp_opt(&chrono::Local, current_time, 0).single() {
+        Some(tm) => tm,
+        None => return BBLFinishTime::default(),
+    };
+    // tm_yday is 0-based, chrono's ordinal 1-based.
+    let current_day: i32 = current_tm.ordinal() as i32 - 1;
+    let current_year: i32 = current_tm.year();
 
-    // Utils.hpp:837-843  Calculate finish time and get its local time.
-    let finish = current + chrono::Duration::seconds(time_in_secs as i64);
-    let finish_hour: i32 = finish.hour() as i32;
-    let finish_minute: i32 = finish.minute() as i32;
-    let finish_day: i32 = finish.ordinal() as i32 - 1;
-    let finish_year: i32 = finish.year();
+    // Utils.hpp:712-718  Calculate finish time and get its local time
+    let finish_time = current_time + time_in_secs as i64;
+    let finish_tm = match chrono::TimeZone::timestamp_opt(&chrono::Local, finish_time, 0).single() {
+        Some(tm) => tm,
+        None => return BBLFinishTime::default(),
+    };
+    let finish_day: i32 = finish_tm.ordinal() as i32 - 1;
+    let finish_year: i32 = finish_tm.year();
 
-    // Utils.hpp:845-860
-    let mut diff_day = 0;
+    // Utils.hpp:720-735
+    let mut diff_day;
     if current_year != finish_year {
         if (current_year % 4 == 0 && current_year % 100 != 0) || current_year % 400 == 0 {
             diff_day = 366 - current_day;
         } else {
             diff_day = 365 - current_day;
         }
-        // Utils.hpp:851-856  NOTE: faithful to the C++ bug — the loop body tests
-        // `current_year` (not `year`), so every iteration uses the same condition.
+        // The loop tests `current_year`, not `year`, as the C++ does.
         let mut year = current_year + 1;
         while year < finish_year {
             if (current_year % 4 == 0 && current_year % 100 != 0) || current_year % 400 == 0 {
@@ -835,15 +919,24 @@ pub fn get_bbl_finish_time_dhm(time_in_secs: f32, use_12h_format: bool) -> Strin
         diff_day = finish_day - current_day;
     }
 
-    // Utils.hpp:862-873  current_tm is never null in practice; format via format_time_hm.
-    let mut finish_time_str = format_time_hm(finish_hour, finish_minute, use_12h_format);
-    // Utils.hpp:874  if (diff_day != 0) finish_time_str += "+" + std::to_string(diff_day);
-    if diff_day != 0 {
-        finish_time_str += &format!("+{}", diff_day);
+    // Utils.hpp:737  return {format_time_hm(&finish_tm, use_12h_format), diff_day};
+    BBLFinishTime {
+        time: format_time_hm(finish_tm.hour() as i32, finish_tm.minute() as i32, use_12h_format),
+        day_offset: diff_day,
+    }
+}
+
+// Utils.hpp:740-746  inline std::string get_bbl_finish_time_dhm(float time_in_secs, bool use_12h_format = false)
+pub fn get_bbl_finish_time_dhm(time_in_secs: f32, use_12h_format: bool) -> String {
+    // Utils.hpp:742
+    if time_in_secs < 1.0 {
+        return "Finished".to_string();
     }
 
-    // Utils.hpp:876  return finish_time_str;
-    finish_time_str
+    // Utils.hpp:744-745
+    let finish_time = get_bbl_finish_time(time_in_secs, use_12h_format);
+    finish_time.time
+        + &(if finish_time.day_offset == 0 { String::new() } else { format!("+{}", finish_time.day_offset) })
 }
 
 // Utils.hpp:879
@@ -1354,29 +1447,33 @@ pub fn normalize_utf8_nfc(src: &str) -> String {
     src.to_string()
 }
 
-// Utils.cpp:1123  std::vector<std::string> split_string(const std::string &str, char delimiter)
+// utils.cpp:1102  std::vector<std::string> split_string(const std::string &str, char delimiter)
 pub fn split_string(s: &str, delimiter: char) -> Vec<String> {
-    // Utils.cpp:1125-1132  std::getline(ss, substr, delimiter) loop.
-    // std::getline yields no trailing empty token when the string ends with the
-    // delimiter and produces nothing for an empty input.
+    // utils.cpp:1104  std::vector<std::string> result;
     let mut result: Vec<String> = Vec::new();
-    if s.is_empty() {
-        return result;
-    }
-    let mut current = String::new();
-    let mut has_token = false;
-    for ch in s.chars() {
-        if ch == delimiter {
-            result.push(std::mem::take(&mut current));
-            has_token = false;
-        } else {
-            current.push(ch);
-            has_token = true;
+    // utils.cpp:1105  std::stringstream ss(str);
+    let mut ss = s.chars().peekable();
+    // utils.cpp:1106  std::string substr;
+    let mut substr = String::new();
+
+    // utils.cpp:1108-1110  while (std::getline(ss, substr, delimiter)) result.push_back(substr);
+    // std::getline clears `substr`, extracts up to the delimiter (which it consumes and does not
+    // store) or the end of the stream, and fails only when it extracted nothing at the end of the
+    // stream: "a,b," gives "a" and "b", no trailing empty string, and "" gives nothing.
+    loop {
+        substr.clear();
+        if ss.peek().is_none() {
+            break;
         }
+        for ch in ss.by_ref() {
+            if ch == delimiter {
+                break;
+            }
+            substr.push(ch);
+        }
+        result.push(substr.clone());
     }
-    if has_token {
-        result.push(current);
-    }
+    // utils.cpp:1111  return result;
     result
 }
 
@@ -1448,6 +1545,87 @@ pub fn header_gcodeviewer_generated() -> String {
 pub fn get_current_pid() -> u32 {
     // Utils.cpp:1184  return ::getpid();
     std::process::id()
+}
+
+#[cfg(target_os = "macos")]
+extern "C" {
+    // <libproc.h>  int proc_pidpath(int pid, void *buffer, uint32_t buffersize);
+    fn proc_pidpath(pid: i32, buffer: *mut u8, buffersize: u32) -> i32;
+}
+
+// utils.cpp:1167-1205  std::string get_process_name(int pid)
+// BBS: backup & restore. Returns the executable's name from its last separator on: the C++ walks
+// `p` to the last separator with `strchr(p + 1, sep)` and returns from there, so the separator is
+// part of the result ("/usr/bin/foo" gives "/foo"; a path without one is returned whole).
+pub fn get_process_name(pid: i32) -> String {
+    // The tail from the last separator after the first byte, as the strchr loop leaves it.
+    fn tail_from_last(path: &[u8], sep: u8) -> Vec<u8> {
+        let mut p = 0usize;
+        while let Some(q) = path.get(p + 1..).and_then(|rest| rest.iter().position(|&c| c == sep)) {
+            p = p + 1 + q;
+        }
+        path[p.min(path.len())..].to_vec()
+    }
+    #[cfg(windows)]
+    {
+        // utils.cpp:1170-1182  GetModuleFileNameA (pid 0) / GetModuleFileNameExA, MAX_PATH bytes.
+        use winapi::um::processthreadsapi::OpenProcess;
+        use winapi::um::psapi::GetModuleFileNameExA;
+        use winapi::um::winnt::{HANDLE, PROCESS_QUERY_LIMITED_INFORMATION};
+        extern "system" {
+            // <handleapi.h>, kernel32 (the crate's winapi features leave handleapi out).
+            fn CloseHandle(h: HANDLE) -> i32;
+        }
+        // <handleapi.h>  #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
+        let invalid_handle_value: HANDLE = -1isize as HANDLE;
+        let mut name = [0u8; 260];
+        unsafe {
+            if pid == 0 {
+                // GetModuleFileNameExA on the current process is GetModuleFileNameA(NULL).
+                let h = winapi::um::processthreadsapi::GetCurrentProcess();
+                GetModuleFileNameExA(h, std::ptr::null_mut(), name.as_mut_ptr() as *mut i8, 260);
+            } else {
+                let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid as u32);
+                // The C++ compares with INVALID_HANDLE_VALUE (OpenProcess fails with NULL).
+                if h == invalid_handle_value {
+                    return String::new();
+                }
+                GetModuleFileNameExA(h, std::ptr::null_mut(), name.as_mut_ptr() as *mut i8, 260);
+                CloseHandle(h);
+            }
+        }
+        let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+        // utils.cpp:1183-1186  return decode_path(p);
+        return decode_path(&String::from_utf8_lossy(&tail_from_last(&name[..len], b'\\')));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // utils.cpp:1187-1194  PROC_PIDPATHINFO_MAXSIZE = 4 * MAXPATHLEN
+        let mut pathbuf = [0u8; 4 * 1024];
+        let pid = if pid == 0 { std::process::id() as i32 } else { pid };
+        let ret = unsafe { proc_pidpath(pid, pathbuf.as_mut_ptr(), pathbuf.len() as u32) };
+        if ret <= 0 {
+            return String::new();
+        }
+        let len = pathbuf.iter().position(|&c| c == 0).unwrap_or(pathbuf.len());
+        return String::from_utf8_lossy(&tail_from_last(&pathbuf[..len], b'/')).into_owned();
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    {
+        // utils.cpp:1195-1204  readlink("/proc/self/exe" or "/proc/<pid>/exe") into 512 bytes.
+        let proc_path = if pid != 0 { format!("/proc/{}/exe", pid) } else { "/proc/self/exe".to_string() };
+        let target = match std::fs::read_link(&proc_path) {
+            Ok(t) => t,
+            Err(e) => {
+                // perror(NULL)
+                eprintln!("{}", e);
+                return String::new();
+            }
+        };
+        let bytes = target.to_string_lossy().into_owned().into_bytes();
+        let bytes = &bytes[..bytes.len().min(511)];
+        return String::from_utf8_lossy(&tail_from_last(bytes, b'/')).into_owned();
+    }
 }
 
 // Utils.cpp:1189  std::string get_process_name(int pid)
@@ -1675,6 +1853,51 @@ pub fn log_memory_info(ignore_loglevel: bool) -> String {
 // Utils.cpp:1428  size_t total_physical_memory()
 // BLOCKED: sysctl(HW_MEMSIZE)/sysconf(_SC_PHYS_PAGES)/GlobalMemoryStatusEx — native
 // only, not wasm-safe. Returns 0 like the C++ "Unknown OS" fallback (Utils.cpp:1493).
+#[cfg(unix)]
+extern "C" {
+    // <sys/resource.h>  int getrusage(int who, struct rusage *r_usage);
+    fn getrusage(who: i32, r_usage: *mut i64) -> i32;
+}
+
+// utils.cpp:1407-1426  double get_peak_rss_mb()
+pub fn get_peak_rss_mb() -> f64 {
+    #[cfg(windows)]
+    {
+        // utils.cpp:1409-1412  GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))
+        use winapi::um::psapi::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+        let mut pmc: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
+        let ok = unsafe {
+            GetProcessMemoryInfo(
+                winapi::um::processthreadsapi::GetCurrentProcess(),
+                &mut pmc,
+                std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            )
+        };
+        if ok != 0 {
+            return pmc.PeakWorkingSetSize as f64 / (1024.0 * 1024.0);
+        }
+    }
+    #[cfg(unix)]
+    {
+        // utils.cpp:1413-1421  getrusage(RUSAGE_SELF, &memory_info): struct rusage is two
+        // struct timeval (16 bytes each on 64-bit targets) and fourteen longs, ru_maxrss the
+        // first of them.
+        let mut memory_info = [0i64; 18];
+        if unsafe { getrusage(0 /* RUSAGE_SELF */, memory_info.as_mut_ptr()) } == 0 {
+            #[allow(unused_mut)]
+            let mut peak_rss = memory_info[4] as usize;
+            // ru_maxrss is in kilobytes on Linux, bytes on macOS.
+            #[cfg(target_os = "linux")]
+            {
+                peak_rss *= 1024;
+            }
+            return peak_rss as f64 / (1024.0 * 1024.0);
+        }
+    }
+    // utils.cpp:1425
+    0.0
+}
+
 pub fn total_physical_memory() -> usize {
     // Utils.cpp:1493  return 0L; // Unknown OS.
     0
@@ -1690,6 +1913,112 @@ pub fn makedir(path: &str) -> bool {
         return true;
     }
     std::fs::create_dir(p).is_ok()
+}
+
+/// MD5 (RFC 1321) for `bbl_calc_md5`, which the C++ takes from OpenSSL (MD5_Init / MD5_Update /
+/// MD5_Final).
+struct Md5Ctx {
+    state: [u32; 4],
+    len: u64,
+    buf: Vec<u8>,
+}
+
+impl Md5Ctx {
+    fn new() -> Self {
+        Md5Ctx { state: [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476], len: 0, buf: Vec::with_capacity(64) }
+    }
+
+    fn block(state: &mut [u32; 4], chunk: &[u8]) {
+        const S: [u32; 64] = [
+            7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5,
+            9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6,
+            10, 15, 21, 6, 10, 15, 21,
+        ];
+        let mut m = [0u32; 16];
+        for (i, w) in m.iter_mut().enumerate() {
+            *w = u32::from_le_bytes([chunk[4 * i], chunk[4 * i + 1], chunk[4 * i + 2], chunk[4 * i + 3]]);
+        }
+        let (mut a, mut b, mut c, mut d) = (state[0], state[1], state[2], state[3]);
+        for i in 0..64 {
+            let (f, g) = match i / 16 {
+                0 => ((b & c) | (!b & d), i),
+                1 => ((d & b) | (!d & c), (5 * i + 1) % 16),
+                2 => (b ^ c ^ d, (3 * i + 5) % 16),
+                _ => (c ^ (b | !d), (7 * i) % 16),
+            };
+            // K[i] = floor(abs(sin(i + 1)) * 2^32)
+            let k = ((i as f64 + 1.0).sin().abs() * 4_294_967_296.0) as u32;
+            let f = f.wrapping_add(a).wrapping_add(k).wrapping_add(m[g]);
+            a = d;
+            d = c;
+            c = b;
+            b = b.wrapping_add(f.rotate_left(S[i]));
+        }
+        state[0] = state[0].wrapping_add(a);
+        state[1] = state[1].wrapping_add(b);
+        state[2] = state[2].wrapping_add(c);
+        state[3] = state[3].wrapping_add(d);
+    }
+
+    fn update(&mut self, data: &[u8]) {
+        self.len += data.len() as u64;
+        self.buf.extend_from_slice(data);
+        let full = self.buf.len() / 64 * 64;
+        for chunk in self.buf[..full].chunks(64) {
+            Self::block(&mut self.state, chunk);
+        }
+        self.buf.drain(..full);
+    }
+
+    fn finalize(mut self) -> [u8; 16] {
+        let bits = self.len.wrapping_mul(8);
+        let mut pad = vec![0x80u8];
+        while (self.buf.len() + pad.len()) % 64 != 56 {
+            pad.push(0);
+        }
+        pad.extend_from_slice(&bits.to_le_bytes());
+        let len = self.len;
+        self.update(&pad);
+        self.len = len;
+        let mut out = [0u8; 16];
+        for (i, w) in self.state.iter().enumerate() {
+            out[4 * i..4 * i + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        out
+    }
+}
+
+// utils.cpp:1511-1530  bool bbl_calc_md5(std::string &filename, std::string &md5_out)
+// `boost::filesystem::file_size` throws when the file cannot be read; that is the `Err` here.
+pub fn bbl_calc_md5(filename: &str, md5_out: &mut String) -> std::io::Result<bool> {
+    use std::io::Read;
+    // utils.cpp:1513-1515  unsigned char digest[16]; MD5_CTX ctx; MD5_Init(&ctx);
+    let mut ctx = Md5Ctx::new();
+    // utils.cpp:1516-1519
+    let mut ifs = std::fs::File::open(filename)?;
+    let mut buf = vec![0u8; 64 * 1024];
+    let _size = std::fs::metadata(filename)?.len();
+    // utils.cpp:1520-1524  while (ifs) { ifs.read(buf.data(), buf.size()); MD5_Update(..., ifs.gcount()); }
+    loop {
+        let mut read_bytes = 0usize;
+        while read_bytes < buf.len() {
+            match ifs.read(&mut buf[read_bytes..]) {
+                Ok(0) => break,
+                Ok(n) => read_bytes += n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        ctx.update(&buf[..read_bytes]);
+        if read_bytes < buf.len() {
+            break;
+        }
+    }
+    // utils.cpp:1525-1528  MD5_Final; sprintf("%02X") per byte
+    let digest = ctx.finalize();
+    *md5_out = digest.iter().map(|b| format!("{:02X}", b)).collect();
+    // utils.cpp:1529
+    Ok(true)
 }
 
 // Utils.cpp:1511  bool bbl_calc_md5(std::string &filename, std::string &md5_out)
@@ -1983,11 +2312,16 @@ mod tests {
 
     #[test]
     fn test_split_string() {
-        // Utils.cpp:1123
+        // utils.cpp:1102
         assert_eq!(split_string("a,b,c", ','), vec!["a", "b", "c"]);
-        // trailing delimiter -> trailing empty token then dropped by getline
-        assert_eq!(split_string("a,b,", ','), vec!["a", "b", ""]);
+        // A trailing delimiter gives no trailing empty string: the getline after "b," extracts
+        // nothing at the end of the stream and fails. The pin's split_string gives ["a", "b"]
+        // (a generator calling it).
+        assert_eq!(split_string("a,b,", ','), vec!["a", "b"]);
         assert!(split_string("", ',').is_empty());
+        // Empty strings between delimiters and a leading delimiter are kept.
+        assert_eq!(split_string(",a,,b", ','), vec!["", "a", "", "b"]);
+        assert_eq!(split_string(",", ','), vec![""]);
     }
 
     #[test]

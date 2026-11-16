@@ -11,22 +11,22 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**49.3% of the named C++ functions are ported or verified (4716 of 9574); 40.9% by size of body.**
+**51.6% of the named C++ functions are ported or verified (4936 of 9574); 44.3% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 2164 | 22.6% | 31.9% |
-| partial `[~]` | 2694 | 28.1% | 27.2% |
-| ported `[x]` | 3458 | 36.1% | 24.6% |
-| verified `[v]` | 1258 | 13.1% | 16.3% |
+| not started `[ ]` | 2006 | 21.0% | 28.8% |
+| partial `[~]` | 2632 | 27.5% | 27.0% |
+| ported `[x]` | 3445 | 36.0% | 24.7% |
+| verified `[v]` | 1491 | 15.6% | 19.6% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
 | no Rust file of that name | 4 |
-| partial | 245 |
-| every named function ported | 56 |
-| every named function verified | 12 |
+| partial | 242 |
+| every named function ported | 58 |
+| every named function verified | 13 |
 
 C++ still run through the FFI shim crates: 0 functions called from the engine (`clipper-z-sys` 0, `clipper2-z-sys` 0, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
@@ -76,11 +76,11 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Arachne/SkeletalTrapezoidationGraph` | 1 | `arachne/skeletal_trapezoidation_graph.rs` | ported | 12 | 0 | 0 | 12 | 0 |
 | `Arachne/SkeletalTrapezoidationJoint` | 1 | `arachne/skeletal_trapezoidation_joint.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Arachne/utils/ExtrusionJunction` | 1 | `arachne/utils/extrusion_junction.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `Arachne/utils/ExtrusionLine` | 1 | `arachne/utils/extrusion_line.rs` | partial | 39 | 3 | 20 | 16 | 0 |
+| `Arachne/utils/ExtrusionLine` | 1 | `arachne/utils/extrusion_line.rs` | partial | 39 | 0 | 18 | 21 | 0 |
 | `Arachne/utils/HalfEdge` | 1 | `arachne/utils/half_edge.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `Arachne/utils/HalfEdgeGraph` | 1 | `arachne/utils/half_edge_graph.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `Arachne/utils/HalfEdgeNode` | 1 | `arachne/utils/half_edge_node.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `Arachne/utils/linearAlg2D` | 1 | `arachne/utils/linear_alg2d.rs` | partial | 3 | 0 | 2 | 1 | 0 |
+| `Arachne/utils/linearAlg2D` | 1 | `arachne/utils/linear_alg2d.rs` | verified | 3 | 0 | 0 | 0 | 3 |
 | `Arachne/utils/PolygonsPointIndex` | 1 | `arachne/utils/polygons_point_index.rs` | ported | 4 | 0 | 0 | 4 | 0 |
 | `Arachne/utils/PolygonsSegmentIndex` | 1 | `arachne/utils/polygons_segment_index.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `Arachne/utils/PolylineStitcher` | 1 | `arachne/utils/polyline_stitcher.rs` | partial | 7 | 1 | 6 | 0 | 0 |
@@ -143,7 +143,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Execution/ExecutionTBB` | 3 | `execution/execution_tbb.rs` | partial | 5 | 2 | 2 | 1 | 0 |
 | `ExPolygon` | 1 | `ex_polygon.rs` | partial | 93 | 10 | 66 | 17 | 0 |
 | `ExPolygonCollection` | 1 | `ex_polygon_collection.rs` | partial | 11 | 0 | 2 | 9 | 0 |
-| `ExPolygonSerialize` | 1 | `ex_polygon_serialize.rs` | partial | 2 | 0 | 2 | 0 | 0 |
+| `ExPolygonSerialize` | 1 | `ex_polygon_serialize.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `ExPolygonsIndex` | 1 | `ex_polygons_index.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `Extruder` | 1 | `extruder.rs` | partial | 31 | 3 | 2 | 26 | 0 |
 | `ExtrusionEntity` | 1 | `extrusion_entity.rs` | partial | 125 | 7 | 29 | 89 | 0 |
@@ -152,7 +152,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `FaceDetector` | 3 | `face_detector.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `FilamentGroup` | 1 | `filament_group.rs` | partial | 49 | 23 | 4 | 22 | 0 |
 | `FilamentGroupUtils` | 1 | `filament_group_utils.rs` | partial | 17 | 4 | 2 | 11 | 0 |
-| `FilamentMixer` | 3 | `filament_mixer.rs` | partial | 37 | 18 | 1 | 18 | 0 |
+| `FilamentMixer` | 3 | `filament_mixer.rs` | partial | 37 | 17 | 2 | 18 | 0 |
 | `FilamentMixerModel` | 3 | `filament_mixer_model.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `FileParserError` | 1 | `file_parser_error.rs` | partial | 4 | 0 | 1 | 3 | 0 |
 | `Fill/Fill` | 1 | `fill/fill.rs` | partial | 7 | 1 | 3 | 3 | 0 |
@@ -176,7 +176,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Fill/Lightning/Generator` | 1 | `fill/lightning/generator.rs` | partial | 6 | 5 | 1 | 0 | 0 |
 | `Fill/Lightning/Layer` | 1 | `fill/lightning/layer.rs` | partial | 11 | 0 | 1 | 10 | 0 |
 | `Fill/Lightning/TreeNode` | 1 | `fill/lightning/tree_node.rs` | partial | 27 | 1 | 9 | 17 | 0 |
-| `Flow` | 1 | `flow.rs` | partial | 31 | 5 | 12 | 14 | 0 |
+| `Flow` | 1 | `flow.rs` | partial | 31 | 1 | 5 | 6 | 19 |
 | `FlushVolCalc` | 1 | `flush_vol_calc.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `FlushVolPredictor` | 3 | `flush_vol_predictor.rs` | partial | 14 | 3 | 1 | 10 | 0 |
 | `format` | 1 | `format/format.rs` | partial | 4 | 0 | 2 | 0 | 2 |
@@ -220,7 +220,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `GCodeWriter` | 1 | `g_code_writer.rs` | partial | 84 | 4 | 16 | 64 | 0 |
 | `Geometry` | 1 | `geometry/geometry.rs` | partial | 86 | 6 | 27 | 53 | 0 |
 | `Geometry/Bicubic` | 1 | `geometry/bicubic.rs` | ported | 53 | 0 | 0 | 53 | 0 |
-| `Geometry/Circle` | 1 | `geometry/circle.rs` | partial | 24 | 0 | 6 | 18 | 0 |
+| `Geometry/Circle` | 1 | `geometry/circle.rs` | partial | 24 | 0 | 6 | 16 | 2 |
 | `Geometry/ConvexHull` | 1 | `geometry/convex_hull.rs` | partial | 21 | 2 | 11 | 8 | 0 |
 | `Geometry/Curves` | 1 | `geometry/curves.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `Geometry/MedialAxis` | 1 | `geometry/medial_axis.rs` | partial | 16 | 2 | 11 | 3 | 0 |
@@ -234,7 +234,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Interlocking/InterlockingGenerator` | 2 | `interlocking/interlocking_generator.rs` | partial | 15 | 0 | 2 | 13 | 0 |
 | `Interlocking/VoxelUtils` | 2 | `interlocking/voxel_utils.rs` | partial | 15 | 0 | 4 | 11 | 0 |
 | `InternalBridgeDetector` | 3 | `internal_bridge_detector.rs` | partial | 3 | 0 | 2 | 1 | 0 |
-| `IntersectionPoints` | 1 | `intersection_points.rs` | partial | 6 | 0 | 5 | 1 | 0 |
+| `IntersectionPoints` | 1 | `intersection_points.rs` | ported | 6 | 0 | 0 | 1 | 5 |
 | `JumpPointSearch` | 3 | `jump_point_search.rs` | partial | 14 | 0 | 4 | 10 | 0 |
 | `KDTreeIndirect` | 1 | `kd_tree_indirect.rs` | partial | 15 | 0 | 7 | 8 | 0 |
 | `Layer` | 1 | `layer.rs` | partial | 56 | 20 | 21 | 15 | 0 |
@@ -250,7 +250,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Measure` | 3 | `measure.rs` | partial | 41 | 0 | 9 | 32 | 0 |
 | `MeasureUtils` | 3 | `measure_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `MeshBoolean` | 3 | `mesh_boolean.rs` | partial | 54 | 37 | 13 | 4 | 0 |
-| `MeshBooleanOpenMeshCraft` | 3 | none | not started | 6 | 6 | 0 | 0 | 0 |
+| `MeshBooleanOpenMeshCraft` | 3 | none | not started | 6 | 5 | 1 | 0 | 0 |
 | `MeshDiagnostics` | 3 | `mesh_diagnostics.rs` | verified | 11 | 0 | 0 | 0 | 11 |
 | `MeshRaycast` | 3 | `mesh_raycast.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `MeshSplitImpl` | 3 | `mesh_split_impl.rs` | partial | 11 | 0 | 1 | 10 | 0 |
@@ -281,20 +281,20 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `pchheader` | 3 | `pchheader.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `PerfTrace` | 3 | `perf_trace.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 18 | 7 | 4 | 0 |
-| `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 20 | 34 | 31 | 0 |
+| `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 0 | 10 | 1 | 74 |
 | `Platform` | 1 | `platform.rs` | ported | 5 | 0 | 0 | 5 | 0 |
-| `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 1 | 12 | 11 | 0 |
+| `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 0 | 13 | 11 | 0 |
 | `Point` | 1 | `geometry/point.rs` | partial | 103 | 10 | 73 | 20 | 0 |
 | `Polygon` | 1 | `geometry/polygon.rs` | partial | 86 | 4 | 28 | 54 | 0 |
 | `PolygonTrimmer` | 1 | `polygon_trimmer.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Polyline` | 1 | `geometry/polyline.rs` | partial | 52 | 2 | 21 | 29 | 0 |
 | `Preset` | 1 | `preset.rs` | partial | 108 | 0 | 16 | 15 | 77 |
-| `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 115 | 23 | 3 | 0 |
+| `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 0 | 6 | 14 | 121 |
 | `PrincipalComponents2D` | 1 | `principal_components2_d.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `Print` | 1 | `print.rs` | partial | 236 | 160 | 71 | 5 | 0 |
 | `PrintApply` | 1 | `print_apply.rs` | partial | 44 | 27 | 14 | 3 | 0 |
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 40 | 20 | 17 | 0 |
-| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 18 | 17 | 11 | 91 |
+| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 17 | 17 | 12 | 91 |
 | `PrintObject` | 1 | `print_object.rs` | partial | 82 | 52 | 24 | 6 | 0 |
 | `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 20 | 3 | 1 | 0 |
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
@@ -367,8 +367,8 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Triangulation` | 1 | `triangulation.rs` | partial | 14 | 1 | 9 | 4 | 0 |
 | `TryCatchSignal` | 3 | `try_catch_signal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `TryCatchSignalSEH` | 3 | `try_catch_signal_seh.rs` | ported | 3 | 0 | 0 | 3 | 0 |
-| `Utils` | 1 | `utils.rs` | partial | 36 | 5 | 17 | 14 | 0 |
-| `utils` | 1 | `utils.rs` | partial | 66 | 14 | 29 | 23 | 0 |
+| `Utils` | 1 | `utils.rs` | partial | 36 | 0 | 15 | 21 | 0 |
+| `utils` | 1 | `utils.rs` | partial | 66 | 7 | 25 | 25 | 9 |
 | `VariableWidth` | 1 | `variable_width.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `VectorFormatter` | 3 | `vector_formatter.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `Win10ModelRepair` | 3 | none | not started | 0 | 0 | 0 | 0 | 0 |
@@ -484,25 +484,25 @@ Rust file: `aabb_tree_lines.rs`. Status: **partial**. Not listed: 2 constructors
 
 **free functions**
 
-- [x] `coordinate_aligned_ray_hit_count` (line 42) → `aabb_tree_lines.rs:631`
-- [x] `get_intersections_with_line` (line 119) → `aabb_tree_lines.rs:747`
-- [x] `build_aabb_tree_over_indexed_lines` (line 167) → `aabb_tree_lines.rs:975`
-- [x] `squared_distance_to_indexed_lines` (line 206) → `aabb_tree_lines.rs:1034`
-- [x] `all_lines_in_radius` (line 223) → `aabb_tree_lines.rs:1065`
-- [x] `point_outside_closed_contours` (line 239) → `aabb_tree_lines.rs:1096`
-- [x] `get_intersections_with_line` (line 265) → `aabb_tree_lines.rs:1134`
+- [x] `coordinate_aligned_ray_hit_count` (line 42) → `aabb_tree_lines.rs:650`
+- [x] `get_intersections_with_line` (line 119) → `aabb_tree_lines.rs:766`
+- [x] `build_aabb_tree_over_indexed_lines` (line 167) → `aabb_tree_lines.rs:994`
+- [x] `squared_distance_to_indexed_lines` (line 206) → `aabb_tree_lines.rs:1080`
+- [x] `all_lines_in_radius` (line 223) → `aabb_tree_lines.rs:1111`
+- [x] `point_outside_closed_contours` (line 239) → `aabb_tree_lines.rs:1142`
+- [x] `get_intersections_with_line` (line 265) → `aabb_tree_lines.rs:1180`
 
 **class `IndexedLinesDistancer`**
 
-- [~] `closest_point_to_origin` (line 29) → `aabb_tree_lines.rs:604` — partial
+- [~] `closest_point_to_origin` (line 29) → `aabb_tree_lines.rs:623` — partial
 
 **class `LinesDistancer`**
 
-- [x] `outside` (line 318) → `aabb_tree_lines.rs:1201`
-- [x] `distance_from_lines_extra` (line 322) → `aabb_tree_lines.rs:1207`
-- [x] `distance_from_lines` (line 341) → `aabb_tree_lines.rs:1243`
-- [x] `all_lines_in_radius` (line 347) → `aabb_tree_lines.rs:1250`
-- [x] `intersections_with_line` (line 352) → `aabb_tree_lines.rs:1257`
+- [x] `outside` (line 318) → `aabb_tree_lines.rs:1247`
+- [x] `distance_from_lines_extra` (line 322) → `aabb_tree_lines.rs:1253`
+- [x] `distance_from_lines` (line 341) → `aabb_tree_lines.rs:1289`
+- [x] `all_lines_in_radius` (line 347) → `aabb_tree_lines.rs:1296`
+- [x] `intersections_with_line` (line 352) → `aabb_tree_lines.rs:1303`
 
 ### `AdaptiveLayerMerge` (.cpp+.hpp)
 
@@ -896,9 +896,9 @@ Rust file: `arachne/utils/extrusion_line.rs`. Status: **partial**. Not listed: 4
 
 **free functions**
 
-- [x] `to_thick_polyline` (line 201) → `arachne/utils/extrusion_line.rs:521`
+- [x] `to_thick_polyline` (line 201) → `arachne/utils/extrusion_line.rs:569`
 - [~] `to_thick_polyline` (line 221) → `arachne/utils/extrusion_line.rs` — another overload of the name is ported
-- [x] `to_polygon` (line 241) → `arachne/utils/extrusion_line.rs:578`
+- [x] `to_polygon` (line 241) → `arachne/utils/extrusion_line.rs:626`
 - [~] `get_extents` (line 253) → `ex_polygon.rs, ex_polygon_collection.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `get_extents` (line 261) → `ex_polygon.rs, ex_polygon_collection.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `get_extents` (line 269) → `ex_polygon.rs, ex_polygon_collection.rs, fill/fill_conformal.rs` — not in the paired file
@@ -907,37 +907,37 @@ Rust file: `arachne/utils/extrusion_line.rs`. Status: **partial**. Not listed: 4
 - [~] `to_points` (line 288) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 - [~] `extrusion_paths_append` (line 293) → `overhang_detector.rs` — not in the paired file
 - [~] `extrusion_paths_append` (line 301) → `overhang_detector.rs` — not in the paired file
-- [x] `extrusion_path_append` (line 307) → `arachne/utils/extrusion_line.rs:729`
+- [x] `extrusion_path_append` (line 307) → `arachne/utils/extrusion_line.rs:777`
 
 **class `ExtrusionLine`**
 
-- [x] `getLength` (line 17) → `arachne/utils/extrusion_line.rs:148`
-- [~] `getMinimalWidth` (line 34) → `arachne/utils/extrusion_line.rs:188` — divergent
-- [~] `simplify` (line 43) → `arachne/utils/extrusion_line.rs:213` — partial
+- [x] `getLength` (line 17) → `arachne/utils/extrusion_line.rs:192`
+- [~] `getMinimalWidth` (line 34) → `arachne/utils/extrusion_line.rs:232` — divergent
+- [~] `simplify` (line 43) → `arachne/utils/extrusion_line.rs:257` — partial
 - [x] `size` (line 57) → `arachne/utils/extrusion_line.rs:86`
 - [~] `empty` (line 62) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `begin` (line 94) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `end` (line 95) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
-- [ ] `rbegin` (line 96) → `arachne/utils/extrusion_line.rs`
-- [ ] `rend` (line 97) → `arachne/utils/extrusion_line.rs`
+- [x] `rbegin` (line 96) → `arachne/utils/extrusion_line.rs:134`
+- [x] `rend` (line 97) → `arachne/utils/extrusion_line.rs:141`
 - [~] `front` (line 98) → `gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 99) → `gcode/tool_ordering.rs` — not in the paired file
-- [~] `begin` (line 102) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 103) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [x] `begin` (line 102) → `arachne/utils/extrusion_line.rs:121`
+- [x] `end` (line 103) → `arachne/utils/extrusion_line.rs:128`
 - [x] `front` (line 104) → `arachne/utils/extrusion_line.rs:100`
 - [x] `back` (line 105) → `arachne/utils/extrusion_line.rs:107`
-- [ ] `emplace_back` (line 107) → `arachne/utils/extrusion_line.rs`
-- [x] `remove` (line 108) → `arachne/utils/extrusion_line.rs:121`
-- [x] `insert` (line 109) → `arachne/utils/extrusion_line.rs:128`
+- [x] `emplace_back` (line 107) → `arachne/utils/extrusion_line.rs:149`
+- [x] `remove` (line 108) → `arachne/utils/extrusion_line.rs:165`
+- [x] `insert` (line 109) → `arachne/utils/extrusion_line.rs:172`
 - [~] `insert` (line 112) → `arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [x] `clear` (line 117) → `arachne/utils/extrusion_line.rs:135`
-- [x] `reverse` (line 118) → `arachne/utils/extrusion_line.rs:142`
-- [x] `polylineLength` (line 124) → `arachne/utils/extrusion_line.rs:171`
-- [x] `toPolygon` (line 131) → `arachne/utils/extrusion_line.rs:177`
-- [~] `calculateExtrusionAreaDeviationError` (line 194) → `arachne/utils/extrusion_line.rs:402` — partial
-- [x] `shouldApplyHoleCompensation` (line 237) → `arachne/utils/extrusion_line.rs:449`
-- [x] `is_contour` (line 251) → `arachne/utils/extrusion_line.rs:473`
-- [x] `area` (line 265) → `arachne/utils/extrusion_line.rs:491`
+- [x] `clear` (line 117) → `arachne/utils/extrusion_line.rs:179`
+- [x] `reverse` (line 118) → `arachne/utils/extrusion_line.rs:186`
+- [x] `polylineLength` (line 124) → `arachne/utils/extrusion_line.rs:215`
+- [x] `toPolygon` (line 131) → `arachne/utils/extrusion_line.rs:221`
+- [~] `calculateExtrusionAreaDeviationError` (line 194) → `arachne/utils/extrusion_line.rs:446` — partial
+- [x] `shouldApplyHoleCompensation` (line 237) → `arachne/utils/extrusion_line.rs:493`
+- [x] `is_contour` (line 251) → `arachne/utils/extrusion_line.rs:517`
+- [x] `area` (line 265) → `arachne/utils/extrusion_line.rs:535`
 
 ### `Arachne/utils/HalfEdge` (.hpp)
 
@@ -959,13 +959,13 @@ No named function with a body.
 
 ### `Arachne/utils/linearAlg2D` (.hpp)
 
-Rust file: `arachne/utils/linear_alg2d.rs`. Status: **partial**.
+Rust file: `arachne/utils/linear_alg2d.rs`. Status: **verified**.
 
 **free functions**
 
-- [~] `isInsideCorner` (line 19) → `arachne/utils/linear_alg2d.rs:20` — partial
-- [x] `pointIsLeftOfLine` (line 80) → `arachne/utils/linear_alg2d.rs:106`
-- [~] `getAngleLeft` (line 102) → `arachne/utils/linear_alg2d.rs:131` — partial
+- [v] `isInsideCorner` (line 19) → `arachne/utils/linear_alg2d.rs:20` — R913: tests/linear_alg2d_native_parity.rs: 9,000 cases against the pin's linearAlg2D.cpp, bit for bit (the body reads as partial to the estimate)
+- [v] `pointIsLeftOfLine` (line 80) → `arachne/utils/linear_alg2d.rs:106` — R913: tests/linear_alg2d_native_parity.rs: 9,000 cases against the pin's linearAlg2D.cpp, bit for bit
+- [v] `getAngleLeft` (line 102) → `arachne/utils/linear_alg2d.rs:131` — R913: tests/linear_alg2d_native_parity.rs: 9,000 cases against the pin's linearAlg2D.cpp, bit for bit (the body reads as partial to the estimate)
 
 ### `Arachne/utils/PolygonsPointIndex` (.hpp)
 
@@ -1011,10 +1011,10 @@ Rust file: `arachne/utils/sparse_grid.rs`. Status: **partial**. Not listed: 1 co
 
 **class `SparseGrid`**
 
-- [~] `begin` (line 46) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 47) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
-- [~] `begin` (line 48) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 49) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 46) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 47) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 48) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 49) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `processFromCell` (line 105) → `arachne/utils/sparse_grid.rs:202` — partial
 - [x] `processNearby` (line 115) → `arachne/utils/sparse_grid.rs:175`
 - [x] `getNearby` (line 120) → `arachne/utils/sparse_grid.rs:146`
@@ -1084,7 +1084,7 @@ Rust file: `arc_fitter.rs`. Status: **ported**.
 **class `ArcFitter`**
 
 - [v] `do_arc_fitting` (line 9) → `arc_fitter.rs:131` — R864: twin probe ARCP on Majora: 421,971 of 426,993 arcs written have the same start, end, centre and radius; the others are fitted over other points
-- [x] `do_arc_fitting_and_simplify` (line 97) → `arc_fitter.rs:335`
+- [x] `do_arc_fitting_and_simplify` (line 97) → `arc_fitter.rs:336`
 
 **class `PathFittingData`**
 
@@ -1200,10 +1200,10 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [~] `unscaled` (line 263) → `fill/fill_conformal.rs, fill/fill_conformal_chart.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `cast` (line 266) → `geometry/voronoi_visual_utils.rs` — not in the paired file
 - [~] `cast` (line 273) → `geometry/voronoi_visual_utils.rs` — not in the paired file
-- [~] `serialize` (line 283) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 284) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 285) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 286) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 283) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 284) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 285) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 286) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `BoundingBox`**
 
@@ -1328,7 +1328,7 @@ Rust file: `brim_ears_point.rs`. Status: **partial**. Not listed: 3 constructors
 
 - [x] `transform` (line 43) → `brim_ears_point.rs:123`
 - [x] `set_transform` (line 49) → `brim_ears_point.rs:139`
-- [~] `serialize` (line 61) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 61) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 ### `BuildVolume` (.cpp+.hpp)
 
@@ -2366,65 +2366,65 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 **class `EmptyPathsProvider`**
 
 - [~] `cend` (line 74) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 75) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 75) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `cbegin` (line 76) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 77) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 77) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `size` (line 78) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExPolygonProvider`**
 
 - [~] `cbegin` (line 183) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 184) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 184) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 185) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 186) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 186) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 187) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExPolygonsProvider`**
 
 - [~] `cbegin` (line 223) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 224) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 224) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 225) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 226) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 226) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 227) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `MultiPointsProvider`**
 
 - [~] `cbegin` (line 154) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 155) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 155) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 156) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 157) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 157) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 158) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `PathsProvider`**
 
 - [~] `cbegin` (line 127) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 128) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 128) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 129) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 130) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 130) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 131) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SinglePathProvider`**
 
 - [~] `cbegin` (line 99) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 100) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 100) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 101) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 102) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 102) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 103) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SurfacesProvider`**
 
 - [~] `cbegin` (line 264) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 265) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 265) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 266) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 267) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 267) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 268) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SurfacesPtrProvider`**
 
 - [~] `cbegin` (line 305) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 306) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 306) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 307) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 308) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 308) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 309) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 ### `ClipperZUtils` (.hpp)
@@ -2658,8 +2658,8 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `save` (line 1638) → `config.rs:7923` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [v] `null_nullables` (line 1651) → `config.rs:7955` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `handle_legacy` (line 2547) → `config.rs:6560` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `option` (line 2554) → `config.rs` — another overload of the name is ported
-- [~] `option` (line 2558) → `config.rs` — another overload of the name is ported
+- [~] `option` (line 2554) → `placeholder_parser.rs` — not in the paired file
+- [~] `option` (line 2558) → `placeholder_parser.rs` — not in the paired file
 - [~] `option_throw` (line 2564) → `config.rs` — another overload of the name is ported
 - [~] `option_throw` (line 2573) → `config.rs` — another overload of the name is ported
 - [v] `apply` (line 2584) → `config.rs:6581` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2698,7 +2698,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `clone` (line 1856) → `config.rs:3261` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1861) → `config.rs:4658` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1866) → `config.rs:4181` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `serialize` (line 1882) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1882) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionBoolsTempl`**
 
@@ -2716,7 +2716,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `deserialize_with_substitutions` (line 1945) → `config.rs:4336` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1974) → `config.rs:4432` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize_single_value` (line 1980) → `config.rs:2965` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 1992) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1992) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionDef`**
 
@@ -2748,9 +2748,9 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [~] `type` (line 2084) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 2085) → `config.rs:3941` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `set` (line 2098) → `config.rs:4560` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 2105) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 2105) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [v] `deserialize` (line 2113) → `config.rs:4667` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `serialize` (line 2125) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 2125) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionEnumsGenericTempl`**
 
@@ -2763,7 +2763,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `vserialize` (line 2173) → `config.rs:4853` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 2185) → `config.rs:4826` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize_single_value` (line 2210) → `config.rs:3999` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as divergent to the estimate)
-- [~] `serialize` (line 2226) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 2226) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionFloat`**
 
@@ -2773,7 +2773,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `clone` (line 831) → `config.rs:3462` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 835) → `config.rs:2638` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 842) → `config.rs:2642` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `serialize` (line 858) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 858) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionFloatOrPercent`**
 
@@ -2783,9 +2783,9 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `hash` (line 1317) → `config.rs:3477` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `get_abs_value` (line 1322) → `config.rs:3435` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `set` (line 1325) → `config.rs:1864` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `serialize` (line 1332) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1332) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [v] `deserialize` (line 1341) → `config.rs:3507` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `serialize` (line 1352) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1352) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionFloatsOrPercentsTempl`**
 
@@ -2803,7 +2803,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `serialize_single_value` (line 1444) → `config.rs:3562` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `vectors_equal` (line 1457) → `config.rs:2741` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `vectors_lower` (line 1469) → `config.rs:3597` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 1484) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1484) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionFloatsTempl`**
 
@@ -2821,7 +2821,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `serialize_single_value` (line 948) → `config.rs:2725` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `vectors_equal` (line 959) → `config.rs:3580` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `vectors_lower` (line 971) → `config.rs:2759` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 986) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 986) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionInt`**
 
@@ -2832,7 +2832,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `clone` (line 1003) → `config.rs:2791` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1006) → `config.rs:4270` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1013) → `config.rs:2911` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `serialize` (line 1029) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1029) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionIntsGroups`**
 
@@ -2846,7 +2846,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `deserialize` (line 1801) → `config.rs:3379` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as divergent to the estimate)
 - [v] `vserialize_single` (line 1819) → `config.rs:3988` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize_single_value` (line 1832) → `config.rs:4130` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 1843) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1843) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionIntsTempl`**
 
@@ -2862,7 +2862,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `vserialize` (line 1072) → `config.rs:3052` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1084) → `config.rs:3023` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [v] `serialize_single_value` (line 1108) → `config.rs:4751` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 1119) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1119) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionPercent`**
 
@@ -2872,7 +2872,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `get_abs_value` (line 1216) → `config.rs:3237` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1218) → `config.rs:3265` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [v] `deserialize` (line 1227) → `config.rs:3271` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `serialize` (line 1238) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1238) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionPercentsTempl`**
 
@@ -2881,7 +2881,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `clone` (line 1253) → `config.rs:3629` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1258) → `config.rs:3365` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `vserialize` (line 1272) → `config.rs:3387` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 1291) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1291) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionPoint`**
 
@@ -2890,7 +2890,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `clone` (line 1498) → `config.rs:4155` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1503) → `config.rs:3783` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1512) → `config.rs:3790` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as divergent to the estimate)
-- [~] `serialize` (line 1522) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1522) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionPoint3`**
 
@@ -2899,7 +2899,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `clone` (line 1613) → `config.rs:4540` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1619) → `config.rs:3945` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1630) → `config.rs:3954` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `serialize` (line 1640) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1640) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionPoints`**
 
@@ -2925,13 +2925,13 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `deserialize` (line 1688) → `config.rs:4050` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [v] `vserialize_single` (line 1714) → `config.rs:4121` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [v] `serialize_single_value` (line 1728) → `config.rs:4374` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 1739) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1739) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionResolver`**
 
 - [v] `has` (line 2490) → `config.rs:5308` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [x] `option` (line 2492) → `config.rs:5313`
-- [~] `option` (line 2495) → `config.rs` — another overload of the name is ported
+- [~] `option` (line 2495) → `placeholder_parser.rs` — not in the paired file
 - [x] `option_throw` (line 2501) → `config.rs:5318`
 - [~] `option_throw` (line 2510) → `config.rs` — another overload of the name is ported
 
@@ -2949,7 +2949,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `empty` (line 1137) → `config.rs:3096` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1139) → `config.rs:3120` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1144) → `config.rs:3124` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 1152) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1152) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionStrings`**
 
@@ -2960,7 +2960,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `serialize` (line 1173) → `config.rs:3187` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `vserialize` (line 1178) → `config.rs:3202` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1191) → `config.rs:3191` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 1200) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1200) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionVector`**
 
@@ -2983,7 +2983,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `hash` (line 740) → `config.rs:2326` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `overriden_by` (line 751) → `config.rs:2337` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `apply_override` (line 773) → `config.rs:2365` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `serialize` (line 819) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 819) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ConfigOptionVectorBase`**
 
@@ -2996,7 +2996,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `DynamicConfig`**
 
 - [v] `remove_nil_options` (line 1681) → `config.rs:8139` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `optptr` (line 1693) → `print_config.rs` — not in the paired file
+- [~] `optptr` (line 1693) → `placeholder_parser.rs, print_config.rs` — not in the paired file
 - [x] `optptr` (line 1716) → `config.rs:8549`
 - [v] `read_cli` (line 1722) → `config.rs:8419` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `keys` (line 1846) → `config.rs:8587` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -3022,7 +3022,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [x] `cbegin` (line 2841) → `config.rs:8537`
 - [~] `cend` (line 2842) → `mutable_polygon.rs, preset.rs` — not in the paired file
 - [x] `size` (line 2843) → `config.rs:8542`
-- [~] `serialize` (line 2849) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 2849) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `FloatOrPercent`**
 
@@ -3345,8 +3345,8 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 
 **class `Contour`**
 
-- [~] `begin` (line 22) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 23) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 22) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 23) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `open` (line 24) → `svg.rs` — not in the paired file
 - [ ] `closed` (line 25) → `edge_grid.rs`
 - [ ] `segment_idx_prev` (line 51) → `edge_grid.rs`
@@ -3549,12 +3549,12 @@ Rust file: `emboss_shape.rs`. Status: **partial**. Not listed: 3 constructors, 2
 
 **free functions**
 
-- [~] `serialize` (line 216) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 217) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 216) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 217) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `EmbossProjection`**
 
-- [~] `serialize` (line 32) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 32) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `EmbossShape`**
 
@@ -3731,8 +3731,8 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `polygon_set_traits<Slic3r::ExPolygons>`**
 
-- [~] `begin` (line 576) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 580) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 576) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 580) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [ ] `clean` (line 585) → `ex_polygon.rs`
 - [~] `sorted` (line 586) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
 
@@ -3772,12 +3772,12 @@ Rust file: `ex_polygon_collection.rs`. Status: **partial**. Not listed: 3 constr
 
 ### `ExPolygonSerialize` (.hpp)
 
-Rust file: `ex_polygon_serialize.rs`. Status: **partial**.
+Rust file: `ex_polygon_serialize.rs`. Status: **ported**.
 
 **free functions**
 
-- [~] `serialize` (line 18) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 23) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [x] `serialize` (line 18) → `ex_polygon_serialize.rs:70`
+- [x] `serialize` (line 23) → `ex_polygon_serialize.rs:60`
 
 ### `ExPolygonsIndex` (.cpp+.hpp)
 
@@ -4211,7 +4211,7 @@ Rust file: `filament_mixer.rs`. Status: **partial**.
 - [x] `check_mixed_filament_type_consistency` (line 504) → `filament_mixer.rs:385`
 - [ ] `check_mixed_filament_diameter_consistency` (line 535) → `filament_mixer.rs`
 - [ ] `expand_mixed_slots_in_unprintables` (line 562) → `filament_mixer.rs`
-- [ ] `sanitize_mixed_gradient_curve_array` (line 583) → `filament_mixer.rs`
+- [~] `sanitize_mixed_gradient_curve_array` (line 583) → `preset_bundle.rs` — not in the paired file
 - [ ] `try_parse_mixed_components_strict` (line 599) → `filament_mixer.rs`
 - [ ] `try_parse_mixed_ratios_strict` (line 641) → `filament_mixer.rs`
 - [ ] `validate_gradient_range_strict` (line 677) → `filament_mixer.rs`
@@ -4951,7 +4951,7 @@ Rust file: `fill/lightning/distance_field.rs`. Status: **partial**. Not listed: 
 
 - [x] `tryGetNextPoint` (line 43) → `fill/lightning/distance_field.rs:356`
 - [x] `update` (line 98) → `fill/lightning/distance_field.rs:389`
-- [~] `update` (line 156) → `gcode/pressure_equalizer.rs, mutable_priority_queue.rs` — not in the paired file
+- [~] `update` (line 156) → `gcode/pressure_equalizer.rs, mutable_priority_queue.rs, utils.rs` — not in the paired file
 - [x] `to_grid_point` (line 191) → `fill/lightning/distance_field.rs:498`
 - [x] `from_grid_point` (line 198) → `fill/lightning/distance_field.rs:506`
 
@@ -5046,40 +5046,40 @@ Rust file: `flow.rs`. Status: **partial**. Not listed: 7 constructors, 3 operato
 
 **free functions**
 
-- [ ] `opt_key_to_flow_role` (line 41) → `flow.rs`
-- [ ] `throw_on_missing_variable` (line 62) → `flow.rs`
-- [~] `support_material_flow` (line 248) → `flow.rs:764` — partial
-- [x] `support_transition_flow` (line 262) → `flow.rs:794`
-- [x] `support_material_1st_layer_flow` (line 269) → `flow.rs:803`
-- [~] `support_material_interface_flow` (line 282) → `flow.rs:841` — partial
+- [v] `opt_key_to_flow_role` (line 41) → `flow.rs:173` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates (the body reads as divergent to the estimate)
+- [v] `throw_on_missing_variable` (line 62) → `flow.rs:201` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates (the body reads as partial to the estimate)
+- [~] `support_material_flow` (line 248) → `flow.rs:1027` — partial
+- [x] `support_transition_flow` (line 262) → `flow.rs:1057`
+- [x] `support_material_1st_layer_flow` (line 269) → `flow.rs:1066`
+- [~] `support_material_interface_flow` (line 282) → `flow.rs:1104` — partial
 - [ ] `support_nozzle_diameter` (line 293) → `flow.rs`
 
 **class `Flow`**
 
-- [~] `auto_extrusion_width` (line 22) → `flow.rs:641` — divergent
-- [x] `width` (line 61) → `flow.rs:266`
-- [x] `scaled_width` (line 62) → `flow.rs:277`
-- [x] `height` (line 65) → `flow.rs:293`
-- [x] `spacing` (line 67) → `flow.rs:299`
-- [x] `scaled_spacing` (line 68) → `flow.rs:308`
-- [~] `extrusion_width` (line 68) → `gcode/ironing.rs` — not in the paired file
-- [x] `nozzle_diameter` (line 70) → `flow.rs:319`
+- [v] `auto_extrusion_width` (line 22) → `flow.rs:812` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates (the body reads as divergent to the estimate)
+- [x] `width` (line 61) → `flow.rs:327`
+- [v] `scaled_width` (line 62) → `flow.rs:338` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [x] `height` (line 65) → `flow.rs:354`
+- [x] `spacing` (line 67) → `flow.rs:360`
+- [v] `extrusion_width` (line 68) → `flow.rs:844` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [v] `scaled_spacing` (line 68) → `flow.rs:369` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [x] `nozzle_diameter` (line 70) → `flow.rs:380`
 - [~] `bridge` (line 72) → `surface.rs` — not in the paired file
-- [x] `scaled_elephant_foot_spacing` (line 80) → `flow.rs:399`
-- [~] `with_width` (line 91) → `flow.rs:412` — divergent
+- [v] `scaled_elephant_foot_spacing` (line 80) → `flow.rs:478` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [v] `with_width` (line 91) → `flow.rs:497` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates (the body reads as divergent to the estimate)
 - [~] `extrusion_width` (line 91) → `gcode/ironing.rs` — not in the paired file
-- [~] `with_height` (line 95) → `flow.rs:430` — divergent
-- [ ] `extrusion_width_for_nozzle` (line 96) → `flow.rs`
-- [x] `with_flow_ratio` (line 103) → `flow.rs:559`
-- [x] `bridging_flow` (line 105) → `flow.rs:216`
-- [ ] `resolve_extrusion_width_for_nozzle` (line 110) → `flow.rs`
-- [~] `new_from_config_width` (line 136) → `flow.rs:240` — partial
-- [~] `with_spacing` (line 160) → `flow.rs:447` — partial
-- [x] `with_cross_section` (line 181) → `flow.rs:489`
-- [~] `rounded_rectangle_extrusion_spacing` (line 214) → `flow.rs:581` — partial
-- [x] `rounded_rectangle_extrusion_width_from_spacing` (line 224) → `flow.rs:609`
-- [x] `bridge_extrusion_spacing` (line 229) → `flow.rs:625`
-- [~] `mm3_per_mm` (line 235) → `flow.rs:354` — partial
+- [v] `with_height` (line 95) → `flow.rs:515` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates (the body reads as divergent to the estimate)
+- [v] `extrusion_width_for_nozzle` (line 96) → `flow.rs:893` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [v] `with_flow_ratio` (line 103) → `flow.rs:721` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [v] `bridging_flow` (line 105) → `flow.rs:277` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [v] `resolve_extrusion_width_for_nozzle` (line 110) → `flow.rs:914` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [~] `new_from_config_width` (line 136) → `flow.rs:301` — partial
+- [v] `with_spacing` (line 160) → `flow.rs:532` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates (the body reads as partial to the estimate)
+- [v] `with_cross_section` (line 181) → `flow.rs:602` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [v] `rounded_rectangle_extrusion_spacing` (line 214) → `flow.rs:745` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates (the body reads as partial to the estimate)
+- [v] `rounded_rectangle_extrusion_width_from_spacing` (line 224) → `flow.rs:777` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [v] `bridge_extrusion_spacing` (line 229) → `flow.rs:796` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates
+- [v] `mm3_per_mm` (line 235) → `flow.rs:415` — R913: tests/flow_native_parity.rs: 12,157 cases against the pin's Flow.cpp (widths, spacings, bridging, mm3_per_mm, the with_* builders, extrusion_width from configs), bit for bit with the default gates (the body reads as partial to the estimate)
 
 ### `FlushVolCalc` (.cpp+.hpp)
 
@@ -5969,7 +5969,7 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [ ] `get_instance_name` (line 4576) → `g_code.rs`
 - [ ] `calculate_layer_edge_grid` (line 6543) → `g_code.rs`
 - [ ] `has_overhang_path_on_slope` (line 6565) → `g_code.rs`
-- [x] `need_smooth_speed` (line 7205) → `g_code.rs:9099`
+- [x] `need_smooth_speed` (line 7205) → `g_code.rs:9143`
 - [ ] `encodeBase64` (line 8091) → `g_code.rs`
 - [ ] `polygon_to_string` (line 8993) → `g_code.rs`
 
@@ -6021,7 +6021,7 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [~] `set_extruders` (line 6433) → `g_code_writer.rs` — not in the paired file
 - [ ] `set_origin` (line 6446) → `g_code.rs`
 - [~] `preamble` (line 6458) → `g_code_writer.rs` — not in the paired file
-- [~] `change_layer` (line 6473) → `g_code.rs:5247` — partial
+- [~] `change_layer` (line 6473) → `g_code.rs:5261` — partial
 - [ ] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs`
 - [ ] `is_enable_overhang_speed` (line 6601) → `g_code.rs`
 - [ ] `get_path_speed` (line 6615) → `g_code.rs`
@@ -6032,17 +6032,17 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [~] `extrude_perimeters` (line 6959) → `g_code.rs:3906` — divergent
 - [x] `extrude_infill` (line 6983) → `g_code.rs:3970`
 - [~] `extrude_support` (line 7011) → `g_code.rs:4314` — partial
-- [x] `mapping_speed` (line 7158) → `g_code.rs:9081`
-- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:9091`
+- [x] `mapping_speed` (line 7158) → `g_code.rs:9125`
+- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:9135`
 - [ ] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs`
-- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:9118`
-- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:9364` — partial
-- [x] `set_speed_transition` (line 7403) → `g_code.rs:9414`
-- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:9577`
+- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:9162`
+- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:9408` — partial
+- [x] `set_speed_transition` (line 7403) → `g_code.rs:9458`
+- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:9621`
 - [ ] `slowDownByHeight` (line 7513) → `g_code.rs`
 - [ ] `calc_max_volumetric_speed` (line 7565) → `g_code.rs`
 - [~] `_extrude` (line 7587) → `extruder.rs, gcode/extruder.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:5387` — partial
+- [~] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:5401` — partial
 - [ ] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs`
 - [ ] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs`
 - [ ] `_remaining_objects_gcode` (line 8141) → `g_code.rs`
@@ -6051,7 +6051,7 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [ ] `_mark_objects_finished` (line 8186) → `g_code.rs`
 - [~] `travel_to` (line 8198) → `g_code.rs:4474` — divergent
 - [~] `reset_last_acceleration` (line 8342) → `g_code_writer.rs, gcode/writer.rs` — not in the paired file
-- [x] `to_lift_type` (line 8348) → `g_code.rs:5212`
+- [x] `to_lift_type` (line 8348) → `g_code.rs:5226`
 - [ ] `needs_retraction` (line 8363) → `g_code.rs`
 - [~] `retract` (line 8498) → `g_code.rs:4560` — divergent
 - [ ] `update_layer_related_config` (line 8531) → `g_code.rs`
@@ -6081,7 +6081,7 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 
 **class `GCode::ObjectByExtruder::Island::Region`**
 
-- [~] `append` (line 9106) → `g_code.rs:6881` — divergent
+- [~] `append` (line 9106) → `g_code.rs:6925` — divergent
 
 **class `OozePrevention`**
 
@@ -6360,7 +6360,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [x] `contains_reserved_tags` (line 1658) → `gcode/g_code_processor.rs:1746`
 - [~] `register_commands` (line 1699) → `gcode/g_code_processor.rs:2874` — divergent
 - [ ] `check_multi_extruder_gcode_valid` (line 1785) → `gcode/g_code_processor.rs`
-- [~] `apply_config` (line 1964) → `g_code_reader.rs` — not in the paired file
+- [~] `apply_config` (line 1964) → `g_code_reader.rs, placeholder_parser.rs` — not in the paired file
 - [~] `apply_config` (line 2106) → `gcode/g_code_processor.rs:2976` — partial
 - [x] `enable_stealth_time_estimator` (line 2548) → `gcode/g_code_processor.rs:2958`
 - [x] `reset` (line 2553) → `gcode/g_code_processor.rs:2888`
@@ -6903,8 +6903,8 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [~] `clear` (line 305) → `gcode/tool_ordering.rs:478` — divergent
 - [x] `first_extruder` (line 320) → `gcode/tool_ordering.rs:1987`
 - [x] `last_extruder` (line 323) → `gcode/tool_ordering.rs:1992`
-- [~] `begin` (line 347) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 348) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 347) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 348) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `empty` (line 349) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `has_wipe_tower` (line 352) → `gcode/tool_ordering.rs:2022` — divergent
 - [x] `get_most_used_extruder` (line 358) → `gcode/tool_ordering.rs:2029`
@@ -7273,7 +7273,7 @@ Rust file: `g_code_reader.rs`. Status: **partial**. Not listed: 2 constructors.
 **class `GCodeReader`**
 
 - [x] `apply_config` (line 19) → `g_code_reader.rs:630`
-- [~] `apply_config` (line 24) → `gcode/g_code_processor.rs` — not in the paired file
+- [~] `apply_config` (line 24) → `gcode/g_code_processor.rs, placeholder_parser.rs` — not in the paired file
 - [x] `parse_line_internal` (line 29) → `g_code_reader.rs:649`
 - [x] `reset` (line 98) → `g_code_reader.rs:625`
 - [x] `parse_buffer` (line 103) → `g_code_reader.rs:830`
@@ -7550,7 +7550,7 @@ Rust file: `geometry/geometry.rs`. Status: **partial**. Not listed: 7 constructo
 - [x] `set_matrix` (line 463) → `geometry/geometry.rs:1284`
 - [x] `set_from_transform` (line 464) → `geometry/geometry.rs:1289`
 - [x] `set_rotation` (line 468) → `geometry/geometry.rs:989`
-- [~] `serialize` (line 472) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 472) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [ ] `load_and_construct` (line 474) → `geometry/geometry.rs`
 - [x] `get_scaling_factor_matrix` (line 482) → `geometry/geometry.rs:1012`
 - [x] `set_scaling_factor` (line 491) → `geometry/geometry.rs:1032`
@@ -7659,8 +7659,8 @@ Rust file: `geometry/circle.rs`. Status: **partial**. Not listed: 9 constructors
 - [x] `circle_ransac` (line 111) → `geometry/circle.rs:411`
 - [~] `smallest_enclosing_circle_welzl` (line 142) → `geometry/circle.rs` — another overload of the name is ported
 - [x] `smallest_enclosing_circle_welzl` (line 148) → `geometry/circle.rs:536`
-- [x] `ray_circle_intersections_r2_lv2_c` (line 159) → `geometry/circle.rs:550`
-- [x] `ray_circle_intersections` (line 174) → `geometry/circle.rs:586`
+- [v] `ray_circle_intersections_r2_lv2_c` (line 159) → `geometry/circle.rs:550` — R913: tests/geometry_circle_native_parity.rs: 2,200 cases against the pin's Circle.cpp, bit for bit with the default gates
+- [v] `ray_circle_intersections` (line 174) → `geometry/circle.rs:596` — R913: tests/geometry_circle_native_parity.rs: 2,200 cases against the pin's Circle.cpp, bit for bit with the default gates
 
 **class `Circle`**
 
@@ -7910,7 +7910,7 @@ Rust file: `i18n.rs`. Status: **partial**.
 - [x] `set_translate_callback` (line 17) → `i18n.rs:22`
 - [x] `translate` (line 18) → `i18n.rs:39`
 - [~] `translate` (line 19) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `L` (line 31) → `print_base.rs, print_config.rs, sla/pad.rs` — not in the paired file
+- [~] `L` (line 31) → `preset_bundle.rs, print_base.rs, print_config.rs` — not in the paired file
 - [ ] `L_CONTEXT` (line 32) → `i18n.rs`
 - [ ] `_u8L` (line 33) → `i18n.rs`
 
@@ -7994,16 +7994,16 @@ Rust file: `internal_bridge_detector.rs`. Status: **partial**. Not listed: 2 con
 
 ### `IntersectionPoints` (.cpp+.hpp)
 
-Rust file: `intersection_points.rs`. Status: **partial**.
+Rust file: `intersection_points.rs`. Status: **ported**.
 
 **free functions**
 
 - [x] `compute_intersections` (line 8) → `intersection_points.rs:41`
-- [~] `get_intersections` (line 40) → `sla/hollowing.rs` — not in the paired file
-- [~] `get_intersections` (line 41) → `sla/hollowing.rs` — not in the paired file
-- [~] `get_intersections` (line 42) → `sla/hollowing.rs` — not in the paired file
-- [~] `get_intersections` (line 43) → `sla/hollowing.rs` — not in the paired file
-- [~] `get_intersections` (line 44) → `sla/hollowing.rs` — not in the paired file
+- [v] `get_intersections` (line 40) → `intersection_points.rs:162` — R913: tests/intersection_points_native_parity.rs: 400 cases for each of the five overloads against the pin's IntersectionPoints.cpp
+- [v] `get_intersections` (line 41) → `intersection_points.rs:148` — R913: tests/intersection_points_native_parity.rs: 400 cases for each of the five overloads against the pin's IntersectionPoints.cpp
+- [v] `get_intersections` (line 42) → `intersection_points.rs:168` — R913: tests/intersection_points_native_parity.rs: 400 cases for each of the five overloads against the pin's IntersectionPoints.cpp
+- [v] `get_intersections` (line 43) → `intersection_points.rs:134` — R913: tests/intersection_points_native_parity.rs: 400 cases for each of the five overloads against the pin's IntersectionPoints.cpp
+- [v] `get_intersections` (line 44) → `intersection_points.rs:155` — R913: tests/intersection_points_native_parity.rs: 400 cases for each of the five overloads against the pin's IntersectionPoints.cpp
 
 ### `JumpPointSearch` (.cpp+.hpp)
 
@@ -8185,7 +8185,7 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 - [ ] `append_reversed` (line 173) → `libslic3r.rs`
 - [~] `cast` (line 187) → `geometry/voronoi_visual_utils.rs` — not in the paired file
 - [ ] `remove_nulls` (line 197) → `libslic3r.rs`
-- [~] `sort_remove_duplicates` (line 205) → `filament_group_utils.rs` — not in the paired file
+- [~] `sort_remove_duplicates` (line 205) → `filament_group_utils.rs, preset_bundle.rs` — not in the paired file
 - [ ] `make_unique` (line 213) → `libslic3r.rs`
 - [~] `lower_bound_by_predicate` (line 220) → `fill/fill_base.rs` — not in the paired file
 - [ ] `binary_find` (line 242) → `libslic3r.rs`
@@ -8204,8 +8204,8 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 
 **class `Range`**
 
-- [~] `begin` (line 358) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 359) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 358) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 359) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 369) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 370) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
@@ -8560,7 +8560,7 @@ Rust file: none. Status: **not started**.
 
 **class `OMCInput`**
 
-- [ ] `view` (line 22)
+- [~] `view` (line 22) → `preset_bundle.rs` — a function of this name is in another Rust file
 
 ### `MeshDiagnostics` (.cpp+.hpp)
 
@@ -8700,11 +8700,11 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 **class `CutConnector`**
 
-- [~] `serialize` (line 325) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 325) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `CutConnectorAttributes`**
 
-- [~] `serialize` (line 300) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 300) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `FacetsAnnotation`**
 
@@ -8713,7 +8713,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `empty` (line 800) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `reserve` (line 810) → `boost_polygon_voronoi.rs, fill/fill_plane_path.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `shrink_to_fit` (line 814) → `model.rs`
-- [~] `serialize` (line 836) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 836) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `get_facets` (line 4599) → `triangle_selector.rs` — not in the paired file
 - [~] `get_facets` (line 4608) → `triangle_selector.rs` — not in the paired file
 - [~] `shift_states_above` (line 4615) → `triangle_selector.rs` — not in the paired file
@@ -8741,7 +8741,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `set` (line 213) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `set` (line 214) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `clear` (line 215) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `serialize` (line 217) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 217) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `Model`**
 
@@ -8823,7 +8823,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 - [~] `timestamp` (line 93) → `object_id.rs` — not in the paired file
 - [~] `object_id_and_timestamp_match` (line 94) → `object_id.rs` — not in the paired file
-- [~] `serialize` (line 100) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 100) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ModelInfo`**
 
@@ -8849,7 +8849,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `is_printable` (line 1545) → `model.rs`
 - [ ] `is_assemble_initialized` (line 1546) → `model.rs`
 - [ ] `set_model_object` (line 1569) → `model.rs`
-- [~] `serialize` (line 1597) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 1597) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [ ] `set_transformation` (line 3972) → `model.rs`
 - [ ] `set_assemble_transformation` (line 3988) → `model.rs`
 - [~] `set_assemble_from_transform` (line 3994) → `format/assembly_steps_json.rs` — not in the paired file
@@ -8877,7 +8877,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `apply` (line 171) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
 - [ ] `set_model` (line 184) → `model.rs`
 - [~] `set_new_unique_id` (line 185) → `object_id.rs` — not in the paired file
-- [~] `serialize` (line 192) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 192) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ModelObject`**
 
@@ -9076,19 +9076,19 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `set_processed` (line 974) → `model.rs`
 - [~] `invalidate` (line 975) → `mt_utils.rs, object_id.rs, print_base.rs` — not in the paired file
 - [ ] `reset_from_upper` (line 976) → `model.rs`
-- [~] `serialize` (line 977) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 977) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ModelVolume::Source`**
 
-- [~] `serialize` (line 940) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 940) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ModelWipeTower`**
 
-- [~] `serialize` (line 1630) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 1630) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `RaycastResult`**
 
-- [~] `serialize` (line 867) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 867) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `StaticSerializationWrapper`**
 
@@ -9097,7 +9097,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 **class `TextInfo`**
 
-- [~] `serialize` (line 894) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 894) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 ### `ModelArrange` (.cpp+.hpp)
 
@@ -9361,10 +9361,10 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [x] `bounding_box` (line 89) → `multi_point.rs:236`
 - [x] `has_duplicate_points` (line 94) → `multi_point.rs:246`
 - [~] `remove_duplicate_points` (line 102) → `geometry/simplify.rs` — not in the paired file
-- [~] `begin` (line 103) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 104) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 105) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
-- [~] `end` (line 106) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 103) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `begin` (line 104) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 105) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 106) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `cbegin` (line 107) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `cend` (line 108) → `mutable_polygon.rs, preset.rs` — not in the paired file
 - [x] `remove_colinear_points` (line 121) → `multi_point.rs:287`
@@ -9415,10 +9415,10 @@ Rust file: `mutable_polygon.rs`. Status: **partial**. Not listed: 7 constructors
 - [x] `clear` (line 170) → `mutable_polygon.rs:259`
 - [x] `begin` (line 172) → `mutable_polygon.rs:268`
 - [x] `cbegin` (line 173) → `mutable_polygon.rs:273`
-- [~] `begin` (line 174) → `boost_polygon_voronoi.rs, preset.rs, sla/agg/scanline_p.rs` — not in the paired file
+- [~] `begin` (line 174) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, preset.rs` — not in the paired file
 - [x] `end` (line 176) → `mutable_polygon.rs:279`
 - [x] `cend` (line 177) → `mutable_polygon.rs:290`
-- [~] `end` (line 178) → `preset.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `end` (line 178) → `arachne/utils/extrusion_line.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `remove` (line 182) → `arachne/utils/extrusion_line.rs, extrusion_entity_collection.rs, fill/fill_adaptive.rs` — not in the paired file
 - [~] `insert` (line 185) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
 - [x] `assign_inner` (line 207) → `mutable_polygon.rs:365`
@@ -9467,8 +9467,8 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [x] `update` (line 27) → `mutable_priority_queue.rs:272`
 - [x] `size` (line 29) → `mutable_priority_queue.rs:284`
 - [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `begin` (line 36) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 37) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 36) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 37) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `cbegin` (line 38) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `cend` (line 39) → `mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `clear` (line 59) → `mutable_priority_queue.rs:111` — divergent
@@ -9665,7 +9665,7 @@ Rust file: `object_id.rs`. Status: **partial**. Not listed: 9 constructors, 8 op
 - [x] `increase_check_sum` (line 184) → `object_id.rs:405`
 - [x] `connectors_cnt` (line 186) → `object_id.rs:410`
 - [x] `increase_connectors_cnt` (line 187) → `object_id.rs:415`
-- [~] `serialize` (line 191) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 191) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ObjectBase`**
 
@@ -9676,14 +9676,14 @@ Rust file: `object_id.rs`. Status: **partial**. Not listed: 9 constructors, 8 op
 - [x] `copy_id` (line 81) → `object_id.rs:145`
 - [x] `assign_new_unique_ids_recursive` (line 84) → `object_id.rs:152`
 - [x] `generate_new_id` (line 89) → `object_id.rs:66`
-- [~] `serialize` (line 97) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 97) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [ ] `load_and_construct` (line 98) → `object_id.rs`
 
 **class `ObjectID`**
 
 - [x] `valid` (line 36) → `object_id.rs:47`
 - [x] `invalid` (line 37) → `object_id.rs:52`
-- [~] `serialize` (line 43) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 43) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ObjectWithTimestamp`**
 
@@ -9692,7 +9692,7 @@ Rust file: `object_id.rs`. Status: **partial**. Not listed: 9 constructors, 8 op
 - [x] `timestamp_matches` (line 122) → `object_id.rs:252`
 - [x] `object_id_and_timestamp_match` (line 123) → `object_id.rs:257`
 - [x] `touch` (line 124) → `object_id.rs:262`
-- [~] `serialize` (line 135) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 135) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 ### `OpenVDBUtils` (.cpp+.hpp)
 
@@ -9804,7 +9804,7 @@ Rust file: `orient.rs`. Status: **partial**. Not listed: 3 constructors, 1 opera
 **class `AutoOrienter`**
 
 - [x] `quantize_vec3f` (line 113) → `orient.rs:597`
-- [~] `process` (line 117) → `gcode/gcode_template.rs, gcode/pressure_equalizer.rs, print.rs` — not in the paired file
+- [~] `process` (line 117) → `gcode/gcode_template.rs, gcode/pressure_equalizer.rs, placeholder_parser.rs` — not in the paired file
 - [~] `preprocess` (line 186) → `format/step.rs` — not in the paired file
 - [x] `area_cumulation` (line 234) → `orient.rs:608`
 - [x] `area_cumulation_accurate` (line 259) → `orient.rs:652`
@@ -10002,109 +10002,109 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 
 **free functions**
 
-- [ ] `opts_equal` (line 105) → `placeholder_parser.rs`
-- [ ] `process_macro` (line 1516) → `placeholder_parser.rs`
+- [v] `opts_equal` (line 105) → `placeholder_parser.rs:3140` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `process_macro` (line 1516) → `placeholder_parser.rs:3112` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 
 **class `MyContext`**
 
-- [~] `get_extruder_id` (line 739) → `gcode/g_code_processor.rs, gcode/wipe_tower.rs, multi_nozzle_utils.rs` — not in the paired file
-- [ ] `evaluate_full_macro` (line 747) → `placeholder_parser.rs`
-- [~] `optptr` (line 749) → `config.rs, print_config.rs` — not in the paired file
-- [ ] `resolve_symbol` (line 761) → `placeholder_parser.rs`
-- [ ] `legacy_variable_expansion` (line 764) → `placeholder_parser.rs`
-- [ ] `legacy_variable_expansion2` (line 800) → `placeholder_parser.rs`
-- [ ] `resolve_variable` (line 831) → `placeholder_parser.rs`
-- [ ] `scalar_variable_reference` (line 844) → `placeholder_parser.rs`
-- [ ] `vector_variable_reference` (line 964) → `placeholder_parser.rs`
-- [ ] `evaluate_index` (line 995) → `placeholder_parser.rs`
-- [~] `random` (line 1003) → `placeholder_parser.rs` — another overload of the name is ported
-- [ ] `filament_change` (line 1012) → `placeholder_parser.rs`
-- [~] `throw_exception` (line 1019) → `placeholder_parser.rs` — another overload of the name is ported
-- [ ] `process_error_message` (line 1027) → `placeholder_parser.rs`
+- [v] `get_extruder_id` (line 739) → `placeholder_parser.rs:1238` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `evaluate_full_macro` (line 747) → `placeholder_parser.rs:1256` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `optptr` (line 749) → `placeholder_parser.rs:1175` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `resolve_symbol` (line 761) → `placeholder_parser.rs:1261` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `legacy_variable_expansion` (line 764) → `placeholder_parser.rs:1266` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `legacy_variable_expansion2` (line 800) → `placeholder_parser.rs:1313` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `resolve_variable` (line 831) → `placeholder_parser.rs:1358` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `scalar_variable_reference` (line 844) → `placeholder_parser.rs:1367` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `vector_variable_reference` (line 964) → `placeholder_parser.rs:1519` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `evaluate_index` (line 995) → `placeholder_parser.rs:1569` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `random` (line 1003) → `placeholder_parser.rs:1577` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `filament_change` (line 1012) → `placeholder_parser.rs:1591` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `throw_exception` (line 1019) → `placeholder_parser.rs:1599` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `process_error_message` (line 1027) → `placeholder_parser.rs:1607` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 
 **class `PlaceholderParser`**
 
-- [ ] `clear_config` (line 27) → `placeholder_parser.rs`
+- [v] `clear_config` (line 27) → `placeholder_parser.rs:3230` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 - [~] `set` (line 40) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `set` (line 41) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `set` (line 42) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `set` (line 43) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `set` (line 44) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `set` (line 45) → `app_config.rs, color.rs, config.rs` — not in the paired file
-- [~] `set` (line 46) → `app_config.rs, color.rs, config.rs` — not in the paired file
-- [~] `option` (line 49) → `config.rs` — not in the paired file
-- [ ] `external_config` (line 51) → `placeholder_parser.rs`
-- [ ] `update_timestamp` (line 64) → `placeholder_parser.rs`
-- [ ] `update_timestamp` (line 80) → `placeholder_parser.rs`
-- [ ] `config_diff` (line 113) → `placeholder_parser.rs`
-- [~] `apply_config` (line 128) → `g_code_reader.rs, gcode/g_code_processor.rs` — not in the paired file
-- [~] `apply_only` (line 140) → `config.rs` — not in the paired file
+- [v] `set` (line 46) → `placeholder_parser.rs:3294` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `option` (line 49) → `placeholder_parser.rs:3309` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `external_config` (line 51) → `placeholder_parser.rs:3314` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `update_timestamp` (line 64) → `placeholder_parser.rs:3367` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [~] `update_timestamp` (line 80) → `placeholder_parser.rs` — another overload of the name is ported
+- [v] `config_diff` (line 113) → `placeholder_parser.rs:3235` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `apply_config` (line 128) → `placeholder_parser.rs:3251` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `apply_only` (line 140) → `placeholder_parser.rs:3264` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 - [~] `apply_config` (line 146) → `g_code_reader.rs, gcode/g_code_processor.rs` — not in the paired file
-- [ ] `apply_env_variables` (line 151) → `placeholder_parser.rs`
-- [~] `process` (line 1541) → `gcode/gcode_template.rs, gcode/pressure_equalizer.rs, print.rs` — not in the paired file
-- [~] `evaluate_boolean_expression` (line 1554) → `preset.rs` — not in the paired file
+- [v] `apply_env_variables` (line 151) → `placeholder_parser.rs:3277` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `process` (line 1541) → `placeholder_parser.rs:3320` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `evaluate_boolean_expression` (line 1554) → `placeholder_parser.rs:3341` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 
 **class `expr`**
 
-- [~] `reset` (line 238) → `placeholder_parser.rs:118` — divergent
-- [x] `b` (line 249) → `placeholder_parser.rs:136`
-- [x] `set_b` (line 250) → `placeholder_parser.rs:147`
-- [x] `i` (line 252) → `placeholder_parser.rs:153`
-- [x] `set_i` (line 253) → `placeholder_parser.rs:161`
-- [x] `as_i` (line 254) → `placeholder_parser.rs:167`
-- [x] `as_i_rounded` (line 255) → `placeholder_parser.rs:176`
-- [x] `d` (line 257) → `placeholder_parser.rs:185`
-- [x] `set_d` (line 258) → `placeholder_parser.rs:193`
-- [x] `as_d` (line 259) → `placeholder_parser.rs:199`
-- [x] `set_s` (line 262) → `placeholder_parser.rs:217`
+- [v] `reset` (line 238) → `placeholder_parser.rs:220` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as divergent to the estimate)
+- [v] `b` (line 249) → `placeholder_parser.rs:238` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `set_b` (line 250) → `placeholder_parser.rs:248` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `i` (line 252) → `placeholder_parser.rs:254` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `set_i` (line 253) → `placeholder_parser.rs:262` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `as_i` (line 254) → `placeholder_parser.rs:269` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `as_i_rounded` (line 255) → `placeholder_parser.rs:278` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `d` (line 257) → `placeholder_parser.rs:287` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `set_d` (line 258) → `placeholder_parser.rs:295` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `as_d` (line 259) → `placeholder_parser.rs:301` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `set_s` (line 262) → `placeholder_parser.rs:319` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 - [~] `set_s` (line 263) → `placeholder_parser.rs` — another overload of the name is ported
-- [~] `to_string` (line 265) → `placeholder_parser.rs:223` — partial
-- [~] `unary_minus` (line 319) → `placeholder_parser.rs:246` — partial
-- [~] `unary_integer` (line 334) → `placeholder_parser.rs:258` — partial
-- [~] `round` (line 349) → `placeholder_parser.rs:270` — partial
-- [~] `floor` (line 364) → `placeholder_parser.rs:282` — partial
-- [~] `ceil` (line 379) → `placeholder_parser.rs:294` — partial
-- [~] `unary_not` (line 394) → `placeholder_parser.rs:306` — divergent
-- [x] `to_string2` (line 493) → `placeholder_parser.rs:420`
-- [~] `evaluate_boolean` (line 498) → `placeholder_parser.rs:425` — partial
-- [~] `evaluate_boolean_to_string` (line 505) → `placeholder_parser.rs:433` — partial
-- [x] `compare_op` (line 513) → `placeholder_parser.rs:448`
-- [x] `equal` (line 552) → `placeholder_parser.rs:508`
-- [x] `not_equal` (line 553) → `placeholder_parser.rs:511`
-- [x] `lower` (line 554) → `placeholder_parser.rs:514`
-- [x] `greater` (line 555) → `placeholder_parser.rs:517`
-- [x] `leq` (line 556) → `placeholder_parser.rs:520`
-- [x] `geq` (line 557) → `placeholder_parser.rs:523`
+- [v] `to_string` (line 265) → `placeholder_parser.rs:325` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `unary_minus` (line 319) → `placeholder_parser.rs:348` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `unary_integer` (line 334) → `placeholder_parser.rs:360` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `round` (line 349) → `placeholder_parser.rs:372` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `floor` (line 364) → `placeholder_parser.rs:384` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `ceil` (line 379) → `placeholder_parser.rs:396` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `unary_not` (line 394) → `placeholder_parser.rs:408` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `to_string2` (line 493) → `placeholder_parser.rs:515` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `evaluate_boolean` (line 498) → `placeholder_parser.rs:520` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `evaluate_boolean_to_string` (line 505) → `placeholder_parser.rs:528` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `compare_op` (line 513) → `placeholder_parser.rs:537` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `equal` (line 552) → `placeholder_parser.rs:590` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `not_equal` (line 553) → `placeholder_parser.rs:593` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `lower` (line 554) → `placeholder_parser.rs:596` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `greater` (line 555) → `placeholder_parser.rs:599` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `leq` (line 556) → `placeholder_parser.rs:602` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `geq` (line 557) → `placeholder_parser.rs:605` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 - [~] `throw_if_not_numeric` (line 559) → `placeholder_parser.rs` — another overload of the name is ported
-- [x] `function_2params` (line 570) → `placeholder_parser.rs:535`
-- [x] `min` (line 595) → `placeholder_parser.rs:559`
-- [x] `max` (line 596) → `placeholder_parser.rs:562`
-- [x] `random` (line 599) → `placeholder_parser.rs:568`
-- [x] `digits` (line 615) → `placeholder_parser.rs:594`
-- [~] `regex_op` (line 636) → `placeholder_parser.rs:638` — partial
-- [x] `regex_matches` (line 660) → `placeholder_parser.rs:662`
-- [x] `regex_doesnt_match` (line 661) → `placeholder_parser.rs:665`
-- [x] `logical_op` (line 663) → `placeholder_parser.rs:670`
-- [x] `logical_or` (line 675) → `placeholder_parser.rs:688`
-- [x] `logical_and` (line 676) → `placeholder_parser.rs:691`
-- [x] `ternary_op` (line 678) → `placeholder_parser.rs:696`
-- [x] `set_if` (line 688) → `placeholder_parser.rs:711`
-- [~] `throw_exception` (line 696) → `placeholder_parser.rs:721` — divergent
-- [x] `throw_if_not_numeric` (line 702) → `placeholder_parser.rs:730`
+- [v] `function_2params` (line 570) → `placeholder_parser.rs:617` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `min` (line 595) → `placeholder_parser.rs:651` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `max` (line 596) → `placeholder_parser.rs:654` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `random` (line 599) → `placeholder_parser.rs:660` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `digits` (line 615) → `placeholder_parser.rs:675` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `regex_op` (line 636) → `placeholder_parser.rs:702` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `regex_matches` (line 660) → `placeholder_parser.rs:727` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `regex_doesnt_match` (line 661) → `placeholder_parser.rs:730` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `logical_op` (line 663) → `placeholder_parser.rs:735` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `logical_or` (line 675) → `placeholder_parser.rs:750` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `logical_and` (line 676) → `placeholder_parser.rs:753` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `ternary_op` (line 678) → `placeholder_parser.rs:758` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `set_if` (line 688) → `placeholder_parser.rs:772` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `throw_exception` (line 696) → `placeholder_parser.rs:780` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts (the body reads as partial to the estimate)
+- [v] `throw_if_not_numeric` (line 702) → `placeholder_parser.rs:785` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 
 **class `expr::Data`**
 
-- [~] `set` (line 302) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [v] `set` (line 302) → `placeholder_parser.rs:151` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 
 **class `strict_real_policies_without_nan_inf`**
 
-- [ ] `parse_nan` (line 1112) → `placeholder_parser.rs`
-- [ ] `parse_inf` (line 1113) → `placeholder_parser.rs`
+- [v] `parse_nan` (line 1112) → `placeholder_parser.rs:1852` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [v] `parse_inf` (line 1113) → `placeholder_parser.rs:1856` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
 
 **class `utf8_char_skipper_parser`**
 
-- [~] `parse` (line 1129) → `config.rs, debug/compare.rs, format/assembly_steps_json.rs` — not in the paired file
-- [~] `what` (line 1173) → `clipper2/clipper_core.rs, config.rs, filament_group_utils.rs` — not in the paired file
+- [v] `parse` (line 1129) → `placeholder_parser.rs:1785` — R913: tests/placeholder_parser_native_parity.rs: against the pin's PlaceholderParser.cpp: 45,873 synthetic templates (every operator over 46 operand kinds, legacy variables, errors with their columns), 2,274 boolean expressions, all 107 BBL machine and filament custom G-code templates with the X1C and H2D profiles, the class methods; byte-equal output and error texts
+- [x] `what` (line 1173) → `placeholder_parser.rs:1841`
 
 ### `Platform` (.cpp+.hpp)
 
@@ -10124,25 +10124,25 @@ Rust file: `png_read_write.rs`. Status: **partial**. Not listed: 1 constructors,
 
 **free functions**
 
-- [x] `is_png` (line 29) → `png_read_write.rs:420`
-- [ ] `png_read_callback` (line 49) → `png_read_write.rs`
-- [~] `decode_png` (line 61) → `png_read_write.rs:450` — partial
+- [x] `is_png` (line 29) → `png_read_write.rs:416`
+- [~] `png_read_callback` (line 49) → `png_read_write.rs:438` — partial
+- [~] `decode_png` (line 61) → `png_read_write.rs:458` — partial
 - [~] `decode_png` (line 73) → `png_read_write.rs` — another overload of the name is ported
 - [~] `decode_colored_png` (line 103) → `png_read_write.rs` — another overload of the name is ported
-- [x] `decode_colored_png` (line 176) → `png_read_write.rs:624`
-- [~] `write_rgb_or_gray_to_file` (line 188) → `png_read_write.rs:646` — partial
-- [x] `write_gl_rgba_to_file` (line 267) → `png_read_write.rs:719`
-- [x] `write_rgb_to_file` (line 272) → `png_read_write.rs:730`
+- [x] `decode_colored_png` (line 176) → `png_read_write.rs:632`
+- [~] `write_rgb_or_gray_to_file` (line 188) → `png_read_write.rs:654` — partial
+- [x] `write_gl_rgba_to_file` (line 267) → `png_read_write.rs:727`
+- [x] `write_rgb_to_file` (line 272) → `png_read_write.rs:738`
 - [~] `write_rgb_to_file` (line 277) → `png_read_write.rs` — another overload of the name is ported
 - [~] `write_rgb_to_file` (line 282) → `png_read_write.rs` — another overload of the name is ported
-- [x] `write_gray_to_file` (line 288) → `png_read_write.rs:751`
+- [x] `write_gray_to_file` (line 288) → `png_read_write.rs:759`
 - [~] `write_gray_to_file` (line 293) → `png_read_write.rs` — another overload of the name is ported
 - [~] `write_gray_to_file` (line 298) → `png_read_write.rs` — another overload of the name is ported
-- [x] `write_rgb_or_gray_to_file_scaled` (line 307) → `png_read_write.rs:778`
-- [x] `write_rgb_to_file_scaled` (line 331) → `png_read_write.rs:827`
+- [x] `write_rgb_or_gray_to_file_scaled` (line 307) → `png_read_write.rs:786`
+- [x] `write_rgb_to_file_scaled` (line 331) → `png_read_write.rs:835`
 - [~] `write_rgb_to_file_scaled` (line 336) → `png_read_write.rs` — another overload of the name is ported
 - [~] `write_rgb_to_file_scaled` (line 341) → `png_read_write.rs` — another overload of the name is ported
-- [x] `write_gray_to_file_scaled` (line 347) → `png_read_write.rs:853`
+- [x] `write_gray_to_file_scaled` (line 347) → `png_read_write.rs:861`
 - [~] `write_gray_to_file_scaled` (line 352) → `png_read_write.rs` — another overload of the name is ported
 - [~] `write_gray_to_file_scaled` (line 357) → `png_read_write.rs` — another overload of the name is ported
 
@@ -10219,20 +10219,20 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `align_to_grid` (line 595) → `bounding_box.rs` — not in the paired file
 - [~] `apply` (line 603) → `config.rs, format/sl1.rs, geometry/transform.rs` — not in the paired file
 - [x] `apply` (line 608) → `geometry/point.rs:1638`
-- [~] `serialize` (line 683) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 684) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 687) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 688) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 689) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `serialize` (line 690) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 683) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 684) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 687) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 688) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 689) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `serialize` (line 690) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `load` (line 692) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 693) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `load` (line 695) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 696) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [~] `begin` (line 702) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 705) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
-- [~] `begin` (line 708) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 711) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 702) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 705) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 708) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 711) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 
 **class `ClosestPointInRadiusLookup`**
 
@@ -10370,8 +10370,8 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 
 **class `polygon_set_traits<Slic3r::Polygons>`**
 
-- [~] `begin` (line 370) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 374) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 370) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 374) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [ ] `clean` (line 379) → `geometry/polygon.rs`
 - [~] `sorted` (line 380) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
 
@@ -10476,34 +10476,34 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [v] `get_values_from_json` (line 154) → `preset.rs:510` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [v] `guess_config_file_type` (line 177) → `preset.rs:528` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [v] `extend_default_config_length` (line 232) → `preset.rs:578` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `is_compatible_with_print` (line 784) → `preset.rs:2324` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `is_compatible_with_parent_printer` (line 811) → `preset.rs:2355` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `is_compatible_with_printer` (line 821) → `preset.rs:2363` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `is_compatible_with_print` (line 784) → `preset.rs:2341` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `is_compatible_with_parent_printer` (line 811) → `preset.rs:2372` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `is_compatible_with_printer` (line 821) → `preset.rs:2380` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `is_compatible_with_printer` (line 845) → `preset.rs` — another overload of the name is ported
-- [v] `is_compatible_with_printer_names` (line 859) → `preset.rs:2407` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `is_compatible_with_printer_names` (line 859) → `preset.rs:2424` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 
 **class `PhysicalPrinter`**
 
-- [v] `save` (line 935) → `preset.rs:5685` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `save` (line 935) → `preset.rs:5703` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `printer_technology` (line 948) → `preset.rs` — another overload of the name is ported
 - [x] `printer_technology` (line 954) → `preset.rs:1544`
 
 **class `PhysicalPrinterCollection`**
 
-- [~] `begin` (line 985) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [v] `begin` (line 986) → `preset.rs:5849` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `begin` (line 985) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [v] `begin` (line 986) → `preset.rs:5867` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `cbegin` (line 987) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [v] `end` (line 988) → `preset.rs:5853` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [~] `end` (line 989) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [v] `end` (line 988) → `preset.rs:5871` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `end` (line 989) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `cend` (line 990) → `mutable_polygon.rs` — not in the paired file
-- [v] `empty` (line 992) → `preset.rs:5857` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `get_selected_idx` (line 1029) → `preset.rs:6143` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `get_selected_printer_name` (line 1031) → `preset.rs:6147` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [x] `get_selected_printer_config` (line 1033) → `preset.rs:6155` — read against the C++ in R912 (the estimate says partial)
-- [v] `get_selected_printer_technology` (line 1035) → `preset.rs:6163` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `get_selected_printer_preset_name` (line 1042) → `preset.rs:6180` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `find_printer` (line 1061) → `preset.rs:6249` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `find_printer_internal` (line 1080) → `preset.rs:6281` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `empty` (line 992) → `preset.rs:5875` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_idx` (line 1029) → `preset.rs:6161` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_printer_name` (line 1031) → `preset.rs:6165` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [x] `get_selected_printer_config` (line 1033) → `preset.rs:6173` — read against the C++ in R912 (the estimate says partial)
+- [v] `get_selected_printer_technology` (line 1035) → `preset.rs:6181` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_printer_preset_name` (line 1042) → `preset.rs:6198` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `find_printer` (line 1061) → `preset.rs:6267` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `find_printer_internal` (line 1080) → `preset.rs:6299` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 
 **class `Preset`**
 
@@ -10512,7 +10512,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [x] `set_dirty` (line 322) → `preset.rs:1467`
 - [v] `reset_dirty` (line 323) → `preset.rs:1471` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `printer_technology` (line 347) → `preset.rs` — another overload of the name is ported
-- [v] `printer_technology` (line 354) → `preset.rs:5754` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `printer_technology` (line 354) → `preset.rs:5772` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [v] `set_num_extruders` (line 362) → `preset.rs:1608` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [v] `get_printer_id` (line 374) → `preset.rs:1703` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [v] `update_suffix_modified` (line 449) → `preset.rs:1858` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
@@ -10542,44 +10542,44 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 
 **class `PresetCollection`**
 
-- [x] `lbegin` (line 467) → `preset.rs:2731`
-- [x] `begin` (line 471) → `preset.rs:2735`
-- [~] `begin` (line 472) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [x] `cbegin` (line 473) → `preset.rs:2739`
-- [x] `end` (line 474) → `preset.rs:2743`
-- [~] `end` (line 475) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [x] `cend` (line 476) → `preset.rs:2747`
-- [x] `erase` (line 479) → `preset.rs:2755`
-- [x] `set_sync_func` (line 481) → `preset.rs:2760`
-- [x] `lock` (line 483) → `preset.rs:2764`
-- [x] `unlock` (line 484) → `preset.rs:2766`
-- [x] `type` (line 488) → `preset.rs:2796`
-- [v] `is_default_suppressed` (line 582) → `preset.rs:4427` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `get_selected_idx` (line 595) → `preset.rs:4445` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `get_selected_preset_name` (line 597) → `preset.rs:4449` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `get_edited_preset_with_vendor_profile` (line 622) → `preset.rs:4581` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [x] `get_idx_selected` (line 631) → `preset.rs:4660`
-- [v] `discard_current_changes` (line 644) → `preset.rs:4731` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `find_preset` (line 654) → `preset.rs:4766` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [x] `lbegin` (line 467) → `preset.rs:2748`
+- [x] `begin` (line 471) → `preset.rs:2752`
+- [~] `begin` (line 472) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [x] `cbegin` (line 473) → `preset.rs:2756`
+- [x] `end` (line 474) → `preset.rs:2760`
+- [~] `end` (line 475) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [x] `cend` (line 476) → `preset.rs:2764`
+- [x] `erase` (line 479) → `preset.rs:2772`
+- [x] `set_sync_func` (line 481) → `preset.rs:2777`
+- [x] `lock` (line 483) → `preset.rs:2781`
+- [x] `unlock` (line 484) → `preset.rs:2783`
+- [x] `type` (line 488) → `preset.rs:2813`
+- [v] `is_default_suppressed` (line 582) → `preset.rs:4444` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_idx` (line 595) → `preset.rs:4462` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_preset_name` (line 597) → `preset.rs:4466` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_edited_preset_with_vendor_profile` (line 622) → `preset.rs:4598` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [x] `get_idx_selected` (line 631) → `preset.rs:4677`
+- [v] `discard_current_changes` (line 644) → `preset.rs:4748` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `find_preset` (line 654) → `preset.rs:4783` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `first_compatible_idx` (line 661) → `preset.rs` — another overload of the name is ported
-- [v] `first_compatible_idx` (line 687) → `preset.rs:4832` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `size` (line 701) → `preset.rs:4858` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `has_defaults_only` (line 702) → `preset.rs:4862` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [~] `update_compatible` (line 706) → `preset.rs` — another overload of the name is ported
-- [v] `update_compatible` (line 714) → `preset.rs:4882` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `set_extra_compatible_printers` (line 720) → `preset.rs:4894` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `clear_extra_compatible_printers` (line 721) → `preset.rs:4898` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `num_visible` (line 723) → `preset.rs:4903` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
-- [v] `current_is_dirty` (line 726) → `preset.rs:4909` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `current_dirty_options` (line 729) → `preset.rs:4913` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `current_different_from_parent_options` (line 732) → `preset.rs:4917` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `saved_is_dirty` (line 736) → `preset.rs:4922` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [x] `update_saved_preset_from_current_preset` (line 742) → `preset.rs:4926`
-- [v] `is_base_preset` (line 757) → `preset.rs:4963` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `num_default_presets` (line 766) → `preset.rs:5008` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [v] `find_preset_internal` (line 799) → `preset.rs:5356` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `first_compatible_idx` (line 687) → `preset.rs:4849` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `size` (line 701) → `preset.rs:4875` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `has_defaults_only` (line 702) → `preset.rs:4879` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `update_compatible` (line 706) → `preset_bundle.rs` — not in the paired file
+- [v] `update_compatible` (line 714) → `preset.rs:4899` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `set_extra_compatible_printers` (line 720) → `preset.rs:4911` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `clear_extra_compatible_printers` (line 721) → `preset.rs:4915` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `num_visible` (line 723) → `preset.rs:4920` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
+- [v] `current_is_dirty` (line 726) → `preset.rs:4926` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `current_dirty_options` (line 729) → `preset.rs:4930` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `current_different_from_parent_options` (line 732) → `preset.rs:4934` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `saved_is_dirty` (line 736) → `preset.rs:4939` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [x] `update_saved_preset_from_current_preset` (line 742) → `preset.rs:4943`
+- [v] `is_base_preset` (line 757) → `preset.rs:4980` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `num_default_presets` (line 766) → `preset.rs:5025` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `find_preset_internal` (line 799) → `preset.rs:5373` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `find_preset_internal` (line 812) → `preset.rs` — another overload of the name is ported
-- [v] `find_preset_renamed` (line 814) → `preset.rs:5372` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
+- [v] `find_preset_renamed` (line 814) → `preset.rs:5389` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
 - [~] `find_preset_renamed` (line 820) → `preset.rs` — another overload of the name is ported
 
 **class `VendorProfile`**
@@ -10602,165 +10602,165 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 
 **free functions**
 
-- [ ] `copy_dir` (line 515) → `preset_bundle.rs`
-- [~] `GetNozzleVolumeTypeStr` (line 1778) → `nozzle_inventory.rs` — not in the paired file
-- [ ] `count_default_nozzle_volume_types` (line 1791) → `preset_bundle.rs`
-- [ ] `build_extruder_full_stat_from_nozzle_stat` (line 1799) → `preset_bundle.rs`
-- [~] `per_slot_nozzle_options_consistent` (line 1822) → `nozzle_inventory.rs` — not in the paired file
-- [~] `sync_per_slot_nozzle_options_from_full_stat` (line 1845) → `nozzle_inventory.rs` — not in the paired file
-- [ ] `smallest_installed_diameters` (line 1883) → `preset_bundle.rs`
-- [ ] `remove_ini_suffix` (line 1941) → `preset_bundle.rs`
-- [ ] `apply_synced_tray_side_effects` (line 2768) → `preset_bundle.rs`
-- [ ] `filament_preset_diameters_for_model` (line 3679) → `preset_bundle.rs`
-- [ ] `build_printer_name_to_diameter` (line 3694) → `preset_bundle.rs`
-- [ ] `uses_per_slot_nozzle_diameters` (line 3708) → `preset_bundle.rs`
-- [ ] `collect_configured_nozzle_diameters` (line 3726) → `preset_bundle.rs`
-- [ ] `collect_installed_nozzle_variants` (line 3766) → `preset_bundle.rs`
-- [ ] `get_filament_nozzle_flow_options` (line 3835) → `preset_bundle.rs`
-- [ ] `get_filament_nozzle_diameter_options` (line 3865) → `preset_bundle.rs`
-- [ ] `settle_filament_slot_flow` (line 3907) → `preset_bundle.rs`
-- [ ] `repair_filament_nozzle_flows` (line 3940) → `preset_bundle.rs`
-- [ ] `set_filament_nozzle_diameter` (line 4010) → `preset_bundle.rs`
-- [ ] `find_default_filament_for_nozzle_diameter` (line 4204) → `preset_bundle.rs`
-- [ ] `find_filament_preset_map_name` (line 5216) → `preset_bundle.rs`
-- [ ] `convert_filament_preset_name` (line 5258) → `preset_bundle.rs`
-- [ ] `replace_default_filament_slots` (line 7274) → `preset_bundle.rs`
-- [ ] `log_default_filament_slots` (line 7299) → `preset_bundle.rs`
+- [v] `copy_dir` (line 515) → `preset_bundle.rs:1223` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [v] `GetNozzleVolumeTypeStr` (line 1778) → `preset_bundle.rs:2408` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `count_default_nozzle_volume_types` (line 1791) → `preset_bundle.rs:2422` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `build_extruder_full_stat_from_nozzle_stat` (line 1799) → `preset_bundle.rs:2431` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `per_slot_nozzle_options_consistent` (line 1822) → `preset_bundle.rs:2454` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [v] `sync_per_slot_nozzle_options_from_full_stat` (line 1845) → `preset_bundle.rs:2474` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `smallest_installed_diameters` (line 1883) → `preset_bundle.rs:2504` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `remove_ini_suffix` (line 1941) → `preset_bundle.rs:2579` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `apply_synced_tray_side_effects` (line 2768) → `preset_bundle.rs:3588` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `filament_preset_diameters_for_model` (line 3679) → `preset_bundle.rs:4666` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `build_printer_name_to_diameter` (line 3694) → `preset_bundle.rs:4681` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `uses_per_slot_nozzle_diameters` (line 3708) → `preset_bundle.rs:4697` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `collect_configured_nozzle_diameters` (line 3726) → `preset_bundle.rs:4714` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `collect_installed_nozzle_variants` (line 3766) → `preset_bundle.rs:4756` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_filament_nozzle_flow_options` (line 3835) → `preset_bundle.rs:4833` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_filament_nozzle_diameter_options` (line 3865) → `preset_bundle.rs:4868` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `settle_filament_slot_flow` (line 3907) → `preset_bundle.rs:4914` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `repair_filament_nozzle_flows` (line 3940) → `preset_bundle.rs:4956` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `set_filament_nozzle_diameter` (line 4010) → `preset_bundle.rs:5038` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [x] `find_default_filament_for_nozzle_diameter` (line 4204) → `preset_bundle.rs:5276`
+- [v] `find_filament_preset_map_name` (line 5216) → `preset_bundle.rs:6188` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `convert_filament_preset_name` (line 5258) → `preset_bundle.rs:6245` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `replace_default_filament_slots` (line 7274) → `preset_bundle.rs:7525` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `log_default_filament_slots` (line 7299) → `preset_bundle.rs:7550` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
 
 **class `AMSComboInfo`**
 
-- [x] `clear` (line 47) → `preset_bundle.rs:62`
-- [x] `empty` (line 53) → `preset_bundle.rs:70`
+- [v] `clear` (line 47) → `preset_bundle.rs:262` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `empty` (line 53) → `preset_bundle.rs:270` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
 
 **class `ExtruderFullStat`**
 
-- [ ] `set_raw_stat` (line 119) → `preset_bundle.rs`
-- [~] `get_extruder_count` (line 120) → `multi_nozzle_utils.rs` — not in the paired file
-- [ ] `get_extruder_nozzle_count` (line 121) → `preset_bundle.rs`
-- [ ] `get_extruder_stats` (line 126) → `preset_bundle.rs`
-- [~] `resize` (line 131) → `config.rs, extrusion_simulator.rs, nozzle_inventory.rs` — not in the paired file
-- [~] `set_extruder_stats` (line 132) → `nozzle_inventory.rs` — not in the paired file
-- [ ] `clear_extruder` (line 137) → `preset_bundle.rs`
-- [~] `clear` (line 141) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `empty` (line 142) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `set_raw_stat` (line 119) → `preset_bundle.rs:386`
+- [v] `get_extruder_count` (line 120) → `preset_bundle.rs:390` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_extruder_nozzle_count` (line 121) → `preset_bundle.rs:394` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_extruder_stats` (line 126) → `preset_bundle.rs:401` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `resize` (line 131) → `preset_bundle.rs:408` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `set_extruder_stats` (line 132) → `preset_bundle.rs:412` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [x] `clear_extruder` (line 137) → `preset_bundle.rs:419`
+- [x] `clear` (line 141) → `preset_bundle.rs:425`
+- [x] `empty` (line 142) → `preset_bundle.rs:429`
 
 **class `ExtruderNozzleStat`**
 
-- [~] `get_raw_stat` (line 106) → `nozzle_inventory.rs` — not in the paired file
-- [ ] `set_raw_stat` (line 107) → `preset_bundle.rs`
-- [ ] `get_extruder_nozzle_count` (line 309) → `preset_bundle.rs`
-- [ ] `on_printer_model_change_cli` (line 323) → `preset_bundle.rs`
-- [ ] `on_volume_type_switch` (line 337) → `preset_bundle.rs`
-- [ ] `set_extruder_nozzle_count` (line 349) → `preset_bundle.rs`
+- [v] `get_raw_stat` (line 106) → `preset_bundle.rs:360` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [x] `set_raw_stat` (line 107) → `preset_bundle.rs:364`
+- [v] `get_extruder_nozzle_count` (line 309) → `preset_bundle.rs:968` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [x] `on_printer_model_change_cli` (line 323) → `preset_bundle.rs:980`
+- [x] `on_volume_type_switch` (line 337) → `preset_bundle.rs:994`
+- [v] `set_extruder_nozzle_count` (line 349) → `preset_bundle.rs:1006` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
 
 **class `FilamentBaseInfo`**
 
-- [ ] `get_extruder_compatibility` (line 78) → `preset_bundle.rs`
-- [ ] `set_filament_extruder_compatibility` (line 88) → `preset_bundle.rs`
-- [ ] `get_filament_extruder_compatibility` (line 89) → `preset_bundle.rs`
+- [x] `get_extruder_compatibility` (line 78) → `preset_bundle.rs:326`
+- [x] `set_filament_extruder_compatibility` (line 88) → `preset_bundle.rs:338`
+- [x] `get_filament_extruder_compatibility` (line 89) → `preset_bundle.rs:342`
 
 **class `MergeFilamentInfo`**
 
-- [x] `is_empty` (line 59) → `preset_bundle.rs:97`
+- [x] `is_empty` (line 59) → `preset_bundle.rs:283`
 
 **class `PresetBundle`**
 
-- [ ] `construct_full_config` (line 103) → `preset_bundle.rs`
-- [ ] `has_defauls_only` (line 439) → `preset_bundle.rs`
-- [ ] `load_config_from_wizard` (line 453) → `preset_bundle.rs`
-- [ ] `load_config_model` (line 458) → `preset_bundle.rs`
-- [~] `reset` (line 465) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
-- [ ] `setup_directories` (line 486) → `preset_bundle.rs`
-- [~] `update_compatible` (line 519) → `preset.rs` — not in the paired file
-- [ ] `copy_files` (line 535) → `preset_bundle.rs`
-- [~] `load_presets` (line 556) → `preset.rs` — not in the paired file
-- [~] `get_preset_differed_for_save` (line 595) → `preset.rs` — not in the paired file
-- [~] `get_differed_values_to_update` (line 617) → `preset.rs` — not in the paired file
-- [ ] `get_vendor_profile_version` (line 640) → `preset_bundle.rs`
-- [ ] `get_filament_by_filament_id` (line 652) → `preset_bundle.rs`
-- [~] `load_project_embedded_presets` (line 703) → `preset.rs` — not in the paired file
-- [ ] `get_current_project_embedded_presets` (line 738) → `preset_bundle.rs`
-- [~] `reset_project_embedded_presets` (line 756) → `preset.rs` — not in the paired file
-- [ ] `get_texture_for_printer_model` (line 818) → `preset_bundle.rs`
-- [ ] `get_stl_model_for_printer_model` (line 846) → `preset_bundle.rs`
-- [ ] `get_hotend_model_for_printer_model` (line 873) → `preset_bundle.rs`
-- [ ] `load_user_presets` (line 900) → `preset_bundle.rs`
-- [ ] `load_user_presets` (line 945) → `preset_bundle.rs`
-- [ ] `import_presets` (line 1024) → `preset_bundle.rs`
-- [ ] `import_json_presets` (line 1111) → `preset_bundle.rs`
-- [~] `save_user_presets` (line 1225) → `preset.rs` — not in the paired file
-- [~] `update_user_presets_directory` (line 1250) → `preset.rs` — not in the paired file
-- [ ] `remove_user_presets_directory` (line 1271) → `preset_bundle.rs`
-- [ ] `update_system_preset_setting_ids` (line 1286) → `preset_bundle.rs`
-- [ ] `get_full_flush_matrix` (line 1337) → `preset_bundle.rs`
-- [ ] `validate_presets` (line 1373) → `preset_bundle.rs`
-- [ ] `remove_users_preset` (line 1447) → `preset_bundle.rs`
-- [ ] `load_system_presets_from_json` (line 1604) → `preset_bundle.rs`
-- [ ] `load_system_models_from_json` (line 1667) → `preset_bundle.rs`
-- [ ] `load_system_filaments_json` (line 1701) → `preset_bundle.rs`
-- [ ] `get_custom_vendor_models` (line 1752) → `preset_bundle.rs`
-- [~] `merge_presets` (line 1907) → `preset.rs` — not in the paired file
-- [ ] `update_system_maps` (line 1927) → `preset_bundle.rs`
-- [ ] `load_installed_printers` (line 1952) → `preset_bundle.rs`
-- [ ] `get_required_hrc_by_filament_id` (line 1974) → `preset_bundle.rs`
-- [ ] `save_changes_for_preset` (line 1984) → `preset_bundle.rs`
-- [ ] `load_installed_filaments` (line 2015) → `preset_bundle.rs`
-- [ ] `quick_fix_for_filaments_due_to_upgrade` (line 2077) → `preset_bundle.rs`
-- [ ] `load_installed_sla_materials` (line 2121) → `preset_bundle.rs`
-- [ ] `load_selections` (line 2146) → `preset_bundle.rs`
-- [ ] `export_selections` (line 2397) → `preset_bundle.rs`
-- [~] `set_num_filaments` (line 2494) → `print_config.rs` — not in the paired file
-- [ ] `update_num_filaments` (line 2568) → `preset_bundle.rs`
-- [ ] `is_mixed_filament` (line 2648) → `preset_bundle.rs`
-- [ ] `physical_filament_config_indices` (line 2654) → `preset_bundle.rs`
-- [ ] `physical_filament_count` (line 2663) → `preset_bundle.rs`
-- [ ] `mixed_filament_count` (line 2668) → `preset_bundle.rs`
-- [ ] `get_ams_cobox_infos` (line 2677) → `preset_bundle.rs`
-- [ ] `sync_ams_list` (line 2785) → `preset_bundle.rs`
-- [ ] `update_filament_multi_color` (line 3258) → `preset_bundle.rs`
-- [ ] `get_used_tpu_filaments` (line 3279) → `preset_bundle.rs`
-- [ ] `set_calibrate_printer` (line 3303) → `preset_bundle.rs`
-- [ ] `get_extruder_filament_info` (line 3326) → `preset_bundle.rs`
-- [ ] `get_printer_names_by_printer_type_and_nozzle` (line 3343) → `preset_bundle.rs`
-- [ ] `check_filament_temp_equation_by_printer_type_and_nozzle_for_mas_tray` (line 3379) → `preset_bundle.rs`
-- [ ] `get_similar_printer_preset` (line 3441) → `preset_bundle.rs`
-- [ ] `set_ams_count` (line 3474) → `preset_bundle.rs`
-- [ ] `get_ams_count` (line 3491) → `preset_bundle.rs`
-- [ ] `get_ams_selection` (line 3501) → `preset_bundle.rs`
-- [ ] `initialize_ams_selection` (line 3509) → `preset_bundle.rs`
-- [ ] `resize_ams_selection` (line 3528) → `preset_bundle.rs`
-- [ ] `replace_ams_selection` (line 3562) → `preset_bundle.rs`
-- [ ] `get_extra_compatible_printers_by_full_stat` (line 3575) → `preset_bundle.rs`
-- [ ] `compute_filament_supported_nozzle_diameters` (line 3628) → `preset_bundle.rs`
-- [ ] `get_filament_nozzle_diameter_options` (line 3989) → `preset_bundle.rs`
-- [ ] `get_installed_nozzle_variants` (line 3996) → `preset_bundle.rs`
-- [ ] `is_filament_nozzle_diameter_valid` (line 4001) → `preset_bundle.rs`
-- [ ] `set_filament_nozzle_diameter` (line 4079) → `preset_bundle.rs`
-- [ ] `tray_diameter_for_filament_slot` (line 4099) → `preset_bundle.rs`
-- [ ] `stamp_printer_nozzle_diameter_mode` (line 4127) → `preset_bundle.rs`
-- [ ] `is_multi_nozzle_user_printer_preset` (line 4137) → `preset_bundle.rs`
-- [ ] `seed_filament_nozzles_for_multi_diameter` (line 4153) → `preset_bundle.rs`
-- [ ] `validate_filament_nozzle_diameter_selections` (line 4243) → `preset_bundle.rs`
-- [ ] `is_the_only_edited_filament` (line 4661) → `preset_bundle.rs`
-- [ ] `get_printer_extruder_count` (line 4688) → `preset_bundle.rs`
-- [~] `support_different_extruders` (line 4697) → `print_config.rs` — not in the paired file
-- [ ] `get_printer_nozzle_volume_list` (line 4706) → `preset_bundle.rs`
-- [ ] `get_default_nozzle_volume_types_for_filaments` (line 4722) → `preset_bundle.rs`
-- [ ] `full_config` (line 4738) → `preset_bundle.rs`
-- [ ] `full_config_secure` (line 4745) → `preset_bundle.rs`
-- [ ] `full_fff_config` (line 4763) → `preset_bundle.rs`
-- [ ] `full_sla_config` (line 5090) → `preset_bundle.rs`
-- [ ] `load_config_file` (line 5145) → `preset_bundle.rs`
-- [ ] `load_config_file_config` (line 5265) → `preset_bundle.rs`
-- [ ] `load_vendor_configs_from_json` (line 6179) → `preset_bundle.rs`
-- [ ] `load_vendor_configs_from_json` (line 6992) → `preset_bundle.rs`
-- [ ] `on_extruders_count_changed` (line 7104) → `preset_bundle.rs`
-- [ ] `update_multi_material_filament_presets` (line 7115) → `preset_bundle.rs`
-- [ ] `replace_default_presets` (line 7316) → `preset_bundle.rs`
+- [v] `construct_full_config` (line 103) → `preset_bundle.rs:757` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `has_defauls_only` (line 439) → `preset_bundle.rs:716` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_config_from_wizard` (line 453) → `preset_bundle.rs:6142` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_config_model` (line 458) → `preset_bundle.rs:6147` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `reset` (line 465) → `preset_bundle.rs:1174` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `setup_directories` (line 486) → `preset_bundle.rs:1196` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `update_compatible` (line 519) → `preset_bundle.rs:7608` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `copy_files` (line 535) → `preset_bundle.rs:1249` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_presets` (line 556) → `preset_bundle.rs:1270` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [~] `get_preset_differed_for_save` (line 595) → `preset_bundle.rs:1315` — divergent
+- [~] `get_differed_values_to_update` (line 617) → `preset_bundle.rs:1324` — divergent
+- [v] `get_vendor_profile_version` (line 640) → `preset_bundle.rs:1334` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_filament_by_filament_id` (line 652) → `preset_bundle.rs:1345` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_project_embedded_presets` (line 703) → `preset_bundle.rs:1404` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_current_project_embedded_presets` (line 738) → `preset_bundle.rs:1436` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `reset_project_embedded_presets` (line 756) → `preset_bundle.rs:1453` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_texture_for_printer_model` (line 818) → `preset_bundle.rs:1533` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as divergent to the estimate)
+- [v] `get_stl_model_for_printer_model` (line 846) → `preset_bundle.rs:1539` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as divergent to the estimate)
+- [v] `get_hotend_model_for_printer_model` (line 873) → `preset_bundle.rs:1544` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as divergent to the estimate)
+- [v] `load_user_presets` (line 900) → `preset_bundle.rs:1549` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [~] `load_user_presets` (line 945) → `preset_bundle.rs` — another overload of the name is ported
+- [v] `import_presets` (line 1024) → `preset_bundle.rs:1669` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [v] `import_json_presets` (line 1111) → `preset_bundle.rs:1751` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as divergent to the estimate)
+- [v] `save_user_presets` (line 1225) → `preset_bundle.rs:1904` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `update_user_presets_directory` (line 1250) → `preset_bundle.rs:1929` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `remove_user_presets_directory` (line 1271) → `preset_bundle.rs:1949` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [v] `update_system_preset_setting_ids` (line 1286) → `preset_bundle.rs:1964` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_full_flush_matrix` (line 1337) → `preset_bundle.rs:2001` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `validate_presets` (line 1373) → `preset_bundle.rs:2044` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `remove_users_preset` (line 1447) → `preset_bundle.rs:2110` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_system_presets_from_json` (line 1604) → `preset_bundle.rs:2286` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as divergent to the estimate)
+- [v] `load_system_models_from_json` (line 1667) → `preset_bundle.rs:2312` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [v] `load_system_filaments_json` (line 1701) → `preset_bundle.rs:2344` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as divergent to the estimate)
+- [v] `get_custom_vendor_models` (line 1752) → `preset_bundle.rs:2363` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [x] `merge_presets` (line 1907) → `preset_bundle.rs:2532`
+- [v] `update_system_maps` (line 1927) → `preset_bundle.rs:2555` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_installed_printers` (line 1952) → `preset_bundle.rs:2595` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_required_hrc_by_filament_id` (line 1974) → `preset_bundle.rs:2622` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `save_changes_for_preset` (line 1984) → `preset_bundle.rs:2634` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_installed_filaments` (line 2015) → `preset_bundle.rs:2675` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `quick_fix_for_filaments_due_to_upgrade` (line 2077) → `preset_bundle.rs:2750` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_installed_sla_materials` (line 2121) → `preset_bundle.rs:2819` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_selections` (line 2146) → `preset_bundle.rs:2972` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [v] `export_selections` (line 2397) → `preset_bundle.rs:3244` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `set_num_filaments` (line 2494) → `preset_bundle.rs:3318` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `update_num_filaments` (line 2568) → `preset_bundle.rs:3398` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [~] `is_mixed_filament` (line 2648) → `preset_bundle.rs:3467` — partial
+- [v] `physical_filament_config_indices` (line 2654) → `preset_bundle.rs:3472` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `physical_filament_count` (line 2663) → `preset_bundle.rs:3477` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `mixed_filament_count` (line 2668) → `preset_bundle.rs:3482` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_ams_cobox_infos` (line 2677) → `preset_bundle.rs:3504` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `sync_ams_list` (line 2785) → `preset_bundle.rs:3622` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `update_filament_multi_color` (line 3258) → `preset_bundle.rs:4161` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [v] `get_used_tpu_filaments` (line 3279) → `preset_bundle.rs:4184` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `set_calibrate_printer` (line 3303) → `preset_bundle.rs:4207` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_extruder_filament_info` (line 3326) → `preset_bundle.rs:4240` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_printer_names_by_printer_type_and_nozzle` (line 3343) → `preset_bundle.rs:4259` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as partial to the estimate)
+- [v] `check_filament_temp_equation_by_printer_type_and_nozzle_for_mas_tray` (line 3379) → `preset_bundle.rs:4297` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_similar_printer_preset` (line 3441) → `preset_bundle.rs:4371` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `set_ams_count` (line 3474) → `preset_bundle.rs:4416` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_ams_count` (line 3491) → `preset_bundle.rs:4435` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_ams_selection` (line 3501) → `preset_bundle.rs:4448` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `initialize_ams_selection` (line 3509) → `preset_bundle.rs:4460` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `resize_ams_selection` (line 3528) → `preset_bundle.rs:4487` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `replace_ams_selection` (line 3562) → `preset_bundle.rs:4531` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_extra_compatible_printers_by_full_stat` (line 3575) → `preset_bundle.rs:4545` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `compute_filament_supported_nozzle_diameters` (line 3628) → `preset_bundle.rs:4607` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_filament_nozzle_diameter_options` (line 3989) → `preset_bundle.rs:5015` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_installed_nozzle_variants` (line 3996) → `preset_bundle.rs:5022` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `is_filament_nozzle_diameter_valid` (line 4001) → `preset_bundle.rs:5027` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `set_filament_nozzle_diameter` (line 4079) → `preset_bundle.rs:5120` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `tray_diameter_for_filament_slot` (line 4099) → `preset_bundle.rs:5144` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `stamp_printer_nozzle_diameter_mode` (line 4127) → `preset_bundle.rs:5178` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `is_multi_nozzle_user_printer_preset` (line 4137) → `preset_bundle.rs:5199` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `seed_filament_nozzles_for_multi_diameter` (line 4153) → `preset_bundle.rs:5221` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `validate_filament_nozzle_diameter_selections` (line 4243) → `preset_bundle.rs:5381` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `is_the_only_edited_filament` (line 4661) → `preset_bundle.rs:5680` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_printer_extruder_count` (line 4688) → `preset_bundle.rs:5709` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `support_different_extruders` (line 4697) → `preset_bundle.rs:5716` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_printer_nozzle_volume_list` (line 4706) → `preset_bundle.rs:5723` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `get_default_nozzle_volume_types_for_filaments` (line 4722) → `preset_bundle.rs:5736` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `full_config` (line 4738) → `preset_bundle.rs:5757` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `full_config_secure` (line 4745) → `preset_bundle.rs:5766` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `full_fff_config` (line 4763) → `preset_bundle.rs:5783` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [x] `full_sla_config` (line 5090) → `preset_bundle.rs:6098`
+- [v] `load_config_file` (line 5145) → `preset_bundle.rs:6155` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_config_file_config` (line 5265) → `preset_bundle.rs:6324` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `load_vendor_configs_from_json` (line 6179) → `preset_bundle.rs:6775` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal (the body reads as divergent to the estimate)
+- [~] `load_vendor_configs_from_json` (line 6992) → `preset_bundle.rs` — another overload of the name is ported
+- [v] `on_extruders_count_changed` (line 7104) → `preset_bundle.rs:7311` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `update_multi_material_filament_presets` (line 7115) → `preset_bundle.rs:7328` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `replace_default_presets` (line 7316) → `preset_bundle.rs:7580` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
 - [~] `update_compatible` (line 7340) → `preset.rs` — not in the paired file
-- [ ] `export_current_configs` (line 7628) → `preset_bundle.rs`
-- [ ] `set_filament_preset` (line 7661) → `preset_bundle.rs`
-- [~] `set_default_suppressed` (line 7686) → `preset.rs` — not in the paired file
+- [v] `export_current_configs` (line 7628) → `preset_bundle.rs:7724` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `set_filament_preset` (line 7661) → `preset_bundle.rs:7775` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
+- [v] `set_default_suppressed` (line 7686) → `preset_bundle.rs:7798` — R913: tests/preset_bundle_native_parity.rs: against the pin's PresetBundle.cpp linked from the engine build: a vendor bundle with three printers (one, two extruders, a 4-slot nozzle rack) and user presets loaded, selected, synchronised (AMS, filaments, nozzle diameters), exported and imported, full configs and flush matrices; 850 lines equal
 
 ### `PrincipalComponents2D` (.cpp+.hpp)
 
@@ -10824,8 +10824,8 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `ConstVectorOfPtrsAdaptor`**
 
-- [~] `begin` (line 207) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 208) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 207) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `size` (line 212) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
@@ -10899,9 +10899,9 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `get_wipe_tower_bbx` (line 1172) → `print.rs`
 - [~] `get_rib_offset` (line 1173) → `gcode/wipe_tower.rs` — not in the paired file
 - [ ] `is_all_objects_are_short` (line 1192) → `print.rs`
-- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:3852`
-- [x] `is_filaments_compatible` (line 1268) → `print.rs:3884`
-- [x] `get_compatible_filament_type` (line 1285) → `print.rs:3908`
+- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:3856`
+- [x] `is_filaments_compatible` (line 1268) → `print.rs:3888`
+- [x] `get_compatible_filament_type` (line 1285) → `print.rs:3912`
 - [ ] `is_dynamic_group_reorder` (line 1306) → `print.rs`
 - [ ] `get_filament_config_indx` (line 1319) → `print.rs`
 - [ ] `update_filament_self_index_cache` (line 1324) → `print.rs`
@@ -10923,12 +10923,12 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `auto_assign_extruders` (line 2058) → `print.rs`
 - [~] `process` (line 2178) → `print.rs:2218` — divergent
 - [~] `export_gcode` (line 2839) → `print.rs:608` — divergent
-- [~] `_make_skirt` (line 2869) → `print.rs:3454` — divergent
+- [~] `_make_skirt` (line 2869) → `print.rs:3458` — divergent
 - [ ] `first_layer_islands` (line 3061) → `print.rs`
 - [ ] `first_layer_wipe_tower_corners` (line 3082) → `print.rs`
 - [ ] `translate_to_print_space` (line 3107) → `print.rs`
 - [ ] `translate_to_print_space` (line 3112) → `print.rs`
-- [~] `get_filament_temp_type` (line 3116) → `print.rs:3820` — divergent
+- [~] `get_filament_temp_type` (line 3116) → `print.rs:3824` — divergent
 - [ ] `get_hrc_by_nozzle_type` (line 3155) → `print.rs`
 - [ ] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs`
 - [ ] `finalize_first_layer_convex_hull` (line 3229) → `print.rs`
@@ -11095,8 +11095,8 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 - [~] `assign` (line 362) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
 - [~] `config` (line 388) → `extruder.rs, gcode/cooling.rs, gcode/ironing.rs` — not in the paired file
-- [~] `begin` (line 401) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 402) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 401) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 402) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 403) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ModelObjectStatusDB`**
@@ -11113,14 +11113,14 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [ ] `get_range` (line 522) → `print_apply.rs`
 - [ ] `get_range` (line 526) → `print_apply.rs`
 - [~] `count` (line 530) → `boost_polygon_voronoi.rs, clipper2/clipper_engine.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `begin` (line 534) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 535) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 534) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 535) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `clear` (line 537) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 
 **class `PrintObjectStatusDB::iterator_range`**
 
-- [~] `begin` (line 518) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 519) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 518) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 519) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 
 ### `PrintBase` (.cpp+.hpp)
 
@@ -11355,7 +11355,7 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [v] `get_filament_vendor` (line 9713) → `print_config.rs:17297` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
 - [v] `get_filament_type` (line 9726) → `print_config.rs:17309` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers (the body reads as partial to the estimate)
 - [v] `get_extruder_nozzle_volume_count` (line 9738) → `print_config.rs:17407` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
-- [ ] `update_values_to_printer_extruders` (line 9780) → `print_config.rs`
+- [x] `update_values_to_printer_extruders` (line 9780) → `print_config.rs:19264`
 - [ ] `update_values_to_printer_extruders_for_multiple_filaments` (line 9996) → `print_config.rs`
 - [ ] `update_filament_config_values_for_multiple_extruders` (line 10194) → `print_config.rs`
 - [v] `update_non_diff_values_to_base_config` (line 10326) → `print_config.rs:19089` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
@@ -11379,7 +11379,7 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 
 - [~] `initialized` (line 861) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs` — not in the paired file
 - [~] `optptr` (line 863) → `print_config.rs:16901` — divergent
-- [~] `optptr` (line 869) → `config.rs` — not in the paired file
+- [~] `optptr` (line 869) → `config.rs, placeholder_parser.rs` — not in the paired file
 - [~] `finalize` (line 881) → `cut_utils.rs, fill/fill_base.rs, gcode/g_code_processor.rs` — not in the paired file
 
 **class `StaticPrintConfig::StaticCacheBase`**
@@ -11418,25 +11418,25 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 **class `PrintObject`**
 
 - [ ] `set_instances` (line 110) → `print_object.rs`
-- [~] `all_regions` (line 132) → `print_object.rs:5480` — divergent
-- [~] `merge_layer_node` (line 141) → `print_object.rs:5496` — partial
+- [~] `all_regions` (line 132) → `print_object.rs:5509` — divergent
+- [~] `merge_layer_node` (line 141) → `print_object.rs:5525` — partial
 - [ ] `detect_extruder_geometric_unprintables` (line 202) → `print_object.rs`
 - [ ] `calc_estimated_filament_print_time` (line 328) → `print_object.rs`
 - [~] `make_perimeters` (line 470) → `print_object.rs:1898` — divergent
 - [~] `prepare_infill` (line 902) → `print_object.rs:2173` — divergent
 - [~] `infill` (line 1154) → `print_object.rs:4595` — partial
-- [~] `ironing` (line 1249) → `print_object.rs:5375` — divergent
-- [~] `clear_overhangs_for_lift` (line 1270) → `print_object.rs:5193` — partial
-- [~] `detect_overhangs_for_lift` (line 1282) → `print_object.rs:5212` — divergent
+- [~] `ironing` (line 1249) → `print_object.rs:5386` — divergent
+- [~] `clear_overhangs_for_lift` (line 1270) → `print_object.rs:5198` — partial
+- [~] `detect_overhangs_for_lift` (line 1282) → `print_object.rs:5217` — divergent
 - [~] `generate_support_material` (line 1330) → `print_object.rs` — another overload of the name is ported
 - [~] `simplify_extrusion_path` (line 1374) → `print_object.rs:5170` — divergent
 - [ ] `prepare_adaptive_infill_data` (line 1430) → `print_object.rs`
 - [ ] `prepare_lightning_infill_data` (line 1467) → `print_object.rs`
-- [~] `clear_layers` (line 1479) → `print_object.rs:5633` — divergent
-- [x] `add_layer` (line 1488) → `print_object.rs:5643`
-- [x] `get_support_layer_at_printz` (line 1494) → `print_object.rs:5656`
+- [~] `clear_layers` (line 1479) → `print_object.rs:5662` — divergent
+- [x] `add_layer` (line 1488) → `print_object.rs:5672`
+- [x] `get_support_layer_at_printz` (line 1494) → `print_object.rs:5685`
 - [~] `get_support_layer_at_printz` (line 1501) → `print_object.rs` — another overload of the name is ported
-- [x] `clear_support_layers` (line 1506) → `print_object.rs:5676`
+- [x] `clear_support_layers` (line 1506) → `print_object.rs:5705`
 - [ ] `alloc_tree_support_preview_cache` (line 1520) → `print_object.rs`
 - [ ] `add_tree_support_layer` (line 1530) → `print_object.rs`
 - [ ] `add_support_layer` (line 1536) → `print_object.rs`
@@ -11446,7 +11446,7 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [~] `invalidate_all_steps` (line 1916) → `print_object.rs:509` — divergent
 - [ ] `reset_slice_surfaces` (line 1925) → `print_object.rs`
 - [~] `detect_surfaces_type` (line 1951) → `print_object.rs:3987` — partial
-- [~] `process_external_surfaces` (line 2167) → `print_object.rs:6988` — divergent
+- [~] `process_external_surfaces` (line 2167) → `print_object.rs:7017` — divergent
 - [ ] `discover_shell_for_perimeters` (line 2698) → `print_object.rs`
 - [ ] `object_config_from_model_object` (line 3627) → `print_object.rs`
 - [ ] `generate_support_preview` (line 3826) → `print_object.rs`
@@ -11458,12 +11458,12 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [ ] `get_certain_layers` (line 3970) → `print_object.rs`
 - [ ] `get_instances_shift_without_plate_offset` (line 3985) → `print_object.rs`
 - [ ] `clip_fill_surfaces` (line 4003) → `print_object.rs`
-- [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6484` — partial
+- [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6513` — partial
 - [ ] `compute_adaptive_merge_groups` (line 4312) → `print_object.rs`
 - [ ] `combine_adaptive_infill` (line 5035) → `print_object.rs`
 - [ ] `combine_infill` (line 5724) → `print_object.rs`
 - [~] `discover_sub_top_surfaces` (line 5839) → `print_object.rs:2383` — partial
-- [~] `_generate_support_material` (line 5920) → `print_object.rs:5281` — divergent
+- [~] `_generate_support_material` (line 5920) → `print_object.rs:5286` — divergent
 - [ ] `collected_support_areas` (line 5960) → `print_object.rs`
 - [ ] `warn_uncovered_overhangs` (line 6040) → `print_object.rs`
 - [ ] `remove_bridges_from_contacts` (line 6361) → `print_object.rs`
@@ -11471,11 +11471,11 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [ ] `project_and_append_custom_facets` (line 6726) → `print_object.rs`
 - [~] `get_layer_at_printz` (line 6768) → `print_object.rs` — another overload of the name is ported
 - [~] `get_layer_at_printz` (line 6775) → `print_object.rs` — another overload of the name is ported
-- [x] `get_layer_at_printz` (line 6780) → `print_object.rs:5691`
+- [x] `get_layer_at_printz` (line 6780) → `print_object.rs:5720`
 - [~] `get_layer_at_printz` (line 6788) → `print_object.rs` — another overload of the name is ported
-- [x] `get_first_layer_bellow_printz` (line 6790) → `print_object.rs:5708`
-- [~] `get_layer_idx_get_printz` (line 6796) → `print_object.rs:5732` — partial
-- [x] `get_layer_at_bottomz` (line 6802) → `print_object.rs:5750`
+- [x] `get_first_layer_bellow_printz` (line 6790) → `print_object.rs:5737`
+- [~] `get_layer_idx_get_printz` (line 6796) → `print_object.rs:5761` — partial
+- [x] `get_layer_at_bottomz` (line 6802) → `print_object.rs:5779`
 - [~] `get_layer_at_bottomz` (line 6814) → `print_object.rs` — another overload of the name is ported
 
 ### `PrintObjectSlice` (.cpp)
@@ -11692,39 +11692,39 @@ Rust file: `shortest_path.rs`. Status: **partial**. Not listed: 4 constructors, 
 
 - [x] `chain_segments_closest_point` (line 21) → `shortest_path.rs:64`
 - [~] `chain_polylines` (line 27) → `shortest_path.rs` — another overload of the name is ported
-- [x] `reorder_by_shortest_traverse` (line 28) → `shortest_path.rs:2181`
+- [x] `reorder_by_shortest_traverse` (line 28) → `shortest_path.rs:2195`
 - [x] `chain_segments_greedy_constrained_reversals_` (line 67) → `shortest_path.rs:199`
 - [x] `update_end_point_in_queue` (line 397) → `shortest_path.rs:795`
 - [x] `chain_segments_greedy_constrained_reversals2_` (line 466) → `shortest_path.rs:895`
 - [x] `chain_segments_greedy_constrained_reversals` (line 976) → `shortest_path.rs:557`
 - [x] `chain_segments_greedy` (line 982) → `shortest_path.rs:577`
-- [x] `chain_segments_greedy_constrained_reversals2` (line 989) → `shortest_path.rs:1386`
-- [x] `chain_segments_greedy2` (line 995) → `shortest_path.rs:1406`
-- [x] `chain_extrusion_entities` (line 1001) → `shortest_path.rs:1479`
-- [x] `reorder_extrusion_entities` (line 1017) → `shortest_path.rs:1527`
-- [x] `chain_and_reorder_extrusion_entities` (line 1031) → `shortest_path.rs:1560`
-- [x] `chain_extrusion_paths` (line 1039) → `shortest_path.rs:1586`
-- [x] `reorder_extrusion_paths` (line 1045) → `shortest_path.rs:1603`
-- [x] `chain_and_reorder_extrusion_paths` (line 1058) → `shortest_path.rs:1627`
-- [x] `chain_expolygons` (line 1063) → `shortest_path.rs:1636`
-- [x] `chain_points` (line 1073) → `shortest_path.rs:1650`
+- [x] `chain_segments_greedy_constrained_reversals2` (line 989) → `shortest_path.rs:1400`
+- [x] `chain_segments_greedy2` (line 995) → `shortest_path.rs:1420`
+- [x] `chain_extrusion_entities` (line 1001) → `shortest_path.rs:1493`
+- [x] `reorder_extrusion_entities` (line 1017) → `shortest_path.rs:1541`
+- [x] `chain_and_reorder_extrusion_entities` (line 1031) → `shortest_path.rs:1574`
+- [x] `chain_extrusion_paths` (line 1039) → `shortest_path.rs:1600`
+- [x] `reorder_extrusion_paths` (line 1045) → `shortest_path.rs:1617`
+- [x] `chain_and_reorder_extrusion_paths` (line 1058) → `shortest_path.rs:1641`
+- [x] `chain_expolygons` (line 1063) → `shortest_path.rs:1650`
+- [x] `chain_points` (line 1073) → `shortest_path.rs:1664`
 - [ ] `svg_draw_polyline_chain` (line 1089) → `shortest_path.rs`
 - [ ] `improve_ordering_by_segment_flipping` (line 1101) → `shortest_path.rs`
-- [x] `minimum_crossover_cost` (line 1289) → `shortest_path.rs:1711`
+- [x] `minimum_crossover_cost` (line 1289) → `shortest_path.rs:1725`
 - [~] `minimum_crossover_cost` (line 1356) → `shortest_path.rs` — another overload of the name is ported
-- [x] `do_crossover` (line 1433) → `shortest_path.rs:1868`
+- [x] `do_crossover` (line 1433) → `shortest_path.rs:1882`
 - [~] `do_crossover` (line 1475) → `shortest_path.rs` — another overload of the name is ported
-- [x] `reorder_by_two_exchanges_with_segment_flipping` (line 1553) → `shortest_path.rs:1970`
+- [x] `reorder_by_two_exchanges_with_segment_flipping` (line 1553) → `shortest_path.rs:1984`
 - [ ] `reorder_by_three_exchanges_with_segment_flipping` (line 1629) → `shortest_path.rs`
 - [~] `minimum_crossover_cost` (line 1724) → `shortest_path.rs` — another overload of the name is ported
 - [ ] `reorder_by_three_exchanges_with_segment_flipping2` (line 1783) → `shortest_path.rs`
-- [~] `improve_ordering_by_two_exchanges_with_segment_flipping` (line 1882) → `shortest_path.rs:2080` — partial
-- [x] `chain_polylines` (line 1934) → `shortest_path.rs:2111`
+- [~] `improve_ordering_by_two_exchanges_with_segment_flipping` (line 1882) → `shortest_path.rs:2094` — partial
+- [x] `chain_polylines` (line 1934) → `shortest_path.rs:2125`
 - [ ] `chain_path_items` (line 1964) → `shortest_path.rs`
 - [ ] `chain_clipper_polynodes` (line 1975) → `shortest_path.rs`
 - [ ] `chain_print_object_instances` (line 1981) → `shortest_path.rs`
 - [ ] `chain_print_object_instances` (line 2005) → `shortest_path.rs`
-- [~] `chain_lines` (line 2010) → `shortest_path.rs:2249` — partial
+- [~] `chain_lines` (line 2010) → `shortest_path.rs:2263` — partial
 
 **class `ConnectionCost`**
 
@@ -11732,7 +11732,7 @@ Rust file: `shortest_path.rs`. Status: **partial**. Not listed: 4 constructors, 
 
 **class `FlipEdge`**
 
-- [x] `flip` (line 1274) → `shortest_path.rs:1681`
+- [x] `flip` (line 1274) → `shortest_path.rs:1695`
 
 ### `SLA/AGGRaster` (.hpp)
 
@@ -11935,7 +11935,7 @@ Rust file: `sla/hollowing.rs`. Status: **partial**. Not listed: 3 constructors, 
 
 **class `DrainHole`**
 
-- [~] `serialize` (line 61) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 61) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [x] `to_mesh` (line 149) → `sla/hollowing.rs:624`
 - [x] `is_inside` (line 168) → `sla/hollowing.rs:649`
 - [x] `get_intersections` (line 186) → `sla/hollowing.rs:676`
@@ -12381,7 +12381,7 @@ Rust file: `sla_print.rs`. Status: **partial**. Not listed: 7 constructors, 2 de
 - [~] `validate` (line 616) → `print.rs, print_config.rs, sla/pad.rs` — not in the paired file
 - [ ] `set_printer` (line 671) → `sla_print.rs`
 - [ ] `invalidate_step` (line 677) → `sla_print.rs`
-- [~] `process` (line 689) → `gcode/gcode_template.rs, gcode/pressure_equalizer.rs, print.rs` — not in the paired file
+- [~] `process` (line 689) → `gcode/gcode_template.rs, gcode/pressure_equalizer.rs, placeholder_parser.rs` — not in the paired file
 - [ ] `invalidate_state_by_config_options` (line 800) → `sla_print.rs`
 - [~] `is_step_done` (line 885) → `print_object.rs` — not in the paired file
 - [ ] `relative_correction` (line 1048) → `sla_print.rs`
@@ -12507,7 +12507,7 @@ Rust file: `slicing.rs`. Status: **partial**. Not listed: 2 constructors.
 - [x] `equal_layering` (line 125) → `slicing.rs:223`
 - [ ] `custom_layer_heights_within_limits` (line 212) → `slicing.rs`
 - [ ] `layer_height_profile_from_ranges` (line 235) → `slicing.rs`
-- [~] `serialize` (line 238) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 238) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [x] `layer_height_profile_adaptive` (line 311) → `slicing.rs:286`
 - [x] `smooth_height_profile` (line 404) → `slicing.rs:414`
 - [x] `adjust_layer_height_profile` (line 513) → `slicing.rs:565`
@@ -12661,7 +12661,7 @@ Rust file: `support/support_material.rs`. Status: **partial**. Not listed: 6 con
 **class `SupportGridPattern`**
 
 - [ ] `extract_support` (line 786) → `support/support_material.rs`
-- [~] `serialize` (line 912) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 912) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `deserialize` (line 944) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [~] `deserialize_` (line 952) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [ ] `dilate_trimming_region` (line 1027) → `support/support_material.rs`
@@ -12698,49 +12698,49 @@ Rust file: `support/tree_model_volumes.rs`. Status: **partial**. Not listed: 2 c
 
 **free functions**
 
-- [~] `calculateMachineBorderCollision` (line 38) → `support/tree_model_volumes.rs:471` — divergent
+- [~] `calculateMachineBorderCollision` (line 38) → `support/tree_model_volumes.rs:509` — divergent
 
 **class `TreeModelVolumes`**
 
-- [x] `clear` (line 54) → `support/tree_model_volumes.rs:739`
-- [x] `clear_all_but_object_collision` (line 58) → `support/tree_model_volumes.rs:745`
+- [x] `clear` (line 54) → `support/tree_model_volumes.rs:777`
+- [x] `clear_all_but_object_collision` (line 58) → `support/tree_model_volumes.rs:783`
 - [~] `ceilRadius` (line 148) → `support/tree_model_volumes.rs` — another overload of the name is ported
-- [x] `getRadiusNextCeil` (line 162) → `support/tree_model_volumes.rs:796`
-- [~] `precalculate` (line 177) → `support/tree_model_volumes.rs:812` — divergent
-- [x] `get_collision_lower_bound_area` (line 338) → `support/tree_model_volumes.rs:930`
+- [x] `getRadiusNextCeil` (line 162) → `support/tree_model_volumes.rs:834`
+- [~] `precalculate` (line 177) → `support/tree_model_volumes.rs:850` — divergent
+- [x] `get_collision_lower_bound_area` (line 338) → `support/tree_model_volumes.rs:968`
 - [ ] `calculateCollisionHolefree` (line 357) → `support/tree_model_volumes.rs`
 - [ ] `calculateAvoidance` (line 378) → `support/tree_model_volumes.rs`
 - [ ] `calculateWallRestrictions` (line 412) → `support/tree_model_volumes.rs`
 - [~] `calculateCollision` (line 431) → `support/tree_model_volumes.rs` — another overload of the name is ported
-- [x] `calculateCollision` (line 444) → `support/tree_model_volumes.rs:1059`
+- [x] `calculateCollision` (line 444) → `support/tree_model_volumes.rs:1097`
 - [ ] `calculateCollisionHolefree` (line 609) → `support/tree_model_volumes.rs`
 - [ ] `calculateAvoidance` (line 641) → `support/tree_model_volumes.rs`
 - [~] `calculatePlaceables` (line 744) → `support/tree_model_volumes.rs` — another overload of the name is ported
-- [~] `calculatePlaceables` (line 753) → `support/tree_model_volumes.rs:1416` — partial
+- [~] `calculatePlaceables` (line 753) → `support/tree_model_volumes.rs:1463` — partial
 - [ ] `calculateWallRestrictions` (line 792) → `support/tree_model_volumes.rs`
-- [~] `ceilRadius` (line 862) → `support/tree_model_volumes.rs:1492` — partial
+- [~] `ceilRadius` (line 862) → `support/tree_model_volumes.rs:1540` — partial
 
 **class `TreeModelVolumes::LayerPolygonCache`**
 
-- [x] `allocate` (line 175) → `support/tree_model_volumes.rs:194`
-- [x] `begin` (line 181) → `support/tree_model_volumes.rs:202`
-- [x] `end` (line 182) → `support/tree_model_volumes.rs:206`
-- [x] `size` (line 183) → `support/tree_model_volumes.rs:210`
-- [x] `has` (line 185) → `support/tree_model_volumes.rs:215`
+- [x] `allocate` (line 175) → `support/tree_model_volumes.rs:232`
+- [x] `begin` (line 181) → `support/tree_model_volumes.rs:240`
+- [x] `end` (line 182) → `support/tree_model_volumes.rs:244`
+- [x] `size` (line 183) → `support/tree_model_volumes.rs:248`
+- [x] `has` (line 185) → `support/tree_model_volumes.rs:253`
 
 **class `TreeModelVolumes::RadiusLayerPolygonCache`**
 
 - [~] `insert` (line 213) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
 - [~] `insert` (line 219) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
 - [~] `insert` (line 224) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
-- [~] `insert` (line 230) → `support/tree_model_volumes.rs:434` — divergent
-- [x] `getArea` (line 242) → `support/tree_model_volumes.rs:345`
-- [~] `get_lower_bound_area` (line 252) → `support/tree_model_volumes.rs:356` — partial
-- [~] `getMaxCalculatedLayer` (line 274) → `support/tree_model_volumes.rs:381` — partial
-- [x] `clear` (line 287) → `support/tree_model_volumes.rs:414`
-- [~] `clear_all_but_radius0` (line 288) → `support/tree_model_volumes.rs:421` — partial
-- [x] `allocate_layers` (line 891) → `support/tree_model_volumes.rs:278`
-- [~] `sorted` (line 901) → `support/tree_model_volumes.rs:402` — partial
+- [~] `insert` (line 230) → `support/tree_model_volumes.rs:472` — divergent
+- [x] `getArea` (line 242) → `support/tree_model_volumes.rs:383`
+- [~] `get_lower_bound_area` (line 252) → `support/tree_model_volumes.rs:394` — partial
+- [~] `getMaxCalculatedLayer` (line 274) → `support/tree_model_volumes.rs:419` — partial
+- [x] `clear` (line 287) → `support/tree_model_volumes.rs:452`
+- [~] `clear_all_but_radius0` (line 288) → `support/tree_model_volumes.rs:459` — partial
+- [x] `allocate_layers` (line 891) → `support/tree_model_volumes.rs:316`
+- [~] `sorted` (line 901) → `support/tree_model_volumes.rs:440` — partial
 
 ### `Support/TreeSupport` (.cpp+.hpp)
 
@@ -13254,7 +13254,7 @@ Rust file: `text_configuration.rs`. Status: **partial**. Not listed: 1 construct
 
 **class `TextConfiguration`**
 
-- [~] `serialize` (line 176) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 176) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 ### `TexturePainting` (.cpp+.hpp)
 
@@ -13929,35 +13929,35 @@ Rust file: `utils.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 **free functions**
 
 - [~] `convert_to_full_version` (line 114) → `utils.rs:158` — partial
-- [x] `round_divide` (line 151) → `utils.rs:369`
-- [x] `round_up_divide` (line 156) → `utils.rs:376`
-- [~] `get_max_element` (line 162) → `utils.rs:382` — divergent
-- [~] `convert_vector` (line 173) → `utils.rs:448` — partial
+- [x] `round_divide` (line 151) → `utils.rs:399`
+- [x] `round_up_divide` (line 156) → `utils.rs:406`
+- [~] `get_max_element` (line 162) → `utils.rs:412` — divergent
+- [~] `convert_vector` (line 173) → `utils.rs:478` — partial
 - [~] `next_highest_power_of_2` (line 300) → `aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `next_highest_power_of_2` (line 310) → `aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `next_highest_power_of_2` (line 321) → `aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `next_highest_power_of_2` (line 337) → `aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
-- [x] `next_highest_power_of_2` (line 345) → `utils.rs:543`
-- [ ] `reserve_more` (line 354) → `utils.rs`
-- [ ] `reserve_more_power_of_2` (line 359) → `utils.rs`
-- [x] `prev_idx_modulo` (line 365) → `utils.rs:553`
-- [x] `next_idx_modulo` (line 373) → `utils.rs:564`
+- [x] `next_highest_power_of_2` (line 345) → `utils.rs:573`
+- [x] `reserve_more` (line 354) → `utils.rs:580`
+- [x] `reserve_more_power_of_2` (line 359) → `utils.rs:587`
+- [x] `prev_idx_modulo` (line 365) → `utils.rs:598`
+- [x] `next_idx_modulo` (line 373) → `utils.rs:609`
 - [~] `prev_idx_modulo` (line 381) → `utils.rs` — another overload of the name is ported
 - [~] `next_idx_modulo` (line 387) → `multi_material_segmentation.rs` — not in the paired file
-- [x] `short_time` (line 475) → `utils.rs:591`
-- [x] `get_time_dhms` (line 522) → `utils.rs:653`
-- [x] `get_bbl_time_dhms` (line 546) → `utils.rs:678`
-- [ ] `get_local_utc_offset_seconds` (line 573) → `utils.rs`
-- [ ] `get_local_utc_offset_seconds` (line 597) → `utils.rs`
-- [x] `get_timezone_utc_hm` (line 599) → `utils.rs:700`
-- [x] `get_time_dhm` (line 617) → `utils.rs:720`
-- [x] `get_time_hms` (line 638) → `utils.rs:741`
-- [x] `get_bbl_monitor_time_dhm` (line 651) → `utils.rs:754`
-- [~] `format_time_hm` (line 675) → `utils.rs:778` — partial
-- [ ] `get_bbl_finish_time` (line 701) → `utils.rs`
-- [~] `get_bbl_finish_time_dhm` (line 740) → `utils.rs:795` — partial
-- [x] `get_bbl_remain_time_dhms` (line 748) → `utils.rs:850`
-- [~] `filter_characters` (line 772) → `utils.rs:872` — divergent
+- [x] `short_time` (line 475) → `utils.rs:636`
+- [x] `get_time_dhms` (line 522) → `utils.rs:698`
+- [x] `get_bbl_time_dhms` (line 546) → `utils.rs:723`
+- [~] `get_local_utc_offset_seconds` (line 573) → `utils.rs:754` — divergent
+- [~] `get_local_utc_offset_seconds` (line 597) → `utils.rs` — another overload of the name is ported
+- [x] `get_timezone_utc_hm` (line 599) → `utils.rs:771`
+- [x] `get_time_dhm` (line 617) → `utils.rs:791`
+- [x] `get_time_hms` (line 638) → `utils.rs:812`
+- [x] `get_bbl_monitor_time_dhm` (line 651) → `utils.rs:825`
+- [~] `format_time_hm` (line 675) → `utils.rs:849` — partial
+- [x] `get_bbl_finish_time` (line 701) → `utils.rs:874`
+- [x] `get_bbl_finish_time_dhm` (line 740) → `utils.rs:930`
+- [x] `get_bbl_remain_time_dhms` (line 748) → `utils.rs:943`
+- [~] `filter_characters` (line 772) → `utils.rs:965` — divergent
 
 **class `FilePtr`**
 
@@ -13965,10 +13965,10 @@ Rust file: `utils.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **class `PathSanitizer`**
 
-- [x] `sanitize` (line 141) → `utils.rs:209`
-- [~] `sanitize` (line 142) → `utils.rs` — another overload of the name is ported
-- [~] `sanitize` (line 143) → `utils.rs` — another overload of the name is ported
-- [~] `sanitize` (line 144) → `utils.rs` — another overload of the name is ported
+- [x] `sanitize` (line 141) → `utils.rs:336`
+- [x] `sanitize` (line 142) → `utils.rs:309`
+- [x] `sanitize` (line 143) → `utils.rs:316`
+- [x] `sanitize` (line 144) → `utils.rs:302`
 
 **class `ScopeGuard`**
 
@@ -13980,66 +13980,66 @@ Rust file: `utils.rs`. Status: **partial**. Not listed: 2 constructors, 2 destru
 
 **free functions**
 
-- [~] `disable_multi_threading` (line 85) → `utils.rs:966` — divergent
-- [x] `set_var_dir` (line 98) → `utils.rs:974`
-- [x] `var` (line 108) → `utils.rs:986`
-- [x] `set_resources_dir` (line 121) → `utils.rs:1000`
-- [x] `set_temporary_dir` (line 133) → `utils.rs:1017`
-- [x] `set_local_dir` (line 145) → `utils.rs:1032`
-- [x] `set_sys_shapes_dir` (line 157) → `utils.rs:1047`
+- [~] `disable_multi_threading` (line 85) → `utils.rs:1059` — divergent
+- [x] `set_var_dir` (line 98) → `utils.rs:1067`
+- [x] `var` (line 108) → `utils.rs:1079`
+- [x] `set_resources_dir` (line 121) → `utils.rs:1093`
+- [x] `set_temporary_dir` (line 133) → `utils.rs:1110`
+- [x] `set_local_dir` (line 145) → `utils.rs:1125`
+- [x] `set_sys_shapes_dir` (line 157) → `utils.rs:1140`
 - [~] `set_data_dir` (line 171) → `log_sink.rs` — not in the paired file
-- [x] `custom_shapes_dir` (line 181) → `utils.rs:1059`
-- [~] `debug_out_path` (line 188) → `utils.rs:1075` — partial
+- [x] `custom_shapes_dir` (line 181) → `utils.rs:1152`
+- [~] `debug_out_path` (line 188) → `utils.rs:1168` — partial
 - [ ] `map_windows_error` (line 252) → `utils.rs`
 - [ ] `rename_internal` (line 311) → `utils.rs`
 - [ ] `real_path_from_handle` (line 331) → `utils.rs`
 - [ ] `rename` (line 346) → `utils.rs`
-- [~] `rename_file` (line 462) → `utils.rs:1134` — partial
+- [~] `rename_file` (line 462) → `utils.rs:1227` — partial
 - [ ] `copy_file_linux_read_write` (line 475) → `utils.rs`
 - [ ] `copy_file_linux` (line 524) → `utils.rs`
-- [~] `copy_file_inner` (line 666) → `utils.rs:1142` — divergent
-- [~] `copy_file` (line 703) → `utils.rs:1156` — divergent
-- [~] `copy_framework` (line 801) → `utils.rs:1182` — partial
-- [~] `check_copy` (line 829) → `utils.rs:1249` — divergent
-- [~] `is_plain_file` (line 867) → `utils.rs:1272` — divergent
-- [~] `is_ini_file` (line 879) → `utils.rs:1287` — partial
-- [~] `is_idx_file` (line 884) → `utils.rs:1293` — partial
-- [x] `is_gcode_file` (line 890) → `utils.rs:1299`
-- [x] `is_json_file` (line 896) → `utils.rs:1305`
-- [x] `is_img_file` (line 901) → `utils.rs:1311`
+- [~] `copy_file_inner` (line 666) → `utils.rs:1235` — divergent
+- [~] `copy_file` (line 703) → `utils.rs:1249` — divergent
+- [~] `copy_framework` (line 801) → `utils.rs:1275` — partial
+- [~] `check_copy` (line 829) → `utils.rs:1342` — divergent
+- [~] `is_plain_file` (line 867) → `utils.rs:1365` — divergent
+- [~] `is_ini_file` (line 879) → `utils.rs:1380` — partial
+- [~] `is_idx_file` (line 884) → `utils.rs:1386` — partial
+- [x] `is_gcode_file` (line 890) → `utils.rs:1392`
+- [x] `is_json_file` (line 896) → `utils.rs:1398`
+- [x] `is_img_file` (line 901) → `utils.rs:1404`
 - [~] `is_gallery_file` (line 906) → `utils.rs` — another overload of the name is ported
-- [x] `is_gallery_file` (line 911) → `utils.rs:1323`
-- [x] `is_shapes_dir` (line 916) → `utils.rs:1329`
-- [~] `is_separator` (line 925) → `format/resource_path_utils.rs` — not in the paired file
-- [ ] `is_utf8_continuation` (line 982) → `utils.rs`
-- [ ] `mask_bytes` (line 985) → `utils.rs`
-- [ ] `file_name_part` (line 997) → `utils.rs`
-- [ ] `is_upper_of` (line 1003) → `utils.rs`
-- [~] `encode_path` (line 1060) → `utils.rs:1336` — stub
-- [~] `decode_path` (line 1079) → `utils.rs:1343` — stub
-- [~] `normalize_utf8_nfc` (line 1096) → `utils.rs:1352` — divergent
-- [~] `split_string` (line 1102) → `utils.rs:1358` — partial
-- [x] `path_to_filename` (line 1116) → `utils.rs:1388`
-- [x] `path_to_stem` (line 1118) → `utils.rs:1396`
-- [x] `path_to_extension` (line 1120) → `utils.rs:1404`
-- [x] `path_to_parent_path` (line 1122) → `utils.rs:1413`
-- [~] `string_printf` (line 1126) → `utils.rs:1425` — stub
-- [x] `header_slic3r_generated` (line 1148) → `utils.rs:1436`
-- [x] `header_gcodeviewer_generated` (line 1153) → `utils.rs:1442`
-- [x] `get_current_pid` (line 1158) → `utils.rs:1448`
-- [ ] `get_process_name` (line 1168) → `utils.rs`
-- [x] `xml_escape` (line 1208) → `utils.rs:1460`
-- [~] `xml_escape_double_quotes_attribute_value` (line 1238) → `utils.rs:1521` — partial
-- [x] `xml_unescape` (line 1263) → `utils.rs:1566`
-- [x] `format_memsize_MB` (line 1299) → `utils.rs:1611`
-- [x] `format_diameter_to_str` (line 1325) → `utils.rs:1641`
-- [~] `log_memory_info` (line 1339) → `utils.rs:1669` — divergent
-- [ ] `get_peak_rss_mb` (line 1407) → `utils.rs`
-- [~] `total_physical_memory` (line 1428) → `utils.rs:1678` — stub
-- [~] `makedir` (line 1497) → `utils.rs:1684` — divergent
-- [ ] `bbl_calc_md5` (line 1511) → `utils.rs`
-- [~] `save_string_file` (line 1532) → `utils.rs:1700` — divergent
-- [~] `load_string_file` (line 1540) → `utils.rs:1706` — divergent
+- [x] `is_gallery_file` (line 911) → `utils.rs:1416`
+- [x] `is_shapes_dir` (line 916) → `utils.rs:1422`
+- [v] `is_separator` (line 925) → `utils.rs:193` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp
+- [v] `is_utf8_continuation` (line 982) → `utils.rs:258` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp
+- [v] `mask_bytes` (line 985) → `utils.rs:264` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp
+- [v] `file_name_part` (line 997) → `utils.rs:282` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp (the body reads as partial to the estimate)
+- [v] `is_upper_of` (line 1003) → `utils.rs:291` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp (the body reads as partial to the estimate)
+- [~] `encode_path` (line 1060) → `utils.rs:1429` — stub
+- [~] `decode_path` (line 1079) → `utils.rs:1436` — stub
+- [~] `normalize_utf8_nfc` (line 1096) → `utils.rs:1445` — divergent
+- [v] `split_string` (line 1102) → `utils.rs:1451` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp
+- [x] `path_to_filename` (line 1116) → `utils.rs:1485`
+- [x] `path_to_stem` (line 1118) → `utils.rs:1493`
+- [x] `path_to_extension` (line 1120) → `utils.rs:1501`
+- [x] `path_to_parent_path` (line 1122) → `utils.rs:1510`
+- [~] `string_printf` (line 1126) → `utils.rs:1522` — stub
+- [x] `header_slic3r_generated` (line 1148) → `utils.rs:1533`
+- [x] `header_gcodeviewer_generated` (line 1153) → `utils.rs:1539`
+- [x] `get_current_pid` (line 1158) → `utils.rs:1545`
+- [x] `get_process_name` (line 1168) → `utils.rs:1560`
+- [x] `xml_escape` (line 1208) → `utils.rs:1638`
+- [~] `xml_escape_double_quotes_attribute_value` (line 1238) → `utils.rs:1699` — partial
+- [x] `xml_unescape` (line 1263) → `utils.rs:1744`
+- [x] `format_memsize_MB` (line 1299) → `utils.rs:1789`
+- [x] `format_diameter_to_str` (line 1325) → `utils.rs:1819`
+- [~] `log_memory_info` (line 1339) → `utils.rs:1847` — divergent
+- [x] `get_peak_rss_mb` (line 1407) → `utils.rs:1863`
+- [~] `total_physical_memory` (line 1428) → `utils.rs:1901` — stub
+- [~] `makedir` (line 1497) → `utils.rs:1907` — divergent
+- [v] `bbl_calc_md5` (line 1511) → `utils.rs:1993` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp (the body reads as partial to the estimate)
+- [~] `save_string_file` (line 1532) → `utils.rs:2029` — divergent
+- [~] `load_string_file` (line 1540) → `utils.rs:2035` — divergent
 
 **class `CommonHandleTraits`**
 
@@ -14049,7 +14049,7 @@ Rust file: `utils.rs`. Status: **partial**. Not listed: 2 constructors, 2 destru
 
 **class `PathSanitizer`**
 
-- [~] `sanitize_impl` (line 1011) → `utils.rs:283` — divergent
+- [v] `sanitize_impl` (line 1011) → `utils.rs:341` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp (the body reads as divergent to the estimate)
 
 **class `ScopedHandle`**
 
@@ -14057,7 +14057,7 @@ Rust file: `utils.rs`. Status: **partial**. Not listed: 2 constructors, 2 destru
 
 **class `UserPathLayout`**
 
-- [~] `valid` (line 936) → `build_volume.rs, fill/fill_base.rs, gcode/conflict_checker.rs` — not in the paired file
+- [v] `valid` (line 936) → `utils.rs:213` — R913: tests/utils_native_parity.rs: 1,500 path sanitizations, 300 splits and 60 MD5 digests against the pin's utils.cpp
 
 ### `VariableWidth` (.cpp+.hpp)
 

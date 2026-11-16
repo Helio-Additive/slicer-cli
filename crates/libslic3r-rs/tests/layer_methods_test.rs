@@ -438,10 +438,19 @@ fn test_make_fills_adds_thin_fills() {
     let result = layer.make_fills(&[], &[], None);
     assert!(result.is_ok(), "make_fills should succeed");
 
-    // All fills should be cleared
+    // make_fills clears the fills (Fill.cpp:681) and then wraps every thin
+    // fill in a collection of its own and appends it (Fill.cpp:851-860), so the
+    // two thin fills come back as two fill collections, each holding a clone.
     // (re-borrow: the earlier `region` handle cannot outlive the `make_fills` call)
     let region = layer.get_region(0).expect("region exists");
-    assert_eq!(region.fills.entities.len(), 0, "fills should be cleared");
+    assert_eq!(region.fills.entities.len(), 2, "one fill collection per thin fill");
+    for e in &region.fills.entities {
+        match e {
+            ExtrusionEntityType::Collection(c) => assert_eq!(c.entities.len(), 1),
+            other => panic!("expected a collection, got {:?}", other),
+        }
+    }
+    assert_eq!(region.thin_fills.entities.len(), 2, "thin fills are cloned, not moved");
 }
 
 #[test]

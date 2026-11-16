@@ -553,7 +553,7 @@ fn bytes_to_string(b: &[u8]) -> String {
 }
 
 /// `std::ostringstream << double` with the default flags: `%g`, precision 6.
-fn ostream_double(v: f64) -> String {
+pub(crate) fn ostream_double(v: f64) -> String {
     if v.is_nan() {
         // The BSD printf of Apple's libc prints "nan" whatever the sign bit (glibc: "-nan").
         return "nan".to_string();
@@ -568,10 +568,10 @@ fn ostream_int(v: i32) -> String {
 
 /// Result of `strtod`: the value, the number of bytes consumed (0: no conversion) and
 /// whether `errno` was set to `ERANGE`.
-struct Strtod {
-    value: f64,
-    consumed: usize,
-    erange: bool,
+pub(crate) struct Strtod {
+    pub(crate) value: f64,
+    pub(crate) consumed: usize,
+    pub(crate) erange: bool,
 }
 
 fn hex_digit_value(c: u8) -> Option<u32> {
@@ -628,7 +628,7 @@ fn nan_payload(seq: &[u8]) -> u64 {
 /// C `strtod` of the BSD libc (gdtoa) in the C locale, over the bytes of `s` (the end of the
 /// slice is the terminating NUL). Leading white space, a sign, then one of: `inf`/`infinity`,
 /// `nan` with an optional `(n-char-sequence)`, a hexadecimal float, a decimal float.
-fn strtod_c(s: &[u8]) -> Strtod {
+pub(crate) fn strtod_c(s: &[u8]) -> Strtod {
     let n = s.len();
     let mut i = 0usize;
     while i < n && is_space_byte(s[i]) {
@@ -5465,7 +5465,7 @@ fn iequals(a: &str, b: &str) -> bool {
 /// flag off (what follows the first value is not read). The DOM it builds is held as a
 /// serde_json::Value (an object is sorted by key as the std::map of nlohmann::json is when it is
 /// iterated; a later duplicate key replaces the earlier value, as `operator[]` does).
-mod nlohmann_json {
+pub(crate) mod nlohmann_json {
     /// lexer_base::token_type (lexer.hpp:34-52)
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     enum TokenType {
@@ -5523,7 +5523,7 @@ mod nlohmann_json {
 
     /// The exceptions `parse` throws: parse_error (Config.cpp catches it by its class) and the
     /// out_of_range of a number that overflows (caught as a std::exception).
-    pub(super) enum Error {
+    pub(crate) enum Error {
         Parse(String),
         Other(String),
     }
@@ -6279,7 +6279,7 @@ mod nlohmann_json {
     }
 
     /// `ifs >> j` (json.hpp:7131-7135): `parser(detail::input_adapter(i)).parse(false, j)`.
-    pub(super) fn parse(data: &[u8]) -> Result<serde_json::Value, Error> {
+    pub(crate) fn parse(data: &[u8]) -> Result<serde_json::Value, Error> {
         let mut p = Parser::new(data);
         p.sax_parse_internal()
     }

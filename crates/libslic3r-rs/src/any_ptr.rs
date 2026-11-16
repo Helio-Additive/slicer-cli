@@ -325,9 +325,13 @@ mod tests {
         let ptr = AnyPtr::from_shared(Arc::clone(&arc));
         let copy = ptr.get_shared_cpy();
         assert!(copy.is_some());
-        assert_eq!(*copy.unwrap(), 42);
-        // original + ptr + copy
+        // Borrow the copy: `copy.unwrap()` would move it out and drop it before the count.
+        assert_eq!(**copy.as_ref().unwrap(), 42);
+        // original + ptr + copy: the pin gives use_count() == 3 (a generator holding a shared_ptr,
+        // an AnyPtr made from it and the AnyPtr's get_shared_cpy()).
         assert_eq!(Arc::strong_count(&arc), 3);
+        drop(copy);
+        assert_eq!(Arc::strong_count(&arc), 2);
 
         // Empty shared pointer returned otherwise.
         let raw = AnyPtr::from_raw(std::ptr::null_mut::<i32>());

@@ -408,8 +408,16 @@ mod tests {
 
         let ends = Arc::new(RwLock::new(vec![TransitionEnd::new(150, 2, true)]));
 
-        edge.set_transition_ends(ends);
+        // The edge keeps a weak_ptr (SkeletalTrapezoidationEdge.hpp:128): the caller has to keep a
+        // strong owner, as the C++ callers keep the shared_ptr list. Moving the only Arc into the
+        // call drops it, and the pin's hasTransitionEnds returns false then (use_count() == 0).
+        edge.set_transition_ends(Arc::clone(&ends));
         assert!(edge.has_transition_ends(false));
+        assert_eq!(edge.get_transition_ends().unwrap().read().len(), 1);
+
+        drop(ends);
+        assert!(!edge.has_transition_ends(false));
+        assert!(!edge.has_transition_ends(true));
     }
 
     #[test]

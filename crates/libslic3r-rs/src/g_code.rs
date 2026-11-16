@@ -4868,6 +4868,20 @@ pub fn set_extruder(
     /// C++: return gcode;
     /// C++: }
     if !writer.has_multiple_extruders() {
+        if crate::opt_in_gate("SET_EXTRUDER_SINGLE_SILENT") {
+            // GCode.cpp:8664 `gcode += m_writer.toolchange(new_filament_id,new_nozzle_id);`
+            // and GCodeWriter.cpp:419-443: toolchange() switches the current
+            // extruder and writes a command only `if (this->multiple_extruders)`,
+            // so a single-extruder setup gets no T line (and no retraction:
+            // the retract is in the multi-extruder branch, GCode.cpp:8674). The
+            // filament_start_gcode of GCode.cpp:8642-8658 is not processed here.
+            // Opt-in until `GCodeWriter::multiple_extruders` is wired: the live
+            // writer's `has_multiple_extruders()` is still a stub returning false
+            // (gcode/writer.rs), so multi-tool prints without a wipe tower reach
+            // this branch and need the T line of the arm below.
+            writer.set_extruder(new_extruder_id);
+            return Ok(());
+        }
         // Single extruder - just emit T command and update state
         writer.write_command_with_comment(&format!("T{}", new_extruder_id), Some("tool change"));
         writer.set_extruder(new_extruder_id);
@@ -5541,6 +5555,32 @@ mod exporter_tests {
         ExtrusionLoop::new(vec![path], ExtrusionLoopRole::DEFAULT)
     }
 
+    /// Sum of the E words of the G1/G2/G3 lines. The default writer uses
+    /// relative E (Extruder.cpp:83-84 resets m_E before every extrude when
+    /// use_relative_e_distances is set), so `writer.e()` is only the last
+    /// increment and the amount extruded is the sum of the E words.
+    fn sum_e_words(content: &str) -> f64 {
+        let mut sum = 0.0;
+        for line in content.lines() {
+            let code = line.split(';').next().unwrap_or("");
+            if !(code.starts_with("G1 ") || code.starts_with("G2 ") || code.starts_with("G3 ")) {
+                continue;
+            }
+            for word in code.split_whitespace() {
+                if let Some(v) = word.strip_prefix('E') {
+                    sum += v.parse::<f64>().unwrap();
+                }
+            }
+        }
+        sum
+    }
+
+    /// Extruder.cpp:18-19 `m_e_per_mm3 = filament_flow_ratio / filament_crossection`
+    /// for the writer's default 1.75 mm filament and flow ratio 1.
+    fn default_e_per_mm3() -> f64 {
+        1.0 / (1.75 * 1.75 * 0.25 * std::f64::consts::PI)
+    }
+
     /// Helper to create a simple path for testing
     fn create_simple_path() -> ExtrusionPath {
         let points = vec![Point::new_scale(0.0, 0.0), Point::new_scale(10.0, 0.0)];
@@ -5697,20 +5737,22 @@ mod exporter_tests {
         // Should have extruded for the 10mm segment
         assert!(final_e > initial_e, "E should increase for single segment");
 
-        // Calculate expected E delta: length * mm3_per_mm = 10.0 * 0.1 = 1.0
-        let expected_delta = 10.0 * 0.1;
+        // E is filament length, not volume: GCode.cpp `_extrude` takes
+        // e_per_mm = extruder()->e_per_mm3() * path.mm3_per_mm, so the 10 mm
+        // segment extrudes 10 * 0.1 / (pi * 1.75^2 / 4) = 0.41575 mm.
+        let expected_delta = 10.0 * 0.1 * default_e_per_mm3();
         let actual_delta = final_e - initial_e;
-
-        // Allow small floating-point tolerance
         assert!(
-            (actual_delta - expected_delta).abs() < 0.01,
-            "E delta should be approximately {}, got {}",
+            (actual_delta - expected_delta).abs() < 1e-9,
+            "E delta should be {}, got {}",
             expected_delta,
             actual_delta
         );
 
         let gcode = writer.get_gcode();
         let content = gcode.content();
+        // E is written with 5 decimals, the leading zero dropped (GCodeFormatter).
+        assert!(content.contains("G1 X10 Y0 E.41575"), "got {}", content);
 
         // Should have exactly one G1 command
         let g1_count = content.matches("G1").count();
@@ -5744,22 +5786,21 @@ mod exporter_tests {
         let config = crate::print_config::PrintObjectConfig::default();
         extrude_path(&path, &mut writer, &config, false);
 
-        let final_e = writer.e();
+        let _ = initial_e;
+        let gcode = writer.get_gcode();
+        let content = gcode.content();
 
-        // Total length: 10 + 5 + 10 = 25mm
-        // Expected E delta: 25 * 0.08 = 2.0
-        let expected_delta = 25.0 * 0.08;
-        let actual_delta = final_e - initial_e;
-
+        // Total length: 10 + 5 + 10 = 25mm. E is filament length,
+        // length * mm3_per_mm * e_per_mm3 (GCode.cpp `_extrude`), written per
+        // segment in relative E: .3326, .1663, .3326 = 25 * 0.08 * 0.41575.
+        let expected_delta = 25.0 * 0.08 * default_e_per_mm3();
+        let actual_delta = sum_e_words(content);
         assert!(
-            (actual_delta - expected_delta).abs() < 0.01,
+            (actual_delta - expected_delta).abs() < 3e-5,
             "E delta should be approximately {}, got {}",
             expected_delta,
             actual_delta
         );
-
-        let gcode = writer.get_gcode();
-        let content = gcode.content();
 
         // Should have 3 G1 commands (one per segment)
         let g1_count = content.matches("G1").count();
@@ -5809,12 +5850,15 @@ mod exporter_tests {
         let path1 = create_simple_path();
         let path2 = create_simple_path();
 
-        let e0 = writer.e();
+        // The default writer uses relative E, where writer.e() is the last
+        // increment (Extruder.cpp:83-84); the running total is the sum of the
+        // E words written so far.
+        let e0 = sum_e_words(writer.get_gcode().content());
         let config = crate::print_config::PrintObjectConfig::default();
         extrude_path(&path1, &mut writer, &config, false);
-        let e1 = writer.e();
+        let e1 = sum_e_words(writer.get_gcode().content());
         extrude_path(&path2, &mut writer, &config, false);
-        let e2 = writer.e();
+        let e2 = sum_e_words(writer.get_gcode().content());
 
         // Each path should increase E
         assert!(e1 > e0, "First path should increase E");
@@ -6057,23 +6101,21 @@ mod exporter_tests {
         let gcode = writer.get_gcode();
         let content = gcode.content();
 
-        // Should have feature comments for both roles
+        // Should have feature comments for both roles, under the names
+        // ExtrusionEntity::role_to_string gives them (ExtrusionEntity.cpp:617,
+        // 620): erPerimeter is "Inner wall", erInternalInfill "Sparse infill".
         assert!(
-            content.contains("Perimeter"),
-            "Should have Perimeter feature comment"
+            content.contains("; FEATURE: Inner wall\n"),
+            "Should have the Inner wall feature comment"
         );
         assert!(
-            content.contains("InternalInfill"),
-            "Should have InternalInfill feature comment"
+            content.contains("; FEATURE: Sparse infill\n"),
+            "Should have the Sparse infill feature comment"
         );
 
-        // Should have at least 2 feature comments
+        // One per role change
         let feature_count = content.matches("FEATURE:").count();
-        assert!(
-            feature_count >= 2,
-            "Should have at least 2 feature comments, got {}",
-            feature_count
-        );
+        assert_eq!(feature_count, 2, "Should have 2 feature comments, got {}", feature_count);
     }
 
     // Tests for travel_to, retract, and unretract
@@ -6460,15 +6502,19 @@ mod exporter_tests {
         // Change to extruder 1 (single extruder mode)
         set_extruder(1, &mut writer, 0.2, &config).expect("set_extruder should succeed");
 
-        // Should emit T command
+        // GCodeWriter::toolchange writes a command only with
+        // multiple_extruders (GCodeWriter.cpp:429-443), so a single-extruder
+        // setup switches without any G-code.
         let gcode = writer.get_gcode();
         let content = gcode.content();
-        assert!(
-            content.contains("T1") || content.contains("tool change"),
-            "Should emit tool change command"
-        );
+        if crate::opt_in_gate("SET_EXTRUDER_SINGLE_SILENT") {
+            assert!(content.is_empty(), "single-extruder toolchange writes nothing, got {:?}", content);
+        } else {
+            // Default arm (see set_extruder): the T line the no-tower path needs.
+            assert!(content.contains("T1"), "expected a T1 line, got {:?}", content);
+        }
 
-        // Extruder should be updated
+        // Extruder should be updated (GCodeWriter.cpp:422-425)
         assert_eq!(writer.extruder(), 1);
     }
 
@@ -6481,22 +6527,20 @@ mod exporter_tests {
         writer.set_x(10.0);
         writer.set_y(10.0);
 
-        // Change extruder (should retract first)
+        // Change extruder. GCode::set_extruder retracts only in the
+        // multi-extruder branch (GCode.cpp:8674 `this->retract(true, false)`);
+        // the single-extruder branch (GCode.cpp:8627-8666) goes straight to
+        // m_writer.toolchange, which writes nothing without multiple_extruders
+        // (GCodeWriter.cpp:429-443).
         set_extruder(1, &mut writer, 0.2, &config).expect("set_extruder should succeed");
 
-        // Should have retracted
         let gcode = writer.get_gcode();
         let content = gcode.content();
-
-        // Should contain both retraction and tool change
-        assert!(
-            content.contains(" E") || content.contains("retract"),
-            "Should retract before tool change"
-        );
-        assert!(
-            content.contains("T1") || content.contains("tool change"),
-            "Should emit tool change command"
-        );
+        assert!(!content.contains(" E"), "no retraction on a single extruder, got {:?}", content);
+        if crate::opt_in_gate("SET_EXTRUDER_SINGLE_SILENT") {
+            assert!(!content.contains("T1"), "no T command on a single extruder, got {:?}", content);
+        }
+        assert_eq!(writer.extruder(), 1);
     }
 
     #[test]
@@ -6514,15 +6558,15 @@ mod exporter_tests {
         set_extruder(2, &mut writer, 0.2, &config).expect("third change should succeed");
         assert_eq!(writer.extruder(), 2);
 
-        // Should have emitted multiple tool changes
+        // Single extruder: each toolchange only switches the current
+        // extruder and writes nothing (GCodeWriter.cpp:429-443).
         let gcode = writer.get_gcode();
         let content = gcode.content();
-        let t_count = content.matches("T").count();
-        assert!(
-            t_count >= 3,
-            "Should emit at least 3 tool change commands (got {})",
-            t_count
-        );
+        if crate::opt_in_gate("SET_EXTRUDER_SINGLE_SILENT") {
+            assert!(content.is_empty(), "single-extruder toolchanges write nothing, got {:?}", content);
+        } else {
+            assert!(content.contains("T1") && content.contains("T0") && content.contains("T2"), "expected T lines, got {:?}", content);
+        }
     }
 
     #[test]

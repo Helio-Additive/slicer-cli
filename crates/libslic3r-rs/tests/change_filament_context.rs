@@ -58,8 +58,11 @@ fn flush_length_split_matches_cpp_formula() {
     let out = process("F1 {flush_length_1} F2 {flush_length_2} F4 {flush_length_4}", &ctx);
     let area = std::f64::consts::PI / 4.0 * 1.75 * 1.75;
     let unit = (700.0 / area) / 4.0;
-    let expect = format!("F1 {u} F2 {u} F4 {u}", u = trim(unit));
+    let expect = format!("F1 {u} F2 {u} F4 {u}", u = ostream_default(unit));
     assert_eq!(out.trim(), expect, "flush split: {}", out);
+    // The pin's PlaceholderParser prints exactly this for the flush_length_*
+    // values GCode.cpp:1104-1119 computes (a generator doing both).
+    assert_eq!(out.trim(), "F1 72.7565 F2 72.7565 F4 72.7565");
 }
 
 #[test]
@@ -70,12 +73,22 @@ fn small_purge_uses_single_segment() {
     let out = process("{flush_length_1}|{flush_length_2}", &ctx);
     let area = std::f64::consts::PI / 4.0 * 1.75 * 1.75;
     let unit = 100.0 / area; // flush_count=1 → whole purge_length in segment 1
-    assert_eq!(out.trim(), format!("{}|0", trim(unit)));
+    assert_eq!(out.trim(), format!("{}|0", ostream_default(unit)));
+    // As the pin's PlaceholderParser prints it (a generator).
+    assert_eq!(out.trim(), "41.5752|0");
 }
 
-// Match Value::Float rendering (6 decimals, trailing zeros trimmed).
-fn trim(f: f64) -> String {
-    let s = format!("{:.6}", f);
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s.is_empty() { "0".into() } else { s.to_string() }
+/// How the placeholder parser prints a double: `std::ostringstream ss; ss <<
+/// data.d;` (PlaceholderParser.cpp:277-281), the stream default of six
+/// significant digits with trailing zeros dropped (printf `%g`). Only the
+/// fixed-point range these tests reach is handled.
+fn ostream_default(f: f64) -> String {
+    if f == 0.0 {
+        return "0".into();
+    }
+    let exp = f.abs().log10().floor() as i32;
+    assert!((-5..6).contains(&exp), "scientific range not handled");
+    let s = format!("{:.*}", (5 - exp).max(0) as usize, f);
+    let s = if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.') } else { &s };
+    s.to_string()
 }

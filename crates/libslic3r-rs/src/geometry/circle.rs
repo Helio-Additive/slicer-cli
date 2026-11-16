@@ -555,11 +555,14 @@ pub fn ray_circle_intersections_r2_lv2_c(
     c: CoordF,
     out: &mut (Vec2d, Vec2d),
 ) -> i32 {
+    // clang compiles the template with -ffp-contract=on: `r2 * lv2 - c * c` and each
+    // `x0 + b * d` is one fma. RAY_CIRCLE_FMA=0 restores the unfused arm byte for byte.
+    let fused = ray_circle_fma();
     // Circle.hpp:161-162
     let x0 = -a * c;
     let y0 = -b * c;
     // Circle.hpp:163
-    let d2 = r2 * lv2 - c * c;
+    let d2 = if fused { r2.mul_add(lv2, -(c * c)) } else { r2 * lv2 - c * c };
     // Circle.hpp:164-165
     if d2 < 0.0 {
         return 0;
@@ -567,10 +570,17 @@ pub fn ray_circle_intersections_r2_lv2_c(
     // Circle.hpp:166
     let d = d2.sqrt();
     // Circle.hpp:167-170
-    out.0.x = (x0 + b * d) / lv2;
-    out.0.y = (y0 - a * d) / lv2;
-    out.1.x = (x0 - b * d) / lv2;
-    out.1.y = (y0 + a * d) / lv2;
+    if fused {
+        out.0.x = b.mul_add(d, x0) / lv2;
+        out.0.y = (-a).mul_add(d, y0) / lv2;
+        out.1.x = (-b).mul_add(d, x0) / lv2;
+        out.1.y = a.mul_add(d, y0) / lv2;
+    } else {
+        out.0.x = (x0 + b * d) / lv2;
+        out.0.y = (y0 - a * d) / lv2;
+        out.1.x = (x0 - b * d) / lv2;
+        out.1.y = (y0 + a * d) / lv2;
+    }
     // Circle.hpp:171
     if d == 0.0 {
         1
@@ -590,8 +600,9 @@ pub fn ray_circle_intersections(
     c: CoordF,
     out: &mut (Vec2d, Vec2d),
 ) -> i32 {
-    // Circle.hpp:176
-    let lv2 = a * a + b * b;
+    // Circle.hpp:176  (`a * a + b * b` is one fma under -ffp-contract=on)
+    let fused = ray_circle_fma();
+    let lv2 = if fused { a.mul_add(a, b * b) } else { a * a + b * b };
     // Circle.hpp:177-181
     if lv2 < SCALED_EPSILON * SCALED_EPSILON {
         //FIXME what is the correct epsilon?
@@ -602,7 +613,14 @@ pub fn ray_circle_intersections(
     // NOTE: BambuStudio source calls `ray_circle_intersections_r2_lv2_c2` here, which does not
     // exist; the only matching definition is `ray_circle_intersections_r2_lv2_c` above. Ported
     // to the existing definition (the typo'd name is a known upstream compile-time dead path).
-    ray_circle_intersections_r2_lv2_c(r * r, a, b, a * a + b * b, c, out)
+    ray_circle_intersections_r2_lv2_c(r * r, a, b, lv2, c, out)
+}
+
+/// Gate for the fused multiply-adds of the ray/circle templates (Circle.hpp:158-183) as clang
+/// compiles them; checked bit for bit by tests/geometry_circle_native_parity.rs.
+fn ray_circle_fma() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("RAY_CIRCLE_FMA"))
 }
 
 /// Mersenne Twister (`std::mt19937`) faithful to the standard parameters used by
@@ -835,14 +853,19 @@ mod tests {
 
     #[test]
     fn test_ray_circle_intersections() {
-        // Line x = 0 (a=1, b=0, c=0) through a unit circle => (0, 1) and (0, -1).
+        // The epsilon of Circle.hpp:177 is in scaled units (SCALED_EPSILON^2 = 100): a line
+        // vector of length 1 is refused, `return false` (0).
         let mut out = (Vec2d::new(0.0, 0.0), Vec2d::new(0.0, 0.0));
-        let count = ray_circle_intersections(1.0, 1.0, 0.0, 0.0, &mut out);
+        assert_eq!(ray_circle_intersections(1.0, 1.0, 0.0, 0.0, &mut out), 0);
+
+        // Line 1000 x = 0 through a circle of radius 1000: (0, -1000) and (-0, 1000), the values of
+        // the pin's ray_circle_intersections_r2_lv2_c (a generator calling it with the arguments
+        // Circle.hpp:182 passes; ray_circle_intersections itself calls an undefined
+        // `ray_circle_intersections_r2_lv2_c2` and cannot be instantiated at the pin).
+        let count = ray_circle_intersections(1000.0, 1000.0, 0.0, 0.0, &mut out);
         assert_eq!(count, 2);
-        assert!((out.0.x).abs() < 1e-12);
-        assert!((out.0.y.abs() - 1.0).abs() < 1e-12);
-        assert!((out.1.x).abs() < 1e-12);
-        assert!((out.1.y.abs() - 1.0).abs() < 1e-12);
+        assert_eq!((out.0.x, out.0.y), (0.0, -1000.0));
+        assert_eq!((out.1.x.to_bits(), out.1.y), ((-0.0f64).to_bits(), 1000.0));
     }
 
     #[test]

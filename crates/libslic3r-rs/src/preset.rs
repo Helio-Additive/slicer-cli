@@ -2300,17 +2300,34 @@ pub type BooleanExpressionEvaluator = fn(&str, &DynamicConfig, Option<&DynamicCo
 
 static BOOLEAN_EXPRESSION_EVALUATOR: RwLock<Option<BooleanExpressionEvaluator>> = RwLock::new(None);
 
-/// FIDELITY-NOTE: PlaceholderParser::evaluate_boolean_expression is not ported
-/// (placeholder_parser.rs has the expression values but not the grammar). The compatibility
-/// conditions are evaluated by the function installed here; with none installed the evaluation
-/// fails, and the callers take the path the C++ takes when the expression throws: compatible.
+/// The compatibility conditions are evaluated by the function installed here (tests install their
+/// own); with none installed, by [`placeholder_parser_evaluate_boolean_expression`], the port of
+/// `PlaceholderParser::evaluate_boolean_expression`. An evaluation that fails takes the path the C++
+/// takes when the expression throws: compatible.
 pub fn set_boolean_expression_evaluator(evaluator: Option<BooleanExpressionEvaluator>) {
     *BOOLEAN_EXPRESSION_EVALUATOR.write().unwrap() = evaluator;
+}
+
+/// PlaceholderParser.cpp:1554-1562 `PlaceholderParser::evaluate_boolean_expression(templ, config, config_override)`,
+/// the `what()` of the exception it throws as the error (every exception it throws is a
+/// `std::runtime_error`, which Preset.cpp:795 / 832 catch).
+pub fn placeholder_parser_evaluate_boolean_expression(
+    templ: &str,
+    config: &DynamicConfig,
+    config_override: Option<&DynamicConfig>,
+) -> Result<bool, String> {
+    crate::placeholder_parser::PlaceholderParser::evaluate_boolean_expression(templ, config, config_override)
+        .map_err(|e| e.what().to_string())
 }
 
 fn evaluate_boolean_expression(templ: &str, config: &DynamicConfig, config_override: Option<&DynamicConfig>) -> Result<bool, String> {
     match *BOOLEAN_EXPRESSION_EVALUATOR.read().unwrap() {
         Some(f) => f(templ, config, config_override),
+        // Gate PRESET_PLACEHOLDER_BOOLEAN_EXPRESSION (faithful, on): =0 restores the earlier arm, where
+        // no evaluator was available and every condition failed (compatible).
+        None if crate::faithful_gate("PRESET_PLACEHOLDER_BOOLEAN_EXPRESSION") => {
+            placeholder_parser_evaluate_boolean_expression(templ, config, config_override)
+        }
         None => Err("PlaceholderParser::evaluate_boolean_expression is not available".to_string()),
     }
 }
@@ -5551,8 +5568,9 @@ pub mod preset_utils {
     }
 }
 
-/// FIDELITY-NOTE: PresetBundle (PresetBundle.hpp) is not ported. The Preset methods that take a
-/// `PresetBundle*` read its printers and vendors only; this holds those two.
+/// FIDELITY-NOTE: the Preset methods that take a `PresetBundle*` read its printers and vendors
+/// only; this holds those two, so a caller without a whole `preset_bundle::PresetBundle` (the tests
+/// of this unit) can pass them. A bundle gives its view with `PresetBundle::view()`.
 pub struct PresetBundleView<'a> {
     pub printers: &'a PrinterPresetCollection,
     pub vendors: &'a VendorMap,

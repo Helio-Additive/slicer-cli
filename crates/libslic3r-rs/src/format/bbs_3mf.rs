@@ -1482,12 +1482,26 @@ mod tests {
 
     #[test]
     fn test_zip_unicode_path_extra_field_roundtrip() {
-        // bbs_3mf.cpp:66-98
+        // bbs_3mf.cpp:66-98. Expected values printed by the pin's own struct
+        // (a generator that includes bbs_3mf.cpp and calls encode/decode).
         let extra = ZipUnicodePathExtraField::encode("päth", "p?th");
-        assert!(!extra.is_empty());
-        assert_eq!(extra[0], 0x75);
-        assert_eq!(extra[1], 0x70);
-        assert_eq!(ZipUnicodePathExtraField::decode(&extra, "p?th"), "päth");
+        assert_eq!(
+            extra,
+            vec![
+                0x75, 0x70, 0x0a, 0x00, 0x01, 0xb5, 0x88, 0x76, 0x6d, 0x70, 0xc3, 0xa4, 0x74,
+                0x68
+            ]
+        );
+        // bbs_3mf.cpp:92 tests `p + 4 + len < e` (strict), so a field that ends
+        // exactly at the end of the extra data is not taken and decode falls
+        // back to decode_path(path) (bbs_3mf.cpp:99); the pin prints "p?th".
+        assert_eq!(ZipUnicodePathExtraField::decode(&extra, "p?th"), "p?th");
+        // With any byte after the field it is taken; the pin prints "päth".
+        let mut padded = extra.clone();
+        padded.push(0);
+        assert_eq!(ZipUnicodePathExtraField::decode(&padded, "p?th"), "päth");
+        padded.extend_from_slice(&[0, 0, 0]);
+        assert_eq!(ZipUnicodePathExtraField::decode(&padded, "p?th"), "päth");
         // Identical paths produce no extra field.
         assert!(ZipUnicodePathExtraField::encode("path", "path").is_empty());
         // No unicode entry -> falls back to decode_path(path).

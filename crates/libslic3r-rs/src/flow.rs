@@ -28,6 +28,10 @@ use std::f64::consts::PI;
 use thiserror::Error;
 
 use crate::libslic3r::EPSILON;
+use crate::config::{
+    ConfigOptionFloat, ConfigOptionFloatOrPercent, ConfigOptionFloatsNullable, ConfigOptionResolver,
+    ConfigOptionResolverTyped,
+};
 use crate::print_object::PrintObject;
 use crate::{scale, Coord};
 
@@ -58,6 +62,10 @@ pub enum FlowError {
     /// Flow.hpp:43-47
     #[error("Missing flow configuration variable: {0}")]
     MissingVariable(String),
+
+    /// Slic3r::RuntimeError (opt_key_to_flow_role, Flow.cpp:58)
+    #[error("{0}")]
+    Runtime(String),
 }
 
 /// Result type for flow calculations.
@@ -136,6 +144,20 @@ pub fn flow_f32() -> bool {
     *G.get_or_init(|| crate::faithful_gate("FLOW_F32"))
 }
 
+/// Gate for the float arithmetic of Flow.cpp / Flow.hpp as clang compiles it (on by default;
+/// FLOW_FMA=0 restores the earlier arm byte for byte). The members and arguments are floats:
+/// each float operation rounds to float, and `-ffp-contract=on` fuses a multiply with the add or
+/// subtract of the same expression (`width - height * coef` is one fmaf; `spacing + height *
+/// (1. - 0.25 * PI)` one fma in double). Checked bit for bit against the pin by
+/// tests/flow_native_parity.rs. Takes effect only with FLOW_F32 on, the float store it refines.
+pub fn flow_fma() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| flow_f32() && crate::faithful_gate("FLOW_FMA"))
+}
+
+/// `1. - 0.25 * PI`, the double constant of the rounded-rectangle model (Flow.cpp:216, 224, 239).
+const ROUNDED_RECTANGLE_COEF: f64 = 1.0 - 0.25 * PI;
+
 /// Quantize to f32 under the FLOW_F32 gate (native float member store).
 fn q32(v: f64) -> f64 {
     if flow_f32() {
@@ -143,6 +165,45 @@ fn q32(v: f64) -> f64 {
     } else {
         v
     }
+}
+
+/// Used by the Flow::extrusion_width() funtion to provide hints to the user on default extrusion
+/// width values, and to provide reasonable values to the PlaceholderParser.
+/// Flow.cpp:41-59  static inline FlowRole opt_key_to_flow_role(const std::string &opt_key)
+pub fn opt_key_to_flow_role(opt_key: &str) -> FlowResult<FlowRole> {
+    if opt_key == "inner_wall_line_width"
+        // or all the defaults:
+        || opt_key == "line_width"
+        || opt_key == "initial_layer_line_width"
+    {
+        Ok(FlowRole::Perimeter)
+    } else if opt_key == "outer_wall_line_width" {
+        Ok(FlowRole::ExternalPerimeter)
+    } else if opt_key == "sparse_infill_line_width"
+        || opt_key == "skeleton_infill_line_width"
+        || opt_key == "initial_layer_infill_line_width"
+    {
+        Ok(FlowRole::Infill)
+    } else if opt_key == "internal_solid_infill_line_width" || opt_key == "skin_infill_line_width" {
+        Ok(FlowRole::SolidInfill)
+    } else if opt_key == "top_surface_line_width" {
+        Ok(FlowRole::TopSolidInfill)
+    } else if opt_key == "support_line_width" {
+        Ok(FlowRole::SupportMaterial)
+    } else {
+        // throw Slic3r::RuntimeError("opt_key_to_flow_role: invalid argument");
+        Err(FlowError::Runtime("opt_key_to_flow_role: invalid argument".to_string()))
+    }
+}
+
+/// Flow.cpp:61-64  static inline void throw_on_missing_variable(const std::string &opt_key, const char *dependent_opt_key)
+/// The FlowErrorMissingVariable it throws, for the caller to return.
+pub fn throw_on_missing_variable(opt_key: &str, dependent_opt_key: &str) -> FlowError {
+    // L(s) translates; the CLI has no translation, so the English text.
+    FlowError::MissingVariable(format!(
+        "Failed to calculate line width of {}. Can not get value of \"{}\" ",
+        opt_key, dependent_opt_key
+    ))
 }
 
 /// Flow implementation
@@ -352,6 +413,24 @@ impl Flow {
     ///
     /// Returns `FlowError::NegativeFlow` if the result would be negative.
     pub fn mm3_per_mm(&self) -> FlowResult<f64> {
+        if flow_fma() {
+            // Flow.cpp:235-243
+            let (w, h) = (self.width as f32, self.height as f32);
+            let res: f32 = if self.bridge {
+                // Flow.cpp:238  float((m_width * m_width) * 0.25 * PI): the square is a float
+                // product, the rest double.
+                ((w * w) as f64 * 0.25 * PI) as f32
+            } else {
+                // Flow.cpp:240  float(m_height * (m_width - m_height * (1. - 0.25 * PI))): the
+                // inner subtraction is one fma in double.
+                (h as f64 * (-(h as f64)).mul_add(ROUNDED_RECTANGLE_COEF, w as f64)) as f32
+            };
+            // Flow.cpp:242-243
+            if res <= 0.0 {
+                return Err(FlowError::NegativeFlow);
+            }
+            return Ok(res as f64);
+        }
         let res = if self.bridge {
             // Area of a circle with diameter = width
             q32((self.width * self.width) * 0.25 * PI)
@@ -398,6 +477,12 @@ impl Flow {
     #[inline]
     pub fn scaled_elephant_foot_spacing(&self) -> Coord {
         // coord_t(0.5f * float(this->scaled_width() + 0.6f * this->scaled_spacing()))
+        if flow_fma() {
+            // In float: the coord_t values convert to float, `scaled_width() + 0.6f *
+            // scaled_spacing()` is one fmaf, then the float product with 0.5f, truncated.
+            let sum = 0.6f32.mul_add(self.scaled_spacing() as f32, self.scaled_width() as f32);
+            return (0.5f32 * sum) as i32 as Coord;
+        }
         // Computed on the scaled (coord_t) values, matching C++ ordering / rounding.
         (0.5 * (self.scaled_width() as f64 + 0.6 * self.scaled_spacing() as f64)) as Coord
     }
@@ -445,6 +530,34 @@ impl Flow {
     /// This adjusts width/height to achieve the new spacing while keeping the
     /// gap between extrusions constant.
     pub fn with_spacing(&self, new_spacing: f64) -> FlowResult<Self> {
+        if flow_fma() {
+            // Flow.cpp:159-178, in float: `new_spacing` is a float parameter.
+            let new_spacing = new_spacing as f32;
+            let (width, height, spacing) = (self.width as f32, self.height as f32, self.spacing as f32);
+            // Flow.cpp:161  Flow out = *this;
+            let mut out = *self;
+            if self.bridge {
+                // Flow.cpp:164-167  Diameter of the rounded extrusion.
+                debug_assert!(self.width == self.height);
+                let gap: f32 = spacing - width;
+                let new_diameter: f32 = new_spacing - gap;
+                out.width = new_diameter as f64;
+                out.height = new_diameter as f64;
+            } else {
+                // Flow.cpp:169-173
+                debug_assert!(self.width >= self.height);
+                let out_width: f32 = width + (new_spacing - spacing);
+                out.width = out_width as f64;
+                if out_width < height {
+                    return Err(FlowError::InvalidArgument(
+                        "Invalid spacing supplied to Flow::with_spacing()".to_string(),
+                    ));
+                }
+            }
+            // Flow.cpp:176  out.m_spacing = new_spacing;
+            out.spacing = new_spacing as f64;
+            return Ok(out);
+        }
         // Flow.cpp:140
         let mut out = *self;
         if self.bridge {
@@ -495,6 +608,55 @@ impl Flow {
             "Flow width must be >= height for cross section adjustment"
         );
 
+        if flow_fma() {
+            // Flow.cpp:181-212, in float: `area_new` is a float parameter.
+            let area_new = area_new as f32;
+            let (width, height, spacing) = (self.width as f32, self.height as f32, self.spacing as f32);
+            // Flow.cpp:187  float area = this->mm3_per_mm();
+            let area = self.mm3_per_mm()? as f32;
+            // Flow.cpp:188  float + double EPSILON: compared in double.
+            if area_new as f64 > area as f64 + EPSILON {
+                // Increasing the flow rate.
+                // Flow.cpp:190
+                let new_full_spacing: f32 = area_new / height;
+                if new_full_spacing > spacing {
+                    // Filling up the spacing without an air gap. Grow the extrusion in height.
+                    // Flow.cpp:193-194
+                    let height: f32 = area_new / spacing;
+                    return Ok(Self::new_with_spacing(
+                        Self::rounded_rectangle_extrusion_width_from_spacing(spacing as f64, height as f64),
+                        height as f64,
+                        self.spacing,
+                        self.nozzle_diameter,
+                        false,
+                    ));
+                } else {
+                    // Flow.cpp:196
+                    return self.with_width(Self::rounded_rectangle_extrusion_width_from_spacing(
+                        (area / height) as f64,
+                        self.height,
+                    ));
+                }
+            } else if (area_new as f64) < area as f64 - EPSILON {
+                // Decreasing the flow rate.
+                // Flow.cpp:200
+                let width_new: f32 = width - (area - area_new) / height;
+                debug_assert!(width_new > 0.0);
+                if width_new > height {
+                    // Shrink the extrusion width.
+                    // Flow.cpp:204
+                    return self.with_width(width_new as f64);
+                } else {
+                    // Create a rounded extrusion.
+                    // Flow.cpp:207-208  auto dmr = float(sqrt(area_new / M_PI));
+                    let dmr = ((area_new as f64 / PI).sqrt()) as f32;
+                    return Ok(Self::new_with_spacing(dmr as f64, dmr as f64, self.spacing, self.nozzle_diameter, false));
+                }
+            } else {
+                // Flow.cpp:211
+                return Ok(*self);
+            }
+        }
         // Adjust for bridge_flow, maintain the extrusion spacing.
         // Flow.cpp:164
         let area = self.mm3_per_mm()?;
@@ -557,6 +719,8 @@ impl Flow {
     /// * `ratio` - Multiplier for cross-section area (e.g., 1.05 for +5%)
     #[inline]
     pub fn with_flow_ratio(&self, ratio: f64) -> FlowResult<Self> {
+        // Flow.hpp:103  with_cross_section(this->mm3_per_mm() * ratio): the double product is
+        // converted to the float parameter (with_cross_section does that under FLOW_FMA).
         let current_area = self.mm3_per_mm()?;
         self.with_cross_section(current_area * ratio)
     }
@@ -583,7 +747,11 @@ impl Flow {
         // float(1. - 0.25*PI) is rounded to f32 FIRST, then height*coef and
         // the subtraction round in f32 — one f64 pass + final rounding lands
         // 1 f32-ULP off (measured: sp .377079636 vs native .377079606, R281).
-        let spacing = if flow_f32() {
+        let spacing = if flow_fma() {
+            // Flow.cpp:214  auto out = width - height * float(1. - 0.25 * PI);  one fmaf.
+            let coef = ROUNDED_RECTANGLE_COEF as f32;
+            (-(height as f32)).mul_add(coef, width as f32) as f64
+        } else if flow_f32() {
             let coef = (1.0 - 0.25 * PI) as f32;
             ((width as f32) - (height as f32) * coef) as f64
         } else {
@@ -610,7 +778,10 @@ impl Flow {
         // Native (Flow.cpp:201-204) is DIFFERENT from spacing(): the inner
         // arithmetic promotes to DOUBLE (f32 spacing + f32 height * double
         // coef) and float() rounds ONCE at the end.
-        if flow_f32() {
+        if flow_fma() {
+            // Flow.cpp:224  float(spacing + height * (1. - 0.25 * PI)): one fma in double.
+            ((height as f32) as f64).mul_add(ROUNDED_RECTANGLE_COEF, (spacing as f32) as f64) as f32 as f64
+        } else if flow_f32() {
             (((spacing as f32) as f64) + ((height as f32) as f64) * (1.0 - 0.25 * PI)) as f32
                 as f64
         } else {
@@ -639,6 +810,20 @@ impl Flow {
     ///
     /// These defaults match the manual Prusa MK3 profiles in BambuStudio.
     pub fn auto_extrusion_width(role: FlowRole, nozzle_diameter: f64) -> f64 {
+        if flow_fma() {
+            // Flow.cpp:22-37: a float parameter, `1.125f * nozzle_diameter` a float product.
+            let nozzle_diameter = nozzle_diameter as f32;
+            return match role {
+                FlowRole::SupportMaterial
+                | FlowRole::SupportMaterialInterface
+                | FlowRole::SupportTransition
+                | FlowRole::TopSolidInfill => nozzle_diameter as f64,
+                FlowRole::ExternalPerimeter
+                | FlowRole::Perimeter
+                | FlowRole::SolidInfill
+                | FlowRole::Infill => (1.125f32 * nozzle_diameter) as f64,
+            };
+        }
         match role {
             FlowRole::SupportMaterial
             | FlowRole::SupportMaterialInterface
@@ -652,31 +837,109 @@ impl Flow {
         }
     }
 
-    // === BLOCKED: Flow::extrusion_width (Flow.cpp:67-116) ===========================
-    //
-    // The two `Flow::extrusion_width(opt_key, ...)` static overloads, together with
-    // their file-local helpers `opt_key_to_flow_role` (Flow.cpp:41-59) and
-    // `throw_on_missing_variable` (Flow.cpp:61-64), are NOT portable into this crate
-    // at present.
-    //
-    // They are built entirely on the dynamic, string-keyed `ConfigOptionResolver`
-    // API:  `config.option<ConfigOptionFloatOrPercent>(opt_key)`,
-    //        `config.option(opt_key_layer_height)`,
-    //        `config.option<ConfigOptionFloatsNullable>("nozzle_diameter")`.
-    // This crate models the config as a flat struct of concrete typed fields
-    // (PrintConfig / PrintObjectConfig / PrintRegionConfig); there is no
-    // `ConfigOptionResolver` / `DynamicConfig` / runtime `option(opt_key)` lookup
-    // (see config.rs — the ConfigBase/DynamicConfig family is documented but not
-    // implemented).
-    //
-    // In C++ these two overloads are consumed ONLY by PlaceholderParser.cpp
-    // (PlaceholderParser.cpp:913 and :929) to provide hint values for `{...}`
-    // template variables. PlaceholderParser is itself a dynamic-config consumer
-    // and is not ported. No ported call site needs `Flow::extrusion_width`.
-    //
-    // Porting these faithfully would require first standing up the dynamic
-    // `ConfigOptionResolver` infrastructure; doing so now would be a stub against
-    // the flat-config reality. Left blocked until that infrastructure exists.
+    /// Used to provide hints to the user on default extrusion width values, and to provide
+    /// reasonable values to the PlaceholderParser.
+    /// Flow.cpp:67-88  double Flow::extrusion_width(const std::string& opt_key, const ConfigOptionFloat* opt,
+    ///                 const ConfigOptionResolver& config, const unsigned int first_printing_extruder)
+    pub fn extrusion_width(
+        opt_key: &str,
+        opt: Option<&ConfigOptionFloat>,
+        config: &dyn ConfigOptionResolver,
+        first_printing_extruder: u32,
+    ) -> FlowResult<f64> {
+        // Flow.cpp:69  assert(opt != nullptr);
+        let mut opt = opt.expect("Flow::extrusion_width: opt");
+
+        // Flow.cpp:71-76
+        if opt.value == 0.0 {
+            // The role specific extrusion width value was set to zero, try the role non-specific extrusion width.
+            opt = match config.option_typed::<ConfigOptionFloat>("line_width") {
+                Some(o) => o,
+                None => return Err(throw_on_missing_variable(opt_key, "line_width")),
+            };
+        }
+
+        // Flow.cpp:78-84
+        if opt.value == 0.0 {
+            // If user left option to 0, calculate a sane default width.
+            let opt_nozzle_diameters = match config.option_typed::<ConfigOptionFloatsNullable>("nozzle_diameter") {
+                Some(o) => o,
+                None => return Err(throw_on_missing_variable(opt_key, "nozzle_diameter")),
+            };
+            return Ok(Self::auto_extrusion_width(
+                opt_key_to_flow_role(opt_key)?,
+                (*opt_nozzle_diameters.get_at(first_printing_extruder as usize) as f32) as f64,
+            ));
+        }
+
+        // Flow.cpp:86
+        Ok(opt.value)
+    }
+
+    /// Flow.cpp:90-94  double Flow::extrusion_width(const std::string& opt_key, const ConfigOptionResolver &config,
+    ///                 const unsigned int first_printing_extruder)
+    /// (the overload that looks the option up by its key)
+    pub fn extrusion_width_by_key(
+        opt_key: &str,
+        config: &dyn ConfigOptionResolver,
+        first_printing_extruder: u32,
+    ) -> FlowResult<f64> {
+        Self::extrusion_width(opt_key, config.option_typed::<ConfigOptionFloat>(opt_key), config, first_printing_extruder)
+    }
+
+    /// Convert the absolute width authored for the process preset into the equivalent width for
+    /// the nozzle that will actually print the path when multi-diameter mode is enabled.
+    /// Flow.cpp:96-107
+    pub fn extrusion_width_for_nozzle(
+        width: &ConfigOptionFloat,
+        preset_nozzle_diameter: f32,
+        nozzle_diameter: f32,
+        multi_nozzle_diameter_mode: bool,
+    ) -> f64 {
+        // Flow.cpp:100-102
+        if !multi_nozzle_diameter_mode || width.value == 0.0 || preset_nozzle_diameter <= 0.0 || nozzle_diameter <= 0.0 {
+            return width.value;
+        }
+
+        // The GUI keeps showing the absolute width authored by the process preset. Convert it to an
+        // intermediate percentage and reuse the existing percent-to-absolute conversion for the actual nozzle.
+        // Flow.cpp:104-106
+        let relative_width =
+            ConfigOptionFloatOrPercent::with_value(100.0 * width.value / preset_nozzle_diameter as f64, true);
+        relative_width.get_abs_value(nozzle_diameter as f64)
+    }
+
+    /// Resolve a role-specific width through line_width, then convert it for the target nozzle.
+    /// Flow.cpp:109-133
+    pub fn resolve_extrusion_width_for_nozzle(
+        opt_key: &str,
+        config: &dyn ConfigOptionResolver,
+        preset_nozzle_diameter: f32,
+        nozzle_diameter: f32,
+        multi_nozzle_diameter_mode: bool,
+    ) -> FlowResult<f64> {
+        // Flow.cpp:116-118
+        let mut width = match config.option_typed::<ConfigOptionFloat>(opt_key) {
+            Some(w) => w,
+            None => return Err(throw_on_missing_variable(opt_key, opt_key)),
+        };
+
+        // Flow.cpp:120-124
+        if width.value == 0.0 {
+            width = match config.option_typed::<ConfigOptionFloat>("line_width") {
+                Some(w) => w,
+                None => return Err(throw_on_missing_variable(opt_key, "line_width")),
+            };
+        }
+
+        // Flow.cpp:126-127
+        if width.value == 0.0 {
+            return Ok(Self::auto_extrusion_width(opt_key_to_flow_role(opt_key)?, nozzle_diameter as f64));
+        }
+
+        // Flow.cpp:129-130
+        Ok(Self::extrusion_width_for_nozzle(width, preset_nozzle_diameter, nozzle_diameter, multi_nozzle_diameter_mode))
+    }
 
     // === E-Value Calculation Helpers ===
 
@@ -1113,15 +1376,12 @@ mod tests {
         // These values should match libslic3r output
         assert!(approx_eq(width, 0.45), "Auto width should be 0.45mm");
 
+        // Flow.cpp:235-243 computes in double from the float members and stores the result in a
+        // float before returning it as double: the pin gives 0.081415928900241852 (a generator
+        // calling Flow(auto_extrusion_width(frExternalPerimeter, 0.4f), 0.2f, 0.4f).mm3_per_mm()),
+        // not the all-double 0.2 * (0.45 - 0.2 * (1 - pi / 4)) = 0.08141592653589794.
         let area = flow.mm3_per_mm().unwrap();
-        // Expected from C++: 0.2 × (0.45 - 0.2 × 0.2146) ≈ 0.0814
-        let expected = 0.2 * (0.45 - 0.2 * (1.0 - 0.25 * PI));
-        assert!(
-            (area - expected).abs() < 1e-9,
-            "mm3_per_mm mismatch: got {}, expected {}",
-            area,
-            expected
-        );
+        assert_eq!(area, 0.081415928900241852, "mm3_per_mm mismatch: got {}", area);
     }
 
     #[test]
@@ -1129,15 +1389,11 @@ mod tests {
         // Typical bridge flow
         let flow = Flow::bridging_flow(0.4, 0.4);
 
-        // Bridge area = π × r² = π × 0.2²
+        // Bridge area = π × r² = π × 0.2², stored in a float (Flow.cpp:237-239): the pin gives
+        // 0.12566371262073517 (a generator calling Flow::bridging_flow(0.4f, 0.4f).mm3_per_mm()),
+        // not the double pi * 0.04 = 0.12566370614359174.
         let area = flow.mm3_per_mm().unwrap();
-        let expected = PI * 0.04;
-        assert!(
-            (area - expected).abs() < 1e-9,
-            "Bridge mm3_per_mm mismatch: got {}, expected {}",
-            area,
-            expected
-        );
+        assert_eq!(area, 0.12566371262073517, "Bridge mm3_per_mm mismatch: got {}", area);
 
         // Bridge spacing = diameter + BRIDGE_EXTRA_SPACING
         assert!(approx_eq(flow.spacing(), 0.4 + BRIDGE_EXTRA_SPACING));

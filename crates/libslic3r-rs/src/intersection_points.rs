@@ -122,6 +122,53 @@ pub fn get_intersections_expolygons(expolygons: &ExPolygons) -> IntersectionsLin
     compute_intersections(&expolygons_to_lines(expolygons))
 }
 
+/// The five `get_intersections` overloads of IntersectionPoints.hpp:15-19, one implementation
+/// per argument type (the C++ overload set), so that `get_intersections(&x)` reads as the C++
+/// call does.
+pub trait GetIntersections {
+    fn get_intersections(&self) -> IntersectionsLines;
+}
+
+impl GetIntersections for Lines {
+    // IntersectionPoints.cpp:40  IntersectionsLines get_intersections(const Lines &lines)           { return compute_intersections(lines); }
+    fn get_intersections(&self) -> IntersectionsLines {
+        compute_intersections(self)
+    }
+}
+
+impl GetIntersections for Polygon {
+    // IntersectionPoints.cpp:41  IntersectionsLines get_intersections(const Polygon &polygon)       { return compute_intersections(to_lines(polygon)); }
+    fn get_intersections(&self) -> IntersectionsLines {
+        get_intersections_polygon(self)
+    }
+}
+
+impl GetIntersections for Polygons {
+    // IntersectionPoints.cpp:42  IntersectionsLines get_intersections(const Polygons &polygons)     { return compute_intersections(to_lines(polygons)); }
+    fn get_intersections(&self) -> IntersectionsLines {
+        get_intersections_polygons(self)
+    }
+}
+
+impl GetIntersections for ExPolygon {
+    // IntersectionPoints.cpp:43  IntersectionsLines get_intersections(const ExPolygon &expolygon)   { return compute_intersections(to_lines(expolygon)); }
+    fn get_intersections(&self) -> IntersectionsLines {
+        compute_intersections(&to_lines_expoly(self))
+    }
+}
+
+impl GetIntersections for ExPolygons {
+    // IntersectionPoints.cpp:44  IntersectionsLines get_intersections(const ExPolygons &expolygons) { return compute_intersections(to_lines(expolygons)); }
+    fn get_intersections(&self) -> IntersectionsLines {
+        compute_intersections(&expolygons_to_lines(self))
+    }
+}
+
+/// IntersectionPoints.hpp:15-19 — `get_intersections(x)` for any of the five argument types.
+pub fn get_intersections<T: GetIntersections + ?Sized>(input: &T) -> IntersectionsLines {
+    input.get_intersections()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,10 +204,14 @@ mod tests {
         ];
         let intersections = get_intersections_lines(&lines);
 
-        // Should find one intersection between the two diagonals
+        // IntersectionPoints.cpp:18 skips `node_index - 1 <= li` (size_t): from line 0 the
+        // crossing with line 1 is skipped, from line 1 the crossing with line 0 is kept, because
+        // 0 - 1 wraps. The pin gives one intersection [1 0 (50, 50)] (a generator calling
+        // get_intersections on these lines).
         assert_eq!(intersections.len(), 1, "Should find one intersection");
-        assert_eq!(intersections[0].line_index1, 0);
-        assert_eq!(intersections[0].line_index2, 1);
+        assert_eq!(intersections[0].line_index1, 1);
+        assert_eq!(intersections[0].line_index2, 0);
+        assert_eq!((intersections[0].intersection.x, intersections[0].intersection.y), (50.0, 50.0));
     }
 
     #[test]

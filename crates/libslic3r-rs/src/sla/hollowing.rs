@@ -1518,9 +1518,14 @@ mod tests {
         assert!(hit);
         assert!((out[0].0 - 5.0).abs() < 1e-3); // x = -5 wall
         assert!((out[1].0 - 15.0).abs() < 1e-3); // x = +5 wall
-        // Wall normals point towards the axis.
-        assert!((out[0].1 - Vec3d::new(1.0, 0.0, 0.0)).norm() < 1e-5);
-        assert!((out[1].1 - Vec3d::new(-1.0, 0.0, 0.0)).norm() < 1e-5);
+        // Wall normals point towards the axis, from a point on the base plane
+        // that Hollowing.cpp:231 moves EPSILON below pos, so they tilt up by
+        // EPSILON/radius: `(pos-isect).normalized()` (Hollowing.cpp:255). The
+        // pin's DrainHole::get_intersections prints n = (1, 0, 2.002716064453125e-05)
+        // and (-1, 0, 2.002716064453125e-05) for this ray (a generator with the
+        // pin's function bodies; Hollowing.cpp itself needs OpenVDB).
+        assert_eq!(out[0].1, Vec3d::new(1.0, 0.0, 2.002716064453125e-05));
+        assert_eq!(out[1].1, Vec3d::new(-1.0, 0.0, 2.002716064453125e-05));
     }
 
     #[test]
@@ -1529,15 +1534,25 @@ mod tests {
         // offset by pos.
         let d = DrainHole::new(Vec3f::new(1.0, 2.0, 3.0), Vec3f::new(1.0, 0.0, 0.0), 2.0, 4.0, false);
         let m = d.to_mesh();
-        assert_eq!(m.vertices.len(), 2 * DrainHole::STEPS);
-        // The +Z axis maps to +X: all vertices lie within x in [3-eps, 7+eps]
-        // around pos.x... cylinder() spans z in [0, -h]? Verify via bounds.
+        // sla::cylinder (SupportTreeMesher.cpp:96-153) emits both circles and
+        // then the two cap centres, so 2 * steps + 2 vertices and 4 * steps
+        // faces; the pin's to_mesh prints 66 vertices and 128 faces here.
+        assert_eq!(m.vertices.len(), 2 * DrainHole::STEPS + 2);
+        assert_eq!(m.indices.len(), 4 * DrainHole::STEPS);
+        // The cylinder spans z in [0, h] and +Z is rotated onto +X, so x runs
+        // from pos.x to pos.x + h: the pin prints [0.999999881, 5].
         let (mut min_x, mut max_x) = (f32::INFINITY, f32::NEG_INFINITY);
         for v in &m.vertices {
             min_x = min_x.min(v.x);
             max_x = max_x.max(v.x);
         }
-        assert!((max_x - min_x - 4.0).abs() < 1e-4); // height along +X
+        assert!((min_x - 1.0).abs() < 1e-6);
+        assert!((max_x - 5.0).abs() < 1e-6);
+        // Cap centres, as the pin prints them: v64 = (1, 2, 3), v65 = (5, 2, 3.00000024).
+        let c0 = m.vertices[2 * DrainHole::STEPS];
+        let c1 = m.vertices[2 * DrainHole::STEPS + 1];
+        assert!((c0.x - 1.0).abs() < 1e-6 && (c0.y - 2.0).abs() < 1e-6 && (c0.z - 3.0).abs() < 1e-6);
+        assert!((c1.x - 5.0).abs() < 1e-6 && (c1.y - 2.0).abs() < 1e-6 && (c1.z - 3.0).abs() < 1e-6);
     }
 
     #[test]

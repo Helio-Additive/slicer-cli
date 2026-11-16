@@ -497,8 +497,15 @@ mod tests {
             Point::new(0, 2),
             Point::new(2, 0),
         ];
+        // Two edges only: get_intersections returns nothing for fewer than three lines
+        // (IntersectionPoints.cpp:9-10), so the pin's has_self_intersection is false here even
+        // though they cross (a generator calling get_intersections on these two lines).
         let edges = vec![(0u32, 1u32), (2, 3)];
-        assert!(has_self_intersection(&points, &edges));
+        assert!(!has_self_intersection(&points, &edges));
+
+        // With a third edge the crossing of the first two is found (from the second edge's side).
+        let edges3 = vec![(0u32, 1u32), (2, 3), (1, 2)];
+        assert!(has_self_intersection(&points, &edges3));
 
         // Non-crossing edges
         let edges_ok = vec![(0u32, 3u32), (1, 2)];

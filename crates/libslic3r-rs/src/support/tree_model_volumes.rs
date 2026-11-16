@@ -25,9 +25,9 @@
 //!    (`TreeModelVolumes.cpp:133`) are not threadable here, so layer outlines and
 //!    the `TreeSupportMeshGroupSettings`/`TreeSupportSettings` are supplied to the
 //!    Rust constructor pre-extracted (see [`TreeModelVolumes::with_layer_outlines`]).
-//!  * The crate `clipper_utils::offset_polygons` does not expose a per-call miter
-//!    limit (`1.2`) or arc tolerance, so `jtMiter,1.2` / `jtRound,m_min_resolution`
-//!    map to [`OffsetJoinType::Miter`] / [`OffsetJoinType::Round`] respectively.
+//!  * Offsets go through the ClipperLib port in scaled units with each call's
+//!    own miter limit / arc tolerance (`offset_ex` / `offset_polys` below, gate
+//!    `TREE_MODEL_VOLUMES_OFFSET`).
 //!  * `BOOST_LOG_TRIVIAL`, `SLIC3R_TREESUPPORTS_PROGRESS`, and the `#if 0`
 //!    debug-SVG blocks are omitted.
 
@@ -143,14 +143,52 @@ fn union_ex(subject: &[Polygon]) -> Vec<ExPolygon> {
     clipper_utils::union_polygons_ex(subject)
 }
 
-// ClipperUtils.hpp  `Polygons offset(const ExPolygons&, float delta, JoinType, miter)`
-fn offset_ex(subject: &[ExPolygon], delta: CoordF, jt: OffsetJoinType) -> Vec<Polygon> {
-    to_polygons(&clipper_utils::offset_expolygons(subject, delta, jt))
+// Every delta this file offsets by is in scaled units (`coord_t`), as in the
+// C++; `clipper_utils::offset_expolygons` / `offset_polygons` take millimetres,
+// so the earlier arm grew every area by 1e5 times the distance (a 0.4 mm
+// collision margin became 40 m and the offset came back empty). Gate
+// TREE_MODEL_VOLUMES_OFFSET (on unless =0) offsets in scaled units with the
+// call's own miter limit / arc tolerance, through the `float` delta of the C++
+// signatures; =0 keeps the earlier arm.
+#[inline]
+fn tmv_join_code(jt: OffsetJoinType) -> i32 {
+    match jt {
+        OffsetJoinType::Miter => 0,
+        OffsetJoinType::Round => 1,
+        OffsetJoinType::Square => 2,
+    }
 }
 
-// ClipperUtils.hpp  `Polygons offset(const Polygons&, float delta, JoinType, miter)`
-fn offset_polys(subject: &[Polygon], delta: CoordF, jt: OffsetJoinType) -> Vec<Polygon> {
-    to_polygons(&clipper_utils::offset_polygons(subject, delta, jt))
+// ClipperUtils.cpp:561-562  `Polygons offset(const ExPolygons&, const float delta, JoinType, double miterLimit)`
+//   { return to_polygons(expolygons_offset(expolygons, delta, joinType, miterLimit)); }
+fn offset_ex(subject: &[ExPolygon], delta: CoordF, jt: OffsetJoinType, miter_limit: f64) -> Vec<Polygon> {
+    if !crate::faithful_gate("TREE_MODEL_VOLUMES_OFFSET") {
+        return to_polygons(&clipper_utils::offset_expolygons(subject, delta, jt));
+    }
+    let rings: Vec<(crate::clipper::Path, crate::clipper::Paths)> = subject
+        .iter()
+        .map(|e| {
+            let ring = |pts: &[Point]| -> crate::clipper::Path {
+                pts.iter().map(|q| crate::clipper::IntPoint::new(q.x as i32, q.y as i32)).collect()
+            };
+            (ring(e.contour.points()), e.holes.iter().map(|h| ring(h.points())).collect())
+        })
+        .collect();
+    clipper_utils::clib_polygons_from_paths(&clipper_utils::expolygons_offset(
+        &rings,
+        (delta as f32) as f64,
+        clipper_utils::clib_join_type(tmv_join_code(jt)),
+        miter_limit,
+    ))
+}
+
+// ClipperUtils.cpp:413-414  `Polygons offset(const Polygons&, const float delta, JoinType, double miterLimit)`
+//   { return to_polygons(offset_paths<ClipperLib::Paths>(PolygonsProvider(polygons), delta, joinType, miterLimit)); }
+fn offset_polys(subject: &[Polygon], delta: CoordF, jt: OffsetJoinType, miter_limit: f64) -> Vec<Polygon> {
+    if !crate::faithful_gate("TREE_MODEL_VOLUMES_OFFSET") {
+        return to_polygons(&clipper_utils::offset_polygons(subject, delta, jt));
+    }
+    clipper_utils::offset_polygons_clib_ml(subject, (delta as f32) as f64, jt, miter_limit)
 }
 
 // ClipperUtils.hpp  `Polygons diff(const Polygons &subject, const Polygons &clip)`
@@ -1119,7 +1157,8 @@ impl TreeModelVolumes {
                     let offsetted = if offset_value == 0 {
                         union_(&collision_areas)
                     } else {
-                        offset_ex(&union_ex(&collision_areas), offset_value as CoordF, OffsetJoinType::Miter)
+                        // TreeModelVolumes.cpp:492  offset(union_ex(collision_areas), offset_value, jtMiter, 1.2)
+                        offset_ex(&union_ex(&collision_areas), offset_value as CoordF, OffsetJoinType::Miter, 1.2)
                     };
                     *collision_areas_offsetted.get_mut(layer_idx) = offsetted;
                 }
@@ -1163,6 +1202,7 @@ impl TreeModelVolumes {
                                     &union_ex(&collision_areas_original),
                                     (radius + required_range_x) as CoordF,
                                     OffsetJoinType::Miter,
+                                    1.2, // TreeModelVolumes.cpp:545
                                 ),
                             );
                         }
@@ -1176,6 +1216,7 @@ impl TreeModelVolumes {
                                 &union_ex(&self.m_anti_overhang[layer_idx as usize]),
                                 radius as CoordF,
                                 OffsetJoinType::Miter,
+                                1.2, // TreeModelVolumes.cpp:548
                             ),
                         )
                     } else {
@@ -1210,7 +1251,10 @@ impl TreeModelVolumes {
                     } else {
                         current
                     };
-                    let mut placable = diff(&offset_polys(&below, xy_distance as CoordF, OffsetJoinType::Miter), &clip);
+                    // TreeModelVolumes.cpp:576  offset(below, xy_distance): DefaultJoinType = jtMiter,
+                    // DefaultMiterLimit = 3 (ClipperUtils.hpp).
+                    let mut placable =
+                        diff(&offset_polys(&below, xy_distance as CoordF, OffsetJoinType::Miter, 3.0), &clip);
                     let dst = data_placeable.get_mut(layer_idx);
                     if processing_last_mesh {
                         if !dst.is_empty() {
@@ -1263,6 +1307,8 @@ impl TreeModelVolumes {
                                 &union_ex(&self.get_collision_min_xy(self.m_increase_until_radius, layer_idx, false)),
                                 (5 - increase_radius_ceil) as CoordF,
                                 OffsetJoinType::Round,
+                                // TreeModelVolumes.cpp:631  jtRound, m_min_resolution
+                                self.m_min_resolution as f64,
                             ),
                             self.m_min_resolution,
                         ),
@@ -1386,7 +1432,8 @@ impl TreeModelVolumes {
                     let delta = if istep + 1 == move_steps { -last_move_step } else { -move_step };
                     latest_avoidance = union_2(
                         &current_layer_collisions,
-                        &offset_polys(&latest_avoidance, delta, OffsetJoinType::Round),
+                        // TreeModelVolumes.cpp:717-719  offset(latest_avoidance, ..., jtRound, m_min_resolution)
+                        &offset_polys(&latest_avoidance, delta, OffsetJoinType::Round, self.m_min_resolution as f64),
                     );
                 }
                 if task.to_model {
@@ -1436,6 +1483,7 @@ impl TreeModelVolumes {
                 &union_ex(&self.get_placeable_areas(0, layer_idx)),
                 -((radius + self.m_current_min_xy_dist + self.m_current_min_xy_dist_delta) as CoordF),
                 OffsetJoinType::Miter,
+                1.2, // TreeModelVolumes.cpp:769-775
             );
         }
         self.m_placeable_areas_cache.insert_layers(data, start_layer, radius);
@@ -1733,6 +1781,11 @@ mod tests {
         ));
     }
 
+    // `is_safe_position` is a crate helper over getCollision; the collision of a
+    // 10 mm square at radius 0 is the square grown by m_current_min_xy_dist
+    // (TreeModelVolumes.cpp:490-492, offset in scaled units). Before gate
+    // TREE_MODEL_VOLUMES_OFFSET the offset took the scaled delta as millimetres
+    // and came back empty, so the origin read as safe.
     #[test]
     fn test_is_safe_position() {
         let config = TreeModelVolumesConfig::default();

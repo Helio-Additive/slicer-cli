@@ -328,6 +328,25 @@ pub mod aabb_tree_indirect_2d {
                             break;
                         }
                     }
+                    if super::partition_faithful() {
+                        // AABBTreeIndirect.hpp:194
+                        // while (input[-- j].centroid()(dimension) > pivot && i < j) ;
+                        // j is decremented before every test, also the first after a swap, so
+                        // an element equal to the pivot that was just swapped in is passed over.
+                        loop {
+                            j -= 1;
+                            if !(input[j].centroid()[dimension] > pivot && i < j) {
+                                break;
+                            }
+                        }
+                        // AABBTreeIndirect.hpp:195-196
+                        if i >= j {
+                            break;
+                        }
+                        // AABBTreeIndirect.hpp:197
+                        input.swap(i, j);
+                        continue;
+                    }
                     // AABBTreeIndirect.hpp:194-195
                     loop {
                         if j == 0 || i >= j {
@@ -1004,10 +1023,21 @@ pub fn build_aabb_tree_over_indexed_lines(lines: &[Line]) -> tree2d::Tree {
     for (i, line) in lines.iter().enumerate() {
         // AABBTreeLines.hpp:189-194
         // n.m_centroid = (line.a + line.b) * 0.5;
-        let m_centroid = [
-            (line.a.x + line.b.x) as f64 * 0.5,
-            (line.a.y + line.b.y) as f64 * 0.5,
-        ];
+        // For Slic3r::Line the tree's VectorType is a coord_t vector, and `(line.a + line.b) * 0.5`
+        // resolves to the free `Point operator*(const Point&, const double&)` (Point.hpp:255,
+        // `coord_t(x * r)`): the centroid is truncated toward zero to integers, (-3 + 0) * 0.5
+        // giving -1 (checked against the pin). AABB_LINES_CENTROID_TRUNC=0 keeps the halves.
+        let m_centroid = if centroid_trunc() {
+            [
+                (((line.a.x + line.b.x) as f64 * 0.5) as i32) as f64,
+                (((line.a.y + line.b.y) as f64 * 0.5) as i32) as f64,
+            ]
+        } else {
+            [
+                (line.a.x + line.b.x) as f64 * 0.5,
+                (line.a.y + line.b.y) as f64 * 0.5,
+            ]
+        };
         // n.m_bbox = BoundingBox(line.a, line.a); n.m_bbox.extend(line.b);
         let mut m_bbox =
             tree2d::BoundingBox::from_point([line.a.x as f64, line.a.y as f64]);
@@ -1023,6 +1053,22 @@ pub fn build_aabb_tree_over_indexed_lines(lines: &[Line]) -> tree2d::Tree {
     let mut out = tree2d::Tree::new();
     out.build(input);
     out
+}
+
+/// Gate for `tree2d::Tree::partition_input` following AABBTreeIndirect.hpp:194-197 as written:
+/// the right scan pre-decrements j on every test (AABB_LINES_PARTITION=0 restores the earlier
+/// scan, which re-tested the element just swapped in and swapped again when it equalled the
+/// pivot). Checked by tests/intersection_points_native_parity.rs, whose result order is the tree's.
+pub(crate) fn partition_faithful() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("AABB_LINES_PARTITION"))
+}
+
+/// Gate for the integer centroids of `build_aabb_tree_over_indexed_lines` over `Line`
+/// (AABBTreeLines.hpp:191 with Point.hpp:255); checked by tests/intersection_points_native_parity.rs.
+fn centroid_trunc() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("AABB_LINES_CENTROID_TRUNC"))
 }
 
 // Finding a closest line, its closest point and squared distance to the closest point

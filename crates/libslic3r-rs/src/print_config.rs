@@ -19217,4 +19217,217 @@ pub mod config_def {
             Ok(())
         }
     }
+
+    /// `this->option<TYPE>(key)` of the vector classes (Config.hpp:2557-2562): the option when its
+    /// type is `ty` (a nullable class has the type of its non-nullable twin, so a
+    /// ConfigOptionFloatsNullable is returned for ConfigOptionFloats), its values read through the class.
+    fn typed_values_mut<'a, T: 'static>(config: &'a mut DynamicPrintConfig, key: &str, ty: ConfigOptionType) -> CfgResult<Option<&'a mut Vec<T>>> {
+        Ok(match config.option_mut(key, false)? {
+            Some(o) if o.r#type() == ty => o.vector_values_any_mut().and_then(|v| v.downcast_mut::<Vec<T>>()),
+            _ => None,
+        })
+    }
+
+    /// `ConfigOptionVector<T>::get_at(size_t i)` (Config.hpp:681-685) of an index the C++ computes in
+    /// `unsigned int` (`variant_index[e] * stride + i`): a negative variant index wraps around and
+    /// reads the first value.
+    fn get_at_wrapped<T: Clone>(values: &[T], variant_index: i32, stride: u32, i: u32) -> T {
+        let idx = (variant_index as u32).wrapping_mul(stride).wrapping_add(i) as usize;
+        if idx < values.len() {
+            values[idx].clone()
+        } else {
+            values[0].clone()
+        }
+    }
+
+    /// The rows `variant_index` of `values`, `stride` values each (PrintConfig.cpp:9887-9893 and the
+    /// cases after it).
+    fn select_variant_rows<T: Clone + Default>(values: &[T], variant_index: &[i32], variant_count: i32, stride: u32) -> Vec<T> {
+        let mut new_values: Vec<T> = vec![T::default(); (variant_count as u32 * stride) as usize];
+        for e_index in 0..variant_count as usize {
+            for i in 0..stride {
+                new_values[e_index * stride as usize + i as usize] = get_at_wrapped(values, variant_index[e_index], stride, i);
+            }
+        }
+        new_values
+    }
+
+    impl DynamicPrintConfig {
+        /// PrintConfig.cpp:9780-9994 `std::vector<int> DynamicPrintConfig::update_values_to_printer_extruders(DynamicPrintConfig& printer_config, int extruder_count, int extruder_nozzle_volume_count, std::vector<std::vector<NozzleVolumeType>>& nv_types, std::set<std::string>& key_set, std::string id_name, std::string variant_name, unsigned int stride, unsigned int extruder_id, NozzleVolumeType filament_nvt)`
+        ///
+        /// `printer_config` of `None` is the config itself (PresetBundle.cpp calls
+        /// `out.update_values_to_printer_extruders(out, ...)`): the C++ reads `extruder_type` and
+        /// `nozzle_volume_type` of the printer config only while it computes the variant indices,
+        /// before it writes the first value, so they are copied first here.
+        /// FIDELITY-NOTE: the log lines are not written.
+        #[allow(clippy::too_many_arguments)]
+        pub fn update_values_to_printer_extruders(
+            &mut self,
+            printer_config: Option<&DynamicPrintConfig>,
+            extruder_count: i32,
+            extruder_nozzle_volume_count: i32,
+            nv_types: &[Vec<enums::NozzleVolumeType>],
+            key_set: &BTreeSet<String>,
+            id_name: &str,
+            variant_name: &str,
+            stride: u32,
+            extruder_id: u32,
+            filament_nvt: enums::NozzleVolumeType,
+        ) -> CfgResult<Vec<i32>> {
+            let mut variant_index: Vec<i32> = Vec::new();
+            let mut variant_count = extruder_count;
+
+            let (opt_extruder_type, opt_nozzle_volume_type) = {
+                let printer: &DynamicPrintConfig = printer_config.unwrap_or(self);
+                (dyn_enums_generic(printer.option("extruder_type")).cloned(), dyn_enums_generic(printer.option("nozzle_volume_type")).cloned())
+            };
+            let (opt_extruder_type, opt_nozzle_volume_type) = match (opt_extruder_type, opt_nozzle_volume_type) {
+                (Some(a), Some(b)) => (a, b),
+                // extruder_type or nozzle_volume_type not found, skipping
+                _ => return Ok(variant_index),
+            };
+
+            if extruder_id > 0 && extruder_id <= extruder_count as u32 {
+                //材料参数处理
+                variant_index.resize(1, 0);
+                let extruder_type = enums::ExtruderType::from_i32(*get_at(&opt_extruder_type, (extruder_id - 1) as usize));
+                let mut nozzle_volume_type = enums::NozzleVolumeType::from_i32(*get_at(&opt_nozzle_volume_type, (extruder_id - 1) as usize));
+
+                if nozzle_volume_type == enums::NozzleVolumeType::NvtHybrid {
+                    // use the one passed
+                    nozzle_volume_type = filament_nvt;
+                } else if nozzle_volume_type != filament_nvt {
+                    // nozzle_volume_type is not equal to filament_nvt (logged only)
+                }
+
+                //variant index
+                variant_index[0] = self.get_index_for_extruder(extruder_id as i32, id_name, extruder_type, nozzle_volume_type, variant_name, 1);
+
+                variant_count = 1;
+            } else {
+                //机器和工艺参数处理
+                if extruder_nozzle_volume_count > extruder_count {
+                    variant_count = extruder_nozzle_volume_count;
+                } else {
+                    for e_index in 0..extruder_count {
+                        let nozzle_volume_type = enums::NozzleVolumeType::from_i32(*get_at(&opt_nozzle_volume_type, e_index as usize));
+                        if nozzle_volume_type == enums::NozzleVolumeType::NvtHybrid {
+                            variant_count = extruder_nozzle_volume_count;
+                        }
+                    }
+                }
+                variant_index.resize(variant_count.max(0) as usize, 0);
+
+                let mut v_index = 0usize;
+                for e_index in 0..extruder_count {
+                    let extruder_type = enums::ExtruderType::from_i32(*get_at(&opt_extruder_type, e_index as usize));
+                    let mut nozzle_volume_type = enums::NozzleVolumeType::from_i32(*get_at(&opt_nozzle_volume_type, e_index as usize));
+
+                    let mut nvt_count = 1;
+                    if extruder_nozzle_volume_count > extruder_count || nozzle_volume_type == enums::NozzleVolumeType::NvtHybrid {
+                        nvt_count = nv_types[e_index as usize].len();
+                    }
+                    for nvt_index in 0..nvt_count {
+                        if extruder_nozzle_volume_count > extruder_count || nozzle_volume_type == enums::NozzleVolumeType::NvtHybrid {
+                            nozzle_volume_type = nv_types[e_index as usize][nvt_index];
+                        }
+                        //variant index
+                        variant_index[v_index] = self.get_index_for_extruder(e_index + 1, id_name, extruder_type, nozzle_volume_type, variant_name, 1);
+                        if variant_index[v_index] < 0 {
+                            //for some updates happens in a invalid state(caused by popup window)
+                            //we need to avoid crash
+                            variant_index[v_index] = 0;
+                        }
+                        v_index += 1;
+                    }
+                }
+            }
+
+            // const ConfigDef *config_def = this->def(); never null for a DynamicPrintConfig.
+            let config_def = print_config_def();
+            for key in key_set {
+                let optdef = match config_def.get(key) {
+                    Some(d) => d,
+                    // can not find opt define
+                    None => continue,
+                };
+                match optdef.r#type {
+                    ConfigOptionType::CoStrings => {
+                        if let Some(values) = typed_values_mut::<String>(self, key, ConfigOptionType::CoStrings)? {
+                            *values = select_variant_rows(values, &variant_index, variant_count, stride);
+                        }
+                    }
+                    ConfigOptionType::CoInts => {
+                        if let Some(values) = typed_values_mut::<i32>(self, key, ConfigOptionType::CoInts)? {
+                            *values = select_variant_rows(values, &variant_index, variant_count, stride);
+                        }
+                    }
+                    ConfigOptionType::CoFloats => {
+                        if let Some(values) = typed_values_mut::<f64>(self, key, ConfigOptionType::CoFloats)? {
+                            *values = select_variant_rows(values, &variant_index, variant_count, stride);
+                        }
+                    }
+                    ConfigOptionType::CoPercents => {
+                        if let Some(values) = typed_values_mut::<f64>(self, key, ConfigOptionType::CoPercents)? {
+                            *values = select_variant_rows(values, &variant_index, variant_count, stride);
+                        }
+                    }
+                    ConfigOptionType::CoFloatsOrPercents => {
+                        if let Some(values) = typed_values_mut::<FloatOrPercent>(self, key, ConfigOptionType::CoFloatsOrPercents)? {
+                            *values = select_variant_rows(values, &variant_index, variant_count, stride);
+                        }
+                    }
+                    ConfigOptionType::CoBools => {
+                        if let Some(values) = typed_values_mut::<u8>(self, key, ConfigOptionType::CoBools)? {
+                            *values = select_variant_rows(values, &variant_index, variant_count, stride);
+                        }
+                    }
+                    ConfigOptionType::CoEnums => {
+                        if let Some(values) = typed_values_mut::<i32>(self, key, ConfigOptionType::CoEnums)? {
+                            *values = select_variant_rows(values, &variant_index, variant_count, stride);
+                        }
+                    }
+                    // unsupported option type
+                    _ => {}
+                }
+            }
+
+            Ok(variant_index)
+        }
+    }
+
+    /// PrintConfig.hpp:2215-2216 `inline constexpr const char *canonical_multi_nozzle_printer_variant()`:
+    /// printer_variant of the system printer multi-diameter mode slices against.
+    pub fn canonical_multi_nozzle_printer_variant() -> &'static str {
+        "0.4"
+    }
+
+    /// PrintConfig.hpp:2218-2219 `inline constexpr const char *default_single_nozzle_printer_variant()`:
+    /// printer_variant used when leaving multi-diameter with no restorable return point.
+    pub fn default_single_nozzle_printer_variant() -> &'static str {
+        "0.4"
+    }
+
+    /// PrintConfig.hpp:2221-2236 `inline bool nozzle_variant_exists(const std::string &diameter, NozzleVolumeType volume_type)`:
+    /// whether a nozzle of this (diameter, flow) is a product that exists at all: E3D high flow only
+    /// comes in 0.4 and 0.6, and 0.2 comes as Standard only.
+    pub fn nozzle_variant_exists(diameter: &str, volume_type: enums::NozzleVolumeType) -> bool {
+        if volume_type == enums::NozzleVolumeType::NvtE3DHighFlow && diameter != "0.4" && diameter != "0.6" {
+            return false;
+        }
+        if diameter == "0.2" && volume_type != enums::NozzleVolumeType::NvtStandard {
+            return false;
+        }
+        true
+    }
+
+    /// PrintConfig.hpp:2240 `inline constexpr const char *printer_nozzle_diameter_mode_single()`
+    pub fn printer_nozzle_diameter_mode_single() -> &'static str {
+        "single"
+    }
+
+    /// PrintConfig.hpp:2241 `inline constexpr const char *printer_nozzle_diameter_mode_multi()`
+    pub fn printer_nozzle_diameter_mode_multi() -> &'static str {
+        "multi"
+    }
 }

@@ -153,7 +153,8 @@ impl ArcFitter {
         if points.len() < 3 {
             result.push(PathFittingData::new(
                 0,
-                points.len() - 1,
+                // `points.size() - 1` is size_t arithmetic: no points gives SIZE_MAX.
+                points.len().wrapping_sub(1),
                 EMovePathType::LinearMove,
                 ArcSegment::new(),
             ));
@@ -474,11 +475,14 @@ mod tests {
         let points = vec![];
         let mut result = Vec::new();
 
-        // Should handle empty gracefully (though C++ expects at least 1 point)
-        // We'll return Ok for robustness
-        assert!(
-            ArcFitter::do_arc_fitting(&points, &mut result, 0.05).is_err() || result.is_empty()
-        );
+        // ArcFitter.cpp:29-36 takes the `points.size() < 3` branch: one linear move from 0 to
+        // `points.size() - 1`, which wraps to SIZE_MAX. The pin gives n=1 start=0
+        // end=18446744073709551615 type=Linear_move (a generator calling do_arc_fitting).
+        ArcFitter::do_arc_fitting(&points, &mut result, 0.05).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].start_point_index, 0);
+        assert_eq!(result[0].end_point_index, usize::MAX);
+        assert_eq!(result[0].path_type, EMovePathType::LinearMove);
     }
 
     #[test]
@@ -509,23 +513,30 @@ mod tests {
     #[test]
     fn test_arc_fitting_quarter_circle() {
         // Points forming a 90-degree arc
-        let radius = 1000.0;
-        let steps = 10;
-        let mut points = Vec::new();
+        let quarter = |radius: f64| -> Vec<Point> {
+            let steps = 10;
+            (0..=steps)
+                .map(|i| {
+                    let angle = (i as f64) * std::f64::consts::PI / (2.0 * steps as f64);
+                    Point::new((radius * angle.cos()).round() as i64, (radius * angle.sin()).round() as i64)
+                })
+                .collect()
+        };
 
-        for i in 0..=steps {
-            let angle = (i as f64) * std::f64::consts::PI / (2.0 * steps as f64);
-            let x = (radius * angle.cos()).round() as i64;
-            let y = (radius * angle.sin()).round() as i64;
-            points.push(Point::new(x, y));
-        }
-
+        // A radius of 1000 scaled units (10 um) is too small for an arc: the pin gives one linear
+        // move [0-10] (a generator calling do_arc_fitting with tolerance 100000).
         let mut result = Vec::new();
-        ArcFitter::do_arc_fitting(&points, &mut result, 100_000.0).unwrap();
+        ArcFitter::do_arc_fitting(&quarter(1000.0), &mut result, 100_000.0).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!((result[0].start_point_index, result[0].end_point_index), (0, 10));
+        assert_eq!(result[0].path_type, EMovePathType::LinearMove);
 
-        // Should detect at least one arc segment
-        let has_arc = result.iter().any(|r| r.is_arc_move());
-        assert!(has_arc, "Expected to detect arc in quarter circle");
+        // A radius of 10 mm with tolerance 5000: one counter-clockwise arc over all eleven points,
+        // as the pin gives (the same generator).
+        ArcFitter::do_arc_fitting(&quarter(1_000_000.0), &mut result, 5000.0).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!((result[0].start_point_index, result[0].end_point_index), (0, 10));
+        assert_eq!(result[0].path_type, EMovePathType::ArcMoveCcw);
     }
 
     #[test]

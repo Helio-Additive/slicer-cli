@@ -21,7 +21,8 @@ use std::path::PathBuf;
 fn arachne_cube_has_infill() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo = manifest.join("../..");
-    let stl = repo.join("fixtures/smoke/stl/Cube_25.6.stl");
+    // The committed Cube fixture (docs/rust-engine/README.md, "Fixtures").
+    let stl = repo.join("tests/rust-engine/fixtures/Cube_25.6.stl");
     let settings = manifest.join("tests/data/cube_arachne_settings.json");
     let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("arachne_cube.gcode");
 

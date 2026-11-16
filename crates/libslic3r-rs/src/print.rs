@@ -2671,7 +2671,11 @@ impl Print {
                             } else {
                                 !r.fills.entities.is_empty()
                             })
-                            || !r.thin_fills.entities.is_empty()
+                            // ToolOrdering.cpp collect_extruders reads `fills`
+                            // only; the thin fills are cloned into them
+                            // (THIN_FILLS_CLONE, Fill.cpp:856-859).
+                            || (!crate::faithful_gate("THIN_FILLS_CLONE")
+                                && !r.thin_fills.entities.is_empty())
                     })
                     .collect();
                 let multi_tool = region_tools.iter().any(|&t| t != region_tools[0]);
@@ -4231,7 +4235,13 @@ fn emit_layer_by_island(
                     }
                 }
             }
-            for ent in &region.thin_fills.entities {
+            // THIN_FILLS_CLONE (on): GCode.cpp takes the island infill from
+            // `layerm->fills` only; Layer::make_fills has already put a clone
+            // of every thin fill there (Fill.cpp:856-859), so `thin_fills` is
+            // not read again. =0 reads the thin fills left in `thin_fills`.
+            let thin_fills_left: &[crate::extrusion_entity::ExtrusionEntityType] =
+                if crate::faithful_gate("THIN_FILLS_CLONE") { &[] } else { &region.thin_fills.entities };
+            for ent in thin_fills_left {
                 if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
                     // Fill.cpp (end of make_fills): every thin fill is put into
                     // `fills` inside a sortable collection of its own, so

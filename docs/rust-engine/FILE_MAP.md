@@ -44,26 +44,26 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 59 (plus 23 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 4862 (54%) |
-| estimate: faithful | 4167 (86% of matched) |
-| estimate: partial | 453 (9% of matched) |
-| estimate: divergent | 215 (4% of matched) |
+| matched to a Rust function in the paired file | 5064 (56%) |
+| estimate: faithful | 4347 (86% of matched) |
+| estimate: partial | 466 (9% of matched) |
+| estimate: divergent | 224 (4% of matched) |
 | estimate: stub | 27 (1% of matched) |
-| missing in the paired Rust file | 4057 |
-| of those, a function of that name exists in another Rust file | 1580 |
-| of the rest, another overload of the name is ported | 362 |
-| of the rest, under 25 tokens (accessors, one-liners) | 562 |
-| of the rest, 25 tokens or more | 1553 |
+| missing in the paired Rust file | 3855 |
+| of those, a function of that name exists in another Rust file | 1540 |
+| of the rest, another overload of the name is ported | 357 |
+| of the rest, under 25 tokens (accessors, one-liners) | 535 |
+| of the rest, 25 tokens or more | 1423 |
 | in a C++ unit with no Rust file | 133 |
-| Rust functions with no C++ function of that name in the pair | 6096 |
+| Rust functions with no C++ function of that name in the pair | 6348 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 3640 | 3103 | 356 | 165 | 16 | 3211 |
+| 1 | 180 | 180 | 6851 | 3841 | 3283 | 368 | 174 | 16 | 3010 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
-| 3 | 92 | 88 | 1374 | 829 | 723 | 58 | 43 | 5 | 545 |
+| 3 | 92 | 88 | 1374 | 830 | 723 | 59 | 43 | 5 | 544 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
 
 ## Biggest gaps
@@ -74,7 +74,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | Tier | C++ unit | Rust file | C++ fns | faithful | partial | divergent | stub | missing | missing, real |
 |-|-|-|-|-|-|-|-|-|-|
 | 1 | `Model` | `model.rs` | 374 | 8 | 4 | 0 | 0 | 362 | 160 |
-| 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 3 | 0 | 0 | 0 | 138 | 102 |
 | 1 | `Print` | `print.rs` | 236 | 5 | 1 | 6 | 1 | 223 | 93 |
 | 1 | `GCode` | `g_code.rs` | 152 | 14 | 5 | 11 | 0 | 122 | 74 |
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 19 | 3 | 0 | 0 | 183 | 69 |
@@ -82,19 +81,18 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 99 | 22 | 10 | 3 | 79 | 44 |
 | 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 14 | 8 | 11 | 0 | 52 | 42 |
 | 1 | `ClipperUtils` | `clipper_utils.rs` | 227 | 32 | 3 | 3 | 0 | 189 | 25 |
-| 1 | `utils` | `utils.rs` | 66 | 23 | 7 | 11 | 4 | 21 | 12 |
 | 1 | `FilamentGroup` | `filament_group.rs` | 49 | 22 | 0 | 4 | 0 | 23 | 19 |
 | 1 | `PrintApply` | `print_apply.rs` | 44 | 3 | 1 | 0 | 0 | 40 | 22 |
 | 1 | `Arrange` | `arrange.rs` | 44 | 5 | 1 | 0 | 0 | 38 | 21 |
+| 1 | `utils` | `utils.rs` | 66 | 30 | 9 | 11 | 4 | 12 | 6 |
 | 1 | `PrintObjectSlice` | `print_object_slice.rs` | 24 | 1 | 2 | 0 | 0 | 21 | 20 |
 | 1 | `MultiMaterialSegmentation` | `multi_material_segmentation.rs` | 74 | 39 | 4 | 3 | 0 | 28 | 16 |
-| 1 | `PrintConfig` | `print_config.rs` | 137 | 94 | 9 | 3 | 0 | 31 | 16 |
 | 1 | `TriangleMesh` | `triangle_mesh.rs` | 136 | 62 | 1 | 4 | 0 | 69 | 15 |
 | 1 | `Calib` | `calib.rs` | 51 | 12 | 2 | 3 | 3 | 31 | 12 |
+| 1 | `PrintConfig` | `print_config.rs` | 137 | 95 | 9 | 3 | 0 | 30 | 15 |
 | 1 | `GCode/AvoidCrossingPerimeters` | `gcode/avoid_crossing_perimeters.rs` | 59 | 31 | 3 | 0 | 0 | 25 | 17 |
 | 1 | `GCode/TimelapsePosPicker` | `gcode/timelapse_pos_picker.rs` | 20 | 1 | 0 | 0 | 0 | 19 | 17 |
 | 1 | `Layer` | `layer.rs` | 56 | 15 | 4 | 2 | 0 | 35 | 15 |
-| 1 | `PlaceholderParser` | `placeholder_parser.rs` | 85 | 31 | 9 | 3 | 0 | 42 | 13 |
 | 1 | `TriangleMeshSlicer` | `triangle_mesh_slicer.rs` | 45 | 15 | 7 | 1 | 0 | 22 | 15 |
 | 1 | `PerimeterGenerator` | `perimeter_generator.rs` | 29 | 4 | 2 | 0 | 0 | 23 | 14 |
 | 1 | `EdgeGrid` | `edge_grid.rs` | 47 | 11 | 2 | 2 | 0 | 32 | 11 |
@@ -102,8 +100,8 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 33 | 6 | 0 | 0 | 29 | 10 |
 | 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 183 | 20 | 7 | 2 | 6 | 0 |
 | 1 | `LayerRegion` | `layer_region.rs` | 29 | 1 | 3 | 0 | 0 | 25 | 9 |
+| 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 119 | 10 | 9 | 0 | 3 | 0 |
 | 1 | `Color` | `color.rs` | 97 | 72 | 1 | 0 | 0 | 24 | 8 |
-| 1 | `Flow` | `flow.rs` | 31 | 14 | 6 | 3 | 0 | 8 | 5 |
 | 1 | `MultiNozzleUtils` | `multi_nozzle_utils.rs` | 59 | 39 | 5 | 0 | 0 | 15 | 8 |
 | 1 | `Slicing` | `slicing.rs` | 22 | 12 | 0 | 0 | 0 | 10 | 8 |
 | 1 | `libslic3r` | `libslic3r.rs` | 28 | 1 | 0 | 0 | 0 | 27 | 8 |
@@ -122,6 +120,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Algorithm/LineSegmentation/LineSegmentation` | `algorithm/line_segmentation/line_segmentation.rs` | 29 | 5 | 3 | 0 | 0 | 21 | 5 |
 | 1 | `AppConfig` | `app_config.rs` | 72 | 53 | 3 | 2 | 0 | 14 | 3 |
 | 1 | `ElephantFootCompensation` | `elephant_foot_compensation.rs` | 10 | 5 | 0 | 0 | 0 | 5 | 5 |
+| 1 | `Flow` | `flow.rs` | 31 | 17 | 7 | 4 | 0 | 3 | 1 |
 | 1 | `Geometry/VoronoiOffset` | `geometry/voronoi_offset.rs` | 39 | 23 | 2 | 0 | 0 | 14 | 5 |
 | 1 | `Geometry/VoronoiUtils` | `geometry/voronoi_utils.rs` | 13 | 5 | 2 | 2 | 0 | 4 | 3 |
 | 1 | `MutablePriorityQueue` | `mutable_priority_queue.rs` | 37 | 20 | 4 | 5 | 0 | 8 | 0 |
@@ -134,13 +133,13 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Geometry` | `geometry/geometry.rs` | 86 | 53 | 2 | 1 | 0 | 30 | 3 |
 | 1 | `Geometry/ConvexHull` | `geometry/convex_hull.rs` | 21 | 8 | 3 | 3 | 0 | 7 | 1 |
 | 1 | `Thread` | `thread.rs` | 24 | 6 | 1 | 1 | 0 | 16 | 3 |
-| 1 | `Utils` | `utils.rs` | 36 | 14 | 4 | 2 | 0 | 16 | 2 |
 | 1 | `Arachne/SkeletalTrapezoidation` | `arachne/skeletal_trapezoidation.rs` | 41 | 33 | 0 | 2 | 0 | 6 | 1 |
 | 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 9 | 0 | 1 | 0 | 4 | 2 |
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
 | 1 | `GCode/ToolOrderUtils` | `gcode/tool_order_utils.rs` | 32 | 26 | 1 | 0 | 0 | 5 | 3 |
 | 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 3 | 0 | 1 | 0 | 12 | 2 |
 | 1 | `Polyline` | `geometry/polyline.rs` | 52 | 29 | 3 | 1 | 0 | 19 | 2 |
+| 1 | `Utils` | `utils.rs` | 36 | 21 | 3 | 3 | 0 | 9 | 0 |
 | 1 | `Arachne/WallToolPaths` | `arachne/wall_tool_paths.rs` | 16 | 8 | 3 | 1 | 0 | 4 | 1 |
 | 1 | `Circle` | `circle.rs` | 27 | 24 | 0 | 0 | 0 | 3 | 2 |
 | 1 | `CustomGCode` | `custom_g_code.rs` | 6 | 4 | 0 | 0 | 0 | 2 | 2 |
@@ -153,6 +152,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Tesselate` | `tesselate.rs` | 18 | 10 | 1 | 0 | 0 | 7 | 2 |
 | 1 | `Triangulation` | `triangulation.rs` | 14 | 4 | 1 | 1 | 0 | 8 | 1 |
 | 1 | `miniz_extension` | `miniz_extension.rs` | 9 | 2 | 0 | 0 | 0 | 7 | 2 |
+| 1 | `AABBMesh` | `aabb_mesh.rs` | 20 | 9 | 3 | 0 | 0 | 8 | 1 |
 
 ## C++ units with no Rust file
 
@@ -440,11 +440,11 @@ Rust only:
 
 ### `AABBTreeLines` (.hpp) and `aabb_tree_lines.rs`
 
-Tier 1. C++ functions 13 (plus 2 constructors, 0 destructors, 0 operators), Rust functions 51. Matched 13: faithful 12, partial 1, divergent 0, stub 0.
+Tier 1. C++ functions 13 (plus 2 constructors, 0 destructors, 0 operators), Rust functions 53. Matched 13: faithful 12, partial 1, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `IndexedLinesDistancer::closest_point_to_origin` :29 and `IndexedLinesDistancer::closest_point_to_origin` :604 (100%, 1.33x)
+- partial: `IndexedLinesDistancer::closest_point_to_origin` :29 and `IndexedLinesDistancer::closest_point_to_origin` :623 (100%, 1.33x)
 
 Rust only:
 
@@ -470,22 +470,24 @@ Rust only:
 - `Tree::right_child_idx` :218 — C++ has it in `AABBTreeIndirect`
 - `Tree::build_recursive` :223 — C++ has it in `AABBTreeIndirect`, `KDTreeIndirect`
 - `Tree::partition_input` :269 — C++ has it in `AABBTreeIndirect`, `KDTreeIndirect`
-- `Tree::default` :365
-- `BoundingBoxWrapper::new` :386
-- `BoundingBoxWrapper::idx` :401 — C++ has it in `AABBTreeIndirect`, `Geometry/ConvexHull`, `Support/TreeSupport3D`
-- `BoundingBoxWrapper::centroid` :405 — C++ has it in `AABBTreeIndirect`, `Polygon`, `SLA/ConcaveHull`
-- `BoundingBoxWrapper::bbox` :412
-- `traverse_recurse` :421 — C++ has it in `AABBTreeIndirect`
-- `traverse` :453 — C++ has it in `AABBTreeIndirect`
-- `next_highest_power_of_2` :467 — C++ has it in `Utils`
-- `distance_to_squared` :501 — C++ has it in `Line`
-- `intersection` :550 — C++ has it in `ClipperUtils`, `Fill/FillAdaptive`, `Line`
-- `squared_distance_to_indexed_primitives_recursive` :803 — C++ has it in `AABBTreeIndirect`
-- `indexed_primitives_within_distance_squared_recurisve` :918 — C++ has it in `AABBTreeIndirect`
-- `LinesDistancer::new` :1185
-- `LinesDistancer::default` :1192
-- `LinesDistancer::get_line` :1262 — C++ has it in `Config`
-- `LinesDistancer::get_lines` :1267 — C++ has it in `Line`
+- `Tree::default` :384
+- `BoundingBoxWrapper::new` :405
+- `BoundingBoxWrapper::idx` :420 — C++ has it in `AABBTreeIndirect`, `Geometry/ConvexHull`, `Support/TreeSupport3D`
+- `BoundingBoxWrapper::centroid` :424 — C++ has it in `AABBTreeIndirect`, `Polygon`, `SLA/ConcaveHull`
+- `BoundingBoxWrapper::bbox` :431
+- `traverse_recurse` :440 — C++ has it in `AABBTreeIndirect`
+- `traverse` :472 — C++ has it in `AABBTreeIndirect`
+- `next_highest_power_of_2` :486 — C++ has it in `Utils`
+- `distance_to_squared` :520 — C++ has it in `Line`
+- `intersection` :569 — C++ has it in `ClipperUtils`, `Fill/FillAdaptive`, `Line`
+- `squared_distance_to_indexed_primitives_recursive` :822 — C++ has it in `AABBTreeIndirect`
+- `indexed_primitives_within_distance_squared_recurisve` :937 — C++ has it in `AABBTreeIndirect`
+- `partition_faithful` :1062
+- `centroid_trunc` :1069
+- `LinesDistancer::new` :1231
+- `LinesDistancer::default` :1238
+- `LinesDistancer::get_line` :1308 — C++ has it in `Config`
+- `LinesDistancer::get_lines` :1313 — C++ has it in `Line`
 
 ### `Algorithm/LineSegmentation/LineSegmentation` (.cpp+.hpp) and `algorithm/line_segmentation/line_segmentation.rs`
 
@@ -886,26 +888,21 @@ Rust only:
 
 ### `Arachne/utils/ExtrusionLine` (.cpp+.hpp) and `arachne/utils/extrusion_line.rs`
 
-Tier 1. C++ functions 39 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 30. Matched 19: faithful 16, partial 2, divergent 1, stub 0.
+Tier 1. C++ functions 39 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 36. Matched 24: faithful 21, partial 2, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `ExtrusionLine::getMinimalWidth` :34 and `ExtrusionLine::get_minimal_width` :188 (28%, 0.6x)
-- partial: `ExtrusionLine::simplify` :43 and `ExtrusionLine::simplify` :213 (93%, 0.99x)
-- partial: `ExtrusionLine::calculateExtrusionAreaDeviationError` :194 and `ExtrusionLine::calculate_extrusion_area_deviation_error` :402 (82%, 0.62x)
+- divergent: `ExtrusionLine::getMinimalWidth` :34 and `ExtrusionLine::get_minimal_width` :232 (28%, 0.6x)
+- partial: `ExtrusionLine::simplify` :43 and `ExtrusionLine::simplify` :257 (93%, 0.99x)
+- partial: `ExtrusionLine::calculateExtrusionAreaDeviationError` :194 and `ExtrusionLine::calculate_extrusion_area_deviation_error` :446 (82%, 0.62x)
 
 Missing in the Rust file:
 
 - `ExtrusionLine::empty` :62 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `ExtrusionLine::begin` :94 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExtrusionLine::end` :95 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
-- `ExtrusionLine::rbegin` :96 (9 tokens)
-- `ExtrusionLine::rend` :97 (9 tokens)
+- `ExtrusionLine::begin` :94 (9 tokens, overload) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `ExtrusionLine::end` :95 (9 tokens, overload) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
 - `ExtrusionLine::front` :98 (9 tokens, overload) — in `gcode/tool_ordering.rs`
 - `ExtrusionLine::back` :99 (9 tokens, overload) — in `gcode/tool_ordering.rs`
-- `ExtrusionLine::begin` :102 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExtrusionLine::end` :103 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
-- `ExtrusionLine::emplace_back` :107 (10 tokens)
 - `ExtrusionLine::insert` :112 (14 tokens, overload) — in `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`, `boost_polygon_voronoi.rs`
 - `to_thick_polyline` :221 (192 tokens, overload)
 - `get_extents` :253 (28 tokens) — in `ex_polygon.rs`, `ex_polygon_collection.rs`, `fill/fill_conformal.rs`
@@ -925,11 +922,12 @@ Rust only:
 - `ExtrusionLine::default` :74
 - `ExtrusionLine::is_empty` :93 — C++ has it in `PresetBundle`
 - `ExtrusionLine::push_back` :114
-- `to_thick_polyline_z` :551
-- `extrusion_paths_append_list` :616
-- `extrusion_paths_append_zpaths` :643
-- `detect_bridge_wall_arachne` :677
-- `extrusion_paths_append_line` :706
+- `ExtrusionLine::insert_range` :156
+- `to_thick_polyline_z` :599
+- `extrusion_paths_append_list` :664
+- `extrusion_paths_append_zpaths` :691
+- `detect_bridge_wall_arachne` :725
+- `extrusion_paths_append_line` :754
 
 ### `Arachne/utils/HalfEdge` (.hpp) and `arachne/utils/half_edge.rs`
 
@@ -1050,10 +1048,10 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `SparseGrid::begin` :46 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SparseGrid::end` :47 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
-- `SparseGrid::begin` :48 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SparseGrid::end` :49 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `SparseGrid::begin` :46 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `SparseGrid::end` :47 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `SparseGrid::begin` :48 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `SparseGrid::end` :49 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 
 Rust only:
 
@@ -1217,10 +1215,10 @@ Missing in the Rust file:
 - `unscaled` :263 (19 tokens) — in `fill/fill_conformal.rs`, `fill/fill_conformal_chart.rs`, `fill/fill_radial_zig_zag.rs`
 - `cast` :266 (38 tokens) — in `geometry/voronoi_visual_utils.rs`
 - `cast` :273 (38 tokens) — in `geometry/voronoi_visual_utils.rs`
-- `serialize` :283 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :284 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :285 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :286 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `serialize` :283 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :284 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :285 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :286 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 
 Rust only:
 
@@ -1568,55 +1566,55 @@ Missing in the Rust file:
 - `export_clipper_input_polygons_bin` :28 (258 tokens)
 - `clip_clipper_polygon_with_subject_bbox_templ` :66 (320 tokens)
 - `EmptyPathsProvider::cend` :74 (7 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `EmptyPathsProvider::end` :75 (7 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `EmptyPathsProvider::end` :75 (7 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `EmptyPathsProvider::cbegin` :76 (7 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `EmptyPathsProvider::begin` :77 (7 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `EmptyPathsProvider::begin` :77 (7 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `EmptyPathsProvider::size` :78 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `SinglePathProvider::cbegin` :99 (8 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SinglePathProvider::begin` :100 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `SinglePathProvider::begin` :100 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `SinglePathProvider::cend` :101 (8 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `SinglePathProvider::end` :102 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `SinglePathProvider::end` :102 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `SinglePathProvider::size` :103 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clip_clipper_polygon_with_subject_bbox` :120 (13 tokens, overload)
 - `clip_clipper_polygon_with_subject_bbox` :121 (11 tokens, overload)
 - `clip_clipper_polygon_with_subject_bbox_templ` :123 (22 tokens)
 - `PathsProvider::cbegin` :127 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `PathsProvider::begin` :128 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `PathsProvider::begin` :128 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `PathsProvider::cend` :129 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
 - `clip_clipper_polygon_with_subject_bbox` :130 (10 tokens, overload)
-- `PathsProvider::end` :130 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `PathsProvider::end` :130 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `clip_clipper_polygon_with_subject_bbox` :131 (10 tokens, overload)
 - `PathsProvider::size` :131 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clip_clipper_polygon_with_subject_bbox` :133 (15 tokens, overload)
 - `clip_clipper_polygons_with_subject_bbox` :144 (86 tokens) — in `fill/fill_floating_concentric.rs`
 - `clip_clipper_polygons_with_subject_bbox` :152 (106 tokens) — in `fill/fill_floating_concentric.rs`
 - `MultiPointsProvider::cbegin` :154 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MultiPointsProvider::begin` :155 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `MultiPointsProvider::begin` :155 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `MultiPointsProvider::cend` :156 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `MultiPointsProvider::end` :157 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `MultiPointsProvider::end` :157 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MultiPointsProvider::size` :158 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clip_clipper_polygons_with_subject_bbox` :161 (110 tokens) — in `fill/fill_floating_concentric.rs`
 - `ExPolygonProvider::cbegin` :183 (10 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonProvider::begin` :184 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `ExPolygonProvider::begin` :184 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `ExPolygonProvider::cend` :185 (18 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonProvider::end` :186 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `ExPolygonProvider::end` :186 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `ExPolygonProvider::size` :187 (13 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `ExPolygonsProvider::cbegin` :223 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonsProvider::begin` :224 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `ExPolygonsProvider::begin` :224 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `ExPolygonsProvider::cend` :225 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonsProvider::end` :226 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `ExPolygonsProvider::end` :226 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `ExPolygonsProvider::size` :227 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `has_duplicate_points` :233 (133 tokens) — in `ex_polygon.rs`, `geometry/point.rs`, `geometry/polygon.rs`
 - `has_duplicate_points` :250 (113 tokens) — in `ex_polygon.rs`, `geometry/point.rs`, `geometry/polygon.rs`
 - `SurfacesProvider::cbegin` :264 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SurfacesProvider::begin` :265 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `SurfacesProvider::begin` :265 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `SurfacesProvider::cend` :266 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `SurfacesProvider::end` :267 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `SurfacesProvider::end` :267 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `SurfacesProvider::size` :268 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `SurfacesPtrProvider::cbegin` :305 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SurfacesPtrProvider::begin` :306 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
+- `SurfacesPtrProvider::begin` :306 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `SurfacesPtrProvider::cend` :307 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `SurfacesPtrProvider::end` :308 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `SurfacesPtrProvider::end` :308 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `SurfacesPtrProvider::size` :309 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `clipper_do` :325 (87 tokens, overload)
 - `offset_ex` :358 (26 tokens) — in `bridge_detector.rs`, `emboss.rs`, `fill/fill_conformal.rs`
@@ -2051,64 +2049,64 @@ Missing in the Rust file:
 - `ConfigOptionVector::size` :726 (11 tokens, overload) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `ConfigOptionVector::empty` :727 (11 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ConfigBase::get_abs_value` :792 (55 tokens, overload)
-- `ConfigOptionVector::serialize` :819 (9 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionVector::serialize` :819 (9 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionFloat::type` :829 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionFloat::serialize` :858 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionFloat::serialize` :858 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionFloatsTempl::type` :872 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
 - `ConfigBase::load_from_json` :885 (2441 tokens, overload)
 - `ConfigOptionFloatsTempl::is_nil` :888 (15 tokens, overload)
-- `ConfigOptionFloatsTempl::serialize` :986 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionFloatsTempl::serialize` :986 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionInt::type` :1000 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionInt::serialize` :1029 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionInt::serialize` :1029 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionIntsTempl::type` :1043 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
 - `ConfigOptionIntsTempl::is_nil` :1054 (14 tokens, overload)
-- `ConfigOptionIntsTempl::serialize` :1119 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionIntsTempl::serialize` :1119 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionString::type` :1132 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionString::serialize` :1152 (20 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionString::serialize` :1152 (20 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionStrings::type` :1166 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionStrings::serialize` :1200 (20 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionStrings::serialize` :1200 (20 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionPercent::type` :1210 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionPercent::serialize` :1238 (15 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionPercent::serialize` :1238 (15 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionPercentsTempl::type` :1252 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionPercentsTempl::serialize` :1291 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionPercentsTempl::serialize` :1291 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigBase::load` :1304 (74 tokens, overload) — in `app_config.rs`, `format/assembly_steps_json.rs`, `format/step.rs`
 - `ConfigOptionFloatOrPercent::type` :1305 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionFloatOrPercent::serialize` :1332 (40 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
-- `ConfigOptionFloatOrPercent::serialize` :1352 (17 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionFloatOrPercent::serialize` :1332 (40 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ConfigOptionFloatOrPercent::serialize` :1352 (17 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionFloatsOrPercentsTempl::type` :1366 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
 - `ConfigOptionFloatsOrPercentsTempl::is_nil` :1382 (29 tokens, overload)
 - `ConfigOptionFloatsOrPercentsTempl::is_nil` :1383 (17 tokens, overload)
-- `ConfigOptionFloatsOrPercentsTempl::serialize` :1484 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionFloatsOrPercentsTempl::serialize` :1484 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionPoint::type` :1497 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionPoint::serialize` :1522 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionPoint::serialize` :1522 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionPoints::type` :1534 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
 - `ConfigOptionPoints::save` :1592 (43 tokens, overload) — in `app_config.rs`, `format/assembly_steps_json.rs`, `preset.rs`
 - `ConfigOptionPoints::load` :1597 (47 tokens, overload) — in `app_config.rs`, `format/assembly_steps_json.rs`, `format/step.rs`
 - `ConfigOptionPoint3::type` :1612 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionPoint3::serialize` :1640 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionPoint3::serialize` :1640 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionPointsGroups::type` :1651 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `DynamicConfig::optptr` :1693 (117 tokens, overload) — in `print_config.rs`
-- `ConfigOptionPointsGroups::serialize` :1739 (15 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `DynamicConfig::optptr` :1693 (117 tokens, overload) — in `placeholder_parser.rs`, `print_config.rs`
+- `ConfigOptionPointsGroups::serialize` :1739 (15 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionIntsGroups::type` :1750 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionIntsGroups::serialize` :1843 (15 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionIntsGroups::serialize` :1843 (15 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionBool::type` :1854 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionBool::serialize` :1882 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionBool::serialize` :1882 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionBoolsTempl::type` :1897 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
 - `ConfigOptionBoolsTempl::is_nil` :1908 (14 tokens, overload)
 - `DynamicConfig::opt_bool` :1967 (76 tokens, overload)
-- `ConfigOptionBoolsTempl::serialize` :1992 (19 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionBoolsTempl::serialize` :1992 (19 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionEnum::type` :2012 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
 - `ConfigOptionEnumGeneric::type` :2084 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionEnumGeneric::serialize` :2105 (36 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
-- `ConfigOptionEnumGeneric::serialize` :2125 (15 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionEnumGeneric::serialize` :2105 (36 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ConfigOptionEnumGeneric::serialize` :2125 (15 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionEnumsGenericTempl::type` :2142 (7 tokens) — in `geometry/build_volume.rs`, `placeholder_parser.rs`, `preset.rs`
-- `ConfigOptionEnumsGenericTempl::serialize` :2226 (18 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `ConfigOptionEnumsGenericTempl::serialize` :2226 (18 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `ConfigOptionDef::load_option_from_archive` :2271 (579 tokens)
 - `ConfigOptionDef::save_option_to_archive` :2307 (507 tokens)
-- `ConfigOptionResolver::option` :2495 (45 tokens, overload)
+- `ConfigOptionResolver::option` :2495 (45 tokens, overload) — in `placeholder_parser.rs`
 - `ConfigOptionResolver::option_throw` :2510 (46 tokens, overload)
-- `ConfigBase::option` :2554 (12 tokens, overload)
-- `ConfigBase::option` :2558 (45 tokens, overload)
+- `ConfigBase::option` :2554 (12 tokens, overload) — in `placeholder_parser.rs`
+- `ConfigBase::option` :2558 (45 tokens, overload) — in `placeholder_parser.rs`
 - `ConfigBase::option_throw` :2564 (30 tokens, overload)
 - `ConfigBase::option_throw` :2573 (47 tokens, overload)
 - `ConfigBase::set` :2603 (18 tokens, overload) — in `app_config.rs`, `color.rs`, `enum_bitmask.rs`
@@ -2119,7 +2117,7 @@ Missing in the Rust file:
 - `DynamicConfig::opt_int` :2820 (23 tokens, overload)
 - `DynamicConfig::opt_enum` :2829 (23 tokens, overload)
 - `DynamicConfig::cend` :2842 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `DynamicConfig::serialize` :2849 (7 tokens, overload) — in `multi_nozzle_utils.rs`, `sla/support_point.rs`, `text_configuration.rs`
+- `DynamicConfig::serialize` :2849 (7 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 
 Rust only:
 
@@ -2514,8 +2512,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `Contour::begin` :22 (5 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `Contour::end` :23 (5 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `Contour::begin` :22 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `Contour::end` :23 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `Contour::open` :24 (5 tokens) — in `svg.rs`
 - `Contour::closed` :25 (6 tokens)
 - `EdgeGrid::Grid::create` :28 (83 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
@@ -2693,8 +2691,8 @@ Missing in the Rust file:
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::begin_holes` :545 (11 tokens)
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::end_holes` :548 (11 tokens)
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::size_holes` :551 (14 tokens)
-- `polygon_set_traits<Slic3r::ExPolygons>::begin` :576 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `polygon_set_traits<Slic3r::ExPolygons>::end` :580 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `polygon_set_traits<Slic3r::ExPolygons>::begin` :576 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `polygon_set_traits<Slic3r::ExPolygons>::end` :580 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `remove_same_neighbor` :582 (112 tokens) — in `geometry/expolygon.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
 - `polygon_set_traits<Slic3r::ExPolygons>::clean` :585 (5 tokens)
 - `polygon_set_traits<Slic3r::ExPolygons>::sorted` :586 (5 tokens) — in `sla/agg/rasterizer_cells_aa.rs`, `support/tree_model_volumes.rs`
@@ -2748,17 +2746,12 @@ Rust only:
 
 ### `ExPolygonSerialize` (.hpp) and `ex_polygon_serialize.rs`
 
-Tier 1. C++ functions 2, Rust functions 2. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
-
-Missing in the Rust file:
-
-- `serialize` :18 (9 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :23 (13 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+Tier 1. C++ functions 2, Rust functions 4. Matched 2: faithful 2, partial 0, divergent 0, stub 0.
 
 Rust only:
 
-- `serialize_polygon` :54
-- `serialize_ex_polygon` :77
+- `serialize_polygon` :47
+- `serialize_ex_polygon` :87
 
 ### `ExPolygonsIndex` (.cpp+.hpp) and `ex_polygons_index.rs`
 
@@ -3775,7 +3768,7 @@ Tier 1. C++ functions 11 (plus 1 constructors, 0 destructors, 0 operators), Rust
 Missing in the Rust file:
 
 - `export_distance_field_to_svg` :21 (116 tokens)
-- `DistanceField::update` :156 (177 tokens, overload) — in `gcode/pressure_equalizer.rs`, `mutable_priority_queue.rs`
+- `DistanceField::update` :156 (177 tokens, overload) — in `gcode/pressure_equalizer.rs`, `mutable_priority_queue.rs`, `utils.rs`
 
 Rust only:
 
@@ -3857,45 +3850,44 @@ Rust only:
 
 ### `Flow` (.cpp+.hpp) and `flow.rs`
 
-Tier 1. C++ functions 31 (plus 7 constructors, 0 destructors, 3 operators), Rust functions 35. Matched 23: faithful 14, partial 6, divergent 3, stub 0.
+Tier 1. C++ functions 31 (plus 7 constructors, 0 destructors, 3 operators), Rust functions 42. Matched 28: faithful 17, partial 7, divergent 4, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Flow::auto_extrusion_width` :22 and `Flow::auto_extrusion_width` :641 (27%, 1.05x)
-- divergent: `Flow::with_width` :91 and `Flow::with_width` :412 (28%, 1.93x)
-- divergent: `Flow::with_height` :95 and `Flow::with_height` :430 (28%, 1.93x)
-- partial: `Flow::new_from_config_width` :136 and `Flow::new_from_config_width` :240 (54%, 0.74x)
-- partial: `Flow::with_spacing` :160 and `Flow::with_spacing` :447 (36%, 1.53x)
-- partial: `Flow::rounded_rectangle_extrusion_spacing` :214 and `Flow::rounded_rectangle_extrusion_spacing` :581 (44%, 1.44x)
-- partial: `Flow::mm3_per_mm` :235 and `Flow::mm3_per_mm` :354 (43%, 1.4x)
-- partial: `support_material_flow` :248 and `support_material_flow` :764 (44%, 0.56x)
-- partial: `support_material_interface_flow` :282 and `support_material_interface_flow` :841 (50%, 0.63x)
+- divergent: `Flow::auto_extrusion_width` :22 and `Flow::auto_extrusion_width` :812 (27%, 2.55x)
+- divergent: `opt_key_to_flow_role` :41 and `opt_key_to_flow_role` :173 (12%, 1.22x)
+- partial: `throw_on_missing_variable` :62 and `throw_on_missing_variable` :201 (50%, 0.69x)
+- divergent: `Flow::with_width` :91 and `Flow::with_width` :497 (28%, 1.93x)
+- divergent: `Flow::with_height` :95 and `Flow::with_height` :515 (28%, 1.93x)
+- partial: `Flow::new_from_config_width` :136 and `Flow::new_from_config_width` :301 (54%, 0.74x)
+- partial: `Flow::with_spacing` :160 and `Flow::with_spacing` :532 (36%, 3.28x)
+- partial: `Flow::rounded_rectangle_extrusion_spacing` :214 and `Flow::rounded_rectangle_extrusion_spacing` :745 (44%, 2.08x)
+- partial: `Flow::mm3_per_mm` :235 and `Flow::mm3_per_mm` :415 (43%, 3.36x)
+- partial: `support_material_flow` :248 and `support_material_flow` :1027 (44%, 0.56x)
+- partial: `support_material_interface_flow` :282 and `support_material_interface_flow` :1104 (50%, 0.63x)
 
 Missing in the Rust file:
 
-- `opt_key_to_flow_role` :41 (114 tokens)
-- `throw_on_missing_variable` :62 (32 tokens)
-- `Flow::extrusion_width` :68 (112 tokens) — in `gcode/ironing.rs`
 - `Flow::bridge` :72 (5 tokens) — in `surface.rs`
-- `Flow::extrusion_width` :91 (22 tokens) — in `gcode/ironing.rs`
-- `Flow::extrusion_width_for_nozzle` :96 (49 tokens)
-- `Flow::resolve_extrusion_width_for_nozzle` :110 (105 tokens)
+- `Flow::extrusion_width` :91 (22 tokens, overload) — in `gcode/ironing.rs`
 - `support_nozzle_diameter` :293 (52 tokens)
 
 Rust only:
 
-- `flow_f32` :128
-- `q32` :140
-- `Flow::default_constructed` :154
-- `Flow::new` :160
-- `Flow::new_with_spacing` :175
-- `Flow::zero` :197 — C++ has it in `Semver`
-- `Flow::is_bridge` :325 — C++ has it in `ExtrusionEntity`, `Surface`
-- `Flow::mm3_per_mm_unchecked` :378
-- `Flow::e_per_mm` :699 — C++ has it in `Calib`, `Extruder`
-- `Flow::extrusion_for_length` :711
-- `Flow::extrusion_for_length_with_multiplier` :726
-- `Flow::partial_cmp` :737
+- `flow_f32` :136
+- `flow_fma` :153
+- `q32` :162
+- `Flow::default_constructed` :215
+- `Flow::new` :221
+- `Flow::new_with_spacing` :236
+- `Flow::zero` :258 — C++ has it in `Semver`
+- `Flow::is_bridge` :386 — C++ has it in `ExtrusionEntity`, `Surface`
+- `Flow::mm3_per_mm_unchecked` :457
+- `Flow::extrusion_width_by_key` :882
+- `Flow::e_per_mm` :962 — C++ has it in `Calib`, `Extruder`
+- `Flow::extrusion_for_length` :974
+- `Flow::extrusion_for_length_with_multiplier` :989
+- `Flow::partial_cmp` :1000
 
 ### `FlushVolCalc` (.cpp+.hpp) and `flush_vol_calc.rs`
 
@@ -4161,17 +4153,17 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - divergent: `WipeTowerIntegration::post_process_wipe_tower_moves` :1383 and `post_process_wipe_tower_moves` :499 (25%, 0.89x)
 - divergent: `GCode::unretract` :1959 and `unretract` :4618 (17%, 1.12x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :1361 (8%, 1.33x)
-- partial: `GCode::change_layer` :6473 and `change_layer` :5247 (39%, 1.11x)
+- partial: `GCode::change_layer` :6473 and `change_layer` :5261 (39%, 1.11x)
 - divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :1916 (18%, 1.94x)
 - divergent: `GCode::extrude_path` :6927 and `extrude_path` :3146 (5%, 0.05x)
 - divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :3906 (28%, 1.68x)
 - partial: `GCode::extrude_support` :7011 and `extrude_support` :4314 (33%, 1.62x)
-- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9364 (50%, 1.06x)
-- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5387 (30%, 1.08x)
+- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :9408 (50%, 1.06x)
+- partial: `GCode::_encode_label_ids_to_base64` :8104 and `encode_label_ids_to_base64` :5401 (30%, 1.08x)
 - divergent: `GCode::travel_to` :8198 and `travel_to` :4474 (11%, 0.21x)
 - divergent: `GCode::retract` :8498 and `retract` :4560 (8%, 0.21x)
-- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4846 (2%, 0.03x)
-- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6881 (0%, 0.06x)
+- divergent: `GCode::set_extruder` :8617 and `set_extruder` :4846 (2%, 0.04x)
+- divergent: `GCode::ObjectByExtruder::Island::Region::append` :9106 and `GCode::append` :6925 (0%, 0.06x)
 
 Missing in the Rust file:
 
@@ -4340,68 +4332,68 @@ Rust only:
 - `extrude_path_with_arc_fitting` :3177
 - `extrude_perimeters_entities` :4086
 - `extrude_infill_entities` :4204
-- `apply_layer_cooling` :4998
-- `bridge_fan_speed` :5062
-- `overhang_fan_speed` :5081
-- `set_fan_speed_for_role` :5103
-- `GCodeLayerState::default` :5193
-- `lift_type_code` :5226
-- `emit_layer_preamble` :5297
-- `emit_layer_postamble` :5354
-- `emit_object_start_label` :5429
-- `emit_object_end_label` :5458
-- `emit_layer_object_labels` :5484
-- `set_loop_wipe_path` :6739
-- `first_extrusion_path` :6755
-- `width_tag_before_speed` :6767
-- `set_speed_before_path` :6790
-- `GCode::new` :6824
-- `GCode::from_content_and_stats` :6832
-- `GCode::from_string` :6837 — C++ has it in `Config`
-- `GCode::from_string_with_stats` :6845
-- `GCode::content` :6850
-- `GCode::as_bytes` :6855
-- `GCode::len` :6860
-- `GCode::is_empty` :6865 — C++ has it in `PresetBundle`
-- `GCode::split_off` :6871
-- `GCode::append_line` :6875
-- `GCode::append_comment` :6886
-- `GCode::write_to_file` :6893
-- `GCode::read_from_file` :6904 — C++ has it in `Model`
-- `GCode::line_count` :6910
-- `GCode::lines` :6915 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
-- `GCode::clear` :6920 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `GCode::fmt` :6927
-- `GCode::fmt` :6938
-- `GCode::from` :6944 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `String::from` :6950 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `GCodeStats::new` :6996
-- `GCodeStats::calculate_filament_stats` :7012
-- `GCodeStats::print_time_formatted` :7025
-- `GCodeStats::filament_used_meters` :7034
-- `GCodeStats::fmt` :7040
-- `GCodeHeader::new` :7084
-- `GCodeHeader::with_raw_settings` :7088
-- `GCodeHeader::with_estimated_time` :7101
-- `GCodeHeader::with_estimated_times` :7131
-- `GCodeHeader::generate_header_block` :7148
-- `GCodeHeader::generate_config_block` :7210
-- `GCodeHeader::generate_minimal_config_block` :7297
-- `GCodeHeader::generate_executable_block_start` :7356
-- `GCodeHeader::generate_executable_block_content` :7363
-- `GCodeHeader::generate_complete_header` :7520
-- `is_config_key_skipped` :7682
-- `format_config_value` :7742
-- `process_gcode_template` :7953
-- `eval_condition` :8506
-- `eval_expr` :8693
-- `resolve_all_vars_in_expr` :8831
-- `eval_math` :8881
-- `scale_` :9055 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale_` :9060 — C++ has it in `Point`, `libslic3r`
-- `point_mul_f64` :9066
-- `path_from` :9073
-- `poly_len` :9106
+- `apply_layer_cooling` :5012
+- `bridge_fan_speed` :5076
+- `overhang_fan_speed` :5095
+- `set_fan_speed_for_role` :5117
+- `GCodeLayerState::default` :5207
+- `lift_type_code` :5240
+- `emit_layer_preamble` :5311
+- `emit_layer_postamble` :5368
+- `emit_object_start_label` :5443
+- `emit_object_end_label` :5472
+- `emit_layer_object_labels` :5498
+- `set_loop_wipe_path` :6783
+- `first_extrusion_path` :6799
+- `width_tag_before_speed` :6811
+- `set_speed_before_path` :6834
+- `GCode::new` :6868
+- `GCode::from_content_and_stats` :6876
+- `GCode::from_string` :6881 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :6889
+- `GCode::content` :6894
+- `GCode::as_bytes` :6899
+- `GCode::len` :6904
+- `GCode::is_empty` :6909 — C++ has it in `PresetBundle`
+- `GCode::split_off` :6915
+- `GCode::append_line` :6919
+- `GCode::append_comment` :6930
+- `GCode::write_to_file` :6937
+- `GCode::read_from_file` :6948 — C++ has it in `Model`
+- `GCode::line_count` :6954
+- `GCode::lines` :6959 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :6964 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :6971
+- `GCode::fmt` :6982
+- `GCode::from` :6988 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :6994 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :7040
+- `GCodeStats::calculate_filament_stats` :7056
+- `GCodeStats::print_time_formatted` :7069
+- `GCodeStats::filament_used_meters` :7078
+- `GCodeStats::fmt` :7084
+- `GCodeHeader::new` :7128
+- `GCodeHeader::with_raw_settings` :7132
+- `GCodeHeader::with_estimated_time` :7145
+- `GCodeHeader::with_estimated_times` :7175
+- `GCodeHeader::generate_header_block` :7192
+- `GCodeHeader::generate_config_block` :7254
+- `GCodeHeader::generate_minimal_config_block` :7341
+- `GCodeHeader::generate_executable_block_start` :7400
+- `GCodeHeader::generate_executable_block_content` :7407
+- `GCodeHeader::generate_complete_header` :7564
+- `is_config_key_skipped` :7726
+- `format_config_value` :7786
+- `process_gcode_template` :7997
+- `eval_condition` :8550
+- `eval_expr` :8737
+- `resolve_all_vars_in_expr` :8875
+- `eval_math` :8925
+- `scale_` :9099 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale_` :9104 — C++ has it in `Point`, `libslic3r`
+- `point_mul_f64` :9110
+- `path_from` :9117
+- `poly_len` :9150
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
@@ -4623,7 +4615,7 @@ Missing in the Rust file:
 - `GCodeProcessor::UsedFilaments::process_caches` :1526 (31 tokens)
 - `GCodeProcessorResult::reset` :1537 (182 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `GCodeProcessor::check_multi_extruder_gcode_valid` :1785 (1503 tokens)
-- `GCodeProcessor::apply_config` :1964 (1245 tokens, overload) — in `g_code_reader.rs`
+- `GCodeProcessor::apply_config` :1964 (1245 tokens, overload) — in `g_code_reader.rs`, `placeholder_parser.rs`
 - `skip_whitespaces` :2649 (32 tokens) — in `config.rs`, `g_code_reader.rs`
 - `remove_eols` :2654 (40 tokens)
 - `GCodeProcessor::export_config_for_render` :2659 (100 tokens)
@@ -5041,8 +5033,8 @@ Missing in the Rust file:
 - `LayerTools::mixed_group_by_slot` :260 (26 tokens)
 - `LayerTools::is_mixed_slot` :267 (10 tokens)
 - `ToolOrdering::handle_dontcare_extruder` :294 (499 tokens)
-- `ToolOrdering::begin` :347 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ToolOrdering::end` :348 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `ToolOrdering::begin` :347 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `ToolOrdering::end` :348 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `ToolOrdering::empty` :349 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ToolOrdering::handle_dontcare_extruder` :383 (380 tokens)
 - `ToolOrdering::set_nozzle_status` :420 (10 tokens) — in `multi_nozzle_utils.rs`
@@ -5451,7 +5443,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `GCodeReader::apply_config` :24 (11 tokens, overload) — in `gcode/g_code_processor.rs`
+- `GCodeReader::apply_config` :24 (11 tokens, overload) — in `gcode/g_code_processor.rs`, `placeholder_parser.rs`
 - `GCodeReader::GCodeLine::cmd_is` :76 (48 tokens, overload)
 - `GCodeReader::parse_buffer` :115 (24 tokens, overload) — in `format/amf.rs`
 - `GCodeReader::parse_line` :129 (32 tokens, overload)
@@ -5599,7 +5591,7 @@ Missing in the Rust file:
 - `scale_transform` :421 (16 tokens, overload)
 - `scale_transform` :430 (14 tokens, overload)
 - `scale_transform` :434 (15 tokens, overload)
-- `Transformation::serialize` :472 (7 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `Transformation::serialize` :472 (7 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `Transformation::load_and_construct` :474 (18 tokens)
 - `Transformation::set_scaling_factor` :500 (52 tokens, overload)
 - `is_rotation_ninety_degrees` :512 (39 tokens, overload)
@@ -5651,7 +5643,7 @@ Tier 1. C++ functions 53, Rust functions 53. Matched 53: faithful 53, partial 0,
 
 ### `Geometry/Circle` (.cpp+.hpp) and `geometry/circle.rs`
 
-Tier 1. C++ functions 24 (plus 9 constructors, 0 destructors, 1 operators), Rust functions 35. Matched 18: faithful 18, partial 0, divergent 0, stub 0.
+Tier 1. C++ functions 24 (plus 9 constructors, 0 destructors, 1 operators), Rust functions 36. Matched 18: faithful 18, partial 0, divergent 0, stub 0.
 
 Missing in the Rust file:
 
@@ -5675,12 +5667,13 @@ Rust only:
 - `Circle::from` :234 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
 - `circle_center_taubin_newton_points` :250
 - `smallest_enclosing_circle_welzl_eps` :527
-- `Mt19937::new` :622
-- `Mt19937::with_seed` :626
-- `Mt19937::generate` :640 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
-- `Mt19937::next_u32` :653
-- `uniform_int` :671
-- `sample` :711
+- `ray_circle_fma` :621
+- `Mt19937::new` :640
+- `Mt19937::with_seed` :644
+- `Mt19937::generate` :658 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
+- `Mt19937::next_u32` :671
+- `uniform_int` :689
+- `sample` :729
 
 ### `Geometry/ConvexHull` (.cpp+.hpp) and `geometry/convex_hull.rs`
 
@@ -5999,7 +5992,7 @@ Tier 1. C++ functions 6, Rust functions 3. Matched 2: faithful 2, partial 0, div
 Missing in the Rust file:
 
 - `translate` :19 (24 tokens, overload) — in `bounding_box.rs`, `emboss.rs`, `ex_polygon_collection.rs`
-- `L` :31 (5 tokens) — in `print_base.rs`, `print_config.rs`, `sla/pad.rs`
+- `L` :31 (5 tokens) — in `preset_bundle.rs`, `print_base.rs`, `print_config.rs`
 - `L_CONTEXT` :32 (5 tokens)
 - `_u8L` :33 (12 tokens)
 
@@ -6040,15 +6033,7 @@ Rust only:
 
 ### `IntersectionPoints` (.cpp+.hpp) and `intersection_points.rs`
 
-Tier 1. C++ functions 6, Rust functions 6. Matched 1: faithful 1, partial 0, divergent 0, stub 0.
-
-Missing in the Rust file:
-
-- `get_intersections` :40 (8 tokens) — in `sla/hollowing.rs`
-- `get_intersections` :41 (11 tokens) — in `sla/hollowing.rs`
-- `get_intersections` :42 (11 tokens) — in `sla/hollowing.rs`
-- `get_intersections` :43 (11 tokens) — in `sla/hollowing.rs`
-- `get_intersections` :44 (11 tokens) — in `sla/hollowing.rs`
+Tier 1. C++ functions 6, Rust functions 12. Matched 6: faithful 6, partial 0, divergent 0, stub 0.
 
 Rust only:
 
@@ -6057,6 +6042,7 @@ Rust only:
 - `get_intersections_polygons` :104
 - `get_intersections_expolygon` :115
 - `get_intersections_expolygons` :121
+- `Polygon::get_intersections` :141 — C++ has it in `SLA/Hollowing`
 
 ### `KDTreeIndirect` (.hpp) and `kd_tree_indirect.rs`
 
@@ -6182,21 +6168,21 @@ Rust only:
 - `Layer::make_perimeters_with_lower` :2003
 - `Layer::make_perimeters_with_neighbors` :2012
 - `Layer::record_cooling_node_for_each_extrusion` :2649
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :4139 — C++ has it in `Fill/Fill`
-- `Layer::make_ironing` :4510 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :4633
-- `Layer::generate_sparse_infill` :4640
-- `Layer::new_f` :4649 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :4661
-- `Layer::height_mm` :4667
-- `Layer::set_lower_layer` :4673
-- `Layer::set_upper_layer` :4679
-- `Layer::all_slices` :4685
-- `LayerRegion::set_slices` :4694
-- `chain_points` :4704 — C++ has it in `ShortestPath`
-- `get_extents_layer_region` :4747
-- `get_extents_layer_regions` :4770
-- `mpprobe` :4792
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :4149 — C++ has it in `Fill/Fill`
+- `Layer::make_ironing` :4520 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :4643
+- `Layer::generate_sparse_infill` :4650
+- `Layer::new_f` :4659 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :4671
+- `Layer::height_mm` :4677
+- `Layer::set_lower_layer` :4683
+- `Layer::set_upper_layer` :4689
+- `Layer::all_slices` :4695
+- `LayerRegion::set_slices` :4704
+- `chain_points` :4714 — C++ has it in `ShortestPath`
+- `get_extents_layer_region` :4757
+- `get_extents_layer_regions` :4780
+- `mpprobe` :4802
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 
@@ -6431,7 +6417,7 @@ Missing in the Rust file:
 
 - `ModelConfigObject::timestamp` :93 (11 tokens) — in `object_id.rs`
 - `ModelConfigObject::object_id_and_timestamp_match` :94 (27 tokens) — in `object_id.rs`
-- `ModelConfigObject::serialize` :100 (15 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ModelConfigObject::serialize` :100 (15 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `StaticSerializationWrapper::load` :114 (11 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `StaticSerializationWrapper::save` :115 (11 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `new_clone` :139 (46 tokens)
@@ -6441,7 +6427,7 @@ Missing in the Rust file:
 - `ModelMaterial::set_model` :184 (6 tokens)
 - `Model::assign_new_unique_ids_recursive` :185 (51 tokens) — in `object_id.rs`
 - `ModelMaterial::set_new_unique_id` :185 (16 tokens) — in `object_id.rs`
-- `ModelMaterial::serialize` :192 (48 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ModelMaterial::serialize` :192 (48 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `Model::update_links_bottom_up_recursive` :194 (83 tokens)
 - `Model::clear_assembly_artifacts` :207 (37 tokens)
 - `LayerHeightProfile::assign` :208 (27 tokens) — in `config.rs`, `extrusion_entity_collection.rs`, `mutable_polygon.rs`
@@ -6451,12 +6437,12 @@ Missing in the Rust file:
 - `LayerHeightProfile::set` :213 (20 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
 - `LayerHeightProfile::set` :214 (25 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
 - `LayerHeightProfile::clear` :215 (14 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
-- `LayerHeightProfile::serialize` :217 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `LayerHeightProfile::serialize` :217 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `Model::read_from_step` :226 (252 tokens)
 - `add_textured_mesh_to_model` :284 (224 tokens)
-- `CutConnectorAttributes::serialize` :300 (11 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `CutConnectorAttributes::serialize` :300 (11 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `Model::read_from_file` :306 (1544 tokens) — in `g_code.rs`
-- `CutConnector::serialize` :325 (19 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `CutConnector::serialize` :325 (19 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `ModelObject::const_volumes` :397 (25 tokens)
 - `ModelObject::get_model` :398 (5 tokens)
 - `ModelObject::get_model` :399 (5 tokens)
@@ -6496,21 +6482,21 @@ Missing in the Rust file:
 - `FacetsAnnotation::reserve` :810 (11 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_plane_path.rs`, `geometry/polygon.rs`
 - `FacetsAnnotation::shrink_to_fit` :814 (18 tokens)
 - `Model::bounding_box_in_assembly_view` :828 (43 tokens)
-- `FacetsAnnotation::serialize` :836 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `FacetsAnnotation::serialize` :836 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `Model::update_print_volume_state` :840 (105 tokens)
 - `Model::center_instances_around_point` :852 (154 tokens)
-- `RaycastResult::serialize` :867 (13 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `RaycastResult::serialize` :867 (13 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `Model::mesh` :874 (30 tokens) — in `format/step.rs`, `print_object.rs`, `texture_painting.rs`
 - `Model::duplicate_objects_grid` :882 (153 tokens)
-- `TextInfo::serialize` :894 (33 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `TextInfo::serialize` :894 (33 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `Model::looks_like_multipart_object` :900 (121 tokens)
 - `auto_extruder_id` :920 (21 tokens)
 - `Model::convert_multipart_object` :928 (365 tokens)
-- `ModelVolume::Source::serialize` :940 (21 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ModelVolume::Source::serialize` :940 (21 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `ModelVolume::CutInfo::set_processed` :974 (6 tokens)
 - `ModelVolume::CutInfo::invalidate` :975 (6 tokens) — in `mt_utils.rs`, `object_id.rs`, `print_base.rs`
 - `ModelVolume::CutInfo::reset_from_upper` :976 (6 tokens)
-- `ModelVolume::CutInfo::serialize` :977 (15 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ModelVolume::CutInfo::serialize` :977 (15 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `ModelVolume::is_from_upper` :981 (7 tokens)
 - `Model::looks_like_imperial_units` :981 (119 tokens)
 - `ModelVolume::reset_from_upper` :982 (8 tokens)
@@ -6622,10 +6608,10 @@ Missing in the Rust file:
 - `ModelObject::is_mm_painted` :1577 (42 tokens)
 - `ModelObject::is_fuzzy_skin_painted` :1582 (42 tokens)
 - `ModelObject::sort_volumes` :1587 (133 tokens)
-- `ModelInstance::serialize` :1597 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ModelInstance::serialize` :1597 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `ModelObject::add_instance` :1603 (50 tokens, overload) — in `format/assembly_steps_json.rs`
 - `ModelObject::add_instance` :1622 (41 tokens, overload) — in `format/assembly_steps_json.rs`
-- `ModelWipeTower::serialize` :1630 (9 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ModelWipeTower::serialize` :1630 (9 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `ModelObject::delete_instance` :1632 (36 tokens)
 - `ModelObject::delete_last_instance` :1640 (17 tokens)
 - `ModelObject::clear_instances` :1645 (29 tokens)
@@ -7042,10 +7028,10 @@ Missing in the Rust file:
 - `MultiPoint::append` :84 (21 tokens) — in `config.rs`, `ex_polygon_collection.rs`, `extrusion_entity.rs`
 - `MultiPoint::append` :85 (61 tokens) — in `config.rs`, `ex_polygon_collection.rs`, `extrusion_entity.rs`
 - `MultiPoint::remove_duplicate_points` :102 (101 tokens, overload) — in `geometry/simplify.rs`
-- `MultiPoint::begin` :103 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MultiPoint::begin` :104 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MultiPoint::end` :105 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
-- `MultiPoint::end` :106 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `MultiPoint::begin` :103 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `MultiPoint::begin` :104 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `MultiPoint::end` :105 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `MultiPoint::end` :106 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MultiPoint::cbegin` :107 (9 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MultiPoint::cend` :108 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`
 - `MultiPoint3::append` :116 (11 tokens) — in `config.rs`, `ex_polygon_collection.rs`, `extrusion_entity.rs`
@@ -7084,8 +7070,8 @@ Missing in the Rust file:
 - `MutablePolygon::iterator::size` :55 (18 tokens, overload) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `MutablePolygon::assign` :138 (35 tokens, overload) — in `config.rs`, `extrusion_entity_collection.rs`, `nozzle_inventory.rs`
 - `MutablePolygon::polygon` :149 (78 tokens, overload) — in `bounding_box.rs`, `build_volume.rs`, `clipper2/clipper_engine.rs`
-- `MutablePolygon::begin` :174 (9 tokens, overload) — in `boost_polygon_voronoi.rs`, `preset.rs`, `sla/agg/scanline_p.rs`
-- `MutablePolygon::end` :178 (9 tokens, overload) — in `preset.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
+- `MutablePolygon::begin` :174 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `preset.rs`
+- `MutablePolygon::end` :178 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
 - `MutablePolygon::remove` :182 (25 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `extrusion_entity_collection.rs`, `fill/fill_adaptive.rs`
 - `MutablePolygon::insert` :185 (27 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`
 - `MutablePolygon::insert` :242 (118 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`
@@ -7151,8 +7137,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `MutablePriorityQueue::empty` :30 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `MutablePriorityQueue::begin` :36 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MutablePriorityQueue::end` :37 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `MutablePriorityQueue::begin` :36 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `MutablePriorityQueue::end` :37 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MutablePriorityQueue::cbegin` :38 (9 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MutablePriorityQueue::cend` :39 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`
 - `MutablePriorityQueue::push` :74 (36 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `geometry/polygon.rs`
@@ -7190,7 +7176,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `OrientMesh::apply` :47 (12 tokens) — in `config.rs`, `format/sl1.rs`, `geometry/point.rs`
-- `AutoOrienter::process` :117 (482 tokens) — in `gcode/gcode_template.rs`, `gcode/pressure_equalizer.rs`, `print.rs`
+- `AutoOrienter::process` :117 (482 tokens) — in `gcode/gcode_template.rs`, `gcode/pressure_equalizer.rs`, `placeholder_parser.rs`
 - `AutoOrienter::preprocess` :186 (328 tokens) — in `format/step.rs`
 - `AutoOrienter::add_principal_axes` :302 (427 tokens)
 - `AutoOrienter::project_vertices` :373 (295 tokens)
@@ -7302,94 +7288,169 @@ Rust only:
 
 ### `PlaceholderParser` (.cpp+.hpp) and `placeholder_parser.rs`
 
-Tier 1. C++ functions 85 (plus 17 constructors, 1 destructors, 0 operators), Rust functions 67. Matched 43: faithful 31, partial 9, divergent 3, stub 0.
+Tier 1. C++ functions 85 (plus 17 constructors, 1 destructors, 0 operators), Rust functions 208. Matched 75: faithful 65, partial 9, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `expr::reset` :238 and `Expr::reset` :118 (20%, 0.26x)
-- partial: `expr::to_string` :265 and `Expr::to_string` :223 (42%, 0.82x)
-- partial: `expr::unary_minus` :319 and `Expr::unary_minus` :246 (33%, 0.65x)
-- partial: `expr::unary_integer` :334 and `Expr::unary_integer` :258 (33%, 0.62x)
-- partial: `expr::round` :349 and `Expr::round` :270 (40%, 0.63x)
-- partial: `expr::floor` :364 and `Expr::floor` :282 (40%, 0.63x)
-- partial: `expr::ceil` :379 and `Expr::ceil` :294 (40%, 0.63x)
-- divergent: `expr::unary_not` :394 and `Expr::unary_not` :306 (28%, 0.64x)
-- partial: `expr::evaluate_boolean` :498 and `Expr::evaluate_boolean` :425 (50%, 1.48x)
-- partial: `expr::evaluate_boolean_to_string` :505 and `Expr::evaluate_boolean_to_string` :433 (50%, 1.83x)
-- partial: `expr::regex_op` :636 and `Expr::regex_op` :638 (30%, 0.53x)
-- divergent: `expr::throw_exception` :696 and `Expr::throw_exception` :721 (17%, 0.4x)
+- partial: `PlaceholderParser::apply_env_variables` :151 and `PlaceholderParser::apply_env_variables` :3277 (44%, 1.66x)
+- divergent: `expr::reset` :238 and `Expr::reset` :220 (20%, 0.26x)
+- partial: `expr::to_string` :265 and `Expr::to_string` :325 (42%, 0.82x)
+- partial: `expr::throw_exception` :696 and `Expr::throw_exception` :780 (50%, 0.57x)
+- partial: `MyContext::get_extruder_id` :739 and `MyContext::get_extruder_id` :1238 (100%, 2.41x)
+- partial: `MyContext::legacy_variable_expansion` :764 and `MyContext::legacy_variable_expansion` :1266 (56%, 1.25x)
+- partial: `MyContext::legacy_variable_expansion2` :800 and `MyContext::legacy_variable_expansion2` :1313 (72%, 1.15x)
+- partial: `MyContext::scalar_variable_reference` :844 and `MyContext::scalar_variable_reference` :1367 (89%, 1.14x)
+- partial: `MyContext::filament_change` :1012 and `MyContext::filament_change` :1591 (67%, 0.68x)
+- partial: `MyContext::throw_exception` :1019 and `MyContext::throw_exception` :1599 (50%, 0.53x)
 
 Missing in the Rust file:
 
-- `PlaceholderParser::clear_config` :27 (8 tokens)
-- `PlaceholderParser::set` :40 (15 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
-- `PlaceholderParser::set` :41 (15 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
-- `PlaceholderParser::set` :42 (14 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
-- `PlaceholderParser::set` :43 (15 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
-- `PlaceholderParser::set` :44 (15 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
-- `PlaceholderParser::set` :45 (15 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
-- `PlaceholderParser::set` :46 (11 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
-- `PlaceholderParser::option` :49 (10 tokens) — in `config.rs`
-- `PlaceholderParser::external_config` :51 (5 tokens)
-- `PlaceholderParser::update_timestamp` :64 (7 tokens)
-- `PlaceholderParser::update_timestamp` :80 (284 tokens)
-- `opts_equal` :105 (44 tokens)
-- `PlaceholderParser::config_diff` :113 (47 tokens)
-- `PlaceholderParser::apply_config` :128 (61 tokens) — in `g_code_reader.rs`, `gcode/g_code_processor.rs`
-- `PlaceholderParser::apply_only` :140 (29 tokens) — in `config.rs`
-- `PlaceholderParser::apply_config` :146 (11 tokens) — in `g_code_reader.rs`, `gcode/g_code_processor.rs`
-- `PlaceholderParser::apply_env_variables` :151 (79 tokens)
+- `PlaceholderParser::set` :40 (15 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
+- `PlaceholderParser::set` :41 (15 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
+- `PlaceholderParser::set` :42 (14 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
+- `PlaceholderParser::set` :43 (15 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
+- `PlaceholderParser::set` :44 (15 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
+- `PlaceholderParser::set` :45 (15 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
+- `PlaceholderParser::update_timestamp` :80 (284 tokens, overload)
+- `PlaceholderParser::apply_config` :146 (11 tokens, overload) — in `g_code_reader.rs`, `gcode/g_code_processor.rs`
 - `expr::set_s` :263 (33 tokens, overload)
-- `expr::Data::set` :302 (20 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
 - `expr::throw_if_not_numeric` :559 (18 tokens, overload)
-- `MyContext::get_extruder_id` :739 (46 tokens) — in `gcode/g_code_processor.rs`, `gcode/wipe_tower.rs`, `multi_nozzle_utils.rs`
-- `MyContext::evaluate_full_macro` :747 (9 tokens)
-- `MyContext::optptr` :749 (61 tokens) — in `config.rs`, `print_config.rs`
-- `MyContext::resolve_symbol` :761 (10 tokens)
-- `MyContext::legacy_variable_expansion` :764 (295 tokens)
-- `MyContext::legacy_variable_expansion2` :800 (263 tokens)
-- `MyContext::resolve_variable` :831 (58 tokens)
-- `MyContext::scalar_variable_reference` :844 (949 tokens)
-- `MyContext::vector_variable_reference` :964 (337 tokens)
-- `MyContext::evaluate_index` :995 (32 tokens)
-- `MyContext::random` :1003 (61 tokens, overload)
-- `MyContext::filament_change` :1012 (25 tokens)
-- `MyContext::throw_exception` :1019 (43 tokens, overload)
-- `MyContext::process_error_message` :1027 (316 tokens)
-- `strict_real_policies_without_nan_inf::parse_nan` :1112 (5 tokens)
-- `strict_real_policies_without_nan_inf::parse_inf` :1113 (5 tokens)
-- `utf8_char_skipper_parser::parse` :1129 (189 tokens) — in `config.rs`, `debug/compare.rs`, `format/assembly_steps_json.rs`
-- `utf8_char_skipper_parser::what` :1173 (12 tokens) — in `clipper2/clipper_core.rs`, `config.rs`, `filament_group_utils.rs`
-- `process_macro` :1516 (136 tokens)
-- `PlaceholderParser::process` :1541 (54 tokens) — in `gcode/gcode_template.rs`, `gcode/pressure_equalizer.rs`, `print.rs`
-- `PlaceholderParser::evaluate_boolean_expression` :1554 (38 tokens) — in `preset.rs`
 
 Rust only:
 
-- `Expr::new` :93
-- `Expr::from_bool` :98
-- `Expr::from_int` :103
-- `Expr::from_double` :108
-- `Expr::from_string` :113 — C++ has it in `Config`
-- `Expr::type_` :125 — C++ has it in `BuildVolume`, `Config`, `Model`
-- `Expr::s` :208
-- `Expr::add_assign` :316
-- `Expr::sub_assign` :343
-- `Expr::mul_assign` :358
-- `Expr::div_assign` :373
-- `Expr::rem_assign` :396
-- `Expr::throw_if_not_numeric_static` :528
-- `Expr::throw_exception_unit` :725
-- `Expr::default` :740
-- `format_double_ostream` :755
-- `format_printf_g` :763
-- `trim_g_mantissa` :798
-- `trim_trailing_zeros` :808
-- `normalize_exponent` :818
-- `format_printf_f` :844
-- `format_printf_d` :850
-- `pad_to_width` :858
-- `update_timestamp_values` :908
+- `PlaceholderParserException::what` :68 — C++ has it in `FilamentGroupUtils`, `PrintBase`
+- `PlaceholderParserException::fmt` :79
+- `Error::from` :87 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `expectation_failure` :105
+- `cfg_err` :109
+- `ostream_double` :114
+- `Expr::new` :167
+- `Expr::from_bool` :172
+- `Expr::from_bool_range` :177
+- `Expr::from_int` :182
+- `Expr::from_int_range` :187
+- `Expr::from_double` :192
+- `Expr::from_double_range` :197
+- `Expr::from_string` :202 — C++ has it in `Config`
+- `Expr::from_string_range` :207
+- `Expr::from_expr_range` :212
+- `Expr::type_` :227 — C++ has it in `BuildVolume`, `Config`, `Model`
+- `Expr::s` :310
+- `Expr::add_assign` :418
+- `Expr::sub_assign` :447
+- `Expr::mul_assign` :462
+- `Expr::div_assign` :477
+- `Expr::rem_assign` :496
+- `Expr::throw_if_not_numeric_static` :610
+- `Expr::default` :795
+- `format_printf_f` :808
+- `format_printf_d` :827
+- `pad_to_width` :834
+- `Mt19937::new` :870
+- `Mt19937::next_u32` :880
+- `Mt19937::default` :897
+- `uniform_int_distribution` :908
+- `generate_canonical_53` :931
+- `uniform_real_distribution` :943
+- `update_timestamp_values` :965
+- `auto_extrusion_width` :988 — C++ has it in `Flow`
+- `opt_key_to_flow_role` :998 — C++ has it in `Flow`
+- `throw_on_missing_variable` :1025 — C++ has it in `Flow`
+- `option_float` :1033
+- `float_values` :1041
+- `vector_get_at` :1046
+- `flow_extrusion_width_opt` :1052
+- `flow_extrusion_width` :1087
+- `is_space` :1105
+- `is_alpha` :1110
+- `is_alnum` :1115
+- `tag_to_error_message` :1145
+- `range_string` :1193
+- `strtol10` :1199
+- `MyContext::new_empty` :1225
+- `float_or_percent_is_percent` :1664
+- `nowide_narrow_widen` :1675
+- `MacroProcessor::new` :1875
+- `MacroProcessor::len` :1879
+- `MacroProcessor::skip_over` :1886
+- `MacroProcessor::lit_char` :1893
+- `MacroProcessor::lit_str` :1904
+- `MacroProcessor::distinct_tail` :1916
+- `MacroProcessor::kw` :1921
+- `MacroProcessor::kw_keywords` :1934
+- `MacroProcessor::eoi` :1956
+- `MacroProcessor::iter_pos` :1962
+- `MacroProcessor::utf8char` :1968
+- `MacroProcessor::strict_double` :1974
+- `MacroProcessor::int_` :1980
+- `MacroProcessor::kw_bool` :1986
+- `MacroProcessor::substr` :2005
+- `MacroProcessor::start` :2012 — C++ has it in `Timer`
+- `MacroProcessor::text_block` :2041
+- `MacroProcessor::text` :2087
+- `MacroProcessor::macro_` :2108
+- `MacroProcessor::if_else_output` :2130
+- `MacroProcessor::legacy_variable_expansion` :2199
+- `MacroProcessor::identifier` :2235
+- `MacroProcessor::conditional_expression` :2259
+- `MacroProcessor::logical_or_expression` :2289
+- `MacroProcessor::logical_and_expression` :2316
+- `MacroProcessor::equality_expression` :2344
+- `MacroProcessor::bool_expr_eval` :2405
+- `MacroProcessor::relational_expression` :2413
+- `MacroProcessor::additive_expression` :2451
+- `MacroProcessor::multiplicative_expression` :2489
+- `MacroProcessor::function_head` :2526
+- `MacroProcessor::function_second` :2540
+- `MacroProcessor::function_close` :2551
+- `MacroProcessor::unary_expression` :2559
+- `MacroProcessor::unary_alternatives` :2573
+- `MacroProcessor::quoted` :2744
+- `MacroProcessor::optional_parameter` :2781
+- `MacroProcessor::scalar_variable_reference` :2810
+- `MacroProcessor::variable_reference` :2844
+- `MacroProcessor::regular_expression` :2852
+- `pow10` :2871
+- `parse_n` :2876
+- `ignore_excess_digits` :2912
+- `parse_frac_n` :2922
+- `extract_int_i32` :2961
+- `scale` :2991 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `real_impl_parse` :3018
+- `&str::into_config_option` :3162
+- `String::into_config_option` :3167
+- `i32::into_config_option` :3173
+- `u32::into_config_option` :3179
+- `bool::into_config_option` :3185
+- `f64::into_config_option` :3191
+- `Vec::into_config_option` :3197
+- `&[String]::into_config_option` :3202
+- `Box::into_config_option` :3208
+- `PlaceholderParser::new` :3221
+- `PlaceholderParser::apply_config_move` :3272
+- `PlaceholderParser::config_writable` :3299
+- `PlaceholderParser::config` :3304 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `PlaceholderParser::update_timestamp_of` :3355
+- `fail` :3446
+- `is_word` :3465
+- `is_separator` :3468 — C++ has it in `utils`
+- `class_set` :3471
+- `Parser::err` :3503
+- `Parser::err_msg` :3506
+- `Parser::parse_alt` :3510
+- `Parser::parse_concat` :3519
+- `Parser::parse_repeat_range` :3588
+- `Parser::parse_atom` :3655
+- `Parser::parse_escape` :3717
+- `Parser::escape_literal` :3763
+- `Parser::parse_set` :3802
+- `Parser::get_next_set_literal` :3885
+- `Parser::parse_set_literal` :3914
+- `Matcher::word_at` :3967
+- `Matcher::m_seq` :3972
+- `Matcher::m` :3979
+- `Matcher::m_repeat` :4102
+- `regex_match` :4133
 
 ### `Platform` (.cpp+.hpp) and `platform.rs`
 
@@ -7478,20 +7539,20 @@ Missing in the Rust file:
 - `point_traits<Slic3r::Point>::get` :661 (22 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
 - `point_mutable_traits<Slic3r::Point>::set` :669 (17 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
 - `point_mutable_traits<Slic3r::Point>::construct` :672 (12 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
-- `serialize` :683 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :684 (23 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :687 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :688 (23 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :689 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :690 (23 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `serialize` :683 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :684 (23 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :687 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :688 (23 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :689 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :690 (23 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `load` :692 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `save` :693 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `load` :695 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `save` :696 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
-- `begin` :702 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `end` :705 (13 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
-- `begin` :708 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `end` :711 (13 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `begin` :702 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `end` :705 (13 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `begin` :708 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `end` :711 (13 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 
 Rust only:
 
@@ -7631,8 +7692,8 @@ Missing in the Rust file:
 - `polygon_traits<Slic3r::Polygon>::end_points` :328 (11 tokens)
 - `polygon_traits<Slic3r::Polygon>::size` :333 (11 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `polygon_traits<Slic3r::Polygon>::winding` :338 (5 tokens)
-- `polygon_set_traits<Slic3r::Polygons>::begin` :370 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `polygon_set_traits<Slic3r::Polygons>::end` :374 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `polygon_set_traits<Slic3r::Polygons>::begin` :370 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `polygon_set_traits<Slic3r::Polygons>::end` :374 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `polygon_set_traits<Slic3r::Polygons>::clean` :379 (5 tokens)
 - `polygon_set_traits<Slic3r::Polygons>::sorted` :380 (5 tokens) — in `sla/agg/rasterizer_cells_aa.rs`, `support/tree_model_volumes.rs`
 - `polygon_set_mutable_traits<Slic3r::Polygons>::set` :386 (11 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
@@ -7836,7 +7897,7 @@ Rust only:
 
 ### `Preset` (.cpp+.hpp) and `preset.rs`
 
-Tier 1. C++ functions 108 (plus 8 constructors, 0 destructors, 4 operators), Rust functions 323. Matched 92: faithful 85, partial 7, divergent 0, stub 0.
+Tier 1. C++ functions 108 (plus 8 constructors, 0 destructors, 4 operators), Rust functions 324. Matched 92: faithful 85, partial 7, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -7844,9 +7905,9 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `Preset::load_info` :570 and `Preset::load_info` :1273 (46%, 0.59x)
 - partial: `Preset::remove_files` :648 and `Preset::remove_files` :1343 (38%, 0.67x)
 - partial: `Preset::save` :662 and `Preset::save` :1358 (53%, 0.71x)
-- partial: `PresetCollection::num_visible` :723 and `PresetCollection::num_visible` :4903 (50%, 0.64x)
-- partial: `PresetCollection::find_preset_renamed` :814 and `PresetCollection::find_preset_renamed` :5372 (56%, 0.47x)
-- partial: `PhysicalPrinterCollection::get_selected_printer_config` :1033 and `PhysicalPrinterCollection::get_selected_printer_config` :6155 (50%, 1.12x)
+- partial: `PresetCollection::num_visible` :723 and `PresetCollection::num_visible` :4920 (50%, 0.64x)
+- partial: `PresetCollection::find_preset_renamed` :814 and `PresetCollection::find_preset_renamed` :5389 (56%, 0.47x)
+- partial: `PhysicalPrinterCollection::get_selected_printer_config` :1033 and `PhysicalPrinterCollection::get_selected_printer_config` :6173 (50%, 1.12x)
 
 Missing in the Rust file:
 
@@ -7854,17 +7915,17 @@ Missing in the Rust file:
 - `VendorProfile::from_ini` :300 (1087 tokens, overload)
 - `Preset::set_dirty` :321 (20 tokens, overload) — in `app_config.rs`
 - `Preset::printer_technology` :347 (34 tokens, overload)
-- `PresetCollection::begin` :472 (11 tokens, overload) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
-- `PresetCollection::end` :475 (9 tokens, overload) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
+- `PresetCollection::begin` :472 (11 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `PresetCollection::end` :475 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`
 - `PresetCollection::first_compatible_idx` :661 (109 tokens, overload)
-- `PresetCollection::update_compatible` :706 (39 tokens, overload)
+- `PresetCollection::update_compatible` :706 (39 tokens, overload) — in `preset_bundle.rs`
 - `PresetCollection::find_preset_internal` :812 (17 tokens, overload)
 - `PresetCollection::find_preset_renamed` :820 (17 tokens, overload)
 - `is_compatible_with_printer` :845 (89 tokens, overload)
 - `PhysicalPrinter::printer_technology` :948 (34 tokens, overload)
-- `PhysicalPrinterCollection::begin` :985 (9 tokens, overload) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `sla/agg/scanline_p.rs`
+- `PhysicalPrinterCollection::begin` :985 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `PhysicalPrinterCollection::cbegin` :987 (9 tokens, overload) — in `config.rs`, `mutable_polygon.rs`
-- `PhysicalPrinterCollection::end` :989 (9 tokens, overload) — in `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`, `support/tree_model_volumes.rs`
+- `PhysicalPrinterCollection::end` :989 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `sla/agg/gamma_functions.rs`
 - `PhysicalPrinterCollection::cend` :990 (9 tokens, overload) — in `mutable_polygon.rs`
 
 Rust only:
@@ -7940,311 +8001,302 @@ Rust only:
 - `strings` :1963
 - `set_option_for_save` :1971
 - `set_boolean_expression_evaluator` :2307
-- `evaluate_boolean_expression` :2311 — C++ has it in `PlaceholderParser`
-- `strings_option` :2319
-- `is_compatible_with_printer_2` :2393
-- `add_correct_opts_to_diff` :2477
-- `deep_diff` :2518
-- `profile_print_params_same` :2615
-- `PresetCollection::new` :2685
-- `PresetCollection::assign` :2714 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
-- `PresetCollection::iter` :2751
-- `PresetCollection::reset` :2769 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
-- `PresetCollection::name` :2802
-- `PresetCollection::section_name` :2813
-- `PresetCollection::operator_call` :2823
-- `PresetCollection::add_default_preset` :2829
-- `PresetCollection::sort_presets_from` :2841
-- `PresetCollection::load_presets` :2854 — C++ has it in `PresetBundle`
-- `PresetCollection::load_presets_one` :2953
-- `PresetCollection::get_preset_differed_for_save` :3088 — C++ has it in `PresetBundle`
-- `PresetCollection::get_differed_values_to_update` :3132 — C++ has it in `PresetBundle`
-- `PresetCollection::load_project_embedded_presets` :3198 — C++ has it in `PresetBundle`
-- `PresetCollection::get_project_embedded_presets` :3292
-- `PresetCollection::reset_project_embedded_presets` :3310 — C++ has it in `PresetBundle`
-- `PresetCollection::set_sync_info_and_save` :3343
-- `PresetCollection::need_sync` :3382
-- `PresetCollection::get_user_presets` :3395
-- `PresetCollection::update_user_presets_directory` :3424 — C++ has it in `PresetBundle`
-- `PresetCollection::save_user_presets` :3436 — C++ has it in `PresetBundle`
-- `PresetCollection::load_user_preset` :3489
-- `PresetCollection::update_after_user_presets_loaded` :3689
-- `PresetCollection::validate_preset` :3698
-- `PresetCollection::load_preset` :3725
-- `PresetCollection::load_preset_move` :3733
-- `PresetCollection::load_preset_move_idx` :3738
-- `PresetCollection::clone_presets` :3768
-- `PresetCollection::clone_presets_for_printer` :3826
-- `PresetCollection::clone_presets_for_filament` :3860
-- `PresetCollection::get_filament_presets` :3906
-- `strings_option_mut` :3924
-- `PresetCollection::load_external_preset` :3938
-- `PresetCollection::load_external_preset_idx` :3960
-- `PresetCollection::save_current_preset` :4195
-- `PresetCollection::delete_current_preset` :4340
-- `PresetCollection::delete_preset` :4390
-- `PresetCollection::set_default_suppressed` :4417 — C++ has it in `PresetBundle`
-- `PresetCollection::get_selected_preset_mut` :4433
-- `PresetCollection::get_selected_preset` :4441
-- `PresetCollection::get_selected_preset_parent` :4459
-- `PresetCollection::get_preset_parent` :4497
-- `PresetCollection::get_preset_base` :4519
-- `PresetCollection::is_bbl_brand_filament` :4545
-- `PresetCollection::get_edited_preset` :4557
-- `PresetCollection::get_edited_preset_mut` :4561
-- `PresetCollection::get_preset_with_vendor_profile` :4568
-- `PresetCollection::get_preset_name_by_alias` :4589
-- `PresetCollection::get_preset_name_renamed` :4625
-- `PresetCollection::is_alias_exist` :4630
-- `PresetCollection::get_presets` :4656
-- `PresetCollection::get_suffix_modified` :4664
-- `PresetCollection::default_preset` :4669
-- `PresetCollection::default_preset_mut` :4673
-- `PresetCollection::default_preset_for_idx` :4679
-- `PresetCollection::default_preset_for` :4693
-- `PresetCollection::preset_mut` :4699
-- `PresetCollection::preset` :4710
-- `PresetCollection::preset_real` :4713
-- `PresetCollection::preset_slot` :4719
-- `PresetCollection::find_preset_slot` :4739
-- `PresetCollection::find_preset_mut` :4752
-- `PresetCollection::find_preset_real` :4759
-- `PresetCollection::first_visible_idx` :4772
-- `PresetCollection::first_compatible_idx_with` :4802
-- `PresetCollection::diameters_of_selected_printer` :4837
-- `PresetCollection::first_visible` :4849
-- `PresetCollection::first_compatible` :4853
-- `PresetCollection::update_compatible_with` :4868
-- `PresetCollection::system_preset_names` :4933
-- `PresetCollection::update_dirty` :4953
-- `PresetCollection::path_from_name` :4969
-- `PresetCollection::path_for_preset` :4980
-- `PresetCollection::get_preset_alias` :4986
-- `PresetCollection::update_vendor_ptrs_after_copy` :5014
-- `PresetCollection::select_preset_by_name_strict` :5026
-- `PresetCollection::merge_presets` :5046 — C++ has it in `PresetBundle`
-- `PresetCollection::update_map_alias_to_profile_name` :5071
-- `PresetCollection::update_map_system_profile_renamed` :5081
-- `PresetCollection::set_custom_preset_alias` :5092
-- `PresetCollection::set_printer_hold_alias` :5118
-- `PresetCollection::update_compatible_internal` :5155
-- `PresetCollection::is_dirty` :5225
-- `PresetCollection::dirty_options` :5244
-- `PresetCollection::dirty_options_without_option_list` :5266
-- `PresetCollection::select_preset` :5293
-- `PresetCollection::select_preset_by_name` :5320
-- `trim_c_right` :5381
-- `sync_vendor_ptr` :5390
-- `PrinterPresetCollection::deref` :5412
-- `PrinterPresetCollection::deref_mut` :5418
-- `PrinterPresetCollection::new` :5425
-- `PrinterPresetCollection::default_preset_for` :5432
-- `PrinterPresetCollection::find_system_preset_by_model_and_variant` :5437
-- `PrinterPresetCollection::find_custom_preset_by_model_and_variant` :5454
-- `PrinterPresetCollection::find_all_presets_by_model` :5471
-- `PrinterPresetCollection::only_default_printers` :5490
-- `system_printer_model` :5510
-- `system_printer_file` :5524
-- `system_printer_bed_model` :5539
-- `system_printer_bed_texture` :5544
-- `system_printer_hotend_model` :5549
-- `PhysicalPrinter::fmt` :5581
-- `PhysicalPrinter::default` :5594
-- `update_preset_name_option` :5601
-- `PhysicalPrinter::new` :5613
-- `PhysicalPrinter::with_preset` :5621
-- `PhysicalPrinter::set_name` :5628 — C++ has it in `ProjectTask`
-- `PhysicalPrinter::separator` :5633
-- `PhysicalPrinter::printer_options` :5638
-- `PhysicalPrinter::presets_with_print_host_information` :5644
-- `PhysicalPrinter::has_print_host_information` :5656
-- `PhysicalPrinter::get_preset_names` :5661
-- `PhysicalPrinter::update_preset_names_in_config` :5666
-- `PhysicalPrinter::save_2` :5691
-- `PhysicalPrinter::update_from_preset` :5701
-- `PhysicalPrinter::update_from_config` :5710
-- `PhysicalPrinter::add_preset` :5734
-- `PhysicalPrinter::delete_preset` :5739
-- `PhysicalPrinter::reset_presets` :5744
-- `PhysicalPrinter::printer_technology_cfg` :5750
-- `PhysicalPrinter::operator_lt` :5759
-- `PhysicalPrinter::get_full_name` :5765
-- `PhysicalPrinter::get_short_name` :5771
-- `PhysicalPrinter::get_preset_name` :5788
-- `find_bytes` :5804
-- `PhysicalPrinterCollection::new` :5831
-- `PhysicalPrinterCollection::reset` :5861 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
-- `PhysicalPrinterCollection::operator_call` :5863
-- `PhysicalPrinterCollection::sort_printers` :5867
-- `PhysicalPrinterCollection::load_printers` :5879
-- `PhysicalPrinterCollection::load_printers_from_presets` :5954
-- `PhysicalPrinterCollection::load_printer` :5958
-- `PhysicalPrinterCollection::save_printer` :5983
-- `PhysicalPrinterCollection::save_printer_at` :6009
-- `PhysicalPrinterCollection::save_printer_self` :6034
-- `PhysicalPrinterCollection::delete_printer` :6051
-- `PhysicalPrinterCollection::delete_selected_printer` :6064
-- `PhysicalPrinterCollection::delete_preset_from_printers` :6081
-- `PhysicalPrinterCollection::get_printers_with_preset` :6106
-- `PhysicalPrinterCollection::get_printers_with_only_preset` :6122
-- `PhysicalPrinterCollection::get_selected_printer` :6135
-- `PhysicalPrinterCollection::get_selected_printer_mut` :6139
-- `PhysicalPrinterCollection::get_selected_full_printer_name` :6172
-- `PhysicalPrinterCollection::select_printer` :6192 — C++ has it in `NozzleInventory`
-- `PhysicalPrinterCollection::select_printer_with_preset` :6213
-- `PhysicalPrinterCollection::select_printer_2` :6221
-- `PhysicalPrinterCollection::has_selection` :6227
-- `PhysicalPrinterCollection::unselect_printer` :6232
-- `PhysicalPrinterCollection::is_selected` :6238
-- `PhysicalPrinterCollection::printer` :6243
-- `PhysicalPrinterCollection::path_from_name` :6267
-- `PhysicalPrinterCollection::default_config` :6274
-- `boost_to_lower` :6304
+- `placeholder_parser_evaluate_boolean_expression` :2314
+- `evaluate_boolean_expression` :2323 — C++ has it in `PlaceholderParser`
+- `strings_option` :2336
+- `is_compatible_with_printer_2` :2410
+- `add_correct_opts_to_diff` :2494
+- `deep_diff` :2535
+- `profile_print_params_same` :2632
+- `PresetCollection::new` :2702
+- `PresetCollection::assign` :2731 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
+- `PresetCollection::iter` :2768
+- `PresetCollection::reset` :2786 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `PresetCollection::name` :2819
+- `PresetCollection::section_name` :2830
+- `PresetCollection::operator_call` :2840
+- `PresetCollection::add_default_preset` :2846
+- `PresetCollection::sort_presets_from` :2858
+- `PresetCollection::load_presets` :2871 — C++ has it in `PresetBundle`
+- `PresetCollection::load_presets_one` :2970
+- `PresetCollection::get_preset_differed_for_save` :3105 — C++ has it in `PresetBundle`
+- `PresetCollection::get_differed_values_to_update` :3149 — C++ has it in `PresetBundle`
+- `PresetCollection::load_project_embedded_presets` :3215 — C++ has it in `PresetBundle`
+- `PresetCollection::get_project_embedded_presets` :3309
+- `PresetCollection::reset_project_embedded_presets` :3327 — C++ has it in `PresetBundle`
+- `PresetCollection::set_sync_info_and_save` :3360
+- `PresetCollection::need_sync` :3399
+- `PresetCollection::get_user_presets` :3412
+- `PresetCollection::update_user_presets_directory` :3441 — C++ has it in `PresetBundle`
+- `PresetCollection::save_user_presets` :3453 — C++ has it in `PresetBundle`
+- `PresetCollection::load_user_preset` :3506
+- `PresetCollection::update_after_user_presets_loaded` :3706
+- `PresetCollection::validate_preset` :3715
+- `PresetCollection::load_preset` :3742
+- `PresetCollection::load_preset_move` :3750
+- `PresetCollection::load_preset_move_idx` :3755
+- `PresetCollection::clone_presets` :3785
+- `PresetCollection::clone_presets_for_printer` :3843
+- `PresetCollection::clone_presets_for_filament` :3877
+- `PresetCollection::get_filament_presets` :3923
+- `strings_option_mut` :3941
+- `PresetCollection::load_external_preset` :3955
+- `PresetCollection::load_external_preset_idx` :3977
+- `PresetCollection::save_current_preset` :4212
+- `PresetCollection::delete_current_preset` :4357
+- `PresetCollection::delete_preset` :4407
+- `PresetCollection::set_default_suppressed` :4434 — C++ has it in `PresetBundle`
+- `PresetCollection::get_selected_preset_mut` :4450
+- `PresetCollection::get_selected_preset` :4458
+- `PresetCollection::get_selected_preset_parent` :4476
+- `PresetCollection::get_preset_parent` :4514
+- `PresetCollection::get_preset_base` :4536
+- `PresetCollection::is_bbl_brand_filament` :4562
+- `PresetCollection::get_edited_preset` :4574
+- `PresetCollection::get_edited_preset_mut` :4578
+- `PresetCollection::get_preset_with_vendor_profile` :4585
+- `PresetCollection::get_preset_name_by_alias` :4606
+- `PresetCollection::get_preset_name_renamed` :4642
+- `PresetCollection::is_alias_exist` :4647
+- `PresetCollection::get_presets` :4673
+- `PresetCollection::get_suffix_modified` :4681
+- `PresetCollection::default_preset` :4686
+- `PresetCollection::default_preset_mut` :4690
+- `PresetCollection::default_preset_for_idx` :4696
+- `PresetCollection::default_preset_for` :4710
+- `PresetCollection::preset_mut` :4716
+- `PresetCollection::preset` :4727
+- `PresetCollection::preset_real` :4730
+- `PresetCollection::preset_slot` :4736
+- `PresetCollection::find_preset_slot` :4756
+- `PresetCollection::find_preset_mut` :4769
+- `PresetCollection::find_preset_real` :4776
+- `PresetCollection::first_visible_idx` :4789
+- `PresetCollection::first_compatible_idx_with` :4819
+- `PresetCollection::diameters_of_selected_printer` :4854
+- `PresetCollection::first_visible` :4866
+- `PresetCollection::first_compatible` :4870
+- `PresetCollection::update_compatible_with` :4885
+- `PresetCollection::system_preset_names` :4950
+- `PresetCollection::update_dirty` :4970
+- `PresetCollection::path_from_name` :4986
+- `PresetCollection::path_for_preset` :4997
+- `PresetCollection::get_preset_alias` :5003
+- `PresetCollection::update_vendor_ptrs_after_copy` :5031
+- `PresetCollection::select_preset_by_name_strict` :5043
+- `PresetCollection::merge_presets` :5063 — C++ has it in `PresetBundle`
+- `PresetCollection::update_map_alias_to_profile_name` :5088
+- `PresetCollection::update_map_system_profile_renamed` :5098
+- `PresetCollection::set_custom_preset_alias` :5109
+- `PresetCollection::set_printer_hold_alias` :5135
+- `PresetCollection::update_compatible_internal` :5172
+- `PresetCollection::is_dirty` :5242
+- `PresetCollection::dirty_options` :5261
+- `PresetCollection::dirty_options_without_option_list` :5283
+- `PresetCollection::select_preset` :5310
+- `PresetCollection::select_preset_by_name` :5337
+- `trim_c_right` :5398
+- `sync_vendor_ptr` :5407
+- `PrinterPresetCollection::deref` :5429
+- `PrinterPresetCollection::deref_mut` :5435
+- `PrinterPresetCollection::new` :5442
+- `PrinterPresetCollection::default_preset_for` :5449
+- `PrinterPresetCollection::find_system_preset_by_model_and_variant` :5454
+- `PrinterPresetCollection::find_custom_preset_by_model_and_variant` :5471
+- `PrinterPresetCollection::find_all_presets_by_model` :5488
+- `PrinterPresetCollection::only_default_printers` :5507
+- `system_printer_model` :5527
+- `system_printer_file` :5541
+- `system_printer_bed_model` :5556
+- `system_printer_bed_texture` :5561
+- `system_printer_hotend_model` :5566
+- `PhysicalPrinter::fmt` :5599
+- `PhysicalPrinter::default` :5612
+- `update_preset_name_option` :5619
+- `PhysicalPrinter::new` :5631
+- `PhysicalPrinter::with_preset` :5639
+- `PhysicalPrinter::set_name` :5646 — C++ has it in `ProjectTask`
+- `PhysicalPrinter::separator` :5651
+- `PhysicalPrinter::printer_options` :5656
+- `PhysicalPrinter::presets_with_print_host_information` :5662
+- `PhysicalPrinter::has_print_host_information` :5674
+- `PhysicalPrinter::get_preset_names` :5679
+- `PhysicalPrinter::update_preset_names_in_config` :5684
+- `PhysicalPrinter::save_2` :5709
+- `PhysicalPrinter::update_from_preset` :5719
+- `PhysicalPrinter::update_from_config` :5728
+- `PhysicalPrinter::add_preset` :5752
+- `PhysicalPrinter::delete_preset` :5757
+- `PhysicalPrinter::reset_presets` :5762
+- `PhysicalPrinter::printer_technology_cfg` :5768
+- `PhysicalPrinter::operator_lt` :5777
+- `PhysicalPrinter::get_full_name` :5783
+- `PhysicalPrinter::get_short_name` :5789
+- `PhysicalPrinter::get_preset_name` :5806
+- `find_bytes` :5822
+- `PhysicalPrinterCollection::new` :5849
+- `PhysicalPrinterCollection::reset` :5879 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `PhysicalPrinterCollection::operator_call` :5881
+- `PhysicalPrinterCollection::sort_printers` :5885
+- `PhysicalPrinterCollection::load_printers` :5897
+- `PhysicalPrinterCollection::load_printers_from_presets` :5972
+- `PhysicalPrinterCollection::load_printer` :5976
+- `PhysicalPrinterCollection::save_printer` :6001
+- `PhysicalPrinterCollection::save_printer_at` :6027
+- `PhysicalPrinterCollection::save_printer_self` :6052
+- `PhysicalPrinterCollection::delete_printer` :6069
+- `PhysicalPrinterCollection::delete_selected_printer` :6082
+- `PhysicalPrinterCollection::delete_preset_from_printers` :6099
+- `PhysicalPrinterCollection::get_printers_with_preset` :6124
+- `PhysicalPrinterCollection::get_printers_with_only_preset` :6140
+- `PhysicalPrinterCollection::get_selected_printer` :6153
+- `PhysicalPrinterCollection::get_selected_printer_mut` :6157
+- `PhysicalPrinterCollection::get_selected_full_printer_name` :6190
+- `PhysicalPrinterCollection::select_printer` :6210 — C++ has it in `NozzleInventory`
+- `PhysicalPrinterCollection::select_printer_with_preset` :6231
+- `PhysicalPrinterCollection::select_printer_2` :6239
+- `PhysicalPrinterCollection::has_selection` :6245
+- `PhysicalPrinterCollection::unselect_printer` :6250
+- `PhysicalPrinterCollection::is_selected` :6256
+- `PhysicalPrinterCollection::printer` :6261
+- `PhysicalPrinterCollection::path_from_name` :6285
+- `PhysicalPrinterCollection::default_config` :6292
+- `boost_to_lower` :6322
 
 ### `PresetBundle` (.cpp+.hpp) and `preset_bundle.rs`
 
-Tier 1. C++ functions 141 (plus 7 constructors, 0 destructors, 3 operators), Rust functions 3. Matched 3: faithful 3, partial 0, divergent 0, stub 0.
+Tier 1. C++ functions 141 (plus 7 constructors, 0 destructors, 3 operators), Rust functions 238. Matched 138: faithful 119, partial 10, divergent 9, stub 0.
+
+Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
+
+- partial: `copy_dir` :515 and `copy_dir` :1223 (50%, 0.78x)
+- divergent: `PresetBundle::get_preset_differed_for_save` :595 and `PresetBundle::get_preset_differed_for_save` :1315 (15%, 0.34x)
+- divergent: `PresetBundle::get_differed_values_to_update` :617 and `PresetBundle::get_differed_values_to_update` :1324 (20%, 0.37x)
+- divergent: `PresetBundle::get_texture_for_printer_model` :818 and `PresetBundle::get_texture_for_printer_model` :1533 (14%, 0.12x)
+- divergent: `PresetBundle::get_stl_model_for_printer_model` :846 and `PresetBundle::get_stl_model_for_printer_model` :1539 (14%, 0.12x)
+- divergent: `PresetBundle::get_hotend_model_for_printer_model` :873 and `PresetBundle::get_hotend_model_for_printer_model` :1544 (14%, 0.12x)
+- partial: `PresetBundle::import_presets` :1024 and `PresetBundle::import_presets` :1669 (46%, 0.86x)
+- divergent: `PresetBundle::import_json_presets` :1111 and `PresetBundle::import_json_presets` :1751 (8%, 0.05x)
+- partial: `PresetBundle::remove_user_presets_directory` :1271 and `PresetBundle::remove_user_presets_directory` :1949 (50%, 0.88x)
+- divergent: `PresetBundle::load_system_presets_from_json` :1604 and `PresetBundle::load_system_presets_from_json` :2286 (28%, 0.28x)
+- partial: `PresetBundle::load_system_models_from_json` :1667 and `PresetBundle::load_system_models_from_json` :2312 (46%, 0.72x)
+- divergent: `PresetBundle::load_system_filaments_json` :1701 and `PresetBundle::load_system_filaments_json` :2344 (25%, 0.26x)
+- partial: `per_slot_nozzle_options_consistent` :1822 and `per_slot_nozzle_options_consistent` :2454 (50%, 0.7x)
+- partial: `PresetBundle::load_selections` :2146 and `PresetBundle::load_selections` :2972 (79%, 1.05x)
+- partial: `PresetBundle::update_num_filaments` :2568 and `PresetBundle::update_num_filaments` :3398 (50%, 1.13x)
+- partial: `PresetBundle::is_mixed_filament` :2648 and `PresetBundle::is_mixed_filament` :3467 (40%, 0.95x)
+- partial: `PresetBundle::update_filament_multi_color` :3258 and `PresetBundle::update_filament_multi_color` :4161 (55%, 1.19x)
+- partial: `PresetBundle::get_printer_names_by_printer_type_and_nozzle` :3343 and `PresetBundle::get_printer_names_by_printer_type_and_nozzle` :4259 (55%, 0.8x)
+- divergent: `PresetBundle::load_vendor_configs_from_json` :6179 and `PresetBundle::load_vendor_configs_from_json` :6775 (37%, 0.15x)
 
 Missing in the Rust file:
 
-- `FilamentBaseInfo::get_extruder_compatibility` :78 (54 tokens)
-- `FilamentBaseInfo::set_filament_extruder_compatibility` :88 (6 tokens)
-- `FilamentBaseInfo::get_filament_extruder_compatibility` :89 (5 tokens)
-- `PresetBundle::construct_full_config` :103 (1771 tokens)
-- `ExtruderNozzleStat::get_raw_stat` :106 (5 tokens) — in `nozzle_inventory.rs`
-- `ExtruderNozzleStat::set_raw_stat` :107 (6 tokens)
-- `ExtruderFullStat::set_raw_stat` :119 (6 tokens)
-- `ExtruderFullStat::get_extruder_count` :120 (9 tokens) — in `multi_nozzle_utils.rs`
-- `ExtruderFullStat::get_extruder_nozzle_count` :121 (25 tokens)
-- `ExtruderFullStat::get_extruder_stats` :126 (22 tokens)
-- `ExtruderFullStat::resize` :131 (9 tokens) — in `config.rs`, `extrusion_simulator.rs`, `nozzle_inventory.rs`
-- `ExtruderFullStat::set_extruder_stats` :132 (28 tokens) — in `nozzle_inventory.rs`
-- `ExtruderFullStat::clear_extruder` :137 (21 tokens)
-- `ExtruderFullStat::clear` :141 (8 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
-- `ExtruderFullStat::empty` :142 (9 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `ExtruderNozzleStat::get_extruder_nozzle_count` :309 (123 tokens)
-- `ExtruderNozzleStat::on_printer_model_change_cli` :323 (87 tokens)
-- `ExtruderNozzleStat::on_volume_type_switch` :337 (60 tokens)
-- `ExtruderNozzleStat::set_extruder_nozzle_count` :349 (44 tokens)
-- `PresetBundle::has_defauls_only` :439 (21 tokens)
-- `PresetBundle::load_config_from_wizard` :453 (22 tokens)
-- `PresetBundle::load_config_model` :458 (20 tokens)
-- `PresetBundle::reset` :465 (138 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
-- `PresetBundle::setup_directories` :486 (162 tokens)
-- `copy_dir` :515 (170 tokens)
-- `PresetBundle::update_compatible` :519 (11 tokens) — in `preset.rs`
-- `PresetBundle::copy_files` :535 (96 tokens)
-- `PresetBundle::load_presets` :556 (156 tokens) — in `preset.rs`
-- `PresetBundle::get_preset_differed_for_save` :595 (93 tokens) — in `preset.rs`
-- `PresetBundle::get_differed_values_to_update` :617 (95 tokens) — in `preset.rs`
-- `PresetBundle::get_vendor_profile_version` :640 (38 tokens)
-- `PresetBundle::get_filament_by_filament_id` :652 (448 tokens)
-- `PresetBundle::load_project_embedded_presets` :703 (183 tokens) — in `preset.rs`
-- `PresetBundle::get_current_project_embedded_presets` :738 (132 tokens)
-- `PresetBundle::reset_project_embedded_presets` :756 (304 tokens) — in `preset.rs`
-- `PresetBundle::get_texture_for_printer_model` :818 (132 tokens)
-- `PresetBundle::get_stl_model_for_printer_model` :846 (132 tokens)
-- `PresetBundle::get_hotend_model_for_printer_model` :873 (132 tokens)
-- `PresetBundle::load_user_presets` :900 (322 tokens)
-- `PresetBundle::load_user_presets` :945 (554 tokens)
-- `PresetBundle::import_presets` :1024 (656 tokens)
-- `PresetBundle::import_json_presets` :1111 (860 tokens)
-- `PresetBundle::save_user_presets` :1225 (190 tokens) — in `preset.rs`
-- `PresetBundle::update_user_presets_directory` :1250 (150 tokens) — in `preset.rs`
-- `PresetBundle::remove_user_presets_directory` :1271 (94 tokens)
-- `PresetBundle::update_system_preset_setting_ids` :1286 (341 tokens)
-- `PresetBundle::get_full_flush_matrix` :1337 (324 tokens)
-- `PresetBundle::validate_presets` :1373 (554 tokens)
-- `PresetBundle::remove_users_preset` :1447 (750 tokens)
-- `PresetBundle::load_system_presets_from_json` :1604 (391 tokens)
-- `PresetBundle::load_system_models_from_json` :1667 (241 tokens)
-- `PresetBundle::load_system_filaments_json` :1701 (382 tokens)
-- `PresetBundle::get_custom_vendor_models` :1752 (215 tokens)
-- `GetNozzleVolumeTypeStr` :1778 (77 tokens) — in `nozzle_inventory.rs`
-- `count_default_nozzle_volume_types` :1791 (42 tokens)
-- `build_extruder_full_stat_from_nozzle_stat` :1799 (191 tokens)
-- `per_slot_nozzle_options_consistent` :1822 (240 tokens) — in `nozzle_inventory.rs`
-- `sync_per_slot_nozzle_options_from_full_stat` :1845 (256 tokens) — in `nozzle_inventory.rs`
-- `smallest_installed_diameters` :1883 (127 tokens)
-- `PresetBundle::merge_presets` :1907 (326 tokens) — in `preset.rs`
-- `PresetBundle::update_system_maps` :1927 (74 tokens)
-- `remove_ini_suffix` :1941 (44 tokens)
-- `PresetBundle::load_installed_printers` :1952 (23 tokens)
-- `PresetBundle::get_required_hrc_by_filament_id` :1974 (77 tokens)
-- `PresetBundle::save_changes_for_preset` :1984 (123 tokens)
-- `PresetBundle::load_installed_filaments` :2015 (404 tokens)
-- `PresetBundle::quick_fix_for_filaments_due_to_upgrade` :2077 (318 tokens)
-- `PresetBundle::load_installed_sla_materials` :2121 (138 tokens)
-- `PresetBundle::load_selections` :2146 (2414 tokens)
-- `PresetBundle::export_selections` :2397 (1082 tokens)
-- `PresetBundle::set_num_filaments` :2494 (643 tokens) — in `print_config.rs`
-- `PresetBundle::update_num_filaments` :2568 (570 tokens)
-- `PresetBundle::is_mixed_filament` :2648 (38 tokens)
-- `PresetBundle::physical_filament_config_indices` :2654 (46 tokens)
-- `PresetBundle::physical_filament_count` :2663 (13 tokens)
-- `PresetBundle::mixed_filament_count` :2668 (38 tokens)
-- `PresetBundle::get_ams_cobox_infos` :2677 (614 tokens)
-- `apply_synced_tray_side_effects` :2768 (111 tokens)
-- `PresetBundle::sync_ams_list` :2785 (4355 tokens)
-- `PresetBundle::update_filament_multi_color` :3258 (134 tokens)
-- `PresetBundle::get_used_tpu_filaments` :3279 (190 tokens)
-- `PresetBundle::set_calibrate_printer` :3303 (219 tokens)
-- `PresetBundle::get_extruder_filament_info` :3326 (95 tokens)
-- `PresetBundle::get_printer_names_by_printer_type_and_nozzle` :3343 (212 tokens)
-- `PresetBundle::check_filament_temp_equation_by_printer_type_and_nozzle_for_mas_tray` :3379 (500 tokens)
-- `PresetBundle::get_similar_printer_preset` :3441 (305 tokens)
-- `PresetBundle::set_ams_count` :3474 (130 tokens)
-- `PresetBundle::get_ams_count` :3491 (62 tokens)
-- `PresetBundle::get_ams_selection` :3501 (53 tokens)
-- `PresetBundle::initialize_ams_selection` :3509 (184 tokens)
-- `PresetBundle::resize_ams_selection` :3528 (339 tokens)
-- `PresetBundle::replace_ams_selection` :3562 (71 tokens)
-- `PresetBundle::get_extra_compatible_printers_by_full_stat` :3575 (319 tokens)
-- `PresetBundle::compute_filament_supported_nozzle_diameters` :3628 (347 tokens)
-- `filament_preset_diameters_for_model` :3679 (87 tokens)
-- `build_printer_name_to_diameter` :3694 (127 tokens)
-- `uses_per_slot_nozzle_diameters` :3708 (125 tokens)
-- `collect_configured_nozzle_diameters` :3726 (206 tokens)
-- `collect_installed_nozzle_variants` :3766 (423 tokens)
-- `get_filament_nozzle_flow_options` :3835 (165 tokens)
-- `get_filament_nozzle_diameter_options` :3865 (291 tokens)
-- `settle_filament_slot_flow` :3907 (293 tokens)
-- `repair_filament_nozzle_flows` :3940 (358 tokens)
-- `PresetBundle::get_filament_nozzle_diameter_options` :3989 (38 tokens)
-- `PresetBundle::get_installed_nozzle_variants` :3996 (12 tokens)
-- `PresetBundle::is_filament_nozzle_diameter_valid` :4001 (66 tokens)
-- `set_filament_nozzle_diameter` :4010 (406 tokens)
-- `PresetBundle::set_filament_nozzle_diameter` :4079 (103 tokens)
-- `PresetBundle::tray_diameter_for_filament_slot` :4099 (246 tokens)
-- `PresetBundle::stamp_printer_nozzle_diameter_mode` :4127 (79 tokens)
-- `PresetBundle::is_multi_nozzle_user_printer_preset` :4137 (117 tokens)
-- `PresetBundle::seed_filament_nozzles_for_multi_diameter` :4153 (316 tokens)
-- `find_default_filament_for_nozzle_diameter` :4204 (336 tokens)
-- `PresetBundle::validate_filament_nozzle_diameter_selections` :4243 (2342 tokens)
-- `PresetBundle::is_the_only_edited_filament` :4661 (113 tokens)
-- `PresetBundle::get_printer_extruder_count` :4688 (41 tokens)
-- `PresetBundle::support_different_extruders` :4697 (32 tokens) — in `print_config.rs`
-- `PresetBundle::get_printer_nozzle_volume_list` :4706 (97 tokens)
-- `PresetBundle::get_default_nozzle_volume_types_for_filaments` :4722 (115 tokens)
-- `PresetBundle::full_config` :4738 (36 tokens)
-- `PresetBundle::full_config_secure` :4745 (71 tokens)
-- `PresetBundle::full_fff_config` :4763 (2673 tokens)
-- `PresetBundle::full_sla_config` :5090 (439 tokens)
-- `PresetBundle::load_config_file` :5145 (117 tokens)
-- `find_filament_preset_map_name` :5216 (307 tokens)
-- `convert_filament_preset_name` :5258 (22 tokens)
-- `PresetBundle::load_config_file_config` :5265 (2783 tokens)
-- `PresetBundle::load_vendor_configs_from_json` :6179 (6940 tokens)
-- `PresetBundle::load_vendor_configs_from_json` :6992 (1130 tokens)
-- `PresetBundle::on_extruders_count_changed` :7104 (41 tokens)
-- `PresetBundle::update_multi_material_filament_presets` :7115 (661 tokens)
-- `replace_default_filament_slots` :7274 (195 tokens)
-- `log_default_filament_slots` :7299 (142 tokens)
-- `PresetBundle::replace_default_presets` :7316 (197 tokens)
-- `PresetBundle::update_compatible` :7340 (1064 tokens) — in `preset.rs`
-- `PresetBundle::export_current_configs` :7628 (232 tokens)
-- `PresetBundle::set_filament_preset` :7661 (114 tokens)
-- `PresetBundle::set_default_suppressed` :7686 (37 tokens) — in `preset.rs`
+- `PresetBundle::load_user_presets` :945 (554 tokens, overload)
+- `PresetBundle::load_vendor_configs_from_json` :6992 (1130 tokens, overload)
+- `PresetBundle::update_compatible` :7340 (1064 tokens, overload) — in `preset.rs`
+
+Rust only:
+
+- `runtime_error` :64
+- `L` :70 — C++ has it in `I18N`
+- `vec_ref` :91
+- `vec_mut` :99
+- `strings_ref` :106
+- `strings_mut` :109
+- `ints_ref` :112
+- `ints_mut` :115
+- `floats_ref` :118
+- `floats_mut` :121
+- `bools_ref` :124
+- `bools_mut` :127
+- `enums_ref` :130
+- `enums_mut` :133
+- `string_ref` :138
+- `opt_string` :143
+- `opt_string_at` :148
+- `boost_split` :159
+- `boost_join` :164
+- `std_to_string_f64` :169
+- `lexical_cast_double` :175
+- `iends_with` :184
+- `fs_exists` :189
+- `fs_is_directory` :194
+- `boost_fs_error` :200
+- `fs_create_directory` :210
+- `path_filename` :219
+- `directory_entries` :229
+- `FilamentBaseInfo::default` :306
+- `ExtruderNozzleStat::new` :355
+- `ExtruderFullStat::new` :378
+- `ExtruderFullStat::get_raw_stat` :382
+- `u32::from` :489 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `s_project_options` :566
+- `nozzle_print_config_of` :575
+- `write_nozzle_keys` :597
+- `printer_selection` :637
+- `nvt_of_inventory` :647
+- `PresetBundle::materials` :699
+- `PresetBundle::materials_mut` :707
+- `PresetBundle::sync_nozzle_mirror` :722
+- `PresetBundle::nozzle_call` :729
+- `PresetBundle::nozzle_select_printer` :738
+- `PresetBundle::nozzle_open_project` :747
+- `set_printer_technology_fff` :958
+- `PresetBundle::default` :1018
+- `PresetBundle::clone` :1029 — C++ has it in `Config`, `ExtrusionEntity`, `ExtrusionEntityCollection`
+- `PresetBundle::new` :1038
+- `PresetBundle::assign` :1141 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
+- `PresetBundle::collection_of_type_mut` :1304
+- `PresetBundle::vendor_file_for_printer_model` :1506
+- `PresetBundle::load_user_presets_2` :1605
+- `PresetBundle::import_json_presets_inner` :1769
+- `PresetBundle::system_compatibility_rule` :2223
+- `PresetBundle::load_vendor_jsons_merged` :2237
+- `get_flush_volumes_matrix` :2397
+- `append` :2570 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
+- `PresetBundle::get_preset_name_by_alias` :2604
+- `PresetBundle::collection_for_type` :2664
+- `PresetBundle::filaments_preset_at` :2741
+- `find_preset_index` :2852
+- `gradient_curve_is_empty` :2866
+- `sanitize_mixed_gradient_curve_array` :2897 — C++ has it in `FilamentMixer`
+- `std_stoi` :2912
+- `option_resize` :2941
+- `erase_or_resize` :2948
+- `join_bools` :2957
+- `PresetBundle::find_base_filament_by_id` :3487
+- `PresetBundle::find_filament_if` :3499
+- `PresetBundle::tray_diameter` :5327
+- `PresetBundle::tray_volume_type` :5347
+- `PresetBundle::selected_diameter_at` :5364
+- `PresetBundle::set_selected_diameter_at` :5367
+- `PresetBundle::volume_map_at` :5371
+- `ignore_settings_list` :5656
+- `add_if_some_non_empty` :5661
+- `set_printer_technology` :5669
+- `json_items` :6175
+- `clear_compatible_printers` :6254
+- `different_keys_set` :6267
+- `PresetBundle::load_config_file_config_preset` :6280
+- `iequals` :6661
+- `json_string` :6666
+- `read_json_file` :6685
+- `json_range_starts_with` :6699
+- `sort_remove_duplicates` :6717 — C++ has it in `libslic3r`
+- `trim_right` :6723
+- `get_name_and_subpath` :6737
+- `PresetBundle::parse_config` :6933
+- `PresetBundle::load_vendor_configs_from_json_2` :7193
+- `PreferedProfileMatch::new` :7398
+- `PreferedProfileMatch::call` :7403
+- `PreferedPrintProfileMatch::new` :7425
+- `PreferedPrintProfileMatch::call` :7433
+- `PreferedFilamentProfileMatch::new` :7460
+- `PreferedFilamentProfileMatch::call` :7468
+- `PreferedFilamentsProfileMatch::new` :7495
+- `PreferedFilamentsProfileMatch::call` :7505
+- `PresetBundle::update_compatible_2` :7613
+- `PresetBundle::view` :7810 — C++ has it in `MeshBooleanOpenMeshCraft`
 
 ### `PrincipalComponents2D` (.cpp+.hpp) and `principal_components2_d.rs`
 
@@ -8266,8 +8318,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - divergent: `Print::validate` :1413 and `Print::validate` :2119 (5%, 0.15x)
 - divergent: `Print::process` :2178 and `Print::process` :2218 (13%, 1.23x)
 - divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :608 (25%, 44.94x)
-- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3454 (23%, 0.41x)
-- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3820 (21%, 0.39x)
+- divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3458 (23%, 0.41x)
+- divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3824 (21%, 0.39x)
 - stub: `PrintStatistics::config` :4454 and `Print::config` :559 (6%, 0.03x)
 
 Missing in the Rust file:
@@ -8282,8 +8334,8 @@ Missing in the Rust file:
 - `PrintRegion::set_config` :179 (14 tokens) — in `print_region.rs`
 - `PrintRegion::set_config` :180 (19 tokens) — in `print_region.rs`
 - `PrintRegion::config_apply_only` :181 (21 tokens)
-- `ConstVectorOfPtrsAdaptor::begin` :207 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ConstVectorOfPtrsAdaptor::end` :208 (15 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `ConstVectorOfPtrsAdaptor::begin` :207 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `ConstVectorOfPtrsAdaptor::end` :208 (15 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `ConstVectorOfPtrsAdaptor::front` :209 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `gcode/tool_ordering.rs`
 - `ConstVectorOfPtrsAdaptor::back` :211 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `gcode/tool_ordering.rs`
 - `ConstVectorOfPtrsAdaptor::size` :212 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
@@ -8511,18 +8563,18 @@ Rust only:
 - `Print::entity_points` :578
 - `apply_cooling_postprocess` :1910
 - `Print::apply` :2102 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `Print::make_brim` :3588 — C++ has it in `Brim`
-- `Print::all_extruders` :3724
-- `Print::is_canceled` :3760
-- `Print::cancel` :3766 — C++ has it in `PrintBase`
-- `Print::throw_if_canceled` :3772 — C++ has it in `PrintBase`, `SLAPrintSteps`
-- `Print::set_status_callback` :3781 — C++ has it in `PrintBase`
-- `Print::set_status` :3790 — C++ has it in `PrintBase`
-- `Print::invalidate_all_steps` :3798 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `collect_entity_lines` :3943
-- `stl_instance_object_id` :3986
-- `emit_layer_by_island` :3994
-- `Print::default` :4640
+- `Print::make_brim` :3592 — C++ has it in `Brim`
+- `Print::all_extruders` :3728
+- `Print::is_canceled` :3764
+- `Print::cancel` :3770 — C++ has it in `PrintBase`
+- `Print::throw_if_canceled` :3776 — C++ has it in `PrintBase`, `SLAPrintSteps`
+- `Print::set_status_callback` :3785 — C++ has it in `PrintBase`
+- `Print::set_status` :3794 — C++ has it in `PrintBase`
+- `Print::invalidate_all_steps` :3802 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `collect_entity_lines` :3947
+- `stl_instance_object_id` :3990
+- `emit_layer_by_island` :3998
+- `Print::default` :4650
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 
@@ -8544,18 +8596,18 @@ Missing in the Rust file:
 - `is_printable_filament_changed` :300 (406 tokens)
 - `LayerRanges::assign` :362 (223 tokens) — in `config.rs`, `extrusion_entity_collection.rs`, `mutable_polygon.rs`
 - `LayerRanges::config` :388 (101 tokens) — in `extruder.rs`, `gcode/cooling.rs`, `gcode/ironing.rs`
-- `LayerRanges::begin` :401 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `LayerRanges::end` :402 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `LayerRanges::begin` :401 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `LayerRanges::end` :402 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `LayerRanges::size` :403 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `ModelObjectStatusDB::add` :447 (38 tokens) — in `boost_polygon_voronoi.rs`, `clipper2/clipper_core.rs`, `clipper2/clipper_rectclip.rs`
 - `ModelObjectStatusDB::add_if_new` :452 (52 tokens)
-- `PrintObjectStatusDB::iterator_range::begin` :518 (7 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `PrintObjectStatusDB::iterator_range::end` :519 (7 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `PrintObjectStatusDB::iterator_range::begin` :518 (7 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `PrintObjectStatusDB::iterator_range::end` :519 (7 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `PrintObjectStatusDB::get_range` :522 (17 tokens)
 - `PrintObjectStatusDB::get_range` :526 (15 tokens)
 - `PrintObjectStatusDB::count` :530 (17 tokens) — in `boost_polygon_voronoi.rs`, `clipper2/clipper_engine.rs`, `gcode/wipe_tower.rs`
-- `PrintObjectStatusDB::begin` :534 (9 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `PrintObjectStatusDB::end` :535 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `PrintObjectStatusDB::begin` :534 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `PrintObjectStatusDB::end` :535 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `PrintObjectStatusDB::clear` :537 (8 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`
 - `model_volume_solid_or_modifier` :545 (30 tokens)
 - `trafo_for_bbox` :551 (43 tokens)
@@ -8671,7 +8723,7 @@ Rust only:
 
 ### `PrintConfig` (.cpp+.hpp) and `print_config.rs`
 
-Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Rust functions 237. Matched 106: faithful 94, partial 9, divergent 3, stub 0.
+Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Rust functions 246. Matched 107: faithful 95, partial 9, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -8697,14 +8749,13 @@ Missing in the Rust file:
 - `DynamicPrintConfig::def` :696 (6 tokens, overload) — in `config.rs`
 - `StaticPrintConfig::StaticCacheBase::opt_add` :842 (33 tokens)
 - `StaticPrintConfig::StaticCache::initialized` :861 (10 tokens) — in `arachne/utils/polygons_point_index.rs`, `arachne/utils/polygons_segment_index.rs`
-- `StaticPrintConfig::StaticCache::optptr` :869 (45 tokens, overload) — in `config.rs`
+- `StaticPrintConfig::StaticCache::optptr` :869 (45 tokens, overload) — in `config.rs`, `placeholder_parser.rs`
 - `StaticPrintConfig::StaticCache::finalize` :881 (115 tokens) — in `cut_utils.rs`, `fill/fill_base.rs`, `gcode/g_code_processor.rs`
 - `CLASS_NAME` :937 (7248 tokens)
 - `load` :2325 (96 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `save` :2340 (96 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `PrintConfigDef::handle_legacy` :8306 (1476 tokens, overload) — in `config.rs`
 - `DynamicPrintConfig::get_filament_type` :9009 (402 tokens, overload) — in `preset.rs`
-- `DynamicPrintConfig::update_values_to_printer_extruders` :9780 (1383 tokens)
 - `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :9996 (1248 tokens)
 - `DynamicPrintConfig::update_filament_config_values_for_multiple_extruders` :10194 (913 tokens)
 - `DynamicPrintAndCLIConfig::handle_legacy` :11439 (66 tokens, overload) — in `config.rs`
@@ -8855,6 +8906,14 @@ Rust only:
 - `float_or_percent_lt` :18417
 - `values_mut` :18423
 - `ids_and_variants` :19069
+- `typed_values_mut` :19224
+- `get_at_wrapped` :19234
+- `select_variant_rows` :19245
+- `canonical_multi_nozzle_printer_variant` :19401
+- `default_single_nozzle_printer_variant` :19407
+- `nozzle_variant_exists` :19414
+- `printer_nozzle_diameter_mode_single` :19425
+- `printer_nozzle_diameter_mode_multi` :19430
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 
@@ -8862,24 +8921,24 @@ Tier 1. C++ functions 82 (plus 2 constructors, 1 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5480 (25%, 0.69x)
-- partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5496 (52%, 1.18x)
+- divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5509 (25%, 0.69x)
+- partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5525 (52%, 1.18x)
 - divergent: `PrintObject::make_perimeters` :470 and `PrintObject::make_perimeters` :1898 (26%, 1.08x)
 - divergent: `PrintObject::prepare_infill` :902 and `PrintObject::prepare_infill` :2173 (19%, 1.13x)
 - partial: `PrintObject::infill` :1154 and `PrintObject::infill` :4595 (61%, 5.43x)
-- divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5375 (8%, 3.4x)
-- partial: `PrintObject::clear_overhangs_for_lift` :1270 and `PrintObject::clear_overhangs_for_lift` :5193 (50%, 0.8x)
-- divergent: `PrintObject::detect_overhangs_for_lift` :1282 and `PrintObject::detect_overhangs_for_lift` :5212 (26%, 0.77x)
-- divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :5170 (0%, 0.26x)
-- divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5633 (0%, 0.38x)
+- divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5386 (8%, 4.07x)
+- partial: `PrintObject::clear_overhangs_for_lift` :1270 and `PrintObject::clear_overhangs_for_lift` :5198 (50%, 0.8x)
+- divergent: `PrintObject::detect_overhangs_for_lift` :1282 and `PrintObject::detect_overhangs_for_lift` :5217 (26%, 0.77x)
+- divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :5170 (0%, 0.29x)
+- divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5662 (0%, 0.38x)
 - divergent: `PrintObject::invalidate_all_steps` :1916 and `PrintObject::invalidate_all_steps` :509 (0%, 0.31x)
 - partial: `PrintObject::detect_surfaces_type` :1951 and `PrintObject::detect_surfaces_type` :3987 (42%, 2.15x)
-- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :6988 (18%, 0.92x)
+- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :7017 (18%, 0.92x)
 - stub: `PrintObject::slicing_parameters` :3862 and `PrintObject::slicing_parameters` :462 (0%, 0.02x)
-- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6484 (45%, 2.11x)
+- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6513 (45%, 2.11x)
 - partial: `PrintObject::discover_sub_top_surfaces` :5839 and `PrintObject::discover_sub_top_surfaces` :2383 (48%, 1.2x)
-- divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :5281 (13%, 2.53x)
-- partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :5732 (50%, 0.92x)
+- divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :5286 (13%, 2.7x)
+- partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :5761 (50%, 0.92x)
 
 Missing in the Rust file:
 
@@ -8971,13 +9030,13 @@ Rust only:
 - `PrintObject::apply_mm_segmentation_tier1` :1195
 - `PrintObject::wire_layer_hierarchy` :1858
 - `PrintObject::bridge_over_infill` :2521
-- `PrintObject::has_support` :5455 — C++ has it in `Print`, `Support/SupportMaterial`
-- `PrintObject::num_printing_regions` :5462 — C++ has it in `Print`
-- `PrintObject::printing_region` :5472
-- `PrintObject::discover_vertical_shells` :5775
-- `polygons_diff` :7095
-- `polygons_intersection` :7110
-- `PrintObject::default` :7126
+- `PrintObject::has_support` :5484 — C++ has it in `Print`, `Support/SupportMaterial`
+- `PrintObject::num_printing_regions` :5491 — C++ has it in `Print`
+- `PrintObject::printing_region` :5501
+- `PrintObject::discover_vertical_shells` :5804
+- `polygons_diff` :7124
+- `polygons_intersection` :7139
+- `PrintObject::default` :7155
 
 ### `PrintObjectSlice` (.cpp) and `print_object_slice.rs`
 
@@ -9344,8 +9403,8 @@ Tier 1. C++ functions 37 (plus 4 constructors, 0 destructors, 2 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `improve_ordering_by_two_exchanges_with_segment_flipping` :1882 and `improve_ordering_by_two_exchanges_with_segment_flipping` :2080 (48%, 0.55x)
-- partial: `chain_lines` :2010 and `chain_lines` :2249 (85%, 0.97x)
+- partial: `improve_ordering_by_two_exchanges_with_segment_flipping` :1882 and `improve_ordering_by_two_exchanges_with_segment_flipping` :2094 (48%, 0.55x)
+- partial: `chain_lines` :2010 and `chain_lines` :2263 (85%, 0.97x)
 
 Missing in the Rust file:
 
@@ -9381,21 +9440,21 @@ Rust only:
 - `Chains::equivalent` :749
 - `Chains::merge` :768 — C++ has it in `BoundingBox`, `Format/bbs_3mf`, `MeshBoolean`
 - `Chains::chain_flip_penalty` :786
-- `entity_first_point` :1429
-- `entity_last_point` :1439
-- `entity_is_loop` :1449
-- `entity_can_reverse` :1455
-- `entity_reverse` :1468
-- `FlipEdge::new` :1673
-- `ConnectionCost::default_` :1695
-- `ConnectionCost::sub` :1702 — C++ has it in `CutUtils`
-- `chain_polylines_ref` :2150
-- `Polyline::front_point` :2169
-- `ThickPolyline::front_point` :2176
-- `LineEnd::new` :2222
-- `LineEnd::point` :2226 — C++ has it in `Point`
-- `LineEnd::other_point` :2234
-- `LineEnd::other_end` :2242
+- `entity_first_point` :1443
+- `entity_last_point` :1453
+- `entity_is_loop` :1463
+- `entity_can_reverse` :1469
+- `entity_reverse` :1482
+- `FlipEdge::new` :1687
+- `ConnectionCost::default_` :1709
+- `ConnectionCost::sub` :1716 — C++ has it in `CutUtils`
+- `chain_polylines_ref` :2164
+- `Polyline::front_point` :2183
+- `ThickPolyline::front_point` :2190
+- `LineEnd::new` :2236
+- `LineEnd::point` :2240 — C++ has it in `Point`
+- `LineEnd::other_point` :2248
+- `LineEnd::other_end` :2256
 
 ### `Slicing` (.cpp+.hpp) and `slicing.rs`
 
@@ -9412,7 +9471,7 @@ Missing in the Rust file:
 - `SlicingParameters::to_layer_height_limit` :82 (16 tokens)
 - `custom_layer_heights_within_limits` :212 (141 tokens)
 - `layer_height_profile_from_ranges` :235 (512 tokens)
-- `serialize` :238 (13 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `serialize` :238 (13 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 
 Rust only:
 
@@ -10048,114 +10107,121 @@ Rust only:
 
 ### `Utils` (.hpp) and `utils.rs`
 
-Tier 1. C++ functions 36 (plus 5 constructors, 2 destructors, 0 operators), Rust functions 96. Matched 20: faithful 14, partial 4, divergent 2, stub 0.
+Tier 1. C++ functions 36 (plus 5 constructors, 2 destructors, 0 operators), Rust functions 117. Matched 27: faithful 21, partial 3, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `convert_to_full_version` :114 and `convert_to_full_version` :158 (50%, 0.7x)
-- divergent: `get_max_element` :162 and `get_max_element` :382 (0%, 0.98x)
-- partial: `convert_vector` :173 and `convert_vector` :448 (33%, 0.86x)
-- partial: `format_time_hm` :675 and `format_time_hm` :778 (57%, 0.47x)
-- partial: `get_bbl_finish_time_dhm` :740 and `get_bbl_finish_time_dhm` :795 (43%, 5.06x)
-- divergent: `filter_characters` :772 and `filter_characters` :872 (22%, 0.37x)
+- divergent: `get_max_element` :162 and `get_max_element` :412 (0%, 0.98x)
+- partial: `convert_vector` :173 and `convert_vector` :478 (33%, 0.86x)
+- divergent: `get_local_utc_offset_seconds` :573 and `get_local_utc_offset_seconds` :754 (21%, 0.7x)
+- partial: `format_time_hm` :675 and `format_time_hm` :849 (57%, 0.47x)
+- divergent: `filter_characters` :772 and `filter_characters` :965 (22%, 0.37x)
 
 Missing in the Rust file:
 
-- `PathSanitizer::sanitize` :142 (13 tokens, overload)
-- `PathSanitizer::sanitize` :143 (16 tokens, overload)
-- `PathSanitizer::sanitize` :144 (12 tokens, overload)
 - `next_highest_power_of_2` :300 (39 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `next_highest_power_of_2` :310 (45 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `next_highest_power_of_2` :321 (51 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `next_highest_power_of_2` :337 (11 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
-- `reserve_more` :354 (15 tokens)
-- `reserve_more_power_of_2` :359 (18 tokens)
 - `prev_idx_modulo` :381 (14 tokens, overload)
 - `next_idx_modulo` :387 (14 tokens, overload) — in `multi_material_segmentation.rs`
 - `FilePtr::close` :435 (24 tokens) — in `svg.rs`
 - `ScopeGuard::reset` :470 (8 tokens) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
-- `get_local_utc_offset_seconds` :573 (154 tokens)
-- `get_local_utc_offset_seconds` :597 (13 tokens)
-- `get_bbl_finish_time` :701 (246 tokens)
+- `get_local_utc_offset_seconds` :597 (13 tokens, overload)
 
 Rust only:
 
-- `PathSanitizer::file_name` :214 — C++ has it in `FileParserError`
-- `PathSanitizer::init_usrname_range` :224
-- `PathSanitizer::sanitize_impl` :283 — C++ has it in `utils`
-- `PathSanitizer::replace_stars` :358
-- `next_highest_power_of_2_u16` :496
-- `next_highest_power_of_2_u32` :510
-- `next_highest_power_of_2_u64` :525
-- `prev_value_modulo` :575
-- `next_value_modulo` :581
-- `level_to_boost` :888 — C++ has it in `Log`
-- `set_logging_level` :907 — C++ has it in `Log`
-- `level_string_to_boost` :915 — C++ has it in `Log`
-- `get_string_logging_level` :930 — C++ has it in `Log`
-- `get_logging_level` :944 — C++ has it in `Log`
-- `trace` :960
-- `disable_multi_threading` :966 — C++ has it in `utils`
-- `set_var_dir` :974 — C++ has it in `utils`
-- `var_dir` :980
-- `var` :986 — C++ has it in `utils`
-- `set_resources_dir` :1000 — C++ has it in `utils`
-- `resources_dir` :1008
-- `set_temporary_dir` :1017 — C++ has it in `utils`
-- `temporary_dir` :1023
-- `set_local_dir` :1032 — C++ has it in `utils`
-- `localization_dir` :1038
-- `set_sys_shapes_dir` :1047 — C++ has it in `utils`
-- `sys_shapes_dir` :1053
-- `custom_shapes_dir` :1059 — C++ has it in `utils`
-- `debug_out_path` :1075 — C++ has it in `utils`
-- `is_log_trivival_valid` :1106
-- `set_log_path_and_level` :1114 — C++ has it in `Log`
-- `update_log_sink` :1122 — C++ has it in `Log`
-- `flush_logs` :1128 — C++ has it in `Log`
-- `rename_file` :1134 — C++ has it in `utils`
-- `copy_file_inner` :1142 — C++ has it in `utils`
-- `copy_file` :1156 — C++ has it in `utils`
-- `copy_framework` :1182 — C++ has it in `utils`
-- `check_copy` :1249 — C++ has it in `utils`
-- `is_plain_file` :1272 — C++ has it in `utils`
-- `is_ini_file` :1287 — C++ has it in `utils`
-- `is_idx_file` :1293 — C++ has it in `utils`
-- `is_gcode_file` :1299 — C++ has it in `utils`
-- `is_json_file` :1305 — C++ has it in `utils`
-- `is_img_file` :1311 — C++ has it in `utils`
-- `is_gallery_file_entry` :1317
-- `is_gallery_file` :1323 — C++ has it in `utils`
-- `is_shapes_dir` :1329 — C++ has it in `utils`
-- `encode_path` :1336 — C++ has it in `utils`
-- `decode_path` :1343 — C++ has it in `utils`
-- `normalize_utf8_nfc` :1352 — C++ has it in `utils`
-- `split_string` :1358 — C++ has it in `utils`
-- `path_to_filename` :1388 — C++ has it in `utils`
-- `path_to_stem` :1396 — C++ has it in `utils`
-- `path_to_extension` :1404 — C++ has it in `utils`
-- `path_to_parent_path` :1413 — C++ has it in `utils`
-- `string_printf` :1425 — C++ has it in `utils`
-- `header_slic3r_generated` :1436 — C++ has it in `utils`
-- `header_gcodeviewer_generated` :1442 — C++ has it in `utils`
-- `get_current_pid` :1448 — C++ has it in `utils`
-- `xml_escape` :1460 — C++ has it in `utils`
-- `xml_escape_default` :1516
-- `xml_escape_double_quotes_attribute_value` :1521 — C++ has it in `utils`
-- `xml_unescape` :1566 — C++ has it in `utils`
-- `format_memsize_mb` :1611 — C++ has it in `utils`
-- `format_diameter_to_str` :1641 — C++ has it in `utils`
-- `format_diameter_to_str_default` :1660
-- `log_memory_info` :1669 — C++ has it in `utils`
-- `total_physical_memory` :1678 — C++ has it in `utils`
-- `makedir` :1684 — C++ has it in `utils`
-- `save_string_file` :1700 — C++ has it in `utils`
-- `load_string_file` :1706 — C++ has it in `utils`
-- `strcasecmp` :1719
-- `dir_entry_extension` :1735
-- `iends_with` :1744
-- `sscanf_ints` :1759
-- `sscanf_first_float` :1790
+- `is_separator` :193 — C++ has it in `utils`
+- `UserPathLayout::valid` :213 — C++ has it in `BuildVolume`, `EdgeGrid`, `Fill/FillBase`
+- `UserPathLayout::from_profile` :220
+- `user_path_layout` :243
+- `is_utf8_continuation` :258 — C++ has it in `utils`
+- `mask_bytes` :264 — C++ has it in `utils`
+- `file_name_part` :282 — C++ has it in `utils`
+- `is_upper_of` :291 — C++ has it in `utils`
+- `Path::sanitize` :326
+- `PathSanitizer::sanitize_impl` :341 — C++ has it in `utils`
+- `PathSanitizer::sanitize_with_layout` :350
+- `next_highest_power_of_2_u16` :526
+- `next_highest_power_of_2_u32` :540
+- `next_highest_power_of_2_u64` :555
+- `prev_value_modulo` :620
+- `next_value_modulo` :626
+- `level_to_boost` :981 — C++ has it in `Log`
+- `set_logging_level` :1000 — C++ has it in `Log`
+- `level_string_to_boost` :1008 — C++ has it in `Log`
+- `get_string_logging_level` :1023 — C++ has it in `Log`
+- `get_logging_level` :1037 — C++ has it in `Log`
+- `trace` :1053
+- `disable_multi_threading` :1059 — C++ has it in `utils`
+- `set_var_dir` :1067 — C++ has it in `utils`
+- `var_dir` :1073
+- `var` :1079 — C++ has it in `utils`
+- `set_resources_dir` :1093 — C++ has it in `utils`
+- `resources_dir` :1101
+- `set_temporary_dir` :1110 — C++ has it in `utils`
+- `temporary_dir` :1116
+- `set_local_dir` :1125 — C++ has it in `utils`
+- `localization_dir` :1131
+- `set_sys_shapes_dir` :1140 — C++ has it in `utils`
+- `sys_shapes_dir` :1146
+- `custom_shapes_dir` :1152 — C++ has it in `utils`
+- `debug_out_path` :1168 — C++ has it in `utils`
+- `is_log_trivival_valid` :1199
+- `set_log_path_and_level` :1207 — C++ has it in `Log`
+- `update_log_sink` :1215 — C++ has it in `Log`
+- `flush_logs` :1221 — C++ has it in `Log`
+- `rename_file` :1227 — C++ has it in `utils`
+- `copy_file_inner` :1235 — C++ has it in `utils`
+- `copy_file` :1249 — C++ has it in `utils`
+- `copy_framework` :1275 — C++ has it in `utils`
+- `check_copy` :1342 — C++ has it in `utils`
+- `is_plain_file` :1365 — C++ has it in `utils`
+- `is_ini_file` :1380 — C++ has it in `utils`
+- `is_idx_file` :1386 — C++ has it in `utils`
+- `is_gcode_file` :1392 — C++ has it in `utils`
+- `is_json_file` :1398 — C++ has it in `utils`
+- `is_img_file` :1404 — C++ has it in `utils`
+- `is_gallery_file_entry` :1410
+- `is_gallery_file` :1416 — C++ has it in `utils`
+- `is_shapes_dir` :1422 — C++ has it in `utils`
+- `encode_path` :1429 — C++ has it in `utils`
+- `decode_path` :1436 — C++ has it in `utils`
+- `normalize_utf8_nfc` :1445 — C++ has it in `utils`
+- `split_string` :1451 — C++ has it in `utils`
+- `path_to_filename` :1485 — C++ has it in `utils`
+- `path_to_stem` :1493 — C++ has it in `utils`
+- `path_to_extension` :1501 — C++ has it in `utils`
+- `path_to_parent_path` :1510 — C++ has it in `utils`
+- `string_printf` :1522 — C++ has it in `utils`
+- `header_slic3r_generated` :1533 — C++ has it in `utils`
+- `header_gcodeviewer_generated` :1539 — C++ has it in `utils`
+- `get_current_pid` :1545 — C++ has it in `utils`
+- `get_process_name` :1560 — C++ has it in `utils`
+- `xml_escape` :1638 — C++ has it in `utils`
+- `xml_escape_default` :1694
+- `xml_escape_double_quotes_attribute_value` :1699 — C++ has it in `utils`
+- `xml_unescape` :1744 — C++ has it in `utils`
+- `format_memsize_mb` :1789 — C++ has it in `utils`
+- `format_diameter_to_str` :1819 — C++ has it in `utils`
+- `format_diameter_to_str_default` :1838
+- `log_memory_info` :1847 — C++ has it in `utils`
+- `get_peak_rss_mb` :1863 — C++ has it in `utils`
+- `total_physical_memory` :1901 — C++ has it in `utils`
+- `makedir` :1907 — C++ has it in `utils`
+- `Md5Ctx::new` :1927
+- `Md5Ctx::block` :1931
+- `Md5Ctx::update` :1963 — C++ has it in `Fill/Lightning/DistanceField`, `GCode/GCodeProcessor`, `GCode/PressureEqualizer`
+- `Md5Ctx::finalize` :1973 — C++ has it in `CutUtils`, `GCode`, `GCode/GCodeProcessor`
+- `bbl_calc_md5` :1993 — C++ has it in `utils`
+- `save_string_file` :2029 — C++ has it in `utils`
+- `load_string_file` :2035 — C++ has it in `utils`
+- `strcasecmp` :2048
+- `dir_entry_extension` :2064
+- `iends_with` :2073
+- `sscanf_ints` :2088
+- `sscanf_first_float` :2119
 
 ### `VariableWidth` (.cpp+.hpp) and `variable_width.rs`
 
@@ -10307,7 +10373,7 @@ Missing in the Rust file:
 - `append_reversed` :173 (77 tokens)
 - `cast` :187 (43 tokens) — in `geometry/voronoi_visual_utils.rs`
 - `remove_nulls` :197 (46 tokens)
-- `sort_remove_duplicates` :205 (47 tokens) — in `filament_group_utils.rs`
+- `sort_remove_duplicates` :205 (47 tokens) — in `filament_group_utils.rs`, `preset_bundle.rs`
 - `make_unique` :213 (26 tokens)
 - `lower_bound_by_predicate` :220 (85 tokens) — in `fill/fill_base.rs`
 - `binary_find` :242 (35 tokens)
@@ -10321,8 +10387,8 @@ Missing in the Rust file:
 - `is_approx` :288 (23 tokens) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/point.rs`
 - `is_approx` :294 (45 tokens) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/point.rs`
 - `reserve_vector` :338 (35 tokens)
-- `Range::begin` :358 (5 tokens) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `Range::end` :359 (5 tokens) — in `mutable_polygon.rs`, `preset.rs`, `sla/agg/gamma_functions.rs`
+- `Range::begin` :358 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
+- `Range::end` :359 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `Range::size` :369 (12 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `Range::empty` :370 (7 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `range` :373 (20 tokens)
@@ -10356,32 +10422,34 @@ Rust only:
 
 ### `utils` (.cpp) and `utils.rs`
 
-Tier 1. C++ functions 66 (plus 2 constructors, 2 destructors, 0 operators), Rust functions 96. Matched 45: faithful 23, partial 7, divergent 11, stub 4.
+Tier 1. C++ functions 66 (plus 2 constructors, 2 destructors, 0 operators), Rust functions 117. Matched 54: faithful 30, partial 9, divergent 11, stub 4.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `disable_multi_threading` :85 and `disable_multi_threading` :966 (0%, 0.05x)
-- partial: `debug_out_path` :188 and `debug_out_path` :1075 (33%, 1.02x)
-- partial: `rename_file` :462 and `rename_file` :1134 (33%, 0.39x)
-- divergent: `copy_file_inner` :666 and `copy_file_inner` :1142 (14%, 0.2x)
-- divergent: `copy_file` :703 and `copy_file` :1156 (23%, 0.16x)
-- partial: `copy_framework` :801 and `copy_framework` :1182 (53%, 1.61x)
-- divergent: `check_copy` :829 and `check_copy` :1249 (24%, 0.34x)
-- divergent: `is_plain_file` :867 and `is_plain_file` :1272 (8%, 0.56x)
-- partial: `is_ini_file` :879 and `is_ini_file` :1287 (43%, 0.6x)
-- partial: `is_idx_file` :884 and `is_idx_file` :1293 (43%, 0.6x)
-- divergent: `PathSanitizer::sanitize_impl` :1011 and `PathSanitizer::sanitize_impl` :283 (19%, 1.55x)
-- stub: `encode_path` :1060 and `encode_path` :1336 (10%, 0.06x)
-- stub: `decode_path` :1079 and `decode_path` :1343 (10%, 0.07x)
-- divergent: `normalize_utf8_nfc` :1096 and `normalize_utf8_nfc` :1352 (17%, 0.17x)
-- partial: `split_string` :1102 and `split_string` :1358 (40%, 2.12x)
-- stub: `string_printf` :1126 and `string_printf` :1425 (0%, 0.06x)
-- partial: `xml_escape_double_quotes_attribute_value` :1238 and `xml_escape_double_quotes_attribute_value` :1521 (50%, 1.35x)
-- divergent: `log_memory_info` :1339 and `log_memory_info` :1669 (2%, 0.03x)
-- stub: `total_physical_memory` :1428 and `total_physical_memory` :1678 (0%, 0.01x)
-- divergent: `makedir` :1497 and `makedir` :1684 (12%, 0.57x)
-- divergent: `save_string_file` :1532 and `save_string_file` :1700 (10%, 0.27x)
-- divergent: `load_string_file` :1540 and `load_string_file` :1706 (8%, 0.39x)
+- divergent: `disable_multi_threading` :85 and `disable_multi_threading` :1059 (0%, 0.05x)
+- partial: `debug_out_path` :188 and `debug_out_path` :1168 (33%, 1.02x)
+- partial: `rename_file` :462 and `rename_file` :1227 (33%, 0.39x)
+- divergent: `copy_file_inner` :666 and `copy_file_inner` :1235 (14%, 0.2x)
+- divergent: `copy_file` :703 and `copy_file` :1249 (23%, 0.16x)
+- partial: `copy_framework` :801 and `copy_framework` :1275 (53%, 1.61x)
+- divergent: `check_copy` :829 and `check_copy` :1342 (24%, 0.34x)
+- divergent: `is_plain_file` :867 and `is_plain_file` :1365 (8%, 0.56x)
+- partial: `is_ini_file` :879 and `is_ini_file` :1380 (43%, 0.6x)
+- partial: `is_idx_file` :884 and `is_idx_file` :1386 (43%, 0.6x)
+- partial: `file_name_part` :997 and `file_name_part` :282 (50%, 1.45x)
+- partial: `is_upper_of` :1003 and `is_upper_of` :291 (40%, 0.38x)
+- divergent: `PathSanitizer::sanitize_impl` :1011 and `PathSanitizer::sanitize_impl` :341 (10%, 0.14x)
+- stub: `encode_path` :1060 and `encode_path` :1429 (10%, 0.06x)
+- stub: `decode_path` :1079 and `decode_path` :1436 (10%, 0.07x)
+- divergent: `normalize_utf8_nfc` :1096 and `normalize_utf8_nfc` :1445 (17%, 0.17x)
+- stub: `string_printf` :1126 and `string_printf` :1522 (0%, 0.06x)
+- partial: `xml_escape_double_quotes_attribute_value` :1238 and `xml_escape_double_quotes_attribute_value` :1699 (50%, 1.35x)
+- divergent: `log_memory_info` :1339 and `log_memory_info` :1847 (2%, 0.03x)
+- stub: `total_physical_memory` :1428 and `total_physical_memory` :1901 (0%, 0.01x)
+- divergent: `makedir` :1497 and `makedir` :1907 (12%, 0.57x)
+- partial: `bbl_calc_md5` :1511 and `bbl_calc_md5` :1993 (45%, 1.15x)
+- divergent: `save_string_file` :1532 and `save_string_file` :2029 (10%, 0.27x)
+- divergent: `load_string_file` :1540 and `load_string_file` :2035 (8%, 0.39x)
 
 Missing in the Rust file:
 
@@ -10397,69 +10465,72 @@ Missing in the Rust file:
 - `copy_file_linux_read_write` :475 (196 tokens)
 - `copy_file_linux` :524 (641 tokens)
 - `is_gallery_file` :906 (33 tokens, overload)
-- `is_separator` :925 (15 tokens) — in `format/resource_path_utils.rs`
-- `UserPathLayout::valid` :936 (15 tokens) — in `build_volume.rs`, `fill/fill_base.rs`, `gcode/conflict_checker.rs`
-- `is_utf8_continuation` :982 (18 tokens)
-- `mask_bytes` :985 (89 tokens)
-- `file_name_part` :997 (33 tokens)
-- `is_upper_of` :1003 (39 tokens)
-- `get_process_name` :1168 (287 tokens)
-- `get_peak_rss_mb` :1407 (112 tokens)
-- `bbl_calc_md5` :1511 (186 tokens)
 
 Rust only:
 
 - `convert_to_full_version` :158 — C++ has it in `Utils`
-- `PathSanitizer::sanitize` :209 — C++ has it in `Utils`
-- `PathSanitizer::file_name` :214 — C++ has it in `FileParserError`
-- `PathSanitizer::init_usrname_range` :224
-- `PathSanitizer::replace_stars` :358
-- `round_divide` :369 — C++ has it in `Utils`
-- `round_up_divide` :376 — C++ has it in `Utils`
-- `get_max_element` :382 — C++ has it in `Utils`
-- `convert_vector` :448 — C++ has it in `Utils`
-- `next_highest_power_of_2_u16` :496
-- `next_highest_power_of_2_u32` :510
-- `next_highest_power_of_2_u64` :525
-- `next_highest_power_of_2` :543 — C++ has it in `Utils`
-- `prev_idx_modulo` :553 — C++ has it in `Utils`
-- `next_idx_modulo` :564 — C++ has it in `Utils`
-- `prev_value_modulo` :575
-- `next_value_modulo` :581
-- `short_time` :591 — C++ has it in `Utils`
-- `get_time_dhms` :653 — C++ has it in `Utils`
-- `get_bbl_time_dhms` :678 — C++ has it in `Utils`
-- `get_timezone_utc_hm` :700 — C++ has it in `Utils`
-- `get_time_dhm` :720 — C++ has it in `GCode/GCodeProcessor`, `Utils`
-- `get_time_hms` :741 — C++ has it in `Utils`
-- `get_bbl_monitor_time_dhm` :754 — C++ has it in `Utils`
-- `format_time_hm` :778 — C++ has it in `Utils`
-- `get_bbl_finish_time_dhm` :795 — C++ has it in `Utils`
-- `get_bbl_remain_time_dhms` :850 — C++ has it in `Utils`
-- `filter_characters` :872 — C++ has it in `Utils`
-- `level_to_boost` :888 — C++ has it in `Log`
-- `set_logging_level` :907 — C++ has it in `Log`
-- `level_string_to_boost` :915 — C++ has it in `Log`
-- `get_string_logging_level` :930 — C++ has it in `Log`
-- `get_logging_level` :944 — C++ has it in `Log`
-- `trace` :960
-- `var_dir` :980
-- `resources_dir` :1008
-- `temporary_dir` :1023
-- `localization_dir` :1038
-- `sys_shapes_dir` :1053
-- `is_log_trivival_valid` :1106
-- `set_log_path_and_level` :1114 — C++ has it in `Log`
-- `update_log_sink` :1122 — C++ has it in `Log`
-- `flush_logs` :1128 — C++ has it in `Log`
-- `is_gallery_file_entry` :1317
-- `xml_escape_default` :1516
-- `format_diameter_to_str_default` :1660
-- `strcasecmp` :1719
-- `dir_entry_extension` :1735
-- `iends_with` :1744
-- `sscanf_ints` :1759
-- `sscanf_first_float` :1790
+- `UserPathLayout::from_profile` :220
+- `user_path_layout` :243
+- `&str::sanitize` :302 — C++ has it in `Utils`
+- `String::sanitize` :309 — C++ has it in `Utils`
+- `Option::sanitize` :316 — C++ has it in `Utils`
+- `Path::sanitize` :326 — C++ has it in `Utils`
+- `PathSanitizer::sanitize` :336 — C++ has it in `Utils`
+- `PathSanitizer::sanitize_with_layout` :350
+- `round_divide` :399 — C++ has it in `Utils`
+- `round_up_divide` :406 — C++ has it in `Utils`
+- `get_max_element` :412 — C++ has it in `Utils`
+- `convert_vector` :478 — C++ has it in `Utils`
+- `next_highest_power_of_2_u16` :526
+- `next_highest_power_of_2_u32` :540
+- `next_highest_power_of_2_u64` :555
+- `next_highest_power_of_2` :573 — C++ has it in `Utils`
+- `reserve_more` :580 — C++ has it in `Utils`
+- `reserve_more_power_of_2` :587 — C++ has it in `Utils`
+- `prev_idx_modulo` :598 — C++ has it in `Utils`
+- `next_idx_modulo` :609 — C++ has it in `Utils`
+- `prev_value_modulo` :620
+- `next_value_modulo` :626
+- `short_time` :636 — C++ has it in `Utils`
+- `get_time_dhms` :698 — C++ has it in `Utils`
+- `get_bbl_time_dhms` :723 — C++ has it in `Utils`
+- `get_local_utc_offset_seconds` :754 — C++ has it in `Utils`
+- `get_timezone_utc_hm` :771 — C++ has it in `Utils`
+- `get_time_dhm` :791 — C++ has it in `GCode/GCodeProcessor`, `Utils`
+- `get_time_hms` :812 — C++ has it in `Utils`
+- `get_bbl_monitor_time_dhm` :825 — C++ has it in `Utils`
+- `format_time_hm` :849 — C++ has it in `Utils`
+- `get_bbl_finish_time` :874 — C++ has it in `Utils`
+- `get_bbl_finish_time_dhm` :930 — C++ has it in `Utils`
+- `get_bbl_remain_time_dhms` :943 — C++ has it in `Utils`
+- `filter_characters` :965 — C++ has it in `Utils`
+- `level_to_boost` :981 — C++ has it in `Log`
+- `set_logging_level` :1000 — C++ has it in `Log`
+- `level_string_to_boost` :1008 — C++ has it in `Log`
+- `get_string_logging_level` :1023 — C++ has it in `Log`
+- `get_logging_level` :1037 — C++ has it in `Log`
+- `trace` :1053
+- `var_dir` :1073
+- `resources_dir` :1101
+- `temporary_dir` :1116
+- `localization_dir` :1131
+- `sys_shapes_dir` :1146
+- `is_log_trivival_valid` :1199
+- `set_log_path_and_level` :1207 — C++ has it in `Log`
+- `update_log_sink` :1215 — C++ has it in `Log`
+- `flush_logs` :1221 — C++ has it in `Log`
+- `is_gallery_file_entry` :1410
+- `xml_escape_default` :1694
+- `format_diameter_to_str_default` :1838
+- `Md5Ctx::new` :1927
+- `Md5Ctx::block` :1931
+- `Md5Ctx::update` :1963 — C++ has it in `Fill/Lightning/DistanceField`, `GCode/GCodeProcessor`, `GCode/PressureEqualizer`
+- `Md5Ctx::finalize` :1973 — C++ has it in `CutUtils`, `GCode`, `GCode/GCodeProcessor`
+- `strcasecmp` :2048
+- `dir_entry_extension` :2064
+- `iends_with` :2073
+- `sscanf_ints` :2088
+- `sscanf_first_float` :2119
 
 ### `Brim` (.cpp+.hpp) and `brim.rs`
 
@@ -10512,7 +10583,7 @@ Tier 2. C++ functions 3 (plus 3 constructors, 0 destructors, 2 operators), Rust 
 
 Missing in the Rust file:
 
-- `BrimPoint::serialize` :61 (11 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `BrimPoint::serialize` :61 (11 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 
 Rust only:
 
@@ -10729,7 +10800,7 @@ Missing in the Rust file:
 - `contours_simplified` :206 (1107 tokens)
 - `PrintObjectSupportMaterial::generate` :376 (1478 tokens) — in `arachne/wall_tool_paths.rs`, `debug/validation.rs`, `fill/fill_plane_path.rs`
 - `SupportGridPattern::extract_support` :786 (1035 tokens)
-- `SupportGridPattern::serialize` :912 (333 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `SupportGridPattern::serialize` :912 (333 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `SupportGridPattern::deserialize` :944 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `SupportGridPattern::deserialize_` :952 (469 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 - `SupportGridPattern::dilate_trimming_region` :1027 (197 tokens)
@@ -10793,19 +10864,19 @@ Rust only:
 
 ### `Support/TreeModelVolumes` (.cpp+.hpp) and `support/tree_model_volumes.rs`
 
-Tier 2. C++ functions 34 (plus 2 constructors, 0 destructors, 0 operators), Rust functions 81. Matched 22: faithful 13, partial 6, divergent 3, stub 0.
+Tier 2. C++ functions 34 (plus 2 constructors, 0 destructors, 0 operators), Rust functions 82. Matched 22: faithful 13, partial 6, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `calculateMachineBorderCollision` :38 and `calculate_machine_border_collision` :471 (0%, 0.13x)
-- divergent: `TreeModelVolumes::precalculate` :177 and `TreeModelVolumes::precalculate` :812 (30%, 0.44x)
-- divergent: `TreeModelVolumes::RadiusLayerPolygonCache::insert` :230 and `RadiusLayerPolygonCache::insert` :434 (22%, 0.4x)
-- partial: `TreeModelVolumes::RadiusLayerPolygonCache::get_lower_bound_area` :252 and `RadiusLayerPolygonCache::get_lower_bound_area` :356 (43%, 1.23x)
-- partial: `TreeModelVolumes::RadiusLayerPolygonCache::getMaxCalculatedLayer` :274 and `RadiusLayerPolygonCache::get_max_calculated_layer` :381 (38%, 0.93x)
-- partial: `TreeModelVolumes::RadiusLayerPolygonCache::clear_all_but_radius0` :288 and `RadiusLayerPolygonCache::clear_all_but_radius0` :421 (33%, 1.32x)
-- partial: `TreeModelVolumes::calculatePlaceables` :753 and `TreeModelVolumes::calculate_placeables` :1416 (36%, 0.62x)
-- partial: `TreeModelVolumes::ceilRadius` :862 and `TreeModelVolumes::ceil_radius` :1492 (94%, 1.02x)
-- partial: `TreeModelVolumes::RadiusLayerPolygonCache::sorted` :901 and `RadiusLayerPolygonCache::sorted` :402 (42%, 0.54x)
+- divergent: `calculateMachineBorderCollision` :38 and `calculate_machine_border_collision` :509 (0%, 0.13x)
+- divergent: `TreeModelVolumes::precalculate` :177 and `TreeModelVolumes::precalculate` :850 (30%, 0.44x)
+- divergent: `TreeModelVolumes::RadiusLayerPolygonCache::insert` :230 and `RadiusLayerPolygonCache::insert` :472 (22%, 0.4x)
+- partial: `TreeModelVolumes::RadiusLayerPolygonCache::get_lower_bound_area` :252 and `RadiusLayerPolygonCache::get_lower_bound_area` :394 (43%, 1.23x)
+- partial: `TreeModelVolumes::RadiusLayerPolygonCache::getMaxCalculatedLayer` :274 and `RadiusLayerPolygonCache::get_max_calculated_layer` :419 (38%, 0.93x)
+- partial: `TreeModelVolumes::RadiusLayerPolygonCache::clear_all_but_radius0` :288 and `RadiusLayerPolygonCache::clear_all_but_radius0` :459 (33%, 1.32x)
+- partial: `TreeModelVolumes::calculatePlaceables` :753 and `TreeModelVolumes::calculate_placeables` :1463 (38%, 0.63x)
+- partial: `TreeModelVolumes::ceilRadius` :862 and `TreeModelVolumes::ceil_radius` :1540 (94%, 1.02x)
+- partial: `TreeModelVolumes::RadiusLayerPolygonCache::sorted` :901 and `RadiusLayerPolygonCache::sorted` :440 (42%, 0.54x)
 
 Missing in the Rust file:
 
@@ -10831,58 +10902,59 @@ Rust only:
 - `union_` :126 — C++ has it in `ClipperUtils`
 - `union_2` :134
 - `union_ex` :142 — C++ has it in `ClipperUtils`
-- `offset_ex` :147 — C++ has it in `ClipperUtils`
-- `offset_polys` :152
-- `diff` :157 — C++ has it in `ClipperUtils`, `Config`
-- `intersection` :162 — C++ has it in `ClipperUtils`, `Fill/FillAdaptive`, `Line`
-- `polygons_simplify` :167 — C++ has it in `Polygon`
-- `append` :173 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
-- `LayerPolygonCache::get` :219 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `LayerPolygonCache::get_mut` :223
-- `LayerPolygonCache::polygons_mutable` :228
-- `RadiusLayerKey::new` :249
-- `RadiusLayerPolygonCache::new` :271
-- `RadiusLayerPolygonCache::get_allocate_layer_data` :288
-- `RadiusLayerPolygonCache::insert_pairs` :298
-- `RadiusLayerPolygonCache::insert_by_layer` :311
-- `RadiusLayerPolygonCache::insert_layers` :322
-- `RadiusLayerPolygonCache::insert_cache` :334
-- `RadiusLayerPolygonCache::get` :439 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `RadiusLayerPolygonCache::contains` :444 — C++ has it in `AdaptiveLayerMerge`, `BoundingBox`, `ExPolygon`
-- `RadiusLayerPolygonCache::max_layer_for_radius` :449
-- `RadiusLayerPolygonCache::get_lower_bound` :461
-- `TreeModelVolumesConfig::default` :518
-- `TreeModelVolumesConfig::with_layers` :536
-- `TreeModelVolumesConfig::layer_z` :545 — C++ has it in `Support/SupportMaterial`, `Support/TreeSupportCommon`
-- `TreeModelVolumesConfig::layer_height` :556 — C++ has it in `SLAPrint`
-- `TreeModelVolumes::new` :642
-- `TreeModelVolumes::with_layer_outlines` :685
-- `TreeModelVolumes::set_bed_area` :716
-- `TreeModelVolumes::set_anti_overhang` :721
-- `TreeModelVolumes::config` :726 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `TreeModelVolumes::layer_count` :731 — C++ has it in `Fill/FillConformalChart`, `GCode`, `Print`
-- `TreeModelVolumes::avoidance_cache` :760
-- `TreeModelVolumes::ceil_radius_min_xy` :782
-- `TreeModelVolumes::get_collision_min_xy` :915
-- `TreeModelVolumes::get_collision_holefree` :936
-- `TreeModelVolumes::get_avoidance_full` :951
-- `TreeModelVolumes::get_placeable_areas` :990
-- `TreeModelVolumes::get_wall_restriction` :1008
-- `TreeModelVolumes::calculate_collision_keys` :1046
-- `TreeModelVolumes::calculate_collision_holefree_keys` :1240
-- `TreeModelVolumes::calculate_avoidance_keys` :1280
-- `TreeModelVolumes::calculate_placeables_keys` :1406
-- `TreeModelVolumes::calculate_wall_restrictions_keys` :1448
-- `TreeModelVolumes::get_collision` :1537 — C++ has it in `Support/TreeSupport`
-- `TreeModelVolumes::get_collision_holefree_pub` :1542
-- `TreeModelVolumes::get_avoidance` :1548 — C++ has it in `Support/TreeSupport`
-- `TreeModelVolumes::get_placeable` :1559
-- `TreeModelVolumes::get_wall_restriction_legacy` :1564
-- `TreeModelVolumes::next_ceil_radius` :1569
-- `TreeModelVolumes::is_precalculated` :1578
-- `point_inside_polygons` :1589
-- `is_safe_position` :1599
-- `find_nearest_safe_position` :1605
+- `tmv_join_code` :154
+- `offset_ex` :164 — C++ has it in `ClipperUtils`
+- `offset_polys` :187
+- `diff` :195 — C++ has it in `ClipperUtils`, `Config`
+- `intersection` :200 — C++ has it in `ClipperUtils`, `Fill/FillAdaptive`, `Line`
+- `polygons_simplify` :205 — C++ has it in `Polygon`
+- `append` :211 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
+- `LayerPolygonCache::get` :257 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `LayerPolygonCache::get_mut` :261
+- `LayerPolygonCache::polygons_mutable` :266
+- `RadiusLayerKey::new` :287
+- `RadiusLayerPolygonCache::new` :309
+- `RadiusLayerPolygonCache::get_allocate_layer_data` :326
+- `RadiusLayerPolygonCache::insert_pairs` :336
+- `RadiusLayerPolygonCache::insert_by_layer` :349
+- `RadiusLayerPolygonCache::insert_layers` :360
+- `RadiusLayerPolygonCache::insert_cache` :372
+- `RadiusLayerPolygonCache::get` :477 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `RadiusLayerPolygonCache::contains` :482 — C++ has it in `AdaptiveLayerMerge`, `BoundingBox`, `ExPolygon`
+- `RadiusLayerPolygonCache::max_layer_for_radius` :487
+- `RadiusLayerPolygonCache::get_lower_bound` :499
+- `TreeModelVolumesConfig::default` :556
+- `TreeModelVolumesConfig::with_layers` :574
+- `TreeModelVolumesConfig::layer_z` :583 — C++ has it in `Support/SupportMaterial`, `Support/TreeSupportCommon`
+- `TreeModelVolumesConfig::layer_height` :594 — C++ has it in `SLAPrint`
+- `TreeModelVolumes::new` :680
+- `TreeModelVolumes::with_layer_outlines` :723
+- `TreeModelVolumes::set_bed_area` :754
+- `TreeModelVolumes::set_anti_overhang` :759
+- `TreeModelVolumes::config` :764 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `TreeModelVolumes::layer_count` :769 — C++ has it in `Fill/FillConformalChart`, `GCode`, `Print`
+- `TreeModelVolumes::avoidance_cache` :798
+- `TreeModelVolumes::ceil_radius_min_xy` :820
+- `TreeModelVolumes::get_collision_min_xy` :953
+- `TreeModelVolumes::get_collision_holefree` :974
+- `TreeModelVolumes::get_avoidance_full` :989
+- `TreeModelVolumes::get_placeable_areas` :1028
+- `TreeModelVolumes::get_wall_restriction` :1046
+- `TreeModelVolumes::calculate_collision_keys` :1084
+- `TreeModelVolumes::calculate_collision_holefree_keys` :1284
+- `TreeModelVolumes::calculate_avoidance_keys` :1326
+- `TreeModelVolumes::calculate_placeables_keys` :1453
+- `TreeModelVolumes::calculate_wall_restrictions_keys` :1496
+- `TreeModelVolumes::get_collision` :1585 — C++ has it in `Support/TreeSupport`
+- `TreeModelVolumes::get_collision_holefree_pub` :1590
+- `TreeModelVolumes::get_avoidance` :1596 — C++ has it in `Support/TreeSupport`
+- `TreeModelVolumes::get_placeable` :1607
+- `TreeModelVolumes::get_wall_restriction_legacy` :1612
+- `TreeModelVolumes::next_ceil_radius` :1617
+- `TreeModelVolumes::is_precalculated` :1626
+- `point_inside_polygons` :1637
+- `is_safe_position` :1647
+- `find_nearest_safe_position` :1653
 
 ### `Support/TreeSupport` (.cpp+.hpp) and `support/tree_support.rs`
 
@@ -11637,14 +11709,14 @@ Tier 3. C++ functions 8 (plus 3 constructors, 0 destructors, 2 operators), Rust 
 
 Missing in the Rust file:
 
-- `EmbossProjection::serialize` :32 (11 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `EmbossProjection::serialize` :32 (11 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `FontFileWithCache::has_value` :109 (11 tokens) — in `emboss.rs`, `g_code_reader.rs`, `gcode/g_code_processor.rs`
 - `EmbossShape::SvgFile::save` :173 (26 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `EmbossShape::SvgFile::load` :180 (39 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `EmbossShape::save` :200 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `EmbossShape::load` :206 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
-- `serialize` :216 (17 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `serialize` :217 (13 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `serialize` :216 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `serialize` :217 (13 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 
 Rust only:
 
@@ -11735,7 +11807,7 @@ Missing in the Rust file:
 - `sample_gradient_curve` :350 (368 tokens)
 - `check_mixed_filament_diameter_consistency` :535 (160 tokens)
 - `expand_mixed_slots_in_unprintables` :562 (122 tokens)
-- `sanitize_mixed_gradient_curve_array` :583 (86 tokens)
+- `sanitize_mixed_gradient_curve_array` :583 (86 tokens) — in `preset_bundle.rs`
 - `try_parse_mixed_components_strict` :599 (237 tokens)
 - `try_parse_mixed_ratios_strict` :641 (188 tokens)
 - `validate_gradient_range_strict` :677 (99 tokens)
@@ -12710,11 +12782,11 @@ Tier 3. C++ functions 31 (plus 9 constructors, 0 destructors, 8 operators), Rust
 
 Missing in the Rust file:
 
-- `ObjectID::serialize` :43 (7 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `ObjectBase::serialize` :97 (7 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ObjectID::serialize` :43 (7 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `ObjectBase::serialize` :97 (7 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `ObjectBase::load_and_construct` :98 (15 tokens)
-- `ObjectWithTimestamp::serialize` :135 (7 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
-- `CutObjectBase::serialize` :191 (22 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `ObjectWithTimestamp::serialize` :135 (7 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
+- `CutObjectBase::serialize` :191 (22 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 
 Rust only:
 
@@ -12851,16 +12923,16 @@ Rust only:
 
 ### `PNGReadWrite` (.cpp+.hpp) and `png_read_write.rs`
 
-Tier 3. C++ functions 24 (plus 1 constructors, 1 destructors, 0 operators), Rust functions 27. Matched 13: faithful 11, partial 2, divergent 0, stub 0.
+Tier 3. C++ functions 24 (plus 1 constructors, 1 destructors, 0 operators), Rust functions 28. Matched 14: faithful 11, partial 3, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `decode_png` :61 and `decode_png` :450 (50%, 0.7x)
-- partial: `write_rgb_or_gray_to_file` :188 and `write_rgb_or_gray_to_file` :646 (34%, 0.5x)
+- partial: `png_read_callback` :49 and `png_read_callback` :438 (71%, 0.45x)
+- partial: `decode_png` :61 and `decode_png` :458 (50%, 0.7x)
+- partial: `write_rgb_or_gray_to_file` :188 and `write_rgb_or_gray_to_file` :654 (34%, 0.5x)
 
 Missing in the Rust file:
 
-- `png_read_callback` :49 (49 tokens)
 - `decode_png` :73 (17 tokens, overload)
 - `decode_colored_png` :103 (517 tokens, overload)
 - `write_rgb_to_file` :277 (18 tokens, overload)
@@ -12879,15 +12951,15 @@ Rust only:
 - `png_channels` :173
 - `paeth_predictor` :182
 - `read_png_after_signature` :201
-- `encode_png` :343
-- `PNGDescr::new` :414
-- `png_check_sig` :444
-- `decode_colored_png_stream` :509
-- `decode_png_buf` :634
-- `write_rgb_to_file_vec` :740
-- `write_gray_to_file_vec` :764
-- `write_rgb_to_file_scaled_vec` :841
-- `write_gray_to_file_scaled_vec` :867
+- `encode_png` :339
+- `PNGDescr::new` :410
+- `png_check_sig` :452
+- `decode_colored_png_stream` :517
+- `decode_png_buf` :642
+- `write_rgb_to_file_vec` :748
+- `write_gray_to_file_vec` :772
+- `write_rgb_to_file_scaled_vec` :849
+- `write_gray_to_file_scaled_vec` :875
 
 ### `PaintReproject` (.cpp+.hpp) and `paint_reproject.rs`
 
@@ -13116,7 +13188,7 @@ Missing in the Rust file:
 
 - `FontProp::save` :88 (62 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `FontProp::load` :97 (62 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
-- `TextConfiguration::serialize` :176 (9 tokens, overload) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `TextConfiguration::serialize` :176 (9 tokens, overload) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 
 Rust only:
 
@@ -13780,7 +13852,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `DrainHole::serialize` :61 (15 tokens) — in `config.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
+- `DrainHole::serialize` :61 (15 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
 - `get_distance` :89 (21 tokens, overload) — in `calib.rs`, `filament_group.rs`, `gcode/tool_order_utils.rs`
 - `hollow_mesh` :311 (49 tokens, overload)
 - `get_distance` :341 (83 tokens, overload) — in `calib.rs`, `filament_group.rs`, `gcode/tool_order_utils.rs`
@@ -14316,7 +14388,7 @@ Missing in the Rust file:
 - `SLAPrint::validate` :616 (334 tokens) — in `print.rs`, `print_config.rs`, `sla/pad.rs`
 - `SLAPrint::set_printer` :671 (11 tokens)
 - `SLAPrint::invalidate_step` :677 (31 tokens)
-- `SLAPrint::process` :689 (518 tokens) — in `gcode/gcode_template.rs`, `gcode/pressure_equalizer.rs`, `print.rs`
+- `SLAPrint::process` :689 (518 tokens) — in `gcode/gcode_template.rs`, `gcode/pressure_equalizer.rs`, `placeholder_parser.rs`
 - `SLAPrint::invalidate_state_by_config_options` :800 (371 tokens)
 - `SLAPrint::is_step_done` :885 (55 tokens) — in `print_object.rs`
 - `SLAPrintObject::invalidate_state_by_config_options` :911 (356 tokens)

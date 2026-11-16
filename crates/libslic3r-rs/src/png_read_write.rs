@@ -199,20 +199,9 @@ fn paeth_predictor(a: i32, b: i32, c: i32) -> i32 {
 /// non-interlaced 8-bit formats supported here. Returns None on any failure,
 /// matching libpng's longjmp-on-error behavior used by these callers.
 fn read_png_after_signature(in_buf: &mut dyn IStream) -> Option<DecodedPng> {
-    // Drain the rest of the encoded stream into memory. libpng pulls bytes via
-    // the read callback on demand; here we pull all remaining bytes.
-    let mut data: Vec<u8> = Vec::new();
-    let mut tmp = [0u8; 8192];
-    let cap = tmp.len();
-    loop {
-        let got = in_buf.read(&mut tmp, cap);
-        if got == 0 {
-            break;
-        }
-        data.extend_from_slice(&tmp[..got]);
-    }
-
-    let mut pos = 0usize;
+    // libpng pulls the stream through the read callback piece by piece: the 8-byte chunk header
+    // (length and type, png_read_chunk_header), the chunk body (png_crc_read) and the 4-byte CRC
+    // (png_crc_finish). The same pieces are read here, each with exactly its size.
     let mut width = 0usize;
     let mut height = 0usize;
     let mut bit_depth = 0i32;
@@ -221,21 +210,30 @@ fn read_png_after_signature(in_buf: &mut dyn IStream) -> Option<DecodedPng> {
     let mut idat: Vec<u8> = Vec::new();
     let mut seen_ihdr = false;
 
-    while pos + 8 <= data.len() {
-        let len = u32::from_be_bytes([
-            data[pos],
-            data[pos + 1],
-            data[pos + 2],
-            data[pos + 3],
-        ]) as usize;
-        let ctype = &data[pos + 4..pos + 8];
-        let body_start = pos + 8;
-        if body_start + len + 4 > data.len() {
+    loop {
+        if !in_buf.is_ok() {
             break;
         }
-        let body = &data[body_start..body_start + len];
+        let mut header = [0u8; 8];
+        png_read_callback(in_buf, &mut header, 8);
+        let len = u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as usize;
+        // png_read_chunk_header reads the length with png_get_uint_31: above 2^31 - 1 is an error.
+        if len > 0x7fff_ffff {
+            return None;
+        }
+        let ctype = [header[4], header[5], header[6], header[7]];
+        let mut body_buf = vec![0u8; len];
+        png_read_callback(in_buf, &mut body_buf, len);
+        let mut crc_buf = [0u8; 4];
+        png_read_callback(in_buf, &mut crc_buf, 4);
+        // A critical chunk with a bad CRC is an error to libpng (png_chunk_error).
+        let crc = png_crc32(png_crc32(0, &ctype), &body_buf);
+        if crc != u32::from_be_bytes(crc_buf) && (ctype[0] & 0x20) == 0 {
+            return None;
+        }
+        let body = body_buf.as_slice();
 
-        match ctype {
+        match &ctype {
             b"IHDR" => {
                 if len < 13 {
                     return None;
@@ -255,8 +253,6 @@ fn read_png_after_signature(in_buf: &mut dyn IStream) -> Option<DecodedPng> {
             }
             _ => {}
         }
-
-        pos = body_start + len + 4; // skip body + CRC
     }
 
     if !seen_ihdr || interlace != 0 {
@@ -433,11 +429,23 @@ pub fn is_png(rb: &ReadBuf) -> bool {
 
 // PNGReadWrite.cpp:47   // Buffer read callback for libpng. It provides an allocated output buffer and
 // PNGReadWrite.cpp:48   // the amount of data it desires to read from the input.
-// PNGReadWrite.cpp:49   static void png_read_callback(...)
+// PNGReadWrite.cpp:49   static void png_read_callback(png_struct *png_ptr, png_bytep outBytes, png_size_t byteCountToRead)
 //
-// In the pure-Rust codec, reading happens in `read_png_after_signature`, which
-// pulls bytes directly from the `IStream`; this preserves the original
-// behavior of routing all reads through the stream's `read`/`is_ok`.
+// The pure-Rust codec calls it as libpng does: once per piece of the stream it needs (a chunk
+// header, a chunk body, a CRC), with exactly that many bytes. `ReadBufStream::read` copies nothing
+// when asked for more than is left, so a reader that asked for "everything" in one large read got
+// nothing at all.
+fn png_read_callback(reader: &mut dyn IStream, out_bytes: &mut [u8], byte_count_to_read: usize) {
+    // PNGReadWrite.cpp:53-54  // Retrieve our input buffer through the png_ptr
+    //                         auto reader = static_cast<IStream *>(png_get_io_ptr(png_ptr));
+    // PNGReadWrite.cpp:56  if (!reader || !reader->is_ok()) return;
+    if !reader.is_ok() {
+        return;
+    }
+
+    // PNGReadWrite.cpp:58  reader->read(static_cast<std::uint8_t *>(outBytes), byteCountToRead);
+    reader.read(out_bytes, byte_count_to_read);
+}
 
 /// Helper that, given a freshly read 8-byte signature, validates it like
 /// `png_check_sig`.

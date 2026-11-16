@@ -624,7 +624,11 @@ mod tests {
         let mut params = FillParams::default();
         params.density = 0.3;
         let mut out: Polylines = Vec::new();
-        fill._fill_surface_single(&params, 0, &(0.0, Point::new(0, 0)), boundary, &mut out);
+        // thickness_layers is a surface's layer count, at least 1 (Surface.hpp:48 defaults it to
+        // 1). With 0, Fill3DHoneycomb.cpp:223 makes layerHeight 0, zScale and gridSize NaN, and
+        // `Point(gridSize*4, gridSize*4)` (Fill3DHoneycomb.cpp:253) an undefined conversion: not a
+        // case the pin defines, so the test passes the default.
+        fill._fill_surface_single(&params, 1, &(0.0, Point::new(0, 0)), boundary, &mut out);
         // Just verify no crash; output count is geometry-dependent.
         let _ = out.len();
     }

@@ -309,7 +309,18 @@ mod tests {
     }
 
     /// A mesh of two disconnected tetrahedra so `its_is_splittable` is true.
+    ///
+    /// The faces are wound consistently (outward). `its_split` walks
+    /// `its_face_neighbors`, which pairs an edge only with the same edge in the
+    /// opposite direction, so a tetrahedron with inconsistent winding falls
+    /// apart into two-face pieces: the pin's `its_split` gives 4 parts of 2
+    /// faces for the earlier winding (0,1,2),(0,1,3),(1,2,3),(0,2,3) and 2 parts
+    /// of 4 faces for this one (a generator calling the pin's `its_split`).
     fn two_part_mesh() -> TriangleMesh {
+        two_part_mesh_wound(true)
+    }
+
+    fn two_part_mesh_wound(consistent: bool) -> TriangleMesh {
         // Tetra A around origin.
         let mut verts = vec![
             Point3F::new(0.0, 0.0, 0.0),
@@ -324,17 +335,50 @@ mod tests {
             Point3F::new(10.0, 1.0, 0.0),
             Point3F::new(10.0, 0.0, 1.0),
         ]);
-        let indices = vec![
-            Triangle::new(0, 1, 2),
-            Triangle::new(0, 1, 3),
-            Triangle::new(1, 2, 3),
-            Triangle::new(0, 2, 3),
-            Triangle::new(4, 5, 6),
-            Triangle::new(4, 5, 7),
-            Triangle::new(5, 6, 7),
-            Triangle::new(4, 6, 7),
-        ];
+        let indices = if consistent {
+            vec![
+                Triangle::new(0, 2, 1),
+                Triangle::new(0, 1, 3),
+                Triangle::new(1, 2, 3),
+                Triangle::new(0, 3, 2),
+                Triangle::new(4, 6, 5),
+                Triangle::new(4, 5, 7),
+                Triangle::new(5, 6, 7),
+                Triangle::new(4, 7, 6),
+            ]
+        } else {
+            vec![
+                Triangle::new(0, 1, 2),
+                Triangle::new(0, 1, 3),
+                Triangle::new(1, 2, 3),
+                Triangle::new(0, 2, 3),
+                Triangle::new(4, 5, 6),
+                Triangle::new(4, 5, 7),
+                Triangle::new(5, 6, 7),
+                Triangle::new(4, 6, 7),
+            ]
+        };
         TriangleMesh::from_parts(verts, indices)
+    }
+
+    #[test]
+    fn test_model_to_csgmesh_do_splits_inconsistent_winding() {
+        // The pin's its_split gives 4 two-face parts for this winding, so the
+        // output is Push + 4 union parts + Pop (see two_part_mesh).
+        let vol = ModelVolume {
+            mesh: two_part_mesh_wound(false),
+            is_model_part: true,
+            is_negative_volume: false,
+            matrix: Transform3D::identity(),
+            name: "splitme".to_string(),
+        };
+        let volumes: Vec<&ModelVolume> = vec![&vol];
+        let flags = ModelParts::POSITIVE | ModelParts::DO_SPLITS;
+        let (parts, has_split) = model_to_csgmesh(&volumes, &Transform3D::identity(), flags);
+        assert!(has_split);
+        assert_eq!(parts.len(), 6);
+        assert_eq!(parts[0].stack_operation, CSGStackOp::Push);
+        assert_eq!(parts[5].stack_operation, CSGStackOp::Pop);
     }
 
     #[test]

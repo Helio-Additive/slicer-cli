@@ -153,7 +153,7 @@ catch up with.
 cargo build -p slicer-cli-rust        # target/debug/slicer_cli-rust and slicer-parity
 cargo test -p slicer-cli-rust
 bash tests/rust-engine/test_slicer_cli_rust.sh target/debug/slicer_cli-rust
-cargo test --workspace --no-run       # the engine's tests compile; some fail (HANDOFF.md)
+cargo test --workspace --no-run       # the engine's tests compile; their status is in HANDOFF.md
 # one job through slicer_cli and the Rust engine, then the score
 COMPARE_KEEP_DIR=<dir> target/debug/slicer-parity compare --config tests/rust-engine/configs/<job>.jsonnet
 python3 scripts/parity/seq_parity.py <dir>/rust.gcode <dir>/bambu.gcode

@@ -10,7 +10,7 @@
 //! Each polyline is a sequence of ExtrusionJunction points with per-vertex widths.
 
 use crate::arachne::utils::extrusion_junction::ExtrusionJunction;
-use crate::geometry::{cross2f, Coord, CoordF, Line, Point, Polygon, ThickPolyline};
+use crate::geometry::{Coord, CoordF, Line, Point, Polygon, ThickPolyline};
 use crate::scaled;
 
 /// `scaled<double>(v)` — scale a millimetre value to the crate's coordinate space
@@ -113,6 +113,50 @@ impl ExtrusionLine {
     #[inline]
     pub fn push_back(&mut self, junction: ExtrusionJunction) {
         self.junctions.push(junction);
+    }
+
+    /// ExtrusionLine.hpp:94  `std::vector<ExtrusionJunction>::const_iterator begin() const`:
+    /// the junctions from the first.
+    #[inline]
+    pub fn begin(&self) -> std::slice::Iter<'_, ExtrusionJunction> {
+        self.junctions.iter()
+    }
+
+    /// ExtrusionLine.hpp:95  `end() const`: the position past the last junction, an exhausted
+    /// iterator.
+    #[inline]
+    pub fn end(&self) -> std::slice::Iter<'_, ExtrusionJunction> {
+        self.junctions[self.junctions.len()..].iter()
+    }
+
+    /// ExtrusionLine.hpp:96  `const_reverse_iterator rbegin() const`: the junctions from the last.
+    #[inline]
+    pub fn rbegin(&self) -> std::iter::Rev<std::slice::Iter<'_, ExtrusionJunction>> {
+        self.junctions.iter().rev()
+    }
+
+    /// ExtrusionLine.hpp:97  `const_reverse_iterator rend() const`: the position before the first
+    /// junction, an exhausted reverse iterator.
+    #[inline]
+    pub fn rend(&self) -> std::iter::Rev<std::slice::Iter<'_, ExtrusionJunction>> {
+        self.junctions[..0].iter().rev()
+    }
+
+    /// ExtrusionLine.hpp:107  `template<typename... Args> void emplace_back(Args&&... args)
+    /// { junctions.emplace_back(args...); }` — the junction is built by the caller
+    /// (`ExtrusionJunction::new(p, w, perimeter_index)`).
+    #[inline]
+    pub fn emplace_back(&mut self, junction: ExtrusionJunction) {
+        self.junctions.push(junction);
+    }
+
+    /// ExtrusionLine.hpp:112-115  `template<class iterator> void insert(const_iterator pos,
+    /// iterator first, iterator last) { junctions.insert(pos, first, last); }`
+    #[inline]
+    pub fn insert_range<I: IntoIterator<Item = ExtrusionJunction>>(&mut self, pos: usize, junctions: I) {
+        let tail = self.junctions.split_off(pos);
+        self.junctions.extend(junctions);
+        self.junctions.extend(tail);
     }
 
     /// Remove junction at index
@@ -496,13 +540,17 @@ impl ExtrusionLine {
         // ExtrusionLine.cpp:269
         if self.junctions.len() >= 3 {
             // ExtrusionLine.cpp:270 — Vec2d p1 = this->junctions.back().p.cast<double>();
-            let mut p1 = self.junctions.last().unwrap().p.to_f64();
+            // `cast<double>()` keeps the scaled coordinates (no unscale).
+            let back = self.junctions.last().unwrap().p;
+            let mut p1 = (back.x as f64, back.y as f64);
             // ExtrusionLine.cpp:271
             for junction in &self.junctions {
                 // ExtrusionLine.cpp:272 — Vec2d p2 = junction.p.cast<double>();
-                let p2 = junction.p.to_f64();
+                let p2 = (junction.p.x as f64, junction.p.y as f64);
                 // ExtrusionLine.cpp:273 — a += cross2(p1, p2);
-                a += cross2f(p1, p2);
+                // cross2 (Point.hpp:86-88) is `v1.x() * v2.y() - v1.y() * v2.x()`, one expression
+                // that clang contracts to fma(v1.x, v2.y, -(v1.y * v2.x)).
+                a += p1.0.mul_add(p2.1, -(p1.1 * p2.0));
                 // ExtrusionLine.cpp:274
                 p1 = p2;
             }
@@ -872,10 +920,11 @@ mod tests {
         line.push_back(ExtrusionJunction::new(Point::new(1000, 1000), 100, 0));
         line.push_back(ExtrusionJunction::new(Point::new(0, 1000), 100, 0));
 
-        let area = line.area();
-        // Area of 1000x1000 square = 1,000,000
-        // Depending on winding order, could be positive or negative
-        assert!((area.abs() - 1_000_000.0).abs() < 1.0);
+        // In scaled units, counter-clockwise: the pin's ExtrusionLine::area gives exactly
+        // 1000000 on this square (a generator calling it).
+        assert_eq!(line.area(), 1_000_000.0);
+        line.reverse();
+        assert_eq!(line.area(), -1_000_000.0);
     }
 
     #[test]

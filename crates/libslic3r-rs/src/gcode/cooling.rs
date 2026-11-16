@@ -1029,68 +1029,21 @@ impl CoolingBuffer {
         }
     }
 
-    /// Main layer slowdown calculation with algorithm selection
-    /// Reference: CoolingBuffer.cpp:290-420
+    /// CoolingBuffer.cpp:259-350  `float CoolingBuffer::calculate_layer_slowdown(std::vector<PerExtruderAdjustments> &)`:
+    /// slows the extruders down tier by tier (by slow_down_layer_time) and
+    /// returns the layer time after the slowdown. `m_cooling_logic_proportional`
+    /// is `config.slowdown_proportional` here.
+    ///
+    /// An earlier version first scaled every adjustable move by
+    /// `min_layer_time / layer time` through `apply_slowdown` and returned 1.0
+    /// when no slowdown was needed or possible; neither is in the C++, which
+    /// reads only the per-extruder slow_down_layer_time / slow_down_min_speed.
+    /// This type is not on the slicing path (the G-code pipeline uses
+    /// `cooling_buffer::CoolingBuffer` over the GCodeEditor data).
     pub fn calculate_layer_slowdown(
         &self,
         per_extruder_adjustments: &mut [PerExtruderAdjustments],
     ) -> f32 {
-        // Calculate total layer time
-        let total_time: f64 = per_extruder_adjustments
-            .iter()
-            .map(|adj| adj.total_time())
-            .sum();
-
-        // If we're already at or above minimum layer time, no slowdown needed
-        if total_time >= self.config.min_layer_time {
-            return 1.0;
-        }
-
-        // Calculate how much time can be slowed down
-        let total_slowdown_time: f64 = per_extruder_adjustments
-            .iter()
-            .map(|adj| adj.slowdown_time)
-            .sum();
-
-        let fixed_time = total_time - total_slowdown_time;
-
-        // If nothing can be slowed down, return 1.0
-        if total_slowdown_time <= 0.0 {
-            return 1.0;
-        }
-
-        // Calculate required slowdown factor
-        let target_slowdown_time = self.config.min_layer_time - fixed_time;
-        let slowdown_factor = if target_slowdown_time > 0.0 {
-            target_slowdown_time / total_slowdown_time
-        } else {
-            1.0
-        };
-
-        // The slowdown factor is how much longer we need the slowable time to be
-        // So if we need 2x the time, we divide speed by 2 (factor = 2)
-        let factor = slowdown_factor.max(1.0);
-
-        // Calculate the maximum factor based on minimum print speed
-        // We need to check all moves to find the limiting factor
-        let mut max_factor = f64::MAX;
-        for adj in per_extruder_adjustments.iter() {
-            for mov in &adj.moves {
-                if mov.can_slowdown && mov.feedrate > 0.0 {
-                    let move_max_factor = mov.feedrate / self.config.min_print_speed;
-                    max_factor = max_factor.min(move_max_factor);
-                }
-            }
-        }
-
-        // Clamp the factor
-        let final_factor = factor.min(max_factor).max(1.0);
-
-        // Apply the slowdown to all extruders
-        for adj in per_extruder_adjustments.iter_mut() {
-            adj.apply_slowdown(final_factor, self.config.min_print_speed);
-        }
-
         // Sort extruders by slow_down_layer_time
         let mut by_slowdown_time: Vec<usize> = Vec::new();
         let mut elapsed_time_total0 = 0.0f32;
@@ -1146,7 +1099,11 @@ impl CoolingBuffer {
                 per_extruder_adjustments[begin_idx].slow_down_layer_time * 1.001;
 
             if total > slow_down_layer_time {
-                // No adjustment needed
+                // CoolingBuffer.cpp:311-312: nothing is adjusted for this tier,
+                // but the C++ still falls through to CoolingBuffer.cpp:346 and
+                // counts the extruder's time (an earlier `continue` skipped it
+                // and the layer time came back short).
+                elapsed_time_total0 += per_extruder_adjustments[begin_idx].elapsed_time_total();
                 continue;
             }
 
@@ -1268,30 +1225,29 @@ impl CoolingBuffer {
         extruder_id: u32,
     ) -> CoolingResult {
         let mut adjustments = vec![PerExtruderAdjustments::new(extruder_id as usize)];
+        // GCodeEditor.cpp:117-125: the per-extruder slowdown settings come from
+        // the config (slow_down_layer_time, slow_down_min_speed, cooling logic).
+        adjustments[0].slow_down_layer_time = self.config.min_layer_time as f32;
+        adjustments[0].slow_down_min_speed = self.config.min_print_speed as f32;
+        adjustments[0].cooling_slowdown_logic = self.config.slowdown_logic;
+        adjustments[0].cooling_perimeter_transition_distance = self.config.perimeter_transition_distance as f32;
 
         for mov in moves {
             adjustments[0].add_move(mov);
         }
 
         let original_time = adjustments[0].total_time();
-        // Skip expensive slowdown calculation if layer time already exceeds minimum
-        let slowdown_factor = if original_time >= self.config.min_layer_time {
-            1.0f32
-        } else {
-            self.calculate_layer_slowdown(&mut adjustments)
-        };
-        let adjusted_time = if slowdown_factor > 1.0 {
-            adjustments[0].adjusted_total_time()
-        } else {
-            original_time
-        };
+        // CoolingBuffer.cpp:349: calculate_layer_slowdown returns the layer time
+        // after the slowdown; the factor is how much longer the layer became.
+        let adjusted_time = self.calculate_layer_slowdown(&mut adjustments) as f64;
+        let slowdown_factor = if original_time > 0.0 { adjusted_time / original_time } else { 1.0 };
         let fan_speed = self.calculate_fan_speed(layer_index, adjusted_time);
 
         CoolingResult {
             moves: adjustments.into_iter().next().unwrap().moves,
             original_time,
             adjusted_time,
-            slowdown_factor: slowdown_factor as f64,
+            slowdown_factor,
             fan_speed,
         }
     }
@@ -3050,9 +3006,12 @@ mod tests {
         )); // 10 seconds
 
         let mut adjustments = vec![adj];
-        let factor = buffer.calculate_layer_slowdown(&mut adjustments);
+        let layer_time = buffer.calculate_layer_slowdown(&mut adjustments);
 
-        assert!((factor - 1.0).abs() < 0.001);
+        // CoolingBuffer.cpp:311-312,346-349: above slow_down_layer_time nothing
+        // is adjusted and the layer time comes back; the pin returns 10.
+        assert!((layer_time - 10.0).abs() < 1e-5);
+        assert!(!adjustments[0].moves[0].slowdown);
     }
 
     #[test]
@@ -3064,8 +3023,11 @@ mod tests {
         };
         let buffer = CoolingBuffer::new(config);
 
-        // Create a layer that takes 5 seconds (below minimum)
+        // Create a layer that takes 5 seconds (below minimum). The C++ reads
+        // the per-extruder slow_down_layer_time (GCodeEditor.cpp:118), not a
+        // buffer-wide minimum, so the 10 s target is set on the extruder.
         let mut adj = PerExtruderAdjustments::new(0);
+        adj.slow_down_layer_time = 10.0;
         adj.add_move(CoolingMove::extrusion(
             250.0,
             50.0,
@@ -3073,11 +3035,15 @@ mod tests {
         )); // 5 seconds
 
         let mut adjustments = vec![adj];
-        let factor = buffer.calculate_layer_slowdown(&mut adjustments);
+        let layer_time = buffer.calculate_layer_slowdown(&mut adjustments);
 
-        // Should slow down by factor of 2 to reach 10 seconds
-        assert!(factor > 1.0);
-        assert!((factor - 2.0).abs() < 0.1);
+        // CoolingBuffer.cpp:259-350 returns the layer time after the slowdown,
+        // not a factor: the target is slow_down_layer_time * 1.001
+        // (CoolingBuffer.cpp:310). The pin's calculate_layer_slowdown returns
+        // 10.0100002 with the line at 24.9750252 mm/s (a generator calling it).
+        assert!((layer_time - 10.0100002).abs() < 1e-4);
+        assert!((adjustments[0].moves[0].feedrate - 24.9750252).abs() < 1e-4);
+        assert!(adjustments[0].moves[0].slowdown);
     }
 
     #[test]
@@ -3209,9 +3175,11 @@ mod tests {
         let mut adjustments = vec![adj];
         let final_time = buffer.calculate_layer_slowdown(&mut adjustments);
 
-        // Should reach ~10 seconds
-        assert!(final_time >= 9.5);
-        assert!(final_time <= 10.5);
+        // The pin's calculate_layer_slowdown returns 10.0100002 (target
+        // slow_down_layer_time * 1.001, CoolingBuffer.cpp:310) with the line at
+        // 24.9750252 mm/s (a generator calling it).
+        assert!((final_time - 10.0100002).abs() < 1e-4);
+        assert!((adjustments[0].moves[0].feedrate - 24.9750252).abs() < 1e-4);
     }
 
     /// Test non-proportional slowdown algorithm (equalize feedrates)
@@ -3243,9 +3211,12 @@ mod tests {
         let mut adjustments = vec![adj];
         let final_time = buffer.calculate_layer_slowdown(&mut adjustments);
 
-        // Should reach target by slowing fast moves first
-        assert!(final_time >= 9.5);
-        assert!(final_time <= 10.5);
+        // Should reach target by slowing fast moves first. The pin returns
+        // 10.0100002 with both lines at 29.9700298 mm/s (a generator calling it).
+        assert!((final_time - 10.0100002).abs() < 1e-4);
+        for m in &adjustments[0].moves {
+            assert!((m.feedrate - 29.9700298).abs() < 1e-4);
+        }
     }
 
     /// Test ConsistentSurface slowdown (two-phase)
@@ -3279,9 +3250,14 @@ mod tests {
         let mut adjustments = vec![adj];
         let final_time = buffer.calculate_layer_slowdown(&mut adjustments);
 
-        // Should prioritize slowing internal moves first
-        assert!(final_time >= 14.5);
-        assert!(final_time <= 15.5);
+        // Should prioritize slowing internal moves first. The pin returns
+        // 15.0159121, the external perimeter untouched at 2 s and the internal
+        // one at 13.0159121 s, 15.0976562 mm/s (a generator calling it).
+        assert!((final_time - 15.0159121).abs() < 1e-4);
+        assert!((adjustments[0].moves[0].time - 2.0).abs() < 1e-6);
+        assert!(!adjustments[0].moves[0].slowdown);
+        assert!((adjustments[0].moves[1].time - 13.0159121).abs() < 1e-4);
+        assert!((adjustments[0].moves[1].feedrate - 15.0976562).abs() < 1e-4);
     }
 
     /// Test binary search for time stretch target
@@ -3349,9 +3325,16 @@ mod tests {
         let mut adjustments = vec![adj0, adj1];
         let final_time = buffer.calculate_layer_slowdown(&mut adjustments);
 
-        // Total should reach 10 seconds (both extruders combined)
-        assert!(final_time >= 9.5);
-        assert!(final_time <= 10.5);
+        // CoolingBuffer.cpp:305-347: the first tier slows both extruders to
+        // 10.01 s together; the second tier then sums the slowed extruder 0
+        // with extruder 1's time_total, which was taken before any slowdown
+        // (CoolingBuffer.cpp:275, 309), finds 8.006 s and slows extruder 1
+        // again. The pin's calculate_layer_slowdown returns 12.0139999 with
+        // extruder 0 at 6.00600052 s and extruder 1 at 6.0079999 s (a generator
+        // calling it), not the 10 s the two extruders together would need.
+        assert!((final_time - 12.0139999).abs() < 1e-4);
+        assert!((adjustments[0].moves[0].time - 6.00600052).abs() < 1e-4);
+        assert!((adjustments[1].moves[0].time - 6.0079999).abs() < 1e-4);
     }
 
     /// Test non-adjustable segment creation

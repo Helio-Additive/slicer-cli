@@ -557,7 +557,13 @@ mod tests {
     // Keep references to the otherwise-unused-in-tests private helpers so the
     // compiler verifies them (they are exercised only by the blocked CGAL
     // pipeline in C++).
+    // CutSurface.cpp:824-827: a size mismatch is `assert(false); return {};`.
+    // `assert` is live only without NDEBUG (the port maps it to
+    // `debug_assert!`), so a debug build stops at the assertion exactly as a
+    // debug C++ build aborts, and a release build (slicer_cli is built with
+    // -DNDEBUG) returns the empty set.
     #[test]
+    #[cfg_attr(debug_assertions, should_panic(expected = "assertion failed"))]
     fn its_mask_size_mismatch_returns_empty() {
         let its = indexed_triangle_set::default();
         let mask = vec![true]; // size != its.indices.size() (0)

@@ -544,7 +544,11 @@ mod tests {
         // NSVGUtils.cpp:255  static_cast<coord_t>(std::round(val * scale))
         assert_eq!(to_coor(1.0, 100.0), 100);
         assert_eq!(to_coor(1.004, 100.0), 100);
-        assert_eq!(to_coor(1.005, 100.0), 101);
+        // 1.005f is 1.00499999523: times 100 it is 100.4999995, which rounds to 100. The pin's
+        // expression gives 100 (a generator evaluating std::round(1.005f * 100.)).
+        assert_eq!(to_coor(1.005, 100.0), 100);
+        assert_eq!(to_coor(1.0051, 100.0), 101);
+        assert_eq!(to_coor(-1.5, 1.0), -2);
     }
 
     #[test]

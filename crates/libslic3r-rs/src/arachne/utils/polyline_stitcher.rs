@@ -856,9 +856,17 @@ mod tests {
             10_000,
         );
 
-        assert_eq!(result_lines.len(), 1);
+        // Both lines are shorter than the snap distance (10000), so every end point found near
+        // the chain's back is also within snap distance of the chain's front: each is taken for a
+        // closing segment, and a chain this short may not close (PolylineStitcher.hpp:107-113).
+        // Nothing is joined, and each line comes out as reversed by the second pass (canReverse is
+        // true for Polygons). The pin's stitch gives exactly this (a generator running the
+        // template on the same two lines as odd ExtrusionLines, whose canReverse/canConnect are
+        // true as well): (50,0) (0,0) and (100,0) (50,0).
         assert_eq!(result_polygons.len(), 0);
-        assert!(result_lines[0].points.len() >= 3);
+        assert_eq!(result_lines.len(), 2);
+        assert_eq!(result_lines[0].points, vec![Point::new(50, 0), Point::new(0, 0)]);
+        assert_eq!(result_lines[1].points, vec![Point::new(100, 0), Point::new(50, 0)]);
     }
 
     #[test]

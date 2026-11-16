@@ -1240,7 +1240,19 @@ where
                             break;
                         }
                     }
-                    // ShortestPath.cpp:878-883 (NDEBUG drain omitted)
+                    // ShortestPath.cpp:878-883: the debug build drains the queue, checking that
+                    // what is left are end points already connected; a release (NDEBUG) build
+                    // leaves them there. The queue is not read again either way.
+                    if cfg!(debug_assertions) {
+                        while !queue.is_empty() {
+                            let top = *queue.top().unwrap();
+                            debug_assert!(
+                                end_points.borrow()[top].edge_out != NULLPTR
+                                    && end_points.borrow()[top].chain_id > 0
+                            );
+                            queue.pop();
+                        }
+                    }
                     break;
                 } else {
                     // Update end points of the flipped segments.
@@ -1301,7 +1313,9 @@ where
             }
             num_iter -= 1;
         }
-        assert!(queue.is_empty());
+        // ShortestPath.cpp:918  assert(queue.empty()); — an assert, compiled out of the release
+        // build, and true in the debug build only because of the drain above.
+        debug_assert!(queue.is_empty());
 
         // Now interconnect pairs of segments into a chain.
         // ShortestPath.cpp:921-968

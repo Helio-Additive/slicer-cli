@@ -211,13 +211,17 @@ mod tests {
 
     #[test]
     fn test_get_angle_left_pointy() {
-        // Test pointy bit (0 degrees)
+        // a and c on opposite sides of b: ba = (100, 0), bc = (-100, 0), det == 0 and the x signs
+        // differ, so linearAlg2D.hpp:110 returns float(M_PI), the "straight bit", not 0. The pin's
+        // getAngleLeft gives 3.14159274 on these points (a generator calling it).
         let a = Point::new(200, 0);
         let b = Point::new(100, 0);
         let c = Point::new(0, 0);
+        assert_eq!(get_angle_left(a, b, c), PI as f32);
 
-        let angle = get_angle_left(a, b, c);
-        assert!(angle.abs() < 0.001);
+        // The pointy bit (linearAlg2D.hpp:108-109): a and c on the same side of b.
+        assert_eq!(get_angle_left(Point::new(200, 0), b, Point::new(300, 0)), 0.0);
+        assert_eq!(get_angle_left(Point::new(100, 200), b, Point::new(100, 300)), 0.0);
     }
 
     #[test]
@@ -238,13 +242,11 @@ mod tests {
         let b = Point::new(100, 100);
         let c = Point::new(200, 0);
 
-        // Point inside the corner
-        let inside = Point::new(100, 50);
-        assert!(is_inside_corner(a, b, c, inside));
-
-        // Point outside the corner
-        let outside = Point::new(100, 150);
-        assert!(!is_inside_corner(a, b, c, outside));
+        // a -> b -> c turns right, so the side left of the corner is the one above b: the pin's
+        // isInsideCorner returns false for (100, 50) and true for (100, 150) (a generator calling
+        // it on these points).
+        assert!(!is_inside_corner(a, b, c, Point::new(100, 50)));
+        assert!(is_inside_corner(a, b, c, Point::new(100, 150)));
     }
 
     #[test]
@@ -274,13 +276,11 @@ mod tests {
         let b = Point::new(100, 100);
         let c = Point::new(200, 50);
 
-        // Point inside
-        let inside = Point::new(100, 80);
-        assert!(is_inside_corner(a, b, c, inside));
-
-        // Point way outside
-        let outside = Point::new(100, 0);
-        assert!(!is_inside_corner(a, b, c, outside));
+        // A right turn at b again: the pin's isInsideCorner returns false for both points below b,
+        // (100, 80) and (100, 0) (a generator calling it on these points), true above it.
+        assert!(!is_inside_corner(a, b, c, Point::new(100, 80)));
+        assert!(!is_inside_corner(a, b, c, Point::new(100, 0)));
+        assert!(is_inside_corner(a, b, c, Point::new(100, 200)));
     }
 
     #[test]
@@ -290,9 +290,10 @@ mod tests {
         let b = Point::new(100, 100);
         let c = Point::new(150, 0);
 
-        // Point inside the narrow corner
-        let inside = Point::new(100, 50);
-        assert!(is_inside_corner(a, b, c, inside));
+        // The narrow wedge between ba and bc lies right of the corner a -> b -> c: the pin's
+        // isInsideCorner returns false for (100, 50) (a generator calling it on these points).
+        assert!(!is_inside_corner(a, b, c, Point::new(100, 50)));
+        assert!(is_inside_corner(a, b, c, Point::new(100, 150)));
     }
 
     #[test]
@@ -325,19 +326,11 @@ mod tests {
         let b = Point::new(100, 100);
         let a = Point::new(100, 0);
 
-        // 45 degrees
-        let c1 = Point::new(170, 70);
-        let angle1 = get_angle_left(a, b, c1);
-        assert!(angle1 > 0.0 && angle1 < PI as f32 / 2.0);
-
-        // 90 degrees
-        let c2 = Point::new(200, 100);
-        let angle2 = get_angle_left(a, b, c2);
-        assert!((angle2 - PI as f32 / 2.0).abs() < 0.1);
-
-        // 270 degrees
-        let c3 = Point::new(0, 100);
-        let angle3 = get_angle_left(a, b, c3);
-        assert!((angle3 - 3.0 * PI as f32 / 2.0).abs() < 0.1);
+        // Walking up from a to b, "left" is -x, so a turn towards +x leaves the larger angle on the
+        // left. The values are those of the pin's getAngleLeft on these points (a generator
+        // calling it): 5.11728096, 4.71238899 (3 pi / 2) and 1.57079637 (pi / 2).
+        assert_eq!(get_angle_left(a, b, Point::new(170, 70)), 5.11728096_f32);
+        assert_eq!(get_angle_left(a, b, Point::new(200, 100)), 4.71238899_f32);
+        assert_eq!(get_angle_left(a, b, Point::new(0, 100)), 1.57079637_f32);
     }
 }

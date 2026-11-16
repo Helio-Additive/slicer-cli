@@ -225,8 +225,25 @@ fn add_extra_point_targets_the_bottom_edge() {
     for i in 1..=3 {
         assert_eq!(out.points()[i].y, 0, "point {} should sit on the bottom edge", i);
     }
-    // The middle of the trio is the edge midpoint.
-    assert_eq!(out.points()[2].x, slicer::scaled(17.5));
+    // The middle of the trio is the midpoint of the scaled edge, (a + b) * 0.5f
+    // rounded with lround (WipeTower.cpp:531, :555-560): the rectangle corner
+    // is scaled(Vec2f(35, 0)) = 3500000, so the midpoint is 1750000, not
+    // scaled(17.5) = 1749999. The pin's generate_rectange_polygon and
+    // add_extra_point print exactly these seven points (a generator calling them).
+    assert_eq!(out.points()[2].x, 1750000);
+    let expect: Vec<Point> = [
+        (0, 0),
+        (1625001, 0),
+        (1750000, 0),
+        (1874999, 0),
+        (3500000, 0),
+        (3500000, 3850000),
+        (0, 3850000),
+    ]
+    .iter()
+    .map(|&(x, y)| Point::new(x, y))
+    .collect();
+    assert_eq!(out.points(), &expect[..]);
 }
 
 #[test]
