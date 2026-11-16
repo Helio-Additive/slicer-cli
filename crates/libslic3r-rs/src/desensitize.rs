@@ -395,7 +395,7 @@ pub fn nlohmann_parse(text: &str) -> Option<Value> {
 
 /// serializer.hpp:94-369 — `serializer::dump(val, pretty_print, ensure_ascii = false,
 /// indent_step, current_indent)`.
-fn nlohmann_dump(val: &Value, pretty_print: bool, indent_step: usize, current_indent: usize, o: &mut String) {
+pub(crate) fn nlohmann_dump(val: &Value, pretty_print: bool, indent_step: usize, current_indent: usize, o: &mut String) {
     match val {
         Value::Object(object) => {
             if object.is_empty() {

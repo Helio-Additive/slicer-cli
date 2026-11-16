@@ -885,5 +885,138 @@
    "LogSinkUtil::get_log_filename_format",
    "current_pid"
   ]
+ },
+ {
+  "unit": "Format/AssemblyStepsJson",
+  "round": "909",
+  "evidence": "tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal",
+  "functions": [
+   "json_get_string",
+   "json_get_int",
+   "json_get_size_t",
+   "json_get_bool",
+   "json_get_assembly_step_kind",
+   "json_get_double",
+   "json_get_vec2d",
+   "color_to_json",
+   "bound_volumes_to_json",
+   "bound_volumes_from_json",
+   "color_from_json",
+   "transform3d_to_json",
+   "transform3d_from_json",
+   "assembly_steps_version_needs_recompute",
+   "assembly_steps_json_last_step_is_final_assembly",
+   "collect_step_objects",
+   "find_step_by_id",
+   "assembly_steps_json_last_step_covers_model",
+   "assembly_steps_json_mark_last_step_final_assembly",
+   "assembly_steps_json_with_qualified_assembly",
+   "qualified_assembly_result_json",
+   "assembly_steps_json_file_meta",
+   "assembly_steps_json_with_version",
+   "matrix4_to_json",
+   "json_to_matrix4",
+   "assembly_model_to_json_string",
+   "assembly_model_from_json_string",
+   "to_json",
+   "from_json",
+   "create_from_json",
+   "get_assembly_part_number_label_font_size",
+   "get_camera_ref_viewport_w",
+   "get_camera_ref_viewport_h",
+   "load_pdf_export_params",
+   "load_assembly_part_number_label_font_size",
+   "load_camera_ref_viewport",
+   "load",
+   "load_from_string",
+   "to_json_string",
+   "from_json_string"
+  ]
+ },
+ {
+  "unit": "Format/AssemblyTreeJson",
+  "round": "909",
+  "evidence": "tests/assembly_tree_json_native_parity.rs: 40 trees written and 194 documents read (102 accepted) against AssemblyTreeJson.cpp built with the bundled nlohmann 3.10.4; texts and type_error texts equal",
+  "functions": [
+   "node_to_json",
+   "node_from_json",
+   "to_json_string",
+   "from_json_string"
+  ]
+ },
+ {
+  "unit": "format",
+  "round": "909",
+  "evidence": "tests/format_native_parity.rs: 4,161 calls of Slic3r::format (format.hpp over Boost.Format and libc++), 3,609 results and 552 exceptions byte-equal",
+  "functions": [
+   "format_recursive",
+   "format"
+  ]
+ },
+ {
+  "unit": "PerfTrace",
+  "round": "909",
+  "evidence": "tests/perf_trace_native_parity.rs: 11 steps through PerfTrace.cpp built with a recording Log.hpp, 21 records of equal level and message",
+  "functions": [
+   "perf_mark"
+  ]
+ },
+ {
+  "unit": "TextureToColor/CgalUtils",
+  "round": "909",
+  "evidence": "tests/texture_to_color_cgal_utils_native_parity.rs: meshes converted both ways and compared with CGAL::Surface_mesh 6.1.1 index by index (halfedge of every vertex and face, target/face/next/prev of every halfedge), halfedge compatibility, kernel constructions and AABB-tree closest points bit for bit",
+  "functions": [
+   "trimesh_to_cgal",
+   "cgal_to_trimesh",
+   "convert_trimesh_to_cgal",
+   "is_mesh_halfedge_compatible"
+  ]
+ },
+ {
+  "unit": "TextureToColor/ColorUtils",
+  "round": "909",
+  "evidence": "tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit",
+  "functions": [
+   "average_edge_length_impl",
+   "calc_face_normals",
+   "calc_nearest_color_id",
+   "ciede2000",
+   "cluster_adaptive",
+   "cluster_k_means",
+   "cluster_to_specified_colors",
+   "calc_rgb_color_difference_by_ciede2000",
+   "calc_rgb_color_difference_by_ciede2000_srgb01",
+   "farthest_point_sampling_init",
+   "kmeans_core",
+   "get_components",
+   "get_connected_face_groups",
+   "convert_hsv_to_rgb",
+   "is_closed",
+   "convert_lab_to_rgb",
+   "mesh_cluster",
+   "normalize",
+   "convert_rgb_to_hsv",
+   "convert_rgb_to_lab",
+   "convert_rgb_to_xyz",
+   "save_polylines",
+   "smooth_region",
+   "smooth_region_labels",
+   "smooth_region_topo_boundary",
+   "smooth_region_geom_boundary",
+   "calc_rgb_color_difference_by_squared_rgb_double",
+   "calc_rgb_color_difference_by_squared_rgb",
+   "convert_srgb01_to_lab",
+   "convert_srgb01_to_xyz",
+   "convert_xyz_to_lab",
+   "get_angle_between_vectors"
+  ]
+ },
+ {
+  "unit": "TextureToColor/Repair",
+  "round": "909",
+  "evidence": "tests/texture_to_color_repair_native_parity.rs: ComputeBoundaryEdgeStats against Repair.hpp built over CGAL, 32 meshes",
+  "functions": [
+   "ComputeBoundaryEdgeStats"
+  ]
  }
 ]

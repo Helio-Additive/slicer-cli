@@ -35,5 +35,12 @@
   "functions": [
    "toolpath_intersects_bed_exclude_area_2d"
   ]
+ },
+ {
+  "unit": "Format/AssemblyStepsJson",
+  "round": "909",
+  "functions": [
+   "set_items"
+  ]
  }
 ]

@@ -1,0 +1,2023 @@
+// Generator of the vectors of tests/config_native_parity.rs: libslic3r's Config.hpp / Config.cpp
+// at the pin (references/BambuStudio/src/libslic3r), driven class by class.
+//
+// Build: against a built libslic3r of the Bambu Studio engine (docs/building.md), with the
+// include paths and the link line of that build, C++17, -O2 -ffp-contract=on:
+//
+//   c++ -std=c++17 -O2 -ffp-contract=on -I<pin>/src -I<pin>/src/libslic3r -I<build dir> \
+//       <the build's Boost / Eigen / cereal / TBB include paths> -c gen.cpp -o gen.o
+//   c++ gen.o <build dir>/libslic3r/liblibslic3r.a <the libraries libslic3r links> -o gen
+//   ./gen <output directory>
+//
+// It writes options_scalar.txt, options_vector.txt, vector_ops.txt and config.txt. The vectors in
+// this directory were made on macOS arm64 with Apple clang, libc++ and Boost 1.90: the texts of
+// malformed numbers (`iss >> double`), the values of `hash()` and the uninitialized values some
+// `deserialize()` push for an empty item are those of that standard library and that build.
+//
+// Line format: tokens separated by one space. A text token is the hexadecimal of its bytes ("-"
+// for the empty text), a double its 16 hexadecimal digits, an integer is decimal. Every line is
+//   <op> <inputs...> => <outputs...>
+// An option is written as <class> <n> <n value tokens> (see spec()); the state of an option
+// after an operation as that plus type, nullable, is_nil, serialize, hash and, for a vector,
+// size and vserialize (see dump()). A thrown exception is "!<K>" and the text of what(), K being
+// U UnknownOptionException, N NoDefinitionException, T BadOptionTypeException,
+// V BadOptionValueException, C ConfigurationError, R Slic3r::RuntimeError, X any other.
+// A configuration is "D" (the test definition below) or "N" (no definition), the number of
+// options and for each its key and the option.
+
+#include "libslic3r/Config.hpp"
+#include "libslic3r/Utils.hpp"
+#include "libslic3r/libslic3r.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <functional>
+#include <limits>
+#include <map>
+#include <set>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include <unistd.h>
+
+using namespace Slic3r;
+
+enum TestEnum { teAlpha, teBeta, teGamma };
+
+static const t_config_enum_values s_test_enum_values = {{"alpha", 0}, {"beta", 1}, {"gamma", 2}, {"beta_alias", 1}};
+static const t_config_enum_names  s_test_enum_names  = {"alpha", "beta", "gamma"};
+static const t_config_enum_values s_rir_values       = {{"Disabled", 0}, {"Auto", 1}, {"Enabled", 2}};
+static const t_config_enum_values s_style_values     = {{"default", 0}, {"grid", 1}, {"snug", 2}, {"tree_slim", 3},
+                                                        {"tree_strong", 4}, {"tree_hybrid", 5}, {"tree_organic", 6}};
+
+namespace Slic3r {
+template<> const t_config_enum_values &ConfigOptionEnum<TestEnum>::get_enum_values() { return s_test_enum_values; }
+template<> const t_config_enum_names  &ConfigOptionEnum<TestEnum>::get_enum_names() { return s_test_enum_names; }
+} // namespace Slic3r
+
+typedef std::vector<std::string> Line;
+
+static FILE *g_out = nullptr;
+
+static std::string hex(const std::string &s)
+{
+    if (s.empty()) return "-";
+    static const char *d = "0123456789abcdef";
+    std::string        o;
+    for (unsigned char c : s) {
+        o += d[c >> 4];
+        o += d[c & 15];
+    }
+    return o;
+}
+static std::string num(long long v) { return std::to_string(v); }
+static std::string unum(unsigned long long v) { return std::to_string(v); }
+static std::string dbl(double v)
+{
+    uint64_t b;
+    memcpy(&b, &v, 8);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%016llx", (unsigned long long) b);
+    return buf;
+}
+static void emit(const Line &l)
+{
+    for (size_t i = 0; i < l.size(); ++i) {
+        if (i) fputc(' ', g_out);
+        fputs(l[i].c_str(), g_out);
+    }
+    fputc('\n', g_out);
+}
+
+static uint64_t g_seed = 0x243F6A8885A308D3ull;
+static uint64_t rnd()
+{
+    uint64_t z = (g_seed += 0x9E3779B97F4A7C15ull);
+    z          = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z          = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    return z ^ (z >> 31);
+}
+static int rnd_int(int lo, int hi) { return lo + int(rnd() % uint64_t(hi - lo + 1)); }
+
+static double rnd_double()
+{
+    static const double pool[] = {0., -0., 1., 1.5, -2.25, 0.1, 1e-5, 123456.789, 1e20, 0.30000000000000004, 100., 99.99999,
+                                  1234567., 0.000123456, 5e-324, 1.7976931348623157e308, 999999.5, 0.0001, 0.00001, 1e6, 1e-7,
+                                  2.5, 20., 0.4, 0.42, 220., 0.999999949999, -1e-320};
+    int                 k      = rnd_int(0, 39);
+    if (k < int(sizeof(pool) / sizeof(pool[0]))) return pool[k];
+    for (;;) {
+        uint64_t b = rnd();
+        double   v;
+        memcpy(&v, &b, 8);
+        if (std::isfinite(v)) return v;
+    }
+}
+
+static const char *exc_kind(const std::exception &e)
+{
+    if (dynamic_cast<const UnknownOptionException *>(&e)) return "!U";
+    if (dynamic_cast<const NoDefinitionException *>(&e)) return "!N";
+    if (dynamic_cast<const BadOptionTypeException *>(&e)) return "!T";
+    if (dynamic_cast<const BadOptionValueException *>(&e)) return "!V";
+    if (dynamic_cast<const ConfigurationError *>(&e)) return "!C";
+    if (dynamic_cast<const Slic3r::RuntimeError *>(&e)) return "!R";
+    return "!X";
+}
+
+// Runs f, which appends its result tokens; an exception replaces them by its kind and text.
+static void guarded(Line &l, const std::function<void(Line &)> &f)
+{
+    Line r;
+    try {
+        f(r);
+    } catch (const std::exception &e) {
+        r.clear();
+        r.push_back(exc_kind(e));
+        r.push_back(hex(e.what()));
+    }
+    l.insert(l.end(), r.begin(), r.end());
+}
+
+static const char *class_name(const ConfigOption *o)
+{
+    if (dynamic_cast<const ConfigOptionEnumsGeneric *>(o)) return "EnumsGeneric";
+    if (dynamic_cast<const ConfigOptionEnumsGenericNullable *>(o)) return "EnumsGenericNullable";
+    if (dynamic_cast<const ConfigOptionEnumGeneric *>(o)) return "EnumGeneric";
+    if (dynamic_cast<const ConfigOptionEnum<TestEnum> *>(o)) return "Enum";
+    if (dynamic_cast<const ConfigOptionFloatOrPercent *>(o)) return "FloatOrPercent";
+    if (dynamic_cast<const ConfigOptionPercent *>(o)) return "Percent";
+    if (dynamic_cast<const ConfigOptionFloat *>(o)) return "Float";
+    if (dynamic_cast<const ConfigOptionPercents *>(o)) return "Percents";
+    if (dynamic_cast<const ConfigOptionPercentsNullable *>(o)) return "PercentsNullable";
+    if (dynamic_cast<const ConfigOptionFloats *>(o)) return "Floats";
+    if (dynamic_cast<const ConfigOptionFloatsNullable *>(o)) return "FloatsNullable";
+    if (dynamic_cast<const ConfigOptionInt *>(o)) return "Int";
+    if (dynamic_cast<const ConfigOptionInts *>(o)) return "Ints";
+    if (dynamic_cast<const ConfigOptionIntsNullable *>(o)) return "IntsNullable";
+    if (dynamic_cast<const ConfigOptionString *>(o)) return "String";
+    if (dynamic_cast<const ConfigOptionStrings *>(o)) return "Strings";
+    if (dynamic_cast<const ConfigOptionFloatsOrPercents *>(o)) return "FloatsOrPercents";
+    if (dynamic_cast<const ConfigOptionFloatsOrPercentsNullable *>(o)) return "FloatsOrPercentsNullable";
+    if (dynamic_cast<const ConfigOptionPoint *>(o)) return "Point";
+    if (dynamic_cast<const ConfigOptionPoints *>(o)) return "Points";
+    if (dynamic_cast<const ConfigOptionPoint3 *>(o)) return "Point3";
+    if (dynamic_cast<const ConfigOptionPointsGroups *>(o)) return "PointsGroups";
+    if (dynamic_cast<const ConfigOptionIntsGroups *>(o)) return "IntsGroups";
+    if (dynamic_cast<const ConfigOptionBool *>(o)) return "Bool";
+    if (dynamic_cast<const ConfigOptionBools *>(o)) return "Bools";
+    if (dynamic_cast<const ConfigOptionBoolsNullable *>(o)) return "BoolsNullable";
+    fprintf(stderr, "unknown class\n");
+    abort();
+}
+
+// <class> <n> <values>
+static void spec(Line &l, const ConfigOption *o)
+{
+    std::string cls = class_name(o);
+    l.push_back(cls);
+    Line v;
+    if (cls == "Float" || cls == "Percent")
+        v.push_back(dbl(static_cast<const ConfigOptionFloat *>(o)->value));
+    else if (cls == "FloatOrPercent") {
+        auto p = static_cast<const ConfigOptionFloatOrPercent *>(o);
+        v.push_back(dbl(p->value));
+        v.push_back(num(p->percent));
+    } else if (cls == "Floats" || cls == "FloatsNullable" || cls == "Percents" || cls == "PercentsNullable") {
+        for (double d : static_cast<const ConfigOptionVector<double> *>(o)->values) v.push_back(dbl(d));
+    } else if (cls == "Int" || cls == "EnumGeneric")
+        v.push_back(num(static_cast<const ConfigOptionInt *>(o)->value));
+    else if (cls == "Enum")
+        v.push_back(num(o->getInt()));
+    else if (cls == "Ints" || cls == "IntsNullable" || cls == "EnumsGeneric" || cls == "EnumsGenericNullable") {
+        for (int d : static_cast<const ConfigOptionVector<int> *>(o)->values) v.push_back(num(d));
+    } else if (cls == "String")
+        v.push_back(hex(static_cast<const ConfigOptionString *>(o)->value));
+    else if (cls == "Strings") {
+        for (const std::string &s : static_cast<const ConfigOptionStrings *>(o)->values) v.push_back(hex(s));
+    } else if (cls == "FloatsOrPercents" || cls == "FloatsOrPercentsNullable") {
+        for (const FloatOrPercent &f : static_cast<const ConfigOptionVector<FloatOrPercent> *>(o)->values)
+            v.push_back(dbl(f.value) + ":" + num(f.percent));
+    } else if (cls == "Point") {
+        auto p = static_cast<const ConfigOptionPoint *>(o);
+        v.push_back(dbl(p->value(0)));
+        v.push_back(dbl(p->value(1)));
+    } else if (cls == "Point3") {
+        auto p = static_cast<const ConfigOptionPoint3 *>(o);
+        v.push_back(dbl(p->value(0)));
+        v.push_back(dbl(p->value(1)));
+        v.push_back(dbl(p->value(2)));
+    } else if (cls == "Points") {
+        for (const Vec2d &p : static_cast<const ConfigOptionPoints *>(o)->values) v.push_back(dbl(p(0)) + ":" + dbl(p(1)));
+    } else if (cls == "PointsGroups") {
+        for (const Vec2ds &g : static_cast<const ConfigOptionPointsGroups *>(o)->values) {
+            std::string t;
+            for (const Vec2d &p : g) {
+                if (!t.empty()) t += ";";
+                t += dbl(p(0)) + ":" + dbl(p(1));
+            }
+            v.push_back(t.empty() ? "-" : t);
+        }
+    } else if (cls == "IntsGroups") {
+        for (const std::vector<int> &g : static_cast<const ConfigOptionIntsGroups *>(o)->values) {
+            std::string t;
+            for (int d : g) {
+                if (!t.empty()) t += ",";
+                t += num(d);
+            }
+            v.push_back(t.empty() ? "-" : t);
+        }
+    } else if (cls == "Bool")
+        v.push_back(num(static_cast<const ConfigOptionBool *>(o)->value));
+    else if (cls == "Bools" || cls == "BoolsNullable") {
+        for (unsigned char d : static_cast<const ConfigOptionVector<unsigned char> *>(o)->values) v.push_back(num(d));
+    }
+    l.push_back(num((long long) v.size()));
+    l.insert(l.end(), v.begin(), v.end());
+}
+
+// spec, type, nullable, is_nil, serialize, hash, and for a vector: size, vserialize
+static void dump(Line &l, const ConfigOption *o)
+{
+    spec(l, o);
+    l.push_back(num(int(o->type())));
+    l.push_back(num(o->nullable()));
+    l.push_back(num(o->is_nil()));
+    guarded(l, [&](Line &r) {
+        r.push_back("ok");
+        r.push_back(hex(o->serialize()));
+    });
+    l.push_back(unum(o->hash()));
+    if (auto v = dynamic_cast<const ConfigOptionVectorBase *>(o)) {
+        l.push_back(num((long long) v->size()));
+        guarded(l, [&](Line &r) {
+            std::vector<std::string> vs = v->vserialize();
+            r.push_back("ok");
+            r.push_back(num((long long) vs.size()));
+            for (const std::string &s : vs) r.push_back(hex(s));
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Options
+// ---------------------------------------------------------------------------------------------
+
+static const char *SCALARS[] = {"Float", "Int", "String", "Percent", "FloatOrPercent", "Point", "Point3", "Bool", "Enum", "EnumGeneric"};
+static const char *VECTORS[] = {"Floats",   "FloatsNullable",          "Ints",   "IntsNullable",  "Strings",    "Percents",
+                                "PercentsNullable", "FloatsOrPercents", "FloatsOrPercentsNullable", "Points", "PointsGroups",
+                                "IntsGroups", "Bools", "BoolsNullable", "EnumsGeneric", "EnumsGenericNullable"};
+
+static std::string rnd_string()
+{
+    static const char *pool[] = {"", "a", "abc", "hello world", "a;b", "quo\"te", "back\\slash", "line\nfeed", "cr\rlf\n", "tab\there",
+                                 " lead", "trail ", "\xc3\xa9t\xc3\xa9", "0123456789abcdef", "0123456789abcdefg", "x=1;y=2",
+                                 "a string that is longer than thirty two bytes", "#hash", "100%", "nil",
+                                 "this string is longer than sixty four bytes so that the long CityHash path of std::hash runs once",
+                                 "abcd", "abcdefgh", "abcdefghi", "12345678901234567", "1234567890123456789012345678901234567890123456789012345678901234"};
+    return pool[rnd_int(0, int(sizeof(pool) / sizeof(pool[0])) - 1)];
+}
+
+// A random option of the class with n values (vectors); nils now and then in the nullable classes.
+static ConfigOption *make(const std::string &cls, int n)
+{
+    if (cls == "Float") return new ConfigOptionFloat(rnd_double());
+    if (cls == "Percent") return new ConfigOptionPercent(rnd_double());
+    if (cls == "FloatOrPercent") return new ConfigOptionFloatOrPercent(rnd_double(), rnd_int(0, 1) != 0);
+    if (cls == "Int") return new ConfigOptionInt(rnd_int(0, 3) == 0 ? int(rnd()) : rnd_int(-5, 20));
+    if (cls == "String") return new ConfigOptionString(rnd_string());
+    if (cls == "Point") return new ConfigOptionPoint(Vec2d(rnd_double(), rnd_double()));
+    if (cls == "Point3") return new ConfigOptionPoint3(Vec3d(rnd_double(), rnd_double(), rnd_double()));
+    if (cls == "Bool") return new ConfigOptionBool(rnd_int(0, 1) != 0);
+    if (cls == "Enum") return new ConfigOptionEnum<TestEnum>(TestEnum(rnd_int(0, 2)));
+    if (cls == "EnumGeneric") return new ConfigOptionEnumGeneric(&s_test_enum_values, rnd_int(0, 3));
+    bool nullable = cls.size() > 8 && cls.compare(cls.size() - 8, 8, "Nullable") == 0;
+    auto nil      = [&]() { return nullable && rnd_int(0, 3) == 0; };
+    if (cls == "Floats" || cls == "FloatsNullable" || cls == "Percents" || cls == "PercentsNullable") {
+        std::vector<double> v;
+        for (int i = 0; i < n; ++i) v.push_back(nil() ? ConfigOptionFloatsNullable::nil_value() : rnd_double());
+        if (cls == "Floats") return new ConfigOptionFloats(v);
+        if (cls == "FloatsNullable") return new ConfigOptionFloatsNullable(v);
+        if (cls == "Percents") return new ConfigOptionPercents(v);
+        return new ConfigOptionPercentsNullable(v);
+    }
+    if (cls == "Ints" || cls == "IntsNullable") {
+        std::vector<int> v;
+        for (int i = 0; i < n; ++i) v.push_back(nil() ? ConfigOptionIntsNullable::nil_value() : rnd_int(-5, 20));
+        if (cls == "Ints") return new ConfigOptionInts(v);
+        return new ConfigOptionIntsNullable(v);
+    }
+    if (cls == "EnumsGeneric" || cls == "EnumsGenericNullable") {
+        std::vector<int> v;
+        for (int i = 0; i < n; ++i) v.push_back(nil() ? ConfigOptionInts::nil_value() : rnd_int(0, 3));
+        if (cls == "EnumsGeneric") {
+            auto o      = new ConfigOptionEnumsGeneric(v);
+            o->keys_map = &s_test_enum_values;
+            return o;
+        }
+        auto o      = new ConfigOptionEnumsGenericNullable(v);
+        o->keys_map = &s_test_enum_values;
+        return o;
+    }
+    if (cls == "Strings") {
+        std::vector<std::string> v;
+        for (int i = 0; i < n; ++i) v.push_back(rnd_string());
+        return new ConfigOptionStrings(v);
+    }
+    if (cls == "FloatsOrPercents" || cls == "FloatsOrPercentsNullable") {
+        std::vector<FloatOrPercent> v;
+        for (int i = 0; i < n; ++i)
+            v.push_back(nil() ? ConfigOptionFloatsOrPercentsNullable::nil_value() : FloatOrPercent(rnd_double(), rnd_int(0, 1) != 0));
+        if (cls == "FloatsOrPercents") return new ConfigOptionFloatsOrPercents(v);
+        return new ConfigOptionFloatsOrPercentsNullable(v);
+    }
+    if (cls == "Points") {
+        std::vector<Vec2d> v;
+        for (int i = 0; i < n; ++i) v.push_back(Vec2d(rnd_double(), rnd_double()));
+        return new ConfigOptionPoints(v);
+    }
+    if (cls == "PointsGroups") {
+        std::vector<Vec2ds> v;
+        for (int i = 0; i < n; ++i) {
+            Vec2ds g;
+            for (int k = rnd_int(0, 3); k > 0; --k) g.push_back(Vec2d(rnd_double(), rnd_double()));
+            v.push_back(g);
+        }
+        return new ConfigOptionPointsGroups(v);
+    }
+    if (cls == "IntsGroups") {
+        std::vector<std::vector<int>> v;
+        for (int i = 0; i < n; ++i) {
+            std::vector<int> g;
+            for (int k = rnd_int(0, 3); k > 0; --k) g.push_back(rnd_int(-5, 20));
+            v.push_back(g);
+        }
+        return new ConfigOptionIntsGroups(v);
+    }
+    if (cls == "Bools" || cls == "BoolsNullable") {
+        std::vector<unsigned char> v;
+        for (int i = 0; i < n; ++i) v.push_back(nil() ? ConfigOptionBoolsNullable::nil_value() : (unsigned char) rnd_int(0, 1));
+        if (cls == "Bools") return new ConfigOptionBools(v);
+        return new ConfigOptionBoolsNullable(v);
+    }
+    fprintf(stderr, "make: %s\n", cls.c_str());
+    abort();
+}
+
+// The scalar class a vector class takes single values from.
+static std::string scalar_of(const std::string &cls)
+{
+    if (cls == "Floats" || cls == "FloatsNullable") return "Float";
+    if (cls == "Ints" || cls == "IntsNullable") return "Int";
+    if (cls == "Strings") return "String";
+    if (cls == "Percents" || cls == "PercentsNullable") return "Percent";
+    if (cls == "FloatsOrPercents" || cls == "FloatsOrPercentsNullable") return "FloatOrPercent";
+    if (cls == "Points") return "Point";
+    if (cls == "Bools" || cls == "BoolsNullable") return "Bool";
+    if (cls == "EnumsGeneric" || cls == "EnumsGenericNullable") return rnd_int(0, 1) ? "EnumGeneric" : "Enum";
+    return ""; // PointsGroups, IntsGroups: none
+}
+// A class of another type code.
+static std::string other_of(const std::string &cls) { return cls == "Strings" || cls == "String" ? "Ints" : "Strings"; }
+static std::string other_scalar_of(const std::string &cls) { return cls == "Strings" || cls == "String" ? "Int" : "String"; }
+// The class that shares the type code (nullable <-> not nullable), or "".
+static std::string twin_of(const std::string &cls)
+{
+    static const char *pairs[][2] = {{"Floats", "FloatsNullable"}, {"Ints", "IntsNullable"}, {"Percents", "PercentsNullable"},
+                                     {"FloatsOrPercents", "FloatsOrPercentsNullable"}, {"Bools", "BoolsNullable"},
+                                     {"EnumsGeneric", "EnumsGenericNullable"}};
+    for (auto &p : pairs) {
+        if (cls == p[0]) return p[1];
+        if (cls == p[1]) return p[0];
+    }
+    return "";
+}
+
+static const char *DES_STRINGS[] = {
+    "", " ", "0", "-0", "1", "1.5", "-2.25", "+3", " 4", "5 ", "1e5", "1E-3", "1e", "1e+", ".5", "5.", ".", "-", "+", "abc", "1abc",
+    "1.5abc", "1.5xyz", "0x10", "0x1p3", "0x.8p1", "0X1.8", "0x1.fffffffffffffp1023", "0x1p-1074", "0x1p-1075", "0x1.8p-1074",
+    "0x1p1024", "0x1.00000000000008p0", "0x1.00000000000018p0", "0x", "0xg", "0x1p", "0x1p+", "0x1.p3", "inf", "nan", "-inf",
+    "infinity", "-nan", "nan(123)", "INF", "NaN", "1e999", "-1e999", "1e-999", "4.9e-324", "2.2250738585072014e-308", "1e-310",
+    "2.4703282292062328e-324", "2.4703282292062327e-324", "123456789012345678901234567890", "0.1", "0.30000000000000004",
+    "1.7976931348623157e308", "1.7976931348623159e308", "1,2", "1x2", "50%", "50 %", "%", "1.5%", "%5", "nil", " nil ", "1,nil,3",
+    "nil,nil", "1,", "1;2", "true", "false", "enabled", "ON", "off", "1 , 2 ,3", "2147483647", "2147483648", "-2147483648",
+    "-2147483649", "9223372036854775807", "9223372036854775808", "-9223372036854775809", "99999999999999999999", "007", "1.9", "-1.9",
+    "1e2", "\t7\n", "1..2", "1.2.3", "--1", "+-1", "1e5.5", "1d5", "1f", "1p3", "x", "e5", ".e5", "1e0005", "0e0", "1,2,3x4", "1x2,3x4",
+    "1x2x3", "x1", "1x", "1 x 2", " 1 , 2 ", "1,2 z", "1,2,3", "1 , 2 , 3 ", "1x2x3 q", "1 2", "1,2#3,4", "1x2,3x4#5x6", "#", "1,2#", "#1",
+    "1#2", "a,b", "alpha", "beta", "gamma", "delta", "alpha,beta", "alpha, gamma ,nil", "beta_alias", "1,0", "1, 0,1", "0,nil,1",
+    "1,on,0", "enabled,disabled", "a;b", "\"a b\";c", "a\\nb", "\"unterminated", "a\\", "\"a\\\"b\"", " a ; b ", "a;", ";", "\"\"",
+    "\"\";\"\"", "a\"b", "tab\there", "\"x\" y", "\"x\";", "a\\\\b", "\\n", "infx2", "1,inf", "nan,1", "1e400x2", "0x10,0x20",
+    "12abc,3", " 7 , 8 ", "1e5,2e-3", "\xc3\xa9", "3.0mm", "0.4,0.6,0.8", "100%,50%", "1e-5", "0.000012345678", "123456.7", "1234567.8",
+    "0.1,0.2,0.30000000000000004", "1e+20", "1.0000001", "5e-324"};
+
+// Items that are empty after the trim leave `double value;` / `int value;` unset in the vector
+// classes: what gets pushed is whatever the stack held. Those inputs are in the list below and go
+// to the vector classes only where the result does not depend on it.
+static const char *DES_EMPTY_ITEMS[] = {"1,,3", ",", ",1", "1, ,2", ",,", " , "};
+
+static void gen_des(const std::vector<std::string> &classes)
+{
+    for (const std::string &cls : classes) {
+        bool vec = false;
+        for (const char *v : VECTORS) vec |= cls == v;
+        for (int append = 0; append <= (vec ? 1 : 0); ++append)
+            for (const char *s : DES_STRINGS) {
+                std::unique_ptr<ConfigOption> o(make(cls, 2));
+                Line                          l{"des"};
+                spec(l, o.get());
+                l.push_back(num(append));
+                l.push_back(hex(s));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) { r.push_back(num(o->deserialize(s, append != 0))); });
+                dump(l, o.get());
+                emit(l);
+            }
+        // The classes whose items are parsed into an initialized value, or not parsed as numbers.
+        if (cls == "Strings" || cls == "Points" || cls == "PointsGroups" || cls == "Bools" || cls == "BoolsNullable" ||
+            cls == "EnumsGeneric" || cls == "EnumsGenericNullable")
+            for (const char *s : DES_EMPTY_ITEMS) {
+                std::unique_ptr<ConfigOption> o(make(cls, 2));
+                Line                          l{"des"};
+                spec(l, o.get());
+                l.push_back("0");
+                l.push_back(hex(s));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) { r.push_back(num(o->deserialize(s, false))); });
+                dump(l, o.get());
+                emit(l);
+            }
+        // serialize / vserialize / hash of random values, and the round trip.
+        for (int k = 0; k < 40; ++k) {
+            std::unique_ptr<ConfigOption> o(make(cls, rnd_int(0, 4)));
+            Line                          l{"ser"};
+            spec(l, o.get());
+            l.push_back("=>");
+            dump(l, o.get());
+            std::string s;
+            bool        ok = true;
+            try {
+                s = o->serialize();
+            } catch (const std::exception &) {
+                ok = false;
+            }
+            if (ok) {
+                std::unique_ptr<ConfigOption> o2(o->clone());
+                guarded(l, [&](Line &r) { r.push_back(num(o2->deserialize(s, false))); });
+                dump(l, o2.get());
+            } else
+                l.push_back("noser");
+            emit(l);
+        }
+    }
+}
+
+template<class T> static bool lt_t(const ConfigOption *a, const ConfigOption *b) { return *static_cast<const T *>(a) < *static_cast<const T *>(b); }
+
+// operator< of two options of the class; false with *has = false where the class has none.
+static bool lt(const std::string &cls, const ConfigOption *a, const ConfigOption *b, bool *has)
+{
+    *has = true;
+    if (cls == "Float") return lt_t<ConfigOptionFloat>(a, b);
+    if (cls == "Floats") return lt_t<ConfigOptionFloats>(a, b);
+    if (cls == "FloatsNullable") return lt_t<ConfigOptionFloatsNullable>(a, b);
+    if (cls == "Ints") return lt_t<ConfigOptionInts>(a, b);
+    if (cls == "IntsNullable") return lt_t<ConfigOptionIntsNullable>(a, b);
+    if (cls == "String") return lt_t<ConfigOptionString>(a, b);
+    if (cls == "Strings") return lt_t<ConfigOptionStrings>(a, b);
+    if (cls == "Percent") return lt_t<ConfigOptionPercent>(a, b);
+    if (cls == "Percents") return lt_t<ConfigOptionPercents>(a, b);
+    if (cls == "PercentsNullable") return lt_t<ConfigOptionPercentsNullable>(a, b);
+    if (cls == "FloatOrPercent") return lt_t<ConfigOptionFloatOrPercent>(a, b);
+    if (cls == "FloatsOrPercents") return lt_t<ConfigOptionFloatsOrPercents>(a, b);
+    if (cls == "FloatsOrPercentsNullable") return lt_t<ConfigOptionFloatsOrPercentsNullable>(a, b);
+    if (cls == "Point") return lt_t<ConfigOptionPoint>(a, b);
+    if (cls == "Points") return lt_t<ConfigOptionPoints>(a, b);
+    if (cls == "Point3") return lt_t<ConfigOptionPoint3>(a, b);
+    if (cls == "IntsGroups") return lt_t<ConfigOptionIntsGroups>(a, b);
+    if (cls == "Bool") return lt_t<ConfigOptionBool>(a, b);
+    if (cls == "Bools") return lt_t<ConfigOptionBools>(a, b);
+    if (cls == "BoolsNullable") return lt_t<ConfigOptionBoolsNullable>(a, b);
+    if (cls == "Enum") return lt_t<ConfigOptionEnum<TestEnum>>(a, b);
+    if (cls == "EnumGeneric") return lt_t<ConfigOptionEnumGeneric>(a, b);
+    if (cls == "EnumsGeneric") return *static_cast<const ConfigOptionEnumsGeneric *>(a) < *static_cast<const ConfigOptionInts *>(b);
+    if (cls == "EnumsGenericNullable") return *static_cast<const ConfigOptionEnumsGenericNullable *>(a) < *static_cast<const ConfigOptionInts *>(b);
+    *has = false;
+    return false;
+}
+
+static void idx_tokens(Line &l, const std::vector<int> &v)
+{
+    l.push_back(num((long long) v.size()));
+    for (int i : v) l.push_back(num(i));
+}
+
+// set / == / != / overriden_by / apply_override / getters over every pair of classes.
+static void gen_pairs()
+{
+    std::vector<std::string> all;
+    for (const char *c : SCALARS) all.push_back(c);
+    for (const char *c : VECTORS) all.push_back(c);
+    for (int round = 0; round < 3; ++round)
+        for (const std::string &ca : all)
+            for (const std::string &cb : all) {
+                std::unique_ptr<ConfigOption> a(make(ca, round == 0 ? 2 : rnd_int(0, 3)));
+                std::unique_ptr<ConfigOption> b(round == 1 && ca == cb ? a->clone() : make(cb, round == 0 ? 2 : rnd_int(0, 3)));
+                {
+                    Line l{"eq"};
+                    spec(l, a.get());
+                    spec(l, b.get());
+                    l.push_back("=>");
+                    guarded(l, [&](Line &r) { r.push_back(num(*a == *b)); });
+                    guarded(l, [&](Line &r) { r.push_back(num(*a != *b)); });
+                    guarded(l, [&](Line &r) { r.push_back(num(a->overriden_by(b.get()))); });
+                    if (ca == cb) {
+                        // operator< of ConfigOptionIntsGroups reads rhs.values[i] for every i of this.
+                        bool ok  = ca != "IntsGroups" || static_cast<const ConfigOptionIntsGroups *>(b.get())->values.size() >=
+                                                              static_cast<const ConfigOptionIntsGroups *>(a.get())->values.size();
+                        bool has = false;
+                        bool v   = ok ? lt(ca, a.get(), b.get(), &has) : false;
+                        l.push_back(has && ok ? num(v) : "nolt");
+                    } else
+                        l.push_back("nolt");
+                    emit(l);
+                }
+                // ConfigOptionEnumsGenericTempl::set() dereferences a failed dynamic_cast for the other nullability.
+                bool crash = (ca == "EnumsGeneric" && cb == "EnumsGenericNullable") || (ca == "EnumsGenericNullable" && cb == "EnumsGeneric");
+                if (!crash) {
+                    std::unique_ptr<ConfigOption> a2(a->clone());
+                    Line                          l{"set"};
+                    spec(l, a2.get());
+                    spec(l, b.get());
+                    l.push_back("=>");
+                    guarded(l, [&](Line &r) {
+                        a2->set(b.get());
+                        r.push_back("ok");
+                    });
+                    dump(l, a2.get());
+                    emit(l);
+                }
+                {
+                    std::unique_ptr<ConfigOption> a2(a->clone());
+                    std::vector<int>              idx;
+                    if (auto vb = dynamic_cast<const ConfigOptionVectorBase *>(b.get()))
+                        for (size_t i = 0; i < vb->size(); ++i) idx.push_back(rnd_int(-1, 3));
+                    Line l{"apply_override"};
+                    spec(l, a2.get());
+                    spec(l, b.get());
+                    idx_tokens(l, idx);
+                    l.push_back("=>");
+                    guarded(l, [&](Line &r) { r.push_back(num(a2->apply_override(b.get(), idx))); });
+                    dump(l, a2.get());
+                    emit(l);
+                }
+            }
+    for (int round = 0; round < 2; ++round)
+        for (const std::string &ca : all) {
+            std::unique_ptr<ConfigOption> a(make(ca, 2));
+            Line                          l{"getters"};
+            spec(l, a.get());
+            l.push_back("=>");
+            guarded(l, [&](Line &r) { r.push_back(num(a->getInt())); });
+            guarded(l, [&](Line &r) { r.push_back(dbl(a->getFloat())); });
+            guarded(l, [&](Line &r) { r.push_back(num(a->getBool())); });
+            guarded(l, [&](Line &r) {
+                a->setInt(round == 0 ? 2 : 7);
+                r.push_back("ok");
+            });
+            l.push_back(num(a->is_scalar()));
+            l.push_back(num(a->is_vector()));
+            dump(l, a.get());
+            emit(l);
+        }
+}
+
+// The right hand side of a vector operation: kind 0 the class itself with n values, 1 the twin
+// class, 2 the scalar, 3 a vector of another type, 4 a scalar of another type.
+static ConfigOption *rhs_of(const std::string &cls, int kind, int n)
+{
+    if (kind == 1 && !twin_of(cls).empty()) return make(twin_of(cls), n);
+    if (kind == 2 && !scalar_of(cls).empty()) return make(scalar_of(cls), 1);
+    if (kind == 3) return make(other_of(cls), n);
+    if (kind == 4) return make(other_scalar_of(cls), 1);
+    return make(cls, n);
+}
+
+static void gen_vector_ops()
+{
+    for (const char *ccls : VECTORS) {
+        std::string cls = ccls;
+        auto        vb  = [](ConfigOption *o) { return static_cast<ConfigOptionVectorBase *>(o); };
+        for (int k = 0; k < 14; ++k) {
+            // set(const std::vector<const ConfigOption*>&)
+            {
+                std::unique_ptr<ConfigOption>              a(make(cls, rnd_int(0, 3)));
+                std::vector<std::unique_ptr<ConfigOption>> owned;
+                std::vector<const ConfigOption *>          rhs;
+                int                                        cnt = rnd_int(0, 4);
+                for (int i = 0; i < cnt; ++i) {
+                    int kind = k < 9 ? rnd_int(0, 2) : rnd_int(0, 4);
+                    owned.emplace_back(rhs_of(cls, kind, k % 5 == 4 ? rnd_int(0, 2) : rnd_int(1, 3)));
+                    rhs.push_back(owned.back().get());
+                }
+                Line l{"set_from_options"};
+                spec(l, a.get());
+                l.push_back(num(cnt));
+                for (auto &o : owned) spec(l, o.get());
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set(rhs);
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // set_at
+            {
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(1, 3)));
+                std::unique_ptr<ConfigOption> b(rhs_of(cls, k < 8 ? rnd_int(0, 2) : rnd_int(0, 4), k % 6 == 5 ? 0 : rnd_int(1, 3)));
+                int                           i = rnd_int(0, 5), j = rnd_int(0, 4);
+                Line                          l{"set_at"};
+                spec(l, a.get());
+                spec(l, b.get());
+                l.push_back(num(i));
+                l.push_back(num(j));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set_at(b.get(), i, j);
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // append
+            {
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(0, 3)));
+                std::unique_ptr<ConfigOption> b(rhs_of(cls, k < 8 ? rnd_int(0, 2) : rnd_int(0, 4), k % 6 == 5 ? 0 : rnd_int(1, 3)));
+                Line                          l{"append"};
+                spec(l, a.get());
+                spec(l, b.get());
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->append(b.get());
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // set(rhs, start, len)
+            {
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(1, 3)));
+                std::unique_ptr<ConfigOption> b(rhs_of(cls, k < 9 ? rnd_int(0, 1) : rnd_int(0, 4), rnd_int(0, 5)));
+                int                           start = rnd_int(0, 3), len = rnd_int(0, 4);
+                Line                          l{"set_range"};
+                spec(l, a.get());
+                spec(l, b.get());
+                l.push_back(num(start));
+                l.push_back(num(len));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set(b.get(), start, len);
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // set_with_restore
+            {
+                int                           stride = rnd_int(1, 2), groups = rnd_int(0, 3);
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(0, 5)));
+                std::unique_ptr<ConfigOption> b(rhs_of(cls, k < 10 ? rnd_int(0, 1) : rnd_int(0, 3), k == 9 ? groups * stride + 1 : groups * stride));
+                std::vector<int>              idx;
+                for (int i = 0; i < groups; ++i) idx.push_back(rnd_int(-1, 3));
+                Line l{"set_with_restore"};
+                spec(l, a.get());
+                spec(l, b.get());
+                idx_tokens(l, idx);
+                l.push_back(num(stride));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set_with_restore(vb(b.get()), idx, stride);
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // set_with_restore_2
+            {
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(1, 5)));
+                int                           m = rnd_int(1, 3);
+                std::unique_ptr<ConfigOption> b(rhs_of(cls, k < 11 ? rnd_int(0, 1) : 3, m));
+                std::vector<int>              idx;
+                int                           cnt = k % 4 == 3 ? rnd_int(1, 4) : m;
+                for (int i = 0; i < cnt; ++i) idx.push_back(rnd_int(-1, 5));
+                int  start = rnd_int(0, 6), len = rnd_int(0, 3);
+                bool skip = rnd_int(0, 1) != 0;
+                Line l{"set_with_restore_2"};
+                spec(l, a.get());
+                l.push_back(hex("the_key"));
+                spec(l, b.get());
+                idx_tokens(l, idx);
+                l.push_back(num(start));
+                l.push_back(num(len));
+                l.push_back(num(skip));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set_with_restore_2("the_key", vb(b.get()), idx, start, len, skip);
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                dump(l, b.get());
+                emit(l);
+            }
+            // set_only_diff
+            {
+                int                           stride = rnd_int(1, 2), groups = rnd_int(0, 3);
+                std::unique_ptr<ConfigOption> a(make(cls, k == 8 ? groups * stride + 1 : groups * stride));
+                std::unique_ptr<ConfigOption> b(rhs_of(cls, k < 10 ? rnd_int(0, 1) : rnd_int(0, 3), rnd_int(0, 5)));
+                std::vector<int>              idx;
+                for (int i = 0; i < groups; ++i) idx.push_back(rnd_int(-1, 3));
+                Line l{"set_only_diff"};
+                spec(l, a.get());
+                l.push_back(hex("the_key"));
+                spec(l, b.get());
+                idx_tokens(l, idx);
+                l.push_back(num(stride));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set_only_diff("the_key", vb(b.get()), idx, stride);
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // set_to_index (stride 1: the C++ indexes this->values[i * stride + j] past its size otherwise)
+            {
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(0, 3)));
+                std::unique_ptr<ConfigOption> b(rhs_of(cls, k < 11 ? rnd_int(0, 1) : 3, rnd_int(1, 4)));
+                std::vector<int>              idx;
+                for (int i = rnd_int(0, 4); i > 0; --i) idx.push_back(rnd_int(-1, 5));
+                Line l{"set_to_index"};
+                spec(l, a.get());
+                spec(l, b.get());
+                idx_tokens(l, idx);
+                l.push_back("1");
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set_to_index(vb(b.get()), idx, 1);
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // set_with_nil
+            {
+                int                           stride = rnd_int(1, 2), groups = rnd_int(0, 3);
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(1, 5)));
+                std::unique_ptr<ConfigOption> inh(rhs_of(cls, k < 10 ? rnd_int(0, 1) : rnd_int(0, 3), groups * stride));
+                std::unique_ptr<ConfigOption> rhs(k % 3 == 0 && k < 10 ? inh->clone() : rhs_of(cls, k < 12 ? 0 : 3, k == 7 ? groups * stride + 1 : groups * stride));
+                // Half of the groups equal to the inherited ones.
+                if (k % 3 == 1 && k < 10 && class_name(rhs.get()) == class_name(inh.get()) && groups > 0) {
+                    std::unique_ptr<ConfigOption> part(inh->clone());
+                    vb(part.get())->set_at(rhs.get(), 0, 0);
+                    rhs = std::move(part);
+                }
+                Line l{"set_with_nil"};
+                spec(l, a.get());
+                spec(l, rhs.get());
+                spec(l, inh.get());
+                l.push_back(num(stride));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set_with_nil(vb(rhs.get()), vb(inh.get()), stride);
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // set_with_default
+            {
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(1, 4)));
+                std::unique_ptr<ConfigOption> inh(rhs_of(cls, k < 11 ? rnd_int(0, 1) : 3, rnd_int(0, 5)));
+                Line                          l{"set_with_default"};
+                spec(l, a.get());
+                spec(l, inh.get());
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->set_with_default(vb(inh.get()));
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // resize
+            {
+                std::unique_ptr<ConfigOption> a(make(cls, k % 2 ? 0 : rnd_int(1, 4)));
+                int                           kind = rnd_int(-1, 4);
+                std::unique_ptr<ConfigOption> d(kind < 0 ? nullptr : rhs_of(cls, kind, rnd_int(1, 3)));
+                int                           n = rnd_int(0, 6);
+                Line                          l{"resize"};
+                spec(l, a.get());
+                l.push_back(num(n));
+                l.push_back(num(d ? 1 : 0));
+                if (d) spec(l, d.get());
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    vb(a.get())->resize(n, d.get());
+                    r.push_back("ok");
+                });
+                dump(l, a.get());
+                emit(l);
+            }
+            // clear, empty, set_at_to_nil, is_nil(idx), get_at through the first value of set_at
+            {
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(1, 4)));
+                int                           i = rnd_int(0, int(vb(a.get())->size()) - 1);
+                Line                          l{"nil_at"};
+                spec(l, a.get());
+                l.push_back(num(i));
+                l.push_back("=>");
+                l.push_back(num(vb(a.get())->is_nil(i)));
+                l.push_back(num(vb(a.get())->empty()));
+                vb(a.get())->set_at_to_nil(i);
+                l.push_back(num(vb(a.get())->is_nil(i)));
+                dump(l, a.get());
+                vb(a.get())->clear();
+                dump(l, a.get());
+                emit(l);
+            }
+            // overriden_by / apply_override with the nullable twin
+            if (!twin_of(cls).empty()) {
+                std::unique_ptr<ConfigOption> a(make(cls, rnd_int(0, 4)));
+                std::unique_ptr<ConfigOption> b(k % 4 == 0 ? make(cls, rnd_int(0, 4)) : make(twin_of(cls), rnd_int(0, 4)));
+                std::vector<int>              idx;
+                for (size_t i = 0; i < vb(b.get())->size() + (k % 3 == 0 ? 0 : 0); ++i) idx.push_back(rnd_int(-1, 4));
+                if (k % 5 == 4 && !idx.empty()) idx.pop_back();
+                Line l{"override"};
+                spec(l, a.get());
+                spec(l, b.get());
+                idx_tokens(l, idx);
+                l.push_back("=>");
+                guarded(l, [&](Line &r) { r.push_back(num(a->overriden_by(b.get()))); });
+                guarded(l, [&](Line &r) { r.push_back(num(a->apply_override(b.get(), idx))); });
+                dump(l, a.get());
+                emit(l);
+            }
+        }
+    }
+    // vserialize_single of the group classes
+    for (int k = 0; k < 10; ++k) {
+        std::unique_ptr<ConfigOption> a(make(k % 2 ? "PointsGroups" : "IntsGroups", rnd_int(1, 3)));
+        int                           i = rnd_int(0, int(static_cast<ConfigOptionVectorBase *>(a.get())->size()) - 1);
+        Line                          l{"vserialize_single"};
+        spec(l, a.get());
+        l.push_back(num(i));
+        l.push_back("=>");
+        std::vector<std::string> vs = k % 2 ? static_cast<ConfigOptionPointsGroups *>(a.get())->vserialize_single(i) :
+                                                static_cast<ConfigOptionIntsGroups *>(a.get())->vserialize_single(i);
+        l.push_back(num((long long) vs.size()));
+        for (auto &s : vs) l.push_back(hex(s));
+        emit(l);
+    }
+    // deserialize_with_substitutions
+    static const char *subst[] = {"1,0", "1, 0,1", "enabled", "on,off", "1,maybe,0", "nil", "0,nil", "ON, Enabled ,x1", "1,2", "", "1,,0",
+                                  "true", "a b", "-x", "disabled,enabled"};
+    for (const char *s : subst)
+        for (int nullable = 0; nullable < 2; ++nullable)
+            for (int mode = 0; mode < 3; ++mode)
+                for (int append = 0; append < 2; ++append) {
+                    std::unique_ptr<ConfigOption> a(make(nullable ? "BoolsNullable" : "Bools", 2));
+                    Line                          l{"bools_subst"};
+                    spec(l, a.get());
+                    l.push_back(num(append));
+                    l.push_back(num(mode));
+                    l.push_back(hex(s));
+                    l.push_back("=>");
+                    guarded(l, [&](Line &r) {
+                        auto m   = ConfigHelpers::DeserializationSubstitution(mode);
+                        auto res = nullable ? static_cast<ConfigOptionBoolsNullable *>(a.get())->deserialize_with_substitutions(s, append != 0, m) :
+                                              static_cast<ConfigOptionBools *>(a.get())->deserialize_with_substitutions(s, append != 0, m);
+                        r.push_back(num(int(res)));
+                    });
+                    dump(l, a.get());
+                    emit(l);
+                }
+    // The string helpers.
+    static const char *strs[] = {"", "plain", "a b", "a\nb", "a\rb", "q\"q", "b\\b", "a;b", "\"a b\";c", "a\\nb\\rc\\\\d\\\"e", "trail\\",
+                                 "\"open", "\"x\"y", "\"x\" ;y", " a ; b ", ";", "a;", ";;", "\"\"", "a&b&&c", "&", "Enabled_value-1", "1abc",
+                                 "  ON ", "enabled", "off", "tab\tx", "\"a\\\"b\";\"c\\\\d\"", "\"a\\", " ", "  ", "x y;z", "\"\";", "a_b-c",
+                                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                 "\tOn\n", "a b c", "\xc3\xa9", "enabled ", "_a", "a.b"};
+    for (const char *s : strs) {
+        Line l{"strings"};
+        l.push_back(hex(s));
+        l.push_back("=>");
+        l.push_back(hex(escape_string_cstyle(s)));
+        l.push_back(hex(escape_ampersand(s)));
+        std::string out = "untouched";
+        l.push_back(num(unescape_string_cstyle(s, out)));
+        l.push_back(hex(out));
+        std::vector<std::string> v{"first"};
+        l.push_back(num(unescape_strings_cstyle(s, v)));
+        l.push_back(num((long long) v.size()));
+        for (auto &x : v) l.push_back(hex(x));
+        l.push_back(num(ConfigHelpers::looks_like_enum_value(s)));
+        l.push_back(num(ConfigHelpers::enum_looks_like_true_value(s)));
+        emit(l);
+    }
+    for (int k = 0; k < 60; ++k) {
+        std::vector<std::string> v;
+        for (int i = rnd_int(0, 4); i > 0; --i) v.push_back(rnd_string());
+        Line l{"escape_strings"};
+        l.push_back(num((long long) v.size()));
+        for (auto &x : v) l.push_back(hex(x));
+        l.push_back("=>");
+        std::string e = escape_strings_cstyle(v);
+        l.push_back(hex(e));
+        std::vector<std::string> back;
+        l.push_back(num(unescape_strings_cstyle(e, back)));
+        l.push_back(num((long long) back.size()));
+        for (auto &x : back) l.push_back(hex(x));
+        emit(l);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The test definition and the configurations
+// ---------------------------------------------------------------------------------------------
+
+struct TestDef : public ConfigDef
+{
+    TestDef()
+    {
+        ConfigOptionDef *d;
+        d           = add("f", coFloat);
+        d->label    = "Float";
+        d->tooltip  = "A float value. This tooltip is long enough to be wrapped by the help printer when it is printed next to the option.";
+        d->sidetext = "mm";
+        d->category = "Numbers";
+        d->set_default_value(new ConfigOptionFloat(1.5));
+        d           = add("fs", coFloats);
+        d->category = "Numbers";
+        d->tooltip  = "Floats";
+        d->set_default_value(new ConfigOptionFloats{0.4});
+        d = add_nullable("fsn", coFloats);
+        d->set_default_value(new ConfigOptionFloatsNullable{ConfigOptionFloatsNullable::nil_value()});
+        d           = add("i", coInt);
+        d->category = "Numbers";
+        d->tooltip  = "An int";
+        d->cli      = "int-opt|I";
+        d->cli_params = "count";
+        d->set_default_value(new ConfigOptionInt(3));
+        d = add("is", coInts);
+        d->set_default_value(new ConfigOptionInts{1});
+        d = add_nullable("isn", coInts);
+        d = add("s", coString);
+        d->tooltip = "A string";
+        d->cli     = "string-opt|S";
+        d->set_default_value(new ConfigOptionString("abc"));
+        d = add("s_empty", coString);
+        d->tooltip = "A string with an empty default";
+        d->set_default_value(new ConfigOptionString(""));
+        d = add("ss", coStrings);
+        d->set_default_value(new ConfigOptionStrings());
+        d = add("p", coPercent);
+        d->set_default_value(new ConfigOptionPercent(15));
+        d = add("ps", coPercents);
+        d->set_default_value(new ConfigOptionPercents{50});
+        d = add_nullable("psn", coPercents);
+        d             = add("fp", coFloatOrPercent);
+        d->ratio_over = "f";
+        d->set_default_value(new ConfigOptionFloatOrPercent(50, true));
+        d             = add("fp2", coFloatOrPercent);
+        d->ratio_over = "fs";
+        d->set_default_value(new ConfigOptionFloatOrPercent(25, true));
+        d = add("fp3", coFloatOrPercent);
+        d->set_default_value(new ConfigOptionFloatOrPercent(3, false));
+        d             = add("fp4", coFloatOrPercent);
+        d->ratio_over = "fp";
+        d->set_default_value(new ConfigOptionFloatOrPercent(200, true));
+        d             = add("fp5", coFloatOrPercent);
+        d->ratio_over = "missing_key";
+        d->set_default_value(new ConfigOptionFloatOrPercent(10, true));
+        d             = add("fp6", coFloatOrPercent);
+        d->ratio_over = "fsn";
+        d->set_default_value(new ConfigOptionFloatOrPercent(10, true));
+        d             = add("fps", coFloatsOrPercents);
+        d->ratio_over = "fs";
+        d->set_default_value(new ConfigOptionFloatsOrPercents{FloatOrPercent(10, false)});
+        d = add_nullable("fpsn", coFloatsOrPercents);
+        d = add("fps0", coFloatsOrPercents);
+        d->set_default_value(new ConfigOptionFloatsOrPercents{FloatOrPercent(10, true)});
+        d = add("pt", coPoint);
+        d->set_default_value(new ConfigOptionPoint(Vec2d(1, 2)));
+        d = add("pts", coPoints);
+        d->set_default_value(new ConfigOptionPoints{Vec2d(0, 0)});
+        d = add("pt3", coPoint3);
+        d = add("b", coBool);
+        d->tooltip  = "A bool";
+        d->category = "Switches";
+        d->set_default_value(new ConfigOptionBool(false));
+        d = add("b1", coBool);
+        d->set_default_value(new ConfigOptionBool(true));
+        d = add("bs", coBools);
+        d->category = "Switches";
+        d->tooltip  = "Bools";
+        d->set_default_value(new ConfigOptionBools{true});
+        d = add("bs0", coBools);
+        d->set_default_value(new ConfigOptionBools{false});
+        d = add("bs2", coBools);
+        d->set_default_value(new ConfigOptionBools{true, true});
+        d = add_nullable("bsn", coBools);
+        d                = add("e", coEnum);
+        d->enum_keys_map = &s_test_enum_values;
+        d->enum_values   = {"alpha", "beta", "gamma"};
+        d->tooltip       = "An enum";
+        d->category      = "Switches";
+        d->set_default_value(new ConfigOptionEnum<TestEnum>(teBeta));
+        d                = add("e0", coEnum);
+        d->enum_keys_map = &s_test_enum_values;
+        d                = add("es", coEnums);
+        d->enum_keys_map = &s_test_enum_values;
+        d->set_default_value(new ConfigOptionEnumsGeneric{1});
+        d                = add("esn", coEnums);
+        d->enum_keys_map = &s_test_enum_values;
+        d->set_default_value(new ConfigOptionEnumsGenericNullable(std::vector<int>{2, ConfigOptionInts::nil_value()}));
+        d                = add("es0", coEnums);
+        d->enum_keys_map = &s_test_enum_values;
+        d = add("ig", coIntsGroups);
+        d->set_default_value(new ConfigOptionIntsGroups{std::vector<int>{1, 2}});
+        d = add("ig0", coIntsGroups);
+        d = add("pg", coPointsGroups);
+        d->set_default_value(new ConfigOptionPointsGroups{Vec2ds{Vec2d(1, 2)}});
+        d          = add("alias_target", coInt);
+        d->aliases = {"old_alias", "older_alias"};
+        d->set_default_value(new ConfigOptionInt(0));
+        d           = add("sc", coInt);
+        d->shortcut = {"i", "alias_target"};
+        d      = add("nocli_opt", coInt);
+        d->cli = ConfigOptionDef::nocli;
+        d->set_default_value(new ConfigOptionInt(9));
+        d = add("close_fan_the_first_x_layers", coInts);
+        d->set_default_value(new ConfigOptionInts{1});
+        d = add("close_additional_fan_first_x_layers", coInts);
+        d->set_default_value(new ConfigOptionInts{2});
+        d = add("close_optional_fan_first_x_layers", coInts);
+        d->set_default_value(new ConfigOptionInts{3});
+        d = add("additional_cooling_fan_speed", coInts);
+        d->set_default_value(new ConfigOptionInts{70});
+        d = add("optional_cooling_fan_speed", coInts);
+        d->set_default_value(new ConfigOptionInts{80});
+        d = add("first_x_layer_fan_speed", coFloats);
+        d->set_default_value(new ConfigOptionFloats{0.});
+        d = add("first_x_layer_optional_fan_speed", coFloats);
+        d->set_default_value(new ConfigOptionFloats{0.});
+        d = add("different_settings_to_system", coStrings);
+        d->set_default_value(new ConfigOptionStrings());
+        d = add("filament_settings_id", coStrings);
+        d->set_default_value(new ConfigOptionStrings());
+        d = add("reduce_infill_retraction", coBool);
+        d->set_default_value(new ConfigOptionBool(true));
+        d                = add("reduce_infill_retraction_mode", coEnum);
+        d->enum_keys_map = &s_rir_values;
+        d->set_default_value(new ConfigOptionEnumGeneric(&s_rir_values, 1));
+        d = add("support_type", coString);
+        d->set_default_value(new ConfigOptionString("normal(auto)"));
+        d                = add("support_style", coEnum);
+        d->enum_keys_map = &s_style_values;
+        d->set_default_value(new ConfigOptionEnumGeneric(&s_style_values, 0));
+        d = add("wall_infill_order", coString);
+        d->set_default_value(new ConfigOptionString("inner wall/outer wall/infill"));
+        d = add("is_infill_first", coBool);
+        d->set_default_value(new ConfigOptionBool(false));
+        d = add("print_host", coString);
+        d->set_default_value(new ConfigOptionString(""));
+        d = add("printhost_apikey", coString);
+        d->set_default_value(new ConfigOptionString(""));
+    }
+};
+
+static TestDef &test_def()
+{
+    static TestDef def;
+    return def;
+}
+
+class TestConfig : public DynamicConfig
+{
+public:
+    const ConfigDef *def() const override { return &test_def(); }
+    void             handle_legacy(t_config_option_key &opt_key, std::string &value) const override
+    {
+        if (opt_key == "legacy_removed")
+            opt_key = "";
+        else if (opt_key == "legacy_renamed")
+            opt_key = "i";
+        else if (opt_key == "legacy_value") {
+            opt_key = "s";
+            value += "_legacy";
+        }
+    }
+};
+
+// A static configuration with three members.
+class TestStaticConfig : public StaticConfig
+{
+public:
+    ConfigOptionFloat  f;
+    ConfigOptionInts   is;
+    ConfigOptionString s;
+    TestStaticConfig() { this->set_defaults(); }
+    const ConfigDef *def() const override { return &test_def(); }
+    using ConfigBase::optptr;
+    ConfigOption *optptr(const t_config_option_key &opt_key, bool = false) override
+    {
+        if (opt_key == "f") return &f;
+        if (opt_key == "is") return &is;
+        if (opt_key == "s") return &s;
+        return nullptr;
+    }
+    const ConfigOption *optptr(const t_config_option_key &opt_key) const override
+    {
+        return const_cast<TestStaticConfig *>(this)->optptr(opt_key, false);
+    }
+    t_config_option_keys keys() const override { return StaticConfig::keys(); }
+};
+
+typedef std::vector<std::pair<std::string, ConfigOption *>> Init;
+
+static void fill(DynamicConfig &c, const Init &init)
+{
+    for (auto &kv : init) c.set_key_value(kv.first, kv.second->clone());
+}
+
+static void cfg_spec(Line &l, const DynamicConfig &c, bool with_def)
+{
+    l.push_back(with_def ? "D" : "N");
+    l.push_back(num((long long) c.size()));
+    for (auto it = c.cbegin(); it != c.cend(); ++it) {
+        l.push_back(hex(it->first));
+        spec(l, it->second.get());
+    }
+}
+
+static void cfg_dump(Line &l, const DynamicConfig &c)
+{
+    l.push_back(num((long long) c.size()));
+    for (auto it = c.cbegin(); it != c.cend(); ++it) {
+        l.push_back(hex(it->first));
+        dump(l, it->second.get());
+    }
+}
+
+static void subs_dump(Line &l, const ConfigSubstitutions &subs)
+{
+    l.push_back(num((long long) subs.size()));
+    for (const ConfigSubstitution &s : subs) {
+        l.push_back(hex(s.opt_def->opt_key));
+        l.push_back(hex(s.old_value));
+        dump(l, s.new_value.get());
+    }
+}
+
+static void ctx_dump(Line &l, const ConfigSubstitutionContext &ctx)
+{
+    subs_dump(l, ctx.substitutions);
+    l.push_back(num((long long) ctx.unrecogized_keys.size()));
+    for (auto &k : ctx.unrecogized_keys) l.push_back(hex(k));
+}
+
+static void keys_tokens(Line &l, const std::vector<std::string> &keys)
+{
+    l.push_back(num((long long) keys.size()));
+    for (auto &k : keys) l.push_back(hex(k));
+}
+
+static Init init_a()
+{
+    auto es = new ConfigOptionEnumsGeneric(std::vector<int>{0, 2});
+    es->keys_map = &s_test_enum_values;
+    return {{"f", new ConfigOptionFloat(2.5)},
+            {"fs", new ConfigOptionFloats{0.4, 0.6}},
+            {"fsn", new ConfigOptionFloatsNullable{ConfigOptionFloatsNullable::nil_value(), 1.5}},
+            {"i", new ConfigOptionInt(7)},
+            {"is", new ConfigOptionInts{1, 2, 3}},
+            {"isn", new ConfigOptionIntsNullable{ConfigOptionIntsNullable::nil_value(), 3}},
+            {"s", new ConfigOptionString("hello world")},
+            {"ss", new ConfigOptionStrings{"a", "b c"}},
+            {"p", new ConfigOptionPercent(40)},
+            {"ps", new ConfigOptionPercents{10, 20}},
+            {"fp", new ConfigOptionFloatOrPercent(50, true)},
+            {"fp2", new ConfigOptionFloatOrPercent(25, true)},
+            {"fp3", new ConfigOptionFloatOrPercent(3, false)},
+            {"fp4", new ConfigOptionFloatOrPercent(200, true)},
+            {"fp5", new ConfigOptionFloatOrPercent(10, true)},
+            {"fp6", new ConfigOptionFloatOrPercent(10, true)},
+            {"fps", new ConfigOptionFloatsOrPercents{FloatOrPercent(10, false), FloatOrPercent(20, true)}},
+            {"fps0", new ConfigOptionFloatsOrPercents{FloatOrPercent(10, true)}},
+            {"pt", new ConfigOptionPoint(Vec2d(1, 2))},
+            {"pts", new ConfigOptionPoints{Vec2d(0, 0), Vec2d(10, 20)}},
+            {"b", new ConfigOptionBool(true)},
+            {"bs", new ConfigOptionBools{true, false}},
+            {"bsn", new ConfigOptionBoolsNullable(std::vector<unsigned char>{ConfigOptionBoolsNullable::nil_value(), 1})},
+            {"e", new ConfigOptionEnumGeneric(&s_test_enum_values, 1)},
+            {"es", es},
+            {"ig", new ConfigOptionIntsGroups{std::vector<int>{1, 2}, std::vector<int>{3}}}};
+}
+
+static Init init_b()
+{
+    auto es = new ConfigOptionEnumsGeneric(std::vector<int>{0, 2});
+    es->keys_map = &s_test_enum_values;
+    return {{"f", new ConfigOptionFloat(2.5)},
+            {"fs", new ConfigOptionFloats{0.4, 0.8}},
+            {"fsn", new ConfigOptionFloatsNullable{ConfigOptionFloatsNullable::nil_value(), 1.5}},
+            {"i", new ConfigOptionInt(8)},
+            {"isn", new ConfigOptionIntsNullable{4, ConfigOptionIntsNullable::nil_value()}},
+            {"s", new ConfigOptionString("hello world")},
+            {"ss", new ConfigOptionStrings{"a"}},
+            {"p", new ConfigOptionPercent(40)},
+            {"psn", new ConfigOptionPercentsNullable{ConfigOptionPercentsNullable::nil_value()}},
+            {"fp", new ConfigOptionFloatOrPercent(50, false)},
+            {"pt3", new ConfigOptionPoint3(Vec3d(1, 2, 3))},
+            {"b", new ConfigOptionBool(true)},
+            {"bs", new ConfigOptionBools{true, false}},
+            {"e", new ConfigOptionEnum<TestEnum>(teBeta)},
+            {"es", es},
+            {"zz_not_in_def", new ConfigOptionInt(1)}};
+}
+
+// A configuration where "fsn" holds only nils, for remove_nil_options, and "fs" a NaN, for opt_serialize.
+static Init init_c()
+{
+    return {{"fsn", new ConfigOptionFloatsNullable{ConfigOptionFloatsNullable::nil_value()}},
+            {"isn", new ConfigOptionIntsNullable{ConfigOptionIntsNullable::nil_value(), ConfigOptionIntsNullable::nil_value()}},
+            {"bsn", new ConfigOptionBoolsNullable(std::vector<unsigned char>{1})},
+            {"fs", new ConfigOptionFloats{1., std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()}},
+            {"is", new ConfigOptionInts{ConfigOptionInts::nil_value()}},
+            {"fps", new ConfigOptionFloatsOrPercents{FloatOrPercent(std::numeric_limits<double>::infinity(), false)}},
+            {"s", new ConfigOptionString("line\nfeed \"quoted\"\ttab")},
+            {"ss", new ConfigOptionStrings{"line\nfeed", "", "ctl\x01x"}},
+            {"f", new ConfigOptionFloat(0.1)}};
+}
+
+static std::string g_tmp;
+
+static std::string write_tmp(const std::string &name, const std::string &content)
+{
+    std::string   path = g_tmp + "/" + name;
+    std::ofstream f(path, std::ios::binary);
+    f.write(content.data(), content.size());
+    return path;
+}
+static std::string read_file(const std::string &path)
+{
+    std::ifstream      f(path, std::ios::binary);
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+// The path of the scratch file does not belong into the vectors.
+static std::string no_path(std::string s, const std::string &path)
+{
+    for (size_t p; (p = s.find(path)) != std::string::npos;) s.replace(p, path.size(), "<FILE>");
+    return s;
+}
+
+static void gen_config()
+{
+    Init                      ia = init_a(), ib = init_b(), ic = init_c();
+    const std::vector<Init *> inits{&ia, &ib, &ic};
+    static const char        *values[] = {"1", "0", "abc", "1.5", "nil", "1,0,enabled", "50%", "alpha", "delta", "on", "1x2", "", "beta,nope",
+                                          "true", "7,8", "a;b", "1,2#3", "gamma,alpha", "Enabled", "tree_hybrid", "0,nil"};
+    std::vector<std::string>  keys     = test_def().keys();
+    for (const char *k : {"old_alias", "older_alias", "legacy_removed", "legacy_renamed", "legacy_value", "nope", "f#1"}) keys.push_back(k);
+
+    // set_deserialize: every key, every value, every rule; from an empty configuration.
+    for (const std::string &key : keys)
+        for (const char *value : values)
+            for (int rule = 0; rule < 5; ++rule) {
+                if (rule > 1 && strcmp(value, "delta") != 0 && strcmp(value, "on") != 0 && strcmp(value, "1,0,enabled") != 0) continue;
+                TestConfig c;
+                Line       l{"c_set_deserialize"};
+                cfg_spec(l, c, true);
+                l.push_back(num(rule));
+                l.push_back("0");
+                l.push_back(hex(key));
+                l.push_back(hex(value));
+                l.push_back("=>");
+                ConfigSubstitutionContext ctx{ForwardCompatibilitySubstitutionRule(rule)};
+                guarded(l, [&](Line &r) {
+                    c.set_deserialize(key, value, ctx, false);
+                    r.push_back("ok");
+                });
+                ctx_dump(l, ctx);
+                cfg_dump(l, c);
+                emit(l);
+            }
+    // set_deserialize with append, repeated legacy keys, on filled configurations, and without a definition.
+    for (int which = 0; which < 2; ++which)
+        for (const std::string &key : keys)
+            for (const char *value : {"1", "0.5,nil", "x;y", "alpha", "1x1"}) {
+                TestConfig c;
+                fill(c, *inits[which]);
+                Line l{"c_set_deserialize"};
+                cfg_spec(l, c, true);
+                l.push_back("1");
+                l.push_back("1");
+                l.push_back(hex(key));
+                l.push_back(hex(value));
+                l.push_back("=>");
+                ConfigSubstitutionContext ctx{ForwardCompatibilitySubstitutionRule::Enable};
+                ctx.unrecogized_keys.push_back("legacy_removed");
+                guarded(l, [&](Line &r) {
+                    c.set_deserialize(key, value, ctx, true);
+                    r.push_back("ok");
+                });
+                ctx_dump(l, ctx);
+                cfg_dump(l, c);
+                emit(l);
+            }
+    for (const char *key : {"f", "nope", "legacy_removed"}) {
+        DynamicConfig c;
+        fill(c, ia);
+        Line l{"c_set_deserialize"};
+        cfg_spec(l, c, false);
+        l.push_back("0");
+        l.push_back("0");
+        l.push_back(hex(key));
+        l.push_back(hex("1"));
+        l.push_back("=>");
+        ConfigSubstitutionContext ctx{ForwardCompatibilitySubstitutionRule::Disable};
+        guarded(l, [&](Line &r) {
+            c.set_deserialize(key, "1", ctx, false);
+            r.push_back("ok");
+        });
+        ctx_dump(l, ctx);
+        cfg_dump(l, c);
+        emit(l);
+    }
+    // set(key, bool / int / double / string, create)
+    for (int which = 0; which < 2; ++which)
+        for (const std::string &key : keys)
+            for (int create = 0; create < 2; ++create)
+                for (int kind = 0; kind < 4; ++kind) {
+                    TestConfig c;
+                    if (which) fill(c, ia);
+                    static const double dv[] = {0.5, 1234567.891, 1e-7, -3.};
+                    double              d    = dv[rnd_int(0, 3)];
+                    int                 iv   = rnd_int(-3, 1000000);
+                    Line                l{"c_set"};
+                    cfg_spec(l, c, true);
+                    l.push_back(hex(key));
+                    l.push_back(num(create));
+                    l.push_back(num(kind));
+                    l.push_back(kind == 0 ? num(iv & 1) : kind == 1 ? num(iv) : kind == 2 ? dbl(d) : hex("text " + std::to_string(iv)));
+                    l.push_back("=>");
+                    guarded(l, [&](Line &r) {
+                        if (kind == 0)
+                            c.set(key, bool(iv & 1), create != 0);
+                        else if (kind == 1)
+                            c.set(key, iv, create != 0);
+                        else if (kind == 2)
+                            c.set(key, d, create != 0);
+                        else
+                            c.set(key, "text " + std::to_string(iv), create != 0);
+                        r.push_back("ok");
+                    });
+                    cfg_dump(l, c);
+                    emit(l);
+                }
+    // Two configurations: apply, apply_only, equals, diff, equal (ConfigBase and DynamicConfig), ==, +=.
+    for (int wa = 0; wa < 4; ++wa)
+        for (int wb = 0; wb < 4; ++wb) {
+            TestConfig a, b;
+            if (wa < 3) fill(a, *inits[wa]);
+            if (wb < 3) fill(b, *inits[wb]);
+            for (int ignore = 0; ignore < 2; ++ignore) {
+                TestConfig c = a;
+                Line       l{"c_apply"};
+                cfg_spec(l, a, true);
+                cfg_spec(l, b, true);
+                l.push_back(num(ignore));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    c.apply(b, ignore != 0);
+                    r.push_back("ok");
+                });
+                cfg_dump(l, c);
+                emit(l);
+            }
+            {
+                std::set<std::string> skipped{"fs", "i"};
+                Line                  l{"c_compare"};
+                cfg_spec(l, a, true);
+                cfg_spec(l, b, true);
+                l.push_back("=>");
+                guarded(l, [&](Line &r) { r.push_back(num(a.ConfigBase::equals(b))); });
+                guarded(l, [&](Line &r) { r.push_back(num(a.ConfigBase::equals(b, &skipped))); });
+                guarded(l, [&](Line &r) { keys_tokens(r, a.ConfigBase::diff(b)); });
+                guarded(l, [&](Line &r) { keys_tokens(r, a.ConfigBase::equal(b)); });
+                guarded(l, [&](Line &r) { r.push_back(num(a.DynamicConfig::equals(b))); });
+                guarded(l, [&](Line &r) { r.push_back(num(a.DynamicConfig::equals(b, &skipped))); });
+                guarded(l, [&](Line &r) { keys_tokens(r, a.DynamicConfig::diff(b)); });
+                guarded(l, [&](Line &r) { keys_tokens(r, a.DynamicConfig::equal(b)); });
+                guarded(l, [&](Line &r) { r.push_back(num(a == b)); });
+                guarded(l, [&](Line &r) { r.push_back(num(a != b)); });
+                emit(l);
+            }
+            {
+                TestConfig c = a;
+                Line       l{"c_add_assign"};
+                cfg_spec(l, a, true);
+                cfg_spec(l, b, true);
+                l.push_back("=>");
+                c += b;
+                cfg_dump(l, c);
+                TestConfig c2 = a, b2 = b;
+                c2 += std::move(b2);
+                cfg_dump(l, c2);
+                cfg_dump(l, b2);
+                TestConfig c3 = a, b3 = b;
+                c3.swap(b3);
+                cfg_dump(l, c3);
+                emit(l);
+            }
+        }
+    // apply_only with explicit keys, among them "key#index".
+    {
+        const std::vector<std::vector<std::string>> key_sets = {
+            {"f", "fs"}, {"zz_not_in_def"}, {"nope"}, {"fs#1"}, {"fs#0", "is#2"}, {"zz_not_in_def#1"}, {"ss#1", "f"}, {"fs#1x"}, {"f#1"},
+            {"pts#1"}, {"isn#1"}, {"fs#3"}, {"e", "es", "ig"}, {"nope#2"}, {"psn#0"}, {"fs# 1"}, {"fs#-0"}};
+        for (int wa = 0; wa < 4; ++wa)
+            for (int wb = 0; wb < 2; ++wb)
+                for (auto &ks : key_sets)
+                    for (int ignore = 0; ignore < 2; ++ignore) {
+                        TestConfig a, b;
+                        if (wa < 3) fill(a, *inits[wa]);
+                        fill(b, *inits[wb]);
+                        Line l{"c_apply_only"};
+                        cfg_spec(l, a, true);
+                        cfg_spec(l, b, true);
+                        keys_tokens(l, ks);
+                        l.push_back(num(ignore));
+                        l.push_back("=>");
+                        guarded(l, [&](Line &r) {
+                            a.apply_only(b, ks, ignore != 0);
+                            r.push_back("ok");
+                        });
+                        cfg_dump(l, a);
+                        emit(l);
+                    }
+    }
+    // One configuration: keys, opt_serialize, abs values, nil handling, erase, copies, accessors.
+    for (int wa = 0; wa < 3; ++wa) {
+        TestConfig a;
+        fill(a, *inits[wa]);
+        for (const std::string &key : a.keys()) {
+            Line l{"c_key"};
+            cfg_spec(l, a, true);
+            l.push_back(hex(key));
+            l.push_back("=>");
+            guarded(l, [&](Line &r) { r.push_back(hex(a.opt_serialize(key))); });
+            guarded(l, [&](Line &r) { r.push_back(dbl(a.get_abs_value(key))); });
+            guarded(l, [&](Line &r) { r.push_back(dbl(a.get_abs_value(key, 80.))); });
+            for (size_t idx = 0; idx < 3; ++idx) guarded(l, [&](Line &r) { r.push_back(dbl(a.get_abs_value_at(key, idx))); });
+            l.push_back(num(a.has(key)));
+            {
+                TestConfig c = a;
+                l.push_back(num(c.erase(key)));
+                l.push_back(num(c.erase(key)));
+                l.push_back(num((long long) c.size()));
+            }
+            emit(l);
+        }
+        {
+            DynamicConfig n;
+            fill(n, *inits[wa]);
+            Line l{"c_nodef_abs"};
+            cfg_spec(l, n, false);
+            l.push_back("=>");
+            for (const char *key : {"f", "fp", "fps", "fs"}) {
+                guarded(l, [&](Line &r) { r.push_back(n.has(key) ? dbl(n.get_abs_value(key)) : "none"); });
+                guarded(l, [&](Line &r) { r.push_back(n.has(key) ? dbl(n.get_abs_value_at(key, 0)) : "none"); });
+            }
+            emit(l);
+        }
+        {
+            Line l{"c_whole"};
+            cfg_spec(l, a, true);
+            l.push_back("=>");
+            keys_tokens(l, a.keys());
+            l.push_back(num(a.empty()));
+            {
+                TestConfig c = a;
+                guarded(l, [&](Line &r) {
+                    c.null_nullables();
+                    r.push_back("ok");
+                });
+                cfg_dump(l, c);
+                l.push_back(num((long long) c.remove_nil_options()));
+                cfg_dump(l, c);
+            }
+            {
+                TestConfig c = a;
+                l.push_back(num((long long) c.remove_nil_options()));
+                cfg_dump(l, c);
+                l.push_back(num(c.set_key_value("f", new ConfigOptionFloat(9.))));
+                l.push_back(num(c.set_key_value("brand_new", new ConfigOptionInt(4))));
+                cfg_dump(l, c);
+                c.clear();
+                l.push_back(num(c.empty()));
+            }
+            {
+                std::vector<std::string> ks = a.keys();
+                if (ks.size() > 3) ks.resize(3);
+                DynamicConfig c(a, ks);
+                cfg_dump(l, c);
+            }
+            // setenv_
+            guarded(l, [&](Line &r) {
+                a.setenv_();
+                r.push_back("ok");
+            });
+            for (const std::string &key : a.keys()) {
+                std::string env = "SLIC3R_";
+                for (char ch : key) env += (ch >= 'a' && ch <= 'z') ? char(ch - 32) : ch;
+                const char *v = getenv(env.c_str());
+                l.push_back(v ? hex(v) : "unset");
+                unsetenv(env.c_str());
+            }
+            emit(l);
+        }
+    }
+    // The typed accessors, on the keys of the first configuration that have the class asked for.
+    {
+        TestConfig a;
+        fill(a, ia);
+        const TestConfig &ca = a;
+        Line              l{"c_accessors"};
+        cfg_spec(l, a, true);
+        l.push_back("=>");
+        l.push_back(hex(ca.opt_string("s")));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(hex(ca.opt_string("ss", i)));
+        l.push_back(dbl(ca.opt_float("f")));
+        l.push_back(dbl(ca.opt_float("p")));
+        l.push_back(dbl(ca.opt_float("fp")));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(dbl(ca.opt_float("fs", i)));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(dbl(ca.opt_float("fsn", i)));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(dbl(ca.opt_float("ps", i)));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(dbl(ca.opt_float_nullable("fsn", i)));
+        l.push_back(num(ca.opt_int("i")));
+        l.push_back(num(ca.opt_int("e")));
+        for (unsigned i = 0; i < 4; ++i) l.push_back(num(ca.opt_int("is", i)));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(num(ca.opt_int("es", i)));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(num(ca.opt_int_nullable("isn", i)));
+        l.push_back(num(int(ca.opt_enum<TestEnum>("e"))));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(num(ca.opt_enum("es", i)));
+        l.push_back(num(ca.opt_bool("b")));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(num(ca.opt_bool("bs", i)));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(num(ca.opt_bool("bsn", i)));
+        for (unsigned i = 0; i < 3; ++i) l.push_back(num(ca.opt_bool_nullable("bsn", i)));
+        // the mutable ones
+        a.opt_string("s") += "!";
+        a.opt_string("s_empty", true) = "created";
+        a.opt_string("ss", 5) += "?";
+        a.opt_float("f") += 1.;
+        a.opt_float("fs", 1) = 7.;
+        a.opt_float("fsn", 0) = 8.;
+        a.opt_float_nullable("fsn", 9) = 9.;
+        a.opt_int("i") = 70;
+        a.opt_int("is", 2) = 71;
+        a.opt_int_nullable("isn", 1) = 72;
+        cfg_dump(l, a);
+        l.push_back(num(a.opt<ConfigOptionFloat>("f") != nullptr));
+        l.push_back(num(a.opt<ConfigOptionFloat>("i") != nullptr));
+        l.push_back(num(a.opt<ConfigOptionFloat>("nope") != nullptr));
+        l.push_back(num(a.opt<ConfigOptionInt>("alias_target", true) != nullptr));
+        l.push_back(num(a.option<ConfigOptionFloat>("f") != nullptr));
+        l.push_back(num(a.option<ConfigOptionFloat>("i") != nullptr));
+        l.push_back(num(a.option<ConfigOptionInts>("is") != nullptr));
+        guarded(l, [&](Line &r) { r.push_back(num(a.option_throw<ConfigOptionInt>("i")->value)); });
+        guarded(l, [&](Line &r) { r.push_back(num(a.option_throw<ConfigOptionInt>("f")->value)); });
+        guarded(l, [&](Line &r) { r.push_back(num(a.option_throw<ConfigOptionInt>("nope")->value)); });
+        guarded(l, [&](Line &r) { r.push_back(num(a.option_throw("nope") != nullptr)); });
+        guarded(l, [&](Line &r) { r.push_back(num(ca.option_throw("nope") != nullptr)); });
+        guarded(l, [&](Line &r) { r.push_back(num(ca.option_throw<ConfigOptionInt>("s") != nullptr)); });
+        cfg_dump(l, a);
+        emit(l);
+    }
+    // load_string_map
+    {
+        const std::vector<std::map<std::string, std::string>> maps = {
+            {{"f", "3.5"}, {"nope", "1"}, {"is", "4,5"}},
+            {{"close_fan_the_first_x_layers", "5"}, {"additional_cooling_fan_speed", "60,65"}},
+            {{"close_fan_the_first_x_layers", "5"}, {"close_additional_fan_first_x_layers", "6"}, {"first_x_layer_fan_speed", "30"}},
+            {{"e", "delta"}, {"bs", "1,enabled"}, {"legacy_removed", "x"}},
+            {{"f", "abc"}},
+            {{"optional_cooling_fan_speed", "10"}, {"additional_cooling_fan_speed", "20"}},
+            {}};
+        for (auto &m : maps)
+            for (int rule = 0; rule < 2; ++rule) {
+                TestConfig c;
+                Line       l{"c_load_string_map"};
+                cfg_spec(l, c, true);
+                l.push_back(num(rule));
+                l.push_back(num((long long) m.size()));
+                for (auto &kv : m) {
+                    l.push_back(hex(kv.first));
+                    l.push_back(hex(kv.second));
+                }
+                l.push_back("=>");
+                auto mm = m;
+                guarded(l, [&](Line &r) {
+                    ConfigSubstitutions subs = c.load_string_map(mm, ForwardCompatibilitySubstitutionRule(rule));
+                    r.push_back("ok");
+                    subs_dump(r, subs);
+                });
+                cfg_dump(l, c);
+                emit(l);
+            }
+    }
+    // The INI readers.
+    {
+        static const char *inis[] = {
+            "f = 3.5\nis = 4,5\n", "f=3.5", "; comment\n# comment\n\n  s = a b c  \r\nnope = 1\n", "[section]\nf = 1\ni = 2\n", "f = 1\n[sec]\n[sec2]\ni = 3\n",
+            "f = 1\nf = 2\n", "no equals sign\n", "= 5\n", "[open\n", "[a]\nx=1\n[a]\ny=2\n", "f = abc\n", "e = delta\nbs = on\n", "", "\n\n", "s = x = y\n",
+            "[f]\ni = 1\n", "f = 1\n[f]\ni = 1\n", "[s]\n[s]\n", "i = 1\n[sec]\nf = 2\nf = 3\n", " f = 2 ; not a comment\n", "ss = a;b;\"c d\"\n", "f =\n",
+            "legacy_value = v\nlegacy_removed = 1\n", "[sec]\ni = 5\n[]\nf = 2\n", "f = 1\r\ni = 2\r\n", "\tf\t=\t4\t\n"};
+        static const char *commented[] = {
+            "; f = 3.5\n; is = 4,5\n", "; generated by BambuStudio 1.2.3\n; f = 3.5\n\n\n; i = 4\n", ";f=1\r\n;i=2\r\n", "  ;  f = 2\n\t; i = 3", "f = 1\n; s = generated by x\n",
+            "; generated by ", "", ";", "\n", "; f = 1\n;; i = 2\n", "; s = a;b\n;\n; i = 1\n", ";\tgenerated by tool\n; i = 6", "; f = 1\r\r\n; i = 2", "generated by x\n; f = 9\n"};
+        for (const char *ini : inis)
+            for (int rule = 0; rule < 2; ++rule) {
+                TestConfig c;
+                Line       l{"c_ini"};
+                cfg_spec(l, c, true);
+                l.push_back(num(rule));
+                l.push_back(hex(ini));
+                l.push_back("=>");
+                guarded(l, [&](Line &r) {
+                    ConfigSubstitutions subs = c.load_from_ini_string(ini, ForwardCompatibilitySubstitutionRule(rule));
+                    r.push_back("ok");
+                    subs_dump(r, subs);
+                });
+                cfg_dump(l, c);
+                // the same through a file
+                std::string path = write_tmp("x.ini", ini);
+                TestConfig  c2;
+                guarded(l, [&](Line &r) {
+                    ConfigSubstitutions subs = c2.load_from_ini(path, ForwardCompatibilitySubstitutionRule(rule));
+                    r.push_back("ok");
+                    subs_dump(r, subs);
+                });
+                for (size_t i = l.size() - 1; i > 0 && l[i][0] != '!'; --i) {}
+                if (l[l.size() - 2][0] == '!') {
+                    // the text of the error names the file
+                    std::string what = no_path(std::string(), path);
+                }
+                cfg_dump(l, c2);
+                emit(l);
+            }
+        for (const char *ini : commented) {
+            TestConfig c;
+            Line       l{"c_ini_commented"};
+            cfg_spec(l, c, true);
+            l.push_back(hex(ini));
+            l.push_back("=>");
+            guarded(l, [&](Line &r) {
+                ConfigSubstitutions subs = c.load_from_ini_string_commented(std::string(ini), ForwardCompatibilitySubstitutionRule::Enable);
+                r.push_back("ok");
+                subs_dump(r, subs);
+            });
+            cfg_dump(l, c);
+            emit(l);
+        }
+    }
+    // load_from_gcode_string_legacy
+    {
+        static const char *gcodes[] = {
+            "G1 X1\n; fs = 0.4,0.6\n; i = 12\n; s = some text\n", "G1 X1\n; fs = 0.4,0.6\n; i = 12\n; s = some text", "N10 G1 X1\nN20 ; fs = 0.4,0.6\nN30 ; i = 12345\n",
+            "; first = line\n; is = 4,5,6,7\n", "G1\n; nope = 1234567\n; is = 4,5,6,7\n", "G1\n; i = 1\n; is = 4,5,6,7\n", "G1\n;is = 4,5,6,7\n", "G1\n; is=4,5,6,7,8\n",
+            "G1\n; 1s = 4,5,6,7\n", "G1\n; is = 4,5,6,7\r\n; fs = 1,2,3\r\n", "", "\n", "G1\n; f = abcdefg\n", "G1\n; i s = 12345\n", "G1\n; is =  4,5,6,7\n",
+            "  N5 G1\n; ss = a;b;c;d\n\n\n", "G1\n; ab = 12345\n; is = 4,5,6\n", "G1\n; legacy_removed = 12345\n; legacy_value = abcdef\n", "G1\n; e = deltadelta\n",
+            "G1\nN7; is = 4,5,6,7\nN8   ; fs = 1,2,3,4\n", "x\n; isn = nil,nil,4\n", "G1 ; is = 4,5,6,7\n", "G1\n; is = 4,5,6,7 = 9\n"};
+        for (const char *g : gcodes)
+            for (int rule = 0; rule < 2; ++rule) {
+                TestConfig c;
+                Line       l{"c_gcode_legacy"};
+                cfg_spec(l, c, true);
+                l.push_back(num(rule));
+                l.push_back(hex(g));
+                l.push_back("=>");
+                ConfigSubstitutionContext ctx{ForwardCompatibilitySubstitutionRule(rule)};
+                guarded(l, [&](Line &r) { r.push_back(num((long long) ConfigBase::load_from_gcode_string_legacy(c, g, ctx))); });
+                ctx_dump(l, ctx);
+                cfg_dump(l, c);
+                emit(l);
+            }
+    }
+    // load_from_gcode_file, load: the file needs 80 key = value pairs between the tags.
+    {
+        std::string block;
+        for (int i = 0; i < 85; ++i) block += "; i = " + std::to_string(i) + "\n";
+        const std::vector<std::string> files = {
+            "; BambuStudio 1.0\nG1 X1\n; CONFIG_BLOCK_START\n" + block + "; fs = 1,2\n; nope = 3\n; s = text = more\n;x=1\n ; f = 9\n; CONFIG_BLOCK_END\n; f = 5\n",
+            "G1\nN1 ; BambuStudio\n; CONFIG_BLOCK_START\r\n" + block + "; fs = 1,2\r\n; CONFIG_BLOCK_END\r\n",
+            "; BambuStudio 1.0\n; CONFIG_BLOCK_START\n; f = 1\n; CONFIG_BLOCK_END\n",
+            "; BambuStudio 1.0\n" + block,
+            "; BambuStudio 1.0\n; CONFIG_BLOCK_START\n" + block,
+            "; some other slicer\n; CONFIG_BLOCK_START\n" + block + "; CONFIG_BLOCK_END\n",
+            "",
+            "  n5 ; BambuStudio\n; CONFIG_BLOCK_START\n" + block + "; f = abc\n; CONFIG_BLOCK_END\n",
+            "nothing ; BambuStudio\n; CONFIG_BLOCK_START and more\n" + block + "; e = delta\n; CONFIG_BLOCK_END and more"};
+        for (const std::string &content : files)
+            for (int rule = 0; rule < 2; ++rule)
+                for (int via_load = 0; via_load < 2; ++via_load) {
+                    std::string path = write_tmp("x.gcode", content);
+                    TestConfig  c;
+                    Line        l{"c_gcode_file"};
+                    l.push_back(num(rule));
+                    l.push_back(num(via_load));
+                    l.push_back(hex(content));
+                    l.push_back("=>");
+                    Line r;
+                    try {
+                        ConfigSubstitutions subs = via_load ? c.load(path, ForwardCompatibilitySubstitutionRule(rule)) :
+                                                              c.load_from_gcode_file(path, ForwardCompatibilitySubstitutionRule(rule));
+                        r.push_back("ok");
+                        subs_dump(r, subs);
+                    } catch (const std::exception &e) {
+                        r.clear();
+                        r.push_back(exc_kind(e));
+                        r.push_back(hex(no_path(e.what(), path)));
+                    }
+                    l.insert(l.end(), r.begin(), r.end());
+                    cfg_dump(l, c);
+                    emit(l);
+                }
+        // load() of a file that is neither .gcode nor .json
+        {
+            std::string path = write_tmp("x.ini", "f = 5\n");
+            TestConfig  c;
+            Line        l{"c_load_other"};
+            l.push_back("=>");
+            guarded(l, [&](Line &r) {
+                ConfigSubstitutions subs = c.load(path, ForwardCompatibilitySubstitutionRule::Enable);
+                r.push_back("ok");
+                subs_dump(r, subs);
+            });
+            cfg_dump(l, c);
+            emit(l);
+        }
+    }
+    // save, save_to_json
+    for (int wa = 0; wa < 4; ++wa) {
+        TestConfig a;
+        if (wa < 3) fill(a, *inits[wa]);
+        if (wa == 0) {
+            a.set_key_value("print_host", new ConfigOptionString("host"));
+            a.set_key_value("printhost_apikey", new ConfigOptionString("key"));
+            a.set_key_value("name", new ConfigOptionString("an option called name"));
+        }
+        {
+            std::string path = g_tmp + "/saved.ini";
+            unlink(path.c_str());
+            Line l{"c_save"};
+            cfg_spec(l, a, true);
+            l.push_back("=>");
+            guarded(l, [&](Line &r) {
+                a.save(path);
+                r.push_back("ok");
+            });
+            // The first line carries the version of the build.
+            std::string content = read_file(path);
+            size_t      nl      = content.find('\n');
+            l.push_back(hex(nl == std::string::npos ? content : content.substr(nl + 1)));
+            emit(l);
+        }
+        for (const char *from : {"project", "User"}) {
+            std::string path = g_tmp + "/saved.json";
+            unlink(path.c_str());
+            Line l{"c_save_json"};
+            cfg_spec(l, a, true);
+            l.push_back(hex(from));
+            l.push_back("=>");
+            guarded(l, [&](Line &r) {
+                a.save_to_json(path, "the \"name\"", from, "1.2.3.4");
+                r.push_back("ok");
+            });
+            l.push_back(hex(read_file(path)));
+            emit(l);
+        }
+    }
+    // load_from_json
+    {
+        static const char *jsons[] = {
+            "{\"f\": \"3.5\", \"is\": [\"4\", \"5\"], \"version\": \"1.0\", \"name\": \"n\", \"from\": \"User\", \"type\": \"process\"}",
+            "{\"Version\": \"2\", \"version\": \"1\", \"URL\": \"u\", \"setting_id\": \"sid\", \"filament_id\": \"fid\", \"description\": \"d\", \"instantiation\": \"true\", \"is_custom_defined\": \"0\"}",
+            "{\"inherits\": \"parent\", \"include\": [\"a\", \"b\"], \"f\": \"1\"}",
+            "{\"ss\": [\"a b\", \"c\\\"d\", \"e\\\\f\"], \"pts\": [\"1x2\", \"3x4\"], \"pg\": [\"1x2,3x4\", \"5x6\"], \"fs\": [\"1\", \"2\"]}",
+            "{\"ig\": [[\"1\", \"2\"], [\"3\"]], \"is\": [[\"1\"], [\"2\", \"3\"]]}",
+            "{\"is\": [\"1\", 2]}",
+            "{\"is\": [1, 2], \"f\": \"7\"}",
+            "{\"a_first\": \"x\", \"f\": \"2\"}",
+            "{\"f\": 2}",
+            "{\"f\": \"abc\"}",
+            "{\"version\": 5}",
+            "{\"legacy_removed\": \"1\", \"legacy_renamed\": \"9\", \"legacy_value\": \"v\", \"old_alias\": \"4\"}",
+            "{\"legacy_removed\": [\"1\"], \"legacy_renamed\": [\"9\"], \"older_alias\": [\"6\"], \"unknown_array\": [\"1\"]}",
+            "{\"e\": \"delta\", \"bs\": [\"1\", \"enabled\"], \"b\": \"on\"}",
+            "{\"close_fan_the_first_x_layers\": [\"5\"], \"different_settings_to_system\": [\"close_fan_the_first_x_layers;f\", \"x\"], \"additional_cooling_fan_speed\": [\"60\"]}",
+            "{\"additional_cooling_fan_speed\": [\"60\"], \"first_x_layer_fan_speed\": [\"1\"], \"first_x_layer_optional_fan_speed\": [\"2\"], \"different_settings_to_system\": [\"additional_cooling_fan_speed;first_x_layer_fan_speed\", \"optional_cooling_fan_speed;additional_cooling_fan_speed\"]}",
+            "{\"name\": \"project_settings\", \"reduce_infill_retraction\": \"0\", \"support_type\": \"hybrid(auto)\", \"wall_infill_order\": \"infill/outer wall/inner wall\", \"filament_settings_id\": [\"a\", \"b\"]}",
+            "{\"name\": \"project_settings\", \"reduce_infill_retraction\": \"false\", \"different_settings_to_system\": [\"wall_sequence;f\", \"\", \"wall_sequence\"], \"wall_infill_order\": \"infill/inner wall/outer wall\"}",
+            "{\"name\": \"project_settings\", \"support_type\": \"hybrid(auto)\", \"different_settings_to_system\": [\"support_type;\\\"a b\\\"\", \"i;wall_sequence\"], \"wall_infill_order\": \"outer wall/inner wall/infill\"}",
+            "{\"name\": \"other\", \"reduce_infill_retraction\": \"0\", \"support_type\": \"hybrid(auto)\"}",
+            "{\"reduce_infill_retraction\": \"1\", \"support_type\": \"normal(auto)\", \"wall_infill_order\": \"inner-outer-inner wall/infill\"}",
+            "[]", "null", "[1]", "5", "\"text\"", "{", "", "{\"f\": \"1\",}", "{\"f\": {\"a\": \"b\"}, \"i\": \"4\", \"b\": true, \"s\": null}",
+            "{\"ss\": [], \"fs\": []}", "{\"ss\": [[]], \"is\": [[], [\"1\"]]}", "{\"name\": [\"x\"]}", "{\"include\": \"single\", \"inherits\": [\"p\"]}",
+            "{\"s\": \"multi\\nline \\\"q\\\" \\\\ end\", \"ss\": [\"multi\\nline\", \"\"]}"};
+        for (const char *json : jsons)
+            for (int rule = 0; rule < 2; ++rule)
+                for (int inherits = 0; inherits < 2; ++inherits) {
+                    std::string path = write_tmp("x.json", json);
+                    TestConfig  c;
+                    Line        l{"c_json"};
+                    l.push_back(num(rule));
+                    l.push_back(num(inherits));
+                    l.push_back(hex(json));
+                    l.push_back("=>");
+                    ConfigSubstitutionContext          ctx{ForwardCompatibilitySubstitutionRule(rule)};
+                    std::map<std::string, std::string> key_values{{"version", "preset"}};
+                    std::string                        reason = "unset";
+                    int                                ret    = c.load_from_json(path, ctx, inherits != 0, key_values, reason);
+                    l.push_back(num(ret));
+                    l.push_back(hex(no_path(reason, path)));
+                    l.push_back(num((long long) key_values.size()));
+                    for (auto &kv : key_values) {
+                        l.push_back(hex(kv.first));
+                        l.push_back(hex(kv.second));
+                    }
+                    ctx_dump(l, ctx);
+                    cfg_dump(l, c);
+                    emit(l);
+                }
+        // A file that does not exist, and load() of a .json.
+        {
+            TestConfig                         c;
+            ConfigSubstitutionContext          ctx{ForwardCompatibilitySubstitutionRule::Enable};
+            std::map<std::string, std::string> key_values;
+            std::string                        reason = "unset";
+            Line                               l{"c_json_missing", "=>"};
+            l.push_back(num(c.load_from_json(g_tmp + "/does_not_exist.json", ctx, true, key_values, reason)));
+            l.push_back(hex(reason));
+            std::string path = write_tmp("y.json", "{\"f\": \"4.5\", \"e\": \"delta\", \"inherits\": \"p\"}");
+            guarded(l, [&](Line &r) {
+                ConfigSubstitutions subs = c.load(path, ForwardCompatibilitySubstitutionRule::Enable);
+                r.push_back("ok");
+                subs_dump(r, subs);
+            });
+            cfg_dump(l, c);
+            emit(l);
+        }
+    }
+    // read_cli
+    {
+        const std::vector<std::vector<std::string>> argvs = {
+            {"prog", "--f", "2.5", "file.stl"}, {"prog", "--f=3", "--int-opt", "4", "-I", "5"}, {"prog", "--string-opt", "a\\nb", "-S=x y"}, {"prog", "--b", "--bs", "--bs", "--bs=0"},
+            {"prog", "--b=0", "--b=x"}, {"prog", "--fs", "1,2", "--fs", "3"}, {"prog", "--nope"}, {"prog", "--f"}, {"prog", "--f", "abc"}, {"prog", "--", "--f", "1"},
+            {"prog", "a", "-psn_0_1", "b"}, {"prog", "--nocli-opt", "1"}, {"prog", "--alias-target", "5", "--sc", "6"}, {"prog", "--e", "gamma", "--es", "alpha,beta"},
+            {"prog", "--e", "delta"}, {"prog", "--ss", "a;\"b c\"", "--ss", "d"}, {"prog", "--pt", "1,2", "--pts", "1x2,3x4"}, {"prog", "--i=", "7"}, {"prog"},
+            {"prog", "--bsn", "--isn", "nil,1"}, {"prog", "-f", "1"}, {"prog", "--fs=nil"}, {"prog", "--is", "1", "--is", "x", "--p", "5%", "--fp", "20%"},
+            {"prog", "--legacy-removed", "1"}, {"prog", "--b", "--b1=0", "x", "--f", "1", "y"}};
+        for (auto &args : argvs)
+            for (int filled = 0; filled < 2; ++filled) {
+                TestConfig c;
+                if (filled) fill(c, ia);
+                Line l{"c_read_cli"};
+                cfg_spec(l, c, true);
+                keys_tokens(l, args);
+                l.push_back("=>");
+                std::vector<const char *> argv;
+                for (auto &a : args) argv.push_back(a.c_str());
+                t_config_option_keys extra, order;
+                guarded(l, [&](Line &r) { r.push_back(num(c.read_cli(int(argv.size()), argv.data(), &extra, &order))); });
+                keys_tokens(l, extra);
+                keys_tokens(l, order);
+                cfg_dump(l, c);
+                emit(l);
+            }
+    }
+    // The definition: cli_args, create_empty_option, create_default_option, has_enum_value, print_cli_help.
+    for (const std::string &key : test_def().keys()) {
+        const ConfigOptionDef *d = test_def().get(key);
+        Line                   l{"def"};
+        l.push_back(hex(key));
+        l.push_back("=>");
+        l.push_back(num(int(d->type)));
+        l.push_back(num(d->nullable));
+        keys_tokens(l, d->cli_args(key));
+        guarded(l, [&](Line &r) {
+            std::unique_ptr<ConfigOption> o(d->create_empty_option());
+            dump(r, o.get());
+        });
+        guarded(l, [&](Line &r) {
+            std::unique_ptr<ConfigOption> o(d->create_default_option());
+            dump(r, o.get());
+        });
+        l.push_back(num(d->has_enum_value("beta")));
+        l.push_back(num(test_def().has(key)));
+        emit(l);
+    }
+    {
+        Line l{"def_keys", "=>"};
+        keys_tokens(l, test_def().keys());
+        l.push_back(num(test_def().has("nope")));
+        l.push_back(num(test_def().get("nope") != nullptr));
+        emit(l);
+    }
+    for (int show_defaults = 0; show_defaults < 2; ++show_defaults)
+        for (int filter = 0; filter < 3; ++filter) {
+            Line l{"cli_help"};
+            l.push_back(num(show_defaults));
+            l.push_back(num(filter));
+            l.push_back("=>");
+            std::ostringstream ss;
+            test_def().print_cli_help(ss, show_defaults != 0, [filter](const ConfigOptionDef &d) {
+                return filter == 0 || (filter == 1 && !d.category.empty()) || (filter == 2 && d.category == "Numbers");
+            });
+            l.push_back(hex(ss.str()));
+            emit(l);
+        }
+    // StaticConfig
+    {
+        TestStaticConfig s;
+        Line             l{"static", "=>"};
+        keys_tokens(l, s.keys());
+        for (const std::string &key : s.keys()) dump(l, s.option(key));
+        TestConfig a;
+        fill(a, ia);
+        guarded(l, [&](Line &r) {
+            s.apply(a, true);
+            r.push_back("ok");
+        });
+        for (const std::string &key : s.keys()) dump(l, s.option(key));
+        guarded(l, [&](Line &r) {
+            s.apply(a, false);
+            r.push_back("ok");
+        });
+        guarded(l, [&](Line &r) { r.push_back(num(s.ConfigBase::equals(a))); });
+        guarded(l, [&](Line &r) { keys_tokens(r, s.diff(a)); });
+        ConfigSubstitutionContext ctx{ForwardCompatibilitySubstitutionRule::Disable};
+        guarded(l, [&](Line &r) {
+            s.set_deserialize("is", "9,8", ctx, true);
+            r.push_back("ok");
+        });
+        guarded(l, [&](Line &r) {
+            s.set_deserialize("legacy_value", "v", ctx, false);
+            r.push_back("ok");
+        });
+        for (const std::string &key : s.keys()) dump(l, s.option(key));
+        emit(l);
+    }
+}
+
+static void open_out(const std::string &dir, const char *name)
+{
+    if (g_out) fclose(g_out);
+    g_out = fopen((dir + "/" + name).c_str(), "w");
+    if (!g_out) {
+        fprintf(stderr, "cannot write %s/%s\n", dir.c_str(), name);
+        exit(1);
+    }
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2) {
+        fprintf(stderr, "usage: gen <output directory>\n");
+        return 1;
+    }
+    std::string dir = argv[1];
+    char        tmpl[] = "/tmp/config_gen_XXXXXX";
+    g_tmp              = mkdtemp(tmpl);
+
+    std::vector<std::string> scalars, vectors;
+    for (const char *c : SCALARS) scalars.push_back(c);
+    for (const char *c : VECTORS) vectors.push_back(c);
+    open_out(dir, "options_scalar.txt");
+    gen_des(scalars);
+    open_out(dir, "options_vector.txt");
+    gen_des(vectors);
+    open_out(dir, "option_pairs.txt");
+    gen_pairs();
+    open_out(dir, "vector_ops.txt");
+    gen_vector_ops();
+    open_out(dir, "config.txt");
+    gen_config();
+    fclose(g_out);
+    return 0;
+}

@@ -1,0 +1,1284 @@
+TO
+A 4 -766 8 2 1 0 two\swords Würfel 0 114 9 3 2 0 😀 Würfel 4 -2 9 -1 1 75 -2 6 6 1 \e a 0 818 8 -1 3 0 😀 q"\\\n\x09\x01 3 1 3 0 4 0 -2 7 1 2 5 7
+{"checked_node_indices":[5,7],"nodes":[{"children":[],"id":-766,"label":"Würfel","object_idx":2,"parent_id":8,"selectable":false,"uid":"two\swords","volume_idx":1},{"children":[-2,9,-1,1],"id":114,"label":"Würfel","object_idx":3,"parent_id":9,"selectable":false,"uid":"😀","volume_idx":2},{"children":[],"id":75,"label":"a","object_idx":6,"parent_id":-2,"selectable":true,"uid":"","volume_idx":6},{"children":[1,3,0],"id":818,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":8,"selectable":false,"uid":"😀","volume_idx":3}],"roots":[0,-2,7,1],"version":1}
+FROM
+{"checked_node_indices":[5,7],"nodes":[{"children":[],"id":-766,"label":"Würfel","object_idx":2,"parent_id":8,"selectable":false,"uid":"two\swords","volume_idx":1},{"children":[-2,9,-1,1],"id":114,"label":"Würfel","object_idx":3,"parent_id":9,"selectable":false,"uid":"😀","volume_idx":2},{"children":[],"id":75,"label":"a","object_idx":6,"parent_id":-2,"selectable":true,"uid":"","volume_idx":6},{"children":[1,3,0],"id":818,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":8,"selectable":false,"uid":"😀","volume_idx":3}],"roots":[0,-2,7,1],"version":1}
+1
+unset
+A 4 -766 8 2 1 0 two\swords Würfel 0 114 9 3 2 0 😀 Würfel 4 -2 9 -1 1 75 -2 6 6 1 \e a 0 818 8 -1 3 0 😀 q"\\\n\x09\x01 3 1 3 0 4 0 -2 7 1 2 5 7
+{"checked_node_indices":[5,7],"nodes":[{"children":[],"id":-766,"label":"Würfel","object_idx":2,"parent_id":8,"selectable":false,"uid":"two\swords","volume_idx":1},{"children":[-2,9,-1,1],"id":114,"label":"Würfel","object_idx":3,"parent_id":9,"selectable":false,"uid":"😀","volume_idx":2},{"children":[],"id":75,"label":"a","object_idx":6,"parent_id":-2,"selectable":true,"uid":"","volume_idx":6},{"children":[1,3,0],"id":818,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":8,"selectable":false,"uid":"😀","volume_idx":3}],"roots":[0,-2,7,1],"version":1}
+TO
+A 2 183 8 7 1 0 😀 uid-1 3 4 -2 -2 -152 3 6 -2 1 \e 😀 3 1 -2 3 1 7 4 2 1 9 2
+{"checked_node_indices":[2,1,9,2],"nodes":[{"children":[4,-2,-2],"id":183,"label":"uid-1","object_idx":7,"parent_id":8,"selectable":false,"uid":"😀","volume_idx":1},{"children":[1,-2,3],"id":-152,"label":"😀","object_idx":6,"parent_id":3,"selectable":true,"uid":"","volume_idx":-2}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[2,1,9,2],"nodes":[{"children":[4,-2,-2],"id":183,"label":"uid-1","object_idx":7,"parent_id":8,"selectable":false,"uid":"😀","volume_idx":1},{"children":[1,-2,3],"id":-152,"label":"😀","object_idx":6,"parent_id":3,"selectable":true,"uid":"","volume_idx":-2}],"roots":[7],"version":1}
+1
+unset
+A 2 183 8 7 1 0 😀 uid-1 3 4 -2 -2 -152 3 6 -2 1 \e 😀 3 1 -2 3 1 7 4 2 1 9 2
+{"checked_node_indices":[2,1,9,2],"nodes":[{"children":[4,-2,-2],"id":183,"label":"uid-1","object_idx":7,"parent_id":8,"selectable":false,"uid":"😀","volume_idx":1},{"children":[1,-2,3],"id":-152,"label":"😀","object_idx":6,"parent_id":3,"selectable":true,"uid":"","volume_idx":-2}],"roots":[7],"version":1}
+TO
+A 2 -57 9 9 -2147483648 1 q"\\\n\x09\x01 Würfel 2 3 9 -728 7 1 7 1 Würfel two\swords 1 -1 1 -2 0
+{"checked_node_indices":[],"nodes":[{"children":[3,9],"id":-57,"label":"Würfel","object_idx":9,"parent_id":9,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2147483648},{"children":[-1],"id":-728,"label":"two\swords","object_idx":1,"parent_id":7,"selectable":true,"uid":"Würfel","volume_idx":7}],"roots":[-2],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[3,9],"id":-57,"label":"Würfel","object_idx":9,"parent_id":9,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2147483648},{"children":[-1],"id":-728,"label":"two\swords","object_idx":1,"parent_id":7,"selectable":true,"uid":"Würfel","volume_idx":7}],"roots":[-2],"version":1}
+1
+unset
+A 2 -57 9 9 -2147483648 1 q"\\\n\x09\x01 Würfel 2 3 9 -728 7 1 7 1 Würfel two\swords 1 -1 1 -2 0
+{"checked_node_indices":[],"nodes":[{"children":[3,9],"id":-57,"label":"Würfel","object_idx":9,"parent_id":9,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2147483648},{"children":[-1],"id":-728,"label":"two\swords","object_idx":1,"parent_id":7,"selectable":true,"uid":"Würfel","volume_idx":7}],"roots":[-2],"version":1}
+TO
+A 1 542 1 9 5 1 😀 a 4 6 7 7 0 0 2 0 9
+{"checked_node_indices":[0,9],"nodes":[{"children":[6,7,7,0],"id":542,"label":"a","object_idx":9,"parent_id":1,"selectable":true,"uid":"😀","volume_idx":5}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[0,9],"nodes":[{"children":[6,7,7,0],"id":542,"label":"a","object_idx":9,"parent_id":1,"selectable":true,"uid":"😀","volume_idx":5}],"roots":[],"version":1}
+1
+unset
+A 1 542 1 9 5 1 😀 a 4 6 7 7 0 0 2 0 9
+{"checked_node_indices":[0,9],"nodes":[{"children":[6,7,7,0],"id":542,"label":"a","object_idx":9,"parent_id":1,"selectable":true,"uid":"😀","volume_idx":5}],"roots":[],"version":1}
+TO
+A 3 -985 0 8 3 0 Würfel 😀 0 555 4 -1 7 0 Würfel 😀 3 6 8 2 -1 -1 -1 -1 1 \e \e 0 4 3 5 -1 -2 3 0 3 4
+{"checked_node_indices":[0,3,4],"nodes":[{"children":[],"id":-985,"label":"😀","object_idx":8,"parent_id":0,"selectable":false,"uid":"Würfel","volume_idx":3},{"children":[6,8,2],"id":555,"label":"😀","object_idx":-1,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[3,5,-1,-2],"version":1}
+FROM
+{"checked_node_indices":[0,3,4],"nodes":[{"children":[],"id":-985,"label":"😀","object_idx":8,"parent_id":0,"selectable":false,"uid":"Würfel","volume_idx":3},{"children":[6,8,2],"id":555,"label":"😀","object_idx":-1,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[3,5,-1,-2],"version":1}
+1
+unset
+A 3 -985 0 8 3 0 Würfel 😀 0 555 4 -1 7 0 Würfel 😀 3 6 8 2 -1 -1 -1 -1 1 \e \e 0 4 3 5 -1 -2 3 0 3 4
+{"checked_node_indices":[0,3,4],"nodes":[{"children":[],"id":-985,"label":"😀","object_idx":8,"parent_id":0,"selectable":false,"uid":"Würfel","volume_idx":3},{"children":[6,8,2],"id":555,"label":"😀","object_idx":-1,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[3,5,-1,-2],"version":1}
+TO
+A 2 13 7 5 4 0 uid-1 a 1 -2 -408 0 9 1 0 😀 \e 0 2 2 5 3 0 7 1
+{"checked_node_indices":[0,7,1],"nodes":[{"children":[-2],"id":13,"label":"a","object_idx":5,"parent_id":7,"selectable":false,"uid":"uid-1","volume_idx":4},{"children":[],"id":-408,"label":"","object_idx":9,"parent_id":0,"selectable":false,"uid":"😀","volume_idx":1}],"roots":[2,5],"version":1}
+FROM
+{"checked_node_indices":[0,7,1],"nodes":[{"children":[-2],"id":13,"label":"a","object_idx":5,"parent_id":7,"selectable":false,"uid":"uid-1","volume_idx":4},{"children":[],"id":-408,"label":"","object_idx":9,"parent_id":0,"selectable":false,"uid":"😀","volume_idx":1}],"roots":[2,5],"version":1}
+1
+unset
+A 2 13 7 5 4 0 uid-1 a 1 -2 -408 0 9 1 0 😀 \e 0 2 2 5 3 0 7 1
+{"checked_node_indices":[0,7,1],"nodes":[{"children":[-2],"id":13,"label":"a","object_idx":5,"parent_id":7,"selectable":false,"uid":"uid-1","volume_idx":4},{"children":[],"id":-408,"label":"","object_idx":9,"parent_id":0,"selectable":false,"uid":"😀","volume_idx":1}],"roots":[2,5],"version":1}
+TO
+A 5 -264 3 -1 8 0 Würfel Würfel 3 0 6 -2 -874 -2 5 7 0 two\swords uid-1 0 973 -2 1 6 1 a Würfel 4 4 -1 0 6 795 1 0 4 1 two\swords \e 3 2 4 0 746 9 8 5 0 😀 q"\\\n\x09\x01 1 8 3 9 5 2 3 0 7 4
+{"checked_node_indices":[0,7,4],"nodes":[{"children":[0,6,-2],"id":-264,"label":"Würfel","object_idx":-1,"parent_id":3,"selectable":false,"uid":"Würfel","volume_idx":8},{"children":[],"id":-874,"label":"uid-1","object_idx":5,"parent_id":-2,"selectable":false,"uid":"two\swords","volume_idx":7},{"children":[4,-1,0,6],"id":973,"label":"Würfel","object_idx":1,"parent_id":-2,"selectable":true,"uid":"a","volume_idx":6},{"children":[2,4,0],"id":795,"label":"","object_idx":0,"parent_id":1,"selectable":true,"uid":"two\swords","volume_idx":4},{"children":[8],"id":746,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":8,"parent_id":9,"selectable":false,"uid":"😀","volume_idx":5}],"roots":[9,5,2],"version":1}
+FROM
+{"checked_node_indices":[0,7,4],"nodes":[{"children":[0,6,-2],"id":-264,"label":"Würfel","object_idx":-1,"parent_id":3,"selectable":false,"uid":"Würfel","volume_idx":8},{"children":[],"id":-874,"label":"uid-1","object_idx":5,"parent_id":-2,"selectable":false,"uid":"two\swords","volume_idx":7},{"children":[4,-1,0,6],"id":973,"label":"Würfel","object_idx":1,"parent_id":-2,"selectable":true,"uid":"a","volume_idx":6},{"children":[2,4,0],"id":795,"label":"","object_idx":0,"parent_id":1,"selectable":true,"uid":"two\swords","volume_idx":4},{"children":[8],"id":746,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":8,"parent_id":9,"selectable":false,"uid":"😀","volume_idx":5}],"roots":[9,5,2],"version":1}
+1
+unset
+A 5 -264 3 -1 8 0 Würfel Würfel 3 0 6 -2 -874 -2 5 7 0 two\swords uid-1 0 973 -2 1 6 1 a Würfel 4 4 -1 0 6 795 1 0 4 1 two\swords \e 3 2 4 0 746 9 8 5 0 😀 q"\\\n\x09\x01 1 8 3 9 5 2 3 0 7 4
+{"checked_node_indices":[0,7,4],"nodes":[{"children":[0,6,-2],"id":-264,"label":"Würfel","object_idx":-1,"parent_id":3,"selectable":false,"uid":"Würfel","volume_idx":8},{"children":[],"id":-874,"label":"uid-1","object_idx":5,"parent_id":-2,"selectable":false,"uid":"two\swords","volume_idx":7},{"children":[4,-1,0,6],"id":973,"label":"Würfel","object_idx":1,"parent_id":-2,"selectable":true,"uid":"a","volume_idx":6},{"children":[2,4,0],"id":795,"label":"","object_idx":0,"parent_id":1,"selectable":true,"uid":"two\swords","volume_idx":4},{"children":[8],"id":746,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":8,"parent_id":9,"selectable":false,"uid":"😀","volume_idx":5}],"roots":[9,5,2],"version":1}
+TO
+A 4 -854 5 0 6 0 uid-1 uid-1 1 -1 -371 -1 2 -1 1 Würfel 😀 2 3 6 -588 7 2 7 0 a \e 0 -1 -1 -1 -1 1 \e \e 0 1 -2 0
+{"checked_node_indices":[],"nodes":[{"children":[-1],"id":-854,"label":"uid-1","object_idx":0,"parent_id":5,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[3,6],"id":-371,"label":"😀","object_idx":2,"parent_id":-1,"selectable":true,"uid":"Würfel","volume_idx":-1},{"children":[],"id":-588,"label":"","object_idx":2,"parent_id":7,"selectable":false,"uid":"a","volume_idx":7},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[-2],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[-1],"id":-854,"label":"uid-1","object_idx":0,"parent_id":5,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[3,6],"id":-371,"label":"😀","object_idx":2,"parent_id":-1,"selectable":true,"uid":"Würfel","volume_idx":-1},{"children":[],"id":-588,"label":"","object_idx":2,"parent_id":7,"selectable":false,"uid":"a","volume_idx":7},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[-2],"version":1}
+1
+unset
+A 4 -854 5 0 6 0 uid-1 uid-1 1 -1 -371 -1 2 -1 1 Würfel 😀 2 3 6 -588 7 2 7 0 a \e 0 -1 -1 -1 -1 1 \e \e 0 1 -2 0
+{"checked_node_indices":[],"nodes":[{"children":[-1],"id":-854,"label":"uid-1","object_idx":0,"parent_id":5,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[3,6],"id":-371,"label":"😀","object_idx":2,"parent_id":-1,"selectable":true,"uid":"Würfel","volume_idx":-1},{"children":[],"id":-588,"label":"","object_idx":2,"parent_id":7,"selectable":false,"uid":"a","volume_idx":7},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[-2],"version":1}
+TO
+A 4 -1 -1 -1 -1 1 \e \e 0 821 -2 8 0 0 😀 a 0 -997 5 7 3 0 a a 3 -1 4 7 362 2 -1 5 1 a 😀 4 5 -2 -2 1 3 9 9 -1 3 9 2 -2
+{"checked_node_indices":[9,2,-2],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":821,"label":"a","object_idx":8,"parent_id":-2,"selectable":false,"uid":"😀","volume_idx":0},{"children":[-1,4,7],"id":-997,"label":"a","object_idx":7,"parent_id":5,"selectable":false,"uid":"a","volume_idx":3},{"children":[5,-2,-2,1],"id":362,"label":"😀","object_idx":-1,"parent_id":2,"selectable":true,"uid":"a","volume_idx":5}],"roots":[9,9,-1],"version":1}
+FROM
+{"checked_node_indices":[9,2,-2],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":821,"label":"a","object_idx":8,"parent_id":-2,"selectable":false,"uid":"😀","volume_idx":0},{"children":[-1,4,7],"id":-997,"label":"a","object_idx":7,"parent_id":5,"selectable":false,"uid":"a","volume_idx":3},{"children":[5,-2,-2,1],"id":362,"label":"😀","object_idx":-1,"parent_id":2,"selectable":true,"uid":"a","volume_idx":5}],"roots":[9,9,-1],"version":1}
+1
+unset
+A 4 -1 -1 -1 -1 1 \e \e 0 821 -2 8 0 0 😀 a 0 -997 5 7 3 0 a a 3 -1 4 7 362 2 -1 5 1 a 😀 4 5 -2 -2 1 3 9 9 -1 3 9 2 -2
+{"checked_node_indices":[9,2,-2],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":821,"label":"a","object_idx":8,"parent_id":-2,"selectable":false,"uid":"😀","volume_idx":0},{"children":[-1,4,7],"id":-997,"label":"a","object_idx":7,"parent_id":5,"selectable":false,"uid":"a","volume_idx":3},{"children":[5,-2,-2,1],"id":362,"label":"😀","object_idx":-1,"parent_id":2,"selectable":true,"uid":"a","volume_idx":5}],"roots":[9,9,-1],"version":1}
+TO
+A 4 -1 -1 -1 -1 1 \e \e 0 690 9 7 5 1 q"\\\n\x09\x01 \e 0 -602 0 9 0 0 uid-1 Würfel 1 4 -396 -2 2 5 1 a 😀 4 5 4 9 5 0 2 0 0
+{"checked_node_indices":[0,0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":690,"label":"","object_idx":7,"parent_id":9,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5},{"children":[4],"id":-602,"label":"Würfel","object_idx":9,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":0},{"children":[5,4,9,5],"id":-396,"label":"😀","object_idx":2,"parent_id":-2,"selectable":true,"uid":"a","volume_idx":5}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[0,0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":690,"label":"","object_idx":7,"parent_id":9,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5},{"children":[4],"id":-602,"label":"Würfel","object_idx":9,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":0},{"children":[5,4,9,5],"id":-396,"label":"😀","object_idx":2,"parent_id":-2,"selectable":true,"uid":"a","volume_idx":5}],"roots":[],"version":1}
+1
+unset
+A 4 -1 -1 -1 -1 1 \e \e 0 690 9 7 5 1 q"\\\n\x09\x01 \e 0 -602 0 9 0 0 uid-1 Würfel 1 4 -396 -2 2 5 1 a 😀 4 5 4 9 5 0 2 0 0
+{"checked_node_indices":[0,0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":690,"label":"","object_idx":7,"parent_id":9,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5},{"children":[4],"id":-602,"label":"Würfel","object_idx":9,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":0},{"children":[5,4,9,5],"id":-396,"label":"😀","object_idx":2,"parent_id":-2,"selectable":true,"uid":"a","volume_idx":5}],"roots":[],"version":1}
+TO
+A 4 122 2 6 2147483647 1 \e two\swords 0 -31 4 6 -2147483648 0 Würfel q"\\\n\x09\x01 1 2 670 4 -2 6 0 Würfel \e 2 6 4 830 4 2 5 0 uid-1 😀 3 4 7 -1 2 2 0 2 3 6
+{"checked_node_indices":[3,6],"nodes":[{"children":[],"id":122,"label":"two\swords","object_idx":6,"parent_id":2,"selectable":true,"uid":"","volume_idx":2147483647},{"children":[2],"id":-31,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":-2147483648},{"children":[6,4],"id":670,"label":"","object_idx":-2,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":6},{"children":[4,7,-1],"id":830,"label":"😀","object_idx":2,"parent_id":4,"selectable":false,"uid":"uid-1","volume_idx":5}],"roots":[2,0],"version":1}
+FROM
+{"checked_node_indices":[3,6],"nodes":[{"children":[],"id":122,"label":"two\swords","object_idx":6,"parent_id":2,"selectable":true,"uid":"","volume_idx":2147483647},{"children":[2],"id":-31,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":-2147483648},{"children":[6,4],"id":670,"label":"","object_idx":-2,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":6},{"children":[4,7,-1],"id":830,"label":"😀","object_idx":2,"parent_id":4,"selectable":false,"uid":"uid-1","volume_idx":5}],"roots":[2,0],"version":1}
+1
+unset
+A 4 122 2 6 2147483647 1 \e two\swords 0 -31 4 6 -2147483648 0 Würfel q"\\\n\x09\x01 1 2 670 4 -2 6 0 Würfel \e 2 6 4 830 4 2 5 0 uid-1 😀 3 4 7 -1 2 2 0 2 3 6
+{"checked_node_indices":[3,6],"nodes":[{"children":[],"id":122,"label":"two\swords","object_idx":6,"parent_id":2,"selectable":true,"uid":"","volume_idx":2147483647},{"children":[2],"id":-31,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":-2147483648},{"children":[6,4],"id":670,"label":"","object_idx":-2,"parent_id":4,"selectable":false,"uid":"Würfel","volume_idx":6},{"children":[4,7,-1],"id":830,"label":"😀","object_idx":2,"parent_id":4,"selectable":false,"uid":"uid-1","volume_idx":5}],"roots":[2,0],"version":1}
+TO
+A 0 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[],"roots":[],"version":1}
+1
+unset
+A 0 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[],"version":1}
+TO
+A 1 376 1 7 0 0 Würfel a 0 1 -1 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":376,"label":"a","object_idx":7,"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":0}],"roots":[-1],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[],"id":376,"label":"a","object_idx":7,"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":0}],"roots":[-1],"version":1}
+1
+unset
+A 1 376 1 7 0 0 Würfel a 0 1 -1 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":376,"label":"a","object_idx":7,"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":0}],"roots":[-1],"version":1}
+TO
+A 1 24 6 1 4 0 Würfel uid-1 0 0 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":24,"label":"uid-1","object_idx":1,"parent_id":6,"selectable":false,"uid":"Würfel","volume_idx":4}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":24,"label":"uid-1","object_idx":1,"parent_id":6,"selectable":false,"uid":"Würfel","volume_idx":4}],"roots":[],"version":1}
+1
+unset
+A 1 24 6 1 4 0 Würfel uid-1 0 0 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":24,"label":"uid-1","object_idx":1,"parent_id":6,"selectable":false,"uid":"Würfel","volume_idx":4}],"roots":[],"version":1}
+TO
+A 1 381 4 0 1 0 two\swords 😀 0 2 3 8 2 -1 3
+{"checked_node_indices":[-1,3],"nodes":[{"children":[],"id":381,"label":"😀","object_idx":0,"parent_id":4,"selectable":false,"uid":"two\swords","volume_idx":1}],"roots":[3,8],"version":1}
+FROM
+{"checked_node_indices":[-1,3],"nodes":[{"children":[],"id":381,"label":"😀","object_idx":0,"parent_id":4,"selectable":false,"uid":"two\swords","volume_idx":1}],"roots":[3,8],"version":1}
+1
+unset
+A 1 381 4 0 1 0 two\swords 😀 0 2 3 8 2 -1 3
+{"checked_node_indices":[-1,3],"nodes":[{"children":[],"id":381,"label":"😀","object_idx":0,"parent_id":4,"selectable":false,"uid":"two\swords","volume_idx":1}],"roots":[3,8],"version":1}
+TO
+A 2 -743 0 6 5 0 a a 0 65 8 5 8 0 \e a 0 4 0 9 3 4 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":-743,"label":"a","object_idx":6,"parent_id":0,"selectable":false,"uid":"a","volume_idx":5},{"children":[],"id":65,"label":"a","object_idx":5,"parent_id":8,"selectable":false,"uid":"","volume_idx":8}],"roots":[0,9,3,4],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[],"id":-743,"label":"a","object_idx":6,"parent_id":0,"selectable":false,"uid":"a","volume_idx":5},{"children":[],"id":65,"label":"a","object_idx":5,"parent_id":8,"selectable":false,"uid":"","volume_idx":8}],"roots":[0,9,3,4],"version":1}
+1
+unset
+A 2 -743 0 6 5 0 a a 0 65 8 5 8 0 \e a 0 4 0 9 3 4 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":-743,"label":"a","object_idx":6,"parent_id":0,"selectable":false,"uid":"a","volume_idx":5},{"children":[],"id":65,"label":"a","object_idx":5,"parent_id":8,"selectable":false,"uid":"","volume_idx":8}],"roots":[0,9,3,4],"version":1}
+TO
+A 2 -870 -2 0 5 1 q"\\\n\x09\x01 q"\\\n\x09\x01 3 7 0 1 862 7 4 4 0 \e Würfel 1 6 0 1 4
+{"checked_node_indices":[4],"nodes":[{"children":[7,0,1],"id":-870,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":0,"parent_id":-2,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5},{"children":[6],"id":862,"label":"Würfel","object_idx":4,"parent_id":7,"selectable":false,"uid":"","volume_idx":4}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[4],"nodes":[{"children":[7,0,1],"id":-870,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":0,"parent_id":-2,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5},{"children":[6],"id":862,"label":"Würfel","object_idx":4,"parent_id":7,"selectable":false,"uid":"","volume_idx":4}],"roots":[],"version":1}
+1
+unset
+A 2 -870 -2 0 5 1 q"\\\n\x09\x01 q"\\\n\x09\x01 3 7 0 1 862 7 4 4 0 \e Würfel 1 6 0 1 4
+{"checked_node_indices":[4],"nodes":[{"children":[7,0,1],"id":-870,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":0,"parent_id":-2,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5},{"children":[6],"id":862,"label":"Würfel","object_idx":4,"parent_id":7,"selectable":false,"uid":"","volume_idx":4}],"roots":[],"version":1}
+TO
+A 3 143 2 3 6 1 two\swords \e 4 9 6 3 6 22 4 9 5 1 uid-1 uid-1 1 -1 333 -1 2 -2 0 q"\\\n\x09\x01 a 4 -1 3 9 0 0 4 5 -2 1 5
+{"checked_node_indices":[5,-2,1,5],"nodes":[{"children":[9,6,3,6],"id":143,"label":"","object_idx":3,"parent_id":2,"selectable":true,"uid":"two\swords","volume_idx":6},{"children":[-1],"id":22,"label":"uid-1","object_idx":9,"parent_id":4,"selectable":true,"uid":"uid-1","volume_idx":5},{"children":[-1,3,9,0],"id":333,"label":"a","object_idx":2,"parent_id":-1,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[5,-2,1,5],"nodes":[{"children":[9,6,3,6],"id":143,"label":"","object_idx":3,"parent_id":2,"selectable":true,"uid":"two\swords","volume_idx":6},{"children":[-1],"id":22,"label":"uid-1","object_idx":9,"parent_id":4,"selectable":true,"uid":"uid-1","volume_idx":5},{"children":[-1,3,9,0],"id":333,"label":"a","object_idx":2,"parent_id":-1,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2}],"roots":[],"version":1}
+1
+unset
+A 3 143 2 3 6 1 two\swords \e 4 9 6 3 6 22 4 9 5 1 uid-1 uid-1 1 -1 333 -1 2 -2 0 q"\\\n\x09\x01 a 4 -1 3 9 0 0 4 5 -2 1 5
+{"checked_node_indices":[5,-2,1,5],"nodes":[{"children":[9,6,3,6],"id":143,"label":"","object_idx":3,"parent_id":2,"selectable":true,"uid":"two\swords","volume_idx":6},{"children":[-1],"id":22,"label":"uid-1","object_idx":9,"parent_id":4,"selectable":true,"uid":"uid-1","volume_idx":5},{"children":[-1,3,9,0],"id":333,"label":"a","object_idx":2,"parent_id":-1,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2}],"roots":[],"version":1}
+TO
+A 2 741 5 -1 -1 1 😀 Würfel 3 8 2 4 306 1 5 9 1 \e 😀 0 3 1 4 1 2 3 1
+{"checked_node_indices":[3,1],"nodes":[{"children":[8,2,4],"id":741,"label":"Würfel","object_idx":-1,"parent_id":5,"selectable":true,"uid":"😀","volume_idx":-1},{"children":[],"id":306,"label":"😀","object_idx":5,"parent_id":1,"selectable":true,"uid":"","volume_idx":9}],"roots":[1,4,1],"version":1}
+FROM
+{"checked_node_indices":[3,1],"nodes":[{"children":[8,2,4],"id":741,"label":"Würfel","object_idx":-1,"parent_id":5,"selectable":true,"uid":"😀","volume_idx":-1},{"children":[],"id":306,"label":"😀","object_idx":5,"parent_id":1,"selectable":true,"uid":"","volume_idx":9}],"roots":[1,4,1],"version":1}
+1
+unset
+A 2 741 5 -1 -1 1 😀 Würfel 3 8 2 4 306 1 5 9 1 \e 😀 0 3 1 4 1 2 3 1
+{"checked_node_indices":[3,1],"nodes":[{"children":[8,2,4],"id":741,"label":"Würfel","object_idx":-1,"parent_id":5,"selectable":true,"uid":"😀","volume_idx":-1},{"children":[],"id":306,"label":"😀","object_idx":5,"parent_id":1,"selectable":true,"uid":"","volume_idx":9}],"roots":[1,4,1],"version":1}
+TO
+A 3 -1 -1 -1 -1 1 \e \e 0 -160 -1 4 2 1 a Würfel 3 7 0 1 -28 -2 2 7 1 uid-1 uid-1 2 8 7 4 3 5 3 0 2 4 4
+{"checked_node_indices":[4,4],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[7,0,1],"id":-160,"label":"Würfel","object_idx":4,"parent_id":-1,"selectable":true,"uid":"a","volume_idx":2},{"children":[8,7],"id":-28,"label":"uid-1","object_idx":2,"parent_id":-2,"selectable":true,"uid":"uid-1","volume_idx":7}],"roots":[3,5,3,0],"version":1}
+FROM
+{"checked_node_indices":[4,4],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[7,0,1],"id":-160,"label":"Würfel","object_idx":4,"parent_id":-1,"selectable":true,"uid":"a","volume_idx":2},{"children":[8,7],"id":-28,"label":"uid-1","object_idx":2,"parent_id":-2,"selectable":true,"uid":"uid-1","volume_idx":7}],"roots":[3,5,3,0],"version":1}
+1
+unset
+A 3 -1 -1 -1 -1 1 \e \e 0 -160 -1 4 2 1 a Würfel 3 7 0 1 -28 -2 2 7 1 uid-1 uid-1 2 8 7 4 3 5 3 0 2 4 4
+{"checked_node_indices":[4,4],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[7,0,1],"id":-160,"label":"Würfel","object_idx":4,"parent_id":-1,"selectable":true,"uid":"a","volume_idx":2},{"children":[8,7],"id":-28,"label":"uid-1","object_idx":2,"parent_id":-2,"selectable":true,"uid":"uid-1","volume_idx":7}],"roots":[3,5,3,0],"version":1}
+TO
+A 3 198 5 0 7 1 \e \e 2 1 6 -692 4 3 -2 1 q"\\\n\x09\x01 a 1 3 159 8 -1 2 0 q"\\\n\x09\x01 Würfel 4 6 1 8 6 1 6 2 7 0
+{"checked_node_indices":[7,0],"nodes":[{"children":[1,6],"id":198,"label":"","object_idx":0,"parent_id":5,"selectable":true,"uid":"","volume_idx":7},{"children":[3],"id":-692,"label":"a","object_idx":3,"parent_id":4,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2},{"children":[6,1,8,6],"id":159,"label":"Würfel","object_idx":-1,"parent_id":8,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":2}],"roots":[6],"version":1}
+FROM
+{"checked_node_indices":[7,0],"nodes":[{"children":[1,6],"id":198,"label":"","object_idx":0,"parent_id":5,"selectable":true,"uid":"","volume_idx":7},{"children":[3],"id":-692,"label":"a","object_idx":3,"parent_id":4,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2},{"children":[6,1,8,6],"id":159,"label":"Würfel","object_idx":-1,"parent_id":8,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":2}],"roots":[6],"version":1}
+1
+unset
+A 3 198 5 0 7 1 \e \e 2 1 6 -692 4 3 -2 1 q"\\\n\x09\x01 a 1 3 159 8 -1 2 0 q"\\\n\x09\x01 Würfel 4 6 1 8 6 1 6 2 7 0
+{"checked_node_indices":[7,0],"nodes":[{"children":[1,6],"id":198,"label":"","object_idx":0,"parent_id":5,"selectable":true,"uid":"","volume_idx":7},{"children":[3],"id":-692,"label":"a","object_idx":3,"parent_id":4,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2},{"children":[6,1,8,6],"id":159,"label":"Würfel","object_idx":-1,"parent_id":8,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":2}],"roots":[6],"version":1}
+TO
+A 4 -239 0 6 4 1 q"\\\n\x09\x01 q"\\\n\x09\x01 3 9 4 8 183 6 9 -1 0 😀 two\swords 1 1 152 3 3 6 0 q"\\\n\x09\x01 😀 3 2 5 -1 -863 4 -2 3 0 😀 two\swords 4 5 2 1 1 2 1 9 3 3 -2 -1
+{"checked_node_indices":[3,-2,-1],"nodes":[{"children":[9,4,8],"id":-239,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":0,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":4},{"children":[1],"id":183,"label":"two\swords","object_idx":9,"parent_id":6,"selectable":false,"uid":"😀","volume_idx":-1},{"children":[2,5,-1],"id":152,"label":"😀","object_idx":3,"parent_id":3,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":6},{"children":[5,2,1,1],"id":-863,"label":"two\swords","object_idx":-2,"parent_id":4,"selectable":false,"uid":"😀","volume_idx":3}],"roots":[1,9],"version":1}
+FROM
+{"checked_node_indices":[3,-2,-1],"nodes":[{"children":[9,4,8],"id":-239,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":0,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":4},{"children":[1],"id":183,"label":"two\swords","object_idx":9,"parent_id":6,"selectable":false,"uid":"😀","volume_idx":-1},{"children":[2,5,-1],"id":152,"label":"😀","object_idx":3,"parent_id":3,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":6},{"children":[5,2,1,1],"id":-863,"label":"two\swords","object_idx":-2,"parent_id":4,"selectable":false,"uid":"😀","volume_idx":3}],"roots":[1,9],"version":1}
+1
+unset
+A 4 -239 0 6 4 1 q"\\\n\x09\x01 q"\\\n\x09\x01 3 9 4 8 183 6 9 -1 0 😀 two\swords 1 1 152 3 3 6 0 q"\\\n\x09\x01 😀 3 2 5 -1 -863 4 -2 3 0 😀 two\swords 4 5 2 1 1 2 1 9 3 3 -2 -1
+{"checked_node_indices":[3,-2,-1],"nodes":[{"children":[9,4,8],"id":-239,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":0,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":4},{"children":[1],"id":183,"label":"two\swords","object_idx":9,"parent_id":6,"selectable":false,"uid":"😀","volume_idx":-1},{"children":[2,5,-1],"id":152,"label":"😀","object_idx":3,"parent_id":3,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":6},{"children":[5,2,1,1],"id":-863,"label":"two\swords","object_idx":-2,"parent_id":4,"selectable":false,"uid":"😀","volume_idx":3}],"roots":[1,9],"version":1}
+TO
+A 1 -1 -1 -1 -1 1 \e \e 0 4 2 9 -2 3 3 9 1 5
+{"checked_node_indices":[9,1,5],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[2,9,-2,3],"version":1}
+FROM
+{"checked_node_indices":[9,1,5],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[2,9,-2,3],"version":1}
+1
+unset
+A 1 -1 -1 -1 -1 1 \e \e 0 4 2 9 -2 3 3 9 1 5
+{"checked_node_indices":[9,1,5],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[2,9,-2,3],"version":1}
+TO
+A 1 -790 7 9 0 1 q"\\\n\x09\x01 \e 2 9 4 2 0 5 2 6 0
+{"checked_node_indices":[6,0],"nodes":[{"children":[9,4],"id":-790,"label":"","object_idx":9,"parent_id":7,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":0}],"roots":[0,5],"version":1}
+FROM
+{"checked_node_indices":[6,0],"nodes":[{"children":[9,4],"id":-790,"label":"","object_idx":9,"parent_id":7,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":0}],"roots":[0,5],"version":1}
+1
+unset
+A 1 -790 7 9 0 1 q"\\\n\x09\x01 \e 2 9 4 2 0 5 2 6 0
+{"checked_node_indices":[6,0],"nodes":[{"children":[9,4],"id":-790,"label":"","object_idx":9,"parent_id":7,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":0}],"roots":[0,5],"version":1}
+TO
+A 4 10 2 6 -2 0 😀 q"\\\n\x09\x01 3 6 5 2 167 5 9 4 0 a 😀 4 -2 2 1 2 71 9 8 4 1 uid-1 uid-1 3 1 5 9 -1 -1 -1 -1 1 \e \e 0 4 2 0 8 5 2 4 5
+{"checked_node_indices":[4,5],"nodes":[{"children":[6,5,2],"id":10,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":2,"selectable":false,"uid":"😀","volume_idx":-2},{"children":[-2,2,1,2],"id":167,"label":"😀","object_idx":9,"parent_id":5,"selectable":false,"uid":"a","volume_idx":4},{"children":[1,5,9],"id":71,"label":"uid-1","object_idx":8,"parent_id":9,"selectable":true,"uid":"uid-1","volume_idx":4},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[2,0,8,5],"version":1}
+FROM
+{"checked_node_indices":[4,5],"nodes":[{"children":[6,5,2],"id":10,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":2,"selectable":false,"uid":"😀","volume_idx":-2},{"children":[-2,2,1,2],"id":167,"label":"😀","object_idx":9,"parent_id":5,"selectable":false,"uid":"a","volume_idx":4},{"children":[1,5,9],"id":71,"label":"uid-1","object_idx":8,"parent_id":9,"selectable":true,"uid":"uid-1","volume_idx":4},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[2,0,8,5],"version":1}
+1
+unset
+A 4 10 2 6 -2 0 😀 q"\\\n\x09\x01 3 6 5 2 167 5 9 4 0 a 😀 4 -2 2 1 2 71 9 8 4 1 uid-1 uid-1 3 1 5 9 -1 -1 -1 -1 1 \e \e 0 4 2 0 8 5 2 4 5
+{"checked_node_indices":[4,5],"nodes":[{"children":[6,5,2],"id":10,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":2,"selectable":false,"uid":"😀","volume_idx":-2},{"children":[-2,2,1,2],"id":167,"label":"😀","object_idx":9,"parent_id":5,"selectable":false,"uid":"a","volume_idx":4},{"children":[1,5,9],"id":71,"label":"uid-1","object_idx":8,"parent_id":9,"selectable":true,"uid":"uid-1","volume_idx":4},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[2,0,8,5],"version":1}
+TO
+A 5 -763 -2 -2 2 0 \e q"\\\n\x09\x01 3 4 8 2 529 -2 4 9 0 two\swords Würfel 2 4 7 -763 8 4 7 0 two\swords Würfel 0 -444 2 9 -2 1 \e two\swords 3 4 9 -1 -622 0 -2 3 0 two\swords \e 0 2 0 -1 2 8 3
+{"checked_node_indices":[8,3],"nodes":[{"children":[4,8,2],"id":-763,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-2,"parent_id":-2,"selectable":false,"uid":"","volume_idx":2},{"children":[4,7],"id":529,"label":"Würfel","object_idx":4,"parent_id":-2,"selectable":false,"uid":"two\swords","volume_idx":9},{"children":[],"id":-763,"label":"Würfel","object_idx":4,"parent_id":8,"selectable":false,"uid":"two\swords","volume_idx":7},{"children":[4,9,-1],"id":-444,"label":"two\swords","object_idx":9,"parent_id":2,"selectable":true,"uid":"","volume_idx":-2},{"children":[],"id":-622,"label":"","object_idx":-2,"parent_id":0,"selectable":false,"uid":"two\swords","volume_idx":3}],"roots":[0,-1],"version":1}
+FROM
+{"checked_node_indices":[8,3],"nodes":[{"children":[4,8,2],"id":-763,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-2,"parent_id":-2,"selectable":false,"uid":"","volume_idx":2},{"children":[4,7],"id":529,"label":"Würfel","object_idx":4,"parent_id":-2,"selectable":false,"uid":"two\swords","volume_idx":9},{"children":[],"id":-763,"label":"Würfel","object_idx":4,"parent_id":8,"selectable":false,"uid":"two\swords","volume_idx":7},{"children":[4,9,-1],"id":-444,"label":"two\swords","object_idx":9,"parent_id":2,"selectable":true,"uid":"","volume_idx":-2},{"children":[],"id":-622,"label":"","object_idx":-2,"parent_id":0,"selectable":false,"uid":"two\swords","volume_idx":3}],"roots":[0,-1],"version":1}
+1
+unset
+A 5 -763 -2 -2 2 0 \e q"\\\n\x09\x01 3 4 8 2 529 -2 4 9 0 two\swords Würfel 2 4 7 -763 8 4 7 0 two\swords Würfel 0 -444 2 9 -2 1 \e two\swords 3 4 9 -1 -622 0 -2 3 0 two\swords \e 0 2 0 -1 2 8 3
+{"checked_node_indices":[8,3],"nodes":[{"children":[4,8,2],"id":-763,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-2,"parent_id":-2,"selectable":false,"uid":"","volume_idx":2},{"children":[4,7],"id":529,"label":"Würfel","object_idx":4,"parent_id":-2,"selectable":false,"uid":"two\swords","volume_idx":9},{"children":[],"id":-763,"label":"Würfel","object_idx":4,"parent_id":8,"selectable":false,"uid":"two\swords","volume_idx":7},{"children":[4,9,-1],"id":-444,"label":"two\swords","object_idx":9,"parent_id":2,"selectable":true,"uid":"","volume_idx":-2},{"children":[],"id":-622,"label":"","object_idx":-2,"parent_id":0,"selectable":false,"uid":"two\swords","volume_idx":3}],"roots":[0,-1],"version":1}
+TO
+A 4 -715 -2 2 1 0 q"\\\n\x09\x01 q"\\\n\x09\x01 1 1 -48 8 4 5 1 😀 q"\\\n\x09\x01 0 60 6 2 8 0 q"\\\n\x09\x01 😀 3 0 8 -2 -305 0 4 9 0 two\swords a 0 0 1 -1
+{"checked_node_indices":[-1],"nodes":[{"children":[1],"id":-715,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":2,"parent_id":-2,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":1},{"children":[],"id":-48,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":4,"parent_id":8,"selectable":true,"uid":"😀","volume_idx":5},{"children":[0,8,-2],"id":60,"label":"😀","object_idx":2,"parent_id":6,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":8},{"children":[],"id":-305,"label":"a","object_idx":4,"parent_id":0,"selectable":false,"uid":"two\swords","volume_idx":9}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[-1],"nodes":[{"children":[1],"id":-715,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":2,"parent_id":-2,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":1},{"children":[],"id":-48,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":4,"parent_id":8,"selectable":true,"uid":"😀","volume_idx":5},{"children":[0,8,-2],"id":60,"label":"😀","object_idx":2,"parent_id":6,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":8},{"children":[],"id":-305,"label":"a","object_idx":4,"parent_id":0,"selectable":false,"uid":"two\swords","volume_idx":9}],"roots":[],"version":1}
+1
+unset
+A 4 -715 -2 2 1 0 q"\\\n\x09\x01 q"\\\n\x09\x01 1 1 -48 8 4 5 1 😀 q"\\\n\x09\x01 0 60 6 2 8 0 q"\\\n\x09\x01 😀 3 0 8 -2 -305 0 4 9 0 two\swords a 0 0 1 -1
+{"checked_node_indices":[-1],"nodes":[{"children":[1],"id":-715,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":2,"parent_id":-2,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":1},{"children":[],"id":-48,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":4,"parent_id":8,"selectable":true,"uid":"😀","volume_idx":5},{"children":[0,8,-2],"id":60,"label":"😀","object_idx":2,"parent_id":6,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":8},{"children":[],"id":-305,"label":"a","object_idx":4,"parent_id":0,"selectable":false,"uid":"two\swords","volume_idx":9}],"roots":[],"version":1}
+TO
+A 3 -510 1 3 8 1 q"\\\n\x09\x01 q"\\\n\x09\x01 0 -671 2 4 0 1 Würfel \e 1 4 -813 4 -2 7 0 uid-1 \e 0 4 2 0 4 1 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":-510,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":3,"parent_id":1,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":8},{"children":[4],"id":-671,"label":"","object_idx":4,"parent_id":2,"selectable":true,"uid":"Würfel","volume_idx":0},{"children":[],"id":-813,"label":"","object_idx":-2,"parent_id":4,"selectable":false,"uid":"uid-1","volume_idx":7}],"roots":[2,0,4,1],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[],"id":-510,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":3,"parent_id":1,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":8},{"children":[4],"id":-671,"label":"","object_idx":4,"parent_id":2,"selectable":true,"uid":"Würfel","volume_idx":0},{"children":[],"id":-813,"label":"","object_idx":-2,"parent_id":4,"selectable":false,"uid":"uid-1","volume_idx":7}],"roots":[2,0,4,1],"version":1}
+1
+unset
+A 3 -510 1 3 8 1 q"\\\n\x09\x01 q"\\\n\x09\x01 0 -671 2 4 0 1 Würfel \e 1 4 -813 4 -2 7 0 uid-1 \e 0 4 2 0 4 1 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":-510,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":3,"parent_id":1,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":8},{"children":[4],"id":-671,"label":"","object_idx":4,"parent_id":2,"selectable":true,"uid":"Würfel","volume_idx":0},{"children":[],"id":-813,"label":"","object_idx":-2,"parent_id":4,"selectable":false,"uid":"uid-1","volume_idx":7}],"roots":[2,0,4,1],"version":1}
+TO
+A 4 307 8 7 1 1 two\swords 😀 0 -767 7 0 -2 1 Würfel a 4 3 8 -2 -1 702 6 1 -2 0 😀 \e 2 -2 4 625 4 5 -2147483648 0 two\swords q"\\\n\x09\x01 1 -1 4 3 1 4 5 2 -2 3
+{"checked_node_indices":[-2,3],"nodes":[{"children":[],"id":307,"label":"😀","object_idx":7,"parent_id":8,"selectable":true,"uid":"two\swords","volume_idx":1},{"children":[3,8,-2,-1],"id":-767,"label":"a","object_idx":0,"parent_id":7,"selectable":true,"uid":"Würfel","volume_idx":-2},{"children":[-2,4],"id":702,"label":"","object_idx":1,"parent_id":6,"selectable":false,"uid":"😀","volume_idx":-2},{"children":[-1],"id":625,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":5,"parent_id":4,"selectable":false,"uid":"two\swords","volume_idx":-2147483648}],"roots":[3,1,4,5],"version":1}
+FROM
+{"checked_node_indices":[-2,3],"nodes":[{"children":[],"id":307,"label":"😀","object_idx":7,"parent_id":8,"selectable":true,"uid":"two\swords","volume_idx":1},{"children":[3,8,-2,-1],"id":-767,"label":"a","object_idx":0,"parent_id":7,"selectable":true,"uid":"Würfel","volume_idx":-2},{"children":[-2,4],"id":702,"label":"","object_idx":1,"parent_id":6,"selectable":false,"uid":"😀","volume_idx":-2},{"children":[-1],"id":625,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":5,"parent_id":4,"selectable":false,"uid":"two\swords","volume_idx":-2147483648}],"roots":[3,1,4,5],"version":1}
+1
+unset
+A 4 307 8 7 1 1 two\swords 😀 0 -767 7 0 -2 1 Würfel a 4 3 8 -2 -1 702 6 1 -2 0 😀 \e 2 -2 4 625 4 5 -2147483648 0 two\swords q"\\\n\x09\x01 1 -1 4 3 1 4 5 2 -2 3
+{"checked_node_indices":[-2,3],"nodes":[{"children":[],"id":307,"label":"😀","object_idx":7,"parent_id":8,"selectable":true,"uid":"two\swords","volume_idx":1},{"children":[3,8,-2,-1],"id":-767,"label":"a","object_idx":0,"parent_id":7,"selectable":true,"uid":"Würfel","volume_idx":-2},{"children":[-2,4],"id":702,"label":"","object_idx":1,"parent_id":6,"selectable":false,"uid":"😀","volume_idx":-2},{"children":[-1],"id":625,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":5,"parent_id":4,"selectable":false,"uid":"two\swords","volume_idx":-2147483648}],"roots":[3,1,4,5],"version":1}
+TO
+A 1 -1 -1 -1 -1 1 \e \e 0 0 4 8 5 0 6
+{"checked_node_indices":[8,5,0,6],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[8,5,0,6],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[],"version":1}
+1
+unset
+A 1 -1 -1 -1 -1 1 \e \e 0 0 4 8 5 0 6
+{"checked_node_indices":[8,5,0,6],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[],"version":1}
+TO
+A 0 1 -2 1 8
+{"checked_node_indices":[8],"nodes":[],"roots":[-2],"version":1}
+FROM
+{"checked_node_indices":[8],"nodes":[],"roots":[-2],"version":1}
+1
+unset
+A 0 1 -2 1 8
+{"checked_node_indices":[8],"nodes":[],"roots":[-2],"version":1}
+TO
+A 4 437 8 5 4 0 uid-1 Würfel 3 -1 8 9 -437 5 6 8 0 \e two\swords 3 6 0 4 -863 5 3 5 0 \e uid-1 2 2 0 -506 1 -1 1 1 \e \e 4 8 0 3 5 4 -1 9 -1 -1 0
+{"checked_node_indices":[],"nodes":[{"children":[-1,8,9],"id":437,"label":"Würfel","object_idx":5,"parent_id":8,"selectable":false,"uid":"uid-1","volume_idx":4},{"children":[6,0,4],"id":-437,"label":"two\swords","object_idx":6,"parent_id":5,"selectable":false,"uid":"","volume_idx":8},{"children":[2,0],"id":-863,"label":"uid-1","object_idx":3,"parent_id":5,"selectable":false,"uid":"","volume_idx":5},{"children":[8,0,3,5],"id":-506,"label":"","object_idx":-1,"parent_id":1,"selectable":true,"uid":"","volume_idx":1}],"roots":[-1,9,-1,-1],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[-1,8,9],"id":437,"label":"Würfel","object_idx":5,"parent_id":8,"selectable":false,"uid":"uid-1","volume_idx":4},{"children":[6,0,4],"id":-437,"label":"two\swords","object_idx":6,"parent_id":5,"selectable":false,"uid":"","volume_idx":8},{"children":[2,0],"id":-863,"label":"uid-1","object_idx":3,"parent_id":5,"selectable":false,"uid":"","volume_idx":5},{"children":[8,0,3,5],"id":-506,"label":"","object_idx":-1,"parent_id":1,"selectable":true,"uid":"","volume_idx":1}],"roots":[-1,9,-1,-1],"version":1}
+1
+unset
+A 4 437 8 5 4 0 uid-1 Würfel 3 -1 8 9 -437 5 6 8 0 \e two\swords 3 6 0 4 -863 5 3 5 0 \e uid-1 2 2 0 -506 1 -1 1 1 \e \e 4 8 0 3 5 4 -1 9 -1 -1 0
+{"checked_node_indices":[],"nodes":[{"children":[-1,8,9],"id":437,"label":"Würfel","object_idx":5,"parent_id":8,"selectable":false,"uid":"uid-1","volume_idx":4},{"children":[6,0,4],"id":-437,"label":"two\swords","object_idx":6,"parent_id":5,"selectable":false,"uid":"","volume_idx":8},{"children":[2,0],"id":-863,"label":"uid-1","object_idx":3,"parent_id":5,"selectable":false,"uid":"","volume_idx":5},{"children":[8,0,3,5],"id":-506,"label":"","object_idx":-1,"parent_id":1,"selectable":true,"uid":"","volume_idx":1}],"roots":[-1,9,-1,-1],"version":1}
+TO
+A 2 -429 -2 9 -2 1 Würfel Würfel 4 9 3 4 3 -656 9 0 7 1 uid-1 a 2 2 -2 4 9 7 5 8 2 1 8
+{"checked_node_indices":[1,8],"nodes":[{"children":[9,3,4,3],"id":-429,"label":"Würfel","object_idx":9,"parent_id":-2,"selectable":true,"uid":"Würfel","volume_idx":-2},{"children":[2,-2],"id":-656,"label":"a","object_idx":0,"parent_id":9,"selectable":true,"uid":"uid-1","volume_idx":7}],"roots":[9,7,5,8],"version":1}
+FROM
+{"checked_node_indices":[1,8],"nodes":[{"children":[9,3,4,3],"id":-429,"label":"Würfel","object_idx":9,"parent_id":-2,"selectable":true,"uid":"Würfel","volume_idx":-2},{"children":[2,-2],"id":-656,"label":"a","object_idx":0,"parent_id":9,"selectable":true,"uid":"uid-1","volume_idx":7}],"roots":[9,7,5,8],"version":1}
+1
+unset
+A 2 -429 -2 9 -2 1 Würfel Würfel 4 9 3 4 3 -656 9 0 7 1 uid-1 a 2 2 -2 4 9 7 5 8 2 1 8
+{"checked_node_indices":[1,8],"nodes":[{"children":[9,3,4,3],"id":-429,"label":"Würfel","object_idx":9,"parent_id":-2,"selectable":true,"uid":"Würfel","volume_idx":-2},{"children":[2,-2],"id":-656,"label":"a","object_idx":0,"parent_id":9,"selectable":true,"uid":"uid-1","volume_idx":7}],"roots":[9,7,5,8],"version":1}
+TO
+A 1 -198 5 6 5 0 two\swords uid-1 1 5 3 4 8 3 4 5 7 -2 9
+{"checked_node_indices":[5,7,-2,9],"nodes":[{"children":[5],"id":-198,"label":"uid-1","object_idx":6,"parent_id":5,"selectable":false,"uid":"two\swords","volume_idx":5}],"roots":[4,8,3],"version":1}
+FROM
+{"checked_node_indices":[5,7,-2,9],"nodes":[{"children":[5],"id":-198,"label":"uid-1","object_idx":6,"parent_id":5,"selectable":false,"uid":"two\swords","volume_idx":5}],"roots":[4,8,3],"version":1}
+1
+unset
+A 1 -198 5 6 5 0 two\swords uid-1 1 5 3 4 8 3 4 5 7 -2 9
+{"checked_node_indices":[5,7,-2,9],"nodes":[{"children":[5],"id":-198,"label":"uid-1","object_idx":6,"parent_id":5,"selectable":false,"uid":"two\swords","volume_idx":5}],"roots":[4,8,3],"version":1}
+TO
+A 5 -1 -1 -1 -1 1 \e \e 0 -111 0 2 6 0 uid-1 Würfel 2 1 0 -353 5 7 4 0 \e Würfel 2 3 5 -646 -2 8 6 0 uid-1 Würfel 0 395 9 6 6 1 a q"\\\n\x09\x01 2 5 7 4 0 8 5 -1 1 0
+{"checked_node_indices":[0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[1,0],"id":-111,"label":"Würfel","object_idx":2,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[3,5],"id":-353,"label":"Würfel","object_idx":7,"parent_id":5,"selectable":false,"uid":"","volume_idx":4},{"children":[],"id":-646,"label":"Würfel","object_idx":8,"parent_id":-2,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[5,7],"id":395,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":9,"selectable":true,"uid":"a","volume_idx":6}],"roots":[0,8,5,-1],"version":1}
+FROM
+{"checked_node_indices":[0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[1,0],"id":-111,"label":"Würfel","object_idx":2,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[3,5],"id":-353,"label":"Würfel","object_idx":7,"parent_id":5,"selectable":false,"uid":"","volume_idx":4},{"children":[],"id":-646,"label":"Würfel","object_idx":8,"parent_id":-2,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[5,7],"id":395,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":9,"selectable":true,"uid":"a","volume_idx":6}],"roots":[0,8,5,-1],"version":1}
+1
+unset
+A 5 -1 -1 -1 -1 1 \e \e 0 -111 0 2 6 0 uid-1 Würfel 2 1 0 -353 5 7 4 0 \e Würfel 2 3 5 -646 -2 8 6 0 uid-1 Würfel 0 395 9 6 6 1 a q"\\\n\x09\x01 2 5 7 4 0 8 5 -1 1 0
+{"checked_node_indices":[0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[1,0],"id":-111,"label":"Würfel","object_idx":2,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[3,5],"id":-353,"label":"Würfel","object_idx":7,"parent_id":5,"selectable":false,"uid":"","volume_idx":4},{"children":[],"id":-646,"label":"Würfel","object_idx":8,"parent_id":-2,"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[5,7],"id":395,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":9,"selectable":true,"uid":"a","volume_idx":6}],"roots":[0,8,5,-1],"version":1}
+TO
+A 5 -1 -1 -1 -1 1 \e \e 0 212 9 6 6 0 a two\swords 3 2 7 1 278 8 -2 9 0 Würfel a 2 6 0 -762 -1 9 -1 1 \e Würfel 3 0 4 7 -986 5 1 1 1 \e two\swords 4 6 2 8 6 4 8 3 -2 7 3 5 0 0
+{"checked_node_indices":[5,0,0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[2,7,1],"id":212,"label":"two\swords","object_idx":6,"parent_id":9,"selectable":false,"uid":"a","volume_idx":6},{"children":[6,0],"id":278,"label":"a","object_idx":-2,"parent_id":8,"selectable":false,"uid":"Würfel","volume_idx":9},{"children":[0,4,7],"id":-762,"label":"Würfel","object_idx":9,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[6,2,8,6],"id":-986,"label":"two\swords","object_idx":1,"parent_id":5,"selectable":true,"uid":"","volume_idx":1}],"roots":[8,3,-2,7],"version":1}
+FROM
+{"checked_node_indices":[5,0,0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[2,7,1],"id":212,"label":"two\swords","object_idx":6,"parent_id":9,"selectable":false,"uid":"a","volume_idx":6},{"children":[6,0],"id":278,"label":"a","object_idx":-2,"parent_id":8,"selectable":false,"uid":"Würfel","volume_idx":9},{"children":[0,4,7],"id":-762,"label":"Würfel","object_idx":9,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[6,2,8,6],"id":-986,"label":"two\swords","object_idx":1,"parent_id":5,"selectable":true,"uid":"","volume_idx":1}],"roots":[8,3,-2,7],"version":1}
+1
+unset
+A 5 -1 -1 -1 -1 1 \e \e 0 212 9 6 6 0 a two\swords 3 2 7 1 278 8 -2 9 0 Würfel a 2 6 0 -762 -1 9 -1 1 \e Würfel 3 0 4 7 -986 5 1 1 1 \e two\swords 4 6 2 8 6 4 8 3 -2 7 3 5 0 0
+{"checked_node_indices":[5,0,0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[2,7,1],"id":212,"label":"two\swords","object_idx":6,"parent_id":9,"selectable":false,"uid":"a","volume_idx":6},{"children":[6,0],"id":278,"label":"a","object_idx":-2,"parent_id":8,"selectable":false,"uid":"Würfel","volume_idx":9},{"children":[0,4,7],"id":-762,"label":"Würfel","object_idx":9,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[6,2,8,6],"id":-986,"label":"two\swords","object_idx":1,"parent_id":5,"selectable":true,"uid":"","volume_idx":1}],"roots":[8,3,-2,7],"version":1}
+TO
+A 1 951 5 6 2147483647 1 uid-1 😀 3 7 -1 4 1 9 2 9 -2
+{"checked_node_indices":[9,-2],"nodes":[{"children":[7,-1,4],"id":951,"label":"😀","object_idx":6,"parent_id":5,"selectable":true,"uid":"uid-1","volume_idx":2147483647}],"roots":[9],"version":1}
+FROM
+{"checked_node_indices":[9,-2],"nodes":[{"children":[7,-1,4],"id":951,"label":"😀","object_idx":6,"parent_id":5,"selectable":true,"uid":"uid-1","volume_idx":2147483647}],"roots":[9],"version":1}
+1
+unset
+A 1 951 5 6 2147483647 1 uid-1 😀 3 7 -1 4 1 9 2 9 -2
+{"checked_node_indices":[9,-2],"nodes":[{"children":[7,-1,4],"id":951,"label":"😀","object_idx":6,"parent_id":5,"selectable":true,"uid":"uid-1","volume_idx":2147483647}],"roots":[9],"version":1}
+TO
+A 0 0 3 1 8 9
+{"checked_node_indices":[1,8,9],"nodes":[],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[1,8,9],"nodes":[],"roots":[],"version":1}
+1
+unset
+A 0 0 3 1 8 9
+{"checked_node_indices":[1,8,9],"nodes":[],"roots":[],"version":1}
+TO
+A 2 960 -1 2 1 0 a \e 4 6 6 4 2 -11 8 7 -1 0 q"\\\n\x09\x01 q"\\\n\x09\x01 4 -1 5 -1 -1 3 6 4 9 2 -2 0
+{"checked_node_indices":[-2,0],"nodes":[{"children":[6,6,4,2],"id":960,"label":"","object_idx":2,"parent_id":-1,"selectable":false,"uid":"a","volume_idx":1},{"children":[-1,5,-1,-1],"id":-11,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":7,"parent_id":8,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-1}],"roots":[6,4,9],"version":1}
+FROM
+{"checked_node_indices":[-2,0],"nodes":[{"children":[6,6,4,2],"id":960,"label":"","object_idx":2,"parent_id":-1,"selectable":false,"uid":"a","volume_idx":1},{"children":[-1,5,-1,-1],"id":-11,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":7,"parent_id":8,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-1}],"roots":[6,4,9],"version":1}
+1
+unset
+A 2 960 -1 2 1 0 a \e 4 6 6 4 2 -11 8 7 -1 0 q"\\\n\x09\x01 q"\\\n\x09\x01 4 -1 5 -1 -1 3 6 4 9 2 -2 0
+{"checked_node_indices":[-2,0],"nodes":[{"children":[6,6,4,2],"id":960,"label":"","object_idx":2,"parent_id":-1,"selectable":false,"uid":"a","volume_idx":1},{"children":[-1,5,-1,-1],"id":-11,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":7,"parent_id":8,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-1}],"roots":[6,4,9],"version":1}
+TO
+A 0 2 9 8 1 5
+{"checked_node_indices":[5],"nodes":[],"roots":[9,8],"version":1}
+FROM
+{"checked_node_indices":[5],"nodes":[],"roots":[9,8],"version":1}
+1
+unset
+A 0 2 9 8 1 5
+{"checked_node_indices":[5],"nodes":[],"roots":[9,8],"version":1}
+FROM
+\e
+0
+[json.exception.parse_error.101]\sparse\serror\sat\sline\s1,\scolumn\s1:\ssyntax\serror\swhile\sparsing\svalue\s-\sunexpected\send\sof\sinput;\sexpected\s'[',\s'{',\sor\sa\sliteral
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{
+0
+[json.exception.parse_error.101]\sparse\serror\sat\sline\s1,\scolumn\s2:\ssyntax\serror\swhile\sparsing\sobject\skey\s-\sunexpected\send\sof\sinput;\sexpected\sstring\sliteral
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+null
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+[]
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+5
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+"s"
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+true
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\sboolean
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{}
+1
+unset
+A 0 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[],"version":1}
+FROM
+{"nodes":[]}
+1
+unset
+A 0 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[],"version":1}
+FROM
+{"nodes":{}}
+1
+unset
+A 0 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[],"version":1}
+FROM
+{"nodes":5,"roots":[]}
+1
+unset
+A 0 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[],"version":1}
+FROM
+{"nodes":[{}]}
+1
+unset
+A 1 -1 -1 -1 -1 1 \e \e 0 0 1 0
+{"checked_node_indices":[0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[],"version":1}
+FROM
+{"nodes":[{},{"id":5},{"id":-3},{"id":0}]}
+1
+unset
+A 4 -1 -1 -1 -1 1 \e \e 0 5 -1 -1 -1 1 \e \e 0 -3 -1 -1 -1 1 \e \e 0 0 -1 -1 -1 1 \e \e 0 0 4 0 5 2 0
+{"checked_node_indices":[0,5,2,0],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":5,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":-3,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":0,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[],"version":1}
+FROM
+{"nodes":[{},{"id":5}],"checked_node_indices":[]}
+1
+unset
+A 2 -1 -1 -1 -1 1 \e \e 0 5 -1 -1 -1 1 \e \e 0 0 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1},{"children":[],"id":5,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[],"version":1}
+FROM
+{"nodes":[{}],"checked_node_indices":null}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[null]}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[[]]}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"id":"5"}]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"id":true,"parent_id":false,"object_idx":2.9,"volume_idx":-2.9}]}
+1
+unset
+A 1 1 0 2 -2 1 \e \e 0 0 1 1
+{"checked_node_indices":[1],"nodes":[{"children":[],"id":1,"label":"","object_idx":2,"parent_id":0,"selectable":true,"uid":"","volume_idx":-2}],"roots":[],"version":1}
+FROM
+{"nodes":[{"id":-0,"parent_id":-0.0,"object_idx":1e2,"volume_idx":4294967296}]}
+1
+unset
+A 1 0 0 100 0 1 \e \e 0 0 1 0
+{"checked_node_indices":[0],"nodes":[{"children":[],"id":0,"label":"","object_idx":100,"parent_id":0,"selectable":true,"uid":"","volume_idx":0}],"roots":[],"version":1}
+FROM
+{"nodes":[{"selectable":1}]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sboolean,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"selectable":null}]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sboolean,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"uid":5}]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"label":[]}]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":{}}]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":[1,[2]]}]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":[1,true,2.5,null]}]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"roots":"r"}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"roots":[1,2,"3"]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"roots":[true,false,1.9,-1.9,3000000000,-3000000000,1e300,-1e300]}
+1
+unset
+A 0 8 1 0 1 -1 -1294967296 1294967296 2147483647 -2147483648 0
+{"checked_node_indices":[],"nodes":[],"roots":[1,0,1,-1,-1294967296,1294967296,2147483647,-2147483648],"version":1}
+FROM
+{"roots":[1],"roots":[2,3]}
+1
+unset
+A 0 2 2 3 0
+{"checked_node_indices":[],"nodes":[],"roots":[2,3],"version":1}
+FROM
+{"roots":[1]}\strailing
+0
+[json.exception.parse_error.101]\sparse\serror\sat\sline\s1,\scolumn\s17:\ssyntax\serror\swhile\sparsing\svalue\s-\sinvalid\sliteral;\slast\sread:\s'1]}\stra';\sexpected\send\sof\sinput
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+﻿{"roots":[1]}
+1
+unset
+A 0 1 1 0
+{"checked_node_indices":[],"nodes":[],"roots":[1],"version":1}
+FROM
+\s{\n"version"\s:\s9\s,\s"roots"\s:\s[\s4\s]\s,\s"nodes"\s:\s[\s{\s"uid"\s:\s"\\u00e9\\ud83d\\ude00"\s,\s"label"\s:\s"a\\tb"\s}\s]\s}\n
+1
+unset
+A 1 -1 -1 -1 -1 1 é😀 a\x09b 0 1 4 1 0
+{"checked_node_indices":[0],"nodes":[{"children":[],"id":-1,"label":"a\\tb","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"é😀","volume_idx":-1}],"roots":[4],"version":1}
+FROM
+{"checked_node_indices":[2,0,4,4],"nodes":[{"children":[4],"id":-1,"label":"q\\"\\\\\\n\\t\\u0001","selectable":true,"volume_idx":-2},{"children":[8,5,2,8],"id":9,"label":"","object_idx":2,"parent_id":7,"selectable":false,"uid":"uid-1","volume_idx":7},{"id":5,"label":"a","object_idx":5,"parent_id":-1,"selectable":false,"uid":-1e+300},{"children":[1,1],"id":5,"label":"Würfel","object_idx":false,"parent_id":9,"selectable":false,"uid":"two\swords","volume_idx":1}],"roots":[9,9,2,2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[7,1],"nodes":[{"children":[-2],"id":-1,"label":"","parent_id":8,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":1}],"roots":[7,6,0]}
+1
+unset
+A 1 -1 8 -1 1 0 q"\\\n\x09\x01 \e 1 -2 3 7 6 0 2 7 1
+{"checked_node_indices":[7,1],"nodes":[{"children":[-2],"id":-1,"label":"","object_idx":-1,"parent_id":8,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":1}],"roots":[7,6,0],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[],"id":0,"object_idx":0,"parent_id":0,"uid":"two\swords","volume_idx":6},-1e+300,{"children":[],"id":-2,"label":"Würfel","object_idx":1,"parent_id":3,"selectable":true,"uid":"","volume_idx":0},{"children":[-2,8,1],"label":"Würfel","object_idx":7,"parent_id":3,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":1}],"roots":[],"version":1}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[1,3,7],"nodes":[{"children":[6,4,2,2],"id":3,"object_idx":6,"parent_id":18446744073709551615,"selectable":false,"uid":"a","volume_idx":4},{"children":[3,8,-2],"id":-2,"label":"a","object_idx":9,"parent_id":8,"selectable":false,"uid":"uid-1","volume_idx":5}],"roots":[5],"version":1}
+1
+unset
+A 2 3 -1 6 4 0 a \e 4 6 4 2 2 -2 8 9 5 0 uid-1 a 3 3 8 -2 1 5 3 1 3 7
+{"checked_node_indices":[1,3,7],"nodes":[{"children":[6,4,2,2],"id":3,"label":"","object_idx":6,"parent_id":-1,"selectable":false,"uid":"a","volume_idx":4},{"children":[3,8,-2],"id":-2,"label":"a","object_idx":9,"parent_id":8,"selectable":false,"uid":"uid-1","volume_idx":5}],"roots":[5],"version":1}
+FROM
+{"checked_node_indices":{"k":1},"nodes":[{"children":[2,6],"id":1,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":9,"parent_id":{"k":1},"selectable":false,"uid":"uid-1","volume_idx":7},{"children":[[]],"id":3,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":6,"selectable":true,"uid":"","volume_idx":4},{"children":[0,-1,2],"id":1,"label":"😀","object_idx":3,"parent_id":9,"selectable":true,"uid":"two\swords","volume_idx":0},{"children":[1,8,0],"label":4294967297,"object_idx":7,"parent_id":-1,"selectable":false,"uid":"uid-1","volume_idx":5}],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[],"roots":[-1,2,-1,7],"version":1}
+1
+unset
+A 0 4 -1 2 -1 7 0
+{"checked_node_indices":[],"nodes":[],"roots":[-1,2,-1,7],"version":1}
+FROM
+{"checked_node_indices":[3],"nodes":[{"children":[-1,8,8,6],"id":3,"label":"😀","object_idx":6,"parent_id":7,"selectable":false,"uid":"","volume_idx":1},{"children":[5],"id":9,"label":"uid-1","object_idx":4,"parent_id":[1,true,2.9,-7],"selectable":true,"uid":"Würfel","volume_idx":-2},{"children":[5],"id":2,"label":"😀","object_idx":1,"parent_id":5,"selectable":false,"uid":"","volume_idx":-1}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[8,2],"roots":[3,0,3],"version":1}
+1
+unset
+A 0 3 3 0 3 2 8 2
+{"checked_node_indices":[8,2],"nodes":[],"roots":[3,0,3],"version":1}
+FROM
+{"checked_node_indices":[5,-1,-1],"nodes":["x"],"roots":[],"version":1}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":[-2],"id":6,"label":"","object_idx":0,"parent_id":4,"selectable":true,"volume_idx":5},{"children":[3],"id":4,"label":"x","object_idx":5,"parent_id":7,"selectable":true,"uid":[[]],"volume_idx":9},{"children":[7,0,8,2],"id":2,"label":"uid-1","object_idx":4,"parent_id":-2,"selectable":true,"uid":"","volume_idx":7},1e+300],"roots":[7,8,-1,3]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[3],"nodes":[{"children":[],"id":8,"label":"uid-1","object_idx":5,"parent_id":-2,"selectable":true,"uid":{"k":1}},{"children":[7,9],"id":6,"label":"a","object_idx":5,"parent_id":7,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2},{"children":[7,0,9],"id":4,"label":"Würfel","object_idx":2,"parent_id":1,"uid":"😀","volume_idx":1},{"children":[],"id":1,"label":"😀","object_idx":-2,"parent_id":-1,"selectable":false,"uid":"Würfel","volume_idx":1},{"id":8,"object_idx":3,"parent_id":{"k":1},"selectable":true,"uid":"a","volume_idx":null}],"roots":[6,-2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[8,4,8],"nodes":[{"children":[],"id":2,"label":"uid-1","object_idx":4,"parent_id":3,"selectable":true,"uid":"uid-1","volume_idx":-1},{"children":[7,6,5],"id":9,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"Würfel","volume_idx":7}],"roots":[1,2,4],"version":1}
+1
+unset
+A 2 2 3 4 -1 1 uid-1 uid-1 0 9 -1 -1 7 1 Würfel q"\\\n\x09\x01 3 7 6 5 3 1 2 4 3 8 4 8
+{"checked_node_indices":[8,4,8],"nodes":[{"children":[],"id":2,"label":"uid-1","object_idx":4,"parent_id":3,"selectable":true,"uid":"uid-1","volume_idx":-1},{"children":[7,6,5],"id":9,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"Würfel","volume_idx":7}],"roots":[1,2,4],"version":1}
+FROM
+{"checked_node_indices":[0,1,7,-2],"nodes":[],"roots":[9],"version":1}
+1
+unset
+A 0 1 9 4 0 1 7 -2
+{"checked_node_indices":[0,1,7,-2],"nodes":[],"roots":[9],"version":1}
+FROM
+{"nodes":[{"children":[3,3],"id":5,"label":"two\swords","object_idx":1,"parent_id":6,"selectable":true,"uid":"😀","volume_idx":1},{"children":[],"id":0,"label":"uid-1","selectable":true,"volume_idx":3},{"children":true,"id":6,"label":"uid-1","object_idx":7,"parent_id":5,"selectable":false,"uid":"😀","volume_idx":-2.75}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sboolean
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":2.75,"roots":[9,2,7],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[-1,-2],"label":"","object_idx":1,"parent_id":2,"selectable":true,"uid":"","volume_idx":4294967297},{"children":[-2],"id":9,"label":"two\swords","object_idx":5,"parent_id":2,"selectable":true,"uid":"a","volume_idx":8},{"children":[1],"id":6,"label":"two\swords","object_idx":9,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":0},{"children":[],"id":0,"label":"😀","object_idx":1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[6],"version":1}
+1
+unset
+A 4 -1 2 1 1 1 \e \e 2 -1 -2 9 2 5 8 1 a two\swords 1 -2 6 0 9 0 0 uid-1 two\swords 1 1 0 -1 1 -1 1 \e 😀 0 1 6 0
+{"checked_node_indices":[],"nodes":[{"children":[-1,-2],"id":-1,"label":"","object_idx":1,"parent_id":2,"selectable":true,"uid":"","volume_idx":1},{"children":[-2],"id":9,"label":"two\swords","object_idx":5,"parent_id":2,"selectable":true,"uid":"a","volume_idx":8},{"children":[1],"id":6,"label":"two\swords","object_idx":9,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":0},{"children":[],"id":0,"label":"😀","object_idx":1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[6],"version":1}
+FROM
+{"nodes":[],"roots":[7,6,-1,1],"version":1}
+1
+unset
+A 0 4 7 6 -1 1 0
+{"checked_node_indices":[],"nodes":[],"roots":[7,6,-1,1],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[-2,7,2],"id":18446744073709551615,"label":"Würfel","object_idx":5,"parent_id":-2,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":4},{"children":[6,4],"id":-1,"label":"😀","object_idx":2,"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[4],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":5,"parent_id":4,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-1}],"roots":[8,7,2],"version":1}
+1
+unset
+A 3 -1 -2 5 4 0 q"\\\n\x09\x01 Würfel 3 -2 7 2 -1 1 2 7 0 Würfel 😀 2 6 4 0 4 5 -1 0 q"\\\n\x09\x01 q"\\\n\x09\x01 1 4 3 8 7 2 0
+{"checked_node_indices":[],"nodes":[{"children":[-2,7,2],"id":-1,"label":"Würfel","object_idx":5,"parent_id":-2,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":4},{"children":[6,4],"id":-1,"label":"😀","object_idx":2,"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[4],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":5,"parent_id":4,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-1}],"roots":[8,7,2],"version":1}
+FROM
+{"checked_node_indices":[7,6,3],"roots":[0,3,-2],"version":1}
+1
+unset
+A 0 3 0 3 -2 3 7 6 3
+{"checked_node_indices":[7,6,3],"nodes":[],"roots":[0,3,-2],"version":1}
+FROM
+{"checked_node_indices":null,"nodes":[-2.75,{"children":[],"id":4,"label":{"k":1},"object_idx":-2,"parent_id":3,"selectable":false,"uid":"😀","volume_idx":9},{"children":[-1,-2,5],"id":9,"label":"two\swords","object_idx":0,"parent_id":-1e+300,"selectable":false,"uid":"two\swords","volume_idx":-1}],"roots":[2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[3],"nodes":[{"children":{"k":1},"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":[1,"a"],"parent_id":-1,"selectable":[1,"a"],"uid":"Würfel"}],"roots":[4,0,4],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[8,0],"label":"uid-1","object_idx":2,"parent_id":3,"selectable":true,"uid":"uid-1","volume_idx":null}],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[0],"nodes":[{"children":[7,8,7,9],"id":0,"label":"uid-1","parent_id":1,"selectable":[[]],"volume_idx":[[]]},{"children":[9,-1,6,4],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":8,"selectable":false,"uid":"😀","volume_idx":-2},4294967297,{"children":false,"id":3,"label":"uid-1","object_idx":2,"parent_id":[1,true,2.9,-7],"selectable":true,"uid":"uid-1","volume_idx":3},{"children":[],"id":2,"label":"uid-1","object_idx":5,"parent_id":0,"selectable":true,"uid":"uid-1","volume_idx":6}],"roots":[8],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[9,-1,9],"nodes":[{"id":2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"uid":"","volume_idx":7},{"children":[-1,3],"id":1e+300,"label":"two\swords","object_idx":7,"parent_id":9,"selectable":true,"uid":"😀","volume_idx":-1},{"children":[6],"id":true,"label":"uid-1","object_idx":2,"parent_id":6,"selectable":false,"uid":{"k":1},"volume_idx":4}],"roots":[3,7,4,8],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[3],"nodes":[{"children":[-1,6],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","parent_id":5,"selectable":true,"uid":"two\swords","volume_idx":8}],"roots":[0,3],"version":4294967297}
+1
+unset
+A 1 -2 5 -1 8 1 two\swords q"\\\n\x09\x01 2 -1 6 2 0 3 1 3
+{"checked_node_indices":[3],"nodes":[{"children":[-1,6],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":5,"selectable":true,"uid":"two\swords","volume_idx":8}],"roots":[0,3],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[5,0,6],"id":3,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":8,"parent_id":-1,"selectable":true,"uid":1e+300,"volume_idx":0},{"children":[9,3,4,5],"id":0,"label":"a","object_idx":5,"parent_id":3,"selectable":true,"uid":"a","volume_idx":1},[1,true,2.9,-7]],"roots":[3,0,7,-2],"version":4294967297}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[9,3],"nodes":[{"children":[6,-1,1],"id":9,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":8,"parent_id":18446744073709551615,"selectable":true,"uid":"two\swords","volume_idx":2}],"roots":[5,5,8,8],"version":1}
+1
+unset
+A 1 9 -1 8 2 1 two\swords q"\\\n\x09\x01 3 6 -1 1 4 5 5 8 8 2 9 3
+{"checked_node_indices":[9,3],"nodes":[{"children":[6,-1,1],"id":9,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":8,"parent_id":-1,"selectable":true,"uid":"two\swords","volume_idx":2}],"roots":[5,5,8,8],"version":1}
+FROM
+{"checked_node_indices":4294967297,"nodes":[{"children":[9,2],"id":2,"label":"","object_idx":2,"parent_id":[1,true,2.9,-7],"selectable":false,"uid":"two\swords","volume_idx":7},{"children":[-1,3,9,0],"id":3,"label":"","object_idx":2,"selectable":true,"uid":"Würfel","volume_idx":8}],"roots":[9],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[6,2],"nodes":[{"children":[1,1,3,7],"id":3,"label":"Würfel","object_idx":0,"parent_id":4,"selectable":true,"uid":"uid-1","volume_idx":5}],"roots":[6,5],"version":1}
+1
+unset
+A 1 3 4 0 5 1 uid-1 Würfel 4 1 1 3 7 2 6 5 2 6 2
+{"checked_node_indices":[6,2],"nodes":[{"children":[1,1,3,7],"id":3,"label":"Würfel","object_idx":0,"parent_id":4,"selectable":true,"uid":"uid-1","volume_idx":5}],"roots":[6,5],"version":1}
+FROM
+{"checked_node_indices":[5],"nodes":[],"roots":null,"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[],"id":7,"label":"uid-1","object_idx":5,"parent_id":6,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2}],"roots":[0,-2,9],"version":1}
+1
+unset
+A 1 7 6 5 -2 1 q"\\\n\x09\x01 uid-1 0 3 0 -2 9 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":7,"label":"uid-1","object_idx":5,"parent_id":6,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2}],"roots":[0,-2,9],"version":1}
+FROM
+{"checked_node_indices":[4],"nodes":[{"children":[2,8,5,6],"id":3,"label":"uid-1","object_idx":6,"parent_id":4,"selectable":true,"uid":"Würfel"},{"children":[],"id":"x","object_idx":9,"parent_id":1,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":0},{"children":[2,-2,6,2],"id":-1,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":9,"parent_id":8,"selectable":false,"uid":"","volume_idx":-2},{"children":[2,2,1,-2],"id":5,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-2,"parent_id":true,"selectable":true,"uid":"two\swords","volume_idx":8},{"children":[4,9,8,9],"id":0,"object_idx":9,"parent_id":6,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":0}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[3,1,6,-1],"nodes":[{"children":[0,2],"id":8,"label":"uid-1","object_idx":9,"parent_id":4,"selectable":true,"uid":"a","volume_idx":7},{"children":[6],"id":5,"label":"😀","object_idx":9,"parent_id":7,"selectable":true,"uid":"Würfel","volume_idx":4},{"id":2,"label":"😀","object_idx":1e+300,"parent_id":5,"selectable":false,"uid":"uid-1","volume_idx":3},{"children":[3,2,6],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":3,"selectable":true,"uid":"a","volume_idx":7},{"children":false,"id":2,"label":"uid-1","object_idx":9,"selectable":false,"uid":"Würfel","volume_idx":8}],"roots":[7]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sboolean
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":-4294967295,"nodes":[],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[5,3,-2,4],"nodes":[{"children":[0],"id":9,"label":"😀","object_idx":3,"parent_id":-2,"selectable":false,"uid":"two\swords","volume_idx":1}],"roots":[4],"version":1}
+1
+unset
+A 1 9 -2 3 1 0 two\swords 😀 1 0 1 4 4 5 3 -2 4
+{"checked_node_indices":[5,3,-2,4],"nodes":[{"children":[0],"id":9,"label":"😀","object_idx":3,"parent_id":-2,"selectable":false,"uid":"two\swords","volume_idx":1}],"roots":[4],"version":1}
+FROM
+{"checked_node_indices":18446744073709551615,"nodes":[{"children":[1,6,-1],"id":-4294967295,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":2,"selectable":true,"uid":"x","volume_idx":3}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[4],"roots":[-2,2,2],"version":1}
+1
+unset
+A 0 3 -2 2 2 1 4
+{"checked_node_indices":[4],"nodes":[],"roots":[-2,2,2],"version":1}
+FROM
+{"checked_node_indices":{"k":1},"nodes":[{"children":[-2,7,-2,5],"id":2,"label":"Würfel","object_idx":2,"parent_id":[],"selectable":false,"uid":"two\swords","volume_idx":2},{"id":5,"label":true,"object_idx":0,"parent_id":0,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":6},{"children":[3],"id":6,"label":"a","object_idx":1,"parent_id":0,"selectable":true,"uid":"😀","volume_idx":-1},{"children":[8,-1,6],"id":-1,"label":"uid-1","object_idx":1,"parent_id":6,"uid":"Würfel","volume_idx":1},{"children":[8],"id":6,"label":"Würfel","object_idx":3,"parent_id":[1,true,2.9,-7],"selectable":true,"uid":"Würfel","volume_idx":6}],"roots":2.75,"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":true,"nodes":[{"children":[-2,4,3,4],"id":2,"label":"two\swords","object_idx":5,"parent_id":1,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":9},{"children":[0,-2,0],"id":0,"label":"","object_idx":8,"selectable":true,"uid":"uid-1"},{"children":[1],"id":8,"label":"uid-1","object_idx":5,"parent_id":-1,"selectable":true,"uid":18446744073709551615,"volume_idx":1},{"children":[6,9],"id":5,"label":"a","object_idx":8,"parent_id":-2,"selectable":true,"uid":"Würfel","volume_idx":0},{"children":[3,5,8],"id":0,"label":"Würfel","object_idx":0,"parent_id":4,"selectable":null,"uid":"two\swords","volume_idx":9}],"roots":-1e+300,"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":18446744073709551615,"parent_id":-2,"uid":"","volume_idx":8}],"roots":[],"version":1}
+1
+unset
+A 1 0 -2 -1 8 1 \e q"\\\n\x09\x01 0 0 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":-2,"selectable":true,"uid":"","volume_idx":8}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[],"roots":[3,0]}
+1
+unset
+A 0 2 3 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[3,0],"version":1}
+FROM
+{"nodes":[],"roots":[0],"version":-1e+300}
+1
+unset
+A 0 1 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[0],"version":1}
+FROM
+{"nodes":[{"children":[],"id":2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":[1,true,2.9,-7],"parent_id":8,"selectable":false,"uid":"","volume_idx":6}],"roots":[3],"version":[1,true,2.9,-7]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[9,7],"nodes":[{"children":-2.75,"id":4,"label":"😀","object_idx":3,"parent_id":-1,"selectable":true,"uid":[[]],"volume_idx":"x"},{"children":[8,-1,2,-2],"id":-2,"label":"Würfel","object_idx":5,"parent_id":-4294967295,"selectable":true,"uid":"two\swords","volume_idx":7},{"children":[],"id":5,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":2,"parent_id":0,"selectable":true,"uid":{"k":1},"volume_idx":8},{"children":[-1,7,1],"id":6,"label":"😀","object_idx":4,"parent_id":-1,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2},{"children":[0,6,-2,9],"id":-1,"label":"Würfel","object_idx":9,"parent_id":9,"selectable":true,"uid":"😀"}],"roots":[9],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[-2,7,4],"nodes":[{"children":[],"id":8,"label":"","object_idx":-1,"parent_id":9,"uid":"two\swords","volume_idx":7},{"children":[],"id":0,"label":"😀","parent_id":-1,"selectable":true,"uid":[1,true,2.9,-7],"volume_idx":1},{"children":[],"id":9,"label":"uid-1","selectable":false,"uid":"uid-1","volume_idx":2}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":true,"nodes":[],"roots":[2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sboolean
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":[6],"id":0,"label":"two\swords","object_idx":3,"parent_id":6,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":9},{"id":1,"label":"","object_idx":6,"parent_id":4,"selectable":true,"uid":"😀","volume_idx":7},{"children":[],"id":5,"label":"Würfel","object_idx":2,"parent_id":9,"selectable":false,"uid":"","volume_idx":4}],"roots":[4],"version":1}
+1
+unset
+A 3 0 6 3 9 1 q"\\\n\x09\x01 two\swords 1 6 1 4 6 7 1 😀 \e 0 5 9 2 4 0 \e Würfel 0 1 4 3 0 1 5
+{"checked_node_indices":[0,1,5],"nodes":[{"children":[6],"id":0,"label":"two\swords","object_idx":3,"parent_id":6,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":9},{"children":[],"id":1,"label":"","object_idx":6,"parent_id":4,"selectable":true,"uid":"😀","volume_idx":7},{"children":[],"id":5,"label":"Würfel","object_idx":2,"parent_id":9,"selectable":false,"uid":"","volume_idx":4}],"roots":[4],"version":1}
+FROM
+{"checked_node_indices":[5,3],"nodes":[{"children":[4,-1],"id":5,"label":"😀","selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5},{"children":[1,7],"id":0,"object_idx":{"k":1},"parent_id":1,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":{"k":1}},{"children":[-1,6],"id":4,"label":"Würfel","object_idx":9,"parent_id":2.75,"selectable":true,"uid":"","volume_idx":2},{"children":[7],"id":7,"label":"Würfel","object_idx":1,"parent_id":-1,"uid":"uid-1","volume_idx":7}],"roots":[2,-1,-2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[6,9],"nodes":[{"id":6,"label":"😀","object_idx":0,"parent_id":-1,"selectable":false,"uid":"Würfel","volume_idx":9}],"roots":[2,-2,5,-1],"version":1}
+1
+unset
+A 1 6 -1 0 9 0 Würfel 😀 0 4 2 -2 5 -1 2 6 9
+{"checked_node_indices":[6,9],"nodes":[{"children":[],"id":6,"label":"😀","object_idx":0,"parent_id":-1,"selectable":false,"uid":"Würfel","volume_idx":9}],"roots":[2,-2,5,-1],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[[]],"roots":[9],"version":1}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[1,-1,0,9],"nodes":[{"children":[0],"id":[],"label":true,"object_idx":2,"parent_id":2,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2},{"children":[8,7,3],"id":6,"label":null,"object_idx":8,"parent_id":2,"selectable":true,"uid":"😀","volume_idx":0},{"children":[6],"id":6,"label":"","object_idx":7,"parent_id":5,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":9},{"children":[],"id":0,"label":{"k":1},"object_idx":6,"parent_id":8,"selectable":18446744073709551615,"uid":"two\swords","volume_idx":-1e+300}],"roots":[0,2,1],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":"x","nodes":[{"children":[-2,4],"id":8,"object_idx":1,"parent_id":9,"selectable":{"k":1},"uid":""},{"children":[3,6],"id":3,"object_idx":3,"parent_id":-2,"selectable":-4294967295,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":2},{"children":[1,5,0],"id":-1,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":5,"parent_id":-2,"selectable":true,"uid":"😀"},{"children":[1,7],"id":3,"label":"a","object_idx":-2,"parent_id":1,"selectable":true,"uid":"😀","volume_idx":9}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[4,-1,2],"nodes":[{"children":[-2,-1,6,5],"id":5,"label":"😀","object_idx":4294967297,"parent_id":7,"selectable":true,"uid":"","volume_idx":6},{"children":[6,9],"id":1,"parent_id":6,"selectable":true,"uid":"uid-1","volume_idx":0}],"version":1}
+1
+unset
+A 2 5 7 1 6 1 \e 😀 4 -2 -1 6 5 1 6 -1 0 1 uid-1 \e 2 6 9 0 3 4 -1 2
+{"checked_node_indices":[4,-1,2],"nodes":[{"children":[-2,-1,6,5],"id":5,"label":"😀","object_idx":1,"parent_id":7,"selectable":true,"uid":"","volume_idx":6},{"children":[6,9],"id":1,"label":"","object_idx":-1,"parent_id":6,"selectable":true,"uid":"uid-1","volume_idx":0}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[8,4],"id":2,"label":null,"object_idx":6,"parent_id":8,"selectable":-1e+300,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2},{"children":[2,2,8],"id":4,"label":"😀","parent_id":-1,"selectable":true,"uid":"","volume_idx":3},{"children":true,"id":-2,"label":"😀","object_idx":6,"parent_id":4,"selectable":false,"uid":"😀","volume_idx":9},{"children":[3,-1,-1],"id":5,"label":null,"object_idx":1,"parent_id":8,"selectable":true,"uid":"Würfel","volume_idx":6}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sboolean,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[-2.75,{"children":[4],"id":6,"label":"a","object_idx":9,"parent_id":6,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":2},{"children":[-1,-1],"id":-1,"label":"","object_idx":-2,"parent_id":9,"selectable":false,"uid":null,"volume_idx":5},{"children":[1,0],"id":-2,"label":"a","object_idx":0,"parent_id":0,"selectable":false,"uid":"a","volume_idx":8}],"roots":[3,3,4,8],"version":1}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"id":-2,"label":1e+300,"object_idx":-2,"parent_id":false,"selectable":true,"uid":"Würfel","volume_idx":4},{"children":[-2,1,0,-1],"id":6,"label":18446744073709551615,"object_idx":4,"parent_id":7,"selectable":false,"uid":"uid-1","volume_idx":-1},{"children":[0,-2],"id":-4294967295,"label":"Würfel","object_idx":4,"parent_id":-2,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":6}],"roots":[7,6,-2,6],"version":[[]]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"id":-2,"label":"two\swords","object_idx":-1,"parent_id":3,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[6,7],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","parent_id":8,"selectable":true,"uid":"Würfel"},{"children":[4,6,1],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":3,"parent_id":2,"selectable":true,"uid":"two\swords","volume_idx":2},{"children":[3,5,5,2],"id":4,"label":"two\swords","object_idx":2,"parent_id":7,"selectable":false,"uid":"Würfel","volume_idx":-2}],"roots":[1],"version":1}
+1
+unset
+A 4 -2 3 -1 7 0 Würfel two\swords 0 -2 8 -1 -1 1 Würfel q"\\\n\x09\x01 2 6 7 -2 2 3 2 1 two\swords q"\\\n\x09\x01 3 4 6 1 4 7 2 -2 0 Würfel two\swords 4 3 5 5 2 1 1 4 0 1 2 4
+{"checked_node_indices":[0,1,2,4],"nodes":[{"children":[],"id":-2,"label":"two\swords","object_idx":-1,"parent_id":3,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[6,7],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":8,"selectable":true,"uid":"Würfel","volume_idx":-1},{"children":[4,6,1],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":3,"parent_id":2,"selectable":true,"uid":"two\swords","volume_idx":2},{"children":[3,5,5,2],"id":4,"label":"two\swords","object_idx":2,"parent_id":7,"selectable":false,"uid":"Würfel","volume_idx":-2}],"roots":[1],"version":1}
+FROM
+{"checked_node_indices":18446744073709551615,"nodes":[],"roots":[9,6,5,3],"version":-4294967295}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[3],"nodes":[{"children":[7,7,0],"id":3,"label":"uid-1","object_idx":-2,"parent_id":-2,"selectable":true,"uid":"","volume_idx":0},{"children":[2],"id":2,"label":"Würfel","object_idx":5,"selectable":false,"uid":"a","volume_idx":-2}],"roots":[9],"version":1}
+1
+unset
+A 2 3 -2 -2 0 1 \e uid-1 3 7 7 0 2 -1 5 -2 0 a Würfel 1 2 1 9 1 3
+{"checked_node_indices":[3],"nodes":[{"children":[7,7,0],"id":3,"label":"uid-1","object_idx":-2,"parent_id":-2,"selectable":true,"uid":"","volume_idx":0},{"children":[2],"id":2,"label":"Würfel","object_idx":5,"parent_id":-1,"selectable":false,"uid":"a","volume_idx":-2}],"roots":[9],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[-1],"id":4,"label":"😀","object_idx":-1,"parent_id":-2,"selectable":false,"volume_idx":5},{"children":[3,4,3,-1],"label":"Würfel","object_idx":-2,"parent_id":7,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":9},{"children":[1,3,3,9],"id":7,"object_idx":3,"parent_id":1,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":0},{"children":[5,9],"id":7,"label":"😀","object_idx":7,"parent_id":8,"selectable":false,"uid":"","volume_idx":-2},{"children":[8,7,9,3],"id":3,"label":[1,"a"],"object_idx":8,"parent_id":1,"selectable":false,"volume_idx":5}],"roots":[3,3,9,9],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[2,5,6,9],"nodes":[{"children":[-1,0],"id":3,"label":{"k":1},"object_idx":8,"parent_id":0,"selectable":false,"uid":"","volume_idx":7},{"children":"x","id":7,"label":"","object_idx":7,"parent_id":3,"selectable":true,"volume_idx":6},{"children":[1],"id":1,"label":"uid-1","object_idx":5,"parent_id":8,"selectable":true,"uid":"two\swords","volume_idx":8}],"roots":[0,3,-2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[-2,-2,3],"nodes":[-1e+300,{"children":[7,7,5,9],"id":-1,"label":"😀","object_idx":1,"parent_id":9,"selectable":true,"uid":"uid-1","volume_idx":4}],"roots":[5],"version":1}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[0,4,1],"nodes":[{"children":[9,4,9],"id":-2,"label":"uid-1","object_idx":-1e+300,"parent_id":-1,"uid":"","volume_idx":7}],"roots":[],"version":1}
+1
+unset
+A 1 -2 -1 -2147483648 7 1 \e uid-1 3 9 4 9 0 3 0 4 1
+{"checked_node_indices":[0,4,1],"nodes":[{"children":[9,4,9],"id":-2,"label":"uid-1","object_idx":-2147483648,"parent_id":-1,"selectable":true,"uid":"","volume_idx":7}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[7,7],"nodes":[{"children":[],"id":5,"label":"uid-1","object_idx":0,"parent_id":3,"selectable":false,"uid":"two\swords","volume_idx":-2},{"children":[-1,7],"id":6,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-2,"parent_id":-1,"selectable":true,"uid":"Würfel"},{"children":[],"id":-2,"label":"😀","object_idx":0,"parent_id":1,"uid":"uid-1","volume_idx":3}],"roots":[0,4,7,9],"version":1}
+1
+unset
+A 3 5 3 0 -2 0 two\swords uid-1 0 6 -1 -2 -1 1 Würfel q"\\\n\x09\x01 2 -1 7 -2 1 0 3 1 uid-1 😀 0 4 0 4 7 9 2 7 7
+{"checked_node_indices":[7,7],"nodes":[{"children":[],"id":5,"label":"uid-1","object_idx":0,"parent_id":3,"selectable":false,"uid":"two\swords","volume_idx":-2},{"children":[-1,7],"id":6,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-2,"parent_id":-1,"selectable":true,"uid":"Würfel","volume_idx":-1},{"children":[],"id":-2,"label":"😀","object_idx":0,"parent_id":1,"selectable":true,"uid":"uid-1","volume_idx":3}],"roots":[0,4,7,9],"version":1}
+FROM
+{"nodes":[{"children":[-2,-1,-1],"id":7,"label":"two\swords","object_idx":9,"parent_id":5,"selectable":true,"uid":"","volume_idx":9}],"roots":null,"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[-2,6,3,8],"nodes":[{"children":[1,5,3,7],"id":-2.75,"label":"a","object_idx":4,"parent_id":"x","selectable":false,"uid":"Würfel","volume_idx":4},{"children":[3,7,0,5],"id":9,"label":"uid-1","object_idx":0,"parent_id":7,"selectable":false,"uid":-1e+300,"volume_idx":3},{"children":[],"id":2,"parent_id":2,"selectable":true,"uid":"Würfel","volume_idx":9},{"children":[7],"id":6,"label":"Würfel","object_idx":0,"parent_id":2,"selectable":false,"uid":"Würfel","volume_idx":6}],"roots":[-1,1,2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[5,-2,8,6],"nodes":[],"roots":[],"version":1}
+1
+unset
+A 0 0 4 5 -2 8 6
+{"checked_node_indices":[5,-2,8,6],"nodes":[],"roots":[],"version":1}
+FROM
+{"checked_node_indices":"x","nodes":[],"roots":[1],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"id":3,"label":"😀","parent_id":1,"selectable":false,"uid":"two\swords","volume_idx":3},{"k":1}],"roots":[-2,5],"version":1}
+1
+unset
+A 2 3 1 -1 3 0 two\swords 😀 0 -1 -1 -1 -1 1 \e \e 0 2 -2 5 2 3 1
+{"checked_node_indices":[3,1],"nodes":[{"children":[],"id":3,"label":"😀","object_idx":-1,"parent_id":1,"selectable":false,"uid":"two\swords","volume_idx":3},{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[-2,5],"version":1}
+FROM
+{"checked_node_indices":"x","nodes":[{"children":[],"id":[1,"a"],"label":"uid-1","object_idx":null,"parent_id":7,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5},{"children":[],"id":8,"label":"a","object_idx":0,"parent_id":1,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-1},{"children":[8],"label":"two\swords","object_idx":1,"parent_id":-2,"selectable":true,"uid":"Würfel","volume_idx":0},18446744073709551615,{"children":[1,2,1,7],"id":"x","label":"😀","object_idx":0,"parent_id":7,"selectable":true,"uid":"a","volume_idx":0}],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sstring
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":[],"id":9,"label":"","object_idx":4,"selectable":true,"uid":"😀","volume_idx":-1},{"label":"a","parent_id":8,"selectable":true,"uid":"😀","volume_idx":3}],"roots":[8,7],"version":[[]]}
+1
+unset
+A 2 9 -1 4 -1 1 😀 \e 0 -1 8 -1 3 1 😀 a 0 2 8 7 2 9 1
+{"checked_node_indices":[9,1],"nodes":[{"children":[],"id":9,"label":"","object_idx":4,"parent_id":-1,"selectable":true,"uid":"😀","volume_idx":-1},{"children":[],"id":-1,"label":"a","object_idx":-1,"parent_id":8,"selectable":true,"uid":"😀","volume_idx":3}],"roots":[8,7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[],"id":3,"label":"","object_idx":0,"parent_id":-1,"selectable":false,"uid":"uid-1","volume_idx":-2},{"id":false,"label":"","object_idx":5,"parent_id":-2,"selectable":true,"uid":"uid-1","volume_idx":7},{"children":[6,-1],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":3,"parent_id":0,"selectable":false,"uid":"a","volume_idx":1}],"roots":[1,1],"version":1}
+1
+unset
+A 3 3 -1 0 -2 0 uid-1 \e 0 0 -2 5 7 1 uid-1 \e 0 -2 0 3 1 0 a q"\\\n\x09\x01 2 6 -1 2 1 1 0
+{"checked_node_indices":[],"nodes":[{"children":[],"id":3,"label":"","object_idx":0,"parent_id":-1,"selectable":false,"uid":"uid-1","volume_idx":-2},{"children":[],"id":0,"label":"","object_idx":5,"parent_id":-2,"selectable":true,"uid":"uid-1","volume_idx":7},{"children":[6,-1],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":3,"parent_id":0,"selectable":false,"uid":"a","volume_idx":1}],"roots":[1,1],"version":1}
+FROM
+{"checked_node_indices":[6],"nodes":[{"children":[4,2],"id":4,"label":"","object_idx":1,"parent_id":5,"selectable":true,"uid":"two\swords","volume_idx":9},{"children":[-1,8,2,5],"id":null,"object_idx":6,"parent_id":4,"selectable":true,"uid":"a","volume_idx":2},{"children":[6],"id":{"k":1},"label":"uid-1","object_idx":0,"parent_id":-2,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":0}],"roots":[-2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[7,3,6,5],"nodes":[1,"a"],"roots":[-2,1],"version":1}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":18446744073709551615,"nodes":[],"roots":[5,-2,1],"version":-2.75}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[1,true,2.9,-7],"nodes":[{"children":[4,4,8,1],"id":7,"label":[1,"a"],"object_idx":2,"parent_id":-2,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-2},{"children":[7,0],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":2,"selectable":true,"uid":"","volume_idx":-2},{"children":[9,4,7,3],"id":4294967297,"label":"two\swords","object_idx":0,"parent_id":1,"selectable":false,"uid":"😀","volume_idx":4},{"children":[5,3,3],"label":"a","object_idx":2,"parent_id":5,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":9},{"children":[1],"id":6,"object_idx":4,"parent_id":-2,"selectable":true,"uid":"","volume_idx":3}],"roots":[8,2,2,6],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":null,"roots":[-1],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":true,"nodes":[{"children":[8,4,1],"id":5,"label":"😀","object_idx":9,"parent_id":6,"selectable":true,"uid":"Würfel","volume_idx":9},{"children":[0,-1],"id":0,"label":"","object_idx":5,"parent_id":1,"selectable":true,"uid":"a","volume_idx":3},{"children":[7,-2,-2],"id":0,"label":"two\swords","object_idx":-1,"parent_id":8,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":false},{"children":{"k":1},"id":-2,"label":"😀","object_idx":-2,"parent_id":3,"selectable":false,"volume_idx":3},{"children":[7],"id":-2,"object_idx":-2,"parent_id":-1,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":-1}],"roots":[-1],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sboolean
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[9,5,7],"nodes":[{"children":false,"label":"Würfel","object_idx":-1,"parent_id":4,"selectable":false,"uid":"a","volume_idx":9},{"children":[3],"id":1,"label":"a","object_idx":2,"parent_id":1,"selectable":false,"uid":"two\swords","volume_idx":4},{"children":[6,4,2],"id":0,"label":"😀","object_idx":0,"parent_id":2,"selectable":false,"uid":"","volume_idx":4}],"roots":[2,4],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sboolean
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[4,6],"nodes":[{"id":1,"label":"Würfel","object_idx":4,"parent_id":[1,"a"],"selectable":4294967297,"uid":"a","volume_idx":4},{"children":[7],"id":9,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1e+300,"parent_id":-1,"selectable":false,"uid":"","volume_idx":5}],"roots":[4,1],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[-1,2,6,4],"nodes":[{"children":[],"id":6,"label":"two\swords","object_idx":1,"parent_id":2,"selectable":false,"uid":"😀","volume_idx":5},{"children":[8,6],"id":5,"object_idx":-1,"parent_id":-1,"selectable":true,"uid":"a","volume_idx":7}],"roots":[],"version":1}
+1
+unset
+A 2 6 2 1 5 0 😀 two\swords 0 5 -1 -1 7 1 a \e 2 8 6 0 4 -1 2 6 4
+{"checked_node_indices":[-1,2,6,4],"nodes":[{"children":[],"id":6,"label":"two\swords","object_idx":1,"parent_id":2,"selectable":false,"uid":"😀","volume_idx":5},{"children":[8,6],"id":5,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"a","volume_idx":7}],"roots":[],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[],"id":8,"label":"uid-1","object_idx":3,"parent_id":{"k":1},"selectable":null,"uid":"two\swords","volume_idx":0},{"children":[0,0],"id":2,"label":"uid-1","object_idx":9,"parent_id":3,"selectable":false,"uid":"two\swords","volume_idx":3}],"roots":[9,-1,-1],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[3,2],"nodes":[{"label":"a","object_idx":0,"parent_id":2,"selectable":false,"uid":"a","volume_idx":-1}],"roots":[8,9,5],"version":1}
+1
+unset
+A 1 -1 2 0 -1 0 a a 0 3 8 9 5 2 3 2
+{"checked_node_indices":[3,2],"nodes":[{"children":[],"id":-1,"label":"a","object_idx":0,"parent_id":2,"selectable":false,"uid":"a","volume_idx":-1}],"roots":[8,9,5],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[-2,9,-2,6],"id":2,"label":"a","object_idx":-2,"parent_id":2,"selectable":false,"volume_idx":4}],"roots":[6,-2]}
+1
+unset
+A 1 2 2 -2 4 0 \e a 4 -2 9 -2 6 2 6 -2 0
+{"checked_node_indices":[],"nodes":[{"children":[-2,9,-2,6],"id":2,"label":"a","object_idx":-2,"parent_id":2,"selectable":false,"uid":"","volume_idx":4}],"roots":[6,-2],"version":1}
+FROM
+{"nodes":null,"roots":[5,0],"version":[1,true,2.9,-7]}
+1
+unset
+A 0 2 5 0 0
+{"checked_node_indices":[],"nodes":[],"roots":[5,0],"version":1}
+FROM
+{"checked_node_indices":[1,9,0],"nodes":[],"roots":[6,4]}
+1
+unset
+A 0 2 6 4 3 1 9 0
+{"checked_node_indices":[1,9,0],"nodes":[],"roots":[6,4],"version":1}
+FROM
+{"checked_node_indices":[8,8],"nodes":[],"roots":[0],"version":1}
+1
+unset
+A 0 1 0 2 8 8
+{"checked_node_indices":[8,8],"nodes":[],"roots":[0],"version":1}
+FROM
+{"checked_node_indices":[-2,0,6,8],"nodes":[[1,true,2.9,-7],{"children":null,"id":9,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":4,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[9],"id":6,"label":"a","object_idx":2.75,"parent_id":-2,"selectable":false,"volume_idx":8}],"roots":[7],"version":1}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":[-2,9,-2,-1],"id":7,"label":"two\swords","object_idx":-1,"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":5},{"children":[3,2,2],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":1e+300,"parent_id":5,"selectable":false,"uid":"uid-1","volume_idx":3},{"children":[-1,6,4],"id":-1,"label":"Würfel","object_idx":6,"parent_id":7,"selectable":true,"volume_idx":0}],"roots":[-2],"version":1}
+1
+unset
+A 3 7 1 -1 5 0 Würfel two\swords 4 -2 9 -2 -1 0 5 2147483647 3 0 uid-1 q"\\\n\x09\x01 3 3 2 2 -1 7 6 0 1 \e Würfel 3 -1 6 4 1 -2 3 7 0 2
+{"checked_node_indices":[7,0,2],"nodes":[{"children":[-2,9,-2,-1],"id":7,"label":"two\swords","object_idx":-1,"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":5},{"children":[3,2,2],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":2147483647,"parent_id":5,"selectable":false,"uid":"uid-1","volume_idx":3},{"children":[-1,6,4],"id":-1,"label":"Würfel","object_idx":6,"parent_id":7,"selectable":true,"uid":"","volume_idx":0}],"roots":[-2],"version":1}
+FROM
+{"checked_node_indices":-1e+300,"nodes":[{"children":[2,5,3,4],"label":"","object_idx":[],"parent_id":1,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":7},{"children":[],"id":6,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":2.75,"parent_id":[],"selectable":true,"uid":"two\swords","volume_idx":7}],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[2,1,9],"id":6,"label":"q\\"\\\\\\n\\t\\u0001","parent_id":6,"selectable":true,"volume_idx":-2},{"children":[-1],"id":-1,"object_idx":8,"parent_id":1,"selectable":false,"uid":"two\swords","volume_idx":2},{"children":[9,-1,8],"id":4,"label":"two\swords","object_idx":7,"parent_id":7,"selectable":false,"uid":"Würfel","volume_idx":-2}],"roots":[7,4,2]}
+1
+unset
+A 3 6 6 -1 -2 1 \e q"\\\n\x09\x01 3 2 1 9 -1 1 8 2 0 two\swords \e 1 -1 4 7 7 -2 0 Würfel two\swords 3 9 -1 8 3 7 4 2 0
+{"checked_node_indices":[],"nodes":[{"children":[2,1,9],"id":6,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":-1,"parent_id":6,"selectable":true,"uid":"","volume_idx":-2},{"children":[-1],"id":-1,"label":"","object_idx":8,"parent_id":1,"selectable":false,"uid":"two\swords","volume_idx":2},{"children":[9,-1,8],"id":4,"label":"two\swords","object_idx":7,"parent_id":7,"selectable":false,"uid":"Würfel","volume_idx":-2}],"roots":[7,4,2],"version":1}
+FROM
+{"checked_node_indices":-4294967295,"nodes":[{"children":[],"id":8,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":9,"parent_id":6,"selectable":false,"uid":"😀","volume_idx":7},{"children":[],"id":-1e+300,"label":"two\swords","object_idx":9,"parent_id":18446744073709551615,"selectable":true,"uid":"Würfel","volume_idx":3},{"children":[0,3],"id":-2,"label":"uid-1","object_idx":[],"parent_id":7,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":{"k":1}}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":4294967297,"nodes":[[]],"roots":[9,6],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[-1,8],"roots":[-2,0],"version":1}
+1
+unset
+A 0 2 -2 0 2 -1 8
+{"checked_node_indices":[-1,8],"nodes":[],"roots":[-2,0],"version":1}
+FROM
+{"checked_node_indices":1e+300,"nodes":[],"roots":[5],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[5,2],"nodes":[{"children":[4,6,6],"id":2,"label":"uid-1","object_idx":7,"parent_id":3,"selectable":true,"uid":"uid-1","volume_idx":7},{"children":[],"id":6,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":5,"parent_id":4,"selectable":false,"uid":"two\swords","volume_idx":8}],"roots":[4],"version":2.75}
+1
+unset
+A 2 2 3 7 7 1 uid-1 uid-1 3 4 6 6 6 4 5 8 0 two\swords q"\\\n\x09\x01 0 1 4 2 5 2
+{"checked_node_indices":[5,2],"nodes":[{"children":[4,6,6],"id":2,"label":"uid-1","object_idx":7,"parent_id":3,"selectable":true,"uid":"uid-1","volume_idx":7},{"children":[],"id":6,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":5,"parent_id":4,"selectable":false,"uid":"two\swords","volume_idx":8}],"roots":[4],"version":1}
+FROM
+{"checked_node_indices":[-2,4,-2],"nodes":[{"children":[3,-2,6],"id":7,"label":"Würfel","object_idx":3,"parent_id":2,"selectable":false,"uid":"a","volume_idx":7},{"children":[3,3,6,-2],"id":2.75,"label":"uid-1","object_idx":4,"selectable":false,"uid":"two\swords","volume_idx":null},{"children":[],"id":5,"label":"uid-1","object_idx":3,"parent_id":7,"selectable":false,"uid":"two\swords","volume_idx":-2}],"roots":[5,9],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[4,9,0],"id":0,"label":1e+300,"object_idx":7,"parent_id":5,"uid":"a","volume_idx":3},{"children":[4],"id":-2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":6,"parent_id":-2,"selectable":true,"uid":"","volume_idx":8},{"children":[-2],"id":1,"label":"Würfel","object_idx":0,"parent_id":9,"selectable":true,"uid":"Würfel","volume_idx":9},{"children":[],"id":-2,"label":"😀","object_idx":-2,"parent_id":0,"selectable":false,"uid":"uid-1","volume_idx":9},{"children":[4],"id":7,"label":"Würfel","object_idx":-2,"parent_id":6,"selectable":null,"uid":"two\swords"}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":false,"nodes":[{"children":[-1,0,-2],"id":[1,"a"],"label":"","object_idx":7,"parent_id":-1,"selectable":true,"uid":"a","volume_idx":2},{"children":[-1,5],"id":5,"label":false,"object_idx":0,"parent_id":9,"uid":"Würfel","volume_idx":4294967297},{"children":[3],"id":4,"label":"Würfel","object_idx":1,"parent_id":0,"selectable":true,"uid":"a","volume_idx":1}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sboolean
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":-4294967295,"label":"Würfel","object_idx":-2,"parent_id":-1,"selectable":true,"uid":"a","volume_idx":7},{"children":[0,9,1],"id":9,"object_idx":-1,"parent_id":5,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":2},{"children":[9],"id":2,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":[],"parent_id":false,"selectable":false,"uid":"a","volume_idx":0},{"children":[],"id":2,"label":"","parent_id":5,"selectable":false,"uid":[1,true,2.9,-7],"volume_idx":5}],"roots":[1]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":4294967297,"nodes":[{"children":[-2],"id":2,"label":"Würfel","object_idx":2,"parent_id":9,"selectable":true,"uid":"uid-1","volume_idx":9},{"children":[6,8,1],"id":0,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":0,"parent_id":8,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":3},{"children":[],"id":1,"label":"","object_idx":3,"parent_id":7,"selectable":true,"uid":{"k":1},"volume_idx":7},{"children":[7,9],"id":4,"label":"","object_idx":[[]],"parent_id":-2,"selectable":-4294967295,"uid":"a","volume_idx":-1},{"children":[7,3,8,-2],"id":6,"label":"uid-1","object_idx":9,"parent_id":4,"selectable":false,"uid":"","volume_idx":-4294967295}],"roots":[6,-1],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":[8],"id":6,"label":"q\\"\\\\\\n\\t\\u0001","object_idx":2,"parent_id":4,"selectable":false,"uid":""},{"children":[5,5,9],"id":{"k":1},"label":"Würfel","object_idx":4,"parent_id":1,"selectable":false,"uid":"Würfel"}],"roots":[8,1,1],"version":-1e+300}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":-4294967295,"nodes":[{"children":[1,-2],"id":4,"label":"😀","object_idx":8,"parent_id":-4294967295,"selectable":false,"uid":"Würfel","volume_idx":2},{"children":[9,8,4,5],"id":4,"label":"two\swords","object_idx":4,"parent_id":7,"selectable":false,"uid":null,"volume_idx":9},{"id":8,"object_idx":0,"parent_id":-1,"selectable":true,"uid":"a","volume_idx":4},{"children":[7],"id":6,"label":"😀","object_idx":9,"parent_id":0,"selectable":true,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":[]},{"children":[8],"id":2,"label":"two\swords","object_idx":7,"parent_id":8,"selectable":true,"uid":[[]],"volume_idx":6}],"roots":[6,6,2],"version":false}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[-1,0,0],"nodes":[{"children":[0,2,2,-1],"id":1,"label":"Würfel","parent_id":8,"selectable":false,"uid":"Würfel","volume_idx":7},{"children":[],"id":null,"label":"a","object_idx":{"k":1},"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":4},{"children":[3,9,4],"id":4,"label":null,"object_idx":9,"parent_id":7,"selectable":[],"uid":[1,"a"]}],"roots":[5],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[9,-2],"nodes":[{"children":[8],"id":1,"label":"a","object_idx":0,"parent_id":1e+300,"selectable":true,"uid":"😀","volume_idx":1},{"children":[1,9,4],"id":[],"label":"a","object_idx":4,"parent_id":1,"selectable":true,"uid":"uid-1","volume_idx":7},{"children":null,"id":3,"label":"😀","object_idx":-2,"parent_id":null,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":true},{"children":[7],"id":5,"label":"Würfel","object_idx":2.75,"parent_id":8,"selectable":true,"uid":"a","volume_idx":-1},{"children":[],"id":4,"label":"😀","object_idx":-1,"selectable":true,"uid":"","volume_idx":3}],"roots":[]}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[],"roots":[5,7,8,4],"version":1}
+1
+unset
+A 0 4 5 7 8 4 0
+{"checked_node_indices":[],"nodes":[],"roots":[5,7,8,4],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[2,1,0,7],"id":2,"label":"Würfel","object_idx":8,"parent_id":[[]],"selectable":false,"uid":"uid-1","volume_idx":6},{"children":[7,3,4,6],"id":1,"label":"😀","object_idx":2,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":6},{"children":[-1,3,3,6],"id":7,"label":"Würfel","object_idx":-1,"parent_id":9,"selectable":-1e+300,"uid":"a","volume_idx":4}],"roots":[8,9],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[-2,4,7,9],"nodes":{"k":1},"roots":[4],"version":1}
+1
+unset
+A 0 1 4 4 -2 4 7 9
+{"checked_node_indices":[-2,4,7,9],"nodes":[],"roots":[4],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"id":5,"label":"a","object_idx":[[]],"parent_id":1,"selectable":false,"uid":"Würfel","volume_idx":5},{"children":[1,"a"],"id":true,"label":"","object_idx":3,"parent_id":[1,true,2.9,-7],"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":9},{"id":4,"label":"a","object_idx":4,"parent_id":1e+300,"selectable":false,"uid":"q\\"\\\\\\n\\t\\u0001","volume_idx":5}],"roots":[],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\sarray
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[{"children":[6,6,9],"id":-1,"object_idx":5,"parent_id":0,"selectable":false,"uid":"😀","volume_idx":7},{"id":2,"label":"two\swords","parent_id":3,"selectable":true,"uid":"😀","volume_idx":-1},{"children":[8,-2,0],"id":9,"label":"Würfel","object_idx":0,"parent_id":8,"selectable":false,"uid":"two\swords","volume_idx":9},{"children":[],"id":6,"label":"","object_idx":7,"parent_id":0,"selectable":true,"uid":1e+300,"volume_idx":2},{"children":[],"id":-2.75,"parent_id":6,"selectable":true,"uid":"a","volume_idx":9}],"roots":[9,0],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sstring,\sbut\sis\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"nodes":[{"children":[6,-2,9],"id":1,"label":"","object_idx":9,"parent_id":6,"selectable":true,"uid":"two\swords","volume_idx":7}],"roots":[6],"version":1}
+1
+unset
+A 1 1 6 9 7 1 two\swords \e 3 6 -2 9 1 6 1 1
+{"checked_node_indices":[1],"nodes":[{"children":[6,-2,9],"id":1,"label":"","object_idx":9,"parent_id":6,"selectable":true,"uid":"two\swords","volume_idx":7}],"roots":[6],"version":1}
+FROM
+{"checked_node_indices":[1,9,-2],"nodes":[{"children":[2,-2,5,0],"id":6,"label":"Würfel","object_idx":-2,"parent_id":7,"selectable":false,"uid":"uid-1","volume_idx":7},{"children":[],"id":4,"label":"","object_idx":3,"parent_id":1,"selectable":true,"uid":"","volume_idx":1}],"roots":[-1,-1,2,3],"version":1}
+1
+unset
+A 2 6 7 -2 7 0 uid-1 Würfel 4 2 -2 5 0 4 1 3 1 1 \e \e 0 4 -1 -1 2 3 3 1 9 -2
+{"checked_node_indices":[1,9,-2],"nodes":[{"children":[2,-2,5,0],"id":6,"label":"Würfel","object_idx":-2,"parent_id":7,"selectable":false,"uid":"uid-1","volume_idx":7},{"children":[],"id":4,"label":"","object_idx":3,"parent_id":1,"selectable":true,"uid":"","volume_idx":1}],"roots":[-1,-1,2,3],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[],"roots":[3,5],"version":1}
+1
+unset
+A 0 2 3 5 0
+{"checked_node_indices":[],"nodes":[],"roots":[3,5],"version":1}
+FROM
+{"checked_node_indices":[4,-2,9],"nodes":[{"children":[5,9,2,2],"id":7,"label":"Würfel","object_idx":2,"parent_id":1,"selectable":false,"uid":"😀"},{"children":[6,0],"id":4,"label":"","object_idx":null,"parent_id":8,"selectable":{"k":1},"uid":"a","volume_idx":3},{"children":null,"id":8,"label":"a","object_idx":7,"parent_id":8,"selectable":true,"uid":"Würfel","volume_idx":-2}],"roots":[9],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\snumber,\sbut\sis\snull
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[3,-1,6,0],"nodes":[1,"a"],"roots":[-2],"version":1}
+0
+[json.exception.type_error.306]\scannot\suse\svalue()\swith\snumber
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}
+FROM
+{"checked_node_indices":[],"nodes":[],"roots":[0,2],"version":1}
+1
+unset
+A 0 2 0 2 0
+{"checked_node_indices":[],"nodes":[],"roots":[0,2],"version":1}
+FROM
+{"checked_node_indices":[-1,4,1],"nodes":[],"roots":[-2],"version":1}
+1
+unset
+A 0 1 -2 3 -1 4 1
+{"checked_node_indices":[-1,4,1],"nodes":[],"roots":[-2],"version":1}
+FROM
+{"checked_node_indices":[1,5],"nodes":[{"children":[],"id":7,"label":"😀","object_idx":4,"parent_id":-2,"selectable":false,"uid":"Würfel","volume_idx":6},{"children":[6,2],"id":0,"label":"uid-1","object_idx":2,"parent_id":5,"selectable":false,"volume_idx":9}],"roots":[-1,5]}
+1
+unset
+A 2 7 -2 4 6 0 Würfel 😀 0 0 5 2 9 0 \e uid-1 2 6 2 2 -1 5 2 1 5
+{"checked_node_indices":[1,5],"nodes":[{"children":[],"id":7,"label":"😀","object_idx":4,"parent_id":-2,"selectable":false,"uid":"Würfel","volume_idx":6},{"children":[6,2],"id":0,"label":"uid-1","object_idx":2,"parent_id":5,"selectable":false,"uid":"","volume_idx":9}],"roots":[-1,5],"version":1}
+FROM
+{"roots":[6,0,0,9],"version":1}
+1
+unset
+A 0 4 6 0 0 9 0
+{"checked_node_indices":[],"nodes":[],"roots":[6,0,0,9],"version":1}
+FROM
+{"checked_node_indices":{"k":1},"nodes":[],"roots":[4,-2],"version":1}
+0
+[json.exception.type_error.302]\stype\smust\sbe\sarray,\sbut\sis\sobject
+A 1 -1 -1 -1 -1 1 \e \e 0 1 7 1 8
+{"checked_node_indices":[8],"nodes":[{"children":[],"id":-1,"label":"","object_idx":-1,"parent_id":-1,"selectable":true,"uid":"","volume_idx":-1}],"roots":[7],"version":1}

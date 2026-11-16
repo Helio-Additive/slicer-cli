@@ -1,0 +1,39 @@
+STEP mark
+LOG info [perf] startup
+STEP mark_empty
+LOG info [perf] 
+STEP mark_text
+LOG info [perf] load project: a b [c] 100%
+STEP timer
+LOG info [perf] load begin
+LOG info [perf] load cost 0 ms
+FLUSH
+STEP timer_disabled
+STEP timer_enabled
+LOG info [perf] loud begin
+LOG info [perf] loud cost 0 ms
+FLUSH
+STEP trace
+LOG info [perf] scope begin
+LOG info [perf] inside the scope
+LOG info [perf] scope cost 0 ms
+FLUSH
+STEP trace_if_true
+LOG info [perf] 3mf: add model begin
+LOG info [perf] inside
+LOG info [perf] 3mf: add model cost 0 ms
+FLUSH
+STEP trace_if_false
+LOG info [perf] inside
+STEP nested
+LOG info [perf] outer begin
+LOG info [perf] inner begin
+LOG info [perf] inner cost 0 ms
+FLUSH
+LOG info [perf] between
+LOG info [perf] outer cost 0 ms
+FLUSH
+STEP sleep
+LOG info [perf] sleep begin
+LOG info [perf] sleep cost 40 ms
+FLUSH

@@ -11,22 +11,22 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**40.8% of the named C++ functions are ported or verified (3908 of 9574); 29.2% by size of body.**
+**44.5% of the named C++ functions are ported or verified (4261 of 9574); 31.9% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 2843 | 29.7% | 42.7% |
-| partial `[~]` | 2823 | 29.5% | 28.1% |
-| ported `[x]` | 3326 | 34.7% | 24.0% |
-| verified `[v]` | 582 | 6.1% | 5.2% |
+| not started `[ ]` | 2555 | 26.7% | 40.1% |
+| partial `[~]` | 2758 | 28.8% | 28.0% |
+| ported `[x]` | 3610 | 37.7% | 25.8% |
+| verified `[v]` | 651 | 6.8% | 6.1% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
-| no Rust file of that name | 17 |
-| partial | 239 |
-| every named function ported | 50 |
-| every named function verified | 11 |
+| no Rust file of that name | 6 |
+| partial | 243 |
+| every named function ported | 56 |
+| every named function verified | 12 |
 
 C++ still run through the FFI shim crates: 0 functions called from the engine (`clipper-z-sys` 0, `clipper2-z-sys` 0, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
@@ -50,7 +50,7 @@ the end; the goal is none.
 - The percentage counts every named function with a body, accessors included, in all four tiers (tier 4 is
   SLA, which `slicer_cli` does not use).
 
-Entries of `port_checklist_verified.json` that match no function now: `AsPath` in `clipper2/clipper.core`, `Contains` in `clipper2/clipper.core`, `Height` in `clipper2/clipper.core`, `Intersects` in `clipper2/clipper.core`, `InvalidRect` in `clipper2/clipper.core`, `IsEmpty` in `clipper2/clipper.core`, `IsValid` in `clipper2/clipper.core`, `Negate` in `clipper2/clipper.core`, `Width` in `clipper2/clipper.core`, `AddChild` in `clipper2/clipper.engine`, `AddClip` in `clipper2/clipper.engine`, `AddLocalMaxPoly` in `clipper2/clipper.engine`, `AddLocalMinPoly` in `clipper2/clipper.engine`, `AddNewIntersectNode` in `clipper2/clipper.engine`, `AddOpenSubject` in `clipper2/clipper.engine`, `AddOutPt` in `clipper2/clipper.engine`, `AddPath` in `clipper2/clipper.engine`, `AddPaths` in `clipper2/clipper.engine`, `AddSubject` in `clipper2/clipper.engine`, `AddTrialHorzJoin` in `clipper2/clipper.engine`, `AdjustCurrXAndCopyToSEL` in `clipper2/clipper.engine`, `BuildIntersectList` in `clipper2/clipper.engine`, `BuildPaths64` in `clipper2/clipper.engine`, `BuildTree64` in `clipper2/clipper.engine`, `CheckBounds` in `clipper2/clipper.engine`, `CheckJoinLeft` in `clipper2/clipper.engine`, `CheckJoinRight` in `clipper2/clipper.engine`, `CheckSplitOwner` in `clipper2/clipper.engine`, `Child` in `clipper2/clipper.engine`, `CleanCollinear` in `clipper2/clipper.engine`, `CleanUp` in `clipper2/clipper.engine`, `Clear` in `clipper2/clipper.engine`, `ConvertHorzSegsToJoins` in `clipper2/clipper.engine`, `Count` in `clipper2/clipper.engine`, `DeleteEdges` in `clipper2/clipper.engine`, `DeleteFromAEL` in `clipper2/clipper.engine`, `DisposeAllOutRecs` in `clipper2/clipper.engine`, `DisposeVerticesAndLocalMinima` in `clipper2/clipper.engine`, `DoHorizontal` in `clipper2/clipper.engine`, `DoIntersections` in `clipper2/clipper.engine`, `DoMaxima` in `clipper2/clipper.engine`, `DoSplitOp` in `clipper2/clipper.engine`, `DoTopOfScanbeam` in `clipper2/clipper.engine`, `ErrorCode` in `clipper2/clipper.engine`, `Execute` in `clipper2/clipper.engine`, `ExecuteInternal` in `clipper2/clipper.engine`, `FixSelfIntersects` in `clipper2/clipper.engine`, `InsertLeftEdge` in `clipper2/clipper.engine`, `InsertLocalMinimaIntoAEL` in `clipper2/clipper.engine`, `InsertScanline` in `clipper2/clipper.engine`, `IntersectEdges` in `clipper2/clipper.engine`, `IsContributingClosed` in `clipper2/clipper.engine`, `IsContributingOpen` in `clipper2/clipper.engine`, `IsHole` in `clipper2/clipper.engine`, `JoinOutrecPaths` in `clipper2/clipper.engine`, `Level` in `clipper2/clipper.engine`, `NewOutRec` in `clipper2/clipper.engine`, `PopHorz` in `clipper2/clipper.engine`, `PopLocalMinima` in `clipper2/clipper.engine`, `PopScanline` in `clipper2/clipper.engine`, `PreserveCollinear` in `clipper2/clipper.engine`, `ProcessHorzJoins` in `clipper2/clipper.engine`, `ProcessIntersectList` in `clipper2/clipper.engine`, `PushHorz` in `clipper2/clipper.engine`, `RecursiveCheckOwners` in `clipper2/clipper.engine`, `Reset` in `clipper2/clipper.engine`, `ResetHorzDirection` in `clipper2/clipper.engine`, `ReverseSolution` in `clipper2/clipper.engine`, `SetWindCountForClosedPathEdge` in `clipper2/clipper.engine`, `SetWindCountForOpenPathEdge` in `clipper2/clipper.engine`, `SetZ` in `clipper2/clipper.engine`, `SetZCallback` in `clipper2/clipper.engine`, `Split` in `clipper2/clipper.engine`, `StartOpenPath` in `clipper2/clipper.engine`, `SwapPositionsInAEL` in `clipper2/clipper.engine`, `UpdateEdgeIntoAEL` in `clipper2/clipper.engine`.
+Entries of `port_checklist_verified.json` that match no function now: `create_from_json` in `Format/AssemblyStepsJson`, `from_json` in `Format/AssemblyStepsJson`, `from_json_string` in `Format/AssemblyStepsJson`, `get_assembly_part_number_label_font_size` in `Format/AssemblyStepsJson`, `get_camera_ref_viewport_h` in `Format/AssemblyStepsJson`, `get_camera_ref_viewport_w` in `Format/AssemblyStepsJson`, `load` in `Format/AssemblyStepsJson`, `load_assembly_part_number_label_font_size` in `Format/AssemblyStepsJson`, `load_camera_ref_viewport` in `Format/AssemblyStepsJson`, `load_from_string` in `Format/AssemblyStepsJson`, `load_pdf_export_params` in `Format/AssemblyStepsJson`, `to_json` in `Format/AssemblyStepsJson`, `to_json_string` in `Format/AssemblyStepsJson`, `from_json_string` in `Format/AssemblyTreeJson`, `to_json_string` in `Format/AssemblyTreeJson`, `AsPath` in `clipper2/clipper.core`, `Contains` in `clipper2/clipper.core`, `Height` in `clipper2/clipper.core`, `Intersects` in `clipper2/clipper.core`, `InvalidRect` in `clipper2/clipper.core`, `IsEmpty` in `clipper2/clipper.core`, `IsValid` in `clipper2/clipper.core`, `Negate` in `clipper2/clipper.core`, `Width` in `clipper2/clipper.core`, `AddChild` in `clipper2/clipper.engine`, `AddClip` in `clipper2/clipper.engine`, `AddLocalMaxPoly` in `clipper2/clipper.engine`, `AddLocalMinPoly` in `clipper2/clipper.engine`, `AddNewIntersectNode` in `clipper2/clipper.engine`, `AddOpenSubject` in `clipper2/clipper.engine`, `AddOutPt` in `clipper2/clipper.engine`, `AddPath` in `clipper2/clipper.engine`, `AddPaths` in `clipper2/clipper.engine`, `AddSubject` in `clipper2/clipper.engine`, `AddTrialHorzJoin` in `clipper2/clipper.engine`, `AdjustCurrXAndCopyToSEL` in `clipper2/clipper.engine`, `BuildIntersectList` in `clipper2/clipper.engine`, `BuildPaths64` in `clipper2/clipper.engine`, `BuildTree64` in `clipper2/clipper.engine`, `CheckBounds` in `clipper2/clipper.engine`, `CheckJoinLeft` in `clipper2/clipper.engine`, `CheckJoinRight` in `clipper2/clipper.engine`, `CheckSplitOwner` in `clipper2/clipper.engine`, `Child` in `clipper2/clipper.engine`, `CleanCollinear` in `clipper2/clipper.engine`, `CleanUp` in `clipper2/clipper.engine`, `Clear` in `clipper2/clipper.engine`, `ConvertHorzSegsToJoins` in `clipper2/clipper.engine`, `Count` in `clipper2/clipper.engine`, `DeleteEdges` in `clipper2/clipper.engine`, `DeleteFromAEL` in `clipper2/clipper.engine`, `DisposeAllOutRecs` in `clipper2/clipper.engine`, `DisposeVerticesAndLocalMinima` in `clipper2/clipper.engine`, `DoHorizontal` in `clipper2/clipper.engine`, `DoIntersections` in `clipper2/clipper.engine`, `DoMaxima` in `clipper2/clipper.engine`, `DoSplitOp` in `clipper2/clipper.engine`, `DoTopOfScanbeam` in `clipper2/clipper.engine`, `ErrorCode` in `clipper2/clipper.engine`, `Execute` in `clipper2/clipper.engine`, `ExecuteInternal` in `clipper2/clipper.engine`, `FixSelfIntersects` in `clipper2/clipper.engine`, `InsertLeftEdge` in `clipper2/clipper.engine`, `InsertLocalMinimaIntoAEL` in `clipper2/clipper.engine`, `InsertScanline` in `clipper2/clipper.engine`, `IntersectEdges` in `clipper2/clipper.engine`, `IsContributingClosed` in `clipper2/clipper.engine`, `IsContributingOpen` in `clipper2/clipper.engine`, `IsHole` in `clipper2/clipper.engine`, `JoinOutrecPaths` in `clipper2/clipper.engine`, `Level` in `clipper2/clipper.engine`, `NewOutRec` in `clipper2/clipper.engine`, `PopHorz` in `clipper2/clipper.engine`, `PopLocalMinima` in `clipper2/clipper.engine`, `PopScanline` in `clipper2/clipper.engine`, `PreserveCollinear` in `clipper2/clipper.engine`, `ProcessHorzJoins` in `clipper2/clipper.engine`, `ProcessIntersectList` in `clipper2/clipper.engine`, `PushHorz` in `clipper2/clipper.engine`, `RecursiveCheckOwners` in `clipper2/clipper.engine`, `Reset` in `clipper2/clipper.engine`, `ResetHorzDirection` in `clipper2/clipper.engine`, `ReverseSolution` in `clipper2/clipper.engine`, `SetWindCountForClosedPathEdge` in `clipper2/clipper.engine`, `SetWindCountForOpenPathEdge` in `clipper2/clipper.engine`, `SetZ` in `clipper2/clipper.engine`, `SetZCallback` in `clipper2/clipper.engine`, `Split` in `clipper2/clipper.engine`, `StartOpenPath` in `clipper2/clipper.engine`, `SwapPositionsInAEL` in `clipper2/clipper.engine`, `UpdateEdgeIntoAEL` in `clipper2/clipper.engine`.
 
 ## Files
 
@@ -118,7 +118,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Color` | 1 | `color.rs` | partial | 97 | 10 | 15 | 72 | 0 |
 | `ColorDecomposeRecipe` | 1 | `color_decompose_recipe.rs` | verified | 18 | 0 | 0 | 0 | 18 |
 | `CommonDefs` | 3 | `common_defs.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `Config` | 1 | `config.rs` | partial | 327 | 150 | 165 | 12 | 0 |
+| `Config` | 1 | `config.rs` | partial | 327 | 2 | 109 | 216 | 0 |
 | `CSGMesh/CSGMesh` | 3 | `csg_mesh/csg_mesh.rs` | ported | 4 | 0 | 0 | 4 | 0 |
 | `CSGMesh/CSGMeshCopy` | 3 | `csg_mesh/csg_mesh_copy.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `CSGMesh/ModelToCSGMesh` | 3 | `csg_mesh/model_to_csg_mesh.rs` | ported | 1 | 0 | 0 | 1 | 0 |
@@ -128,9 +128,9 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `CSGMesh/VoxelizeCSGMesh` | 3 | `csg_mesh/voxelize_csg_mesh.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `CurveAnalyzer` | 3 | `curve_analyzer.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `CustomGCode` | 1 | `custom_g_code.rs` | partial | 6 | 2 | 0 | 4 | 0 |
-| `CutSurface` | 3 | `cut_surface.rs` | partial | 92 | 78 | 7 | 7 | 0 |
+| `CutSurface` | 3 | `cut_surface.rs` | partial | 92 | 77 | 8 | 7 | 0 |
 | `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 15 | 3 | 1 | 0 |
-| `Debounce` | 3 | none | not started | 1 | 1 | 0 | 0 | 0 |
+| `Debounce` | 3 | `debounce.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Desensitize` | 3 | `desensitize.rs` | verified | 9 | 0 | 0 | 0 | 9 |
 | `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 12 | 24 | 11 | 0 |
 | `ElephantFootCompensation` | 1 | `elephant_foot_compensation.rs` | partial | 10 | 5 | 0 | 4 | 1 |
@@ -179,11 +179,11 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Flow` | 1 | `flow.rs` | partial | 31 | 5 | 12 | 14 | 0 |
 | `FlushVolCalc` | 1 | `flush_vol_calc.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `FlushVolPredictor` | 3 | `flush_vol_predictor.rs` | partial | 14 | 3 | 1 | 10 | 0 |
-| `format` | 1 | none | not started | 4 | 2 | 2 | 0 | 0 |
+| `format` | 1 | `format/format.rs` | partial | 4 | 0 | 2 | 0 | 2 |
 | `Format/3mf` | 3 | none | not started | 111 | 4 | 107 | 0 | 0 |
 | `Format/AMF` | 3 | `format/amf.rs` | partial | 16 | 0 | 10 | 6 | 0 |
-| `Format/AssemblyStepsJson` | 3 | none | not started | 82 | 48 | 34 | 0 | 0 |
-| `Format/AssemblyTreeJson` | 3 | none | not started | 6 | 4 | 2 | 0 | 0 |
+| `Format/AssemblyStepsJson` | 3 | `format/assembly_steps_json.rs` | partial | 82 | 0 | 1 | 54 | 27 |
+| `Format/AssemblyTreeJson` | 3 | `format/assembly_tree_json.rs` | ported | 6 | 0 | 0 | 4 | 2 |
 | `Format/AssimpImport` | 3 | none | not started | 16 | 16 | 0 | 0 | 0 |
 | `Format/bbs_3mf` | 1 | `format/bbs_3mf.rs` | partial | 205 | 108 | 78 | 19 | 0 |
 | `Format/ModelIO` | 3 | `format/model_io.rs` | ported | 0 | 0 | 0 | 0 | 0 |
@@ -257,7 +257,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `MinAreaBoundingBox` | 1 | `min_area_bounding_box.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `MinimumSpanningTree` | 3 | `minimum_spanning_tree.rs` | ported | 6 | 0 | 0 | 6 | 0 |
 | `miniz_extension` | 1 | `miniz_extension.rs` | partial | 9 | 6 | 1 | 2 | 0 |
-| `Model` | 1 | `model.rs` | partial | 374 | 249 | 117 | 8 | 0 |
+| `Model` | 1 | `model.rs` | partial | 374 | 236 | 130 | 8 | 0 |
 | `ModelArrange` | 1 | `model_arrange.rs` | partial | 14 | 9 | 3 | 2 | 0 |
 | `MTUtils` | 1 | `mt_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 14 | 38 | 1 |
@@ -279,9 +279,9 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `PaintReproject` | 3 | none | not started | 50 | 44 | 6 | 0 | 0 |
 | `ParameterUtils` | 1 | `parameter_utils.rs` | partial | 3 | 1 | 1 | 1 | 0 |
 | `pchheader` | 3 | `pchheader.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `PerfTrace` | 3 | none | not started | 1 | 1 | 0 | 0 | 0 |
+| `PerfTrace` | 3 | `perf_trace.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 18 | 7 | 4 | 0 |
-| `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 24 | 30 | 31 | 0 |
+| `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 21 | 33 | 31 | 0 |
 | `Platform` | 1 | `platform.rs` | ported | 5 | 0 | 0 | 5 | 0 |
 | `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 1 | 12 | 11 | 0 |
 | `Point` | 1 | `geometry/point.rs` | partial | 103 | 10 | 73 | 20 | 0 |
@@ -294,7 +294,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Print` | 1 | `print.rs` | partial | 236 | 162 | 69 | 5 | 0 |
 | `PrintApply` | 1 | `print_apply.rs` | partial | 44 | 27 | 14 | 3 | 0 |
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 40 | 20 | 17 | 0 |
-| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 110 | 19 | 8 | 0 |
+| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 102 | 27 | 8 | 0 |
 | `PrintObject` | 1 | `print_object.rs` | partial | 82 | 52 | 24 | 6 | 0 |
 | `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 20 | 3 | 1 | 0 |
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
@@ -349,16 +349,16 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Tesselate` | 1 | `tesselate.rs` | partial | 18 | 7 | 1 | 10 | 0 |
 | `TextConfiguration` | 3 | `text_configuration.rs` | partial | 4 | 0 | 3 | 1 | 0 |
 | `TexturePainting` | 3 | none | not started | 25 | 25 | 0 | 0 | 0 |
-| `TextureToColor/Callbacks` | 3 | none | not started | 0 | 0 | 0 | 0 | 0 |
-| `TextureToColor/CgalUtils` | 3 | none | not started | 5 | 5 | 0 | 0 | 0 |
-| `TextureToColor/ColorUtils` | 3 | none | not started | 37 | 35 | 2 | 0 | 0 |
-| `TextureToColor/Repair` | 3 | none | not started | 3 | 3 | 0 | 0 | 0 |
-| `TextureToColor/TextureToColor` | 3 | none | not started | 15 | 15 | 0 | 0 | 0 |
-| `TextureToColor/TriMesh` | 3 | none | not started | 1 | 1 | 0 | 0 | 0 |
+| `TextureToColor/Callbacks` | 3 | `texture_to_color/callbacks.rs` | ported | 0 | 0 | 0 | 0 | 0 |
+| `TextureToColor/CgalUtils` | 3 | `texture_to_color/cgal_utils.rs` | partial | 5 | 0 | 1 | 0 | 4 |
+| `TextureToColor/ColorUtils` | 3 | `texture_to_color/color_utils.rs` | partial | 37 | 1 | 1 | 3 | 32 |
+| `TextureToColor/Repair` | 3 | `texture_to_color/repair.rs` | ported | 3 | 0 | 0 | 2 | 1 |
+| `TextureToColor/TextureToColor` | 3 | `texture_to_color/texture_to_color.rs` | ported | 15 | 0 | 0 | 15 | 0 |
+| `TextureToColor/TriMesh` | 3 | `texture_to_color/tri_mesh.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Thread` | 1 | `thread.rs` | partial | 24 | 3 | 15 | 6 | 0 |
 | `Time` | 1 | `time.rs` | partial | 22 | 7 | 8 | 7 | 0 |
 | `Timer` | 1 | `timer.rs` | partial | 10 | 0 | 1 | 9 | 0 |
-| `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 33 | 41 | 62 | 0 |
+| `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 32 | 42 | 62 | 0 |
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 16 | 13 | 15 | 1 |
 | `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 18 | 21 | 64 | 0 |
@@ -384,12 +384,12 @@ Rust file: `aabb_mesh.rs`. Status: **partial**. Not listed: 5 constructors, 1 de
 
 - [~] `init` (line 69) → `clipper2/clipper_core.rs, gcode/avoid_crossing_perimeters.rs, gcode/seam_placer.rs` — not in the paired file
 - [ ] `load_holes` (line 105) → `aabb_mesh.rs`
-- [~] `squared_distance` (line 124) → `sla/hollowing.rs, sla/indexed_mesh.rs` — not in the paired file
+- [~] `squared_distance` (line 124) → `sla/hollowing.rs, sla/indexed_mesh.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 - [x] `get_triangle_mesh` (line 133) → `aabb_mesh.rs:391`
 - [x] `normal_by_face_id` (line 145) → `aabb_mesh.rs:410`
 - [~] `query_ray_hit` (line 151) → `aabb_mesh.rs:416` — partial
 - [~] `query_ray_hits` (line 180) → `aabb_mesh.rs:472` — partial
-- [~] `squared_distance` (line 313) → `sla/hollowing.rs, sla/indexed_mesh.rs` — not in the paired file
+- [~] `squared_distance` (line 313) → `sla/hollowing.rs, sla/indexed_mesh.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `AABBMesh::AABBImpl`**
 
@@ -472,7 +472,7 @@ Rust file: `aabb_tree_indirect.rs`. Status: **partial**. Not listed: 1 construct
 - [x] `is_valid` (line 63) → `aabb_tree_indirect.rs:40`
 - [x] `is_inner` (line 64) → `aabb_tree_indirect.rs:47`
 - [x] `is_leaf` (line 65) → `aabb_tree_indirect.rs:54`
-- [~] `set` (line 68) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 68) → `app_config.rs, color.rs, config.rs` — not in the paired file
 
 **class `Within<Eigen::AlignedBox<CoordType, NumD>>`**
 
@@ -582,7 +582,7 @@ Rust file: `any_ptr.rs`. Status: **partial**. Not listed: 7 constructors, 2 oper
 **class `AnyPtr`**
 
 - [~] `get_ptr` (line 32) → `any_ptr.rs:73` — partial
-- [~] `get` (line 107) → `app_config.rs, clonable_ptr.rs, csg_mesh/csg_mesh.rs` — not in the paired file
+- [~] `get` (line 107) → `app_config.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `get` (line 108) → `any_ptr.rs:160`
 - [x] `get_shared_cpy` (line 123) → `any_ptr.rs:206`
 - [x] `convert_unique_to_shared` (line 133) → `any_ptr.rs:226`
@@ -604,19 +604,19 @@ Rust file: `app_config.rs`. Status: **partial**. Not listed: 1 constructors.
 - [x] `dirty` (line 64) → `app_config.rs:1263`
 - [~] `get_hms_host` (line 65) → `app_config.rs:179` — divergent
 - [x] `set_dirty` (line 67) → `app_config.rs:1268`
-- [~] `get` (line 70) → `any_ptr.rs, clonable_ptr.rs, csg_mesh/csg_mesh.rs` — not in the paired file
+- [~] `get` (line 70) → `any_ptr.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `get` (line 82) → `app_config.rs:1279`
 - [x] `reset` (line 84) → `app_config.rs:190`
-- [~] `get` (line 84) → `any_ptr.rs, clonable_ptr.rs, csg_mesh/csg_mesh.rs` — not in the paired file
+- [~] `get` (line 84) → `any_ptr.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `get_bool` (line 86) → `app_config.rs:1289`
-- [~] `set` (line 87) → `color.rs, enum_bitmask.rs, extrusion_simulator.rs` — not in the paired file
+- [~] `set` (line 87) → `color.rs, config.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set_defaults` (line 91) → `app_config.rs:199` — divergent
 - [x] `set_str` (line 104) → `app_config.rs:1310`
-- [~] `set` (line 121) → `color.rs, enum_bitmask.rs, extrusion_simulator.rs` — not in the paired file
+- [~] `set` (line 121) → `color.rs, config.rs, enum_bitmask.rs` — not in the paired file
 - [x] `set` (line 131) → `app_config.rs:1295`
 - [x] `set_bool` (line 134) → `app_config.rs:1323`
 - [x] `has` (line 139) → `app_config.rs:1343`
-- [~] `has` (line 147) → `enum_bitmask.rs, g_code_reader.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `has` (line 147) → `config.rs, enum_bitmask.rs, g_code_reader.rs` — not in the paired file
 - [x] `erase` (line 150) → `app_config.rs:1358`
 - [x] `has_section` (line 158) → `app_config.rs:1366`
 - [x] `set_section` (line 162) → `app_config.rs:1376`
@@ -641,8 +641,8 @@ Rust file: `app_config.rs`. Status: **partial**. Not listed: 1 constructors.
 - [x] `get_3dmouse_device_numeric_value` (line 266) → `app_config.rs:1642`
 - [~] `load` (line 609) → `app_config.rs:724` — partial
 - [x] `save` (line 833) → `app_config.rs:1005`
-- [~] `load` (line 995) → `format/step.rs, gcode/wipe_tower.rs, svg.rs` — not in the paired file
-- [~] `save` (line 1126) → `app_config.rs` — another overload of the name is ported
+- [~] `load` (line 995) → `config.rs, format/assembly_steps_json.rs, format/step.rs` — not in the paired file
+- [~] `save` (line 1126) → `config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [x] `get_variant` (line 1199) → `app_config.rs:1386`
 - [x] `set_variant` (line 1207) → `app_config.rs:1398`
 - [~] `set_vendors` (line 1225) → `app_config.rs` — another overload of the name is ported
@@ -1132,11 +1132,11 @@ Rust file: `arrange.rs`. Status: **partial**. Not listed: 5 constructors, 2 oper
 
 **class `ArrangeParams`**
 
-- [~] `to_json` (line 168) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 168) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 
 **class `ArrangePolygon`**
 
-- [~] `apply` (line 86) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
+- [~] `apply` (line 86) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
 - [~] `is_arranged` (line 94) → `model_arrange.rs` — not in the paired file
 - [~] `transformed_poly` (line 96) → `model_arrange.rs` — not in the paired file
 
@@ -1200,10 +1200,10 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [~] `unscaled` (line 263) → `fill/fill_conformal.rs, fill/fill_conformal_chart.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `cast` (line 266) → `geometry/voronoi_visual_utils.rs` — not in the paired file
 - [~] `cast` (line 273) → `geometry/voronoi_visual_utils.rs` — not in the paired file
-- [~] `serialize` (line 283) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 284) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 285) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 286) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 283) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 284) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 285) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 286) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `BoundingBox`**
 
@@ -1328,7 +1328,7 @@ Rust file: `brim_ears_point.rs`. Status: **partial**. Not listed: 3 constructors
 
 - [x] `transform` (line 43) → `brim_ears_point.rs:123`
 - [x] `set_transform` (line 49) → `brim_ears_point.rs:139`
-- [~] `serialize` (line 61) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 61) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 ### `BuildVolume` (.cpp+.hpp)
 
@@ -1357,7 +1357,7 @@ Rust file: `build_volume.rs`. Status: **partial**. Not listed: 2 constructors.
 - [x] `check_volume_bbox_state_with_extruder_areas` (line 487) → `build_volume.rs:1123`
 - [x] `all_paths_inside` (line 506) → `build_volume.rs:1296`
 - [x] `all_paths_inside_vertices_and_normals_interleaved` (line 559) → `build_volume.rs:1164`
-- [~] `type_name` (line 593) → `build_volume.rs` — another overload of the name is ported
+- [~] `type_name` (line 593) → `format/assembly_steps_json.rs` — not in the paired file
 - [x] `bounding_mesh` (line 608) → `build_volume.rs:1260`
 
 ### `ByObjectPrintData` (.cpp+.hpp)
@@ -2267,15 +2267,15 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [ ] `traverse_pt` (line 653) → `clipper_utils.rs`
 - [~] `clipper_do_polytree` (line 656) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `_clipper` (line 670) → `clipper_utils.rs`
-- [~] `diff` (line 675) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 677) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
+- [~] `diff` (line 675) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
+- [~] `diff` (line 677) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
 - [~] `diff_clipped` (line 679) → `support/tree_support_3d.rs` — not in the paired file
 - [~] `diff_clipped` (line 681) → `support/tree_support_3d.rs` — not in the paired file
 - [~] `diff_clipped` (line 683) → `support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 687) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 689) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 691) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 693) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
+- [~] `diff` (line 687) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
+- [~] `diff` (line 689) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
+- [~] `diff` (line 691) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
+- [~] `diff` (line 693) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
 - [~] `intersection` (line 695) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
 - [ ] `intersection_clipped` (line 697) → `clipper_utils.rs`
 - [~] `intersection` (line 699) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
@@ -2367,13 +2367,13 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 - [~] `cend` (line 74) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 75) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `cbegin` (line 76) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 76) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `begin` (line 77) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `size` (line 78) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExPolygonProvider`**
 
-- [~] `cbegin` (line 183) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 183) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `begin` (line 184) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 185) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 186) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -2381,7 +2381,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 **class `ExPolygonsProvider`**
 
-- [~] `cbegin` (line 223) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 223) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `begin` (line 224) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 225) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 226) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -2389,7 +2389,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 **class `MultiPointsProvider`**
 
-- [~] `cbegin` (line 154) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 154) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `begin` (line 155) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 156) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 157) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -2397,7 +2397,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 **class `PathsProvider`**
 
-- [~] `cbegin` (line 127) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 127) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `begin` (line 128) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 129) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 130) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -2405,7 +2405,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 **class `SinglePathProvider`**
 
-- [~] `cbegin` (line 99) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 99) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `begin` (line 100) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 101) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 102) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -2413,7 +2413,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 **class `SurfacesProvider`**
 
-- [~] `cbegin` (line 264) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 264) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `begin` (line 265) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 266) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 267) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -2421,7 +2421,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 **class `SurfacesPtrProvider`**
 
-- [~] `cbegin` (line 305) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 305) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `begin` (line 306) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `cend` (line 307) → `mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 308) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -2477,8 +2477,8 @@ Rust file: `color.rs`. Status: **partial**. Not listed: 5 constructors, 14 opera
 - [ ] `complementary` (line 311) → `color.rs`
 - [ ] `saturate` (line 316) → `color.rs`
 - [ ] `saturate` (line 326) → `color.rs`
-- [~] `opposite` (line 331) → `geometry/voronoi_utils_cgal.rs, surface_mesh.rs` — not in the paired file
-- [~] `opposite` (line 349) → `geometry/voronoi_utils_cgal.rs, surface_mesh.rs` — not in the paired file
+- [~] `opposite` (line 331) → `geometry/voronoi_utils_cgal.rs, surface_mesh.rs, texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `opposite` (line 349) → `geometry/voronoi_utils_cgal.rs, surface_mesh.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 - [x] `can_decode_color` (line 375) → `color.rs:968`
 - [ ] `decode_color` (line 380) → `color.rs`
 - [ ] `decode_color` (line 390) → `color.rs`
@@ -2611,432 +2611,432 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 
 **free functions**
 
-- [x] `escape_string_cstyle` (line 60) → `config.rs:209`
-- [x] `escape_strings_cstyle` (line 86) → `config.rs:238`
-- [x] `looks_like_enum_value` (line 90) → `config.rs:41`
-- [~] `enum_looks_like_true_value` (line 101) → `config.rs:61` — partial
-- [~] `unescape_string_cstyle` (line 137) → `config.rs:297` — partial
-- [x] `unescape_strings_cstyle` (line 160) → `config.rs:339`
-- [x] `escape_ampersand` (line 231) → `config.rs:448`
-- [ ] `describe_option_values` (line 539) → `config.rs`
-- [x] `is_whitespace` (line 1319) → `config.rs:474`
-- [x] `is_end_of_line` (line 1320) → `config.rs:479`
-- [x] `is_end_of_gcode_line` (line 1321) → `config.rs:484`
-- [x] `is_end_of_word` (line 1322) → `config.rs:489`
-- [x] `skip_word` (line 1324) → `config.rs:496`
-- [x] `skip_whitespaces` (line 1330) → `config.rs:507`
-- [ ] `dynamic_config_iterate` (line 1883) → `config.rs`
+- [x] `escape_string_cstyle` (line 60) → `config.rs:200`
+- [x] `escape_strings_cstyle` (line 86) → `config.rs:233`
+- [x] `looks_like_enum_value` (line 90) → `config.rs:32`
+- [~] `enum_looks_like_true_value` (line 101) → `config.rs:52` — partial
+- [~] `unescape_string_cstyle` (line 137) → `config.rs:292` — partial
+- [x] `unescape_strings_cstyle` (line 160) → `config.rs:334`
+- [x] `escape_ampersand` (line 231) → `config.rs:443`
+- [x] `describe_option_values` (line 539) → `config.rs:5317`
+- [x] `is_whitespace` (line 1319) → `config.rs:469`
+- [x] `is_end_of_line` (line 1320) → `config.rs:474`
+- [x] `is_end_of_gcode_line` (line 1321) → `config.rs:479`
+- [x] `is_end_of_word` (line 1322) → `config.rs:484`
+- [x] `skip_word` (line 1324) → `config.rs:491`
+- [x] `skip_whitespaces` (line 1330) → `config.rs:502`
+- [~] `dynamic_config_iterate` (line 1883) → `config.rs:7661` — partial
 
 **class `ConfigBase`**
 
-- [ ] `apply_only` (line 454) → `config.rs`
-- [~] `equals` (line 497) → `support/tree_support.rs` — not in the paired file
-- [~] `diff` (line 511) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `equal` (line 524) → `placeholder_parser.rs` — not in the paired file
-- [ ] `opt_serialize` (line 565) → `config.rs`
+- [x] `apply_only` (line 454) → `config.rs:5662`
+- [x] `equals` (line 497) → `config.rs:5719`
+- [x] `diff` (line 511) → `config.rs:5739`
+- [x] `equal` (line 524) → `config.rs:5755`
+- [x] `opt_serialize` (line 565) → `config.rs:5770`
 - [~] `set` (line 583) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 595) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [ ] `set_deserialize_nothrow` (line 606) → `config.rs`
-- [~] `set_deserialize` (line 624) → `print_config.rs, region_config.rs` — not in the paired file
+- [x] `set_deserialize_nothrow` (line 606) → `config.rs:5858`
+- [x] `set_deserialize` (line 624) → `config.rs:5882`
 - [~] `set_deserialize` (line 630) → `print_config.rs, region_config.rs` — not in the paired file
-- [ ] `set_deserialize_raw` (line 636) → `config.rs`
-- [ ] `get_abs_value_at` (line 721) → `config.rs`
-- [~] `get_abs_value` (line 749) → `config.rs` — another overload of the name is ported
+- [x] `set_deserialize_raw` (line 636) → `config.rs:5919`
+- [x] `get_abs_value_at` (line 721) → `config.rs:6029`
+- [x] `get_abs_value` (line 749) → `config.rs:6057`
 - [~] `get_abs_value` (line 792) → `config.rs` — another overload of the name is ported
-- [ ] `setenv_` (line 803) → `config.rs`
-- [ ] `load_string_map` (line 822) → `config.rs`
-- [~] `load` (line 859) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [ ] `load_from_json` (line 876) → `config.rs`
-- [ ] `load_from_json` (line 885) → `config.rs`
-- [ ] `load_from_ini` (line 1245) → `config.rs`
-- [ ] `load_from_ini_string` (line 1257) → `config.rs`
-- [ ] `load_from_ini_string_commented` (line 1267) → `config.rs`
-- [~] `load` (line 1304) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [ ] `load_from_gcode_string_legacy` (line 1337) → `config.rs`
-- [ ] `load_from_gcode_file` (line 1472) → `config.rs`
-- [ ] `save_to_json` (line 1583) → `config.rs`
-- [~] `save` (line 1638) → `app_config.rs` — not in the paired file
-- [ ] `null_nullables` (line 1651) → `config.rs`
-- [ ] `handle_legacy` (line 2547) → `config.rs`
-- [ ] `option` (line 2554) → `config.rs`
-- [ ] `option` (line 2558) → `config.rs`
-- [ ] `option_throw` (line 2564) → `config.rs`
-- [ ] `option_throw` (line 2573) → `config.rs`
-- [~] `apply` (line 2584) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
+- [~] `setenv_` (line 803) → `config.rs:6123` — partial
+- [x] `load_string_map` (line 822) → `config.rs:6143`
+- [x] `load` (line 859) → `config.rs:6181`
+- [x] `load_from_json` (line 876) → `config.rs:6195`
+- [~] `load_from_json` (line 885) → `config.rs` — another overload of the name is ported
+- [x] `load_from_ini` (line 1245) → `config.rs:6570`
+- [~] `load_from_ini_string` (line 1257) → `config.rs:6585` — partial
+- [~] `load_from_ini_string_commented` (line 1267) → `config.rs:6593` — partial
+- [~] `load` (line 1304) → `app_config.rs, format/assembly_steps_json.rs, format/step.rs` — not in the paired file
+- [x] `load_from_gcode_string_legacy` (line 1337) → `config.rs:6666`
+- [x] `load_from_gcode_file` (line 1472) → `config.rs:6780`
+- [~] `save_to_json` (line 1583) → `config.rs:6895` — partial
+- [~] `save` (line 1638) → `config.rs:6979` — partial
+- [x] `null_nullables` (line 1651) → `config.rs:7011`
+- [x] `handle_legacy` (line 2547) → `config.rs:5635`
+- [~] `option` (line 2554) → `config.rs` — another overload of the name is ported
+- [~] `option` (line 2558) → `config.rs` — another overload of the name is ported
+- [~] `option_throw` (line 2564) → `config.rs` — another overload of the name is ported
+- [~] `option_throw` (line 2573) → `config.rs` — another overload of the name is ported
+- [x] `apply` (line 2584) → `config.rs:5656`
 - [~] `set` (line 2603) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 2607) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 2609) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [ ] `set_deserialize_strict` (line 2617) → `config.rs`
-- [ ] `set_deserialize_strict` (line 2634) → `config.rs`
+- [x] `set_deserialize_strict` (line 2617) → `config.rs:5899`
+- [~] `set_deserialize_strict` (line 2634) → `config.rs` — another overload of the name is ported
 
 **class `ConfigDef`**
 
-- [~] `add` (line 333) → `boost_polygon_voronoi.rs, clipper2/clipper_core.rs, clipper2/clipper_rectclip.rs` — not in the paired file
-- [ ] `add_nullable` (line 344) → `config.rs`
-- [~] `has` (line 2455) → `app_config.rs, enum_bitmask.rs, g_code_reader.rs` — not in the paired file
-- [~] `get` (line 2456) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
-- [ ] `keys` (line 2460) → `config.rs`
+- [x] `add` (line 333) → `config.rs:5085`
+- [x] `add_nullable` (line 344) → `config.rs:5096`
+- [x] `has` (line 2455) → `config.rs:5065`
+- [~] `get` (line 2456) → `config.rs:5070` — partial
+- [x] `keys` (line 2460) → `config.rs:5075`
 
 **class `ConfigOption`**
 
-- [ ] `getInt` (line 276) → `config.rs`
-- [ ] `getFloat` (line 277) → `config.rs`
-- [~] `getBool` (line 278) → `app_config.rs` — not in the paired file
-- [~] `setInt` (line 279) → `gcode/gcode_template.rs` — not in the paired file
-- [ ] `is_scalar` (line 283) → `config.rs`
-- [ ] `is_vector` (line 284) → `config.rs`
-- [ ] `nullable` (line 286) → `config.rs`
-- [ ] `is_nil` (line 288) → `config.rs`
-- [ ] `overriden_by` (line 291) → `config.rs`
-- [ ] `apply_override` (line 296) → `config.rs`
+- [x] `getInt` (line 276) → `config.rs:1496`
+- [x] `getFloat` (line 277) → `config.rs:1500`
+- [x] `getBool` (line 278) → `config.rs:1504`
+- [x] `setInt` (line 279) → `config.rs:1508`
+- [x] `is_scalar` (line 283) → `config.rs:1520`
+- [x] `is_vector` (line 284) → `config.rs:1524`
+- [x] `nullable` (line 286) → `config.rs:2747`
+- [~] `is_nil` (line 288) → `config.rs` — another overload of the name is ported
+- [x] `overriden_by` (line 291) → `config.rs:1537`
+- [x] `apply_override` (line 296) → `config.rs:1546`
 
 **class `ConfigOptionBool`**
 
-- [ ] `static_type` (line 1853) → `config.rs`
+- [x] `static_type` (line 1853) → `config.rs:4188`
 - [~] `type` (line 1854) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `getBool` (line 1855) → `app_config.rs` — not in the paired file
-- [~] `clone` (line 1856) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `serialize` (line 1861) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 1866) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `getBool` (line 1855) → `config.rs:4202`
+- [x] `clone` (line 1856) → `config.rs:3206`
+- [x] `serialize` (line 1861) → `config.rs:4598`
+- [~] `deserialize` (line 1866) → `config.rs:4121` — partial
 - [~] `serialize` (line 1882) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionBoolsTempl`**
 
-- [ ] `static_type` (line 1896) → `config.rs`
+- [x] `static_type` (line 1896) → `config.rs:4329`
 - [~] `type` (line 1897) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1898) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `nullable` (line 1903) → `config.rs`
-- [ ] `nil_value` (line 1905) → `config.rs`
-- [ ] `is_nil` (line 1907) → `config.rs`
-- [ ] `is_nil` (line 1908) → `config.rs`
-- [ ] `set_at_to_nil` (line 1909) → `config.rs`
-- [~] `get_at` (line 1921) → `extruder.rs, print_region.rs` — not in the paired file
-- [~] `serialize` (line 1923) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 1934) → `config.rs`
-- [ ] `deserialize_with_substitutions` (line 1945) → `config.rs`
-- [~] `deserialize` (line 1974) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `serialize_single_value` (line 1980) → `config.rs`
+- [x] `clone` (line 1898) → `config.rs:3719`
+- [x] `nullable` (line 1903) → `config.rs:4348`
+- [x] `nil_value` (line 1905) → `config.rs:4264`
+- [x] `is_nil` (line 1907) → `config.rs:4714`
+- [~] `is_nil` (line 1908) → `config.rs` — another overload of the name is ported
+- [x] `set_at_to_nil` (line 1909) → `config.rs:4395`
+- [x] `get_at` (line 1921) → `config.rs:4272`
+- [x] `serialize` (line 1923) → `config.rs:3598`
+- [x] `vserialize` (line 1934) → `config.rs:4381`
+- [x] `deserialize_with_substitutions` (line 1945) → `config.rs:4276`
+- [x] `deserialize` (line 1974) → `config.rs:4372`
+- [x] `serialize_single_value` (line 1980) → `config.rs:2910`
 - [~] `serialize` (line 1992) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionDef`**
 
-- [ ] `cli_args` (line 252) → `config.rs`
-- [ ] `create_empty_option` (line 272) → `config.rs`
-- [ ] `create_default_option` (line 309) → `config.rs`
-- [ ] `set_default_value` (line 2263) → `config.rs`
-- [ ] `get_default_value` (line 2264) → `config.rs`
+- [x] `cli_args` (line 252) → `config.rs:4955`
+- [x] `create_empty_option` (line 272) → `config.rs:4973`
+- [x] `create_default_option` (line 309) → `config.rs:5010`
+- [x] `set_default_value` (line 2263) → `config.rs:4933`
+- [x] `get_default_value` (line 2264) → `config.rs:4939`
 - [ ] `load_option_from_archive` (line 2271) → `config.rs`
 - [ ] `save_option_to_archive` (line 2307) → `config.rs`
-- [ ] `has_enum_value` (line 2415) → `config.rs`
+- [x] `has_enum_value` (line 2415) → `config.rs:4944`
 
 **class `ConfigOptionEnum`**
 
-- [ ] `static_type` (line 2011) → `config.rs`
+- [x] `static_type` (line 2011) → `config.rs:4541`
 - [~] `type` (line 2012) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 2013) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `getInt` (line 2017) → `config.rs`
-- [~] `setInt` (line 2018) → `gcode/gcode_template.rs` — not in the paired file
-- [~] `set` (line 2028) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `serialize` (line 2035) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 2042) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `has` (line 2048) → `app_config.rs, enum_bitmask.rs, g_code_reader.rs` — not in the paired file
-- [~] `from_string` (line 2061) → `debug/compare.rs, extrusion_entity.rs, g_code.rs` — not in the paired file
+- [x] `clone` (line 2013) → `config.rs:4206`
+- [x] `getInt` (line 2017) → `config.rs:4484`
+- [x] `setInt` (line 2018) → `config.rs:4488`
+- [x] `set` (line 2028) → `config.rs:4585`
+- [x] `serialize` (line 2035) → `config.rs:4512`
+- [x] `deserialize` (line 2042) → `config.rs:4517`
+- [x] `has` (line 2048) → `config.rs:4437`
+- [x] `from_string` (line 2061) → `config.rs:4454`
 
 **class `ConfigOptionEnumGeneric`**
 
-- [ ] `static_type` (line 2083) → `config.rs`
+- [x] `static_type` (line 2083) → `config.rs:4551`
 - [~] `type` (line 2084) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 2085) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `set` (line 2098) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [x] `clone` (line 2085) → `config.rs:3881`
+- [x] `set` (line 2098) → `config.rs:4500`
 - [~] `serialize` (line 2105) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 2113) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `deserialize` (line 2113) → `config.rs:4607` — partial
 - [~] `serialize` (line 2125) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionEnumsGenericTempl`**
 
-- [ ] `static_type` (line 2141) → `config.rs`
+- [x] `static_type` (line 2141) → `config.rs:4692`
 - [~] `type` (line 2142) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 2143) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `nullable` (line 2153) → `config.rs`
-- [~] `set` (line 2155) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `serialize` (line 2162) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 2173) → `config.rs`
-- [~] `deserialize` (line 2185) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `serialize_single_value` (line 2210) → `config.rs`
+- [x] `clone` (line 2143) → `config.rs:1583`
+- [x] `nullable` (line 2153) → `config.rs:4710`
+- [x] `set` (line 2155) → `config.rs:1859`
+- [x] `serialize` (line 2162) → `config.rs:4737`
+- [x] `vserialize` (line 2173) → `config.rs:4775`
+- [x] `deserialize` (line 2185) → `config.rs:4748`
+- [~] `serialize_single_value` (line 2210) → `config.rs:3939` — divergent
 - [~] `serialize` (line 2226) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionFloat`**
 
-- [ ] `static_type` (line 828) → `config.rs`
+- [x] `static_type` (line 828) → `config.rs:2561`
 - [~] `type` (line 829) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [ ] `getFloat` (line 830) → `config.rs`
-- [~] `clone` (line 831) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `serialize` (line 835) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 842) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `getFloat` (line 830) → `config.rs:3403`
+- [x] `clone` (line 831) → `config.rs:3407`
+- [x] `serialize` (line 835) → `config.rs:2583`
+- [~] `deserialize` (line 842) → `config.rs:2587` — partial
 - [~] `serialize` (line 858) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionFloatOrPercent`**
 
-- [ ] `static_type` (line 1304) → `config.rs`
+- [x] `static_type` (line 1304) → `config.rs:3390`
 - [~] `type` (line 1305) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1306) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `hash` (line 1317) → `arachne/utils/polygons_point_index.rs, perimeter_generator.rs, region_expansion.rs` — not in the paired file
-- [x] `get_abs_value` (line 1322) → `config.rs:168`
-- [~] `set` (line 1325) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [x] `clone` (line 1306) → `config.rs:3793`
+- [x] `hash` (line 1317) → `config.rs:3422`
+- [x] `get_abs_value` (line 1322) → `config.rs:3380`
+- [~] `set` (line 1325) → `config.rs:1809` — partial
 - [~] `serialize` (line 1332) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 1341) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `deserialize` (line 1341) → `config.rs:3452` — partial
 - [~] `serialize` (line 1352) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionFloatsOrPercentsTempl`**
 
-- [ ] `static_type` (line 1365) → `config.rs`
+- [x] `static_type` (line 1365) → `config.rs:3560`
 - [~] `type` (line 1366) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1367) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `nullable` (line 1378) → `config.rs`
-- [ ] `nil_value` (line 1380) → `config.rs`
-- [ ] `is_nil` (line 1382) → `config.rs`
-- [ ] `is_nil` (line 1383) → `config.rs`
-- [ ] `set_at_to_nil` (line 1384) → `config.rs`
-- [~] `serialize` (line 1390) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 1401) → `config.rs`
-- [~] `deserialize` (line 1413) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `serialize_single_value` (line 1444) → `config.rs`
-- [ ] `vectors_equal` (line 1457) → `config.rs`
-- [ ] `vectors_lower` (line 1469) → `config.rs`
+- [x] `clone` (line 1367) → `config.rs:3964`
+- [x] `nullable` (line 1378) → `config.rs:3585`
+- [x] `nil_value` (line 1380) → `config.rs:3258`
+- [~] `is_nil` (line 1382) → `config.rs` — another overload of the name is ported
+- [~] `is_nil` (line 1383) → `config.rs` — another overload of the name is ported
+- [x] `set_at_to_nil` (line 1384) → `config.rs:3653`
+- [x] `serialize` (line 1390) → `config.rs:4361`
+- [x] `vserialize` (line 1401) → `config.rs:3639`
+- [~] `deserialize` (line 1413) → `config.rs:2771` — divergent
+- [x] `serialize_single_value` (line 1444) → `config.rs:3507`
+- [x] `vectors_equal` (line 1457) → `config.rs:2686`
+- [x] `vectors_lower` (line 1469) → `config.rs:3542`
 - [~] `serialize` (line 1484) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionFloatsTempl`**
 
-- [ ] `static_type` (line 871) → `config.rs`
+- [x] `static_type` (line 871) → `config.rs:2722`
 - [~] `type` (line 872) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 873) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `nullable` (line 883) → `config.rs`
-- [ ] `nil_value` (line 885) → `config.rs`
-- [ ] `is_nil` (line 887) → `config.rs`
-- [ ] `is_nil` (line 888) → `config.rs`
-- [ ] `set_at_to_nil` (line 889) → `config.rs`
-- [~] `serialize` (line 895) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 906) → `config.rs`
-- [~] `deserialize` (line 918) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `serialize_single_value` (line 948) → `config.rs`
-- [ ] `vectors_equal` (line 959) → `config.rs`
-- [ ] `vectors_lower` (line 971) → `config.rs`
+- [x] `clone` (line 873) → `config.rs:4564`
+- [x] `nullable` (line 883) → `config.rs:2944`
+- [x] `nil_value` (line 885) → `config.rs:3495`
+- [x] `is_nil` (line 887) → `config.rs:3589`
+- [~] `is_nil` (line 888) → `config.rs` — another overload of the name is ported
+- [x] `set_at_to_nil` (line 889) → `config.rs:3011`
+- [x] `serialize` (line 895) → `config.rs:2760`
+- [x] `vserialize` (line 906) → `config.rs:2779`
+- [~] `deserialize` (line 918) → `config.rs:3609` — partial
+- [x] `serialize_single_value` (line 948) → `config.rs:2670`
+- [x] `vectors_equal` (line 959) → `config.rs:3525`
+- [x] `vectors_lower` (line 971) → `config.rs:2704`
 - [~] `serialize` (line 986) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionInt`**
 
-- [ ] `static_type` (line 999) → `config.rs`
+- [x] `static_type` (line 999) → `config.rs:2825`
 - [~] `type` (line 1000) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [ ] `getInt` (line 1001) → `config.rs`
-- [~] `setInt` (line 1002) → `gcode/gcode_template.rs` — not in the paired file
-- [~] `clone` (line 1003) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `serialize` (line 1006) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 1013) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `getInt` (line 1001) → `config.rs:4568`
+- [x] `setInt` (line 1002) → `config.rs:4572`
+- [x] `clone` (line 1003) → `config.rs:2736`
+- [x] `serialize` (line 1006) → `config.rs:4210`
+- [~] `deserialize` (line 1013) → `config.rs:2856` — partial
 - [~] `serialize` (line 1029) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionIntsGroups`**
 
-- [ ] `static_type` (line 1749) → `config.rs`
+- [x] `static_type` (line 1749) → `config.rs:4081`
 - [~] `type` (line 1750) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1751) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `nullable` (line 1775) → `config.rs`
-- [ ] `is_nil` (line 1776) → `config.rs`
-- [~] `serialize` (line 1778) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 1790) → `config.rs`
-- [~] `deserialize` (line 1801) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize_single` (line 1819) → `config.rs`
-- [ ] `serialize_single_value` (line 1832) → `config.rs`
+- [x] `clone` (line 1751) → `config.rs:2848`
+- [x] `nullable` (line 1775) → `config.rs:4106`
+- [x] `is_nil` (line 1776) → `config.rs:1532`
+- [x] `serialize` (line 1778) → `config.rs:4110`
+- [x] `vserialize` (line 1790) → `config.rs:4145`
+- [~] `deserialize` (line 1801) → `config.rs:3324` — divergent
+- [x] `vserialize_single` (line 1819) → `config.rs:3928`
+- [x] `serialize_single_value` (line 1832) → `config.rs:4070`
 - [~] `serialize` (line 1843) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionIntsTempl`**
 
-- [ ] `static_type` (line 1042) → `config.rs`
+- [x] `static_type` (line 1042) → `config.rs:2925`
 - [~] `type` (line 1043) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1044) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `nullable` (line 1049) → `config.rs`
-- [ ] `nil_value` (line 1051) → `config.rs`
-- [ ] `is_nil` (line 1053) → `config.rs`
-- [ ] `is_nil` (line 1054) → `config.rs`
-- [ ] `set_at_to_nil` (line 1055) → `config.rs`
-- [~] `serialize` (line 1061) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 1072) → `config.rs`
-- [~] `deserialize` (line 1084) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `serialize_single_value` (line 1108) → `config.rs`
+- [x] `clone` (line 1044) → `config.rs:2940`
+- [x] `nullable` (line 1049) → `config.rs:3297`
+- [x] `nil_value` (line 1051) → `config.rs:4660`
+- [x] `is_nil` (line 1053) → `config.rs:4352`
+- [~] `is_nil` (line 1054) → `config.rs` — another overload of the name is ported
+- [x] `set_at_to_nil` (line 1055) → `config.rs:3349`
+- [x] `serialize` (line 1061) → `config.rs:2957`
+- [x] `vserialize` (line 1072) → `config.rs:2997`
+- [~] `deserialize` (line 1084) → `config.rs:2968` — partial
+- [x] `serialize_single_value` (line 1108) → `config.rs:4673`
 - [~] `serialize` (line 1119) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPercent`**
 
-- [ ] `static_type` (line 1209) → `config.rs`
+- [x] `static_type` (line 1209) → `config.rs:3188`
 - [~] `type` (line 1210) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1211) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `get_abs_value` (line 1216) → `config.rs` — another overload of the name is ported
-- [~] `serialize` (line 1218) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 1227) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `clone` (line 1211) → `config.rs:3286`
+- [x] `get_abs_value` (line 1216) → `config.rs:3182`
+- [~] `serialize` (line 1218) → `config.rs:3210` — partial
+- [~] `deserialize` (line 1227) → `config.rs:3216` — partial
 - [~] `serialize` (line 1238) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPercentsTempl`**
 
-- [ ] `static_type` (line 1251) → `config.rs`
+- [x] `static_type` (line 1251) → `config.rs:3272`
 - [~] `type` (line 1252) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1253) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `serialize` (line 1258) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 1272) → `config.rs`
+- [x] `clone` (line 1253) → `config.rs:3574`
+- [x] `serialize` (line 1258) → `config.rs:3310`
+- [x] `vserialize` (line 1272) → `config.rs:3332`
 - [~] `serialize` (line 1291) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPoint`**
 
-- [ ] `static_type` (line 1496) → `config.rs`
+- [x] `static_type` (line 1496) → `config.rs:3705`
 - [~] `type` (line 1497) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1498) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `serialize` (line 1503) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 1512) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `clone` (line 1498) → `config.rs:4095`
+- [x] `serialize` (line 1503) → `config.rs:3723`
+- [~] `deserialize` (line 1512) → `config.rs:3730` — divergent
 - [~] `serialize` (line 1522) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPoint3`**
 
-- [ ] `static_type` (line 1611) → `config.rs`
+- [x] `static_type` (line 1611) → `config.rs:3867`
 - [~] `type` (line 1612) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1613) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `serialize` (line 1619) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 1630) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `clone` (line 1613) → `config.rs:4480`
+- [x] `serialize` (line 1619) → `config.rs:3885`
+- [~] `deserialize` (line 1630) → `config.rs:3894` — partial
 - [~] `serialize` (line 1640) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionPoints`**
 
-- [ ] `static_type` (line 1533) → `config.rs`
+- [x] `static_type` (line 1533) → `config.rs:3778`
 - [~] `type` (line 1534) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1535) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `is_nil` (line 1540) → `config.rs`
-- [~] `serialize` (line 1542) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 1554) → `config.rs`
-- [~] `deserialize` (line 1569) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `save` (line 1592) → `app_config.rs` — not in the paired file
-- [~] `load` (line 1597) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
+- [x] `clone` (line 1535) → `config.rs:4344`
+- [x] `is_nil` (line 1540) → `config.rs:2751`
+- [x] `serialize` (line 1542) → `config.rs:3797`
+- [x] `vserialize` (line 1554) → `config.rs:3822`
+- [~] `deserialize` (line 1569) → `config.rs:3808` — partial
+- [~] `save` (line 1592) → `app_config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `load` (line 1597) → `app_config.rs, format/assembly_steps_json.rs, format/step.rs` — not in the paired file
 
 **class `ConfigOptionPointsGroups`**
 
-- [ ] `static_type` (line 1650) → `config.rs`
+- [x] `static_type` (line 1650) → `config.rs:3950`
 - [~] `type` (line 1651) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1652) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `nullable` (line 1662) → `config.rs`
-- [ ] `is_nil` (line 1663) → `config.rs`
-- [~] `serialize` (line 1665) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 1677) → `config.rs`
-- [~] `deserialize` (line 1688) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize_single` (line 1714) → `config.rs`
-- [ ] `serialize_single_value` (line 1728) → `config.rs`
+- [x] `clone` (line 1652) → `config.rs:2579`
+- [x] `nullable` (line 1662) → `config.rs:3975`
+- [x] `is_nil` (line 1663) → `config.rs:3301`
+- [x] `serialize` (line 1665) → `config.rs:3979`
+- [x] `vserialize` (line 1677) → `config.rs:4008`
+- [~] `deserialize` (line 1688) → `config.rs:3990` — partial
+- [~] `vserialize_single` (line 1714) → `config.rs:4061` — partial
+- [x] `serialize_single_value` (line 1728) → `config.rs:4314`
 - [~] `serialize` (line 1739) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionResolver`**
 
-- [~] `has` (line 2490) → `app_config.rs, enum_bitmask.rs, g_code_reader.rs` — not in the paired file
-- [ ] `option` (line 2492) → `config.rs`
-- [ ] `option` (line 2495) → `config.rs`
-- [ ] `option_throw` (line 2501) → `config.rs`
-- [ ] `option_throw` (line 2510) → `config.rs`
+- [x] `has` (line 2490) → `config.rs:5230`
+- [x] `option` (line 2492) → `config.rs:5235`
+- [~] `option` (line 2495) → `config.rs` — another overload of the name is ported
+- [x] `option_throw` (line 2501) → `config.rs:5240`
+- [~] `option_throw` (line 2510) → `config.rs` — another overload of the name is ported
 
 **class `ConfigOptionSingle`**
 
-- [~] `set` (line 315) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `hash` (line 335) → `arachne/utils/polygons_point_index.rs, perimeter_generator.rs, region_expansion.rs` — not in the paired file
-- [~] `serialize` (line 339) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `set` (line 315) → `config.rs:3431` — partial
+- [x] `hash` (line 335) → `config.rs:4508`
+- [x] `serialize` (line 339) → `config.rs:2852`
 
 **class `ConfigOptionString`**
 
-- [ ] `static_type` (line 1131) → `config.rs`
+- [x] `static_type` (line 1131) → `config.rs:3047`
 - [~] `type` (line 1132) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1133) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [~] `empty` (line 1137) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `serialize` (line 1139) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 1144) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `clone` (line 1133) → `config.rs:3061`
+- [x] `empty` (line 1137) → `config.rs:3041`
+- [x] `serialize` (line 1139) → `config.rs:3065`
+- [x] `deserialize` (line 1144) → `config.rs:3069`
 - [~] `serialize` (line 1152) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionStrings`**
 
-- [ ] `static_type` (line 1165) → `config.rs`
+- [x] `static_type` (line 1165) → `config.rs:3113`
 - [~] `type` (line 1166) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [~] `clone` (line 1167) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
-- [ ] `is_nil` (line 1171) → `config.rs`
-- [~] `serialize` (line 1173) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [ ] `vserialize` (line 1178) → `config.rs`
-- [~] `deserialize` (line 1191) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `clone` (line 1167) → `config.rs:3128`
+- [x] `is_nil` (line 1171) → `config.rs:2948`
+- [x] `serialize` (line 1173) → `config.rs:3132`
+- [x] `vserialize` (line 1178) → `config.rs:3147`
+- [x] `deserialize` (line 1191) → `config.rs:3136`
 - [~] `serialize` (line 1200) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionVector`**
 
-- [~] `set` (line 400) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 400) → `config.rs:4724` — partial
 - [~] `set` (line 412) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [ ] `set_at` (line 431) → `config.rs`
-- [ ] `set_at_to_nil` (line 453) → `config.rs`
-- [~] `append` (line 455) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [x] `set_at` (line 431) → `config.rs:1888`
+- [x] `set_at_to_nil` (line 453) → `config.rs:4159`
+- [x] `append` (line 455) → `config.rs:1912`
 - [~] `set` (line 471) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [ ] `set_with_restore` (line 492) → `config.rs`
-- [ ] `set_with_restore_2` (line 522) → `config.rs`
-- [ ] `set_only_diff` (line 573) → `config.rs`
-- [ ] `set_to_index` (line 602) → `config.rs`
-- [ ] `set_with_nil` (line 626) → `config.rs`
-- [ ] `set_with_default` (line 662) → `config.rs`
-- [~] `resize` (line 692) → `extrusion_simulator.rs, nozzle_inventory.rs` — not in the paired file
+- [x] `set_with_restore` (line 492) → `config.rs:1952`
+- [x] `set_with_restore_2` (line 522) → `config.rs:1993`
+- [x] `set_only_diff` (line 573) → `config.rs:2055`
+- [x] `set_to_index` (line 602) → `config.rs:2096`
+- [x] `set_with_nil` (line 626) → `config.rs:2126`
+- [x] `set_with_default` (line 662) → `config.rs:2178`
+- [x] `resize` (line 692) → `config.rs:2226`
 - [~] `clear` (line 725) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [~] `size` (line 726) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 727) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `hash` (line 740) → `arachne/utils/polygons_point_index.rs, perimeter_generator.rs, region_expansion.rs` — not in the paired file
-- [ ] `overriden_by` (line 751) → `config.rs`
-- [ ] `apply_override` (line 773) → `config.rs`
+- [x] `hash` (line 740) → `config.rs:2271`
+- [x] `overriden_by` (line 751) → `config.rs:2282`
+- [x] `apply_override` (line 773) → `config.rs:2310`
 - [~] `serialize` (line 819) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `ConfigOptionVectorBase`**
 
-- [ ] `scalar_type` (line 385) → `config.rs`
+- [x] `scalar_type` (line 385) → `config.rs:1648`
 
 **class `ConfigSubstitutionContext`**
 
-- [~] `empty` (line 258) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `empty` (line 258) → `config.rs:1473`
 
 **class `DynamicConfig`**
 
-- [ ] `remove_nil_options` (line 1681) → `config.rs`
-- [ ] `optptr` (line 1693) → `config.rs`
-- [ ] `optptr` (line 1716) → `config.rs`
-- [ ] `read_cli` (line 1722) → `config.rs`
-- [ ] `keys` (line 1846) → `config.rs`
-- [~] `equals` (line 1910) → `support/tree_support.rs` — not in the paired file
-- [~] `diff` (line 1918) → `support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `equal` (line 1932) → `placeholder_parser.rs` — not in the paired file
-- [ ] `opt_bool` (line 1967) → `config.rs`
-- [~] `swap` (line 2745) → `boost_polygon_voronoi.rs, clonable_ptr.rs, extrusion_entity_collection.rs` — not in the paired file
-- [~] `clear` (line 2750) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `erase` (line 2755) → `app_config.rs, boost_polygon_voronoi.rs, geometry/point.rs` — not in the paired file
-- [ ] `def` (line 2769) → `config.rs`
-- [ ] `opt` (line 2770) → `config.rs`
-- [ ] `opt` (line 2772) → `config.rs`
-- [~] `empty` (line 2780) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `set_key_value` (line 2785) → `config.rs`
-- [ ] `opt_int` (line 2818) → `config.rs`
-- [ ] `opt_int` (line 2820) → `config.rs`
-- [ ] `opt_enum` (line 2827) → `config.rs`
-- [ ] `opt_enum` (line 2829) → `config.rs`
-- [ ] `opt_enum_nullable` (line 2830) → `config.rs`
-- [ ] `opt_bool` (line 2833) → `config.rs`
-- [ ] `opt_bool_nullable` (line 2835) → `config.rs`
-- [~] `cbegin` (line 2841) → `mutable_polygon.rs` — not in the paired file
+- [x] `remove_nil_options` (line 1681) → `config.rs:7195`
+- [~] `optptr` (line 1693) → `config.rs` — another overload of the name is ported
+- [x] `optptr` (line 1716) → `config.rs:7605`
+- [x] `read_cli` (line 1722) → `config.rs:7475`
+- [x] `keys` (line 1846) → `config.rs:7643`
+- [x] `equals` (line 1910) → `config.rs:7234`
+- [x] `diff` (line 1918) → `config.rs:7240`
+- [x] `equal` (line 1932) → `config.rs:7259`
+- [~] `opt_bool` (line 1967) → `config.rs` — another overload of the name is ported
+- [x] `swap` (line 2745) → `config.rs:7179`
+- [x] `clear` (line 2750) → `config.rs:7184`
+- [~] `erase` (line 2755) → `config.rs:7189` — partial
+- [x] `def` (line 2769) → `config.rs:7614`
+- [~] `opt` (line 2770) → `config.rs` — another overload of the name is ported
+- [x] `opt` (line 2772) → `config.rs:7216`
+- [x] `empty` (line 2780) → `config.rs:7221`
+- [~] `set_key_value` (line 2785) → `config.rs:7228` — partial
+- [x] `opt_int` (line 2818) → `config.rs:7380`
+- [~] `opt_int` (line 2820) → `config.rs` — another overload of the name is ported
+- [x] `opt_enum` (line 2827) → `config.rs:7425`
+- [~] `opt_enum` (line 2829) → `config.rs` — another overload of the name is ported
+- [x] `opt_enum_nullable` (line 2830) → `config.rs:7440`
+- [x] `opt_bool` (line 2833) → `config.rs:7450`
+- [x] `opt_bool_nullable` (line 2835) → `config.rs:7465`
+- [x] `cbegin` (line 2841) → `config.rs:7593`
 - [~] `cend` (line 2842) → `mutable_polygon.rs` — not in the paired file
-- [~] `size` (line 2843) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `size` (line 2843) → `config.rs:7598`
 - [~] `serialize` (line 2849) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `FloatOrPercent`**
 
-- [~] `get_abs_value` (line 38) → `config.rs` — another overload of the name is ported
-- [~] `serialize` (line 42) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [x] `get_abs_value` (line 38) → `config.rs:159`
+- [x] `serialize` (line 42) → `config.rs:3444`
 
 **class `ReverseLineReader`**
 
-- [~] `getline` (line 1421) → `aabb_tree_lines.rs` — not in the paired file
+- [~] `getline` (line 1421) → `config.rs:7761` — partial
 
 **class `StaticConfig`**
 
-- [~] `set_defaults` (line 1855) → `app_config.rs` — not in the paired file
-- [ ] `keys` (line 1869) → `config.rs`
+- [x] `set_defaults` (line 1855) → `config.rs:7705`
+- [x] `keys` (line 1869) → `config.rs:7724`
 
 ### `CSGMesh/CSGMesh` (.hpp)
 
@@ -3168,9 +3168,9 @@ Rust file: `cut_surface.rs`. Status: **partial**. Not listed: 2 constructors.
 
 - [ ] `set_is_first` (line 176) → `cut_surface.rs`
 - [ ] `set_is_last` (line 177) → `cut_surface.rs`
-- [~] `get_type` (line 178) → `measure.rs` — not in the paired file
+- [~] `get_type` (line 178) → `format/assembly_steps_json.rs, measure.rs` — not in the paired file
 - [ ] `is_first` (line 179) → `cut_surface.rs`
-- [ ] `is_last` (line 180) → `cut_surface.rs`
+- [~] `is_last` (line 180) → `format/assembly_steps_json.rs` — not in the paired file
 
 **class `IntersectionSources`**
 
@@ -3247,7 +3247,7 @@ Rust file: `cut_surface.rs`. Status: **partial**. Not listed: 2 constructors.
 - [ ] `unproject_loops` (line 3467) → `cut_surface.rs`
 - [ ] `to_expoly` (line 3512) → `cut_surface.rs`
 - [ ] `patch2cut` (line 3535) → `cut_surface.rs`
-- [~] `append` (line 3589) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 3589) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [ ] `merge_patches` (line 3608) → `cut_surface.rs`
 - [ ] `prepare_dir` (line 3620) → `cut_surface.rs`
 - [ ] `initialize_store` (line 3637) → `cut_surface.rs`
@@ -3310,11 +3310,11 @@ Rust file: `cut_utils.rs`. Status: **partial**. Not listed: 2 constructors, 1 de
 
 ### `Debounce` (.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `debounce.rs`. Status: **ported**.
 
 **free functions**
 
-- [ ] `debounce_elapsed` (line 21)
+- [x] `debounce_elapsed` (line 21) → `debounce.rs:29`
 
 ### `Desensitize` (.cpp+.hpp)
 
@@ -3549,22 +3549,22 @@ Rust file: `emboss_shape.rs`. Status: **partial**. Not listed: 3 constructors, 2
 
 **free functions**
 
-- [~] `serialize` (line 216) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 217) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 216) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 217) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `EmbossProjection`**
 
-- [~] `serialize` (line 32) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 32) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `EmbossShape`**
 
-- [~] `save` (line 200) → `app_config.rs` — not in the paired file
-- [~] `load` (line 206) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `save` (line 200) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `load` (line 206) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 
 **class `EmbossShape::SvgFile`**
 
-- [~] `save` (line 173) → `app_config.rs` — not in the paired file
-- [~] `load` (line 180) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `save` (line 173) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `load` (line 180) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 
 **class `FontFileWithCache`**
 
@@ -3727,7 +3727,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `polygon_set_mutable_traits<Slic3r::ExPolygons>`**
 
-- [~] `set` (line 592) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 592) → `app_config.rs, color.rs, config.rs` — not in the paired file
 
 **class `polygon_set_traits<Slic3r::ExPolygons>`**
 
@@ -3776,8 +3776,8 @@ Rust file: `ex_polygon_serialize.rs`. Status: **partial**.
 
 **free functions**
 
-- [~] `serialize` (line 18) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 23) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 18) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 23) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 ### `ExPolygonsIndex` (.cpp+.hpp)
 
@@ -3893,7 +3893,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [x] `check_seam_point_angle` (line 454) → `extrusion_entity.rs:1361`
 - [x] `is_loop` (line 506) → `extrusion_entity.rs:2067`
 - [x] `can_reverse` (line 507) → `extrusion_entity.rs:881`
-- [~] `clone` (line 508) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 508) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [ ] `clone_move` (line 510) → `extrusion_entity.rs`
 - [x] `is_clockwise` (line 513) → `extrusion_entity.rs:981`
 - [x] `is_counter_clockwise` (line 514) → `extrusion_entity.rs:986`
@@ -3929,7 +3929,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [x] `is_loop` (line 452) → `extrusion_entity.rs:2001`
 - [x] `can_reverse` (line 453) → `extrusion_entity.rs:2005`
 - [x] `set_reverse` (line 454) → `extrusion_entity.rs:886`
-- [~] `clone` (line 455) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 455) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [ ] `clone_move` (line 457) → `extrusion_entity.rs`
 - [x] `size` (line 461) → `extrusion_entity.rs:862`
 - [x] `empty` (line 462) → `extrusion_entity.rs:867`
@@ -3952,7 +3952,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [x] `polygons_covered_by_width` (line 55) → `extrusion_entity.rs:472`
 - [x] `polygons_covered_by_spacing` (line 60) → `extrusion_entity.rs:493`
 - [x] `can_merge` (line 70) → `extrusion_entity.rs:517`
-- [~] `clone` (line 313) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 313) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [ ] `clone_move` (line 315) → `extrusion_entity.rs`
 - [x] `reverse` (line 316) → `extrusion_entity.rs:530`
 - [x] `size` (line 319) → `extrusion_entity.rs:545`
@@ -3978,7 +3978,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 
 **class `ExtrusionPathOriented`**
 
-- [~] `clone` (line 419) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 419) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [ ] `clone_move` (line 421) → `extrusion_entity.rs`
 - [x] `can_reverse` (line 422) → `extrusion_entity.rs:641`
 
@@ -4004,20 +4004,20 @@ Rust file: `extrusion_entity_collection.rs`. Status: **partial**. Not listed: 4 
 - [~] `is_collection` (line 53) → `extrusion_entity.rs` — not in the paired file
 - [x] `role` (line 54) → `extrusion_entity_collection.rs:131`
 - [~] `can_sort` (line 62) → `extrusion_entity.rs` — not in the paired file
-- [~] `clone` (line 62) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 62) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `can_reverse` (line 63) → `extrusion_entity.rs` — not in the paired file
 - [~] `reverse` (line 67) → `arachne/utils/extrusion_line.rs, circle.rs, extrusion_entity.rs` — not in the paired file
 - [~] `set_reverse` (line 70) → `extrusion_entity.rs` — not in the paired file
 - [~] `empty` (line 71) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `append` (line 74) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 75) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 76) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 74) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 75) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 76) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `replace` (line 77) → `extrusion_entity_collection.rs:273`
-- [~] `append` (line 81) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 81) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [~] `remove` (line 83) → `extrusion_entity_collection.rs:284` — partial
 - [x] `chained_path_from` (line 89) → `extrusion_entity_collection.rs:473`
-- [~] `append` (line 89) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 94) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 89) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 94) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `polygons_covered_by_width` (line 101) → `extrusion_entity_collection.rs:295`
 - [~] `chained_path_from` (line 102) → `g_code.rs` — not in the paired file
 - [x] `polygons_covered_by_spacing` (line 107) → `extrusion_entity_collection.rs:316`
@@ -4282,7 +4282,7 @@ Rust file: `fill/fill3_d_honeycomb.rs`. Status: **partial**. Not listed: 1 destr
 
 **class `Fill3DHoneycomb`**
 
-- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `use_bridge_flow` (line 19) → `fill/fill3_d_honeycomb.rs:66`
 - [x] `is_self_crossing` (line 20) → `fill/fill3_d_honeycomb.rs:71`
 - [~] `_fill_surface_single` (line 190) → `fill/fill3_d_honeycomb.rs:393` — partial
@@ -4321,7 +4321,7 @@ Rust file: `fill/fill_adaptive.rs`. Status: **partial**. Not listed: 4 construct
 
 **class `Filler`**
 
-- [~] `clone` (line 62) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 62) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `no_sort` (line 73) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
 - [~] `is_self_crossing` (line 74) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [~] `_fill_surface_single` (line 1326) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_cross_hatch.rs` — not in the paired file
@@ -4436,7 +4436,7 @@ Rust file: `fill/fill_concentric.rs`. Status: **partial**.
 
 - [~] `_fill_surface_single` (line 12) → `fill/fill_concentric.rs:85` — partial
 - [x] `is_self_crossing` (line 12) → `fill/fill_concentric.rs:71`
-- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `no_sort` (line 29) → `fill/fill_concentric.rs:76`
 - [~] `_fill_surface_single` (line 67) → `fill/fill3_d_honeycomb.rs, fill/fill_cross_hatch.rs, fill/fill_floating_concentric.rs` — not in the paired file
 
@@ -4448,7 +4448,7 @@ Rust file: `fill/fill_concentric_internal.rs`. Status: **partial**.
 
 - [x] `fill_surface_extrusion` (line 12) → `fill/fill_concentric_internal.rs:80`
 - [x] `is_self_crossing` (line 13) → `fill/fill_concentric_internal.rs:74`
-- [~] `clone` (line 16) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 16) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `no_sort` (line 17) → `fill/fill_concentric_internal.rs:69`
 
 ### `Fill/FillConformal` (.cpp+.hpp)
@@ -4536,7 +4536,7 @@ Rust file: `fill/fill_cross_hatch.rs`. Status: **partial**. Not listed: 1 destru
 
 **class `FillCrossHatch`**
 
-- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `is_self_crossing` (line 17) → `fill/fill_cross_hatch.rs:374`
 - [~] `_fill_surface_single` (line 178) → `fill/fill_cross_hatch.rs:381` — partial
 
@@ -4559,7 +4559,7 @@ Rust file: `fill/fill_floating_concentric.rs`. Status: **partial**. Not listed: 
 
 **class `FillFloatingConcentric`**
 
-- [~] `clone` (line 44) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 44) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `resplit_order_loops` (line 697) → `fill/fill_floating_concentric.rs:1643`
 - [~] `resplit_order_loops` (line 752) → `fill/fill_floating_concentric.rs` — another overload of the name is ported
 - [~] `_fill_surface_single` (line 782) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_cross_hatch.rs` — not in the paired file
@@ -4589,7 +4589,7 @@ Rust file: `fill/fill_gyroid.rs`. Status: **partial**. Not listed: 1 constructor
 
 **class `FillGyroid`**
 
-- [~] `clone` (line 14) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 14) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `use_bridge_flow` (line 17) → `fill/fill_gyroid.rs:371`
 - [x] `is_self_crossing` (line 18) → `fill/fill_gyroid.rs:376`
 - [~] `_fill_surface_single` (line 151) → `fill/fill_gyroid.rs:387` — partial
@@ -4602,7 +4602,7 @@ Rust file: `fill/fill_honeycomb.rs`. Status: **partial**. Not listed: 1 construc
 
 - [~] `_fill_surface_single` (line 9) → `fill/fill_honeycomb.rs:144` — partial
 - [x] `is_self_crossing` (line 16) → `fill/fill_honeycomb.rs:133`
-- [~] `clone` (line 19) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 19) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `_layer_angle` (line 53) → `fill/fill_honeycomb.rs:139`
 
 ### `Fill/FillLightning` (.cpp+.hpp)
@@ -4617,7 +4617,7 @@ Rust file: `fill/fill_lightning.rs`. Status: **partial**. Not listed: 1 operator
 
 - [~] `_fill_surface_single` (line 10) → `fill/fill_lightning.rs:61` — partial
 - [x] `is_self_crossing` (line 23) → `fill/fill_lightning.rs:50`
-- [~] `clone` (line 27) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 27) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `no_sort` (line 36) → `fill/fill_lightning.rs:56`
 
 ### `Fill/FillLine` (.cpp+.hpp)
@@ -4627,7 +4627,7 @@ Rust file: `fill/fill_line.rs`. Status: **partial**.
 **class `FillLine`**
 
 - [~] `_fill_surface_single` (line 10) → `fill/fill_line.rs:100` — partial
-- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `is_self_crossing` (line 17) → `fill/fill_line.rs:62`
 - [x] `_line` (line 34) → `fill/fill_line.rs:73`
 - [x] `_can_connect` (line 39) → `fill/fill_line.rs:90`
@@ -4647,19 +4647,19 @@ Rust file: `fill/fill_plane_path.rs`. Status: **partial**. Not listed: 2 constru
 
 **class `FillArchimedeanChords`**
 
-- [~] `clone` (line 61) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 61) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `centered` (line 65) → `fill/fill_plane_path.rs` — another overload of the name is ported
 - [x] `generate` (line 251) → `fill/fill_plane_path.rs:260`
 
 **class `FillHilbertCurve`**
 
-- [~] `clone` (line 72) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 72) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `centered` (line 76) → `fill/fill_plane_path.rs` — another overload of the name is ported
 - [~] `generate` (line 326) → `arachne/wall_tool_paths.rs, debug/validation.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 
 **class `FillOctagramSpiral`**
 
-- [~] `clone` (line 83) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 83) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `centered` (line 87) → `fill/fill_plane_path.rs:249`
 - [~] `generate` (line 366) → `arachne/wall_tool_paths.rs, debug/validation.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 
@@ -4809,85 +4809,85 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 
 **class `Fill2DLattice`**
 
-- [~] `clone` (line 205) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 205) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `_layer_angle` (line 211) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
 
 **class `FillAlignedRectilinear`**
 
-- [~] `clone` (line 39) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 39) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `_layer_angle` (line 44) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
 
 **class `FillCrossZag`**
 
-- [~] `clone` (line 171) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 171) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [ ] `has_consistent_pattern` (line 174) → `fill/fill_rectilinear.rs`
 
 **class `FillCubic`**
 
-- [~] `clone` (line 107) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 107) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 110) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [~] `_layer_angle` (line 114) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
 
 **class `FillGlobalMonotonicLine`**
 
-- [~] `clone` (line 152) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 152) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [ ] `global_monotonic_sweep` (line 156) → `fill/fill_rectilinear.rs`
 
 **class `FillGrid`**
 
-- [~] `clone` (line 68) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 68) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 71) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [~] `_layer_angle` (line 75) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
 
 **class `FillLockedZag`**
 
-- [~] `clone` (line 180) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 180) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [ ] `has_consistent_pattern` (line 187) → `fill/fill_rectilinear.rs`
 - [ ] `set_lock_region_param` (line 188) → `fill/fill_rectilinear.rs`
 - [ ] `set_skin_and_skeleton_pattern` (line 196) → `fill/fill_rectilinear.rs`
 
 **class `FillMonotonic`**
 
-- [~] `clone` (line 50) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 50) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `no_sort` (line 53) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
 
 **class `FillMonotonicLine`**
 
-- [~] `clone` (line 59) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 59) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `no_sort` (line 62) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
 
 **class `FillMonotonicLineWGapFill`**
 
 - [~] `is_self_crossing` (line 134) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `clone` (line 139) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 139) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `no_sort` (line 140) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
 - [ ] `global_monotonic_sweep` (line 143) → `fill/fill_rectilinear.rs`
 
 **class `FillRectilinear`**
 
-- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 18) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 
 **class `FillStars`**
 
-- [~] `clone` (line 94) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 94) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 97) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [~] `_layer_angle` (line 101) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
 
 **class `FillSupportBase`**
 
-- [~] `clone` (line 120) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 120) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `_layer_angle` (line 126) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
 
 **class `FillTriangles`**
 
-- [~] `clone` (line 81) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 81) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 84) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [~] `_layer_angle` (line 88) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
 
 **class `FillZigZag`**
 
-- [~] `clone` (line 162) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 162) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [ ] `has_consistent_pattern` (line 165) → `fill/fill_rectilinear.rs`
 
 **class `SegmentIntersection`**
@@ -5130,14 +5130,14 @@ Rust file: `flush_vol_predictor.rs`. Status: **partial**. Not listed: 5 construc
 
 ### `format` (.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `format/format.rs`. Status: **partial**.
 
 **free functions**
 
-- [~] `format_recursive` (line 30) → `format/slic3r_format.rs` — a function of this name is in another Rust file
-- [~] `format_recursive` (line 35) → `format/slic3r_format.rs` — a function of this name is in another Rust file
-- [ ] `format` (line 44)
-- [ ] `format` (line 50)
+- [v] `format_recursive` (line 30) → `format/format.rs:63` — R909: tests/format_native_parity.rs: 4,161 calls of Slic3r::format (format.hpp over Boost.Format and libc++), 3,609 results and 552 exceptions byte-equal
+- [~] `format_recursive` (line 35) → `format/format.rs` — another overload of the name is ported
+- [~] `format` (line 44) → `format/format.rs` — another overload of the name is ported
+- [v] `format` (line 50) → `format/format.rs:78` — R909: tests/format_native_parity.rs: 4,161 calls of Slic3r::format (format.hpp over Boost.Format and libc++), 3,609 results and 552 exceptions byte-equal
 
 ### `Format/3mf` (.cpp+.hpp)
 
@@ -5312,153 +5312,153 @@ Rust file: `format/amf.rs`. Status: **partial**. Not listed: 3 constructors.
 
 ### `Format/AssemblyStepsJson` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `format/assembly_steps_json.rs`. Status: **partial**.
 
 **free functions**
 
-- [ ] `json_get_string` (line 17)
-- [ ] `json_get_int` (line 25)
-- [ ] `json_get_size_t` (line 33)
-- [~] `json_get_bool` (line 44) → `gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [ ] `json_get_assembly_step_kind` (line 56)
-- [~] `json_get_double` (line 72) → `color_decompose_recipe.rs` — a function of this name is in another Rust file
-- [ ] `json_get_vec2d` (line 80)
-- [ ] `color_to_json` (line 89)
-- [ ] `bound_volumes_to_json` (line 94)
-- [ ] `bound_volumes_from_json` (line 103)
-- [ ] `color_from_json` (line 115)
-- [ ] `transform3d_to_json` (line 142)
-- [ ] `transform3d_from_json` (line 152)
-- [ ] `assembly_steps_version_needs_recompute` (line 437)
-- [ ] `assembly_steps_json_last_step_is_final_assembly` (line 829)
-- [ ] `collect_step_objects` (line 863)
-- [ ] `find_step_by_id` (line 888)
-- [ ] `assembly_steps_json_last_step_covers_model` (line 904)
-- [ ] `assembly_steps_json_mark_last_step_final_assembly` (line 993)
-- [ ] `assembly_steps_json_with_qualified_assembly` (line 1030)
-- [ ] `qualified_assembly_result_json` (line 1053)
-- [ ] `assembly_steps_json_file_meta` (line 1061)
-- [ ] `assembly_steps_json_with_version` (line 1084)
-- [ ] `matrix4_to_json` (line 1409)
-- [ ] `json_to_matrix4` (line 1417)
-- [ ] `assembly_model_to_json_string` (line 1431)
-- [ ] `assembly_model_from_json_string` (line 1485)
+- [v] `json_get_string` (line 17) → `format/assembly_steps_json.rs:1133` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `json_get_int` (line 25) → `format/assembly_steps_json.rs:1142` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `json_get_size_t` (line 33) → `format/assembly_steps_json.rs:1151` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `json_get_bool` (line 44) → `format/assembly_steps_json.rs:1164` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `json_get_assembly_step_kind` (line 56) → `format/assembly_steps_json.rs:1178` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `json_get_double` (line 72) → `format/assembly_steps_json.rs:1195` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `json_get_vec2d` (line 80) → `format/assembly_steps_json.rs:1204` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `color_to_json` (line 89) → `format/assembly_steps_json.rs:1213` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `bound_volumes_to_json` (line 94) → `format/assembly_steps_json.rs:1218` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `bound_volumes_from_json` (line 103) → `format/assembly_steps_json.rs:1227` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `color_from_json` (line 115) → `format/assembly_steps_json.rs:1241` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `transform3d_to_json` (line 142) → `format/assembly_steps_json.rs:1274` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `transform3d_from_json` (line 152) → `format/assembly_steps_json.rs:1286` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_steps_version_needs_recompute` (line 437) → `format/assembly_steps_json.rs:1124` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_steps_json_last_step_is_final_assembly` (line 829) → `format/assembly_steps_json.rs:2056` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `collect_step_objects` (line 863) → `format/assembly_steps_json.rs:2100` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `find_step_by_id` (line 888) → `format/assembly_steps_json.rs:2132` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_steps_json_last_step_covers_model` (line 904) → `format/assembly_steps_json.rs:2150` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_steps_json_mark_last_step_final_assembly` (line 993) → `format/assembly_steps_json.rs:2256` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_steps_json_with_qualified_assembly` (line 1030) → `format/assembly_steps_json.rs:2306` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `qualified_assembly_result_json` (line 1053) → `format/assembly_steps_json.rs:2338` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_steps_json_file_meta` (line 1061) → `format/assembly_steps_json.rs:2346` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_steps_json_with_version` (line 1084) → `format/assembly_steps_json.rs:2374` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `matrix4_to_json` (line 1409) → `format/assembly_steps_json.rs:2759` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `json_to_matrix4` (line 1417) → `format/assembly_steps_json.rs:2771` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_model_to_json_string` (line 1431) → `format/assembly_steps_json.rs:2788` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
+- [v] `assembly_model_from_json_string` (line 1485) → `format/assembly_steps_json.rs:2858` — R909: tests/assembly_steps_json_native_parity.rs: 104 documents (load_from_string, load, the getters, to_json_string, final-assembly marking, qualified assembly, file meta, version) and 6 models (covers_model, AssemblyStepsTreeData, assembly_model_to/from_json_string, 5 of 48 throwing) against AssemblyStepsJson.cpp built with the bundled nlohmann 3.10.4; every text equal
 
 **class `ArrowSvgNote`**
 
-- [~] `to_json` (line 185) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 208) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `to_json` (line 185) → `format/assembly_steps_json.rs:1326`
+- [x] `from_json` (line 208) → `format/assembly_steps_json.rs:1350`
 
 **class `ArrowSvgRay`**
 
-- [~] `to_json` (line 170) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 177) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `to_json` (line 170) → `format/assembly_steps_json.rs:1309`
+- [x] `from_json` (line 177) → `format/assembly_steps_json.rs:1316`
 
 **class `AssembleBaseInfo`**
 
-- [~] `to_json` (line 561) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 575) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [ ] `create_from_json` (line 595)
+- [x] `to_json` (line 561) → `format/assembly_steps_json.rs:1746`
+- [x] `from_json` (line 575) → `format/assembly_steps_json.rs:1763`
+- [x] `create_from_json` (line 595) → `format/assembly_steps_json.rs:1778`
 
 **class `AssembleSingleInfo`**
 
-- [~] `get_type` (line 223) → `measure.rs` — a function of this name is in another Rust file
-- [~] `to_json` (line 613) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 622) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `get_type` (line 223) → `format/assembly_steps_json.rs:749`
+- [x] `to_json` (line 613) → `format/assembly_steps_json.rs:1798`
+- [x] `from_json` (line 622) → `format/assembly_steps_json.rs:1809`
 
 **class `AssembleSub`**
 
-- [~] `get_type` (line 254) → `measure.rs` — a function of this name is in another Rust file
-- [~] `to_json` (line 630) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 661) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `get_type` (line 254) → `format/assembly_steps_json.rs:793`
+- [x] `to_json` (line 630) → `format/assembly_steps_json.rs:1819`
+- [x] `from_json` (line 661) → `format/assembly_steps_json.rs:1854`
 
 **class `AssemblyNote`**
 
-- [~] `to_json` (line 333) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 385) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `to_json` (line 333) → `format/assembly_steps_json.rs:1489`
+- [x] `from_json` (line 385) → `format/assembly_steps_json.rs:1541`
 
 **class `AssemblyStepJson`**
 
-- [ ] `set_items` (line 373)
-- [ ] `set_items` (line 374)
-- [ ] `set_pdf_export_params` (line 376)
-- [ ] `get_assembly_part_number_label_font_size` (line 377)
-- [ ] `set_assembly_part_number_label_font_size` (line 378)
-- [ ] `get_camera_ref_viewport_w` (line 380)
-- [ ] `get_camera_ref_viewport_h` (line 381)
-- [ ] `set_camera_ref_viewport` (line 382)
-- [ ] `get_debug_file_path` (line 698)
-- [ ] `load_pdf_export_params` (line 702)
-- [ ] `load_assembly_part_number_label_font_size` (line 713)
-- [ ] `load_camera_ref_viewport` (line 721)
-- [~] `load` (line 729) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — a function of this name is in another Rust file
-- [ ] `load_from_string` (line 759)
-- [ ] `to_json_string` (line 781)
-- [~] `save` (line 808) → `app_config.rs` — a function of this name is in another Rust file
+- [~] `set_items` (line 373) → `format/assembly_steps_json.rs` — another overload of the name is ported
+- [x] `set_items` (line 374) → `format/assembly_steps_json.rs:1063`
+- [x] `set_pdf_export_params` (line 376) → `format/assembly_steps_json.rs:1073`
+- [x] `get_assembly_part_number_label_font_size` (line 377) → `format/assembly_steps_json.rs:1078`
+- [x] `set_assembly_part_number_label_font_size` (line 378) → `format/assembly_steps_json.rs:1083`
+- [x] `get_camera_ref_viewport_w` (line 380) → `format/assembly_steps_json.rs:1088`
+- [x] `get_camera_ref_viewport_h` (line 381) → `format/assembly_steps_json.rs:1093`
+- [x] `set_camera_ref_viewport` (line 382) → `format/assembly_steps_json.rs:1098`
+- [x] `get_debug_file_path` (line 698) → `format/assembly_steps_json.rs:1899`
+- [x] `load_pdf_export_params` (line 702) → `format/assembly_steps_json.rs:1907`
+- [x] `load_assembly_part_number_label_font_size` (line 713) → `format/assembly_steps_json.rs:1920`
+- [x] `load_camera_ref_viewport` (line 721) → `format/assembly_steps_json.rs:1929`
+- [x] `load` (line 729) → `format/assembly_steps_json.rs:1937`
+- [x] `load_from_string` (line 759) → `format/assembly_steps_json.rs:1971`
+- [x] `to_json_string` (line 781) → `format/assembly_steps_json.rs:1998`
+- [x] `save` (line 808) → `format/assembly_steps_json.rs:2026`
 
 **class `AssemblyStepsTreeData`**
 
-- [~] `empty` (line 338) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
-- [~] `clear` (line 339) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — a function of this name is in another Rust file
-- [ ] `to_json_string` (line 1101)
-- [ ] `from_json_string` (line 1155)
+- [x] `empty` (line 338) → `format/assembly_steps_json.rs:1025`
+- [x] `clear` (line 339) → `format/assembly_steps_json.rs:1030`
+- [x] `to_json_string` (line 1101) → `format/assembly_steps_json.rs:2397`
+- [x] `from_json_string` (line 1155) → `format/assembly_steps_json.rs:2463`
 
 **class `CircleNote`**
 
-- [~] `to_json` (line 253) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 261) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `to_json` (line 253) → `format/assembly_steps_json.rs:1399`
+- [x] `from_json` (line 261) → `format/assembly_steps_json.rs:1407`
 
 **class `KeyFrame`**
 
-- [ ] `is_last` (line 170)
-- [ ] `is_start` (line 173)
-- [ ] `is_transition` (line 176)
-- [~] `clone_from` (line 179) → `sla/indexed_mesh.rs, sla/support_tree_builder.rs` — a function of this name is in another Rust file
-- [~] `to_json` (line 454) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 501) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `is_last` (line 170) → `format/assembly_steps_json.rs:686`
+- [x] `is_start` (line 173) → `format/assembly_steps_json.rs:691`
+- [x] `is_transition` (line 176) → `format/assembly_steps_json.rs:696`
+- [x] `clone_from` (line 179) → `format/assembly_steps_json.rs:701`
+- [x] `to_json` (line 454) → `format/assembly_steps_json.rs:1615`
+- [x] `from_json` (line 501) → `format/assembly_steps_json.rs:1668`
 
 **class `KeyFrameEntry`**
 
-- [ ] `is_last` (line 266)
-- [ ] `is_start` (line 267)
-- [ ] `is_transition` (line 268)
-- [~] `clone_from` (line 269) → `sla/indexed_mesh.rs, sla/support_tree_builder.rs` — a function of this name is in another Rust file
+- [x] `is_last` (line 266) → `format/assembly_steps_json.rs:871`
+- [x] `is_start` (line 267) → `format/assembly_steps_json.rs:876`
+- [x] `is_transition` (line 268) → `format/assembly_steps_json.rs:881`
+- [x] `clone_from` (line 269) → `format/assembly_steps_json.rs:886`
 
 **class `PartNumberLabel`**
 
-- [~] `to_json` (line 304) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 316) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `to_json` (line 304) → `format/assembly_steps_json.rs:1456`
+- [x] `from_json` (line 316) → `format/assembly_steps_json.rs:1468`
 
 **class `PlainArrowNote`**
 
-- [~] `to_json` (line 287) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 295) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `to_json` (line 287) → `format/assembly_steps_json.rs:1437`
+- [x] `from_json` (line 295) → `format/assembly_steps_json.rs:1445`
 
 **class `RectangleNote`**
 
-- [~] `to_json` (line 270) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 278) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `to_json` (line 270) → `format/assembly_steps_json.rs:1418`
+- [x] `from_json` (line 278) → `format/assembly_steps_json.rs:1426`
 
 **class `TextLabelNote`**
 
-- [~] `to_json` (line 232) → `debug/validation.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
-- [~] `from_json` (line 242) → `custom_g_code.rs, gcode/thumbnail_data.rs` — a function of this name is in another Rust file
+- [x] `to_json` (line 232) → `format/assembly_steps_json.rs:1376`
+- [x] `from_json` (line 242) → `format/assembly_steps_json.rs:1386`
 
 ### `Format/AssemblyTreeJson` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `format/assembly_tree_json.rs`. Status: **ported**.
 
 **free functions**
 
-- [ ] `node_to_json` (line 11)
-- [ ] `node_from_json` (line 25)
+- [v] `node_to_json` (line 11) → `format/assembly_tree_json.rs:164` — R909: tests/assembly_tree_json_native_parity.rs: 40 trees written and 194 documents read (102 accepted) against AssemblyTreeJson.cpp built with the bundled nlohmann 3.10.4; texts and type_error texts equal
+- [v] `node_from_json` (line 25) → `format/assembly_tree_json.rs:178` — R909: tests/assembly_tree_json_native_parity.rs: 40 trees written and 194 documents read (102 accepted) against AssemblyTreeJson.cpp built with the bundled nlohmann 3.10.4; texts and type_error texts equal
 
 **class `AssemblyTreeData`**
 
-- [~] `empty` (line 27) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
-- [~] `clear` (line 28) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — a function of this name is in another Rust file
-- [ ] `to_json_string` (line 39)
-- [ ] `from_json_string` (line 51)
+- [x] `empty` (line 27) → `format/assembly_tree_json.rs:142`
+- [x] `clear` (line 28) → `format/assembly_tree_json.rs:147`
+- [x] `to_json_string` (line 39) → `format/assembly_tree_json.rs:193`
+- [x] `from_json_string` (line 51) → `format/assembly_tree_json.rs:207`
 
 ### `Format/AssimpImport` (.cpp+.hpp)
 
@@ -5678,7 +5678,7 @@ Rust file: `format/bbs_3mf.rs`. Status: **partial**. Not listed: 16 constructors
 **class `_BBS_3MF_Importer::Geometry`**
 
 - [~] `empty` (line 1111) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `swap` (line 1114) → `boost_polygon_voronoi.rs, clonable_ptr.rs, extrusion_entity_collection.rs` — not in the paired file
+- [~] `swap` (line 1114) → `boost_polygon_voronoi.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `reset` (line 1125) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 
 **class `_BBS_3MF_Importer::ObjectImporter`**
@@ -6496,7 +6496,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `GCodeProcessor::OptionsZCorrector`**
 
-- [~] `set` (line 1077) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 1077) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `update` (line 1082) → `fill/lightning/distance_field.rs, gcode/pressure_equalizer.rs, mutable_priority_queue.rs` — not in the paired file
 - [~] `reset` (line 1096) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 
@@ -7343,7 +7343,7 @@ Rust file: `g_code_reader.rs`. Status: **partial**. Not listed: 2 constructors.
 - [x] `p` (line 74) → `g_code_reader.rs:535`
 - [~] `cmd_is` (line 76) → `g_code_reader.rs` — another overload of the name is ported
 - [x] `cmd_start_with` (line 82) → `g_code_reader.rs:565`
-- [~] `has` (line 225) → `app_config.rs, enum_bitmask.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `has` (line 225) → `app_config.rs, config.rs, enum_bitmask.rs` — not in the paired file
 - [x] `has_value` (line 247) → `g_code_reader.rs:247`
 - [x] `set` (line 278) → `g_code_reader.rs:407`
 
@@ -7550,7 +7550,7 @@ Rust file: `geometry/geometry.rs`. Status: **partial**. Not listed: 7 constructo
 - [x] `set_matrix` (line 463) → `geometry/geometry.rs:1284`
 - [x] `set_from_transform` (line 464) → `geometry/geometry.rs:1289`
 - [x] `set_rotation` (line 468) → `geometry/geometry.rs:989`
-- [~] `serialize` (line 472) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 472) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [ ] `load_and_construct` (line 474) → `geometry/geometry.rs`
 - [x] `get_scaling_factor_matrix` (line 482) → `geometry/geometry.rs:1012`
 - [x] `set_scaling_factor` (line 491) → `geometry/geometry.rs:1032`
@@ -7776,8 +7776,8 @@ Rust file: `geometry/voronoi.rs`. Status: **partial**. Not listed: 1 constructor
 - [~] `get_state` (line 65) → `geometry/voronoi_diagram.rs, triangle_selector.rs` — not in the paired file
 - [~] `is_valid` (line 67) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `clear` (line 71) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `num_vertices` (line 77) → `boost_polygon_voronoi.rs, geometry/voronoi_utils.rs` — not in the paired file
-- [~] `num_edges` (line 79) → `boost_polygon_voronoi.rs, geometry/voronoi_utils.rs` — not in the paired file
+- [~] `num_vertices` (line 77) → `boost_polygon_voronoi.rs, geometry/voronoi_utils.rs, texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `num_edges` (line 79) → `boost_polygon_voronoi.rs, geometry/voronoi_utils.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 - [~] `num_cells` (line 81) → `arachne/utils/sparse_grid.rs, boost_polygon_voronoi.rs, geometry/voronoi_utils.rs` — not in the paired file
 - [~] `copy_to_local` (line 86) → `geometry/voronoi_diagram.rs` — not in the paired file
 - [~] `construct_voronoi` (line 92) → `boost_polygon_voronoi.rs, geometry/voronoi_diagram.rs` — not in the paired file
@@ -8178,8 +8178,8 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 **free functions**
 
 - [x] `unscale` (line 112) → `libslic3r.rs:52`
-- [~] `append` (line 131) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 140) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 131) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 140) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [ ] `clear_and_shrink` (line 153) → `libslic3r.rs`
 - [ ] `append_reversed` (line 163) → `libslic3r.rs`
 - [ ] `append_reversed` (line 173) → `libslic3r.rs`
@@ -8253,7 +8253,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `distance_to` (line 169) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 170) → `geometry/line.rs` — another overload of the name is ported
 - [x] `atan2_` (line 176) → `geometry/line.rs:59`
-- [~] `vector` (line 179) → `geometry/line.rs` — another overload of the name is ported
+- [~] `vector` (line 179) → `texture_to_color/cgal_utils.rs` — not in the paired file
 - [x] `normal` (line 180) → `geometry/line.rs:136` — read against the C++ in R872 (the estimate says divergent)
 - [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs` — not in the paired file
 - [~] `distance_to` (line 188) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
@@ -8263,7 +8263,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 **class `Line3`**
 
 - [~] `length` (line 218) → `clipper2/clipper_h.rs, extrusion_entity.rs, fill/fill_floating_concentric.rs` — not in the paired file
-- [~] `vector` (line 219) → `geometry/line.rs` — another overload of the name is ported
+- [~] `vector` (line 219) → `texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `Line3float`**
 
@@ -8275,7 +8275,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 
 - [ ] `intersect_plane` (line 128) → `geometry/line.rs`
 - [x] `scale` (line 249) → `geometry/line.rs:378`
-- [~] `vector` (line 250) → `geometry/line.rs` — another overload of the name is ported
+- [~] `vector` (line 250) → `texture_to_color/cgal_utils.rs` — not in the paired file
 - [ ] `unit_vector` (line 251) → `geometry/line.rs`
 - [x] `length` (line 252) → `geometry/line.rs:109`
 - [x] `reverse` (line 253) → `geometry/line.rs:610`
@@ -8451,7 +8451,7 @@ Rust file: `measure.rs`. Status: **partial**. Not listed: 7 constructors, 1 dest
 
 **class `SurfaceFeature`**
 
-- [~] `clone` (line 49) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 49) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `get_type` (line 60) → `measure.rs:578`
 - [x] `get_point` (line 63) → `measure.rs:583`
 - [x] `get_edge` (line 65) → `measure.rs:589`
@@ -8532,7 +8532,7 @@ Rust file: `mesh_boolean.rs`. Status: **partial**. Not listed: 1 constructors, 2
 - [ ] `does_self_intersect` (line 460) → `mesh_boolean.rs`
 - [ ] `does_bound_a_volume` (line 469) → `mesh_boolean.rs`
 - [~] `empty` (line 474) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `clone` (line 479) → `aabb_mesh.rs, clonable_ptr.rs, marching_squares.rs` — not in the paired file
+- [~] `clone` (line 479) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_enabled` (line 488) → `gcode/ironing.rs, print_config.rs` — not in the paired file
 - [ ] `make_boolean` (line 498) → `mesh_boolean.rs`
 - [x] `empty` (line 528) → `mesh_boolean.rs:73`
@@ -8700,20 +8700,20 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 **class `CutConnector`**
 
-- [~] `serialize` (line 325) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 325) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `CutConnectorAttributes`**
 
-- [~] `serialize` (line 300) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 300) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `FacetsAnnotation`**
 
-- [~] `assign` (line 784) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
-- [~] `assign` (line 785) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
+- [~] `assign` (line 784) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
+- [~] `assign` (line 785) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
 - [~] `empty` (line 800) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `reserve` (line 810) → `boost_polygon_voronoi.rs, fill/fill_plane_path.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `shrink_to_fit` (line 814) → `model.rs`
-- [~] `serialize` (line 836) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 836) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [~] `get_facets` (line 4599) → `triangle_selector.rs` — not in the paired file
 - [~] `get_facets` (line 4608) → `triangle_selector.rs` — not in the paired file
 - [~] `shift_states_above` (line 4615) → `triangle_selector.rs` — not in the paired file
@@ -8721,27 +8721,27 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `set_enforcer_block_type_limit` (line 4634) → `model.rs`
 - [~] `get_facets_strict` (line 4644) → `triangle_selector.rs` — not in the paired file
 - [~] `has_facets` (line 4652) → `triangle_selector.rs` — not in the paired file
-- [~] `set` (line 4657) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 4657) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [x] `reset` (line 4668) → `model.rs:684`
 - [~] `get_triangle_as_string` (line 4678) → `model.rs:693` — partial
 - [~] `set_triangle_from_string` (line 4704) → `model.rs:730` — partial
-- [~] `equals` (line 4736) → `support/tree_support.rs` — not in the paired file
+- [~] `equals` (line 4736) → `config.rs, support/tree_support.rs` — not in the paired file
 
 **class `GlobalFeatureFilaments`**
 
-- [ ] `from_config` (line 3399) → `model.rs`
+- [~] `from_config` (line 3399) → `config.rs` — not in the paired file
 - [ ] `from_full_config` (line 3409) → `model.rs`
 
 **class `LayerHeightProfile`**
 
-- [~] `assign` (line 208) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
-- [~] `assign` (line 209) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
+- [~] `assign` (line 208) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
+- [~] `assign` (line 209) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
 - [~] `get` (line 211) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
 - [~] `empty` (line 212) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `set` (line 213) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 214) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 213) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 214) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `clear` (line 215) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `serialize` (line 217) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 217) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `Model`**
 
@@ -8752,14 +8752,14 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `read_from_file` (line 306) → `g_code.rs` — not in the paired file
 - [ ] `read_from_archive` (line 494) → `model.rs`
 - [x] `add_object` (line 581) → `model.rs:388`
-- [~] `add_object` (line 587) → `print.rs` — not in the paired file
-- [~] `add_object` (line 605) → `print.rs` — not in the paired file
-- [~] `add_object` (line 623) → `print.rs` — not in the paired file
+- [~] `add_object` (line 587) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
+- [~] `add_object` (line 605) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
+- [~] `add_object` (line 623) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
 - [ ] `set_assembly_pos` (line 646) → `model.rs`
 - [ ] `delete_object` (line 674) → `model.rs`
 - [ ] `delete_object` (line 683) → `model.rs`
 - [ ] `delete_object` (line 701) → `model.rs`
-- [ ] `clear_objects` (line 719) → `model.rs`
+- [~] `clear_objects` (line 719) → `format/assembly_steps_json.rs` — not in the paired file
 - [ ] `collect_reusable_objects` (line 735) → `model.rs`
 - [ ] `set_object_backup_id` (line 751) → `model.rs`
 - [ ] `get_object_backup_id` (line 757) → `model.rs`
@@ -8808,8 +8808,8 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `translate` (line 1886) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [ ] `print_info` (line 1903) → `model.rs`
 - [ ] `is_need_backup` (line 1917) → `model.rs`
-- [~] `load` (line 1940) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `save` (line 1944) → `app_config.rs` — not in the paired file
+- [~] `load` (line 1940) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 1944) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [ ] `setPrintSpeedTable` (line 4091) → `model.rs`
 - [ ] `setExtruderParams` (line 4151) → `model.rs`
 - [ ] `obj_import_color_deal` (line 4191) → `model.rs`
@@ -8823,11 +8823,11 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 - [~] `timestamp` (line 93) → `object_id.rs` — not in the paired file
 - [~] `object_id_and_timestamp_match` (line 94) → `object_id.rs` — not in the paired file
-- [~] `serialize` (line 100) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 100) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ModelInfo`**
 
-- [~] `load` (line 1688) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `load` (line 1688) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 
 **class `ModelInstance`**
 
@@ -8835,7 +8835,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [x] `get_object` (line 1482) → `model.rs:402`
 - [ ] `set_assemble_rotation` (line 1493) → `model.rs`
 - [ ] `rotate_assemble` (line 1494) → `model.rs`
-- [ ] `set_offset_to_assembly` (line 1499) → `model.rs`
+- [~] `set_offset_to_assembly` (line 1499) → `format/assembly_steps_json.rs` — not in the paired file
 - [~] `get_offset` (line 1503) → `geometry/geometry.rs` — not in the paired file
 - [~] `set_offset` (line 1505) → `geometry/geometry.rs` — not in the paired file
 - [~] `set_offset` (line 1506) → `geometry/geometry.rs` — not in the paired file
@@ -8849,10 +8849,10 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `is_printable` (line 1545) → `model.rs`
 - [ ] `is_assemble_initialized` (line 1546) → `model.rs`
 - [ ] `set_model_object` (line 1569) → `model.rs`
-- [~] `serialize` (line 1597) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1597) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [ ] `set_transformation` (line 3972) → `model.rs`
 - [ ] `set_assemble_transformation` (line 3988) → `model.rs`
-- [ ] `set_assemble_from_transform` (line 3994) → `model.rs`
+- [~] `set_assemble_from_transform` (line 3994) → `format/assembly_steps_json.rs` — not in the paired file
 - [ ] `set_assemble_offset` (line 4000) → `model.rs`
 - [~] `set_scaling_factor` (line 4006) → `geometry/geometry.rs` — not in the paired file
 - [~] `set_scaling_factor` (line 4012) → `geometry/geometry.rs` — not in the paired file
@@ -8874,10 +8874,10 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 **class `ModelMaterial`**
 
 - [ ] `get_model` (line 170) → `model.rs`
-- [~] `apply` (line 171) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
+- [~] `apply` (line 171) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
 - [ ] `set_model` (line 184) → `model.rs`
 - [~] `set_new_unique_id` (line 185) → `object_id.rs` — not in the paired file
-- [~] `serialize` (line 192) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 192) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ModelObject`**
 
@@ -8894,15 +8894,15 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `is_cut` (line 499) → `model.rs`
 - [~] `set_new_unique_id` (line 650) → `object_id.rs` — not in the paired file
 - [ ] `set_model` (line 673) → `model.rs`
-- [~] `save` (line 686) → `app_config.rs` — not in the paired file
-- [~] `load` (line 695) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `save` (line 686) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `load` (line 695) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `assign_new_unique_ids_recursive` (line 1407) → `object_id.rs` — not in the paired file
 - [ ] `get_backup_id` (line 1426) → `model.rs`
 - [ ] `make_boolean` (line 1429) → `model.rs`
-- [ ] `add_volume` (line 1450) → `model.rs`
-- [ ] `add_volume` (line 1463) → `model.rs`
-- [ ] `add_volume` (line 1476) → `model.rs`
-- [ ] `add_volume` (line 1493) → `model.rs`
+- [~] `add_volume` (line 1450) → `format/assembly_steps_json.rs` — not in the paired file
+- [~] `add_volume` (line 1463) → `format/assembly_steps_json.rs` — not in the paired file
+- [~] `add_volume` (line 1476) → `format/assembly_steps_json.rs` — not in the paired file
+- [~] `add_volume` (line 1493) → `format/assembly_steps_json.rs` — not in the paired file
 - [ ] `add_volume_with_shared_mesh` (line 1504) → `model.rs`
 - [ ] `delete_volume` (line 1518) → `model.rs`
 - [ ] `clear_volumes` (line 1557) → `model.rs`
@@ -8911,9 +8911,9 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `is_mm_painted` (line 1577) → `model.rs`
 - [ ] `is_fuzzy_skin_painted` (line 1582) → `model.rs`
 - [ ] `sort_volumes` (line 1587) → `model.rs`
-- [~] `add_instance` (line 1603) → `model.rs` — another overload of the name is ported
+- [~] `add_instance` (line 1603) → `format/assembly_steps_json.rs` — not in the paired file
 - [~] `add_instance` (line 1614) → `model.rs:517` — partial
-- [~] `add_instance` (line 1622) → `model.rs` — another overload of the name is ported
+- [~] `add_instance` (line 1622) → `format/assembly_steps_json.rs` — not in the paired file
 - [ ] `delete_instance` (line 1632) → `model.rs`
 - [ ] `delete_last_instance` (line 1640) → `model.rs`
 - [ ] `clear_instances` (line 1645) → `model.rs`
@@ -8938,7 +8938,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `scale_mesh_after_creation` (line 1973) → `model.rs`
 - [ ] `convert_units` (line 1982) → `model.rs`
 - [ ] `materials_count` (line 2049) → `model.rs`
-- [ ] `facets_count` (line 2057) → `model.rs`
+- [~] `facets_count` (line 2057) → `texture_to_color/tri_mesh.rs` — not in the paired file
 - [ ] `parts_count` (line 2066) → `model.rs`
 - [ ] `has_connectors` (line 2075) → `model.rs`
 - [ ] `get_connector_mesh` (line 2084) → `model.rs`
@@ -8987,7 +8987,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `get_object` (line 1025) → `model.rs` — another overload of the name is ported
 - [~] `type` (line 1026) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
 - [~] `set_type` (line 1027) → `surface.rs, surface_collection.rs` — not in the paired file
-- [ ] `is_model_part` (line 1028) → `model.rs`
+- [~] `is_model_part` (line 1028) → `format/assembly_steps_json.rs` — not in the paired file
 - [ ] `is_negative_volume` (line 1029) → `model.rs`
 - [ ] `is_modifier` (line 1030) → `model.rs`
 - [ ] `is_support_enforcer` (line 1031) → `model.rs`
@@ -9024,13 +9024,13 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `is_mm_painted` (line 1179) → `model.rs`
 - [ ] `set_origin_mesh_render_type` (line 1181) → `model.rs`
 - [ ] `get_origin_mesh_or_vertice_render` (line 1184) → `model.rs`
-- [ ] `set_part_guid` (line 1188) → `model.rs`
-- [ ] `set_assembly_src_guid` (line 1193) → `model.rs`
+- [~] `set_part_guid` (line 1188) → `format/assembly_steps_json.rs` — not in the paired file
+- [~] `set_assembly_src_guid` (line 1193) → `format/assembly_steps_json.rs` — not in the paired file
 - [ ] `printable` (line 1197) → `model.rs`
 - [x] `set_printable` (line 1198) → `model.rs:539`
 - [ ] `set_model_object` (line 1208) → `model.rs`
-- [~] `load` (line 1388) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `save` (line 1420) → `app_config.rs` — not in the paired file
+- [~] `load` (line 1388) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 1420) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [ ] `is_the_only_one_part` (line 2223) → `model.rs`
 - [ ] `set_material_id` (line 3252) → `model.rs`
 - [ ] `reset_extra_facets` (line 3260) → `model.rs`
@@ -9039,7 +9039,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `set_mesh_keep_paint` (line 3312) → `model.rs`
 - [ ] `material` (line 3325) → `model.rs`
 - [ ] `set_material` (line 3330) → `model.rs`
-- [~] `extruder_id` (line 3338) → `extruder.rs` — not in the paired file
+- [~] `extruder_id` (line 3338) → `extruder.rs, format/assembly_steps_json.rs` — not in the paired file
 - [ ] `is_splittable` (line 3351) → `model.rs`
 - [ ] `apply_tolerance` (line 3360) → `model.rs`
 - [ ] `get_extruders` (line 3416) → `model.rs`
@@ -9051,7 +9051,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `set_transformation` (line 3618) → `model.rs`
 - [ ] `set_transformation` (line 3622) → `model.rs`
 - [ ] `set_assemble_transformation` (line 3634) → `model.rs`
-- [ ] `set_assemble_from_transform` (line 3640) → `model.rs`
+- [~] `set_assemble_from_transform` (line 3640) → `format/assembly_steps_json.rs` — not in the paired file
 - [ ] `set_assemble_offset` (line 3646) → `model.rs`
 - [ ] `get_repaired_errors_count` (line 3652) → `model.rs`
 - [x] `type_from_string` (line 3666) → `model.rs:192`
@@ -9076,28 +9076,28 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [ ] `set_processed` (line 974) → `model.rs`
 - [~] `invalidate` (line 975) → `mt_utils.rs, object_id.rs, print_base.rs` — not in the paired file
 - [ ] `reset_from_upper` (line 976) → `model.rs`
-- [~] `serialize` (line 977) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 977) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ModelVolume::Source`**
 
-- [~] `serialize` (line 940) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 940) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ModelWipeTower`**
 
-- [~] `serialize` (line 1630) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 1630) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `RaycastResult`**
 
-- [~] `serialize` (line 867) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 867) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `StaticSerializationWrapper`**
 
-- [~] `load` (line 114) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `save` (line 115) → `app_config.rs` — not in the paired file
+- [~] `load` (line 114) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 115) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 
 **class `TextInfo`**
 
-- [~] `serialize` (line 894) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 894) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 ### `ModelArrange` (.cpp+.hpp)
 
@@ -9353,11 +9353,11 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `closest_point` (line 68) → `edge_grid.rs, geometry/aabb_tree.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `distance_to` (line 71) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `clear` (line 81) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `append` (line 82) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 82) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `has_boundary_point` (line 83) → `multi_point.rs:224`
-- [~] `append` (line 83) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 84) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 85) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 83) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 84) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 85) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `bounding_box` (line 89) → `multi_point.rs:236`
 - [x] `has_duplicate_points` (line 94) → `multi_point.rs:246`
 - [~] `remove_duplicate_points` (line 102) → `geometry/simplify.rs` — not in the paired file
@@ -9365,7 +9365,7 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `begin` (line 104) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 105) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `end` (line 106) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `cbegin` (line 107) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 107) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 108) → `mutable_polygon.rs` — not in the paired file
 - [x] `remove_colinear_points` (line 121) → `multi_point.rs:287`
 - [~] `intersection` (line 136) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
@@ -9378,7 +9378,7 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **class `MultiPoint3`**
 
-- [~] `append` (line 116) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 116) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [~] `is_valid` (line 122) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `translate` (line 388) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `translate` (line 396) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
@@ -9404,7 +9404,7 @@ Rust file: `mutable_polygon.rs`. Status: **partial**. Not listed: 7 constructors
 
 **class `MutablePolygon`**
 
-- [~] `assign` (line 138) → `extrusion_entity_collection.rs, nozzle_inventory.rs, object_id.rs` — not in the paired file
+- [~] `assign` (line 138) → `config.rs, extrusion_entity_collection.rs, nozzle_inventory.rs` — not in the paired file
 - [x] `assign` (line 145) → `mutable_polygon.rs:210`
 - [~] `polygon` (line 149) → `bounding_box.rs, build_volume.rs, clipper2/clipper_engine.rs` — not in the paired file
 - [x] `polygon` (line 160) → `mutable_polygon.rs:231`
@@ -9469,7 +9469,7 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `begin` (line 36) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 37) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `cbegin` (line 38) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 38) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 39) → `mutable_polygon.rs` — not in the paired file
 - [~] `clear` (line 59) → `mutable_priority_queue.rs:111` — divergent
 - [~] `push` (line 74) → `boost_polygon_voronoi.rs, channel.rs, geometry/polygon.rs` — not in the paired file
@@ -9624,11 +9624,11 @@ Rust file: `obj_color_utils.rs`. Status: **partial**. Not listed: 1 constructors
 
 **class `QuantKMeans`**
 
-- [~] `apply` (line 36) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
+- [~] `apply` (line 36) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
 - [ ] `apply_aplha` (line 45) → `obj_color_utils.rs`
-- [~] `apply` (line 57) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
-- [~] `apply` (line 68) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
-- [~] `apply` (line 80) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
+- [~] `apply` (line 57) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
+- [~] `apply` (line 68) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
+- [~] `apply` (line 80) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
 - [ ] `apply_color_cluster_kmeans` (line 127) → `obj_color_utils.rs`
 - [ ] `apply_color_cluster_image` (line 136) → `obj_color_utils.rs`
 - [ ] `sort_center_and_relabel` (line 155) → `obj_color_utils.rs`
@@ -9665,7 +9665,7 @@ Rust file: `object_id.rs`. Status: **partial**. Not listed: 9 constructors, 8 op
 - [x] `increase_check_sum` (line 184) → `object_id.rs:405`
 - [x] `connectors_cnt` (line 186) → `object_id.rs:410`
 - [x] `increase_connectors_cnt` (line 187) → `object_id.rs:415`
-- [~] `serialize` (line 191) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 191) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ObjectBase`**
 
@@ -9676,14 +9676,14 @@ Rust file: `object_id.rs`. Status: **partial**. Not listed: 9 constructors, 8 op
 - [x] `copy_id` (line 81) → `object_id.rs:145`
 - [x] `assign_new_unique_ids_recursive` (line 84) → `object_id.rs:152`
 - [x] `generate_new_id` (line 89) → `object_id.rs:66`
-- [~] `serialize` (line 97) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 97) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [ ] `load_and_construct` (line 98) → `object_id.rs`
 
 **class `ObjectID`**
 
 - [x] `valid` (line 36) → `object_id.rs:47`
 - [x] `invalid` (line 37) → `object_id.rs:52`
-- [~] `serialize` (line 43) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 43) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 **class `ObjectWithTimestamp`**
 
@@ -9692,7 +9692,7 @@ Rust file: `object_id.rs`. Status: **partial**. Not listed: 9 constructors, 8 op
 - [x] `timestamp_matches` (line 122) → `object_id.rs:252`
 - [x] `object_id_and_timestamp_match` (line 123) → `object_id.rs:257`
 - [x] `touch` (line 124) → `object_id.rs:262`
-- [~] `serialize` (line 135) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 135) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 ### `OpenVDBUtils` (.cpp+.hpp)
 
@@ -9825,7 +9825,7 @@ Rust file: `orient.rs`. Status: **partial**. Not listed: 3 constructors, 1 opera
 
 **class `OrientMesh`**
 
-- [~] `apply` (line 47) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
+- [~] `apply` (line 47) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
 
 ### `OverhangDetector` (.cpp+.hpp)
 
@@ -9924,7 +9924,7 @@ Rust file: none. Status: **not started**.
 
 **class `RegionEdgeLimit`**
 
-- [~] `value` (line 1161) → `g_code_reader.rs, int128.rs, sla/agg/gamma_functions.rs` — a function of this name is in another Rust file
+- [~] `value` (line 1161) → `format/assembly_tree_json.rs, g_code_reader.rs, int128.rs` — a function of this name is in another Rust file
 - [~] `trafo` (line 1162) → `sla/agg_raster.rs` — a function of this name is in another Rust file
 
 ### `ParameterUtils` (.cpp+.hpp)
@@ -9945,11 +9945,11 @@ No named function with a body.
 
 ### `PerfTrace` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `perf_trace.rs`. Status: **verified**. Not listed: 1 constructors, 1 destructors.
 
 **free functions**
 
-- [ ] `perf_mark` (line 6)
+- [v] `perf_mark` (line 6) → `perf_trace.rs:15` — R909: tests/perf_trace_native_parity.rs: 11 steps through PerfTrace.cpp built with a recording Log.hpp, 21 records of equal level and message
 
 ### `PerimeterGenerator` (.cpp+.hpp)
 
@@ -10009,7 +10009,7 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 
 - [~] `get_extruder_id` (line 739) → `gcode/g_code_processor.rs, multi_nozzle_utils.rs` — not in the paired file
 - [ ] `evaluate_full_macro` (line 747) → `placeholder_parser.rs`
-- [ ] `optptr` (line 749) → `placeholder_parser.rs`
+- [~] `optptr` (line 749) → `config.rs` — not in the paired file
 - [ ] `resolve_symbol` (line 761) → `placeholder_parser.rs`
 - [ ] `legacy_variable_expansion` (line 764) → `placeholder_parser.rs`
 - [ ] `legacy_variable_expansion2` (line 800) → `placeholder_parser.rs`
@@ -10025,20 +10025,20 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 **class `PlaceholderParser`**
 
 - [ ] `clear_config` (line 27) → `placeholder_parser.rs`
-- [~] `set` (line 40) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 41) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 42) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 43) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 44) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 45) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 46) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [ ] `option` (line 49) → `placeholder_parser.rs`
+- [~] `set` (line 40) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 41) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 42) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 43) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 44) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 45) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 46) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `option` (line 49) → `config.rs` — not in the paired file
 - [ ] `external_config` (line 51) → `placeholder_parser.rs`
 - [ ] `update_timestamp` (line 64) → `placeholder_parser.rs`
 - [ ] `update_timestamp` (line 80) → `placeholder_parser.rs`
 - [ ] `config_diff` (line 113) → `placeholder_parser.rs`
 - [~] `apply_config` (line 128) → `g_code_reader.rs, gcode/g_code_processor.rs` — not in the paired file
-- [ ] `apply_only` (line 140) → `placeholder_parser.rs`
+- [~] `apply_only` (line 140) → `config.rs` — not in the paired file
 - [~] `apply_config` (line 146) → `g_code_reader.rs, gcode/g_code_processor.rs` — not in the paired file
 - [ ] `apply_env_variables` (line 151) → `placeholder_parser.rs`
 - [~] `process` (line 1541) → `gcode/gcode_template.rs, gcode/pressure_equalizer.rs, print.rs` — not in the paired file
@@ -10094,7 +10094,7 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 
 **class `expr::Data`**
 
-- [~] `set` (line 302) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 302) → `app_config.rs, color.rs, config.rs` — not in the paired file
 
 **class `strict_real_policies_without_nan_inf`**
 
@@ -10103,8 +10103,8 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 
 **class `utf8_char_skipper_parser`**
 
-- [~] `parse` (line 1129) → `debug/compare.rs, gcode/gcode_template.rs, gcode/placeholder_parser.rs` — not in the paired file
-- [~] `what` (line 1173) → `clipper2/clipper_core.rs, filament_group_utils.rs, print_base.rs` — not in the paired file
+- [~] `parse` (line 1129) → `debug/compare.rs, format/assembly_steps_json.rs, format/format.rs` — not in the paired file
+- [~] `what` (line 1173) → `clipper2/clipper_core.rs, config.rs, filament_group_utils.rs` — not in the paired file
 
 ### `Platform` (.cpp+.hpp)
 
@@ -10217,18 +10217,18 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `align_to_grid` (line 591) → `bounding_box.rs` — not in the paired file
 - [~] `align_to_grid` (line 593) → `bounding_box.rs` — not in the paired file
 - [~] `align_to_grid` (line 595) → `bounding_box.rs` — not in the paired file
-- [~] `apply` (line 603) → `format/sl1.rs, geometry/transform.rs, model_arrange.rs` — not in the paired file
+- [~] `apply` (line 603) → `config.rs, format/sl1.rs, geometry/transform.rs` — not in the paired file
 - [x] `apply` (line 608) → `geometry/point.rs:1638`
-- [~] `serialize` (line 683) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 684) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 687) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 688) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 689) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `serialize` (line 690) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `load` (line 692) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `save` (line 693) → `app_config.rs` — not in the paired file
-- [~] `load` (line 695) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `save` (line 696) → `app_config.rs` — not in the paired file
+- [~] `serialize` (line 683) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 684) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 687) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 688) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 689) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `serialize` (line 690) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `load` (line 692) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 693) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `load` (line 695) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 696) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `begin` (line 702) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 705) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `begin` (line 708) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
@@ -10270,7 +10270,7 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 
 **class `point_mutable_traits<Slic3r::Point>`**
 
-- [~] `set` (line 669) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 669) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `construct` (line 672) → `boost_polygon_voronoi.rs, fill/fill_adaptive.rs, geometry/bounding_box.rs` — not in the paired file
 
 **class `point_traits<Slic3r::Point>`**
@@ -10366,7 +10366,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 
 **class `polygon_set_mutable_traits<Slic3r::Polygons>`**
 
-- [~] `set` (line 386) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 386) → `app_config.rs, color.rs, config.rs` — not in the paired file
 
 **class `polygon_set_traits<Slic3r::Polygons>`**
 
@@ -10423,12 +10423,12 @@ Rust file: `geometry/polyline.rs`. Status: **partial**. Not listed: 8 constructo
 - [x] `reverse` (line 34) → `geometry/polyline.rs:255`
 - [x] `new_scale` (line 49) → `geometry/polyline.rs:76`
 - [x] `clip_end` (line 52) → `geometry/polyline.rs:289`
-- [~] `append` (line 59) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 59) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `append_before` (line 67) → `geometry/polyline.rs:845`
-- [~] `append` (line 82) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 89) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 82) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 89) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `clip_start` (line 95) → `geometry/polyline.rs:370`
-- [~] `append` (line 97) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 97) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [~] `extend_end` (line 103) → `geometry/polyline.rs:382` — partial
 - [x] `extend_start` (line 111) → `geometry/polyline.rs:404`
 - [x] `clear` (line 114) → `geometry/polyline.rs:156`
@@ -10443,7 +10443,7 @@ Rust file: `geometry/polyline.rs`. Status: **partial**. Not listed: 8 constructo
 - [x] `split_at_length` (line 300) → `geometry/polyline.rs:678`
 - [x] `is_straight` (line 346) → `geometry/polyline.rs:750`
 - [x] `append` (line 358) → `geometry/polyline.rs:767`
-- [~] `append` (line 381) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 381) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `append_fitting_result_after_append_points` (line 406) → `geometry/polyline.rs:892`
 - [x] `append_fitting_result_after_append_polyline` (line 419) → `geometry/polyline.rs:915`
 - [x] `reset_to_linear_move` (line 441) → `geometry/polyline.rs:948`
@@ -10484,7 +10484,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 
 **class `PhysicalPrinter`**
 
-- [~] `save` (line 935) → `app_config.rs` — not in the paired file
+- [~] `save` (line 935) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [ ] `printer_technology` (line 948) → `preset.rs`
 - [ ] `printer_technology` (line 954) → `preset.rs`
 
@@ -10492,7 +10492,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 
 - [~] `begin` (line 985) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `begin` (line 986) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cbegin` (line 987) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 987) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 988) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `end` (line 989) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cend` (line 990) → `mutable_polygon.rs` — not in the paired file
@@ -10525,7 +10525,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [ ] `load_info` (line 570) → `preset.rs`
 - [ ] `save_info` (line 613) → `preset.rs`
 - [ ] `remove_files` (line 648) → `preset.rs`
-- [~] `save` (line 662) → `app_config.rs` — not in the paired file
+- [~] `save` (line 662) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [ ] `reload` (line 739) → `preset.rs`
 - [x] `label` (line 757) → `preset.rs:465`
 - [ ] `display_name` (line 763) → `preset.rs`
@@ -10545,11 +10545,11 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [ ] `lbegin` (line 467) → `preset.rs`
 - [~] `begin` (line 471) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `begin` (line 472) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cbegin` (line 473) → `mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 473) → `config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 474) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `end` (line 475) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cend` (line 476) → `mutable_polygon.rs` — not in the paired file
-- [~] `erase` (line 479) → `app_config.rs, boost_polygon_voronoi.rs, geometry/point.rs` — not in the paired file
+- [~] `erase` (line 479) → `app_config.rs, boost_polygon_voronoi.rs, config.rs` — not in the paired file
 - [ ] `set_sync_func` (line 481) → `preset.rs`
 - [~] `lock` (line 483) → `execution/execution_seq.rs, log.rs, mt_utils.rs` — not in the paired file
 - [~] `unlock` (line 484) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
@@ -10638,7 +10638,7 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [~] `get_extruder_count` (line 120) → `multi_nozzle_utils.rs` — not in the paired file
 - [ ] `get_extruder_nozzle_count` (line 121) → `preset_bundle.rs`
 - [ ] `get_extruder_stats` (line 126) → `preset_bundle.rs`
-- [~] `resize` (line 131) → `extrusion_simulator.rs, nozzle_inventory.rs` — not in the paired file
+- [~] `resize` (line 131) → `config.rs, extrusion_simulator.rs, nozzle_inventory.rs` — not in the paired file
 - [~] `set_extruder_stats` (line 132) → `nozzle_inventory.rs` — not in the paired file
 - [ ] `clear_extruder` (line 137) → `preset_bundle.rs`
 - [~] `clear` (line 141) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
@@ -10793,30 +10793,30 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `print_instance_hull` (line 3912) → `print.rs`
 - [ ] `estimated_wipe_tower_footprint` (line 3930) → `print.rs`
 - [ ] `seed_emitted_tower_foundation` (line 4148) → `print.rs`
-- [~] `to_json` (line 4596) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4604) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4611) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4630) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4639) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4660) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4679) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4596) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4604) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4611) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4630) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4639) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4660) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4679) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 - [ ] `convert_extrusion_to_json` (line 4690) → `print.rs`
 - [ ] `adaptive_merge_patch_to_json` (line 4753) → `print.rs`
-- [~] `to_json` (line 4778) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4882) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 4901) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 4912) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 4922) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4778) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4882) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 4901) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 4912) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 4922) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 - [ ] `adaptive_merge_patch_from_json` (line 4936) → `print.rs`
-- [~] `from_json` (line 4964) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 4975) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 4994) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 5015) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 4964) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 4975) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 4994) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 5015) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 - [ ] `convert_extrusion_from_json` (line 5026) → `print.rs`
 - [ ] `convert_layer_region_from_json` (line 5097) → `print.rs`
 - [ ] `extract_layer` (line 5214) → `print.rs`
 - [ ] `extract_support_layer` (line 5262) → `print.rs`
-- [~] `from_json` (line 5293) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 5293) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 
 **class `CompactedTowerZone`**
 
@@ -10831,7 +10831,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [~] `size` (line 212) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 213) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `at` (line 215) → `format/objparser.rs, g_code_reader.rs, model.rs` — not in the paired file
-- [~] `vector` (line 216) → `geometry/line.rs` — not in the paired file
+- [~] `vector` (line 216) → `geometry/line.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `FakeWipeTower`**
 
@@ -11093,7 +11093,7 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **class `LayerRanges`**
 
-- [~] `assign` (line 362) → `extrusion_entity_collection.rs, mutable_polygon.rs, nozzle_inventory.rs` — not in the paired file
+- [~] `assign` (line 362) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
 - [~] `config` (line 388) → `extruder.rs, gcode/cooling.rs, gcode/ironing.rs` — not in the paired file
 - [~] `begin` (line 401) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [~] `end` (line 402) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
@@ -11106,7 +11106,7 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **class `Print`**
 
-- [~] `apply` (line 1296) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
+- [~] `apply` (line 1296) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
 
 **class `PrintObjectStatusDB`**
 
@@ -11302,8 +11302,8 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [ ] `split_nozzle_stats_for_export` (line 1459) → `print_config.rs`
 - [ ] `assign_printer_technology_to_unknown` (line 1487) → `print_config.rs`
 - [ ] `trim_option_values` (line 1495) → `print_config.rs`
-- [~] `load` (line 2325) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `save` (line 2340) → `app_config.rs` — not in the paired file
+- [~] `load` (line 2325) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 2340) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [ ] `collect_aux_fan_slots` (line 8284) → `print_config.rs`
 - [ ] `min_object_distance` (line 8683) → `print_config.rs`
 - [ ] `handle_legacy_sla` (line 8884) → `print_config.rs`
@@ -11329,12 +11329,12 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 
 **class `DynamicPrintAndCLIConfig`**
 
-- [ ] `handle_legacy` (line 11439) → `print_config.rs`
+- [~] `handle_legacy` (line 11439) → `config.rs` — not in the paired file
 
 **class `DynamicPrintConfig`**
 
-- [ ] `def` (line 696) → `print_config.rs`
-- [ ] `handle_legacy` (line 726) → `print_config.rs`
+- [~] `def` (line 696) → `config.rs` — not in the paired file
+- [~] `handle_legacy` (line 726) → `config.rs` — not in the paired file
 - [ ] `repair_invalid_filament_extrusion_parameters` (line 1372) → `print_config.rs`
 - [ ] `full_print_config` (line 8667) → `print_config.rs`
 - [ ] `new_from_defaults_keys` (line 8676) → `print_config.rs`
@@ -11368,18 +11368,18 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [ ] `init_extruder_option_keys` (line 7593) → `print_config.rs`
 - [ ] `init_filament_option_keys` (line 7624) → `print_config.rs`
 - [ ] `init_sla_params` (line 7653) → `print_config.rs`
-- [ ] `handle_legacy` (line 8306) → `print_config.rs`
+- [~] `handle_legacy` (line 8306) → `config.rs` — not in the paired file
 
 **class `StaticPrintConfig`**
 
-- [ ] `def` (line 823) → `print_config.rs`
-- [ ] `handle_legacy` (line 832) → `print_config.rs`
+- [~] `def` (line 823) → `config.rs` — not in the paired file
+- [~] `handle_legacy` (line 832) → `config.rs` — not in the paired file
 
 **class `StaticPrintConfig::StaticCache`**
 
 - [~] `initialized` (line 861) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs` — not in the paired file
-- [ ] `optptr` (line 863) → `print_config.rs`
-- [ ] `optptr` (line 869) → `print_config.rs`
+- [~] `optptr` (line 863) → `config.rs` — not in the paired file
+- [~] `optptr` (line 869) → `config.rs` — not in the paired file
 - [~] `finalize` (line 881) → `cut_utils.rs, fill/fill_base.rs, gcode/g_code_processor.rs` — not in the paired file
 
 **class `StaticPrintConfig::StaticCacheBase`**
@@ -11855,7 +11855,7 @@ Rust file: `sla/boost_adapter.rs`. Status: **partial**.
 **class `indexed_access<Slic3r::BoundingBox, 0, d>`**
 
 - [~] `get` (line 107) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
-- [~] `set` (line 110) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 110) → `app_config.rs, color.rs, config.rs` — not in the paired file
 
 **class `indexed_access<Slic3r::BoundingBox, 1, d>`**
 
@@ -11935,7 +11935,7 @@ Rust file: `sla/hollowing.rs`. Status: **partial**. Not listed: 3 constructors, 
 
 **class `DrainHole`**
 
-- [~] `serialize` (line 61) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 61) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [x] `to_mesh` (line 149) → `sla/hollowing.rs:624`
 - [x] `is_inside` (line 168) → `sla/hollowing.rs:649`
 - [x] `get_intersections` (line 186) → `sla/hollowing.rs:676`
@@ -11966,7 +11966,7 @@ Rust file: `sla/indexed_mesh.rs`. Status: **partial**. Not listed: 5 constructor
 - [x] `query_ray_hit` (line 145) → `sla/indexed_mesh.rs:514`
 - [x] `query_ray_hits` (line 174) → `sla/indexed_mesh.rs:553`
 - [ ] `filter_hits` (line 211) → `sla/indexed_mesh.rs`
-- [~] `squared_distance` (line 308) → `aabb_mesh.rs, sla/hollowing.rs` — not in the paired file
+- [~] `squared_distance` (line 308) → `aabb_mesh.rs, sla/hollowing.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `IndexedMesh::AABBImpl`**
 
@@ -12369,7 +12369,7 @@ Rust file: `sla_print.rs`. Status: **partial**. Not listed: 7 constructors, 2 de
 - [~] `clear` (line 117) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [ ] `sla_trafo` (line 129) → `sla_print.rs`
 - [ ] `print_object_ids` (line 177) → `sla_print.rs`
-- [~] `apply` (line 187) → `format/sl1.rs, geometry/point.rs, geometry/transform.rs` — not in the paired file
+- [~] `apply` (line 187) → `config.rs, format/sl1.rs, geometry/point.rs` — not in the paired file
 - [ ] `technology` (line 446) → `sla_print.rs`
 - [~] `empty` (line 449) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `finished` (line 459) → `gcode/wipe_tower.rs` — not in the paired file
@@ -12454,7 +12454,7 @@ Rust file: `sla_print_steps.rs`. Status: **partial**. Not listed: 2 constructors
 **class `FaceHash`**
 
 - [ ] `to_chars` (line 155) → `sla_print_steps.rs`
-- [~] `hash` (line 174) → `arachne/utils/polygons_point_index.rs, perimeter_generator.rs, region_expansion.rs` — not in the paired file
+- [~] `hash` (line 174) → `arachne/utils/polygons_point_index.rs, config.rs, perimeter_generator.rs` — not in the paired file
 - [ ] `facekey` (line 185) → `sla_print_steps.rs`
 - [~] `find` (line 210) → `desensitize.rs, geometry/point.rs, measure_utils.rs` — not in the paired file
 
@@ -12507,7 +12507,7 @@ Rust file: `slicing.rs`. Status: **partial**. Not listed: 2 constructors.
 - [x] `equal_layering` (line 125) → `slicing.rs:223`
 - [ ] `custom_layer_heights_within_limits` (line 212) → `slicing.rs`
 - [ ] `layer_height_profile_from_ranges` (line 235) → `slicing.rs`
-- [~] `serialize` (line 238) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 238) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [x] `layer_height_profile_adaptive` (line 311) → `slicing.rs:286`
 - [x] `smooth_height_profile` (line 404) → `slicing.rs:414`
 - [x] `adjust_layer_height_profile` (line 513) → `slicing.rs:565`
@@ -12661,9 +12661,9 @@ Rust file: `support/support_material.rs`. Status: **partial**. Not listed: 6 con
 **class `SupportGridPattern`**
 
 - [ ] `extract_support` (line 786) → `support/support_material.rs`
-- [~] `serialize` (line 912) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize` (line 944) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
-- [~] `deserialize_` (line 952) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
+- [~] `serialize` (line 912) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `deserialize` (line 944) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
+- [~] `deserialize_` (line 952) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [ ] `dilate_trimming_region` (line 1027) → `support/support_material.rs`
 - [ ] `seed_fill_block` (line 1048) → `support/support_material.rs`
 - [ ] `island_sample` (line 1093) → `support/support_material.rs`
@@ -13072,24 +13072,24 @@ Rust file: `surface_collection.rs`. Status: **partial**. Not listed: 2 construct
 - [~] `size` (line 50) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `has` (line 51) → `surface_collection.rs:509`
 - [x] `filter_by_types` (line 54) → `surface_collection.rs:252`
-- [~] `set` (line 57) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 57) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [x] `set` (line 58) → `surface_collection.rs:117`
-- [~] `set` (line 59) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 60) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 61) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 62) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 59) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 60) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 61) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 62) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `filter_by_type` (line 63) → `surface_collection.rs` — another overload of the name is ported
-- [~] `set` (line 63) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 64) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `append` (line 66) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 67) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `set` (line 63) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `set` (line 64) → `app_config.rs, color.rs, config.rs` — not in the paired file
+- [~] `append` (line 66) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 67) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `append` (line 68) → `surface_collection.rs:127`
-- [~] `append` (line 69) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 70) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 69) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 70) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [~] `keep_type` (line 70) → `surface_collection.rs` — another overload of the name is ported
-- [~] `append` (line 71) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 72) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `append` (line 73) → `ex_polygon_collection.rs, extrusion_entity.rs, fill/fill_cross_hatch.rs` — not in the paired file
+- [~] `append` (line 71) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 72) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 73) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [x] `keep_type` (line 86) → `surface_collection.rs:318`
 - [x] `keep_types` (line 100) → `surface_collection.rs:342`
 - [x] `remove_type` (line 113) → `surface_collection.rs:366`
@@ -13114,13 +13114,13 @@ Rust file: `surface_mesh.rs`. Status: **partial**. Not listed: 5 constructors, 2
 - [x] `next` (line 71) → `surface_mesh.rs:242`
 - [x] `prev` (line 72) → `surface_mesh.rs:251`
 - [x] `halfedge` (line 73) → `surface_mesh.rs:260`
-- [~] `halfedge` (line 74) → `surface_mesh.rs` — another overload of the name is ported
+- [~] `halfedge` (line 74) → `texture_to_color/cgal_utils.rs` — not in the paired file
 - [x] `opposite` (line 75) → `surface_mesh.rs:280`
 - [x] `next_around_target` (line 96) → `surface_mesh.rs:314`
 - [x] `prev_around_target` (line 97) → `surface_mesh.rs:322`
 - [x] `next_around_source` (line 98) → `surface_mesh.rs:334`
 - [x] `prev_around_source` (line 99) → `surface_mesh.rs:346`
-- [~] `halfedge` (line 100) → `surface_mesh.rs` — another overload of the name is ported
+- [~] `halfedge` (line 100) → `texture_to_color/cgal_utils.rs` — not in the paired file
 - [ ] `degree` (line 122) → `surface_mesh.rs`
 - [ ] `degree` (line 141) → `surface_mesh.rs`
 - [x] `is_border` (line 153) → `surface_mesh.rs:457`
@@ -13139,14 +13139,14 @@ Rust file: `svg.rs`. Status: **partial**. Not listed: 9 constructors, 1 destruct
 
 - [x] `ParseSVGPath` (line 338) → `svg.rs:1090`
 - [x] `ConvertToExPolygon` (line 414) → `svg.rs:1204`
-- [~] `to_json` (line 545) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 547) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 558) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 566) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 578) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 582) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 595) → `debug/validation.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `from_json` (line 603) → `custom_g_code.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 545) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 547) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 558) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 566) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 578) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 582) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 595) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `from_json` (line 603) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 - [~] `dumpExPolygonToJson` (line 617) → `svg.rs:1346` — partial
 - [~] `dumpExPolygonsToJson` (line 634) → `svg.rs:1369` — partial
 - [~] `loadExPolygonsFromJson` (line 651) → `svg.rs:1392` — partial
@@ -13249,12 +13249,12 @@ Rust file: `text_configuration.rs`. Status: **partial**. Not listed: 1 construct
 
 **class `FontProp`**
 
-- [~] `save` (line 88) → `app_config.rs` — not in the paired file
-- [~] `load` (line 97) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `save` (line 88) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `load` (line 97) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 
 **class `TextConfiguration`**
 
-- [~] `serialize` (line 176) → `multi_nozzle_utils.rs, sla/support_point.rs, triangle_selector.rs` — not in the paired file
+- [~] `serialize` (line 176) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
 ### `TexturePainting` (.cpp+.hpp)
 
@@ -13293,108 +13293,108 @@ Rust file: none. Status: **not started**.
 
 ### `TextureToColor/Callbacks` (.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `texture_to_color/callbacks.rs`. Status: **ported**.
 
 No named function with a body.
 
 ### `TextureToColor/CgalUtils` (.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `texture_to_color/cgal_utils.rs`. Status: **partial**.
 
 **free functions**
 
-- [ ] `trimesh_to_cgal` (line 20)
-- [ ] `cgal_to_trimesh` (line 31)
-- [ ] `is_mesh_halfedge_compatible` (line 52)
-- [ ] `convert_trimesh_to_cgal` (line 139)
-- [ ] `convert_trimesh_to_cgal` (line 144)
+- [v] `trimesh_to_cgal` (line 20) → `texture_to_color/cgal_utils.rs:761` — R909: tests/texture_to_color_cgal_utils_native_parity.rs: meshes converted both ways and compared with CGAL::Surface_mesh 6.1.1 index by index (halfedge of every vertex and face, target/face/next/prev of every halfedge), halfedge compatibility, kernel constructions and AABB-tree closest points bit for bit
+- [v] `cgal_to_trimesh` (line 31) → `texture_to_color/cgal_utils.rs:774` — R909: tests/texture_to_color_cgal_utils_native_parity.rs: meshes converted both ways and compared with CGAL::Surface_mesh 6.1.1 index by index (halfedge of every vertex and face, target/face/next/prev of every halfedge), halfedge compatibility, kernel constructions and AABB-tree closest points bit for bit
+- [v] `is_mesh_halfedge_compatible` (line 52) → `texture_to_color/cgal_utils.rs:806` — R909: tests/texture_to_color_cgal_utils_native_parity.rs: meshes converted both ways and compared with CGAL::Surface_mesh 6.1.1 index by index (halfedge of every vertex and face, target/face/next/prev of every halfedge), halfedge compatibility, kernel constructions and AABB-tree closest points bit for bit (the body reads as partial to the estimate)
+- [v] `convert_trimesh_to_cgal` (line 139) → `texture_to_color/cgal_utils.rs:897` — R909: tests/texture_to_color_cgal_utils_native_parity.rs: meshes converted both ways and compared with CGAL::Surface_mesh 6.1.1 index by index (halfedge of every vertex and face, target/face/next/prev of every halfedge), halfedge compatibility, kernel constructions and AABB-tree closest points bit for bit
+- [~] `convert_trimesh_to_cgal` (line 144) → `texture_to_color/cgal_utils.rs` — another overload of the name is ported
 
 ### `TextureToColor/ColorUtils` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `texture_to_color/color_utils.rs`. Status: **partial**. Not listed: 1 constructors, 2 operators.
 
 **free functions**
 
-- [ ] `average_edge_length_impl` (line 62)
-- [ ] `convert_rgb_uint_to_rgb_double` (line 85)
-- [~] `normalize` (line 89) → `bin/generate-test-meshes.rs, cut_surface.rs, desensitize.rs` — a function of this name is in another Rust file
-- [ ] `get_angle_between_vectors` (line 96)
-- [ ] `calc_face_normals` (line 109)
-- [ ] `check_and_repair_self_intersect` (line 126)
-- [ ] `save_polylines` (line 144)
-- [ ] `smooth_region_topo_boundary` (line 167)
-- [ ] `smooth_region_geom_boundary` (line 205)
-- [ ] `convert_rgb_to_hsv` (line 366)
-- [ ] `convert_hsv_to_rgb` (line 408)
-- [ ] `convert_rgb_to_xyz` (line 448)
-- [ ] `convert_srgb01_to_xyz` (line 468)
-- [ ] `convert_xyz_to_lab` (line 479)
-- [ ] `convert_srgb01_to_lab` (line 500)
-- [ ] `convert_rgb_to_lab` (line 504)
-- [ ] `convert_lab_to_rgb` (line 508)
-- [ ] `ciede2000` (line 546)
-- [ ] `calc_rgb_color_difference_by_ciede2000` (line 629)
-- [ ] `calc_rgb_color_difference_by_ciede2000_srgb01` (line 635)
-- [ ] `farthest_point_sampling_init` (line 646)
-- [ ] `remesh_mesh` (line 699)
-- [~] `is_closed` (line 841) → `edge_grid.rs, extrusion_entity.rs, fill/fill_floating_concentric.rs` — a function of this name is in another Rust file
-- [ ] `smooth_region_labels` (line 903)
-- [ ] `smooth_region` (line 927)
-- [ ] `smooth_region` (line 954)
-- [ ] `calc_rgb_color_difference_by_squared_rgb_double` (line 959)
-- [ ] `calc_rgb_color_difference_by_squared_rgb` (line 967)
-- [ ] `kmeans_core` (line 974)
-- [ ] `cluster_k_means` (line 1051)
-- [ ] `cluster_to_specified_colors` (line 1113)
-- [ ] `sort_colors_by_pca` (line 1160)
-- [ ] `cluster_adaptive` (line 1232)
-- [ ] `get_connected_face_groups` (line 1347)
-- [ ] `get_components` (line 1375)
-- [ ] `calc_nearest_color_id` (line 1423)
-- [ ] `mesh_cluster` (line 1440)
+- [v] `average_edge_length_impl` (line 62) → `texture_to_color/color_utils.rs:388` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [x] `convert_rgb_uint_to_rgb_double` (line 85) → `texture_to_color/color_utils.rs:437`
+- [v] `normalize` (line 89) → `texture_to_color/color_utils.rs:443` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `get_angle_between_vectors` (line 96) → `texture_to_color/color_utils.rs:455` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `calc_face_normals` (line 109) → `texture_to_color/color_utils.rs:473` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [x] `check_and_repair_self_intersect` (line 126) → `texture_to_color/color_utils.rs:504`
+- [v] `save_polylines` (line 144) → `texture_to_color/color_utils.rs:554` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `smooth_region_topo_boundary` (line 167) → `texture_to_color/color_utils.rs:579` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `smooth_region_geom_boundary` (line 205) → `texture_to_color/color_utils.rs:628` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `convert_rgb_to_hsv` (line 366) → `texture_to_color/color_utils.rs:802` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `convert_hsv_to_rgb` (line 408) → `texture_to_color/color_utils.rs:853` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `convert_rgb_to_xyz` (line 448) → `texture_to_color/color_utils.rs:905` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit (the body reads as partial to the estimate)
+- [v] `convert_srgb01_to_xyz` (line 468) → `texture_to_color/color_utils.rs:926` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit (the body reads as partial to the estimate)
+- [v] `convert_xyz_to_lab` (line 479) → `texture_to_color/color_utils.rs:949` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `convert_srgb01_to_lab` (line 500) → `texture_to_color/color_utils.rs:972` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `convert_rgb_to_lab` (line 504) → `texture_to_color/color_utils.rs:977` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `convert_lab_to_rgb` (line 508) → `texture_to_color/color_utils.rs:982` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `ciede2000` (line 546) → `texture_to_color/color_utils.rs:1028` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `calc_rgb_color_difference_by_ciede2000` (line 629) → `texture_to_color/color_utils.rs:1121` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `calc_rgb_color_difference_by_ciede2000_srgb01` (line 635) → `texture_to_color/color_utils.rs:1128` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `farthest_point_sampling_init` (line 646) → `texture_to_color/color_utils.rs:1141` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [x] `remesh_mesh` (line 699) → `texture_to_color/color_utils.rs:1205`
+- [v] `is_closed` (line 841) → `texture_to_color/color_utils.rs:1330` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit (the body reads as divergent to the estimate)
+- [v] `smooth_region_labels` (line 903) → `texture_to_color/color_utils.rs:1339` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [~] `smooth_region` (line 927) → `texture_to_color/color_utils.rs` — another overload of the name is ported
+- [v] `smooth_region` (line 954) → `texture_to_color/color_utils.rs:1364` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `calc_rgb_color_difference_by_squared_rgb_double` (line 959) → `texture_to_color/color_utils.rs:1397` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `calc_rgb_color_difference_by_squared_rgb` (line 967) → `texture_to_color/color_utils.rs:1405` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `kmeans_core` (line 974) → `texture_to_color/color_utils.rs:1413` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `cluster_k_means` (line 1051) → `texture_to_color/color_utils.rs:1497` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `cluster_to_specified_colors` (line 1113) → `texture_to_color/color_utils.rs:1548` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [ ] `sort_colors_by_pca` (line 1160) → `texture_to_color/color_utils.rs`
+- [v] `cluster_adaptive` (line 1232) → `texture_to_color/color_utils.rs:1578` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `get_connected_face_groups` (line 1347) → `texture_to_color/color_utils.rs:1684` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `get_components` (line 1375) → `texture_to_color/color_utils.rs:1712` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `calc_nearest_color_id` (line 1423) → `texture_to_color/color_utils.rs:1763` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
+- [v] `mesh_cluster` (line 1440) → `texture_to_color/color_utils.rs:1782` — R909: tests/texture_to_color_color_utils_native_parity.rs: ColorUtils.cpp built unchanged over CGAL; color conversions, CIEDE2000, k-means and adaptive clustering, mesh queries, connected groups, mesh_cluster and 48 smooth_region cases, floating point bit for bit
 
 ### `TextureToColor/Repair` (.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `texture_to_color/repair.rs`. Status: **ported**.
 
 **free functions**
 
-- [ ] `ComputeBoundaryEdgeStats` (line 57)
-- [ ] `CloseBoundariesAndRepairManifoldness` (line 83)
-- [ ] `RepairMesh` (line 104)
+- [v] `ComputeBoundaryEdgeStats` (line 57) → `texture_to_color/repair.rs:54` — R909: tests/texture_to_color_repair_native_parity.rs: ComputeBoundaryEdgeStats against Repair.hpp built over CGAL, 32 meshes
+- [x] `CloseBoundariesAndRepairManifoldness` (line 83) → `texture_to_color/repair.rs:77`
+- [x] `RepairMesh` (line 104) → `texture_to_color/repair.rs:96`
 
 ### `TextureToColor/TextureToColor` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `texture_to_color/texture_to_color.rs`. Status: **ported**.
 
 **free functions**
 
-- [ ] `SaveToOFF` (line 27)
-- [ ] `count_cluster_label_usage` (line 59)
-- [ ] `discard_unused_cluster_centers` (line 70)
-- [ ] `ensure_all_cluster_centers_used` (line 115)
-- [ ] `get_pixel_color` (line 187)
-- [ ] `sample_face_color` (line 247)
-- [ ] `linear_subdivision` (line 265)
-- [ ] `quantize_vertex_colors` (line 387)
-- [ ] `quantize_colors` (line 410)
-- [ ] `adaptive_split_by_vertex_clusters` (line 457)
-- [ ] `repair_cluster_smooth` (line 591)
-- [ ] `TextureToColor` (line 864)
-- [ ] `ClusterAndSmooth` (line 1047)
+- [x] `SaveToOFF` (line 27) → `texture_to_color/texture_to_color.rs:239`
+- [x] `count_cluster_label_usage` (line 59) → `texture_to_color/texture_to_color.rs:272`
+- [x] `discard_unused_cluster_centers` (line 70) → `texture_to_color/texture_to_color.rs:284`
+- [x] `ensure_all_cluster_centers_used` (line 115) → `texture_to_color/texture_to_color.rs:322`
+- [x] `get_pixel_color` (line 187) → `texture_to_color/texture_to_color.rs:404`
+- [x] `sample_face_color` (line 247) → `texture_to_color/texture_to_color.rs:456`
+- [x] `linear_subdivision` (line 265) → `texture_to_color/texture_to_color.rs:485`
+- [x] `quantize_vertex_colors` (line 387) → `texture_to_color/texture_to_color.rs:595`
+- [x] `quantize_colors` (line 410) → `texture_to_color/texture_to_color.rs:621`
+- [x] `adaptive_split_by_vertex_clusters` (line 457) → `texture_to_color/texture_to_color.rs:662`
+- [x] `repair_cluster_smooth` (line 591) → `texture_to_color/texture_to_color.rs:831`
+- [x] `TextureToColor` (line 864) → `texture_to_color/texture_to_color.rs:1086`
+- [x] `ClusterAndSmooth` (line 1047) → `texture_to_color/texture_to_color.rs:1285`
 
 **class `MeshRepairCache`**
 
-- [ ] `matches_input` (line 44)
-- [ ] `invalidate_prepared_mesh` (line 58)
+- [x] `matches_input` (line 44) → `texture_to_color/texture_to_color.rs:156`
+- [x] `invalidate_prepared_mesh` (line 58) → `texture_to_color/texture_to_color.rs:172`
 
 ### `TextureToColor/TriMesh` (.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `texture_to_color/tri_mesh.rs`. Status: **ported**. Not listed: 3 constructors.
 
 **class `TriMesh`**
 
-- [ ] `facets_count` (line 24)
+- [x] `facets_count` (line 24) → `texture_to_color/tri_mesh.rs:35`
 
 ### `Thread` (.cpp+.hpp)
 
@@ -13509,8 +13509,8 @@ Rust file: `triangle_mesh.rs`. Status: **partial**. Not listed: 6 constructors, 
 - [x] `its_write_stl_binary` (line 370) → `triangle_mesh.rs:1921`
 - [x] `bounding_box` (line 372) → `triangle_mesh.rs:2363`
 - [x] `bounding_box` (line 373) → `triangle_mesh.rs:1785`
-- [~] `load` (line 394) → `app_config.rs, format/step.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `save` (line 398) → `app_config.rs` — not in the paired file
+- [~] `load` (line 394) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 398) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [x] `create_edge_map` (line 620) → `triangle_mesh.rs:290`
 - [x] `its_face_edge_ids_impl` (line 651) → `triangle_mesh.rs:339`
 - [x] `its_face_edge_ids` (line 701) → `triangle_mesh.rs:410`
@@ -13579,7 +13579,7 @@ Rust file: `triangle_mesh.rs`. Status: **partial**. Not listed: 6 constructors, 
 - [ ] `mirror_z` (line 122) → `triangle_mesh.rs`
 - [x] `size` (line 141) → `triangle_mesh.rs:2452`
 - [x] `center` (line 143) → `triangle_mesh.rs:2447`
-- [ ] `facets_count` (line 149) → `triangle_mesh.rs`
+- [~] `facets_count` (line 149) → `texture_to_color/tri_mesh.rs` — not in the paired file
 - [~] `empty` (line 150) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `release_optional` (line 159) → `triangle_mesh.rs`
 - [ ] `restore_optional` (line 161) → `triangle_mesh.rs`

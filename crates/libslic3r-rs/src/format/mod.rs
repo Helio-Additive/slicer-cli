@@ -6,17 +6,18 @@
 //! C++ Reference: BambuStudio/src/libslic3r/Format/
 
 pub mod amf;
+pub mod assembly_steps_json;
+pub mod assembly_tree_json;
 pub mod bbs_3mf;
+/// Port of `libslic3r/format.hpp` (`Slic3r::format(...)`, the wrapper around boost::format). It is
+/// here, under its own name, because `src/format.rs` cannot stand beside this `src/format/`
+/// directory; the macro `slic3r_format!` is exported at the crate root.
+pub mod format;
 pub mod model_io;
 pub mod obj;
 pub mod objparser;
 pub mod resource_path_utils;
 pub mod sl1;
-/// 1:1 port of `libslic3r/format.hpp` (the `Slic3r::format(...)` boost::format
-/// wrapper). Lives here because `src/format.rs` would collide with this
-/// `src/format/` module directory; the public macro is `slic3r_format!`,
-/// exported at crate root.
-pub mod slic3r_format;
 pub mod step;
 pub mod svg;
 pub mod three_mf;
