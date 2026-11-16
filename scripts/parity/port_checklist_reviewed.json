@@ -72,5 +72,40 @@
    "TriangleSelector::HeightRange::is_pointer_in_triangle",
    "TriangleSelector::Sphere::is_facet_visible"
   ]
+ },
+ {
+  "unit": "Preset",
+  "round": "912",
+  "functions": [
+   "type_rank",
+   "PhysicalPrinterCollection::get_selected_printer_config",
+   "Preset::load_info",
+   "Preset::remove_files",
+   "Preset::save",
+   "PresetCollection::num_visible",
+   "PresetCollection::find_preset_renamed"
+  ]
+ },
+ {
+  "unit": "GCode/WipeTower",
+  "round": "912",
+  "functions": [
+   "WipeTower::toolchange_Change",
+   "WipeTower::heater_off_nozzle_change",
+   "WipeTower::set_single_diameter_parameters",
+   "WipeTower::toolchange_Unload",
+   "WipeTower::toolchange_Load",
+   "WipeTower::set_layer",
+   "WipeTower::extrusion_flow",
+   "WipeTower::nozzle_change_extrusion_flow",
+   "WipeTower::layer_is_skipped",
+   "WipeTower::filament_perimeter_width",
+   "WipeTower::filament_nozzle_change_width",
+   "WipeTower::is_first_layer_for_slab",
+   "WipeTower::set_for_wipe_tower_writer",
+   "WipeTower::first_printed_layer_idx",
+   "WipeTower::tower_bed_z",
+   "WipeTower::get_floating_area"
+  ]
  }
 ]

@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**46.8% of the named C++ functions are ported or verified (4483 of 9574); 37.6% by size of body.**
+**49.3% of the named C++ functions are ported or verified (4716 of 9574); 40.9% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 2370 | 24.8% | 34.6% |
-| partial `[~]` | 2721 | 28.4% | 27.8% |
-| ported `[x]` | 3394 | 35.5% | 24.0% |
-| verified `[v]` | 1089 | 11.4% | 13.6% |
+| not started `[ ]` | 2164 | 22.6% | 31.9% |
+| partial `[~]` | 2694 | 28.1% | 27.2% |
+| ported `[x]` | 3458 | 36.1% | 24.6% |
+| verified `[v]` | 1258 | 13.1% | 16.3% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -214,7 +214,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `GCode/TimelapsePosPicker` | 1 | `gcode/timelapse_pos_picker.rs` | partial | 20 | 17 | 2 | 1 | 0 |
 | `GCode/ToolOrdering` | 1 | `gcode/tool_ordering.rs` | partial | 85 | 46 | 25 | 14 | 0 |
 | `GCode/ToolOrderUtils` | 1 | `gcode/tool_order_utils.rs` | partial | 32 | 3 | 3 | 26 | 0 |
-| `GCode/WipeTower` | 1 | `gcode/wipe_tower.rs` | partial | 218 | 122 | 41 | 55 | 0 |
+| `GCode/WipeTower` | 1 | `gcode/wipe_tower.rs` | partial | 218 | 0 | 10 | 116 | 92 |
 | `GCodeReader` | 1 | `g_code_reader.rs` | partial | 71 | 0 | 8 | 63 | 0 |
 | `GCodeSender` | 3 | `gcode_sender.rs` | partial | 24 | 0 | 13 | 11 | 0 |
 | `GCodeWriter` | 1 | `g_code_writer.rs` | partial | 84 | 4 | 16 | 64 | 0 |
@@ -281,17 +281,17 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `pchheader` | 3 | `pchheader.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `PerfTrace` | 3 | `perf_trace.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 18 | 7 | 4 | 0 |
-| `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 21 | 33 | 31 | 0 |
+| `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 20 | 34 | 31 | 0 |
 | `Platform` | 1 | `platform.rs` | ported | 5 | 0 | 0 | 5 | 0 |
 | `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 1 | 12 | 11 | 0 |
 | `Point` | 1 | `geometry/point.rs` | partial | 103 | 10 | 73 | 20 | 0 |
 | `Polygon` | 1 | `geometry/polygon.rs` | partial | 86 | 4 | 28 | 54 | 0 |
 | `PolygonTrimmer` | 1 | `polygon_trimmer.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Polyline` | 1 | `geometry/polyline.rs` | partial | 52 | 2 | 21 | 29 | 0 |
-| `Preset` | 1 | `preset.rs` | partial | 108 | 70 | 26 | 12 | 0 |
-| `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 126 | 12 | 3 | 0 |
+| `Preset` | 1 | `preset.rs` | partial | 108 | 0 | 16 | 15 | 77 |
+| `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 115 | 23 | 3 | 0 |
 | `PrincipalComponents2D` | 1 | `principal_components2_d.rs` | ported | 2 | 0 | 0 | 2 | 0 |
-| `Print` | 1 | `print.rs` | partial | 236 | 162 | 69 | 5 | 0 |
+| `Print` | 1 | `print.rs` | partial | 236 | 160 | 71 | 5 | 0 |
 | `PrintApply` | 1 | `print_apply.rs` | partial | 44 | 27 | 14 | 3 | 0 |
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 40 | 20 | 17 | 0 |
 | `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 18 | 17 | 11 | 91 |
@@ -642,7 +642,7 @@ Rust file: `app_config.rs`. Status: **partial**. Not listed: 1 constructors.
 - [~] `load` (line 609) → `app_config.rs:724` — partial
 - [x] `save` (line 833) → `app_config.rs:1005`
 - [~] `load` (line 995) → `config.rs, format/assembly_steps_json.rs, format/step.rs` — not in the paired file
-- [~] `save` (line 1126) → `config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 1126) → `config.rs, format/assembly_steps_json.rs, preset.rs` — not in the paired file
 - [x] `get_variant` (line 1199) → `app_config.rs:1386`
 - [x] `set_variant` (line 1207) → `app_config.rs:1398`
 - [~] `set_vendors` (line 1225) → `app_config.rs` — another overload of the name is ported
@@ -916,14 +916,14 @@ Rust file: `arachne/utils/extrusion_line.rs`. Status: **partial**. Not listed: 4
 - [~] `simplify` (line 43) → `arachne/utils/extrusion_line.rs:213` — partial
 - [x] `size` (line 57) → `arachne/utils/extrusion_line.rs:86`
 - [~] `empty` (line 62) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `begin` (line 94) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 95) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 94) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 95) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [ ] `rbegin` (line 96) → `arachne/utils/extrusion_line.rs`
 - [ ] `rend` (line 97) → `arachne/utils/extrusion_line.rs`
 - [~] `front` (line 98) → `gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 99) → `gcode/tool_ordering.rs` — not in the paired file
-- [~] `begin` (line 102) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 103) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 102) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 103) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [x] `front` (line 104) → `arachne/utils/extrusion_line.rs:100`
 - [x] `back` (line 105) → `arachne/utils/extrusion_line.rs:107`
 - [ ] `emplace_back` (line 107) → `arachne/utils/extrusion_line.rs`
@@ -1011,10 +1011,10 @@ Rust file: `arachne/utils/sparse_grid.rs`. Status: **partial**. Not listed: 1 co
 
 **class `SparseGrid`**
 
-- [~] `begin` (line 46) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 47) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `begin` (line 48) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 49) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 46) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 47) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 48) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 49) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `processFromCell` (line 105) → `arachne/utils/sparse_grid.rs:202` — partial
 - [x] `processNearby` (line 115) → `arachne/utils/sparse_grid.rs:175`
 - [x] `getNearby` (line 120) → `arachne/utils/sparse_grid.rs:146`
@@ -1343,7 +1343,7 @@ Rust file: `build_volume.rs`. Status: **partial**. Not listed: 2 constructors.
 **class `BuildVolume`**
 
 - [x] `printable_height` (line 63) → `build_volume.rs:720`
-- [~] `type` (line 69) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 69) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [x] `type_name` (line 72) → `build_volume.rs:775`
 - [x] `valid` (line 73) → `build_volume.rs:781`
 - [x] `bounding_volume2d` (line 80) → `build_volume.rs:805`
@@ -2365,66 +2365,66 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 **class `EmptyPathsProvider`**
 
-- [~] `cend` (line 74) → `mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 75) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `cbegin` (line 76) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 77) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
+- [~] `cend` (line 74) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 75) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `cbegin` (line 76) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 77) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `size` (line 78) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExPolygonProvider`**
 
-- [~] `cbegin` (line 183) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 184) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cend` (line 185) → `mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 186) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `cbegin` (line 183) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 184) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 185) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 186) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 187) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ExPolygonsProvider`**
 
-- [~] `cbegin` (line 223) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 224) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cend` (line 225) → `mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 226) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `cbegin` (line 223) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 224) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 225) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 226) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 227) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `MultiPointsProvider`**
 
-- [~] `cbegin` (line 154) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 155) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cend` (line 156) → `mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 157) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `cbegin` (line 154) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 155) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 156) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 157) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 158) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `PathsProvider`**
 
-- [~] `cbegin` (line 127) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 128) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cend` (line 129) → `mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 130) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `cbegin` (line 127) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 128) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 129) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 130) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 131) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SinglePathProvider`**
 
-- [~] `cbegin` (line 99) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 100) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cend` (line 101) → `mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 102) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `cbegin` (line 99) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 100) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 101) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 102) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 103) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SurfacesProvider`**
 
-- [~] `cbegin` (line 264) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 265) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cend` (line 266) → `mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 267) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `cbegin` (line 264) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 265) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 266) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 267) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 268) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `SurfacesPtrProvider`**
 
-- [~] `cbegin` (line 305) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 306) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cend` (line 307) → `mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 308) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `cbegin` (line 305) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 306) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 307) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 308) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 309) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 ### `ClipperZUtils` (.hpp)
@@ -2625,48 +2625,48 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `is_end_of_word` (line 1322) → `config.rs:484` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `skip_word` (line 1324) → `config.rs:491` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `skip_whitespaces` (line 1330) → `config.rs:502` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `dynamic_config_iterate` (line 1883) → `config.rs:8584` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `dynamic_config_iterate` (line 1883) → `config.rs:8605` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 
 **class `ConfigBase`**
 
-- [v] `apply_only` (line 454) → `config.rs:6566` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `equals` (line 497) → `config.rs:6623` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `diff` (line 511) → `config.rs:6643` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `equal` (line 524) → `config.rs:6659` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `opt_serialize` (line 565) → `config.rs:6674` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `apply_only` (line 454) → `config.rs:6587` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `equals` (line 497) → `config.rs:6644` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `diff` (line 511) → `config.rs:6664` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `equal` (line 524) → `config.rs:6680` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `opt_serialize` (line 565) → `config.rs:6695` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set` (line 583) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 595) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [v] `set_deserialize_nothrow` (line 606) → `config.rs:6762` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `set_deserialize` (line 624) → `config.rs:6786` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_deserialize_nothrow` (line 606) → `config.rs:6783` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_deserialize` (line 624) → `config.rs:6807` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set_deserialize` (line 630) → `print_config.rs, region_config.rs` — not in the paired file
-- [v] `set_deserialize_raw` (line 636) → `config.rs:6823` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `get_abs_value_at` (line 721) → `config.rs:6933` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `get_abs_value` (line 749) → `config.rs:6961` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_deserialize_raw` (line 636) → `config.rs:6844` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `get_abs_value_at` (line 721) → `config.rs:6954` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `get_abs_value` (line 749) → `config.rs:6982` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `get_abs_value` (line 792) → `config.rs` — another overload of the name is ported
-- [v] `setenv_` (line 803) → `config.rs:7027` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `load_string_map` (line 822) → `config.rs:7054` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `load` (line 859) → `config.rs:7092` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `load_from_json` (line 876) → `config.rs:7106` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `setenv_` (line 803) → `config.rs:7048` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_string_map` (line 822) → `config.rs:7075` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load` (line 859) → `config.rs:7113` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_from_json` (line 876) → `config.rs:7127` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `load_from_json` (line 885) → `config.rs` — another overload of the name is ported
-- [v] `load_from_ini` (line 1245) → `config.rs:7489` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `load_from_ini_string` (line 1257) → `config.rs:7504` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [v] `load_from_ini_string_commented` (line 1267) → `config.rs:7512` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `load_from_ini` (line 1245) → `config.rs:7510` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_from_ini_string` (line 1257) → `config.rs:7525` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `load_from_ini_string_commented` (line 1267) → `config.rs:7533` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
 - [~] `load` (line 1304) → `app_config.rs, format/assembly_steps_json.rs, format/step.rs` — not in the paired file
-- [v] `load_from_gcode_string_legacy` (line 1337) → `config.rs:7589` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `load_from_gcode_file` (line 1472) → `config.rs:7703` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `save_to_json` (line 1583) → `config.rs:7818` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [v] `save` (line 1638) → `config.rs:7902` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [v] `null_nullables` (line 1651) → `config.rs:7934` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `handle_legacy` (line 2547) → `config.rs:6539` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_from_gcode_string_legacy` (line 1337) → `config.rs:7610` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `load_from_gcode_file` (line 1472) → `config.rs:7724` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `save_to_json` (line 1583) → `config.rs:7839` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `save` (line 1638) → `config.rs:7923` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [v] `null_nullables` (line 1651) → `config.rs:7955` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `handle_legacy` (line 2547) → `config.rs:6560` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `option` (line 2554) → `config.rs` — another overload of the name is ported
 - [~] `option` (line 2558) → `config.rs` — another overload of the name is ported
 - [~] `option_throw` (line 2564) → `config.rs` — another overload of the name is ported
 - [~] `option_throw` (line 2573) → `config.rs` — another overload of the name is ported
-- [v] `apply` (line 2584) → `config.rs:6560` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `apply` (line 2584) → `config.rs:6581` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set` (line 2603) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 2607) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
 - [~] `set` (line 2609) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [v] `set_deserialize_strict` (line 2617) → `config.rs:6803` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_deserialize_strict` (line 2617) → `config.rs:6824` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set_deserialize_strict` (line 2634) → `config.rs` — another overload of the name is ported
 
 **class `ConfigDef`**
@@ -2693,7 +2693,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionBool`**
 
 - [x] `static_type` (line 1853) → `config.rs:4248`
-- [~] `type` (line 1854) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1854) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `getBool` (line 1855) → `config.rs:4262` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `clone` (line 1856) → `config.rs:3261` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1861) → `config.rs:4658` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2703,7 +2703,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionBoolsTempl`**
 
 - [x] `static_type` (line 1896) → `config.rs:4389`
-- [~] `type` (line 1897) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1897) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1898) → `config.rs:3779` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `nullable` (line 1903) → `config.rs:4408` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [x] `nil_value` (line 1905) → `config.rs:4324`
@@ -2732,7 +2732,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionEnum`**
 
 - [x] `static_type` (line 2011) → `config.rs:4601`
-- [~] `type` (line 2012) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 2012) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 2013) → `config.rs:4266` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `getInt` (line 2017) → `config.rs:4544` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `setInt` (line 2018) → `config.rs:4548` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2745,7 +2745,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionEnumGeneric`**
 
 - [x] `static_type` (line 2083) → `config.rs:4611`
-- [~] `type` (line 2084) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 2084) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 2085) → `config.rs:3941` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `set` (line 2098) → `config.rs:4560` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `serialize` (line 2105) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
@@ -2755,7 +2755,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionEnumsGenericTempl`**
 
 - [x] `static_type` (line 2141) → `config.rs:4770`
-- [~] `type` (line 2142) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 2142) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 2143) → `config.rs:1638` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `nullable` (line 2153) → `config.rs:4788` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `set` (line 2155) → `config.rs:1914` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2768,7 +2768,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionFloat`**
 
 - [x] `static_type` (line 828) → `config.rs:2616`
-- [~] `type` (line 829) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 829) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `getFloat` (line 830) → `config.rs:3458` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `clone` (line 831) → `config.rs:3462` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 835) → `config.rs:2638` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2778,7 +2778,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionFloatOrPercent`**
 
 - [x] `static_type` (line 1304) → `config.rs:3445`
-- [~] `type` (line 1305) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1305) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1306) → `config.rs:3853` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `hash` (line 1317) → `config.rs:3477` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `get_abs_value` (line 1322) → `config.rs:3435` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2790,7 +2790,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionFloatsOrPercentsTempl`**
 
 - [x] `static_type` (line 1365) → `config.rs:3615`
-- [~] `type` (line 1366) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1366) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1367) → `config.rs:4024` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `nullable` (line 1378) → `config.rs:3640` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [x] `nil_value` (line 1380) → `config.rs:3313`
@@ -2808,7 +2808,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionFloatsTempl`**
 
 - [x] `static_type` (line 871) → `config.rs:2777`
-- [~] `type` (line 872) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 872) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 873) → `config.rs:4624` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `nullable` (line 883) → `config.rs:2999` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [x] `nil_value` (line 885) → `config.rs:3550`
@@ -2826,7 +2826,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionInt`**
 
 - [x] `static_type` (line 999) → `config.rs:2880`
-- [~] `type` (line 1000) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1000) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `getInt` (line 1001) → `config.rs:4628` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `setInt` (line 1002) → `config.rs:4632` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `clone` (line 1003) → `config.rs:2791` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2837,7 +2837,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionIntsGroups`**
 
 - [x] `static_type` (line 1749) → `config.rs:4141`
-- [~] `type` (line 1750) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1750) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1751) → `config.rs:2903` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `nullable` (line 1775) → `config.rs:4166` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `is_nil` (line 1776) → `config.rs:1587` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2851,7 +2851,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionIntsTempl`**
 
 - [x] `static_type` (line 1042) → `config.rs:2980`
-- [~] `type` (line 1043) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1043) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1044) → `config.rs:2995` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `nullable` (line 1049) → `config.rs:3352` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [x] `nil_value` (line 1051) → `config.rs:4738`
@@ -2867,7 +2867,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionPercent`**
 
 - [x] `static_type` (line 1209) → `config.rs:3243`
-- [~] `type` (line 1210) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1210) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1211) → `config.rs:3341` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `get_abs_value` (line 1216) → `config.rs:3237` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1218) → `config.rs:3265` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
@@ -2877,7 +2877,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionPercentsTempl`**
 
 - [x] `static_type` (line 1251) → `config.rs:3327`
-- [~] `type` (line 1252) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1252) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1253) → `config.rs:3629` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1258) → `config.rs:3365` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `vserialize` (line 1272) → `config.rs:3387` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2886,7 +2886,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionPoint`**
 
 - [x] `static_type` (line 1496) → `config.rs:3765`
-- [~] `type` (line 1497) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1497) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1498) → `config.rs:4155` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1503) → `config.rs:3783` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1512) → `config.rs:3790` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as divergent to the estimate)
@@ -2895,7 +2895,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionPoint3`**
 
 - [x] `static_type` (line 1611) → `config.rs:3927`
-- [~] `type` (line 1612) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1612) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1613) → `config.rs:4540` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1619) → `config.rs:3945` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1630) → `config.rs:3954` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
@@ -2904,19 +2904,19 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionPoints`**
 
 - [x] `static_type` (line 1533) → `config.rs:3838`
-- [~] `type` (line 1534) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1534) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1535) → `config.rs:4404` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `is_nil` (line 1540) → `config.rs:2806` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1542) → `config.rs:3857` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `vserialize` (line 1554) → `config.rs:3882` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `deserialize` (line 1569) → `config.rs:3868` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `save` (line 1592) → `app_config.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `save` (line 1592) → `app_config.rs, format/assembly_steps_json.rs, preset.rs` — not in the paired file
 - [~] `load` (line 1597) → `app_config.rs, format/assembly_steps_json.rs, format/step.rs` — not in the paired file
 
 **class `ConfigOptionPointsGroups`**
 
 - [x] `static_type` (line 1650) → `config.rs:4010`
-- [~] `type` (line 1651) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1651) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1652) → `config.rs:2634` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `nullable` (line 1662) → `config.rs:4035` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `is_nil` (line 1663) → `config.rs:3356` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2944,7 +2944,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionString`**
 
 - [x] `static_type` (line 1131) → `config.rs:3102`
-- [~] `type` (line 1132) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1132) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1133) → `config.rs:3116` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `empty` (line 1137) → `config.rs:3096` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1139) → `config.rs:3120` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2954,7 +2954,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionStrings`**
 
 - [x] `static_type` (line 1165) → `config.rs:3168`
-- [~] `type` (line 1166) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1166) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [v] `clone` (line 1167) → `config.rs:3183` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `is_nil` (line 1171) → `config.rs:3003` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `serialize` (line 1173) → `config.rs:3187` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -2995,33 +2995,33 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 
 **class `DynamicConfig`**
 
-- [v] `remove_nil_options` (line 1681) → `config.rs:8118` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `remove_nil_options` (line 1681) → `config.rs:8139` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `optptr` (line 1693) → `print_config.rs` — not in the paired file
-- [x] `optptr` (line 1716) → `config.rs:8528`
-- [v] `read_cli` (line 1722) → `config.rs:8398` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `keys` (line 1846) → `config.rs:8566` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `equals` (line 1910) → `config.rs:8157` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `diff` (line 1918) → `config.rs:8163` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `equal` (line 1932) → `config.rs:8182` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `optptr` (line 1716) → `config.rs:8549`
+- [v] `read_cli` (line 1722) → `config.rs:8419` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `keys` (line 1846) → `config.rs:8587` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `equals` (line 1910) → `config.rs:8178` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `diff` (line 1918) → `config.rs:8184` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `equal` (line 1932) → `config.rs:8203` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `opt_bool` (line 1967) → `config.rs` — another overload of the name is ported
-- [v] `swap` (line 2745) → `config.rs:8102` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `clear` (line 2750) → `config.rs:8107` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [x] `erase` (line 2755) → `config.rs:8112` — read against the C++ in R910 (the estimate says partial)
-- [x] `def` (line 2769) → `config.rs:8537`
+- [v] `swap` (line 2745) → `config.rs:8123` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `clear` (line 2750) → `config.rs:8128` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `erase` (line 2755) → `config.rs:8133` — read against the C++ in R910 (the estimate says partial)
+- [x] `def` (line 2769) → `config.rs:8558`
 - [~] `opt` (line 2770) → `config.rs` — another overload of the name is ported
-- [x] `opt` (line 2772) → `config.rs:8139`
-- [v] `empty` (line 2780) → `config.rs:8144` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [v] `set_key_value` (line 2785) → `config.rs:8151` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [x] `opt_int` (line 2818) → `config.rs:8303`
+- [x] `opt` (line 2772) → `config.rs:8160`
+- [v] `empty` (line 2780) → `config.rs:8165` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [v] `set_key_value` (line 2785) → `config.rs:8172` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
+- [x] `opt_int` (line 2818) → `config.rs:8324`
 - [~] `opt_int` (line 2820) → `config.rs` — another overload of the name is ported
-- [x] `opt_enum` (line 2827) → `config.rs:8348`
+- [x] `opt_enum` (line 2827) → `config.rs:8369`
 - [~] `opt_enum` (line 2829) → `config.rs` — another overload of the name is ported
-- [x] `opt_enum_nullable` (line 2830) → `config.rs:8363`
-- [x] `opt_bool` (line 2833) → `config.rs:8373`
-- [x] `opt_bool_nullable` (line 2835) → `config.rs:8388`
-- [x] `cbegin` (line 2841) → `config.rs:8516`
-- [~] `cend` (line 2842) → `mutable_polygon.rs` — not in the paired file
-- [x] `size` (line 2843) → `config.rs:8521`
+- [x] `opt_enum_nullable` (line 2830) → `config.rs:8384`
+- [x] `opt_bool` (line 2833) → `config.rs:8394`
+- [x] `opt_bool_nullable` (line 2835) → `config.rs:8409`
+- [x] `cbegin` (line 2841) → `config.rs:8537`
+- [~] `cend` (line 2842) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [x] `size` (line 2843) → `config.rs:8542`
 - [~] `serialize` (line 2849) → `multi_nozzle_utils.rs, sla/support_point.rs, text_configuration.rs` — not in the paired file
 
 **class `FloatOrPercent`**
@@ -3031,12 +3031,12 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 
 **class `ReverseLineReader`**
 
-- [x] `getline` (line 1421) → `config.rs:8684` — read against the C++ in R910 (the estimate says partial)
+- [x] `getline` (line 1421) → `config.rs:8705` — read against the C++ in R910 (the estimate says partial)
 
 **class `StaticConfig`**
 
-- [x] `set_defaults` (line 1855) → `config.rs:8628`
-- [v] `keys` (line 1869) → `config.rs:8647` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
+- [x] `set_defaults` (line 1855) → `config.rs:8649`
+- [v] `keys` (line 1869) → `config.rs:8668` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 
 ### `CSGMesh/CSGMesh` (.hpp)
 
@@ -3345,8 +3345,8 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 
 **class `Contour`**
 
-- [~] `begin` (line 22) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 23) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 22) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 23) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `open` (line 24) → `svg.rs` — not in the paired file
 - [ ] `closed` (line 25) → `edge_grid.rs`
 - [ ] `segment_idx_prev` (line 51) → `edge_grid.rs`
@@ -3731,8 +3731,8 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `polygon_set_traits<Slic3r::ExPolygons>`**
 
-- [~] `begin` (line 576) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 580) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 576) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 580) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [ ] `clean` (line 585) → `ex_polygon.rs`
 - [~] `sorted` (line 586) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
 
@@ -5999,7 +5999,7 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [ ] `_do_export` (line 2478) → `g_code.rs`
 - [ ] `export_layer_filaments` (line 3670) → `g_code.rs`
 - [ ] `check_placeholder_parser_failed` (line 3765) → `g_code.rs`
-- [~] `get_extruder_id` (line 3793) → `gcode/g_code_processor.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `get_extruder_id` (line 3793) → `gcode/g_code_processor.rs, gcode/wipe_tower.rs, multi_nozzle_utils.rs` — not in the paired file
 - [ ] `get_filament_config_index` (line 3802) → `g_code.rs`
 - [ ] `get_nozzle_config_index` (line 3810) → `g_code.rs`
 - [~] `set_extrude_acceleration` (line 3818) → `g_code_writer.rs` — not in the paired file
@@ -6571,7 +6571,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 **class `GCodeProcessorResult`**
 
 - [~] `lock` (line 383) → `execution/execution_seq.rs, log.rs, mt_utils.rs` — not in the paired file
-- [~] `unlock` (line 384) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
+- [~] `unlock` (line 384) → `execution/execution_seq.rs, mt_utils.rs, preset.rs` — not in the paired file
 - [~] `reset` (line 1537) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [~] `reset` (line 1571) → `gcode/g_code_processor.rs:2318` — partial
 
@@ -6903,8 +6903,8 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [~] `clear` (line 305) → `gcode/tool_ordering.rs:478` — divergent
 - [x] `first_extruder` (line 320) → `gcode/tool_ordering.rs:1987`
 - [x] `last_extruder` (line 323) → `gcode/tool_ordering.rs:1992`
-- [~] `begin` (line 347) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 348) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 347) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 348) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `empty` (line 349) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `has_wipe_tower` (line 352) → `gcode/tool_ordering.rs:2022` — divergent
 - [x] `get_most_used_extruder` (line 358) → `gcode/tool_ordering.rs:2029`
@@ -7029,242 +7029,242 @@ Rust file: `gcode/wipe_tower.rs`. Status: **partial**. Not listed: 8 constructor
 
 **free functions**
 
-- [ ] `nozzle_change_width_for_diameter` (line 32) → `gcode/wipe_tower.rs`
-- [ ] `wipe_tower_sparse_layers_skipped` (line 41) → `gcode/wipe_tower.rs`
-- [ ] `wipe_tower_layer_is_sparse` (line 47) → `gcode/wipe_tower.rs`
-- [ ] `prime_tower_side_scrape_margin` (line 52) → `gcode/wipe_tower.rs`
-- [ ] `compute_compacted_wipe_tower_z` (line 61) → `gcode/wipe_tower.rs`
-- [ ] `parseDoubles` (line 73) → `gcode/wipe_tower.rs`
-- [x] `align_round` (line 103) → `gcode/wipe_tower.rs:5895`
-- [x] `align_ceil` (line 108) → `gcode/wipe_tower.rs:5905`
-- [x] `align_floor` (line 113) → `gcode/wipe_tower.rs:5915`
-- [x] `is_valid_gcode` (line 118) → `gcode/wipe_tower.rs:5923`
-- [ ] `chamfer_polygon` (line 147) → `gcode/wipe_tower.rs`
-- [ ] `rounding_rectangle` (line 249) → `gcode/wipe_tower.rs`
-- [x] `ray_intersetion_line` (line 306) → `gcode/wipe_tower.rs:566`
-- [ ] `scale_polygon` (line 323) → `gcode/wipe_tower.rs`
-- [ ] `unscale_polygon` (line 328) → `gcode/wipe_tower.rs`
-- [x] `generate_rectange` (line 335) → `gcode/wipe_tower.rs:5960`
-- [ ] `remove_points_from_segment` (line 374) → `gcode/wipe_tower.rs`
-- [x] `move_point_along_polygon` (line 413) → `gcode/wipe_tower.rs:623`
-- [x] `insert_points` (line 475) → `gcode/wipe_tower.rs:715`
-- [~] `add_extra_point` (line 493) → `gcode/wipe_tower.rs:768` — partial
-- [x] `remove_points_from_polygon` (line 586) → `gcode/wipe_tower.rs:848`
-- [x] `contrust_gap_for_skip_points` (line 671) → `gcode/wipe_tower.rs:993`
-- [x] `generate_rectange_polygon` (line 686) → `gcode/wipe_tower.rs:1020`
-- [ ] `polylines_extreme_at` (line 4660) → `gcode/wipe_tower.rs`
-- [ ] `apply_wipe_tower_tail_slowdown` (line 7589) → `gcode/wipe_tower.rs`
+- [v] `nozzle_change_width_for_diameter` (line 32) → `gcode/wipe_tower.rs:1197` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `wipe_tower_sparse_layers_skipped` (line 41) → `gcode/wipe_tower.rs:1291` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as divergent to the estimate)
+- [v] `wipe_tower_layer_is_sparse` (line 47) → `gcode/wipe_tower.rs:1299` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `prime_tower_side_scrape_margin` (line 52) → `gcode/wipe_tower.rs:1304` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as partial to the estimate)
+- [v] `compute_compacted_wipe_tower_z` (line 61) → `gcode/wipe_tower.rs:1312` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `parseDoubles` (line 73) → `gcode/wipe_tower.rs:1327` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `align_round` (line 103) → `gcode/wipe_tower.rs:7976` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `align_ceil` (line 108) → `gcode/wipe_tower.rs:7986` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `align_floor` (line 113) → `gcode/wipe_tower.rs:7996` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `is_valid_gcode` (line 118) → `gcode/wipe_tower.rs:8004` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `chamfer_polygon` (line 147) → `gcode/wipe_tower.rs:1467` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `rounding_rectangle` (line 249) → `gcode/wipe_tower.rs:1512` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `ray_intersetion_line` (line 306) → `gcode/wipe_tower.rs:704` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `scale_polygon` (line 323) → `gcode/wipe_tower.rs:1558` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `unscale_polygon` (line 328) → `gcode/wipe_tower.rs:1567` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as partial to the estimate)
+- [v] `generate_rectange` (line 335) → `gcode/wipe_tower.rs:8041` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `remove_points_from_segment` (line 374) → `gcode/wipe_tower.rs:1590` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `move_point_along_polygon` (line 413) → `gcode/wipe_tower.rs:782` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `insert_points` (line 475) → `gcode/wipe_tower.rs:874` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `add_extra_point` (line 493) → `gcode/wipe_tower.rs:927` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as partial to the estimate)
+- [v] `remove_points_from_polygon` (line 586) → `gcode/wipe_tower.rs:1007` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `contrust_gap_for_skip_points` (line 671) → `gcode/wipe_tower.rs:1152` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `generate_rectange_polygon` (line 686) → `gcode/wipe_tower.rs:1179` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `polylines_extreme_at` (line 4660) → `gcode/wipe_tower.rs:1616` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `apply_wipe_tower_tail_slowdown` (line 7589) → `gcode/wipe_tower.rs:15504` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
 
 **class `Segment`**
 
-- [~] `is_valid` (line 371) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
+- [v] `is_valid` (line 371) → `gcode/wipe_tower.rs:1584` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
 
 **class `WipeTower`**
 
-- [~] `never_skip_tag` (line 28) → `g_code.rs` — not in the paired file
-- [ ] `rounding_polygon` (line 181) → `gcode/wipe_tower.rs`
-- [ ] `set_foundation_required` (line 199) → `gcode/wipe_tower.rs`
-- [ ] `set_shared_print_bed` (line 207) → `gcode/wipe_tower.rs`
-- [x] `get_depth` (line 221) → `gcode/wipe_tower.rs:2798`
-- [x] `get_brim_width` (line 222) → `gcode/wipe_tower.rs:2803`
-- [~] `get_bbx` (line 223) → `gcode/wipe_tower.rs:3209` — partial
-- [ ] `get_outer_wall` (line 229) → `gcode/wipe_tower.rs`
-- [x] `get_height` (line 233) → `gcode/wipe_tower.rs:2808`
-- [ ] `get_layer_height` (line 234) → `gcode/wipe_tower.rs`
-- [ ] `get_rib_length` (line 235) → `gcode/wipe_tower.rs`
-- [ ] `get_rib_width` (line 236) → `gcode/wipe_tower.rs`
-- [x] `set_last_layer_extruder_fill` (line 238) → `gcode/wipe_tower.rs:2823`
-- [~] `set_layer` (line 246) → `gcode/wipe_tower.rs:2741` — partial
-- [x] `width` (line 280) → `gcode/wipe_tower.rs:2793`
-- [x] `finished` (line 282) → `gcode/wipe_tower.rs:2818`
-- [ ] `extrusion_flow` (line 306) → `gcode/wipe_tower.rs`
-- [~] `nozzle_change_extrusion_flow` (line 311) → `gcode/wipe_tower.rs:2883` — partial
-- [ ] `extrusion_flow_for` (line 319) → `gcode/wipe_tower.rs`
-- [x] `extrusion_spacing_for` (line 325) → `gcode/wipe_tower.rs:3087`
-- [ ] `get_extrusion_flow` (line 332) → `gcode/wipe_tower.rs`
-- [x] `layer_finished` (line 335) → `gcode/wipe_tower.rs:2844`
-- [x] `get_used_filament` (line 339) → `gcode/wipe_tower.rs:2849`
-- [x] `get_number_of_toolchanges` (line 340) → `gcode/wipe_tower.rs:2854`
-- [x] `set_has_tpu_filament` (line 342) → `gcode/wipe_tower.rs:2727`
-- [x] `has_tpu_filament` (line 344) → `gcode/wipe_tower.rs:2732`
-- [ ] `set_used_filament_ids` (line 393) → `gcode/wipe_tower.rs`
-- [ ] `set_multi_diameter_print` (line 396) → `gcode/wipe_tower.rs`
-- [ ] `set_tower_grid_reference_nozzle` (line 397) → `gcode/wipe_tower.rs`
-- [ ] `set_tower_grid_layer_height` (line 398) → `gcode/wipe_tower.rs`
-- [ ] `set_per_nozzle_tower_params` (line 401) → `gcode/wipe_tower.rs`
-- [ ] `set_filament_categories` (line 405) → `gcode/wipe_tower.rs`
-- [ ] `set_nozzle_group_result` (line 406) → `gcode/wipe_tower.rs`
-- [ ] `encode_block_key` (line 445) → `gcode/wipe_tower.rs`
-- [ ] `decode_block_category` (line 452) → `gcode/wipe_tower.rs`
-- [ ] `get_gap_key` (line 456) → `gcode/wipe_tower.rs`
-- [ ] `layer_is_skipped` (line 487) → `gcode/wipe_tower.rs`
-- [ ] `layer_slab_height` (line 492) → `gcode/wipe_tower.rs`
-- [ ] `slab_height_for` (line 582) → `gcode/wipe_tower.rs`
-- [ ] `filament_extrusion_height` (line 593) → `gcode/wipe_tower.rs`
-- [ ] `get_rib_offset` (line 653) → `gcode/wipe_tower.rs`
-- [x] `filament_area` (line 671) → `gcode/wipe_tower.rs:3076`
-- [ ] `filament_perimeter_width` (line 676) → `gcode/wipe_tower.rs`
-- [ ] `filament_nozzle_change_width` (line 680) → `gcode/wipe_tower.rs`
-- [ ] `nozzle_based_width` (line 685) → `gcode/wipe_tower.rs`
-- [ ] `capped_wall_grid_width` (line 692) → `gcode/wipe_tower.rs`
-- [ ] `is_first_layer` (line 810) → `gcode/wipe_tower.rs`
-- [~] `is_first_layer_for_slab` (line 813) → `gcode/wipe_tower.rs:3137` — partial
-- [x] `calc_tower_feedrate` (line 826) → `gcode/wipe_tower.rs:3155`
-- [~] `calc_tower_feedrate` (line 829) → `gcode/wipe_tower.rs` — another overload of the name is ported
-- [ ] `keeps_outer_walls_unshrunk` (line 852) → `gcode/wipe_tower.rs`
-- [x] `volume_to_length` (line 868) → `gcode/wipe_tower.rs:2870`
-- [x] `length_to_volume` (line 872) → `gcode/wipe_tower.rs:2876`
-- [x] `construct_tcr` (line 1655) → `gcode/wipe_tower.rs:5789`
-- [ ] `construct_block_tcr` (line 1686) → `gcode/wipe_tower.rs`
-- [x] `get_limit_depth_by_height` (line 1718) → `gcode/wipe_tower.rs:2925`
-- [x] `get_auto_brim_by_height` (line 1754) → `gcode/wipe_tower.rs:2963`
-- [ ] `move_box_inside_box` (line 1761) → `gcode/wipe_tower.rs`
-- [ ] `rib_section` (line 1782) → `gcode/wipe_tower.rs`
-- [ ] `its_make_rib_tower` (line 1824) → `gcode/wipe_tower.rs`
-- [ ] `its_make_rib_brim` (line 1854) → `gcode/wipe_tower.rs`
-- [~] `set_extruder` (line 2017) → `gcode/wipe_tower.rs:2696` — divergent
-- [ ] `set_single_diameter_parameters` (line 2172) → `gcode/wipe_tower.rs`
-- [x] `prime` (line 2189) → `gcode/wipe_tower.rs:5850`
-- [ ] `wipe_line_spacing` (line 2201) → `gcode/wipe_tower.rs`
-- [~] `get_next_pos` (line 2209) → `gcode/wipe_tower.rs:4343` — divergent
-- [~] `tool_change` (line 2263) → `gcode/wipe_tower.rs:4086` — partial
-- [ ] `nozzle_change` (line 2424) → `gcode/wipe_tower.rs`
-- [~] `toolchange_Unload` (line 2553) → `gcode/wipe_tower.rs:4308` — divergent
-- [ ] `toolchange_Change` (line 2692) → `gcode/wipe_tower.rs`
-- [ ] `toolchange_Load` (line 2728) → `gcode/wipe_tower.rs`
-- [~] `toolchange_Wipe` (line 2760) → `gcode/wipe_tower.rs:4327` — divergent
-- [x] `align_perimeter` (line 2879) → `gcode/wipe_tower.rs:3179`
-- [~] `set_for_wipe_tower_writer` (line 2900) → `gcode/wipe_tower.rs:4069` — divergent
-- [~] `finish_layer` (line 2916) → `gcode/wipe_tower.rs:4846` — partial
-- [ ] `set_toolchange` (line 3085) → `gcode/wipe_tower.rs`
-- [~] `plan_toolchange` (line 3119) → `gcode/wipe_tower.rs:2971` — partial
-- [x] `plan_tower` (line 3183) → `gcode/wipe_tower.rs:3602`
-- [ ] `save_on_last_wipe` (line 3294) → `gcode/wipe_tower.rs`
-- [x] `is_tpu_filament` (line 3324) → `gcode/wipe_tower.rs:2916`
-- [ ] `is_petg_filament` (line 3329) → `gcode/wipe_tower.rs`
-- [ ] `is_need_reverse_travel` (line 3334) → `gcode/wipe_tower.rs`
-- [ ] `first_toolchange_to_nonsoluble_nonsupport` (line 3344) → `gcode/wipe_tower.rs`
-- [~] `merge_tcr` (line 3353) → `gcode/wipe_tower.rs:5615` — partial
-- [~] `get_all_wall_skip_points` (line 3429) → `gcode/wipe_tower.rs:3495` — divergent
-- [~] `get_wall_skip_points` (line 3450) → `gcode/wipe_tower.rs:3529` — divergent
-- [ ] `tool_change_new` (line 3542) → `gcode/wipe_tower.rs`
-- [ ] `ramming` (line 3727) → `gcode/wipe_tower.rs`
-- [ ] `heater_off_nozzle_change` (line 3922) → `gcode/wipe_tower.rs`
-- [ ] `idle_travel_cooling` (line 3944) → `gcode/wipe_tower.rs`
-- [x] `brim_chamfer_loops_num` (line 4056) → `gcode/wipe_tower.rs:3104`
-- [~] `finish_layer_new` (line 4077) → `gcode/wipe_tower.rs:5417` — divergent
-- [~] `finish_block` (line 4398) → `gcode/wipe_tower.rs:5538` — partial
-- [ ] `finish_block_solid` (line 4531) → `gcode/wipe_tower.rs`
-- [ ] `outer_wall_extreme_at` (line 4687) → `gcode/wipe_tower.rs`
-- [ ] `side_wall_straight_along_range` (line 4710) → `gcode/wipe_tower.rs`
-- [ ] `side_scrape_z_floor` (line 4769) → `gcode/wipe_tower.rs`
-- [ ] `toolchange_side_scrape` (line 4813) → `gcode/wipe_tower.rs`
-- [ ] `toolchange_wipe_new` (line 4999) → `gcode/wipe_tower.rs`
-- [ ] `min_layer_height_for_filament` (line 5222) → `gcode/wipe_tower.rs`
-- [ ] `max_layer_height_for_filament` (line 5228) → `gcode/wipe_tower.rs`
-- [ ] `filament_can_print_height` (line 5234) → `gcode/wipe_tower.rs`
-- [ ] `preferred_band_size_for_filament` (line 5240) → `gcode/wipe_tower.rs`
-- [ ] `preferred_height_for_filament` (line 5249) → `gcode/wipe_tower.rs`
-- [ ] `plan_band_merge_ladder` (line 5256) → `gcode/wipe_tower.rs`
-- [ ] `fold_thin_ladder_groups` (line 5355) → `gcode/wipe_tower.rs`
-- [ ] `get_block_key` (line 5427) → `gcode/wipe_tower.rs`
-- [~] `get_block_by_category` (line 5440) → `gcode/wipe_tower.rs:3246` — partial
-- [~] `add_depth_to_block` (line 5462) → `gcode/wipe_tower.rs:3269` — partial
-- [x] `get_filament_category` (line 5484) → `gcode/wipe_tower.rs:3235`
-- [x] `reset_block_status` (line 5491) → `gcode/wipe_tower.rs:3594`
-- [ ] `set_nozzle_last_layer_id` (line 5499) → `gcode/wipe_tower.rs`
-- [ ] `set_first_layer_flow_ratio` (line 5512) → `gcode/wipe_tower.rs`
-- [~] `update_all_layer_depth` (line 5517) → `gcode/wipe_tower.rs:3427` — partial
-- [~] `generate_wipe_tower_blocks` (line 5551) → `gcode/wipe_tower.rs:3309` — divergent
-- [ ] `calc_block_infill_gap` (line 5736) → `gcode/wipe_tower.rs`
-- [ ] `has_multiple_nozzle_diameters` (line 5832) → `gcode/wipe_tower.rs`
-- [ ] `absorb_run_into_next_layer` (line 5843) → `gcode/wipe_tower.rs`
-- [ ] `plan_tower_ladder` (line 5877) → `gcode/wipe_tower.rs`
-- [~] `first_printed_layer_idx` (line 6074) → `gcode/wipe_tower.rs:3131` — divergent
-- [ ] `merged_fill_active` (line 6083) → `gcode/wipe_tower.rs`
-- [ ] `same_category_filler` (line 6091) → `gcode/wipe_tower.rs`
-- [ ] `loaded_filament` (line 6115) → `gcode/wipe_tower.rs`
-- [ ] `plan_merged_slabs` (line 6128) → `gcode/wipe_tower.rs`
-- [ ] `collect_printed_steps` (line 6513) → `gcode/wipe_tower.rs`
-- [ ] `tower_bed_z` (line 6522) → `gcode/wipe_tower.rs`
-- [ ] `collect_tower_visitors` (line 6530) → `gcode/wipe_tower.rs`
-- [ ] `plan_merge_ladder` (line 6560) → `gcode/wipe_tower.rs`
-- [ ] `plan_merged_block_fill` (line 6643) → `gcode/wipe_tower.rs`
-- [ ] `plan_merged_outer_wall` (line 7093) → `gcode/wipe_tower.rs`
-- [ ] `audit_merged_slabs` (line 7189) → `gcode/wipe_tower.rs`
-- [ ] `plan_tower_new` (line 7256) → `gcode/wipe_tower.rs`
-- [ ] `can_print_base_layers` (line 7360) → `gcode/wipe_tower.rs`
-- [x] `get_wall_filament_for_all_layer` (line 7370) → `gcode/wipe_tower.rs:5667`
-- [ ] `band_fill_depth` (line 7437) → `gcode/wipe_tower.rs`
-- [~] `get_wall_filament_for_layer` (line 7451) → `gcode/wipe_tower.rs:5723` — partial
-- [ ] `block_fill_filament_base` (line 7501) → `gcode/wipe_tower.rs`
-- [~] `get_block_fill_filament` (line 7535) → `gcode/wipe_tower.rs:5758` — partial
-- [ ] `generate_new` (line 7760) → `gcode/wipe_tower.rs`
-- [~] `generate` (line 8112) → `gcode/wipe_tower.rs:3804` — partial
-- [~] `only_generate_out_wall` (line 8215) → `gcode/wipe_tower.rs:4738` — partial
-- [ ] `generate_rib_polygon` (line 8282) → `gcode/wipe_tower.rs`
-- [ ] `generate_support_wall_new` (line 8314) → `gcode/wipe_tower.rs`
-- [ ] `generate_support_wall` (line 8371) → `gcode/wipe_tower.rs`
-- [ ] `get_floating_area` (line 8476) → `gcode/wipe_tower.rs`
-- [ ] `need_thick_bridge_flow` (line 8526) → `gcode/wipe_tower.rs`
-- [ ] `is_valid_last_layer` (line 8539) → `gcode/wipe_tower.rs`
-- [ ] `get_block_gap_width` (line 8546) → `gcode/wipe_tower.rs`
-- [x] `is_need_ramming` (line 8559) → `gcode/wipe_tower.rs:2910`
-- [x] `is_same_extruder` (line 8563) → `gcode/wipe_tower.rs:2893`
-- [x] `is_same_nozzle` (line 8568) → `gcode/wipe_tower.rs:2901`
-- [~] `get_nozzle_id` (line 8573) → `multi_nozzle_utils.rs` — not in the paired file
-- [~] `get_extruder_id` (line 8575) → `gcode/g_code_processor.rs, multi_nozzle_utils.rs` — not in the paired file
+- [x] `never_skip_tag` (line 28) → `gcode/wipe_tower.rs:8122`
+- [v] `rounding_polygon` (line 181) → `gcode/wipe_tower.rs:8715` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `set_foundation_required` (line 199) → `gcode/wipe_tower.rs:8127`
+- [x] `set_shared_print_bed` (line 207) → `gcode/wipe_tower.rs:8132`
+- [v] `get_depth` (line 221) → `gcode/wipe_tower.rs:4714` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `get_brim_width` (line 222) → `gcode/wipe_tower.rs:4719` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `get_bbx` (line 223) → `gcode/wipe_tower.rs:5229` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as partial to the estimate)
+- [x] `get_outer_wall` (line 229) → `gcode/wipe_tower.rs:8137`
+- [x] `get_height` (line 233) → `gcode/wipe_tower.rs:4724`
+- [x] `get_layer_height` (line 234) → `gcode/wipe_tower.rs:8142`
+- [x] `get_rib_length` (line 235) → `gcode/wipe_tower.rs:8147`
+- [x] `get_rib_width` (line 236) → `gcode/wipe_tower.rs:8152`
+- [x] `set_last_layer_extruder_fill` (line 238) → `gcode/wipe_tower.rs:4739`
+- [x] `set_layer` (line 246) → `gcode/wipe_tower.rs:4646` — read against the C++ in R912 (the estimate says partial)
+- [x] `width` (line 280) → `gcode/wipe_tower.rs:4709`
+- [x] `finished` (line 282) → `gcode/wipe_tower.rs:4734`
+- [x] `extrusion_flow` (line 306) → `gcode/wipe_tower.rs:8157` — read against the C++ in R912 (the estimate says partial)
+- [x] `nozzle_change_extrusion_flow` (line 311) → `gcode/wipe_tower.rs:4812` — read against the C++ in R912 (the estimate says partial)
+- [x] `extrusion_flow_for` (line 319) → `gcode/wipe_tower.rs:8165`
+- [x] `extrusion_spacing_for` (line 325) → `gcode/wipe_tower.rs:5101`
+- [x] `get_extrusion_flow` (line 332) → `gcode/wipe_tower.rs:8173`
+- [x] `layer_finished` (line 335) → `gcode/wipe_tower.rs:4760`
+- [x] `get_used_filament` (line 339) → `gcode/wipe_tower.rs:4765`
+- [x] `get_number_of_toolchanges` (line 340) → `gcode/wipe_tower.rs:4770`
+- [x] `set_has_tpu_filament` (line 342) → `gcode/wipe_tower.rs:4632`
+- [x] `has_tpu_filament` (line 344) → `gcode/wipe_tower.rs:4637`
+- [x] `set_used_filament_ids` (line 393) → `gcode/wipe_tower.rs:8178`
+- [x] `set_multi_diameter_print` (line 396) → `gcode/wipe_tower.rs:8183`
+- [x] `set_tower_grid_reference_nozzle` (line 397) → `gcode/wipe_tower.rs:8188`
+- [x] `set_tower_grid_layer_height` (line 398) → `gcode/wipe_tower.rs:8193`
+- [x] `set_per_nozzle_tower_params` (line 401) → `gcode/wipe_tower.rs:8198`
+- [x] `set_filament_categories` (line 405) → `gcode/wipe_tower.rs:8203`
+- [x] `set_nozzle_group_result` (line 406) → `gcode/wipe_tower.rs:8208`
+- [v] `encode_block_key` (line 445) → `gcode/wipe_tower.rs:8213` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `decode_block_category` (line 452) → `gcode/wipe_tower.rs:8219` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `get_gap_key` (line 456) → `gcode/wipe_tower.rs:8224`
+- [x] `layer_is_skipped` (line 487) → `gcode/wipe_tower.rs:8229` — read against the C++ in R912 (the estimate says partial)
+- [x] `layer_slab_height` (line 492) → `gcode/wipe_tower.rs:8234`
+- [x] `slab_height_for` (line 582) → `gcode/wipe_tower.rs:8246`
+- [x] `filament_extrusion_height` (line 593) → `gcode/wipe_tower.rs:8258`
+- [x] `get_rib_offset` (line 653) → `gcode/wipe_tower.rs:8263`
+- [x] `filament_area` (line 671) → `gcode/wipe_tower.rs:5090`
+- [x] `filament_perimeter_width` (line 676) → `gcode/wipe_tower.rs:8268` — read against the C++ in R912 (the estimate says partial)
+- [x] `filament_nozzle_change_width` (line 680) → `gcode/wipe_tower.rs:8280` — read against the C++ in R912 (the estimate says partial)
+- [x] `nozzle_based_width` (line 685) → `gcode/wipe_tower.rs:8292`
+- [x] `capped_wall_grid_width` (line 692) → `gcode/wipe_tower.rs:8303`
+- [x] `is_first_layer` (line 810) → `gcode/wipe_tower.rs:8311`
+- [x] `is_first_layer_for_slab` (line 813) → `gcode/wipe_tower.rs:5157` — read against the C++ in R912 (the estimate says partial)
+- [~] `calc_tower_feedrate` (line 826) → `gcode/wipe_tower.rs` — another overload of the name is ported
+- [x] `calc_tower_feedrate` (line 829) → `gcode/wipe_tower.rs:5174`
+- [x] `keeps_outer_walls_unshrunk` (line 852) → `gcode/wipe_tower.rs:8316`
+- [x] `volume_to_length` (line 868) → `gcode/wipe_tower.rs:4786`
+- [x] `length_to_volume` (line 872) → `gcode/wipe_tower.rs:4805`
+- [v] `construct_tcr` (line 1655) → `gcode/wipe_tower.rs:7839` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `construct_block_tcr` (line 1686) → `gcode/wipe_tower.rs:7896` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `get_limit_depth_by_height` (line 1718) → `gcode/wipe_tower.rs:4869` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `get_auto_brim_by_height` (line 1754) → `gcode/wipe_tower.rs:4913` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `move_box_inside_box` (line 1761) → `gcode/wipe_tower.rs:8692` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `rib_section` (line 1782) → `gcode/wipe_tower.rs:8763` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `its_make_rib_tower` (line 1824) → `gcode/wipe_tower.rs:8808` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `its_make_rib_brim` (line 1854) → `gcode/wipe_tower.rs:8845` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [~] `set_extruder` (line 2017) → `gcode/wipe_tower.rs:4601` — divergent
+- [x] `set_single_diameter_parameters` (line 2172) → `gcode/wipe_tower.rs:9246` — read against the C++ in R912 (the estimate says partial)
+- [x] `prime` (line 2189) → `gcode/wipe_tower.rs:7931`
+- [x] `wipe_line_spacing` (line 2201) → `gcode/wipe_tower.rs:8683`
+- [x] `get_next_pos` (line 2209) → `gcode/wipe_tower.rs:9310`
+- [x] `tool_change` (line 2263) → `gcode/wipe_tower.rs:9397`
+- [x] `nozzle_change` (line 2424) → `gcode/wipe_tower.rs:9576`
+- [~] `toolchange_Unload` (line 2553) → `gcode/wipe_tower.rs:9717` — stub
+- [x] `toolchange_Change` (line 2692) → `gcode/wipe_tower.rs:9721` — read against the C++ in R912 (the estimate says partial)
+- [~] `toolchange_Load` (line 2728) → `gcode/wipe_tower.rs:9745` — stub
+- [x] `toolchange_Wipe` (line 2760) → `gcode/wipe_tower.rs:9749`
+- [x] `align_perimeter` (line 2879) → `gcode/wipe_tower.rs:5199`
+- [x] `set_for_wipe_tower_writer` (line 2900) → `gcode/wipe_tower.rs:6096` — read against the C++ in R912 (the estimate says partial)
+- [x] `finish_layer` (line 2916) → `gcode/wipe_tower.rs:11172`
+- [v] `set_toolchange` (line 3085) → `gcode/wipe_tower.rs:14504` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `plan_toolchange` (line 3119) → `gcode/wipe_tower.rs:4921` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `plan_tower` (line 3183) → `gcode/wipe_tower.rs:5629`
+- [x] `save_on_last_wipe` (line 3294) → `gcode/wipe_tower.rs:14553`
+- [x] `is_tpu_filament` (line 3324) → `gcode/wipe_tower.rs:4857`
+- [x] `is_petg_filament` (line 3329) → `gcode/wipe_tower.rs:8603`
+- [x] `is_need_reverse_travel` (line 3334) → `gcode/wipe_tower.rs:8608`
+- [x] `first_toolchange_to_nonsoluble_nonsupport` (line 3344) → `gcode/wipe_tower.rs:8618`
+- [v] `merge_tcr` (line 3353) → `gcode/wipe_tower.rs:14591` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `get_all_wall_skip_points` (line 3429) → `gcode/wipe_tower.rs:14654`
+- [v] `get_wall_skip_points` (line 3450) → `gcode/wipe_tower.rs:14680` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `tool_change_new` (line 3542) → `gcode/wipe_tower.rs:9857` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `ramming` (line 3727) → `gcode/wipe_tower.rs:10050` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `heater_off_nozzle_change` (line 3922) → `gcode/wipe_tower.rs:10291` — read against the C++ in R912 (the estimate says partial)
+- [x] `idle_travel_cooling` (line 3944) → `gcode/wipe_tower.rs:10307`
+- [x] `brim_chamfer_loops_num` (line 4056) → `gcode/wipe_tower.rs:5121`
+- [v] `finish_layer_new` (line 4077) → `gcode/wipe_tower.rs:11352` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `finish_block` (line 4398) → `gcode/wipe_tower.rs:11707` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `finish_block_solid` (line 4531) → `gcode/wipe_tower.rs:11870` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `outer_wall_extreme_at` (line 4687) → `gcode/wipe_tower.rs:10432`
+- [x] `side_wall_straight_along_range` (line 4710) → `gcode/wipe_tower.rs:10464`
+- [x] `side_scrape_z_floor` (line 4769) → `gcode/wipe_tower.rs:10528`
+- [v] `toolchange_side_scrape` (line 4813) → `gcode/wipe_tower.rs:10572` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `toolchange_wipe_new` (line 4999) → `gcode/wipe_tower.rs:10736` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `min_layer_height_for_filament` (line 5222) → `gcode/wipe_tower.rs:8477`
+- [x] `max_layer_height_for_filament` (line 5228) → `gcode/wipe_tower.rs:8491`
+- [x] `filament_can_print_height` (line 5234) → `gcode/wipe_tower.rs:8505`
+- [x] `preferred_band_size_for_filament` (line 5240) → `gcode/wipe_tower.rs:8511`
+- [x] `preferred_height_for_filament` (line 5249) → `gcode/wipe_tower.rs:8526`
+- [x] `plan_band_merge_ladder` (line 5256) → `gcode/wipe_tower.rs:12335`
+- [x] `fold_thin_ladder_groups` (line 5355) → `gcode/wipe_tower.rs:12472`
+- [x] `get_block_key` (line 5427) → `gcode/wipe_tower.rs:8325`
+- [x] `get_block_by_category` (line 5440) → `gcode/wipe_tower.rs:8347`
+- [x] `add_depth_to_block` (line 5462) → `gcode/wipe_tower.rs:8368`
+- [x] `get_filament_category` (line 5484) → `gcode/wipe_tower.rs:5262`
+- [x] `reset_block_status` (line 5491) → `gcode/wipe_tower.rs:5621`
+- [x] `set_nozzle_last_layer_id` (line 5499) → `gcode/wipe_tower.rs:8387`
+- [x] `set_first_layer_flow_ratio` (line 5512) → `gcode/wipe_tower.rs:8403`
+- [v] `update_all_layer_depth` (line 5517) → `gcode/wipe_tower.rs:14789` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as partial to the estimate)
+- [v] `generate_wipe_tower_blocks` (line 5551) → `gcode/wipe_tower.rs:14826` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `calc_block_infill_gap` (line 5736) → `gcode/wipe_tower.rs:15032` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `has_multiple_nozzle_diameters` (line 5832) → `gcode/wipe_tower.rs:8408`
+- [x] `absorb_run_into_next_layer` (line 5843) → `gcode/wipe_tower.rs:12566`
+- [v] `plan_tower_ladder` (line 5877) → `gcode/wipe_tower.rs:12604` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `first_printed_layer_idx` (line 6074) → `gcode/wipe_tower.rs:5146` — read against the C++ in R912 (the estimate says partial)
+- [x] `merged_fill_active` (line 6083) → `gcode/wipe_tower.rs:8413`
+- [x] `same_category_filler` (line 6091) → `gcode/wipe_tower.rs:8422`
+- [x] `loaded_filament` (line 6115) → `gcode/wipe_tower.rs:8445`
+- [v] `plan_merged_slabs` (line 6128) → `gcode/wipe_tower.rs:12883` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `collect_printed_steps` (line 6513) → `gcode/wipe_tower.rs:8457`
+- [x] `tower_bed_z` (line 6522) → `gcode/wipe_tower.rs:8468` — read against the C++ in R912 (the estimate says divergent)
+- [x] `collect_tower_visitors` (line 6530) → `gcode/wipe_tower.rs:13277`
+- [v] `plan_merge_ladder` (line 6560) → `gcode/wipe_tower.rs:13320` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `plan_merged_block_fill` (line 6643) → `gcode/wipe_tower.rs:13448` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `plan_merged_outer_wall` (line 7093) → `gcode/wipe_tower.rs:14004` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `audit_merged_slabs` (line 7189) → `gcode/wipe_tower.rs:14106`
+- [v] `plan_tower_new` (line 7256) → `gcode/wipe_tower.rs:15156` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `can_print_base_layers` (line 7360) → `gcode/wipe_tower.rs:8534`
+- [x] `get_wall_filament_for_all_layer` (line 7370) → `gcode/wipe_tower.rs:15290`
+- [x] `band_fill_depth` (line 7437) → `gcode/wipe_tower.rs:8549`
+- [x] `get_wall_filament_for_layer` (line 7451) → `gcode/wipe_tower.rs:15354`
+- [x] `block_fill_filament_base` (line 7501) → `gcode/wipe_tower.rs:15412`
+- [x] `get_block_fill_filament` (line 7535) → `gcode/wipe_tower.rs:15453`
+- [v] `generate_new` (line 7760) → `gcode/wipe_tower.rs:15735` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [~] `generate` (line 8112) → `gcode/wipe_tower.rs:5831` — divergent
+- [v] `only_generate_out_wall` (line 8215) → `gcode/wipe_tower.rs:12034` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `generate_rib_polygon` (line 8282) → `gcode/wipe_tower.rs:12099` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `generate_support_wall_new` (line 8314) → `gcode/wipe_tower.rs:12140` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as partial to the estimate)
+- [x] `generate_support_wall` (line 8371) → `gcode/wipe_tower.rs:12202`
+- [x] `get_floating_area` (line 8476) → `gcode/wipe_tower.rs:8629` — read against the C++ in R912 (the estimate says partial)
+- [x] `need_thick_bridge_flow` (line 8526) → `gcode/wipe_tower.rs:8670`
+- [x] `is_valid_last_layer` (line 8539) → `gcode/wipe_tower.rs:8557`
+- [x] `get_block_gap_width` (line 8546) → `gcode/wipe_tower.rs:8569`
+- [x] `is_need_ramming` (line 8559) → `gcode/wipe_tower.rs:4846`
+- [x] `is_same_extruder` (line 8563) → `gcode/wipe_tower.rs:4823`
+- [x] `is_same_nozzle` (line 8568) → `gcode/wipe_tower.rs:4834`
+- [x] `get_nozzle_id` (line 8573) → `gcode/wipe_tower.rs:8586`
+- [x] `get_extruder_id` (line 8575) → `gcode/wipe_tower.rs:8595`
 
 **class `WipeTower::ToolChangeResult`**
 
-- [x] `total_extrusion_length_in_plane` (line 133) → `gcode/wipe_tower.rs:359`
+- [x] `total_extrusion_length_in_plane` (line 133) → `gcode/wipe_tower.rs:423`
 
 **class `WipeTower::WipeTowerInfo`**
 
-- [x] `toolchanges_depth` (line 917) → `gcode/wipe_tower.rs:533`
+- [x] `toolchanges_depth` (line 917) → `gcode/wipe_tower.rs:671`
 
 **class `WipeTower::box_coordinates`**
 
-- [x] `translate` (line 154) → `gcode/wipe_tower.rs:246`
+- [x] `translate` (line 154) → `gcode/wipe_tower.rs:283`
 - [~] `translate` (line 158) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `expand` (line 159) → `gcode/wipe_tower.rs:253`
+- [x] `expand` (line 159) → `gcode/wipe_tower.rs:290`
 - [~] `expand` (line 165) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 
 **class `WipeTowerWriter`**
 
-- [ ] `y_shift` (line 778) → `gcode/wipe_tower.rs`
-- [x] `x` (line 813) → `gcode/wipe_tower.rs:1504`
-- [x] `y` (line 814) → `gcode/wipe_tower.rs:1509`
-- [x] `start_pos_rotated` (line 816) → `gcode/wipe_tower.rs:1520`
-- [x] `pos_rotated` (line 817) → `gcode/wipe_tower.rs:1526`
-- [~] `point_rotated` (line 819) → `geometry/voronoi_diagram.rs` — not in the paired file
-- [x] `elapsed_time` (line 820) → `gcode/wipe_tower.rs:1531`
-- [x] `get_and_reset_used_filament_length` (line 821) → `gcode/wipe_tower.rs:1536`
-- [x] `generate_path` (line 1380) → `gcode/wipe_tower.rs:1902`
-- [ ] `spiral_flat_ironing` (line 1441) → `gcode/wipe_tower.rs`
-- [x] `set_first_layer` (line 1501) → `gcode/wipe_tower.rs:1418`
+- [v] `y_shift` (line 778) → `gcode/wipe_tower.rs:3463` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `x` (line 813) → `gcode/wipe_tower.rs:2223` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `y` (line 814) → `gcode/wipe_tower.rs:2228` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `start_pos_rotated` (line 816) → `gcode/wipe_tower.rs:2239` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `pos_rotated` (line 817) → `gcode/wipe_tower.rs:2245` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `point_rotated` (line 819) → `gcode/wipe_tower.rs:3468`
+- [v] `elapsed_time` (line 820) → `gcode/wipe_tower.rs:2250` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `get_and_reset_used_filament_length` (line 821) → `gcode/wipe_tower.rs:2255` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `generate_path` (line 1380) → `gcode/wipe_tower.rs:2641` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `spiral_flat_ironing` (line 1441) → `gcode/wipe_tower.rs:4031` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_first_layer` (line 1501) → `gcode/wipe_tower.rs:2137` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
 - [~] `set_normal_acceleration` (line 1502) → `gcode/wipe_tower.rs` — another overload of the name is ported
-- [ ] `set_first_layer_normal_acceleration` (line 1503) → `gcode/wipe_tower.rs`
+- [v] `set_first_layer_normal_acceleration` (line 1503) → `gcode/wipe_tower.rs:4114` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
 - [~] `set_travel_acceleration` (line 1504) → `g_code_writer.rs, gcode/g_code_processor.rs, gcode/writer.rs` — not in the paired file
 - [~] `set_first_layer_travel_acceleration` (line 1505) → `g_code_writer.rs` — not in the paired file
-- [x] `set_max_acceleration` (line 1506) → `gcode/wipe_tower.rs:1449`
-- [ ] `set_accel_to_decel_enable` (line 1507) → `gcode/wipe_tower.rs`
-- [ ] `set_accel_to_decel_factor` (line 1508) → `gcode/wipe_tower.rs`
-- [ ] `set_layer_id` (line 1509) → `gcode/wipe_tower.rs`
-- [ ] `set_handle_hotend_as_extruder` (line 1510) → `gcode/wipe_tower.rs`
-- [ ] `set_multi_nozzle_group_result` (line 1511) → `gcode/wipe_tower.rs`
-- [ ] `set_physical_extruder_map` (line 1512) → `gcode/wipe_tower.rs`
-- [~] `set_normal_acceleration` (line 1515) → `gcode/wipe_tower.rs:2439` — divergent
-- [~] `set_travel_acceleration` (line 1523) → `gcode/wipe_tower.rs:2455` — divergent
-- [~] `set_acceleration_impl` (line 1532) → `gcode/wipe_tower.rs:2471` — divergent
-- [ ] `set_format_X` (line 1610) → `gcode/wipe_tower.rs`
-- [ ] `set_format_Y` (line 1616) → `gcode/wipe_tower.rs`
-- [ ] `set_format_Z` (line 1621) → `gcode/wipe_tower.rs`
-- [ ] `set_format_E` (line 1625) → `gcode/wipe_tower.rs`
-- [ ] `set_format_F` (line 1629) → `gcode/wipe_tower.rs`
-- [ ] `set_format_I` (line 1635) → `gcode/wipe_tower.rs`
-- [ ] `set_format_J` (line 1636) → `gcode/wipe_tower.rs`
-- [x] `rotate` (line 1641) → `gcode/wipe_tower.rs:2510`
+- [v] `set_max_acceleration` (line 1506) → `gcode/wipe_tower.rs:2168` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_accel_to_decel_enable` (line 1507) → `gcode/wipe_tower.rs:4119` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_accel_to_decel_factor` (line 1508) → `gcode/wipe_tower.rs:4124` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_layer_id` (line 1509) → `gcode/wipe_tower.rs:4129` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [x] `set_handle_hotend_as_extruder` (line 1510) → `gcode/wipe_tower.rs:4134`
+- [v] `set_multi_nozzle_group_result` (line 1511) → `gcode/wipe_tower.rs:4139` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_physical_extruder_map` (line 1512) → `gcode/wipe_tower.rs:4144` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_normal_acceleration` (line 1515) → `gcode/wipe_tower.rs:3209` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as divergent to the estimate)
+- [v] `set_travel_acceleration` (line 1523) → `gcode/wipe_tower.rs:3233` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as divergent to the estimate)
+- [v] `set_acceleration_impl` (line 1532) → `gcode/wipe_tower.rs:3255` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as divergent to the estimate)
+- [v] `set_format_X` (line 1610) → `gcode/wipe_tower.rs:4149` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_format_Y` (line 1616) → `gcode/wipe_tower.rs:4155` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_format_Z` (line 1621) → `gcode/wipe_tower.rs:4161` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_format_E` (line 1625) → `gcode/wipe_tower.rs:4166` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_format_F` (line 1629) → `gcode/wipe_tower.rs:4172` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim (the body reads as partial to the estimate)
+- [v] `set_format_I` (line 1635) → `gcode/wipe_tower.rs:4178` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `set_format_J` (line 1636) → `gcode/wipe_tower.rs:4183` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
+- [v] `rotate` (line 1641) → `gcode/wipe_tower.rs:3315` — R912: tests/wipe_tower_native_parity.rs: the pin's WipeTower.cpp included: free and geometry helpers (about 900 cases), 36 random WipeTowerWriter programs over six G-code flavors, and 16 whole towers (plan_toolchange, generate_new; 112 ToolChangeResults byte for byte, tower state) covering rib and gap walls, timelapse, categories, two extruders, merged slabs, side scrape, ironing, tail slowdown, TPU and auto brim
 
 ### `GCodeReader` (.cpp+.hpp)
 
@@ -8204,8 +8204,8 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 
 **class `Range`**
 
-- [~] `begin` (line 358) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 359) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 358) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 359) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 369) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 370) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
@@ -8985,7 +8985,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [~] `set_mesh` (line 995) → `print_object.rs, texture_painting.rs` — not in the paired file
 - [ ] `reset_mesh` (line 996) → `model.rs`
 - [~] `get_object` (line 1025) → `texture_painting.rs` — not in the paired file
-- [~] `type` (line 1026) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
+- [~] `type` (line 1026) → `geometry/build_volume.rs, placeholder_parser.rs, preset.rs` — not in the paired file
 - [~] `set_type` (line 1027) → `surface.rs, surface_collection.rs` — not in the paired file
 - [~] `is_model_part` (line 1028) → `format/assembly_steps_json.rs` — not in the paired file
 - [ ] `is_negative_volume` (line 1029) → `model.rs`
@@ -9361,12 +9361,12 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [x] `bounding_box` (line 89) → `multi_point.rs:236`
 - [x] `has_duplicate_points` (line 94) → `multi_point.rs:246`
 - [~] `remove_duplicate_points` (line 102) → `geometry/simplify.rs` — not in the paired file
-- [~] `begin` (line 103) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `begin` (line 104) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 105) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `end` (line 106) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `cbegin` (line 107) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 108) → `mutable_polygon.rs` — not in the paired file
+- [~] `begin` (line 103) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 104) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 105) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `end` (line 106) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `cbegin` (line 107) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 108) → `mutable_polygon.rs, preset.rs` — not in the paired file
 - [x] `remove_colinear_points` (line 121) → `multi_point.rs:287`
 - [~] `intersection` (line 136) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
 - [~] `first_intersection` (line 145) → `geometry/polygon.rs` — not in the paired file
@@ -9415,10 +9415,10 @@ Rust file: `mutable_polygon.rs`. Status: **partial**. Not listed: 7 constructors
 - [x] `clear` (line 170) → `mutable_polygon.rs:259`
 - [x] `begin` (line 172) → `mutable_polygon.rs:268`
 - [x] `cbegin` (line 173) → `mutable_polygon.rs:273`
-- [~] `begin` (line 174) → `boost_polygon_voronoi.rs, sla/agg/scanline_p.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 174) → `boost_polygon_voronoi.rs, preset.rs, sla/agg/scanline_p.rs` — not in the paired file
 - [x] `end` (line 176) → `mutable_polygon.rs:279`
 - [x] `cend` (line 177) → `mutable_polygon.rs:290`
-- [~] `end` (line 178) → `sla/agg/gamma_functions.rs, support/tree_model_volumes.rs, triangle_mesh.rs` — not in the paired file
+- [~] `end` (line 178) → `preset.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `remove` (line 182) → `arachne/utils/extrusion_line.rs, extrusion_entity_collection.rs, fill/fill_adaptive.rs` — not in the paired file
 - [~] `insert` (line 185) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
 - [x] `assign_inner` (line 207) → `mutable_polygon.rs:365`
@@ -9467,10 +9467,10 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [x] `update` (line 27) → `mutable_priority_queue.rs:272`
 - [x] `size` (line 29) → `mutable_priority_queue.rs:284`
 - [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `begin` (line 36) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 37) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `cbegin` (line 38) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 39) → `mutable_polygon.rs` — not in the paired file
+- [~] `begin` (line 36) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 37) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `cbegin` (line 38) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 39) → `mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `clear` (line 59) → `mutable_priority_queue.rs:111` — divergent
 - [~] `push` (line 74) → `boost_polygon_voronoi.rs, channel.rs, geometry/polygon.rs` — not in the paired file
 - [x] `push` (line 83) → `mutable_priority_queue.rs:140`
@@ -10007,7 +10007,7 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 
 **class `MyContext`**
 
-- [~] `get_extruder_id` (line 739) → `gcode/g_code_processor.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `get_extruder_id` (line 739) → `gcode/g_code_processor.rs, gcode/wipe_tower.rs, multi_nozzle_utils.rs` — not in the paired file
 - [ ] `evaluate_full_macro` (line 747) → `placeholder_parser.rs`
 - [~] `optptr` (line 749) → `config.rs, print_config.rs` — not in the paired file
 - [ ] `resolve_symbol` (line 761) → `placeholder_parser.rs`
@@ -10042,7 +10042,7 @@ Rust file: `placeholder_parser.rs`. Status: **partial**. Not listed: 17 construc
 - [~] `apply_config` (line 146) → `g_code_reader.rs, gcode/g_code_processor.rs` — not in the paired file
 - [ ] `apply_env_variables` (line 151) → `placeholder_parser.rs`
 - [~] `process` (line 1541) → `gcode/gcode_template.rs, gcode/pressure_equalizer.rs, print.rs` — not in the paired file
-- [ ] `evaluate_boolean_expression` (line 1554) → `placeholder_parser.rs`
+- [~] `evaluate_boolean_expression` (line 1554) → `preset.rs` — not in the paired file
 
 **class `expr`**
 
@@ -10229,10 +10229,10 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `save` (line 693) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `load` (line 695) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 696) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [~] `begin` (line 702) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 705) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `begin` (line 708) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 711) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 702) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 705) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
+- [~] `begin` (line 708) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 711) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 
 **class `ClosestPointInRadiusLookup`**
 
@@ -10370,8 +10370,8 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 
 **class `polygon_set_traits<Slic3r::Polygons>`**
 
-- [~] `begin` (line 370) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 374) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 370) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 374) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [ ] `clean` (line 379) → `geometry/polygon.rs`
 - [~] `sorted` (line 380) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
 
@@ -10469,132 +10469,132 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 
 **free functions**
 
-- [ ] `alias_rank` (line 90) → `preset.rs`
-- [ ] `type_rank` (line 99) → `preset.rs`
-- [ ] `filament_list_less` (line 107) → `preset.rs`
-- [ ] `get_version_from_json` (line 131) → `preset.rs`
-- [ ] `get_values_from_json` (line 154) → `preset.rs`
-- [ ] `guess_config_file_type` (line 177) → `preset.rs`
-- [ ] `extend_default_config_length` (line 232) → `preset.rs`
-- [ ] `is_compatible_with_print` (line 784) → `preset.rs`
-- [ ] `is_compatible_with_parent_printer` (line 811) → `preset.rs`
-- [ ] `is_compatible_with_printer` (line 821) → `preset.rs`
-- [ ] `is_compatible_with_printer` (line 845) → `preset.rs`
-- [ ] `is_compatible_with_printer_names` (line 859) → `preset.rs`
+- [v] `alias_rank` (line 90) → `preset.rs:410` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `type_rank` (line 99) → `preset.rs:422` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
+- [v] `filament_list_less` (line 107) → `preset.rs:429` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_version_from_json` (line 131) → `preset.rs:495` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_values_from_json` (line 154) → `preset.rs:510` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `guess_config_file_type` (line 177) → `preset.rs:528` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `extend_default_config_length` (line 232) → `preset.rs:578` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `is_compatible_with_print` (line 784) → `preset.rs:2324` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `is_compatible_with_parent_printer` (line 811) → `preset.rs:2355` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `is_compatible_with_printer` (line 821) → `preset.rs:2363` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `is_compatible_with_printer` (line 845) → `preset.rs` — another overload of the name is ported
+- [v] `is_compatible_with_printer_names` (line 859) → `preset.rs:2407` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 
 **class `PhysicalPrinter`**
 
-- [~] `save` (line 935) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [ ] `printer_technology` (line 948) → `preset.rs`
-- [ ] `printer_technology` (line 954) → `preset.rs`
+- [v] `save` (line 935) → `preset.rs:5685` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `printer_technology` (line 948) → `preset.rs` — another overload of the name is ported
+- [x] `printer_technology` (line 954) → `preset.rs:1544`
 
 **class `PhysicalPrinterCollection`**
 
 - [~] `begin` (line 985) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `begin` (line 986) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
+- [v] `begin` (line 986) → `preset.rs:5849` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `cbegin` (line 987) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 988) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [v] `end` (line 988) → `preset.rs:5853` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `end` (line 989) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `cend` (line 990) → `mutable_polygon.rs` — not in the paired file
-- [~] `empty` (line 992) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `get_selected_idx` (line 1029) → `preset.rs`
-- [ ] `get_selected_printer_name` (line 1031) → `preset.rs`
-- [ ] `get_selected_printer_config` (line 1033) → `preset.rs`
-- [ ] `get_selected_printer_technology` (line 1035) → `preset.rs`
-- [ ] `get_selected_printer_preset_name` (line 1042) → `preset.rs`
-- [ ] `find_printer` (line 1061) → `preset.rs`
-- [ ] `find_printer_internal` (line 1080) → `preset.rs`
+- [v] `empty` (line 992) → `preset.rs:5857` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_idx` (line 1029) → `preset.rs:6143` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_printer_name` (line 1031) → `preset.rs:6147` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [x] `get_selected_printer_config` (line 1033) → `preset.rs:6155` — read against the C++ in R912 (the estimate says partial)
+- [v] `get_selected_printer_technology` (line 1035) → `preset.rs:6163` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_printer_preset_name` (line 1042) → `preset.rs:6180` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `find_printer` (line 1061) → `preset.rs:6249` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `find_printer_internal` (line 1080) → `preset.rs:6281` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 
 **class `Preset`**
 
-- [x] `is_user` (line 264) → `preset.rs:436`
+- [v] `is_user` (line 264) → `preset.rs:1253` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `set_dirty` (line 321) → `app_config.rs` — not in the paired file
-- [~] `set_dirty` (line 322) → `app_config.rs` — not in the paired file
-- [ ] `reset_dirty` (line 323) → `preset.rs`
-- [ ] `printer_technology` (line 347) → `preset.rs`
-- [ ] `printer_technology` (line 354) → `preset.rs`
-- [~] `set_num_extruders` (line 362) → `print_config.rs` — not in the paired file
-- [ ] `get_printer_id` (line 374) → `preset.rs`
-- [x] `update_suffix_modified` (line 449) → `preset.rs:446`
-- [x] `remove_suffix_modified` (line 455) → `preset.rs:454`
-- [~] `normalize` (line 463) → `bin/generate-test-meshes.rs, cut_surface.rs, desensitize.rs` — not in the paired file
-- [ ] `remove_invalid_keys` (line 507) → `preset.rs`
-- [x] `get_type_string` (line 523) → `preset.rs:310`
-- [x] `get_iot_type_string` (line 541) → `preset.rs:322`
-- [x] `get_type_from_string` (line 557) → `preset.rs:333`
-- [ ] `load_info` (line 570) → `preset.rs`
-- [ ] `save_info` (line 613) → `preset.rs`
-- [ ] `remove_files` (line 648) → `preset.rs`
-- [~] `save` (line 662) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [ ] `reload` (line 739) → `preset.rs`
-- [x] `label` (line 757) → `preset.rs:465`
-- [ ] `display_name` (line 763) → `preset.rs`
-- [ ] `set_visible_from_appconfig` (line 873) → `preset.rs`
-- [~] `get_filament_type` (line 904) → `print_config.rs` — not in the paired file
-- [ ] `get_printer_type` (line 909) → `preset.rs`
-- [ ] `get_printer_name` (line 926) → `preset.rs`
-- [ ] `get_current_printer_type` (line 941) → `preset.rs`
-- [ ] `get_extruder_names_and_keysets` (line 957) → `preset.rs`
-- [ ] `has_lidar` (line 982) → `preset.rs`
-- [ ] `is_bbl_vendor_preset` (line 1003) → `preset.rs`
-- [ ] `get_default_bed_type` (line 1034) → `preset.rs`
-- [ ] `has_cali_lines` (line 1056) → `preset.rs`
+- [x] `set_dirty` (line 322) → `preset.rs:1467`
+- [v] `reset_dirty` (line 323) → `preset.rs:1471` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `printer_technology` (line 347) → `preset.rs` — another overload of the name is ported
+- [v] `printer_technology` (line 354) → `preset.rs:5754` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `set_num_extruders` (line 362) → `preset.rs:1608` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_printer_id` (line 374) → `preset.rs:1703` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `update_suffix_modified` (line 449) → `preset.rs:1858` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `remove_suffix_modified` (line 455) → `preset.rs:1866` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `normalize` (line 463) → `preset.rs:1877` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `remove_invalid_keys` (line 507) → `preset.rs:1922` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_type_string` (line 523) → `preset.rs:1054` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_iot_type_string` (line 541) → `preset.rs:1066` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_type_from_string` (line 557) → `preset.rs:1077` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `load_info` (line 570) → `preset.rs:1273` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
+- [v] `save_info` (line 613) → `preset.rs:1314` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `remove_files` (line 648) → `preset.rs:1343` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
+- [v] `save` (line 662) → `preset.rs:1358` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
+- [v] `reload` (line 739) → `preset.rs:1415` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `label` (line 757) → `preset.rs:1430` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `display_name` (line 763) → `preset.rs:1438` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `set_visible_from_appconfig` (line 873) → `preset.rs:1573` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_filament_type` (line 904) → `preset.rs:1619` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_printer_type` (line 909) → `preset.rs:1625` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_printer_name` (line 926) → `preset.rs:1642` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_current_printer_type` (line 941) → `preset.rs:1658` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_extruder_names_and_keysets` (line 957) → `preset.rs:1675` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `has_lidar` (line 982) → `preset.rs:1711` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `is_bbl_vendor_preset` (line 1003) → `preset.rs:1734` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_default_bed_type` (line 1034) → `preset.rs:1769` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `has_cali_lines` (line 1056) → `preset.rs:1786` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 
 **class `PresetCollection`**
 
-- [ ] `lbegin` (line 467) → `preset.rs`
-- [~] `begin` (line 471) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
+- [x] `lbegin` (line 467) → `preset.rs:2731`
+- [x] `begin` (line 471) → `preset.rs:2735`
 - [~] `begin` (line 472) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `cbegin` (line 473) → `config.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 474) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [x] `cbegin` (line 473) → `preset.rs:2739`
+- [x] `end` (line 474) → `preset.rs:2743`
 - [~] `end` (line 475) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `cend` (line 476) → `mutable_polygon.rs` — not in the paired file
-- [~] `erase` (line 479) → `app_config.rs, boost_polygon_voronoi.rs, config.rs` — not in the paired file
-- [ ] `set_sync_func` (line 481) → `preset.rs`
-- [~] `lock` (line 483) → `execution/execution_seq.rs, log.rs, mt_utils.rs` — not in the paired file
-- [~] `unlock` (line 484) → `execution/execution_seq.rs, mt_utils.rs` — not in the paired file
-- [~] `type` (line 488) → `geometry/build_volume.rs, placeholder_parser.rs` — not in the paired file
-- [ ] `is_default_suppressed` (line 582) → `preset.rs`
-- [ ] `get_selected_idx` (line 595) → `preset.rs`
-- [ ] `get_selected_preset_name` (line 597) → `preset.rs`
-- [ ] `get_edited_preset_with_vendor_profile` (line 622) → `preset.rs`
-- [ ] `get_idx_selected` (line 631) → `preset.rs`
-- [ ] `discard_current_changes` (line 644) → `preset.rs`
-- [ ] `find_preset` (line 654) → `preset.rs`
-- [ ] `first_compatible_idx` (line 661) → `preset.rs`
-- [ ] `first_compatible_idx` (line 687) → `preset.rs`
-- [~] `size` (line 701) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `has_defaults_only` (line 702) → `preset.rs`
-- [ ] `update_compatible` (line 706) → `preset.rs`
-- [ ] `update_compatible` (line 714) → `preset.rs`
-- [ ] `set_extra_compatible_printers` (line 720) → `preset.rs`
-- [ ] `clear_extra_compatible_printers` (line 721) → `preset.rs`
-- [ ] `num_visible` (line 723) → `preset.rs`
-- [ ] `current_is_dirty` (line 726) → `preset.rs`
-- [ ] `current_dirty_options` (line 729) → `preset.rs`
-- [ ] `current_different_from_parent_options` (line 732) → `preset.rs`
-- [ ] `saved_is_dirty` (line 736) → `preset.rs`
-- [ ] `update_saved_preset_from_current_preset` (line 742) → `preset.rs`
-- [ ] `is_base_preset` (line 757) → `preset.rs`
-- [ ] `num_default_presets` (line 766) → `preset.rs`
-- [ ] `find_preset_internal` (line 799) → `preset.rs`
-- [ ] `find_preset_internal` (line 812) → `preset.rs`
-- [ ] `find_preset_renamed` (line 814) → `preset.rs`
-- [ ] `find_preset_renamed` (line 820) → `preset.rs`
+- [x] `cend` (line 476) → `preset.rs:2747`
+- [x] `erase` (line 479) → `preset.rs:2755`
+- [x] `set_sync_func` (line 481) → `preset.rs:2760`
+- [x] `lock` (line 483) → `preset.rs:2764`
+- [x] `unlock` (line 484) → `preset.rs:2766`
+- [x] `type` (line 488) → `preset.rs:2796`
+- [v] `is_default_suppressed` (line 582) → `preset.rs:4427` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_idx` (line 595) → `preset.rs:4445` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_selected_preset_name` (line 597) → `preset.rs:4449` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `get_edited_preset_with_vendor_profile` (line 622) → `preset.rs:4581` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [x] `get_idx_selected` (line 631) → `preset.rs:4660`
+- [v] `discard_current_changes` (line 644) → `preset.rs:4731` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `find_preset` (line 654) → `preset.rs:4766` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `first_compatible_idx` (line 661) → `preset.rs` — another overload of the name is ported
+- [v] `first_compatible_idx` (line 687) → `preset.rs:4832` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `size` (line 701) → `preset.rs:4858` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `has_defaults_only` (line 702) → `preset.rs:4862` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `update_compatible` (line 706) → `preset.rs` — another overload of the name is ported
+- [v] `update_compatible` (line 714) → `preset.rs:4882` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `set_extra_compatible_printers` (line 720) → `preset.rs:4894` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `clear_extra_compatible_printers` (line 721) → `preset.rs:4898` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `num_visible` (line 723) → `preset.rs:4903` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
+- [v] `current_is_dirty` (line 726) → `preset.rs:4909` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `current_dirty_options` (line 729) → `preset.rs:4913` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `current_different_from_parent_options` (line 732) → `preset.rs:4917` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `saved_is_dirty` (line 736) → `preset.rs:4922` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [x] `update_saved_preset_from_current_preset` (line 742) → `preset.rs:4926`
+- [v] `is_base_preset` (line 757) → `preset.rs:4963` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `num_default_presets` (line 766) → `preset.rs:5008` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `find_preset_internal` (line 799) → `preset.rs:5356` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `find_preset_internal` (line 812) → `preset.rs` — another overload of the name is ported
+- [v] `find_preset_renamed` (line 814) → `preset.rs:5372` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal (the body reads as partial to the estimate)
+- [~] `find_preset_renamed` (line 820) → `preset.rs` — another overload of the name is ported
 
 **class `VendorProfile`**
 
-- [x] `valid` (line 190) → `preset.rs:225`
-- [x] `num_variants` (line 197) → `preset.rs:230`
-- [ ] `from_ini` (line 212) → `preset.rs`
-- [ ] `from_ini` (line 300) → `preset.rs`
-- [x] `families` (line 427) → `preset.rs:239`
+- [v] `valid` (line 190) → `preset.rs:793` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `num_variants` (line 197) → `preset.rs:946` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [v] `from_ini` (line 212) → `preset.rs:800` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
+- [~] `from_ini` (line 300) → `preset.rs` — another overload of the name is ported
+- [v] `families` (line 427) → `preset.rs:955` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 
 **class `VendorProfile::PrinterModel`**
 
-- [x] `variant` (line 172) → `preset.rs:151`
+- [v] `variant` (line 172) → `preset.rs:742` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `variant` (line 179) → `preset.rs` — another overload of the name is ported
-- [x] `get_bed_texture_maps` (line 289) → `preset.rs:156`
+- [v] `get_bed_texture_maps` (line 289) → `preset.rs:747` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 
 ### `PresetBundle` (.cpp+.hpp)
 
@@ -10671,16 +10671,16 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [ ] `load_config_model` (line 458) → `preset_bundle.rs`
 - [~] `reset` (line 465) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
 - [ ] `setup_directories` (line 486) → `preset_bundle.rs`
-- [ ] `update_compatible` (line 519) → `preset_bundle.rs`
+- [~] `update_compatible` (line 519) → `preset.rs` — not in the paired file
 - [ ] `copy_files` (line 535) → `preset_bundle.rs`
-- [ ] `load_presets` (line 556) → `preset_bundle.rs`
-- [ ] `get_preset_differed_for_save` (line 595) → `preset_bundle.rs`
-- [ ] `get_differed_values_to_update` (line 617) → `preset_bundle.rs`
+- [~] `load_presets` (line 556) → `preset.rs` — not in the paired file
+- [~] `get_preset_differed_for_save` (line 595) → `preset.rs` — not in the paired file
+- [~] `get_differed_values_to_update` (line 617) → `preset.rs` — not in the paired file
 - [ ] `get_vendor_profile_version` (line 640) → `preset_bundle.rs`
 - [ ] `get_filament_by_filament_id` (line 652) → `preset_bundle.rs`
-- [ ] `load_project_embedded_presets` (line 703) → `preset_bundle.rs`
+- [~] `load_project_embedded_presets` (line 703) → `preset.rs` — not in the paired file
 - [ ] `get_current_project_embedded_presets` (line 738) → `preset_bundle.rs`
-- [ ] `reset_project_embedded_presets` (line 756) → `preset_bundle.rs`
+- [~] `reset_project_embedded_presets` (line 756) → `preset.rs` — not in the paired file
 - [ ] `get_texture_for_printer_model` (line 818) → `preset_bundle.rs`
 - [ ] `get_stl_model_for_printer_model` (line 846) → `preset_bundle.rs`
 - [ ] `get_hotend_model_for_printer_model` (line 873) → `preset_bundle.rs`
@@ -10688,8 +10688,8 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [ ] `load_user_presets` (line 945) → `preset_bundle.rs`
 - [ ] `import_presets` (line 1024) → `preset_bundle.rs`
 - [ ] `import_json_presets` (line 1111) → `preset_bundle.rs`
-- [ ] `save_user_presets` (line 1225) → `preset_bundle.rs`
-- [ ] `update_user_presets_directory` (line 1250) → `preset_bundle.rs`
+- [~] `save_user_presets` (line 1225) → `preset.rs` — not in the paired file
+- [~] `update_user_presets_directory` (line 1250) → `preset.rs` — not in the paired file
 - [ ] `remove_user_presets_directory` (line 1271) → `preset_bundle.rs`
 - [ ] `update_system_preset_setting_ids` (line 1286) → `preset_bundle.rs`
 - [ ] `get_full_flush_matrix` (line 1337) → `preset_bundle.rs`
@@ -10699,7 +10699,7 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [ ] `load_system_models_from_json` (line 1667) → `preset_bundle.rs`
 - [ ] `load_system_filaments_json` (line 1701) → `preset_bundle.rs`
 - [ ] `get_custom_vendor_models` (line 1752) → `preset_bundle.rs`
-- [ ] `merge_presets` (line 1907) → `preset_bundle.rs`
+- [~] `merge_presets` (line 1907) → `preset.rs` — not in the paired file
 - [ ] `update_system_maps` (line 1927) → `preset_bundle.rs`
 - [ ] `load_installed_printers` (line 1952) → `preset_bundle.rs`
 - [ ] `get_required_hrc_by_filament_id` (line 1974) → `preset_bundle.rs`
@@ -10757,10 +10757,10 @@ Rust file: `preset_bundle.rs`. Status: **partial**. Not listed: 7 constructors, 
 - [ ] `on_extruders_count_changed` (line 7104) → `preset_bundle.rs`
 - [ ] `update_multi_material_filament_presets` (line 7115) → `preset_bundle.rs`
 - [ ] `replace_default_presets` (line 7316) → `preset_bundle.rs`
-- [ ] `update_compatible` (line 7340) → `preset_bundle.rs`
+- [~] `update_compatible` (line 7340) → `preset.rs` — not in the paired file
 - [ ] `export_current_configs` (line 7628) → `preset_bundle.rs`
 - [ ] `set_filament_preset` (line 7661) → `preset_bundle.rs`
-- [ ] `set_default_suppressed` (line 7686) → `preset_bundle.rs`
+- [~] `set_default_suppressed` (line 7686) → `preset.rs` — not in the paired file
 
 ### `PrincipalComponents2D` (.cpp+.hpp)
 
@@ -10824,8 +10824,8 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `ConstVectorOfPtrsAdaptor`**
 
-- [~] `begin` (line 207) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 208) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 207) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 208) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `size` (line 212) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
@@ -10880,7 +10880,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `get_geometric_unprintable_filaments` (line 1078) → `print.rs`
 - [ ] `set_filament_print_time` (line 1080) → `print.rs`
 - [ ] `get_filament_print_time` (line 1081) → `print.rs`
-- [ ] `set_nozzle_group_result` (line 1083) → `print.rs`
+- [~] `set_nozzle_group_result` (line 1083) → `gcode/wipe_tower.rs` — not in the paired file
 - [ ] `get_nozzle_group_result` (line 1084) → `print.rs`
 - [ ] `get_layered_nozzle_group_result` (line 1085) → `print.rs`
 - [ ] `set_slice_used_filaments` (line 1090) → `print.rs`
@@ -10897,7 +10897,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `get_conflict_string` (line 1147) → `print.rs`
 - [ ] `get_wipe_tower_depth` (line 1171) → `print.rs`
 - [ ] `get_wipe_tower_bbx` (line 1172) → `print.rs`
-- [ ] `get_rib_offset` (line 1173) → `print.rs`
+- [~] `get_rib_offset` (line 1173) → `gcode/wipe_tower.rs` — not in the paired file
 - [ ] `is_all_objects_are_short` (line 1192) → `print.rs`
 - [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:3852`
 - [x] `is_filaments_compatible` (line 1268) → `print.rs:3884`
@@ -10949,7 +10949,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [ ] `get_extruder_printable_polygons` (line 3573) → `print.rs`
 - [ ] `get_extruder_unprintable_polygons` (line 3584) → `print.rs`
 - [ ] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs`
-- [~] `get_extruder_id` (line 3609) → `gcode/g_code_processor.rs, multi_nozzle_utils.rs` — not in the paired file
+- [~] `get_extruder_id` (line 3609) → `gcode/g_code_processor.rs, gcode/wipe_tower.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `get_filament_config_idx` (line 3618) → `extruder.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 3623) → `extruder.rs` — not in the paired file
 - [ ] `support_material_on_wipe_tower` (line 3628) → `print.rs`
@@ -11095,8 +11095,8 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 - [~] `assign` (line 362) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
 - [~] `config` (line 388) → `extruder.rs, gcode/cooling.rs, gcode/ironing.rs` — not in the paired file
-- [~] `begin` (line 401) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 402) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 401) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 402) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `size` (line 403) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 
 **class `ModelObjectStatusDB`**
@@ -11112,15 +11112,15 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 - [ ] `get_range` (line 522) → `print_apply.rs`
 - [ ] `get_range` (line 526) → `print_apply.rs`
-- [~] `count` (line 530) → `boost_polygon_voronoi.rs, clipper2/clipper_engine.rs, geometry/expolygon.rs` — not in the paired file
-- [~] `begin` (line 534) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 535) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `count` (line 530) → `boost_polygon_voronoi.rs, clipper2/clipper_engine.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `begin` (line 534) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 535) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 - [~] `clear` (line 537) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 
 **class `PrintObjectStatusDB::iterator_range`**
 
-- [~] `begin` (line 518) → `boost_polygon_voronoi.rs, mutable_polygon.rs, sla/agg/scanline_p.rs` — not in the paired file
-- [~] `end` (line 519) → `mutable_polygon.rs, sla/agg/gamma_functions.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `begin` (line 518) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `end` (line 519) → `mutable_polygon.rs, preset.rs, sla/agg/gamma_functions.rs` — not in the paired file
 
 ### `PrintBase` (.cpp+.hpp)
 
@@ -11345,7 +11345,7 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [v] `set_num_extruders` (line 8935) → `print_config.rs:18380` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [v] `set_num_filaments` (line 8953) → `print_config.rs:18400` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [~] `validate` (line 8970) → `print_config.rs:4103` — divergent
-- [~] `get_filament_type` (line 9009) → `print_config.rs` — another overload of the name is ported
+- [~] `get_filament_type` (line 9009) → `preset.rs` — not in the paired file
 - [v] `is_using_different_extruders` (line 9081) → `print_config.rs:17207` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [v] `support_different_extruders` (line 9110) → `print_config.rs:17234` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [v] `get_index_for_extruder` (line 9133) → `print_config.rs:17256` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
@@ -12454,7 +12454,7 @@ Rust file: `sla_print_steps.rs`. Status: **partial**. Not listed: 2 constructors
 **class `FaceHash`**
 
 - [ ] `to_chars` (line 155) → `sla_print_steps.rs`
-- [~] `hash` (line 174) → `arachne/utils/polygons_point_index.rs, config.rs, perimeter_generator.rs` — not in the paired file
+- [~] `hash` (line 174) → `arachne/utils/polygons_point_index.rs, config.rs, gcode/wipe_tower.rs` — not in the paired file
 - [ ] `facekey` (line 185) → `sla_print_steps.rs`
 - [~] `find` (line 210) → `desensitize.rs, geometry/point.rs, measure_utils.rs` — not in the paired file
 

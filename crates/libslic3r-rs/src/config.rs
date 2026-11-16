@@ -6297,6 +6297,27 @@ fn json_type_name(v: &serde_json::Value) -> &'static str {
     }
 }
 
+/// `ifs >> j` of nlohmann::json over the bytes of a file, for the readers of Preset.cpp
+/// (get_version_from_json, get_values_from_json): `Err((true, what))` for a parse_error,
+/// `Err((false, what))` for the other exceptions.
+pub(crate) fn nlohmann_json_parse(data: &[u8]) -> Result<serde_json::Value, (bool, String)> {
+    match nlohmann_json::parse(data) {
+        Ok(v) => Ok(v),
+        Err(nlohmann_json::Error::Parse(what)) => Err((true, what)),
+        Err(nlohmann_json::Error::Other(what)) => Err((false, what)),
+    }
+}
+
+/// `nlohmann::json::type_name()`, for Preset.cpp.
+pub(crate) fn nlohmann_type_name(v: &serde_json::Value) -> &'static str {
+    json_type_name(v)
+}
+
+/// C `atoi` of a text, for Preset.cpp.
+pub(crate) fn c_atoi_str(s: &str) -> i32 {
+    c_atoi(s.as_bytes())
+}
+
 /// The implicit conversion of a `nlohmann::json` to `std::string`: a type_error 302 for
 /// anything but a string. The error is a `std::exception`, not a ConfigurationError; the one
 /// caller turns it into the `reason` text.
