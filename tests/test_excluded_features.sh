@@ -448,6 +448,63 @@ else
     skip "own-project-loads-like-the-app" "fixture missing: $BASE_3MF"
 fi
 
+# ── Supports set on a part stay on the part ─────────────────────────────────
+# The project load replaces project-wide settings the file does not list as
+# changed; what is stored with an object (Metadata/model_settings.config) is
+# the object's own and is not part of that. A slab on a pillar, exported as a
+# project with supports off, then given enable_support on the object itself:
+# the project loaded the app's way prints supports, and without the object's
+# setting it prints none.
+PART_DIR=$(mktemp -d "${TMPDIR:-/tmp}/part_support.XXXXXX")
+python3 - "$PART_DIR/slab.stl" <<'PY'
+import sys
+def box(x0, y0, z0, x1, y1, z1):
+    v = [(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)]
+    f = [(0,1,3),(0,3,2),(4,6,7),(4,7,5),(0,4,5),(0,5,1),(2,3,7),(2,7,6),(0,2,6),(0,6,4),(1,5,7),(1,7,3)]
+    return [[v[i] for i in t] for t in f]
+tris = box(12, 12, 0, 18, 18, 12) + box(0, 0, 12, 30, 30, 14)
+with open(sys.argv[1], "w") as o:
+    o.write("solid slab\n")
+    for t in tris:
+        o.write("facet normal 0 0 0\nouter loop\n")
+        for p in t:
+            o.write("vertex %g %g %g\n" % p)
+        o.write("endloop\nendfacet\n")
+    o.write("endsolid slab\n")
+PY
+PART_PRINTER="Bambu Lab X1 Carbon 0.4 nozzle"
+[ "$ENGINE" = snapmaker ] && PART_PRINTER="Snapmaker U1 (0.4 nozzle)"
+set +e
+"$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --slice 1 --outputdir "$PART_DIR/a" --export-3mf p.3mf > "$PART_DIR/a.out" 2>&1; PART_EXPORT=$?
+set -e
+python3 - "$PART_DIR/a/p.3mf" "$PART_DIR/part.3mf" <<'PY' 2>/dev/null || true
+import re, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename.startswith("Metadata/plate_") and item.filename.endswith((".gcode", ".md5")):
+            continue
+        if item.filename == "Metadata/model_settings.config":
+            text, n = re.subn(r"(<object id=\"\d+\">)", r'\1\n    <metadata key="enable_support" value="1"/>', data.decode(), count=1)
+            assert n == 1, "no object in model_settings.config"
+            data = text.encode()
+        zout.writestr(item, data)
+PY
+support_lines() { grep -c -i -E '^; ?(FEATURE|TYPE): ?Support' "$1" 2>/dev/null || true; }
+GC=$(mktmp_gcode)
+run_slice "$GC" "$PART_DIR/a/p.3mf"
+PART_OFF_EXIT=$LAST_EXIT; PART_OFF=$(support_lines "$GC")
+run_slice "$GC" "$PART_DIR/part.3mf"
+PART_ON=$(support_lines "$GC")
+if [ "$PART_EXPORT" -eq 0 ] && [ "$PART_OFF_EXIT" -eq 0 ] && [ "$LAST_EXIT" -eq 0 ] \
+   && [ "${PART_OFF:-0}" -eq 0 ] && [ "${PART_ON:-0}" -gt 0 ] \
+   && grep -q "ProjectRebasedOnSystemPresets" <<<"$LAST_OUTPUT"; then
+    record "supports-set-on-a-part-are-kept" 1
+else
+    record "supports-set-on-a-part-are-kept" 0 "export exit=$PART_EXPORT, project exit=$PART_OFF_EXIT with ${PART_OFF:-?} support sections (want 0), with the part's setting exit=$LAST_EXIT with ${PART_ON:-?} (want more than 0)"
+fi
+rm -rf "$GC" "$PART_DIR"
+
 # ── A saved prime tower outside the plate ───────────────────────────────────
 # Bambu Studio puts a project's saved tower back inside the plate when it opens
 # the project (Plater.cpp 12270-12276 at v02.09.01.70); OrcaSlicer and
@@ -469,6 +526,7 @@ with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipf
 PY
     tower_x() { sed -n 's/^; wipe_tower_x = //p' "$1" | head -n 1 | tr -d '\r'; }
     inside() { python3 -c 'import sys; x = float(sys.argv[1].split(",")[0]); sys.exit(0 if 0 < x < 300 else 1)' "$1" 2>/dev/null; }
+    is_value() { python3 -c 'import sys; sys.exit(0 if float(sys.argv[1].split(",")[0]) == float(sys.argv[2]) else 1)' "$1" "$2" 2>/dev/null; }
     GC=$(mktmp_gcode)
     run_slice "$GC" "$TOWER_DIR/far.3mf"
     PLAIN=$(tower_x "$GC")
@@ -480,19 +538,19 @@ PY
 import json, sys, zipfile
 print(json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config"))["wipe_tower_x"][0])' "$TOWER_DIR/s/p.3mf" 2>/dev/null || true)
     if [ "$ENGINE" = bambu ]; then
-        if [ "$LAST_EXIT" -eq 0 ] && [ "$SLICE_EXIT" -eq 0 ] && inside "$PLAIN" && [ "$PLAIN" = "$SLICED" ] && inside "$EXPORTED"; then
+        if [ "$LAST_EXIT" -eq 0 ] && [ "$SLICE_EXIT" -eq 0 ] && inside "$PLAIN" && is_value "$SLICED" "$PLAIN" && is_value "$EXPORTED" "$PLAIN"; then
             record "project-tower-put-inside-plate" 1
         else
             record "project-tower-put-inside-plate" 0 "plain call '$PLAIN' (exit $LAST_EXIT), --slice '$SLICED' (exit $SLICE_EXIT), exported '$EXPORTED': want one position inside the plate"
         fi
         run_slice "$GC" "$TOWER_DIR/far.3mf" --wipe-tower-x 5
         FLAG=$(tower_x "$GC")
-        if [ "$LAST_EXIT" -eq 0 ] && [ "$FLAG" = 5 ]; then
+        if [ "$LAST_EXIT" -eq 0 ] && is_value "$FLAG" 5; then
             record "project-tower-flag-stays-as-given" 1
         else
             record "project-tower-flag-stays-as-given" 0 "exit=$LAST_EXIT wipe_tower_x='$FLAG' (want 5)"
         fi
-    elif [ "$LAST_EXIT" -eq 0 ] && [ "$PLAIN" = 400 ] && [ "$SLICED" = 400 ]; then
+    elif [ "$LAST_EXIT" -eq 0 ] && is_value "$PLAIN" 400 && is_value "$SLICED" 400; then
         record "project-tower-kept-as-saved" 1
     else
         record "project-tower-kept-as-saved" 0 "plain call '$PLAIN' (exit $LAST_EXIT), --slice '$SLICED' (exit $SLICE_EXIT): want 400, as the app keeps it"
