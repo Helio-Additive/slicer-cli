@@ -9462,7 +9462,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         continue;
                     PlateScope scope(model, rs.plates[index]);
                     slicer_cli::project_load_tower_inside_plate(
-                        config, index, reach, (int)arrange_plate_extruders(model, config, index).size(),
+                        config, index, (int)rs.plates.size(), reach,
+                        (int)arrange_plate_extruders(model, config, index).size(),
                         [&](int filaments) {
                             return arrange_estimate_wipe_tower_size(model, config, wipe.width, wipe.volume,
                                                                     wipe.extruder_count, filaments, wipe.wrapping,
