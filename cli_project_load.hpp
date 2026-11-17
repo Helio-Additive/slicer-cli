@@ -5,6 +5,9 @@
 #pragma once
 
 #include <functional>
+#include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -49,5 +52,18 @@ void project_load_tower_positions_per_plate(Slic3r::DynamicPrintConfig& config, 
 /// hold the same value once per extruder or variant) holds the same setting.
 std::vector<std::string> settings_replaced_by_presets(const Slic3r::DynamicPrintConfig& file,
                                                       const Slic3r::DynamicPrintConfig& loaded);
+
+/// The keys of `replaced` that printed with a value other than the file's:
+/// the load's list holds every key whose loaded value differs from the file's,
+/// and on a printer with extruder variants the presets hold one value per
+/// variant, which the print narrows to the plate's own (Print::apply), so a
+/// key can differ at load and print with the file's value. A key the command
+/// line set (`command_line`: the setting flags and the short flags) is its own change, not the presets', and a key
+/// the print does not hold (a preset's list of compatible printers and the
+/// like) prints nothing. `file_values` holds each key's value in the file.
+void keep_replaced_printed_differently(std::vector<std::string>& replaced,
+                                       const std::map<std::string, std::string>& file_values,
+                                       const Slic3r::DynamicPrintConfig& printed,
+                                       const std::set<std::string>& command_line);
 
 } // namespace slicer_cli

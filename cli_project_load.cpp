@@ -49,22 +49,51 @@ void project_load_tower_positions_per_plate(Slic3r::DynamicPrintConfig& config, 
             opt->values.resize(plate_count, opt->values.front());
 }
 
+// Two lists that hold one same value, repeated a different number of times
+// (one value where the other holds it once per extruder or variant).
+static bool same_value_repeated(const Slic3r::ConfigOption* a, const Slic3r::ConfigOption* b) {
+    using namespace Slic3r;
+    const auto* va = dynamic_cast<const ConfigOptionVectorBase*>(a);
+    const auto* vb = dynamic_cast<const ConfigOptionVectorBase*>(b);
+    if (va == nullptr || vb == nullptr)
+        return false;
+    const std::vector<std::string> sa = va->vserialize(), sb = vb->vserialize();
+    if (sa.empty() || sb.empty())
+        return false;
+    const auto all_are = [](const std::vector<std::string>& v, const std::string& x) {
+        return std::all_of(v.begin(), v.end(), [&x](const std::string& e) { return e == x; });
+    };
+    return all_are(sa, sa.front()) && all_are(sb, sa.front());
+}
+
+void keep_replaced_printed_differently(std::vector<std::string>& replaced,
+                                       const std::map<std::string, std::string>& file_values,
+                                       const Slic3r::DynamicPrintConfig& printed,
+                                       const std::set<std::string>& command_line) {
+    using namespace Slic3r;
+    replaced.erase(std::remove_if(replaced.begin(), replaced.end(),
+                                  [&](const std::string& key) {
+                                      if (command_line.count(key) != 0)
+                                          return true;
+                                      const ConfigOption* used = printed.option(key);
+                                      const auto file = file_values.find(key);
+                                      if (used == nullptr || file == file_values.end())
+                                          return true;
+                                      std::unique_ptr<ConfigOption> stated(used->clone());
+                                      try {
+                                          if (!stated->deserialize(file->second))
+                                              return false;
+                                      } catch (const std::exception&) {
+                                          return false;
+                                      }
+                                      return *stated == *used || same_value_repeated(stated.get(), used);
+                                  }),
+                   replaced.end());
+}
+
 std::vector<std::string> settings_replaced_by_presets(const Slic3r::DynamicPrintConfig& file,
                                                       const Slic3r::DynamicPrintConfig& loaded) {
     using namespace Slic3r;
-    const auto same_value_repeated = [](const ConfigOption* a, const ConfigOption* b) {
-        const auto* va = dynamic_cast<const ConfigOptionVectorBase*>(a);
-        const auto* vb = dynamic_cast<const ConfigOptionVectorBase*>(b);
-        if (va == nullptr || vb == nullptr)
-            return false;
-        const std::vector<std::string> sa = va->vserialize(), sb = vb->vserialize();
-        if (sa.empty() || sb.empty())
-            return false;
-        const auto all_are = [](const std::vector<std::string>& v, const std::string& x) {
-            return std::all_of(v.begin(), v.end(), [&x](const std::string& e) { return e == x; });
-        };
-        return all_are(sa, sa.front()) && all_are(sb, sa.front());
-    };
     std::vector<std::string> replaced;
     for (const std::string& key : file.diff(loaded))
         if (key != "different_settings_to_system" && key != "inherits_group" &&

@@ -3026,6 +3026,7 @@ struct PlateOutcome {
     // Keys whose value in the project file was replaced by the preset's when
     // the project was loaded the way its desktop app loads it.
     std::vector<std::string> settings_replaced_by_presets;
+    std::map<std::string, std::string> replaced_file_values;  // each one's value in the file
     // sliced_info_t print summary (BambuStudio.cpp 221-231)
     float       layer_height = 0.f;
     int         wall_loops   = 0;
@@ -8763,6 +8764,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 }
                 if (rebase) {
                     outcome.settings_replaced_by_presets = slicer_cli::settings_replaced_by_presets(config, rebased);
+                    for (const std::string& key : outcome.settings_replaced_by_presets)
+                        outcome.replaced_file_values[key] = config.opt_serialize(key);
                     config = std::move(rebased);
                     rs.project_loaded_like_desktop = true;
                     emit_event({{"event","config_normalized"},
@@ -11675,6 +11678,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                                 "' states no layer height; it keeps the object's " +
                                                 mm(filled.layer_height) + " mm."}});
                 print.apply(model, config);
+                // What the load replaced and the print then used other than
+                // the file's value (cli_project_load.hpp).
+                if (!outcome.settings_replaced_by_presets.empty()) {
+                    std::set<std::string> command_line;
+                    for (const std::string& key : rs.extra.keys())
+                        command_line.insert(key);
+                    for (const auto& override_value : o.overrides)
+                        command_line.insert(override_value.first);
+                    slicer_cli::keep_replaced_printed_differently(outcome.settings_replaced_by_presets,
+                                                                  outcome.replaced_file_values,
+                                                                  print.full_print_config(), command_line);
+                }
 #ifdef ENGINE_ORCA
                 // The Orca desktop applies again before Slice (Plater.cpp 15855/15893 at v2.4.2).
                 // On Bambu a second apply moves the output away from the desktop's own G-code (7
