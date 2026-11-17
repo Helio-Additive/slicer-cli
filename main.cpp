@@ -3026,7 +3026,7 @@ struct PlateOutcome {
     // Keys whose value in the project file was replaced by the preset's when
     // the project was loaded the way its desktop app loads it.
     std::vector<std::string> settings_replaced_by_presets;
-    std::map<std::string, std::string> replaced_file_values;  // each one's value in the file
+    std::map<std::string, std::vector<std::string>> replaced_file_values;  // each one's value in the file
     // sliced_info_t print summary (BambuStudio.cpp 221-231)
     float       layer_height = 0.f;
     int         wall_loops   = 0;
@@ -8768,8 +8768,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // never the file's value.
                     const json file_settings = project_settings_json(input_file);
                     for (const std::string& key : outcome.settings_replaced_by_presets)
-                        if (file_settings.contains(key))
-                            outcome.replaced_file_values[key] = config.opt_serialize(key);
+                        if (file_settings.contains(key)) {
+                            auto& values = outcome.replaced_file_values[key];
+                            values.push_back(config.opt_serialize(key));
+                            if (file_settings[key].is_string())
+                                values.push_back(file_settings[key].get<std::string>());
+                        }
                     config = std::move(rebased);
                     rs.project_loaded_like_desktop = true;
                     emit_event({{"event","config_normalized"},

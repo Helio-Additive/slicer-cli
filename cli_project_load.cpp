@@ -68,7 +68,7 @@ static bool same_value_repeated(const Slic3r::ConfigOption* a, const Slic3r::Con
 }
 
 void keep_replaced_printed_differently(std::vector<std::string>& replaced,
-                                       const std::map<std::string, std::string>& file_values,
+                                       const std::map<std::string, std::vector<std::string>>& file_values,
                                        const Slic3r::DynamicPrintConfig& printed,
                                        const std::set<std::string>& command_line) {
     using namespace Slic3r;
@@ -109,16 +109,25 @@ void keep_replaced_printed_differently(std::vector<std::string>& replaced,
                                       const auto file = file_values.find(key);
                                       if (used == nullptr || file == file_values.end())
                                           return true;
-                                      if (file->second == used->serialize())
-                                          return true;
-                                      std::unique_ptr<ConfigOption> stated(used->clone());
-                                      try {
-                                          if (!stated->deserialize(file->second))
-                                              return false;
-                                      } catch (const std::exception&) {
-                                          return false;
+                                      // The file's value as the engine read
+                                      // it and, for a text value, as the file
+                                      // writes it (a reader can rewrite the
+                                      // text: OrcaSlicer's thumbnails, PrintConfig.cpp
+                                      // 8292-8312 at 8500fcd).
+                                      for (const std::string& value : file->second) {
+                                          if (value == used->serialize())
+                                              return true;
+                                          std::unique_ptr<ConfigOption> stated(used->clone());
+                                          try {
+                                              if (!stated->deserialize(value))
+                                                  continue;
+                                          } catch (const std::exception&) {
+                                              continue;
+                                          }
+                                          if (*stated == *used || same_value_repeated(stated.get(), used))
+                                              return true;
                                       }
-                                      return *stated == *used || same_value_repeated(stated.get(), used);
+                                      return false;
                                   }),
                    replaced.end());
 }

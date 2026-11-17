@@ -447,7 +447,9 @@ else:
     # presets that the maker did not list; those are replaced and printed as
     # the preset's, and are named too.
     WANT_REPLACED='["sparse_infill_density"]'
-    [ "$ENGINE" = bambu ] && WANT_REPLACED='["filament_cost", "sparse_infill_density"]'
+    # Bambu: the edit moves brim_type off the fixture's own changed list, so
+    # the preset's brim type is used, and that is named too.
+    [ "$ENGINE" = bambu ] && WANT_REPLACED='["brim_type", "filament_cost", "sparse_infill_density"]'
     [ "$ENGINE" = orca ] && WANT_REPLACED='["slowdown_for_curled_perimeters", "sparse_infill_density"]'
     if [ "$REPLACED" = "$WANT_REPLACED $WANT_REPLACED" ]; then
         record "own-project-result-names-only-what-printed-differently" 1
