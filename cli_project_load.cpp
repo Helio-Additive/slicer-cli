@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "libslic3r/BuildVolume.hpp"
+#include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/libslic3r.h"
 
 namespace slicer_cli {
@@ -89,6 +90,20 @@ void keep_replaced_printed_differently(std::vector<std::string>& replaced,
                                       // PrintConfig.cpp 7479-7486 at v02.09.01.70).
                                       const ConfigOptionDef* def = print_config_def.get(key);
                                       if (def == nullptr || def->label.empty() || def->mode == comDevelop)
+                                          return true;
+                                      // A project-level setting is the
+                                      // project's, never a preset's: the
+                                      // desktop takes it from the file
+                                      // (s_project_options, project_config;
+                                      // BambuStudio PresetBundle.cpp 59-90,
+                                      // 428, 5574; OrcaSlicer 391, 4565;
+                                      // Snapmaker Orca 303, 3135).
+                                      static const std::set<std::string> project_level = [] {
+                                          const PresetBundle bundle;
+                                          const t_config_option_keys keys = bundle.project_config.keys();
+                                          return std::set<std::string>(keys.begin(), keys.end());
+                                      }();
+                                      if (project_level.count(key) != 0)
                                           return true;
                                       const ConfigOption* used = printed.option(key);
                                       const auto file = file_values.find(key);

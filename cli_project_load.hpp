@@ -61,8 +61,8 @@ std::vector<std::string> settings_replaced_by_presets(const Slic3r::DynamicPrint
 /// line set (`command_line`: the setting flags and the short flags) is its own change, not the presets', and a key
 /// the print does not hold (a preset's list of compatible printers and the
 /// like) prints nothing, the keys that index the per-variant lists are not
-/// settings, and neither is a key the app does not show (no label, or
-/// developer mode only). `file_values` holds the value of each key the file
+/// settings, neither is a key the app does not show (no label, or developer
+/// mode only), and a project-level setting is the project's, not a preset's. `file_values` holds the value of each key the file
 /// states; a key it does not state was never the file's value.
 void keep_replaced_printed_differently(std::vector<std::string>& replaced,
                                        const std::map<std::string, std::string>& file_values,
