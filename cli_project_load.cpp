@@ -82,9 +82,19 @@ void keep_replaced_printed_differently(std::vector<std::string>& replaced,
                                   [&](const std::string& key) {
                                       if (command_line.count(key) != 0 || variant_index.count(key) != 0)
                                           return true;
+                                      // A setting the app shows: one with a
+                                      // label, outside the developer mode
+                                      // (comDevelop; the device's AMS drying
+                                      // values have no label at all, BambuStudio
+                                      // PrintConfig.cpp 7479-7486 at v02.09.01.70).
+                                      const ConfigOptionDef* def = print_config_def.get(key);
+                                      if (def == nullptr || def->label.empty() || def->mode == comDevelop)
+                                          return true;
                                       const ConfigOption* used = printed.option(key);
                                       const auto file = file_values.find(key);
                                       if (used == nullptr || file == file_values.end())
+                                          return true;
+                                      if (file->second == used->serialize())
                                           return true;
                                       std::unique_ptr<ConfigOption> stated(used->clone());
                                       try {

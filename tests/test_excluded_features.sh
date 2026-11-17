@@ -443,10 +443,16 @@ else:
     "$BINARY" "$OWN_3MF" --slice 1 --outputdir "$REPLACED_DIR" > "$REPLACED_DIR.out" 2>&1
     set -e
     REPLACED=$(python3 -c 'import json, sys; r = json.load(open(sys.argv[1])); print(json.dumps(r.get("settings_replaced_by_presets")), json.dumps(r["sliced_plates"][0].get("settings_replaced_by_presets")))' "$REPLACED_DIR/result.json" 2>/dev/null || true)
-    if [ "$REPLACED" = '["sparse_infill_density"] ["sparse_infill_density"]' ]; then
+    # The engine's own project fixtures hold a few values older than today's
+    # presets that the maker did not list; those are replaced and printed as
+    # the preset's, and are named too.
+    WANT_REPLACED='["sparse_infill_density"]'
+    [ "$ENGINE" = bambu ] && WANT_REPLACED='["filament_cost", "sparse_infill_density"]'
+    [ "$ENGINE" = orca ] && WANT_REPLACED='["slowdown_for_curled_perimeters", "sparse_infill_density"]'
+    if [ "$REPLACED" = "$WANT_REPLACED $WANT_REPLACED" ]; then
         record "own-project-result-names-only-what-printed-differently" 1
     else
-        record "own-project-result-names-only-what-printed-differently" 0 "result.json run and plate lists: '$REPLACED' (want [\"sparse_infill_density\"] for both)"
+        record "own-project-result-names-only-what-printed-differently" 0 "result.json run and plate lists: '$REPLACED' (want $WANT_REPLACED for both)"
     fi
     rm -rf "$REPLACED_DIR" "$REPLACED_DIR.out"
     run_slice "$GC" "$OWN_3MF" --project-settings-as-saved

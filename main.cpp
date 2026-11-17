@@ -8764,8 +8764,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 }
                 if (rebase) {
                     outcome.settings_replaced_by_presets = slicer_cli::settings_replaced_by_presets(config, rebased);
+                    // Only what the file states: a key it leaves out was
+                    // never the file's value.
+                    const json file_settings = project_settings_json(input_file);
                     for (const std::string& key : outcome.settings_replaced_by_presets)
-                        outcome.replaced_file_values[key] = config.opt_serialize(key);
+                        if (file_settings.contains(key))
+                            outcome.replaced_file_values[key] = config.opt_serialize(key);
                     config = std::move(rebased);
                     rs.project_loaded_like_desktop = true;
                     emit_event({{"event","config_normalized"},
