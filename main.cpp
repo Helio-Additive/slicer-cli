@@ -900,6 +900,10 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
         // Keep non-fatal forward-compatibility substitutions and unknown keys
         // visible before success when the caller opts into slicing events.
         // Legacy --layout callers leave diagnostic_source empty.
+#ifdef ENGINE_SNAPMAKER
+        slicer_cli::convert_flow_type_spelling(config, substitution_context,
+                                               diagnostic_source.empty() ? filepath : diagnostic_source);
+#endif
         if (!diagnostic_source.empty()) {
             emit_config_substitutions(substitution_context, diagnostic_source);
         }
@@ -8477,6 +8481,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // channel the GUI renders as "incompatible settings were
             // substituted", and it is also where an unknown key (a setting the
             // host wrote that this engine has no definition for) is recorded.
+#ifdef ENGINE_SNAPMAKER
+            slicer_cli::convert_flow_type_spelling(config, config_subst, "3mf:project_settings.config");
+#endif
             emit_config_substitutions(config_subst, "3mf:project_settings.config");
             outcome.unknown_settings = config_subst.unrecogized_keys;   // sic — upstream spelling
 #ifdef ENGINE_SNAPMAKER
