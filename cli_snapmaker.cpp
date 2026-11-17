@@ -1208,8 +1208,8 @@ void convert_flow_type_spelling(Slic3r::DynamicPrintConfig& config, Slic3r::Conf
                                 const std::string& source) {
     // Bambu Studio and OrcaSlicer spell the flow type "Standard" / "High Flow"
     // (BambuStudio PrintConfig.cpp 897-903 at v02.09.01.70; OrcaSlicer
-    // PrintConfig.cpp 573-576 at 8500fcd), and Snapmaker Orca releases before
-    // its flow-variant keys wrote those words too. This engine has "standard" /
+    // PrintConfig.cpp 573-576 at 8500fcd), and a public Snapmaker U1 project
+    // carries them. This engine has "standard" /
     // "high_flow" (PrintConfig.cpp 482-485, 4094-4122 at bac6fd5) and no
     // conversion: the desktop substitutes its default, standard, for any other
     // word (Plater.cpp 11690, ForwardCompatibilitySubstitutionRule::Enable), so

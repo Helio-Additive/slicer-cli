@@ -236,7 +236,12 @@ the plate when it opens a project, by the size the tower has for that plate's
 filaments (`Plater.cpp` 12270-12276, `PartPlate.cpp` 5141-5221,
 `WipeTowerPlacement.cpp` 86-97 at v02.09.01.70), and `slicer_cli` does the
 same. OrcaSlicer and Snapmaker Orca keep the saved position, and so do
-`slicer_cli-orcaslicer` and `slicer_cli-snapmaker`.
+`slicer_cli-orcaslicer` and `slicer_cli-snapmaker`. A plate the project holds
+no tower position for takes the first plate's in all three apps (Bambu Studio
+fills the list at load, `PartPlate.cpp` 5146-5148; OrcaSlicer and Snapmaker
+Orca read a missing entry as the first one, `ConfigOptionVector::get_at`), and
+in all three binaries. With `--project-settings-as-saved` such a plate keeps
+the official command line's reading, the option's default corner.
 
 The app can also download newer presets than the ones its installer ships,
 and slices with those. slicer-cli has the presets of its pinned engine
@@ -255,6 +260,15 @@ A refusal that a flag gets past says so in its own sentence: a file newer than
 the engine names `--allow-newer-file`, and a value this engine does not know
 names the setting's own flag (`--<setting> <value>`) and `--allow-substitution`,
 which lets the engine use its own default instead.
+
+`slicer_cli-snapmaker` reads a nozzle or filament flow type written the way
+Bambu Studio and OrcaSlicer spell it (`Standard`, `High Flow` in
+`nozzle_volume_type` or `filament_volume_type`) as the same flow type in
+Snapmaker Orca's words (`standard`, `high_flow`), in a project and in a
+settings file, and says so (event `config_normalized` /
+`FlowTypeSpellingConverted`). Snapmaker Orca itself substitutes its default,
+`standard`, for those words, so a `High Flow` nozzle would load as a standard
+one; this conversion is slicer-cli's own. Any other word is refused as above.
 
 `--allow-mix-temp` in the `slicer_cli-snapmaker` binary: slice a plate whose
 filaments mix high- and low-temperature materials. Snapmaker Orca's engine has
