@@ -183,8 +183,9 @@ if [ -f "$TOKEN_3MF" ]; then
     #     engine an unknown variable: its placeholder parser refuses the custom
     #     G-code and no G-code is written. That is the engine's own behaviour.
     #     Snapmaker Orca (bac6fd5) is the same: its parser refuses the token.
+    #     The file's own start G-code is sliced, as in (1).
     GC=$(mktmp_gcode)
-    run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode
+    run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode --project-settings-as-saved
     if [ "$ENGINE" != bambu ]; then
         if [ "$LAST_EXIT" -ne 0 ] \
            && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
@@ -383,6 +384,126 @@ if [ -f "$BASE_3MF" ]; then
 else
     skip "calib-*" "fixture missing: $BASE_3MF"
 fi
+
+# ── A project loads the way its desktop app loads it ────────────────────────
+# Each app keeps the settings the maker changed (different_settings_to_system)
+# and takes every other value from the preset it has today, for a project it
+# made itself too (BambuStudio Plater.cpp 12155 at v02.09.01.70; OrcaSlicer
+# Plater.cpp 6063-6110, 6415 and Preset.cpp 2516-2535 at 8500fcd; Snapmaker_Orca
+# Plater.cpp 12103 and Preset.cpp 2121-2148 at bac6fd5). The fixture is this
+# engine's own project; --project-settings-as-saved slices the file's values.
+if [ -f "$BASE_3MF" ]; then
+    OWN_3MF=$(mktemp "${TMPDIR:-/tmp}/own_project.XXXXXX"); mv "$OWN_3MF" "$OWN_3MF.3mf"; OWN_3MF="$OWN_3MF.3mf"
+    python3 - "$BASE_3MF" "$OWN_3MF" <<'PY'
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["sparse_infill_density"] = "33%"
+            d["wall_loops"] = "5"
+            diff = d.get("different_settings_to_system") or [""]
+            diff[0] = "wall_loops"
+            d["different_settings_to_system"] = diff
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PY
+    header() { sed -n "s/^; $2 = //p" "$1" | head -n 1 | tr -d '\r'; }
+    GC=$(mktmp_gcode)
+    run_slice "$GC" "$OWN_3MF"
+    DENSITY=$(header "$GC" sparse_infill_density); WALLS=$(header "$GC" wall_loops)
+    if [ "$LAST_EXIT" -eq 0 ] && [ -n "$DENSITY" ] && [ "$DENSITY" != "33%" ] && [ "$WALLS" = 5 ] \
+       && grep -q "ProjectRebasedOnSystemPresets" <<<"$LAST_OUTPUT"; then
+        record "own-project-loads-like-the-app" 1
+    else
+        record "own-project-loads-like-the-app" 0 "exit=$LAST_EXIT density='$DENSITY' (want the preset's, not 33%) wall_loops='$WALLS' (want 5)"
+    fi
+    # The run names what it did not keep: the replaced setting is in the
+    # event's list, the maker's own change is not.
+    if python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith("[[SLICER_EVENT]] ") and "ProjectRebasedOnSystemPresets" in line:
+        replaced = json.loads(line[len("[[SLICER_EVENT]] "):])["replaced_settings"]
+        assert "sparse_infill_density" in replaced and "wall_loops" not in replaced, replaced
+        break
+else:
+    raise SystemExit("no ProjectRebasedOnSystemPresets event")
+' <<<"$LAST_OUTPUT" 2>/dev/null; then
+        record "own-project-names-what-the-presets-replaced" 1
+    else
+        record "own-project-names-what-the-presets-replaced" 0 "replaced_settings does not hold sparse_infill_density without wall_loops"
+    fi
+    run_slice "$GC" "$OWN_3MF" --project-settings-as-saved
+    DENSITY=$(header "$GC" sparse_infill_density)
+    if [ "$LAST_EXIT" -eq 0 ] && [ "$DENSITY" = "33%" ]; then
+        record "own-project-as-saved" 1
+    else
+        record "own-project-as-saved" 0 "exit=$LAST_EXIT density='$DENSITY' (want 33%)"
+    fi
+    rm -f "$GC" "$OWN_3MF"
+else
+    skip "own-project-loads-like-the-app" "fixture missing: $BASE_3MF"
+fi
+
+# ── An exported project slices again with the same settings ─────────────────
+# The export lists the settings the run changed, as the app lists them when it
+# saves (desktop_presets.hpp record_changed_settings), so opening the export
+# keeps them. Each case slices with --export-3mf, slices the export again with
+# no flags, and compares the two G-codes: the same printed lines (every line
+# that is not a comment), with the changed settings in the second header.
+RT=$(mktemp -d "${TMPDIR:-/tmp}/roundtrip.XXXXXX")
+python3 - "$RT/cube.stl" <<'PY'
+import sys
+v = [(x, y, z) for x in (0, 20) for y in (0, 20) for z in (0, 20)]
+f = [(0,1,3),(0,3,2),(4,6,7),(4,7,5),(0,4,5),(0,5,1),(2,3,7),(2,7,6),(0,2,6),(0,6,4),(1,5,7),(1,7,3)]
+with open(sys.argv[1], "w") as o:
+    o.write("solid cube\n")
+    for a, b, c in f:
+        o.write("facet normal 0 0 0\nouter loop\n")
+        for i in (a, b, c):
+            o.write("vertex %d %d %d\n" % v[i])
+        o.write("endloop\nendfacet\n")
+    o.write("endsolid cube\n")
+PY
+RT_PRINTER="Bambu Lab X1 Carbon 0.4 nozzle"
+[ "$ENGINE" = snapmaker ] && RT_PRINTER="Snapmaker U1 (0.4 nozzle)"
+roundtrip() {
+    local LABEL="$1"; shift
+    local D="$RT/$LABEL"; mkdir -p "$D"
+    set +e
+    "$BINARY" "$@" --slice 1 --outputdir "$D/a" --export-3mf p.3mf > "$D/a.out" 2>&1; local R1=$?
+    "$BINARY" "$D/a/p.3mf" --slice 1 --outputdir "$D/b" > "$D/b.out" 2>&1; local R2=$?
+    set -e
+    local DETAIL
+    DETAIL=$(python3 - "$D/a/plate_1.gcode" "$D/b/plate_1.gcode" 2>&1 <<'PY'
+import re, sys
+def read(path):
+    header, printed = {}, []
+    for line in open(path, errors="replace"):
+        line = line.rstrip("\r\n")
+        m = re.match(r"^; ([a-z_0-9]+) = (.*)$", line)
+        if m:
+            header.setdefault(m.group(1), m.group(2))
+        elif line and not line.startswith(";"):
+            printed.append(line)
+    return header, printed
+(a, pa), (b, pb) = read(sys.argv[1]), read(sys.argv[2])
+for name, h in (("the first slice", a), ("the export sliced again", b)):
+    assert h.get("wall_loops") == "5" and h.get("sparse_infill_density") == "33%", (name, h.get("wall_loops"), h.get("sparse_infill_density"))
+assert pa == pb, "the printed lines differ: %d and %d lines" % (len(pa), len(pb))
+PY
+    ) && [ "$R1" -eq 0 ] && [ "$R2" -eq 0 ] && record "export-slices-again-$LABEL" 1 \
+        || record "export-slices-again-$LABEL" 0 "export exit=$R1 re-slice exit=$R2 $DETAIL"
+}
+roundtrip "model-with-flags" "$RT/cube.stl" --printer-preset "$RT_PRINTER" --perimeters 5 --infill 33%
+if [ -f "$BASE_3MF" ]; then
+    roundtrip "project-with-flags" "$BASE_3MF" --perimeters 5 --infill 33%
+    roundtrip "project-as-saved" "$BASE_3MF" --project-settings-as-saved --perimeters 5 --infill 33%
+fi
+rm -rf "$RT"
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""

@@ -84,6 +84,13 @@
       },
       "description": "Settings the file states that this engine has no definition for; the engine ignores them."
     },
+    "settings_replaced_by_presets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Settings whose value in the project file was replaced by the preset's, because the file does not list them as changed by its maker (different_settings_to_system); the desktop app loads the project the same way. Empty with --project-settings-as-saved and for model files."
+    },
     "downward_compatible_machine": {
       "type": "array",
       "items": {
@@ -172,7 +179,9 @@
         },
         "filament_nozzle_map": {
           "type": "array",
-          "items": { "type": "integer" },
+          "items": {
+            "type": "integer"
+          },
           "description": "Printers with a nozzle rack (slicer_cli): the rack nozzle each of the project's filaments printed with, in filament order, as the G-code's filament_nozzle_map states it (0-based)."
         },
         "filament_map_mode": {
@@ -211,6 +220,12 @@
           "type": "string"
         },
         "unknown_settings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "settings_replaced_by_presets": {
           "type": "array",
           "items": {
             "type": "string"

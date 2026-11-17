@@ -3018,6 +3018,9 @@ struct PlateOutcome {
     // G-code's filament_nozzle_map states it (0-based). Empty without a rack.
     std::vector<int> filament_nozzle_map;
     std::vector<std::string> unknown_settings;  // keys in the file this engine has no definition for
+    // Keys whose value in the project file was replaced by the preset's when
+    // the project was loaded the way its desktop app loads it.
+    std::vector<std::string> settings_replaced_by_presets;
     // sliced_info_t print summary (BambuStudio.cpp 221-231)
     float       layer_height = 0.f;
     int         wall_loops   = 0;
@@ -3389,6 +3392,14 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
     for (const PlateOutcome& p : outcomes)
         unknown.insert(p.unknown_settings.begin(), p.unknown_settings.end());
     j["unknown_settings"] = std::vector<std::string>(unknown.begin(), unknown.end());
+    // Settings the project file states that the presets replaced: the file
+    // does not list them as changed by its maker, and the desktop app drops
+    // such a value the same way. A caller that edited the file reads here
+    // what was not kept.
+    std::set<std::string> replaced;
+    for (const PlateOutcome& p : outcomes)
+        replaced.insert(p.settings_replaced_by_presets.begin(), p.settings_replaced_by_presets.end());
+    j["settings_replaced_by_presets"] = std::vector<std::string>(replaced.begin(), replaced.end());
     // --downward-check and the settings merge: the official keys, written
     // only when they have entries (BambuStudio.cpp 488-493; OrcaSlicer.cpp
     // 429-430). A printer is compatible when every checked plate fits it.
@@ -3454,6 +3465,7 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
         plate["warnings"]   = p.warnings;
         plate["gcode_file"] = p.gcode_path;
         plate["unknown_settings"] = p.unknown_settings;
+        plate["settings_replaced_by_presets"] = p.settings_replaced_by_presets;
         j["sliced_plates"].push_back(plate);
     }
     const boost::filesystem::path path = boost::filesystem::path(outputdir) / "result.json";
@@ -3989,7 +4001,9 @@ static bool arrange_instance_totally_inside(const Slic3r::ModelObject* object, c
     return true;
 }
 
-/// PartPlate::estimate_wipe_tower_size (Bambu PartPlate.cpp 2159-2233; Orca
+/// PartPlate::estimate_wipe_tower_size (Bambu PartPlate.cpp 2350-2440 at
+/// v02.09.01.70, where the official command line passes legacy_behavior and
+/// the desktop does not, BambuStudio.cpp 4883, 6246; Orca
 /// PartPlate.cpp 2099-2165). The two engines differ in the tallest-object
 /// measure (Bambu: every instance's top; Orca: the object's exact height) and
 /// in the rib-wall settings (Bambu prime_tower_rib_wall / prime_tower_rib_width
@@ -4003,7 +4017,8 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
                                                       int plate_extruder_size, bool enable_wrapping_detection,
                                                       const Slic3r::BoundingBoxf3& plate_box,
                                                       const std::vector<Slic3r::BoundingBoxf>& exclude_boxes,
-                                                      const Slic3r::Model* global_model = nullptr) {
+                                                      const Slic3r::Model* global_model = nullptr,
+                                                      bool legacy_behavior = true) {
     using namespace Slic3r;
     Vec3d wipe_tower_size;
     double layer_height = 0.08f; // hard code layer height
@@ -4075,14 +4090,34 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
         diameter = diameters.empty() ? diameter : *std::max_element(diameters.begin(), diameters.end());
         filament_change_volume = length * PI * diameter * diameter / 4.;
     }
+#ifdef ENGINE_ORCA
+    (void) legacy_behavior;
     double volume = wipe_volume * (extruder_count == 2 ? plate_extruder_size : (plate_extruder_size - 1));
     if (extruder_count == 2) volume += filament_change_volume * (int) (plate_extruder_size / 2);
+#else
+    // Bambu PartPlate.cpp 2396-2409: the desktop sizes a one-colour plate with
+    // smooth timelapse for one filament, and a printer whose nozzles count as
+    // extruders rams at every nozzle change.
+    const bool smooth_timelapse = timelapse_type ? (timelapse_type->value == TimelapseType::tlSmooth) : false;
+    int filament_depth_count = extruder_count == 2 ? plate_extruder_size : (plate_extruder_size - 1);
+    if (!legacy_behavior && plate_extruder_size == 1 && smooth_timelapse) filament_depth_count = 1;
+    double volume = wipe_volume * filament_depth_count;
+    if (extruder_count == 2) volume += filament_change_volume * (int) (plate_extruder_size / 2);
+    if (const auto* hotend_as_ext = config.option<ConfigOptionBool>("handle_hotend_as_extruder");
+        hotend_as_ext && hotend_as_ext->value && plate_extruder_size >= 2 && filament_change_volume > 0)
+        volume += filament_change_volume * (plate_extruder_size - 1);
+#endif
     if (use_rib_wall) {
         depth = std::sqrt(volume / layer_height * extra_spacing);
         if (need_wipe_tower || plate_extruder_size > 1) {
             float min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height);
             double volume_depth        = depth;
             depth = std::max((double) min_wipe_tower_depth, depth);
+#ifndef ENGINE_ORCA
+            // Slicing forces a wrapping tower to this depth (Bambu PartPlate.cpp 2420-2422).
+            if (enable_wrapping_detection)
+                depth = std::max(depth, WipeTower::wrapping_wipe_tower_depth);
+#endif
             rib_width = std::min(rib_width, depth / 2);
             depth = rib_width / std::sqrt(2) + std::max(depth + extra_rib_length, volume_depth);
             wipe_tower_size(0) = wipe_tower_size(1) = depth;
@@ -4092,6 +4127,10 @@ static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model
         if (need_wipe_tower || depth > EPSILON) {
             float min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height);
             depth = std::max((double) min_wipe_tower_depth, depth);
+#ifndef ENGINE_ORCA
+            if (enable_wrapping_detection)   // Bambu PartPlate.cpp 2432-2434
+                depth = std::max(depth, WipeTower::wrapping_wipe_tower_depth);
+#endif
         }
         wipe_tower_size(0) = w;
         wipe_tower_size(1) = depth;
@@ -4861,6 +4900,60 @@ static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, cons
     wipe_x->set_at(&wt_x_opt, plate_index, 0);
     wipe_y->set_at(&wt_y_opt, plate_index, 0);
 }
+
+#ifdef ENGINE_BAMBU
+/// Opening a project, Bambu Studio puts each plate's saved tower position back
+/// inside the plate (Plater.cpp 12270-12276 at v02.09.01.70:
+/// set_default_wipe_tower_pos_for_plate with keep_existing, PartPlate.cpp
+/// 5141-5221). The tower is sized for the filaments the plate's objects use,
+/// and for two when that size is zero (5183-5187); its corner is then kept
+/// WIPE_TOWER_MARGIN inside the area every nozzle reaches, pinned to the low
+/// edge when the tower is larger than that area (wipe_tower_legal_corner_range
+/// and wipe_tower_pullback_then_avoid, WipeTowerPlacement.cpp 86-97, 403-417;
+/// a kept position has no forbidden regions, PartPlate.cpp 5194-5196).
+/// OrcaSlicer and Snapmaker Orca keep the saved position when they open a
+/// project: their Plater calls this only after a printer change (OrcaSlicer
+/// Plater.cpp 10903-10907; Snapmaker_Orca PartPlate.cpp 3799, 4277, 4686).
+static void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
+                                            int plate_index) {
+    using namespace Slic3r;
+    const auto* area = config.option<ConfigOptionPoints>("printable_area");
+    if (plate_index < 0 || !area || area->values.size() < 3)
+        return;
+    auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x", true);
+    auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y", true);
+    // A plate with no entry of its own takes the first plate's (PartPlate.cpp 5147-5148).
+    if ((int)wipe_x->values.size() <= plate_index)
+        wipe_x->values.resize(plate_index + 1, wipe_x->values.empty() ? 0.0 : wipe_x->values.front());
+    if ((int)wipe_y->values.size() <= plate_index)
+        wipe_y->values.resize(plate_index + 1, wipe_y->values.empty() ? 0.0 : wipe_y->values.front());
+    const BoundingBoxf reach = tower_reach_box(config, *area);
+    const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+    const BoundingBoxf3 plate_box(Vec3d(reach.min.x(), reach.min.y(), 0.), Vec3d(reach.max.x(), reach.max.y(), height));
+    const TowerWipeParams wipe = tower_wipe_params(config);
+    const auto exclude = arrange_exclude_boxes(config);
+    const auto size_for = [&](int filaments) {
+        return arrange_estimate_wipe_tower_size(model, config, wipe.width, wipe.volume, wipe.extruder_count, filaments,
+                                                wipe.wrapping, plate_box, exclude, nullptr, /*legacy_behavior=*/false);
+    };
+    Vec3d tower = size_for((int)arrange_plate_extruders(model, config, plate_index).size());
+    if (is_approx(tower(0), 0.0) || is_approx(tower(1), 0.0))
+        tower = size_for(2);
+    if (is_approx(tower(0), 0.0) || is_approx(tower(1), 0.0))
+        return;
+    // The build volume is the reach area widened by SceneEpsilon
+    // (PartPlate::get_build_volume, PartPlate.cpp 3711-3733): a tower the app
+    // put on the low edge is saved at 15 - 0.0001.
+    const double m = WIPE_TOWER_MARGIN, eps = BuildVolume::SceneEpsilon;
+    const double lo_x = reach.min.x() - eps + m, lo_y = reach.min.y() - eps + m;
+    const double hi_x = std::max(lo_x, reach.max.x() + eps - tower(0) - m);
+    const double hi_y = std::max(lo_y, reach.max.y() + eps - tower(1) - m);
+    ConfigOptionFloat wt_x_opt(std::clamp((float)wipe_x->values[plate_index], (float)lo_x, (float)hi_x));
+    ConfigOptionFloat wt_y_opt(std::clamp((float)wipe_y->values[plate_index], (float)lo_y, (float)hi_y));
+    wipe_x->set_at(&wt_x_opt, plate_index, 0);
+    wipe_y->set_at(&wt_y_opt, plate_index, 0);
+}
+#endif
 
 /// PartPlate::estimate_wipe_tower_polygon with use_global_objects (Bambu
 /// PartPlate.cpp 2236-2281; Orca 2174-2220): plate_index's tower position
@@ -7795,6 +7888,7 @@ struct RunState {
     int plan_file_filaments = 0;
     slicer_cli::ProjectFacts project_facts;
     std::vector<Slic3r::Preset> project_presets_kept;
+    bool project_loaded_like_desktop = false;   // the project was loaded over the system presets
     Slic3r::DynamicPrintConfig extra;
     bool explicit_config_supplied_nozzle_map = false;
     slicer_cli::SettingsMerge settings_merge;
@@ -8492,17 +8586,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // 94266c28, OrcaSlicer.cpp 3075-3108 and 2697-2726 on main).
             // wipe_tower_x/y are the plate's own positions and are put back
             // after the load (Plater.cpp 6380-6389).
-            // Only a project Bambu Studio made is rebased; an OrcaSlicer
-            // project already states this engine's own values, and every file
-            // this product writes must keep slicing as it did. This scope test
-            // is the one place the scope is decided.
+            // This scope test is the one place the scope is decided.
 #ifdef ENGINE_SNAPMAKER
             // Snapmaker's loader reports no "made by OrcaSlicer" flag (Format/bbs_3mf.hpp
             // at bac6fd5), so the maker is read from the file's own tags: a Snapmaker Orca
             // project (Application "Snapmaker_Orca-<version>", Format/bbs_3mf.cpp:6645-6647)
-            // or an OrcaSlicer one already states this engine's values and is sliced as the
-            // file states them, as Snapmaker's CLI slices it (no rebase without --uptodate,
-            // Snapmaker_Orca.cpp:1243-1245 at bac6fd5).
+            // or an OrcaSlicer one. The maker decides only the Bambu Studio walls
+            // warning below; the rebase covers every project.
             bool is_orca_3mf = false;
             {
                 std::string model_xml;
@@ -8510,9 +8600,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     is_orca_3mf = slicer_cli::snapmaker_engine_made(model_metadata(model_xml));
             }
 #endif
-            const bool bambu_made_project = is_bbl_3mf && !is_orca_3mf;
+            // Every project one of the desktops made is rebased, this engine's
+            // own too: the desktop's load has no test on who made the file
+            // (OrcaSlicer Plater.cpp 6063-6110 lets a From_Orca project load
+            // its config, 6415 load_config_model, Preset.cpp 2516-2535;
+            // Snapmaker_Orca Plater.cpp 12103, Preset.cpp 2121-2148).
+            const bool bambu_made_project = is_bbl_3mf;
 #if defined(ENGINE_SNAPMAKER) || defined(ENGINE_ORCA)
-            g_file_made_by_bambustudio = bambu_made_project;
+            g_file_made_by_bambustudio = is_bbl_3mf && !is_orca_3mf;
 #endif
 #if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
             // The loader's own is_orca_3mf flag does not recognise every
@@ -8703,13 +8798,44 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #endif
                 }
                 if (rebase) {
+                    // Every setting whose value in the file the presets
+                    // replaced, by name: the desktop drops them without a
+                    // word, and a caller that edited the file must be able to
+                    // read what was not kept. The two lists the load itself
+                    // rewrites are not settings.
+                    // A list that only changed its length (one value where the
+                    // loaded presets hold the same value once per extruder or
+                    // variant) holds the same setting, and is not named.
+                    const auto same_value_repeated = [](const Slic3r::ConfigOption* a, const Slic3r::ConfigOption* b) {
+                        const auto* va = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(a);
+                        const auto* vb = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(b);
+                        if (va == nullptr || vb == nullptr)
+                            return false;
+                        const std::vector<std::string> sa = va->vserialize(), sb = vb->vserialize();
+                        if (sa.empty() || sb.empty())
+                            return false;
+                        const auto all_are = [](const std::vector<std::string>& v, const std::string& x) {
+                            return std::all_of(v.begin(), v.end(), [&x](const std::string& e) { return e == x; });
+                        };
+                        return all_are(sa, sa.front()) && all_are(sb, sa.front());
+                    };
+                    for (const std::string& key : config.diff(rebased))
+                        if (key != "different_settings_to_system" && key != "inherits_group" &&
+                            !same_value_repeated(config.option(key), rebased.option(key)))
+                            outcome.settings_replaced_by_presets.push_back(key);
                     config = std::move(rebased);
+                    rs.project_loaded_like_desktop = true;
                     emit_event({{"event","config_normalized"},
                                 {"tag","ProjectRebasedOnSystemPresets"},
                                 {"printer_settings_id", config_id_text(config, "printer_settings_id")},
                                 {"print_settings_id", config_id_text(config, "print_settings_id")},
+                                {"replaced_settings", outcome.settings_replaced_by_presets},
                                 {"message","The project was loaded over this engine's system presets, as the desktop loads it: "
-                                           "every key the maker did not change takes the preset's value"}});
+                                           "every setting the file does not list as changed by its maker "
+                                           "(different_settings_to_system) takes the preset's value. " +
+                                           std::to_string(outcome.settings_replaced_by_presets.size()) +
+                                           " value(s) of the file were replaced (replaced_settings); "
+                                           "--project-settings-as-saved slices the file's values"}});
                 } else {
                     // The engine ships no preset to load the project over, so
                     // the file's own settings are sliced, as before.
@@ -11302,6 +11428,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (!manual_map_extruders_fit(config, model, step_plate, outcome))
                     return 1;
 #endif
+#ifdef ENGINE_BAMBU
+                // --arrange places the tower itself.
+                if (rs.project_loaded_like_desktop && !o.arrange_forced())
+                    project_load_tower_inside_plate(config, model, step_plate - 1);
+#endif
                 if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced())) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
@@ -12431,7 +12562,7 @@ static int run_info(const std::string& argv0, const std::string& path, const std
 /// keeps the plate pictures it came with.
 static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path& outdir, RunState& rs,
                              std::vector<PlateOutcome>& outcomes, const Slic3r::DynamicPrintConfig& project,
-                             std::string& error) {
+                             const std::set<std::string>* given_settings, std::string& error) {
     using namespace Slic3r;
     const std::string path = (outdir / o.export_3mf).string();
     Model& model = rs.model;
@@ -12568,6 +12699,35 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     // states the same templates. The slice already reported the alias.
     if (!geometry_input && !g_assemble && o.normalize_legacy_gcode)
         normalize_legacy_gcode_tokens(config, /*report_event=*/false);
+    // The settings this run changed, listed as the desktop lists them when it
+    // saves (desktop_presets.hpp): a project is opened over the presets and
+    // keeps only what is listed. A project whose presets the package does not
+    // ship is opened with its saved values, so its list stays as it is.
+    {
+        std::string unavailable;
+        try {
+            const boost::filesystem::path staging = make_owned_temp_dir("slicer_cli_project-");
+            struct StagingCleanup {
+                boost::filesystem::path dir;
+                ~StagingCleanup() { remove_owned_temp_dir(dir); }
+            } staging_cleanup{staging};
+            PresetBundle bundle;
+            if (load_system_presets(o.argv0, bundle, staging, unavailable)) {
+#ifdef ENGINE_BAMBU
+                slicer_cli::load_project_embedded_presets(bundle, project_presets, config);
+#endif
+                if (project_presets_shipped(bundle, config_id_text(config, "printer_settings_id"),
+                                            config_id_text(config, "print_settings_id")))
+                    slicer_cli::record_changed_settings(bundle, path, config, given_settings, unavailable);
+            }
+        } catch (const std::exception& e) {
+            unavailable = e.what();
+        }
+        if (!unavailable.empty())
+            emit_event({{"event","export_note"}, {"tag","ChangedSettingsNotListed"}, {"path", path},
+                        {"reason", unavailable},
+                        {"message","The project does not list the settings this run changed: " + unavailable}});
+    }
 
     // Each sliced plate's Metadata/plate_N.json; an empty box for the others
     // (BambuStudio.cpp 7976-7988).
@@ -13182,6 +13342,23 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         try {
             Slic3r::DynamicPrintConfig project = rs.base;
             apply_command_line_overrides(project, o.overrides, /*report_rejections=*/false);
+            // The settings the command line gave: the official setting flags
+            // and what this command line's own short flags changed. They are
+            // the run's only changes when every other value is a named
+            // preset's or a project's loaded over its presets; a settings
+            // file or a project sliced as saved brings values of its own, and
+            // then every setting that differs from the presets is listed.
+            std::set<std::string> given_settings;
+            for (const std::string& key : rs.extra.keys())
+                given_settings.insert(key);
+            for (const std::string& key : rs.base.diff(project))
+                given_settings.insert(key);
+            const bool settings_files = !o.machine_config.empty() || !o.filament_config.empty() ||
+                                        !o.process_config.empty() || !o.bundle_config.empty() ||
+                                        o.given_flag("load_settings") || o.given_flag("load_filaments");
+            const bool presets_only = !settings_files &&
+                                      (rs.project_loaded_like_desktop || !input_is_3mf(o.input_file) ||
+                                       slicer_cli::classify_3mf(o.input_file) == slicer_cli::ThreeMfKind::GeometryOnly);
 #ifdef ENGINE_SNAPMAKER
             // The switch trimmed each plate's filament list and remapped the
             // model's paint to it, so the project carries that list too:
@@ -13190,7 +13367,8 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             if (slicer_cli::switch_trims_filaments(o.preset_switch, o.printer_preset))
                 slicer_cli::trim_project_roster_for_switch(project);
 #endif
-            code = export_sliced_3mf(o, outdir, rs, outcomes, project, export_error);
+            code = export_sliced_3mf(o, outdir, rs, outcomes, project, presets_only ? &given_settings : nullptr,
+                                     export_error);
         } catch (const std::exception& e) {
             code = CLI_EXPORT_3MF_ERROR;
             export_error = e.what();

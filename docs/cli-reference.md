@@ -208,27 +208,35 @@ flag takes its value as the next word or after `=`.
 | `--skip-modified-gcodes` | `=0` or `=1` | Keep the system presets' G-code where the project changed it | all binaries |
 | `--allow-newer-file` | `=0` or `=1` | Slice a 3MF saved by a newer app version | all binaries |
 | `--allow-substitution` | | With `--slice`: slice a 3MF whose values this engine has to substitute | all binaries |
-| `--project-settings-as-saved` | | Slice a Bambu Studio project with the values saved in the file | all binaries |
+| `--project-settings-as-saved` | | Slice a project with the values saved in the file | all binaries |
 | `--datadir` | folder | Accepted; no effect (slicer-cli keeps no settings between runs) | all binaries |
 
-**A Bambu Studio project loads the way the desktop app loads it.** A project
+**A project loads the way the desktop app loads it.** A project
 file holds a full copy of its printer, process and filament settings from the
 day it was saved, and the list of the settings the maker changed
 (`different_settings_to_system`). The app keeps the changed ones and takes
 every other value from the preset it has today (`load_config_model`,
 `Plater.cpp` 12155 at v02.09.01.70, `load_external_preset` in `Preset.cpp`);
 the presets saved inside the project and the file's own nozzle rack are kept
-(`Plater.cpp` 11953-11958, 12160). All three programs do the same with the
-presets the package ships, and say so (event `config_normalized` /
-`ProjectRebasedOnSystemPresets`). So a project saved by an older version
+(`Plater.cpp` 11953-11958, 12160). OrcaSlicer and Snapmaker Orca load a
+project the same way, their own projects too (OrcaSlicer `Plater.cpp`
+6063-6110, 6415 and `Preset.cpp` 2516-2535 at 8500fcd; Snapmaker Orca
+`Plater.cpp` 12103 and `Preset.cpp` 2121-2148 at bac6fd5). All three programs
+do the same with the presets the package ships, and say so (event
+`config_normalized` / `ProjectRebasedOnSystemPresets`). So a project saved by an older version
 slices with today's start G-code, as it does in the app. A project whose
 printer or process preset the package does not ship keeps its saved values
 (`ProjectPresetRebaseSkipped`).
 
 `--project-settings-as-saved` turns this off: the run slices the values in
-the file, which is what the official command lines do. `slicer_cli-orcaslicer`
-and `slicer_cli-snapmaker` load only a Bambu Studio project this way; a
-project their own app saved is sliced as saved.
+the file, which is what the official command lines do.
+
+Bambu Studio also puts each plate's saved prime tower position back inside
+the plate when it opens a project, by the size the tower has for that plate's
+filaments (`Plater.cpp` 12270-12276, `PartPlate.cpp` 5141-5221,
+`WipeTowerPlacement.cpp` 86-97 at v02.09.01.70), and `slicer_cli` does the
+same. OrcaSlicer and Snapmaker Orca keep the saved position, and so do
+`slicer_cli-orcaslicer` and `slicer_cli-snapmaker`.
 
 The app can also download newer presets than the ones its installer ships,
 and slices with those. slicer-cli has the presets of its pinned engine
@@ -750,11 +758,13 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
             "sliced_time_with_cache": 0,
             "total_predication": 1133.287353515625,
             "triangle_count": 12,
+            "settings_replaced_by_presets": [],
             "unknown_settings": [],
             "warning_message": "",
             "warnings": []
         }
     ],
+    "settings_replaced_by_presets": [],
     "sparse_infill_density": 15.0,
     "unknown_settings": [],
     "wall_loops": 2
@@ -772,6 +782,7 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `printer_preset`, `process_preset`, `filament_presets` | Optional catalog-validated names of the printer, process, and filament presets a model-file run with `--printer-preset` used. A process or filament not named is the printer's default, and every name is the preset's current one (an old name from its `renamed_from` is reported as the current name). They are captured before raw `--machine`/`--process`/`--filament` settings files can supply arbitrary ids, once the model reaches per-plate slicing; they are absent for 3MF projects, settings-file-only runs, project printer switches, and failures before that capture point. |
 | `layer_height`, `wall_loops`, `sparse_infill_density` | The first sliced plate's values |
 | `unknown_settings` | Settings in the file this engine does not have |
+| `settings_replaced_by_presets` | Settings whose value in the project file was replaced by the preset's: the file does not list them as changed by its maker (`different_settings_to_system`), and the desktop app drops such a value the same way. Also on each sliced plate, and as `replaced_settings` in the `ProjectRebasedOnSystemPresets` event. A caller that edits a project file lists its edits there, gives them as setting flags, or slices with `--project-settings-as-saved` |
 | `sliced_plates[]` | One entry per sliced plate |
 | `sliced_plates[].id` | The plate number |
 | `sliced_plates[].sliced_time` | Milliseconds |
