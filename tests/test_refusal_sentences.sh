@@ -46,8 +46,10 @@ bin_of() { [ "$1" = orca ] && echo "$O" || echo "$B"; }
 python3 - <<'PY'
 import json, struct
 
-def box(path, s, h):
-    v = [(x, y, z) for z in (0, h) for y in (0, s) for x in (0, s)]
+def box(path, width, h, depth=None):
+    if depth is None:
+        depth = width
+    v = [(x, y, z) for z in (0, h) for y in (0, depth) for x in (0, width)]
     f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
     with open(path, "w") as o:
         o.write("solid t\n")
@@ -60,6 +62,8 @@ def box(path, s, h):
 box("cube.stl", 20, 20)
 box("big.stl", 300, 10)          # larger than the A1 mini bed in both directions
 box("big200.stl", 200, 20)       # fits the bed alone, not two of them together
+box("bar.stl", 220, 10, 20)      # fits the 180 mm square bed at 41 degrees
+box("tall.stl", 20, 200)         # too tall for the A1 mini as it stands
 open("empty.stl", "w").write("solid t\nendsolid t\n")
 open("zero.stl", "wb").write(b"\0" * 80 + struct.pack("<I", 0))
 open("garbage.json", "w").write("not json at all")
@@ -283,8 +287,26 @@ both load-filament-ids        "*give --load-filaments with at least 3 file(s)*" 
      cube.stl --slice 1 --load-filament-ids 3
 both clone-objects-max        "*copies or fewer*" \
      cube.stl --slice 1 --clone-objects 9999
-both object-larger-than-bed   "*Scale the object down, split it across plates, or use a bigger printer.*" \
+both object-larger-than-bed   "*Try another way up, split it across plates, or use a bigger printer. Scale the object down only if changing its size is acceptable.*" \
      big.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+both object-too-tall          "*It is too tall for this bed; try another way up first. Split it across plates or use a bigger printer. Scale the object down only if changing its size is acceptable.*" \
+     tall.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+TURN_ADVICE="*fits at full size rotated 41 degrees about Z. Use --rotate 41, or give --arrange 1 --allow-rotations.*"
+both object-turn-plain        "$TURN_ADVICE" bar.stl --slice 1 --printer-preset "$A1M"
+both object-turn-arrange      "$TURN_ADVICE" bar.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+for e in bambu orca; do
+    bin=$(bin_of "$e")
+    run "c-object-turn-slices-$e" "$bin" bar.stl --slice 1 --arrange 1 --allow-rotations \
+        --printer-preset "$A1M" --outputdir "c-object-turn-slices-$e/out"
+    code=$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1]))["return_code"])
+except Exception: print("none")' "c-object-turn-slices-$e/out/result.json" 2>/dev/null)
+    if [ "$code" = 0 ] && [ -s "c-object-turn-slices-$e/out/plate_1.gcode" ]; then
+        report object-turn-slices "$e" PASS "the full-size bar arranged and sliced"
+    else
+        report object-turn-slices "$e" FAIL "full-size turn did not slice; $(why "c-object-turn-slices-$e")"
+    fi
+done
 both assemble-no-fit          "*Give the plate fewer objects or smaller copies, or use a bigger printer.*" \
      --load-assemble-list pair.json --slice 1 --printer-preset "$A1M"
 

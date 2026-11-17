@@ -1192,14 +1192,14 @@ assert w and "bridge_line_width" in w[0]["message"], d["sliced_plates"]
 grep -q '"tag":"PrintReapplied"' u1mix/stdout && { show u1mix; fail "the second apply changed the U1 0.4+0.6 print"; }
 echo "PASS: the Snapmaker U1 0.4+0.6 with its own presets slices, with the settings check as a warning (Orca build)"
 
-# A part larger than the bed: refused with the official -50 code and its size.
+# A part larger than the bed reaches the arranger, then fails with -21 and its size.
 run big-bambu "$B" big.stl --slice 1 --arrange 1 --printer-preset "$A1M" --outputdir big-bambu/out
 run big-orca "$O" big.stl --slice 1 --arrange 1 --printer-preset "$A1M" --outputdir big-orca/out
 for e in bambu orca; do
     [ "$(rc big-$e)" != 0 ] || fail "$e: 300 mm box was sliced"
     py '
 import json, sys; d = json.load(open(sys.argv[1]))
-assert d["return_code"] == -50, d
+assert d["return_code"] == -21, d
 assert "300" in d["error_string"], d["error_string"]
 ' big-$e/out/result.json
 done

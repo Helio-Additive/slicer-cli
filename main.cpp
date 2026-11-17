@@ -120,6 +120,7 @@
 #include "cli_filament_map.hpp"
 #include "cli_nozzle_options.hpp"
 #include "cli_project_load.hpp"
+#include "cli_bed_fit.hpp"
 #include "cli_pipe.hpp"
 
 #ifdef __APPLE__
@@ -3550,6 +3551,27 @@ static std::string object_size_text(const Slic3r::BoundingBoxf3& box) {
     return mm_text(size.x()) + " x " + mm_text(size.y()) + " x " + mm_text(size.z()) + " mm";
 }
 
+static std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObject& object, size_t instance_index,
+                                                           const Slic3r::DynamicPrintConfig& config) {
+    const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
+    if (!area || area->values.size() < 3)
+        return std::nullopt;
+    Slic3r::BoundingBoxf bed;
+    for (const Slic3r::Vec2d& point : area->values)
+        bed.merge(point);
+    const Slic3r::Vec3d size = object.instance_bounding_box(instance_index).size();
+    const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
+    if (fits_as_is)
+        return std::nullopt;
+    return slicer_cli::fitting_z_rotation(object, instance_index, bed);
+}
+
+static std::string full_size_turn_advice(double degrees) {
+    const std::string angle = mm_text(degrees);
+    return " It fits at full size rotated " + angle + " degrees about Z. Use --rotate " + angle +
+           ", or give --arrange 1 --allow-rotations.";
+}
+
 /// The official per-plate gate before apply (BambuStudio.cpp 6527-6567 at
 /// 5873b5f; OrcaSlicer.cpp 5645-5697 at 31f6803): Model::update_print_volume_state
 /// against the printer's bed, then refuse an object partly over the edge
@@ -3594,20 +3616,16 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
         for (size_t i = 0; i < object->instances.size(); ++i) {
             if (object->instances[i]->print_volume_state != Slic3r::ModelInstancePVS_Partly_Outside)
                 continue;
-            const std::string detail = "Object '" + object->name + "' (" +
+            const auto turn = oversized_fitting_z_rotation(*object, i, config);
+            std::string detail = "Object '" + object->name + "' (" +
                 object_size_text(object->instance_bounding_box(i)) +
-                ") crosses the edge of the " + bed_size_text(config) + " bed."
-                // The verdict says what is wrong; this says what to do with it.
-                // --arrange 1 re-arranges the plate on this bed (--arrange N,
-                // official meaning, BambuStudio.cpp 5066-5081 at 5873b5f /
-                // OrcaSlicer.cpp 4327-4342 at 31f6803, run before this check,
-                // BambuStudio.cpp 5936-5945 / OrcaSlicer.cpp 5196-5205), and
-                // the object as it stands fits a bigger printer's bed. A run
-                // that was given --arrange 1 has taken that advice already, so
-                // it gets the way out that is left.
-                + (arranged
-                       ? std::string(" Use a printer with a bigger bed.")
-                       : std::string(" Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed."));
+                ") crosses the edge of the " + bed_size_text(config) + " bed.";
+            if (turn)
+                detail += full_size_turn_advice(*turn);
+            else if (arranged)
+                detail += " Use a printer with a bigger bed.";
+            else
+                detail += " Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed.";
             set_outcome_failure(outcome, CLI_OBJECTS_PARTLY_INSIDE, detail);
             emit_event({{"event","plate_error"}, {"tag","ObjectPartlyOutsideBed"},
                         {"object", object->name}, {"message", detail}});
@@ -4460,10 +4478,10 @@ static Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& co
 ///     printer's clearances), then update_arrange_params,
 ///     update_selected_items_inflation, update_unselected_items_inflation,
 ///     (Orca) update_selected_items_axis_align and get_shrink_bedpts.
-/// An object larger than the bed is refused first, with the official -50
-/// sentence plus its size against the bed; objects that do not all land on
-/// the bed are refused with the official arrange sentence (-21,
-/// BambuStudio.cpp 5938-5944; OrcaSlicer.cpp 5198-5204).
+/// An object taller than the bed is refused first; width is left to the
+/// arranger. Objects that do not all land on the bed are refused with the
+/// official arrange sentence (-21, BambuStudio.cpp 5938-5944;
+/// OrcaSlicer.cpp 5198-5204).
 /// `landed_out`, for --repetitions: how many printable items landed on the
 /// plate; the arrange is applied even when some did not, and those are
 /// left off the plate (not printed), as the official copies loop does.
@@ -4482,26 +4500,20 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
     // Each instance on its own: the arrange places every instance as its own
     // item, so copies that start far apart are not one object wider than the bed.
-    // A part counts as larger than the bed only when it fits in neither
-    // orientation. Whether one that fits only turned 90 degrees is turned is
-    // the arrange's call, and the engines differ: Bambu's arrange offers a
-    // too-big item its minimum-area rotation even with rotations off
-    // (Arrange.cpp 937-941 at 5873b5f), Orca's only with rotations on
-    // (Arrange.cpp 995-1004 at 31f6803), and both turn a long part onto Y on
-    // I3 printers. When the arrange leaves it off the bed, -21 below says why.
+    // Width is the arranger's verdict: it can turn a part to its minimum-area
+    // orientation even with rotations off (BambuStudio Arrange.cpp 969-973).
+    // The later real printable-area check remains authoritative.
     for (ModelObject* object : model.objects) {
         object->ensure_on_bed();
         for (size_t i = 0; i < object->instances.size(); ++i) {
             const BoundingBoxf3 box = object->instance_bounding_box(i);
             const Vec3d size = box.size();
-            const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
-            const bool fits_turned = size.y() <= bed.size().x() + EPSILON && size.x() <= bed.size().y() + EPSILON;
-            const bool too_wide = !fits_as_is && !fits_turned;
             const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
-            if (too_wide || too_tall) {
-                const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
-                                           "; the bed is " + bed_size_text(config) +
-                                           ". Scale the object down, split it across plates, or use a bigger printer.";
+            if (too_tall) {
+                std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
+                                     "; the bed is " + bed_size_text(config) + ".";
+                detail += " It is too tall for this bed; try another way up first. Split it across plates or use a bigger printer.";
+                detail += " Scale the object down only if changing its size is acceptable.";
                 set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
                 emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
                             {"object", object->name}, {"message", detail}});
@@ -4714,7 +4726,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
 
     // Every selected item must land on this plate (BambuStudio.cpp 5936-5945;
     // OrcaSlicer.cpp 5196-5205).
-    std::string off_bed, only_turned;
+    std::string off_bed;
     if (landed_out != nullptr) {
         int landed = 0;
         for (const ArrangePolygon& ap : selected)
@@ -4726,18 +4738,17 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
             object->ensure_on_bed();
         return landed == int(selected.size());
     }
+    std::string turn_advice;
     for (size_t k = 0; k < selected.size(); ++k) {
         if (selected[k].bed_idx == 0)
             continue;
         off_bed += (off_bed.empty() ? "'" : ", '") + selected[k].name + "'";
-        // A part that fits the bed only turned 90 degrees, which this
-        // engine's arrange did not do.
         const ModelInstance* inst = selected_instances[k];
         const ModelObject* object = inst->get_object();
         const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
-        const Vec3d size = object->instance_bounding_box(size_t(it - object->instances.begin())).size();
-        if (!(size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON))
-            only_turned += (only_turned.empty() ? "'" : ", '") + object->name + "'";
+        const size_t instance_index = size_t(it - object->instances.begin());
+        if (const auto turn = oversized_fitting_z_rotation(*object, instance_index, config))
+            turn_advice += " " + object->name + ":" + full_size_turn_advice(*turn);
     }
     if (!off_bed.empty()) {
         std::string detail = "These objects do not fit on the " + bed_size_text(config) +
@@ -4750,9 +4761,11 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
                              // OrcaSlicer.cpp 5196-5205 at 31f6803), or a
                              // bigger printer's bed takes them together.
                              " Move some objects to another plate in the file, or use a printer with a bigger bed.";
-        if (!only_turned.empty())
-            detail += " " + only_turned + " fit" + (only_turned.find(',') == std::string::npos ? "s" : "") +
-                      " the bed only turned 90 degrees, which this arrange does not do; turn it in the file.";
+        if (!turn_advice.empty())
+            detail += turn_advice;
+        else
+            detail += " Try another way up, split it across plates, or use a bigger printer."
+                      " Scale the object down only if changing its size is acceptable.";
         set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, detail);
         emit_event({{"event","plate_error"}, {"tag","ArrangeFailed"}, {"message", detail}});
         return false;
