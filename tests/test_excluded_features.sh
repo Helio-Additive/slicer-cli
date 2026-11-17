@@ -475,7 +475,7 @@ PY
     "$BINARY" "$FLOW_DIR/bambu_words.3mf" --slice 1 --outputdir "$FLOW_DIR/a" > "$FLOW_DIR/a.out" 2>&1; FLOW_EXIT=$?
     "$BINARY" "$FLOW_DIR/unknown_word.3mf" --slice 1 --outputdir "$FLOW_DIR/b" > "$FLOW_DIR/b.out" 2>&1; UNKNOWN_EXIT=$?
     set -e
-    FLOW_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/a/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r')
+    FLOW_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/a/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
     if [ "$FLOW_EXIT" -eq 0 ] && [ "$FLOW_HEADER" = "standard,high_flow,standard,standard" ] \
        && grep -q 'FlowTypeSpellingConverted' "$FLOW_DIR/a.out"; then
         record "flow-type-bambu-spelling-read-as-snapmaker" 1
@@ -503,20 +503,27 @@ PY
     set +e
     "$BINARY" "$FLOW_DIR/cube.stl" --machine "$FLOW_DIR/machine.json" --slice 1 --outputdir "$FLOW_DIR/c" > "$FLOW_DIR/c.out" 2>&1; MACHINE_EXIT=$?
     set -e
-    MACHINE_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/c/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r')
+    MACHINE_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/c/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
     if [ "$MACHINE_EXIT" -eq 0 ] && [ "$MACHINE_HEADER" = "high_flow,standard,standard,standard" ]; then
         record "flow-type-bambu-spelling-in-inheriting-settings-file" 1
     else
         record "flow-type-bambu-spelling-in-inheriting-settings-file" 0 "exit=$MACHINE_EXIT nozzle_volume_type='$MACHINE_HEADER' (want high_flow,standard,standard,standard)"
     fi
-    set +e
-    "$BINARY" "$FLOW_DIR/cube.stl" --load-settings "$FLOW_DIR/machine.json" --slice 1 --outputdir "$FLOW_DIR/d" > "$FLOW_DIR/d.out" 2>&1; LOAD_EXIT=$?
-    set -e
-    LOAD_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/d/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r')
-    if [ "$LOAD_EXIT" -eq 0 ] && [ "$LOAD_HEADER" = "high_flow,standard,standard,standard" ]; then
-        record "flow-type-bambu-spelling-in-load-settings" 1
+    # --load-settings takes a process with the printer: the engine's own U1
+    # 0.20mm Standard process file.
+    FLOW_PROCESS="$SCRIPT_DIR/../references/SnapmakerOrca/resources/profiles/Snapmaker/process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json"
+    if [ -f "$FLOW_PROCESS" ]; then
+        set +e
+        "$BINARY" "$FLOW_DIR/cube.stl" --load-settings "$FLOW_DIR/machine.json;$FLOW_PROCESS" --slice 1 --outputdir "$FLOW_DIR/d" > "$FLOW_DIR/d.out" 2>&1; LOAD_EXIT=$?
+        set -e
+        LOAD_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/d/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
+        if [ "$LOAD_EXIT" -eq 0 ] && [ "$LOAD_HEADER" = "high_flow,standard,standard,standard" ]; then
+            record "flow-type-bambu-spelling-in-load-settings" 1
+        else
+            record "flow-type-bambu-spelling-in-load-settings" 0 "exit=$LOAD_EXIT nozzle_volume_type='$LOAD_HEADER' (want high_flow,standard,standard,standard)"
+        fi
     else
-        record "flow-type-bambu-spelling-in-load-settings" 0 "exit=$LOAD_EXIT nozzle_volume_type='$LOAD_HEADER' (want high_flow,standard,standard,standard)"
+        skip "flow-type-bambu-spelling-in-load-settings" "engine profiles missing: $FLOW_PROCESS"
     fi
     rm -rf "$GC" "$FLOW_DIR"
 fi
