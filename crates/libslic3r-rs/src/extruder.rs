@@ -327,6 +327,211 @@ pub struct GCodeConfig {
     // get_process_config_idx() inputs (PrintConfig.cpp:114-115).
     pub printer_extruder_id: ConfigOptionVector<i32>,
     pub printer_extruder_variant: ConfigOptionVector<String>,
+    // Members the pin's GCodeWriter and Extruder read as well (PrintConfig.hpp:1349-1558):
+    // `config.single_extruder_multi_material.value` (GCodeWriter.cpp:78), and what
+    // Extruder::retracted_slot_id / filament_toolchange_override read (Extruder.cpp:27-35, 223-233).
+    pub single_extruder_multi_material: bool,
+    pub handle_hotend_as_extruder: bool,
+    pub filament_type: ConfigOptionVector<String>,
+    pub filament_retract_length_toolchange: ConfigOptionVector<f64>,
+    pub filament_retract_restart_extra_toolchange: ConfigOptionVector<f64>,
+}
+
+/// PrintConfig.hpp:40-43 `enum GCodeFlavor : unsigned char`, from the value an option stores.
+pub fn gcode_flavor_from_int(v: i32) -> crate::print_config::GCodeFlavor {
+    use crate::print_config::GCodeFlavor;
+    match v {
+        0 => GCodeFlavor::MarlinLegacy,
+        1 => GCodeFlavor::Klipper,
+        2 => GCodeFlavor::RepRapSprinter,
+        3 => GCodeFlavor::RepRapFirmware,
+        4 => GCodeFlavor::Repetier,
+        5 => GCodeFlavor::Teacup,
+        6 => GCodeFlavor::MakerWare,
+        7 => GCodeFlavor::Marlin,
+        8 => GCodeFlavor::Sailfish,
+        9 => GCodeFlavor::Mach3,
+        10 => GCodeFlavor::Machinekit,
+        11 => GCodeFlavor::Smoothie,
+        _ => GCodeFlavor::NoExtrusion,
+    }
+}
+
+/// The value of a vector option, as the `std::vector<T>` it holds.
+fn option_vector_values<T: Clone + 'static>(opt: &dyn crate::config::ConfigOption) -> Vec<T> {
+    opt.vector_values_any()
+        .and_then(|a| a.downcast_ref::<Vec<T>>())
+        .cloned()
+        .expect("GCodeConfig: a member of an unexpected class")
+}
+
+/// The members of `GCodeConfig` this model stores, each with the field that holds it.
+///
+/// `scalar` lines are `ConfigOptionBool` / `ConfigOptionFloat` / `ConfigOptionPercent` /
+/// `ConfigOptionEnum<GCodeFlavor>` members, `vector` lines the `ConfigOption*s` members, with the
+/// element type of their `values`.
+macro_rules! gcode_config_members {
+    ($mac:ident) => {
+        $mac! {
+            scalar bool: use_relative_e_distances, use_firmware_retraction, accel_to_decel_enable,
+                single_extruder_multi_material, handle_hotend_as_extruder;
+            scalar f64: prime_tower_lift_height, prime_tower_lift_speed, accel_to_decel_factor;
+            scalar flavor: gcode_flavor;
+            vector i32: filament_map, filament_nozzle_map, filament_volume_map, filament_self_index,
+                nozzle_volume_type, extruder_type, printer_extruder_id;
+            vector String: filament_extruder_variant, printer_extruder_variant, filament_type;
+            vector f64: filament_diameter, filament_density, filament_cost, filament_flow_ratio,
+                retract_before_wipe, retraction_length, z_hop, retraction_speed, deretraction_speed,
+                retract_restart_extra, retract_length_toolchange, retract_restart_extra_toolchange,
+                travel_speed, travel_speed_z, retract_lift_above, retract_lift_below,
+                filament_retract_length_toolchange, filament_retract_restart_extra_toolchange;
+        }
+    };
+}
+
+macro_rules! gcode_config_store_impl {
+    (scalar bool: $($b:ident),*; scalar f64: $($f:ident),*; scalar flavor: $($e:ident),*;
+     vector i32: $($vi:ident),*; vector String: $($vs:ident),*; vector f64: $($vf:ident),*;) => {
+        impl GCodeConfig {
+            /// Stores the value of `opt` into the field of the member `opt_key`; false when this
+            /// model does not hold that member.
+            fn store_member(&mut self, opt_key: &str, opt: &dyn crate::config::ConfigOption) -> crate::print_config::config_def::CfgResult<bool> {
+                match opt_key {
+                    $(stringify!($b) => self.$b = opt.get_bool()?,)*
+                    $(stringify!($f) => self.$f = opt.get_float()?,)*
+                    $(stringify!($e) => self.$e = gcode_flavor_from_int(opt.get_int()?),)*
+                    $(stringify!($vi) => self.$vi.values = option_vector_values::<i32>(opt),)*
+                    $(stringify!($vs) => self.$vs.values = option_vector_values::<String>(opt),)*
+                    $(stringify!($vf) => self.$vf.values = option_vector_values::<f64>(opt),)*
+                    _ => return Ok(false),
+                }
+                Ok(true)
+            }
+
+            /// Writes the field of the vector member `opt_key` into `opt` (of the member's class);
+            /// false when this model does not hold that vector member.
+            fn load_vector_member(&self, opt_key: &str, opt: &mut dyn crate::config::ConfigOption) -> bool {
+                let any = match opt.vector_values_any_mut() {
+                    None => return false,
+                    Some(a) => a,
+                };
+                match opt_key {
+                    $(stringify!($vi) => *any.downcast_mut::<Vec<i32>>().expect("GCodeConfig: ints") = self.$vi.values.clone(),)*
+                    $(stringify!($vs) => *any.downcast_mut::<Vec<String>>().expect("GCodeConfig: strings") = self.$vs.values.clone(),)*
+                    $(stringify!($vf) => *any.downcast_mut::<Vec<f64>>().expect("GCodeConfig: floats") = self.$vf.values.clone(),)*
+                    _ => return false,
+                }
+                true
+            }
+        }
+    };
+}
+
+gcode_config_members!(gcode_config_store_impl);
+
+impl GCodeConfig {
+    /// `GCodeConfig::defaults()` (PrintConfig.hpp:960-999 `PRINT_CONFIG_CLASS_DEFINE`): the members
+    /// of the static class with the defaults of their definitions.
+    fn defaults() -> &'static crate::print_config::config_def::DynamicPrintConfig {
+        crate::print_config::config_def::static_print_config_defaults("GCodeConfig")
+    }
+
+    /// PrintConfig.hpp:960-999 `GCodeConfig()`: `initialize(GCodeConfig::s_cache_GCodeConfig, ...)`
+    /// sets every member to the default of its definition (StaticCache, Config.cpp:1855-1867).
+    ///
+    /// FIDELITY-NOTE: this model holds the members the writer and the Extruder read; the other
+    /// members of the C++ class (custom G-code templates, filament flags, ...) are not stored.
+    pub fn new() -> Self {
+        use crate::config::{ConfigBase, ConfigOptionResolver};
+        let mut c = GCodeConfig::default();
+        let defaults = Self::defaults();
+        for key in defaults.keys() {
+            if let Some(opt) = defaults.option(&key) {
+                c.store_member(&key, opt).expect("GCodeConfig(): a default of its own class");
+            }
+        }
+        c
+    }
+
+    /// Config.hpp:2584 `void apply(const ConfigBase &other, bool ignore_nonexistent = false)`:
+    /// `this->apply_only(other, other.keys(), ignore_nonexistent)`.
+    pub fn apply(&mut self, other: &dyn crate::config::ConfigBase, ignore_nonexistent: bool) -> crate::print_config::config_def::CfgResult<()> {
+        let keys = other.keys();
+        self.apply_only(other, &keys, ignore_nonexistent)
+    }
+
+    /// Config.cpp:454-493 `void ConfigBase::apply_only(const ConfigBase &other, const t_config_option_keys &keys, bool ignore_nonexistent)`
+    /// for this static class: `this->option(opt_key, true)` is the member of that name, or null.
+    pub fn apply_only(
+        &mut self,
+        other: &dyn crate::config::ConfigBase,
+        keys: &[String],
+        ignore_nonexistent: bool,
+    ) -> crate::print_config::config_def::CfgResult<()> {
+        use crate::config::{ConfigOption, ConfigOptionResolver, UnknownOptionException};
+        let defaults = Self::defaults();
+        // loop through options and apply them
+        for opt_key in keys {
+            // Create a new option with default value for the key.
+            // If the key is not in the parameter definition, or this ConfigBase is a static type and it does not support the parameter,
+            // an exception is thrown if not ignore_nonexistent.
+            let my_member = defaults.option(opt_key);
+            match my_member {
+                None => {
+                    // opt_key does not exist in this ConfigBase and it cannot be created, because it is not defined by this->def().
+                    // This is only possible if other is of DynamicConfig type.
+                    if let Some(n) = opt_key.find('#') {
+                        let opt_key2 = &opt_key[..n];
+                        let member2 = defaults.option(opt_key2).filter(|o| o.as_vector_base().is_some());
+                        let other_opt = other.option(opt_key2);
+                        if member2.is_none() && other_opt.is_some() {
+                            // `this->option(opt_key2, true)` of a static class does not create it: the
+                            // C++ dereferences the null `my_opt2` next.
+                            panic!("ConfigBase::apply_only(): my_opt2 is null for {}", opt_key2);
+                        }
+                        if let Some(member2) = member2 {
+                            let index = crate::config::c_atoi_str(&opt_key[n + 1..]);
+                            if let Some(other_opt) = other_opt {
+                                // my_opt2->set_at(other_opt, index, index)
+                                let mut my_opt2 = ConfigOption::clone(member2);
+                                if self.load_vector_member(opt_key2, &mut *my_opt2) {
+                                    my_opt2
+                                        .as_vector_base_mut()
+                                        .expect("ConfigBase::apply_only(): my_opt2")
+                                        .set_at(other_opt, index as usize, index as usize)?;
+                                    self.store_member(opt_key2, &*my_opt2)?;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                    if ignore_nonexistent {
+                        continue;
+                    }
+                    return Err(UnknownOptionException::with_key(opt_key));
+                }
+                Some(member) => {
+                    match other.option(opt_key) {
+                        None => {
+                            // The key was not found in the source config, therefore it will not be initialized!
+                        }
+                        Some(other_opt) => {
+                            // my_opt->set(other_opt), on a member of its own class.
+                            let mut my_opt = ConfigOption::clone(member);
+                            my_opt.set(other_opt)?;
+                            self.store_member(opt_key, &*my_opt)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `ConfigOptionFloatsNullable::is_nil(size_t idx)` (Config.hpp): the value is the nil value, a NaN.
+    pub fn is_nil(values: &ConfigOptionVector<f64>, idx: usize) -> bool {
+        values.values[idx].is_nan()
+    }
 }
 
 // ===========================================================================
@@ -340,6 +545,16 @@ pub struct GCodeConfig {
 // ===========================================================================
 static mut M_SHARE_E: [f64; 2] = [0.0, 0.0];
 static mut M_SHARE_RETRACTED: [f64; 2] = [0.0, 0.0];
+// Extruder.cpp:6 at the pin: `m_share_retracted` is indexed by the retraction slot
+// (`retracted_slot_id()`) and grows on demand (`share_retracted()`, Extruder.cpp:38-43).
+static M_SHARE_RETRACTED_SLOTS: std::sync::LazyLock<std::sync::Mutex<Vec<f64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(vec![0.0, 0.0]));
+
+/// The pin's Extruder (retraction slots, the conditional restart extra, the PVA toolchange
+/// override); `EXTRUDER_PIN=0` restores the earlier body of this file.
+fn extruder_pin() -> bool {
+    crate::faithful_gate("EXTRUDER_PIN")
+}
 
 // Extruder.hpp:13
 // class Extruder
@@ -360,6 +575,8 @@ pub struct Extruder {
     m_e_per_mm3: f64,
     // Extruder.hpp:88  BBS: shared E / retraction for single-extruder multi-material.
     m_share_extruder: bool,
+    // Extruder.hpp:93  bool m_exclusive_nozzle { false };
+    m_exclusive_nozzle: bool,
 }
 
 impl Extruder {
@@ -377,6 +594,7 @@ impl Extruder {
             m_restart_extra: 0.0,
             m_e_per_mm3: 0.0,
             m_share_extruder: share_extruder,
+            m_exclusive_nozzle: false,
         };
         // Extruder.cpp:16
         e.reset();
@@ -399,10 +617,21 @@ impl Extruder {
     pub fn reset(&mut self) {
         // Extruder.hpp:20-21  BBS
         if self.m_share_extruder {
-            // Extruder.hpp:22-23
-            unsafe {
-                M_SHARE_E = [0.0, 0.0];
-                M_SHARE_RETRACTED = [0.0, 0.0];
+            if extruder_pin() {
+                // Extruder.hpp:19-21  m_share_E = { 0.,0.}; m_share_retracted.assign(m_share_retracted.size(), 0.);
+                unsafe {
+                    M_SHARE_E = [0.0, 0.0];
+                }
+                let mut slots = M_SHARE_RETRACTED_SLOTS.lock().unwrap();
+                let n = slots.len();
+                slots.clear();
+                slots.resize(n, 0.0);
+            } else {
+                // Extruder.hpp:22-23
+                unsafe {
+                    M_SHARE_E = [0.0, 0.0];
+                    M_SHARE_RETRACTED = [0.0, 0.0];
+                }
             }
         } else {
             // Extruder.hpp:25-26
@@ -432,6 +661,37 @@ impl Extruder {
         }
         // Extruder.cpp:28
         0
+    }
+
+    // Extruder.cpp:27-36
+    // unsigned int Extruder::retracted_slot_id() const
+    pub fn retracted_slot_id(&self) -> u32 {
+        // assert(m_config);
+        let config = self.config();
+        if config.handle_hotend_as_extruder && (self.m_id as usize) < config.filament_nozzle_map.size() {
+            let nozzle_idx = config.filament_nozzle_map.get_at(self.m_id as usize);
+            if nozzle_idx >= 0 {
+                return nozzle_idx as u32;
+            }
+        }
+        self.extruder_id()
+    }
+
+    // Extruder.cpp:38-43
+    // static double& Extruder::share_retracted(unsigned int slot): the slot, the vector grown to hold
+    // it; the reference is the argument of `f`.
+    fn share_retracted<R>(slot: u32, f: impl FnOnce(&mut f64) -> R) -> R {
+        let mut slots = M_SHARE_RETRACTED_SLOTS.lock().unwrap();
+        if slot as usize >= slots.len() {
+            slots.resize(slot as usize + 1, 0.0);
+        }
+        f(&mut slots[slot as usize])
+    }
+
+    // Extruder.hpp:63
+    // void set_exclusive_nozzle(bool exclusive) { m_exclusive_nozzle = exclusive; }
+    pub fn set_exclusive_nozzle(&mut self, exclusive: bool) {
+        self.m_exclusive_nozzle = exclusive;
     }
 
     // Extruder.cpp:31
@@ -499,8 +759,13 @@ impl Extruder {
             self.m_absolute_e += d_e;
             // Extruder.cpp:69-70
             if d_e < 0.0 {
-                unsafe {
-                    M_SHARE_RETRACTED[extruder_id] -= d_e;
+                if extruder_pin() {
+                    // Extruder.cpp:67-68  share_retracted(retracted_slot_id()) -= dE;
+                    Extruder::share_retracted(self.retracted_slot_id(), |r| *r -= d_e);
+                } else {
+                    unsafe {
+                        M_SHARE_RETRACTED[extruder_id] -= d_e;
+                    }
                 }
             }
         } else {
@@ -542,6 +807,23 @@ impl Extruder {
                     M_SHARE_E[extruder_id] = 0.0;
                 }
             }
+            if extruder_pin() {
+                // Extruder.cpp:86-96
+                let slot = self.retracted_slot_id();
+                let retracted = Extruder::share_retracted(slot, |r| *r);
+                let to_retract = (length - retracted).max(0.0);
+                if to_retract > 0.0 || length + crate::libslic3r::EPSILON >= retracted {
+                    self.m_restart_extra = restart_extra;
+                }
+                if to_retract > 0.0 {
+                    unsafe {
+                        M_SHARE_E[extruder_id] -= to_retract;
+                    }
+                    self.m_absolute_e -= to_retract;
+                    Extruder::share_retracted(slot, |r| *r += to_retract);
+                }
+                return to_retract;
+            }
             // Extruder.cpp:96
             let to_retract = (length - unsafe { M_SHARE_RETRACTED[extruder_id] }).max(0.0);
             // Extruder.cpp:97
@@ -569,7 +851,14 @@ impl Extruder {
             // Extruder.cpp:108
             let to_retract = (length - self.m_retracted).max(0.0);
             // Extruder.cpp:109
-            self.m_restart_extra = restart_extra;
+            if extruder_pin() {
+                // Extruder.cpp:101-102  if (to_retract > 0. || length + EPSILON >= m_retracted)
+                if to_retract > 0.0 || length + crate::libslic3r::EPSILON >= self.m_retracted {
+                    self.m_restart_extra = restart_extra;
+                }
+            } else {
+                self.m_restart_extra = restart_extra;
+            }
             // Extruder.cpp:110
             if to_retract > 0.0 {
                 // Extruder.cpp:111
@@ -589,6 +878,14 @@ impl Extruder {
     pub fn unretract(&mut self) -> f64 {
         // Extruder.cpp:121  BBS
         if self.m_share_extruder {
+            if extruder_pin() {
+                // Extruder.cpp:113-118
+                let d_e = Extruder::share_retracted(self.retracted_slot_id(), |r| *r) + self.m_restart_extra;
+                self.extrude(d_e);
+                Extruder::share_retracted(self.retracted_slot_id(), |r| *r = 0.0);
+                self.m_restart_extra = 0.0;
+                return d_e;
+            }
             let extruder_id = self.extruder_id() as usize;
             // Extruder.cpp:123
             let d_e = unsafe { M_SHARE_RETRACTED[extruder_id] } + self.m_restart_extra;
@@ -784,6 +1081,12 @@ impl Extruder {
     // Extruder.cpp:213
     // double Extruder::retract_length_toolchange() const
     pub fn retract_length_toolchange(&self) -> f64 {
+        if extruder_pin() {
+            // Extruder.cpp:236-241
+            if let Some(filament_len) = self.filament_toolchange_override(&self.config().filament_retract_length_toolchange) {
+                return filament_len.get_at(get_filament_config_idx(self.config(), self.m_id));
+            }
+        }
         // Extruder.cpp:215
         self.config()
             .retract_length_toolchange
@@ -793,6 +1096,12 @@ impl Extruder {
     // Extruder.cpp:218
     // double Extruder::retract_restart_extra_toolchange() const
     pub fn retract_restart_extra_toolchange(&self) -> f64 {
+        if extruder_pin() {
+            // Extruder.cpp:243-248
+            if let Some(filament_extra) = self.filament_toolchange_override(&self.config().filament_retract_restart_extra_toolchange) {
+                return filament_extra.get_at(get_filament_config_idx(self.config(), self.m_id));
+            }
+        }
         // Extruder.cpp:220
         self.config()
             .retract_restart_extra_toolchange
@@ -814,7 +1123,30 @@ impl Extruder {
     // Extruder.hpp:67
     // double get_share_retracted_length() const { return m_share_retracted[extruder_id()]; }
     pub fn get_share_retracted_length(&self) -> f64 {
+        if extruder_pin() {
+            // Extruder.cpp:45-48  return share_retracted(retracted_slot_id());
+            return Extruder::share_retracted(self.retracted_slot_id(), |r| *r);
+        }
         unsafe { M_SHARE_RETRACTED[self.extruder_id() as usize] }
+    }
+
+    // Extruder.cpp:223-234
+    // const ConfigOptionFloatsNullable *Extruder::filament_toolchange_override(const ConfigOptionFloatsNullable &opt) const
+    fn filament_toolchange_override<'c>(&self, opt: &'c ConfigOptionVector<f64>) -> Option<&'c ConfigOptionVector<f64>> {
+        let config = self.config();
+        if !config.handle_hotend_as_extruder
+            || !self.m_exclusive_nozzle
+            || self.m_id as usize >= config.filament_type.size()
+            || config.filament_type.get_at(self.m_id as usize) != "PVA"
+        {
+            return None;
+        }
+
+        let filament_config_idx = get_filament_config_idx(config, self.m_id);
+        if filament_config_idx >= opt.size() || GCodeConfig::is_nil(opt, filament_config_idx) {
+            return None;
+        }
+        Some(opt)
     }
 }
 

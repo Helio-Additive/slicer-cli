@@ -798,8 +798,8 @@ mod tests {
         let layer_maps = vec![vec![0, 1], vec![0, 1]];
         let sequences = vec![vec![0u32], vec![0u32, 1u32]];
         let used = vec![0u32, 1u32];
-        LayeredNozzleGroupResult::create_layered(&layer_maps, &nozzle_list, &used, &sequences)
-            .expect("create_layered")
+        <LayeredNozzleGroupResult as crate::multi_nozzle_utils::CreateFromLayerMaps>::create(&layer_maps, &nozzle_list, &used, &sequences, false)
+            .expect("create")
     }
 
     #[test]

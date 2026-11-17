@@ -16,7 +16,7 @@
 // MultiNozzleUtils.cpp:6  #include <unordered_map>
 // MultiNozzleUtils.cpp:7  #include <unordered_set>
 // MultiNozzleUtils.cpp:8  #include <boost/log/trivial.hpp>
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use crate::extruder::{NozzleVolumeType, NVT_MAX_NOZZLE_VOLUME_TYPE};
@@ -586,6 +586,8 @@ pub struct LayeredNozzleGroupResult {
     used_filaments: Vec<u32>,
     // MultiNozzleUtils.hpp:114  _nozzle_list
     nozzle_list: Vec<NozzleInfo>,
+    // MultiNozzleUtils.hpp:115  bool handle_nozzle_as_extruder{ false };
+    handle_nozzle_as_extruder: bool,
 }
 
 impl Default for LayeredNozzleGroupResult {
@@ -606,6 +608,7 @@ impl LayeredNozzleGroupResult {
             default_filament_nozzle_map: Vec::new(),
             used_filaments: Vec::new(),
             nozzle_list: Vec::new(),
+            handle_nozzle_as_extruder: false,
         }
     }
 
@@ -614,80 +617,132 @@ impl LayeredNozzleGroupResult {
         self.support_dynamic_nozzle_map
     }
 
-    // MultiNozzleUtils.cpp:159  static std::optional<LayeredNozzleGroupResult> create(
-    //     filament_nozzle_map, nozzle_list, used_filaments)
-    // 无选料器：全局使用一份 filament->nozzle
+    // MultiNozzleUtils.hpp:124-128  create(filament_nozzle_map, nozzle_list, used_filaments,
+    //   handle_nozzle_as_extruder = false): the overload with its last argument at the default. The
+    //   overloads with every argument are the `create` of the traits below.
     pub fn create(
         filament_nozzle_map: &[i32],
         nozzle_list: &[NozzleInfo],
         used_filaments: &[u32],
     ) -> Option<LayeredNozzleGroupResult> {
-        // MultiNozzleUtils.cpp:164  if (filament_nozzle_map.empty() || nozzle_list.empty()) { return std::nullopt; }
-        if filament_nozzle_map.is_empty() || nozzle_list.is_empty() {
-            return None;
-        }
-
-        // MultiNozzleUtils.cpp:168  LayeredNozzleGroupResult result(false);
-        let mut result = LayeredNozzleGroupResult::with_support(false);
-        // MultiNozzleUtils.cpp:169  result._default_filament_nozzle_map = filament_nozzle_map;
-        result.default_filament_nozzle_map = filament_nozzle_map.to_vec();
-        // MultiNozzleUtils.cpp:170  result._nozzle_list = nozzle_list;
-        result.nozzle_list = nozzle_list.to_vec();
-        // MultiNozzleUtils.cpp:171  result._used_filaments = used_filaments;
-        result.used_filaments = used_filaments.to_vec();
-
-        // MultiNozzleUtils.cpp:173  return result;
-        Some(result)
+        <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(filament_nozzle_map, nozzle_list, used_filaments, false)
     }
 
-    // MultiNozzleUtils.cpp:176  static std::optional<LayeredNozzleGroupResult> create(
-    //     layer_filament_nozzle_maps, nozzle_list, used_filaments, layer_filament_sequences)
-    // 有选料器：从逐层映射构建（每层可能不同）
-    pub fn create_layered(
+    // MultiNozzleUtils.hpp:176  bool is_handle_nozzle_as_extruder() const { return handle_nozzle_as_extruder; }
+    pub fn is_handle_nozzle_as_extruder(&self) -> bool {
+        self.handle_nozzle_as_extruder
+    }
+}
+
+/// `LayeredNozzleGroupResult::create(filament_nozzle_map, nozzle_list, used_filaments,
+/// handle_nozzle_as_extruder)` (MultiNozzleUtils.hpp:124-128), the first of the three overloads:
+/// call it as `<LayeredNozzleGroupResult as CreateFromNozzleMap>::create(...)`.
+pub trait CreateFromNozzleMap {
+    fn create(
+        filament_nozzle_map: &[i32],
+        nozzle_list: &[NozzleInfo],
+        used_filaments: &[u32],
+        handle_nozzle_as_extruder: bool,
+    ) -> Option<LayeredNozzleGroupResult>;
+}
+
+/// `LayeredNozzleGroupResult::create(layer_filament_nozzle_maps, nozzle_list, used_filaments,
+/// layer_filament_sequences, handle_nozzle_as_extruder)` (MultiNozzleUtils.hpp:130-135).
+pub trait CreateFromLayerMaps {
+    fn create(
         layer_filament_nozzle_maps: &[Vec<i32>],
         nozzle_list: &[NozzleInfo],
         used_filaments: &[u32],
         layer_filament_sequences: &[Vec<u32>],
-    ) -> Option<LayeredNozzleGroupResult> {
-        // MultiNozzleUtils.cpp:182  if (layer_filament_nozzle_maps.empty() || nozzle_list.empty()) { return std::nullopt; }
-        if layer_filament_nozzle_maps.is_empty() || nozzle_list.is_empty() {
-            return None;
-        }
+        handle_nozzle_as_extruder: bool,
+    ) -> Option<LayeredNozzleGroupResult>;
+}
 
-        // MultiNozzleUtils.cpp:186  bool support_dynamic_nozzle_map = has_filament_mapped_to_multiple_nozzles(layer_filament_nozzle_maps, used_filaments);
-        let support_dynamic_nozzle_map =
-            has_filament_mapped_to_multiple_nozzles(layer_filament_nozzle_maps, used_filaments);
-        // MultiNozzleUtils.cpp:187  LayeredNozzleGroupResult result(support_dynamic_nozzle_map);
-        let mut result = LayeredNozzleGroupResult::with_support(support_dynamic_nozzle_map);
-        // MultiNozzleUtils.cpp:188  result._layer_filament_nozzle_maps = layer_filament_nozzle_maps;
-        result.layer_filament_nozzle_maps = layer_filament_nozzle_maps.to_vec();
-        // MultiNozzleUtils.cpp:189  result._layer_filament_sequences = layer_filament_sequences;
-        result.layer_filament_sequences = layer_filament_sequences.to_vec();
-        // MultiNozzleUtils.cpp:190  result._nozzle_list = nozzle_list;
-        result.nozzle_list = nozzle_list.to_vec();
-        // MultiNozzleUtils.cpp:191  result._used_filaments = used_filaments;
-        result.used_filaments = used_filaments.to_vec();
-
-        // MultiNozzleUtils.cpp:193  if (!layer_filament_nozzle_maps.empty()) {
-        if !layer_filament_nozzle_maps.is_empty() {
-            // MultiNozzleUtils.cpp:194  result._default_filament_nozzle_map = layer_filament_nozzle_maps[0];
-            result.default_filament_nozzle_map = layer_filament_nozzle_maps[0].clone();
-        }
-
-        // MultiNozzleUtils.cpp:197  return result;
-        Some(result)
-    }
-
-    // MultiNozzleUtils.cpp:200  static std::optional<LayeredNozzleGroupResult> create(
-    //     used_filaments, filament_map, filament_volume_map, filament_nozzle_map, nozzle_count, diameter)
-    // O1C + 无选料器 + 命令行切片
-    pub fn create_from_nozzle_count(
+/// `LayeredNozzleGroupResult::create(used_filaments, filament_map, filament_volume_map,
+/// filament_nozzle_map, nozzle_count, diameter, handle_nozzle_as_extruder)`
+/// (MultiNozzleUtils.hpp:137-144).
+pub trait CreateFromNozzleCount {
+    #[allow(clippy::too_many_arguments)]
+    fn create(
         used_filaments: &[u32],
         filament_map: &[i32],
         filament_volume_map: &[i32],
         filament_nozzle_map: &[i32],
         nozzle_count: &[BTreeMap<NozzleVolumeType, i32>],
         diameter: f32,
+        handle_nozzle_as_extruder: bool,
+    ) -> Option<LayeredNozzleGroupResult>;
+}
+
+impl CreateFromNozzleMap for LayeredNozzleGroupResult {
+    // MultiNozzleUtils.cpp:310-327
+    fn create(
+        filament_nozzle_map: &[i32],
+        nozzle_list: &[NozzleInfo],
+        used_filaments: &[u32],
+        handle_nozzle_as_extruder: bool,
+    ) -> Option<LayeredNozzleGroupResult> {
+        // MultiNozzleUtils.cpp:316-318
+        if filament_nozzle_map.is_empty() || nozzle_list.is_empty() {
+            return None;
+        }
+
+        // MultiNozzleUtils.cpp:320-324
+        let mut result = LayeredNozzleGroupResult::with_support(false);
+        result.default_filament_nozzle_map = filament_nozzle_map.to_vec();
+        result.nozzle_list = nozzle_list.to_vec();
+        result.used_filaments = used_filaments.to_vec();
+        result.handle_nozzle_as_extruder = handle_nozzle_as_extruder;
+
+        // MultiNozzleUtils.cpp:326
+        Some(result)
+    }
+}
+
+impl CreateFromLayerMaps for LayeredNozzleGroupResult {
+    // MultiNozzleUtils.cpp:329-353
+    fn create(
+        layer_filament_nozzle_maps: &[Vec<i32>],
+        nozzle_list: &[NozzleInfo],
+        used_filaments: &[u32],
+        layer_filament_sequences: &[Vec<u32>],
+        handle_nozzle_as_extruder: bool,
+    ) -> Option<LayeredNozzleGroupResult> {
+        // MultiNozzleUtils.cpp:336-338
+        if layer_filament_nozzle_maps.is_empty() || nozzle_list.is_empty() {
+            return None;
+        }
+
+        // MultiNozzleUtils.cpp:340-346
+        let support_dynamic_nozzle_map =
+            has_filament_mapped_to_multiple_nozzles(layer_filament_nozzle_maps, used_filaments);
+        let mut result = LayeredNozzleGroupResult::with_support(support_dynamic_nozzle_map);
+        result.layer_filament_nozzle_maps = layer_filament_nozzle_maps.to_vec();
+        result.layer_filament_sequences = layer_filament_sequences.to_vec();
+        result.nozzle_list = nozzle_list.to_vec();
+        result.used_filaments = used_filaments.to_vec();
+        result.handle_nozzle_as_extruder = handle_nozzle_as_extruder;
+
+        // MultiNozzleUtils.cpp:348-350
+        if !layer_filament_nozzle_maps.is_empty() {
+            result.default_filament_nozzle_map = layer_filament_nozzle_maps[0].clone();
+        }
+
+        // MultiNozzleUtils.cpp:352
+        Some(result)
+    }
+}
+
+impl CreateFromNozzleCount for LayeredNozzleGroupResult {
+    // MultiNozzleUtils.cpp:355-409
+    fn create(
+        used_filaments: &[u32],
+        filament_map: &[i32],
+        filament_volume_map: &[i32],
+        filament_nozzle_map: &[i32],
+        nozzle_count: &[BTreeMap<NozzleVolumeType, i32>],
+        diameter: f32,
+        handle_nozzle_as_extruder: bool,
     ) -> Option<LayeredNozzleGroupResult> {
         // MultiNozzleUtils.cpp:208  std::vector<NozzleGroupInfo> nozzle_groups;
         let mut nozzle_groups: Vec<NozzleGroupInfo> = Vec::new();
@@ -772,10 +827,12 @@ impl LayeredNozzleGroupResult {
             output_nozzle_map[filament_idx] = output_nozzle_idx;
         }
 
-        // MultiNozzleUtils.cpp:252  return create(output_nozzle_map, nozzle_list, used_filaments);
-        LayeredNozzleGroupResult::create(&output_nozzle_map, &nozzle_list, used_filaments)
+        // MultiNozzleUtils.cpp:408  return create(output_nozzle_map, nozzle_list, used_filaments, handle_nozzle_as_extruder);
+        <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(&output_nozzle_map, &nozzle_list, used_filaments, handle_nozzle_as_extruder)
     }
+}
 
+impl LayeredNozzleGroupResult {
     // MultiNozzleUtils.cpp:255  bool LayeredNozzleGroupResult::are_filaments_same_extruder(filament_id1, filament_id2, layer_id) const
     pub fn are_filaments_same_extruder(
         &self,
@@ -787,10 +844,14 @@ impl LayeredNozzleGroupResult {
         let nozzle_info1 = self.get_nozzle_for_filament(filament_id1, layer_id);
         let nozzle_info2 = self.get_nozzle_for_filament(filament_id2, layer_id);
 
-        // MultiNozzleUtils.cpp:260  if (!nozzle_info1 || !nozzle_info2) return false;
+        // MultiNozzleUtils.cpp:416  if (!nozzle_info1 || !nozzle_info2) return false;
         match (nozzle_info1, nozzle_info2) {
             (Some(n1), Some(n2)) => {
-                // MultiNozzleUtils.cpp:262  return nozzle_info1->extruder_id == nozzle_info2->extruder_id;
+                // MultiNozzleUtils.cpp:418-419  if (handle_nozzle_as_extruder) return are_filaments_same_nozzle(...);
+                if self.handle_nozzle_as_extruder {
+                    return self.are_filaments_same_nozzle(filament_id1, filament_id2, layer_id);
+                }
+                // MultiNozzleUtils.cpp:421  return nozzle_info1->extruder_id == nozzle_info2->extruder_id;
                 n1.extruder_id == n2.extruder_id
             }
             _ => false,
@@ -1473,7 +1534,237 @@ impl StaticNozzleGroupResult {
     }
 }
 
-// MultiNozzleUtils.cpp:633  float calc_filament_change_gap_for_assignment(...)
+// MultiNozzleUtils.hpp:239-242  struct FilamentChangeSimResult
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct FilamentChangeSimResult {
+    pub actual_time: f64, // MultiNozzleUtils.hpp:240  = 0.0
+    pub sliced_time: f64, // MultiNozzleUtils.hpp:241  = 0.0
+}
+
+// MultiNozzleUtils.cpp:843  enum class Location { IN_AMS, IN_SELECTOR, IN_EXTRUDER };
+// (local to simulate_filament_change_time; `operator[]` of its map value-initializes to IN_AMS)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Location {
+    #[default]
+    InAms,
+    InSelector,
+    InExtruder,
+}
+
+// MultiNozzleUtils.cpp:797-991  FilamentChangeSimResult simulate_filament_change_time(...)
+//   header defaults (MultiNozzleUtils.hpp:244-252): ams_preload_enabled = {}, calc_sliced_time = false
+#[allow(clippy::too_many_arguments)]
+pub fn simulate_filament_change_time(
+    logical_filaments: &[i32],
+    nozzle_list: &[NozzleInfo],
+    filament_change_seq: &[i32],
+    nozzle_change_seq: &[i32],
+    group_of_filament: &[i32],
+    time_params: &FilamentChangeTimeParams,
+    ams_preload_enabled: &[bool],
+    calc_sliced_time: bool,
+) -> FilamentChangeSimResult {
+    // MultiNozzleUtils.cpp:807
+    let mut result = FilamentChangeSimResult::default();
+    // MultiNozzleUtils.cpp:808-809
+    if logical_filaments.is_empty() || nozzle_list.is_empty() || filament_change_seq.is_empty() || nozzle_change_seq.is_empty() {
+        return result;
+    }
+
+    // MultiNozzleUtils.cpp:811-817  参数语义重新映射
+    let load_ams_to_selector: f32 = time_params.standard_load_time - time_params.selector_load_time;
+    let unload_ams_to_selector: f32 = time_params.standard_unload_time - time_params.selector_unload_time;
+    let load_selector_to_ext: f32 = time_params.selector_load_time;
+    let unload_ext_to_selector: f32 = time_params.selector_unload_time;
+
+    // MultiNozzleUtils.cpp:819-823  nozzle_id -> extruder_id
+    let mut nozzle_to_extruder: UnorderedMapInt<i32> = UnorderedMapInt::new();
+    nozzle_to_extruder.reserve(nozzle_list.len());
+    for nozzle in nozzle_list {
+        *nozzle_to_extruder.entry(nozzle.group_id) = nozzle.extruder_id;
+    }
+
+    // MultiNozzleUtils.cpp:825-829  filament_id -> AMS group
+    let mut filament_to_group: UnorderedMapInt<i32> = UnorderedMapInt::new();
+    filament_to_group.reserve(logical_filaments.len());
+    for i in 0..logical_filaments.len() {
+        *filament_to_group.entry(logical_filaments[i]) = group_of_filament[i];
+    }
+
+    // MultiNozzleUtils.cpp:831-834
+    let get_group = |filament_to_group: &UnorderedMapInt<i32>, filament_id: i32| -> i32 {
+        match filament_to_group.get(filament_id) {
+            Some(&g) => g,
+            None => -1,
+        }
+    };
+
+    // MultiNozzleUtils.cpp:836-840
+    let is_preload_enabled = |group_id: i32| -> bool {
+        if group_id < 0 || group_id >= ams_preload_enabled.len() as i32 {
+            return false;
+        }
+        ams_preload_enabled[group_id as usize]
+    };
+
+    // MultiNozzleUtils.cpp:842-849  料的位置状态
+    let mut filament_location: UnorderedMapInt<Location> = UnorderedMapInt::new(); // filament_id -> 当前位置
+    let mut filament_extruder: UnorderedMapInt<i32> = UnorderedMapInt::new(); // filament_id -> 所在挤出机
+    let mut extruder_filament: UnorderedMapInt<i32> = UnorderedMapInt::new(); // extruder_id -> 当前装载的料
+    // group_id -> 当前占用了该AMS通道的料集合（IN_SELECTOR或IN_EXTRUDER）
+    let mut ams_group_occupied: UnorderedMapInt<UnorderedMapInt<()>> = UnorderedMapInt::new();
+
+    // MultiNozzleUtils.cpp:851-852
+    filament_location.reserve(logical_filaments.len());
+    filament_extruder.reserve(logical_filaments.len());
+
+    // MultiNozzleUtils.cpp:854-856  初始状态：所有料在AMS，所有挤出机为空
+    for &f in logical_filaments {
+        *filament_location.entry(f) = Location::InAms;
+    }
+
+    // MultiNozzleUtils.cpp:858-859  切片预估模拟器
+    let mut sliced_recorder = NozzleStatusRecorder::new();
+
+    // MultiNozzleUtils.cpp:861-863
+    let seq_len = filament_change_seq.len().min(nozzle_change_seq.len());
+    let mut actual_time: f64 = 0.0;
+    let mut sliced_time: f64 = 0.0;
+
+    // MultiNozzleUtils.cpp:865
+    for i in 0..seq_len {
+        // MultiNozzleUtils.cpp:866-867
+        let b = filament_change_seq[i];
+        let nozzle_id = nozzle_change_seq[i];
+
+        // MultiNozzleUtils.cpp:869-872
+        let e = match nozzle_to_extruder.get(nozzle_id) {
+            Some(&v) => v, // 目标挤出机
+            None => continue,
+        };
+
+        // MultiNozzleUtils.cpp:874-891  Step 0: 计算切片预估时间
+        if calc_sliced_time {
+            let old_nozzle_in_e = sliced_recorder.get_nozzle_in_extruder(e);
+            let old_filament_in_nozzle = sliced_recorder.get_filament_in_nozzle(nozzle_id);
+            let old_filament_in_ext = sliced_recorder.get_filament_in_nozzle(old_nozzle_in_e);
+
+            let nozzle_change = old_nozzle_in_e != nozzle_id;
+            let filament_change = old_filament_in_nozzle != b;
+
+            if nozzle_change || filament_change {
+                if old_filament_in_ext != -1 {
+                    sliced_time += time_params.standard_unload_time as f64;
+                }
+                sliced_time += time_params.standard_load_time as f64;
+            }
+            sliced_recorder.set_nozzle_status(nozzle_id, b, e);
+        }
+
+        // MultiNozzleUtils.cpp:893-899  Step 1: 查目标挤出机E当前装载的料A
+        let mut a: i32 = -1;
+        if let Some(&v) = extruder_filament.get(e) {
+            a = v;
+        }
+
+        // MultiNozzleUtils.cpp:901-902
+        let group_b = get_group(&filament_to_group, b);
+        let group_a = if a != -1 { get_group(&filament_to_group, a) } else { -1 };
+
+        // MultiNozzleUtils.cpp:904-921  Step 2: 清理B的AMS通道占用
+        if let Some(occupied) = ams_group_occupied.get(group_b) {
+            let occupied: Vec<i32> = occupied.keys();
+            for x in occupied {
+                if x == b {
+                    continue;
+                }
+                // X 与 B 同 AMS，退回 AMS 让路
+                let loc_x = *filament_location.entry(x);
+                if loc_x == Location::InExtruder {
+                    actual_time += (unload_ext_to_selector + unload_ams_to_selector) as f64;
+                    let e2 = *filament_extruder.entry(x);
+                    extruder_filament.erase(e2);
+                    filament_extruder.erase(x);
+                } else if loc_x == Location::InSelector {
+                    actual_time += unload_ams_to_selector as f64;
+                }
+                *filament_location.entry(x) = Location::InAms;
+            }
+            ams_group_occupied.get_mut(group_b).expect("found above").clear();
+        }
+
+        // MultiNozzleUtils.cpp:923-940  Step 3: A从E退出 / Step 3.5: 预进料B
+        let mut step3_executed = false;
+        let mut step3_time: f32 = 0.0;
+        if a != -1 && a != b && *filament_location.entry(a) == Location::InExtruder {
+            if is_preload_enabled(group_a) && group_a != group_b {
+                step3_time = unload_ext_to_selector;
+                *filament_location.entry(a) = Location::InSelector;
+            } else {
+                step3_time = unload_ext_to_selector + unload_ams_to_selector;
+                *filament_location.entry(a) = Location::InAms;
+                ams_group_occupied.entry(group_a).erase(a);
+            }
+            extruder_filament.erase(e);
+            filament_extruder.erase(a);
+            step3_executed = true;
+        }
+
+        // MultiNozzleUtils.cpp:942-950
+        let mut step3_5_time: f32 = 0.0;
+        if step3_executed && *filament_location.entry(b) == Location::InAms && group_a != group_b && is_preload_enabled(group_b) {
+            step3_5_time = load_ams_to_selector;
+            *filament_location.entry(b) = Location::InSelector;
+            ams_group_occupied.entry(group_b).insert(b, ());
+        }
+
+        // MultiNozzleUtils.cpp:952
+        actual_time += step3_time.max(step3_5_time) as f64;
+
+        // MultiNozzleUtils.cpp:954-962  Step 4: B推入E
+        let mut step4_time: f32 = 0.0;
+        let loc_b = *filament_location.entry(b);
+        if loc_b == Location::InAms {
+            step4_time = load_ams_to_selector + load_selector_to_ext;
+        } else if loc_b == Location::InSelector {
+            step4_time = load_selector_to_ext;
+        }
+
+        // MultiNozzleUtils.cpp:964-968  Step 5: 更新状态
+        *extruder_filament.entry(e) = b;
+        *filament_location.entry(b) = Location::InExtruder;
+        *filament_extruder.entry(b) = e;
+        ams_group_occupied.entry(group_b).insert(b, ());
+
+        // MultiNozzleUtils.cpp:970-982  Step 6: 预进料下一个料C
+        let mut step6_time: f32 = 0.0;
+        if i + 1 < seq_len {
+            let c = filament_change_seq[i + 1];
+            let group_c = get_group(&filament_to_group, c);
+            if *filament_location.entry(c) == Location::InAms
+                && group_c != group_b
+                && is_preload_enabled(group_c)
+                && ams_group_occupied.entry(group_c).is_empty()
+            {
+                step6_time = load_ams_to_selector;
+                *filament_location.entry(c) = Location::InSelector;
+                ams_group_occupied.entry(group_c).insert(c, ());
+            }
+        }
+
+        // MultiNozzleUtils.cpp:984
+        actual_time += step4_time.max(step6_time) as f64;
+    }
+
+    // MultiNozzleUtils.cpp:987-989
+    result.actual_time = actual_time;
+    result.sliced_time = sliced_time;
+    result
+}
+
+// MultiNozzleUtils.cpp:993-1007  float calc_filament_change_gap_for_assignment(...)
+//   header default (MultiNozzleUtils.hpp:254-261): ams_preload_enabled = {}
+#[allow(clippy::too_many_arguments)]
 pub fn calc_filament_change_gap_for_assignment(
     logical_filaments: &[i32],
     nozzle_list: &[NozzleInfo],
@@ -1481,244 +1772,21 @@ pub fn calc_filament_change_gap_for_assignment(
     nozzle_change_seq: &[i32],
     group_of_filament: &[i32],
     time_params: &FilamentChangeTimeParams,
+    ams_preload_enabled: &[bool],
 ) -> f32 {
-    // MultiNozzleUtils.cpp:641  if (logical_filaments.empty() || nozzle_list.empty() || filament_change_seq.empty() || nozzle_change_seq.empty()) return 0.0f;
-    if logical_filaments.is_empty()
-        || nozzle_list.is_empty()
-        || filament_change_seq.is_empty()
-        || nozzle_change_seq.is_empty()
-    {
-        return 0.0;
-    }
-
-    // MultiNozzleUtils.cpp:643-644  TODO 注释（当前固件所有退料都退到AMS）
-    // MultiNozzleUtils.cpp:645  constexpr bool selector_park_enabled = false;
-    const SELECTOR_PARK_ENABLED: bool = false;
-
-    // MultiNozzleUtils.cpp:647-649  参数语义重新映射
-    // MultiNozzleUtils.cpp:650  const float load_ams_to_selector = standard_load_time - selector_load_time;
-    let load_ams_to_selector = time_params.standard_load_time - time_params.selector_load_time;
-    // MultiNozzleUtils.cpp:651  const float unload_ams_to_selector = standard_unload_time - selector_unload_time;
-    let unload_ams_to_selector =
-        time_params.standard_unload_time - time_params.selector_unload_time;
-    // MultiNozzleUtils.cpp:652  const float load_selector_to_ext = selector_load_time;
-    let load_selector_to_ext = time_params.selector_load_time;
-    // MultiNozzleUtils.cpp:653  const float unload_ext_to_selector = selector_unload_time;
-    let unload_ext_to_selector = time_params.selector_unload_time;
-
-    // MultiNozzleUtils.cpp:656  std::unordered_map<int, int> nozzle_to_extruder;
-    let mut nozzle_to_extruder: HashMap<i32, i32> = HashMap::with_capacity(nozzle_list.len());
-    // MultiNozzleUtils.cpp:658  for (const auto& nozzle : nozzle_list) nozzle_to_extruder[nozzle.group_id] = nozzle.extruder_id;
-    for nozzle in nozzle_list {
-        nozzle_to_extruder.insert(nozzle.group_id, nozzle.extruder_id);
-    }
-
-    // MultiNozzleUtils.cpp:662  std::unordered_map<int, int> filament_to_group;
-    let mut filament_to_group: HashMap<i32, i32> = HashMap::with_capacity(logical_filaments.len());
-    // MultiNozzleUtils.cpp:664  for (size_t i = 0; i < logical_filaments.size(); ++i) filament_to_group[logical_filaments[i]] = group_of_filament[i];
-    for i in 0..logical_filaments.len() {
-        filament_to_group.insert(logical_filaments[i], group_of_filament[i]);
-    }
-
-    // MultiNozzleUtils.cpp:667  const auto get_group = [&](int filament_id) -> int { ... };
-    let get_group = |filament_id: i32| -> i32 {
-        match filament_to_group.get(&filament_id) {
-            Some(&g) => g,
-            None => -1,
-        }
-    };
-
-    // MultiNozzleUtils.cpp:673  enum class Location { IN_AMS, IN_SELECTOR, IN_EXTRUDER };
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum Location {
-        InAms,
-        InSelector,
-        InExtruder,
-    }
-
-    // MultiNozzleUtils.cpp:674  std::unordered_map<int, Location> filament_location;
-    let mut filament_location: HashMap<i32, Location> = HashMap::new();
-    // MultiNozzleUtils.cpp:675  std::unordered_map<int, int> filament_extruder;
-    let mut filament_extruder: HashMap<i32, i32> = HashMap::new();
-    // MultiNozzleUtils.cpp:676  std::unordered_map<int, int> extruder_filament;
-    let mut extruder_filament: HashMap<i32, i32> = HashMap::new();
-    // MultiNozzleUtils.cpp:678  std::unordered_map<int, std::unordered_set<int>> ams_group_occupied;
-    let mut ams_group_occupied: HashMap<i32, HashSet<i32>> = HashMap::new();
-
-    // MultiNozzleUtils.cpp:680-681  filament_location.reserve(...); filament_extruder.reserve(...);
-    filament_location.reserve(logical_filaments.len());
-    filament_extruder.reserve(logical_filaments.len());
-
-    // MultiNozzleUtils.cpp:683-685  初始状态：所有料在AMS
-    for &f in logical_filaments {
-        filament_location.insert(f, Location::InAms);
-    }
-
-    // MultiNozzleUtils.cpp:688  NozzleStatusRecorder sliced_recorder;
-    let mut sliced_recorder = NozzleStatusRecorder::new();
-
-    // MultiNozzleUtils.cpp:690  const size_t seq_len = std::min(filament_change_seq.size(), nozzle_change_seq.size());
-    let seq_len = filament_change_seq.len().min(nozzle_change_seq.len());
-    // MultiNozzleUtils.cpp:691  float actual_time = 0.0f;
-    let mut actual_time: f32 = 0.0;
-    // MultiNozzleUtils.cpp:692  float sliced_time = 0.0f;
-    let mut sliced_time: f32 = 0.0;
-
-    // MultiNozzleUtils.cpp:694  for (size_t i = 0; i < seq_len; ++i) {
-    for i in 0..seq_len {
-        // MultiNozzleUtils.cpp:695  int B = filament_change_seq[i];
-        let b = filament_change_seq[i];
-        // MultiNozzleUtils.cpp:696  int nozzle_id = nozzle_change_seq[i];
-        let nozzle_id = nozzle_change_seq[i];
-
-        // MultiNozzleUtils.cpp:698  auto nozzle_iter = nozzle_to_extruder.find(nozzle_id);
-        // MultiNozzleUtils.cpp:699  if (nozzle_iter == nozzle_to_extruder.end()) continue;
-        let e = match nozzle_to_extruder.get(&nozzle_id) {
-            // MultiNozzleUtils.cpp:701  int E = nozzle_iter->second; // 目标挤出机
-            Some(&v) => v,
-            None => continue,
-        };
-
-        // MultiNozzleUtils.cpp:703-719  切片预估时间：模拟切片视角（无选料器意识）
-        {
-            // MultiNozzleUtils.cpp:706  int old_nozzle_in_E = sliced_recorder.get_nozzle_in_extruder(E);
-            let old_nozzle_in_e = sliced_recorder.get_nozzle_in_extruder(e);
-            // MultiNozzleUtils.cpp:707  int old_filament_in_nozzle = sliced_recorder.get_filament_in_nozzle(nozzle_id);
-            let old_filament_in_nozzle = sliced_recorder.get_filament_in_nozzle(nozzle_id);
-            // MultiNozzleUtils.cpp:708  int old_filament_in_ext = sliced_recorder.get_filament_in_nozzle(old_nozzle_in_E);
-            let old_filament_in_ext = sliced_recorder.get_filament_in_nozzle(old_nozzle_in_e);
-
-            // MultiNozzleUtils.cpp:710  bool nozzle_change = (old_nozzle_in_E != nozzle_id);
-            let nozzle_change = old_nozzle_in_e != nozzle_id;
-            // MultiNozzleUtils.cpp:711  bool filament_change = (old_filament_in_nozzle != B);
-            let filament_change = old_filament_in_nozzle != b;
-
-            // MultiNozzleUtils.cpp:713  if (nozzle_change || filament_change) {
-            if nozzle_change || filament_change {
-                // MultiNozzleUtils.cpp:714  if (old_filament_in_ext != -1) sliced_time += standard_unload_time;
-                if old_filament_in_ext != -1 {
-                    sliced_time += time_params.standard_unload_time;
-                }
-                // MultiNozzleUtils.cpp:716  sliced_time += standard_load_time;
-                sliced_time += time_params.standard_load_time;
-            }
-            // MultiNozzleUtils.cpp:718  sliced_recorder.set_nozzle_status(nozzle_id, B, E);
-            sliced_recorder.set_nozzle_status(nozzle_id, b, e);
-        }
-
-        // MultiNozzleUtils.cpp:721-727  Step 1: 查目标挤出机E当前装载的料A
-        // MultiNozzleUtils.cpp:722  int A = -1;
-        let mut a: i32 = -1;
-        {
-            // MultiNozzleUtils.cpp:724  auto it = extruder_filament.find(E);
-            // MultiNozzleUtils.cpp:725  if (it != extruder_filament.end()) A = it->second;
-            if let Some(&v) = extruder_filament.get(&e) {
-                a = v;
-            }
-        }
-
-        // MultiNozzleUtils.cpp:730  if (A != -1 && A != B) {  Step 2: A从E退出
-        if a != -1 && a != b {
-            // MultiNozzleUtils.cpp:731  if (!selector_park_enabled || get_group(A) == get_group(B)) {
-            if !SELECTOR_PARK_ENABLED || get_group(a) == get_group(b) {
-                // MultiNozzleUtils.cpp:733  actual_time += unload_ext_to_selector + unload_ams_to_selector;
-                actual_time += unload_ext_to_selector + unload_ams_to_selector;
-                // MultiNozzleUtils.cpp:734  filament_location[A] = Location::IN_AMS;
-                filament_location.insert(a, Location::InAms);
-                // MultiNozzleUtils.cpp:735  ams_group_occupied[get_group(A)].erase(A);
-                ams_group_occupied
-                    .entry(get_group(a))
-                    .or_insert_with(HashSet::new)
-                    .remove(&a);
-            } else {
-                // MultiNozzleUtils.cpp:738  actual_time += unload_ext_to_selector;
-                actual_time += unload_ext_to_selector;
-                // MultiNozzleUtils.cpp:739  filament_location[A] = Location::IN_SELECTOR;
-                filament_location.insert(a, Location::InSelector);
-            }
-            // MultiNozzleUtils.cpp:741  extruder_filament.erase(E);
-            extruder_filament.remove(&e);
-            // MultiNozzleUtils.cpp:742  filament_extruder.erase(A);
-            filament_extruder.remove(&a);
-        }
-
-        // MultiNozzleUtils.cpp:745-764  Step 3: 若B的AMS通道被其他料X占用，X必须退回AMS让路
-        // MultiNozzleUtils.cpp:746  int group_B = get_group(B);
-        let group_b = get_group(b);
-        // MultiNozzleUtils.cpp:747  auto group_it = ams_group_occupied.find(group_B);
-        // MultiNozzleUtils.cpp:748  if (group_it != ams_group_occupied.end()) {
-        if ams_group_occupied.contains_key(&group_b) {
-            // Collect the occupants to iterate (mirrors `for (int X : group_it->second)`).
-            // The body mutates extruder_filament / filament_extruder / filament_location,
-            // but not group_it->second itself until the final clear(), so snapshot first.
-            let occupants: Vec<i32> = ams_group_occupied
-                .get(&group_b)
-                .map(|s| s.iter().cloned().collect())
-                .unwrap_or_default();
-            // MultiNozzleUtils.cpp:749  for (int X : group_it->second) {
-            for x in occupants {
-                // MultiNozzleUtils.cpp:750  if (X == B) continue;
-                if x == b {
-                    continue;
-                }
-                // MultiNozzleUtils.cpp:752  Location loc_X = filament_location[X];
-                let loc_x = *filament_location.entry(x).or_insert(Location::InAms);
-                // MultiNozzleUtils.cpp:753  if (loc_X == Location::IN_EXTRUDER) {
-                if loc_x == Location::InExtruder {
-                    // MultiNozzleUtils.cpp:754  actual_time += unload_ext_to_selector + unload_ams_to_selector;
-                    actual_time += unload_ext_to_selector + unload_ams_to_selector;
-                    // MultiNozzleUtils.cpp:756  int E2 = filament_extruder[X];
-                    let e2 = *filament_extruder.entry(x).or_insert(0);
-                    // MultiNozzleUtils.cpp:757  extruder_filament.erase(E2);
-                    extruder_filament.remove(&e2);
-                    // MultiNozzleUtils.cpp:758  filament_extruder.erase(X);
-                    filament_extruder.remove(&x);
-                } else {
-                    // MultiNozzleUtils.cpp:759  IN_SELECTOR -> actual_time += unload_ams_to_selector;
-                    actual_time += unload_ams_to_selector;
-                }
-                // MultiNozzleUtils.cpp:761  filament_location[X] = Location::IN_AMS;
-                filament_location.insert(x, Location::InAms);
-            }
-            // MultiNozzleUtils.cpp:763  group_it->second.clear();
-            if let Some(s) = ams_group_occupied.get_mut(&group_b) {
-                s.clear();
-            }
-        }
-
-        // MultiNozzleUtils.cpp:766-775  Step 4: B推入E（根据B当前状态）
-        // MultiNozzleUtils.cpp:767  auto loc_it = filament_location.find(B);
-        // MultiNozzleUtils.cpp:768  Location loc_B = (loc_it != filament_location.end()) ? loc_it->second : Location::IN_AMS;
-        let loc_b = match filament_location.get(&b) {
-            Some(&l) => l,
-            None => Location::InAms,
-        };
-        // MultiNozzleUtils.cpp:769  if (loc_B == Location::IN_AMS) {
-        if loc_b == Location::InAms {
-            // MultiNozzleUtils.cpp:770  actual_time += load_ams_to_selector + load_selector_to_ext;
-            actual_time += load_ams_to_selector + load_selector_to_ext;
-        } else if loc_b == Location::InSelector {
-            // MultiNozzleUtils.cpp:773  actual_time += load_selector_to_ext;
-            actual_time += load_selector_to_ext;
-        }
-        // MultiNozzleUtils.cpp:775  IN_EXTRUDER且E==当前挤出机：B已经在目标挤出机，无需操作
-
-        // MultiNozzleUtils.cpp:777-781  Step 5: 更新状态
-        // MultiNozzleUtils.cpp:778  extruder_filament[E] = B;
-        extruder_filament.insert(e, b);
-        // MultiNozzleUtils.cpp:779  filament_location[B] = Location::IN_EXTRUDER;
-        filament_location.insert(b, Location::InExtruder);
-        // MultiNozzleUtils.cpp:780  filament_extruder[B] = E;
-        filament_extruder.insert(b, e);
-        // MultiNozzleUtils.cpp:781  ams_group_occupied[group_B].insert(B);
-        ams_group_occupied
-            .entry(group_b)
-            .or_insert_with(HashSet::new)
-            .insert(b);
-    }
-
-    // MultiNozzleUtils.cpp:784  return actual_time - sliced_time;
-    actual_time - sliced_time
+    // MultiNozzleUtils.cpp:1002-1005
+    let r = simulate_filament_change_time(
+        logical_filaments,
+        nozzle_list,
+        filament_change_seq,
+        nozzle_change_seq,
+        group_of_filament,
+        time_params,
+        ams_preload_enabled,
+        /*calc_sliced_time=*/ true,
+    );
+    // MultiNozzleUtils.cpp:1006
+    (r.actual_time - r.sliced_time) as f32
 }
 
 // MultiNozzleUtils.cpp:787  std::vector<int> find_optimal_physical_assignment(...)
@@ -1754,6 +1822,7 @@ pub fn find_optimal_physical_assignment(
         nozzle_change_seq,
         &assignment,
         time_params,
+        &[],
     );
 
     // MultiNozzleUtils.cpp:805  bool done = false;
@@ -1773,6 +1842,7 @@ pub fn find_optimal_physical_assignment(
                 nozzle_change_seq,
                 &assignment,
                 time_params,
+                &[],
             );
             // MultiNozzleUtils.cpp:811  if (gap < best_gap) {
             if gap < best_gap {
@@ -1817,14 +1887,439 @@ pub fn find_optimal_physical_assignment(
     best_assignment
 }
 
+// ==================== std::unordered_map<int, V> of libc++ ====================
+//
+// FIDELITY-NOTE: `std::unordered_map` / `std::unordered_set` with `int` keys whose order of
+// iteration reaches a result (MultiNozzleUtils.hpp:216-217 `NozzleStatusRecorder`,
+// FilamentGroup.hpp:100 `filament_print_time`, FilamentGroup.hpp:110 `nozzle_status`,
+// MultiNozzleUtils.cpp:846-849 the maps of simulate_filament_change_time). The order is
+// implementation-defined; this is libc++ (`<__hash_table>`, `<unordered_map>` of the macOS SDK):
+// one singly linked list of nodes, a bucket holds the node before its first node,
+// `std::hash<int>` is the value widened to `size_t`, max_load_factor 1. Copy construction
+// (`Clone`), copy assignment (`assign_from`), `clear`, `reserve` and insertion follow libc++, so a
+// copy iterates in the order the C++ copy does.
+
+/// The value `std::hash<int>` gives: the `int` converted to `size_t`.
+fn libcxx_hash_int(k: i32) -> usize {
+    k as i64 as u64 as usize
+}
+
+/// libc++ `std::__constrain_hash`.
+fn libcxx_constrain_hash(h: usize, bc: usize) -> usize {
+    if bc & bc.wrapping_sub(1) == 0 {
+        h & bc.wrapping_sub(1)
+    } else if h < bc {
+        h
+    } else {
+        h % bc
+    }
+}
+
+/// libc++ `std::__next_prime`: the smallest prime not below `n`.
+fn libcxx_next_prime(n: usize) -> usize {
+    let mut p = n.max(2);
+    loop {
+        let mut is_prime = true;
+        let mut d = 2usize;
+        while d * d <= p {
+            if p % d == 0 {
+                is_prime = false;
+                break;
+            }
+            d += 1;
+        }
+        if is_prime {
+            return p;
+        }
+        p += 1;
+    }
+}
+
+/// libc++ `std::__is_hash_power2`.
+fn libcxx_is_hash_power2(bc: usize) -> bool {
+    bc > 2 && (bc & (bc - 1)) == 0
+}
+
+/// libc++ `std::__next_hash_pow2`.
+fn libcxx_next_hash_pow2(n: usize) -> usize {
+    if n < 2 {
+        n
+    } else {
+        1usize << (usize::BITS - (n - 1).leading_zeros())
+    }
+}
+
+const LIBCXX_NIL: usize = usize::MAX;
+
+/// libc++ `std::unordered_map<int, V>` (see the note above). `std::unordered_set<int>` is
+/// `UnorderedMapInt<()>`.
+#[derive(Debug)]
+pub struct UnorderedMapInt<V> {
+    /// node 0 is `__p1_`, the node before the first; its key is not read
+    keys: Vec<i32>,
+    values: Vec<Option<V>>,
+    next: Vec<usize>,
+    /// `__bucket_list_`: for each bucket the node before its first node, or `LIBCXX_NIL`
+    buckets: Vec<usize>,
+    size: usize,
+}
+
+impl<V> Default for UnorderedMapInt<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<V> UnorderedMapInt<V> {
+    /// `unordered_map()`
+    pub fn new() -> Self {
+        UnorderedMapInt { keys: vec![0], values: vec![None], next: vec![LIBCXX_NIL], buckets: Vec::new(), size: 0 }
+    }
+
+    /// `unordered_map(size_type __n)`: `__table_.__rehash_unique(__n)`.
+    pub fn with_bucket_count(n: usize) -> Self {
+        let mut m = Self::new();
+        m.rehash(n);
+        m
+    }
+
+    fn hash_of(&self, nd: usize) -> usize {
+        libcxx_hash_int(self.keys[nd])
+    }
+
+    /// `bucket_count()`
+    pub fn bucket_count(&self) -> usize {
+        self.buckets.len()
+    }
+
+    /// `size()`
+    pub fn len(&self) -> usize {
+        self.size
+    }
+
+    /// `empty()`
+    pub fn is_empty(&self) -> bool {
+        self.size == 0
+    }
+
+    /// `__hash_table::__rehash<_UniqueKeys>(n)` (both branches; equal keys never meet here).
+    fn rehash(&mut self, mut n: usize) {
+        if n == 1 {
+            n = 2;
+        } else if n & n.wrapping_sub(1) != 0 {
+            n = libcxx_next_prime(n);
+        }
+        let bc = self.buckets.len();
+        if n > bc {
+            self.do_rehash(n);
+        } else if n < bc {
+            let need = (self.size as f32 / 1.0f32).ceil() as usize;
+            n = n.max(if libcxx_is_hash_power2(bc) { libcxx_next_hash_pow2(need) } else { libcxx_next_prime(need) });
+            if n < bc {
+                self.do_rehash(n);
+            }
+        }
+    }
+
+    /// `__hash_table::__do_rehash<_UniqueKeys>(nbc)`
+    fn do_rehash(&mut self, nbc: usize) {
+        self.buckets = vec![LIBCXX_NIL; nbc];
+        if nbc == 0 {
+            return;
+        }
+        let mut pp = 0usize;
+        let mut cp = self.next[pp];
+        if cp != LIBCXX_NIL {
+            let mut chash = libcxx_constrain_hash(self.hash_of(cp), nbc);
+            self.buckets[chash] = pp;
+            let mut phash = chash;
+            pp = cp;
+            cp = self.next[cp];
+            while cp != LIBCXX_NIL {
+                chash = libcxx_constrain_hash(self.hash_of(cp), nbc);
+                if chash == phash {
+                    pp = cp;
+                } else if self.buckets[chash] == LIBCXX_NIL {
+                    self.buckets[chash] = pp;
+                    pp = cp;
+                    phash = chash;
+                } else {
+                    let np = cp;
+                    self.next[pp] = self.next[np];
+                    let b = self.buckets[chash];
+                    self.next[np] = self.next[b];
+                    self.next[b] = cp;
+                }
+                cp = self.next[pp];
+            }
+        }
+    }
+
+    /// `reserve(n)`: `__rehash_unique(size_type(ceil(float(n) / max_load_factor())))`.
+    pub fn reserve(&mut self, n: usize) {
+        self.rehash((n as f32 / 1.0f32).ceil() as usize);
+    }
+
+    /// `find(k)`: the node of the key, or `LIBCXX_NIL`.
+    fn find_node(&self, k: i32) -> usize {
+        let bc = self.buckets.len();
+        if bc != 0 {
+            let h = libcxx_hash_int(k);
+            let chash = libcxx_constrain_hash(h, bc);
+            let mut nd = self.buckets[chash];
+            if nd != LIBCXX_NIL {
+                nd = self.next[nd];
+                while nd != LIBCXX_NIL
+                    && (self.hash_of(nd) == h || libcxx_constrain_hash(self.hash_of(nd), bc) == chash)
+                {
+                    if self.keys[nd] == k {
+                        return nd;
+                    }
+                    nd = self.next[nd];
+                }
+            }
+        }
+        LIBCXX_NIL
+    }
+
+    /// `find(k) != end()`, `count(k)`
+    pub fn contains_key(&self, k: i32) -> bool {
+        self.find_node(k) != LIBCXX_NIL
+    }
+
+    /// `count(k)`
+    pub fn count(&self, k: i32) -> usize {
+        self.contains_key(k) as usize
+    }
+
+    /// `find(k)->second`
+    pub fn get(&self, k: i32) -> Option<&V> {
+        let nd = self.find_node(k);
+        if nd == LIBCXX_NIL {
+            None
+        } else {
+            self.values[nd].as_ref()
+        }
+    }
+
+    /// `find(k)->second`, writable
+    pub fn get_mut(&mut self, k: i32) -> Option<&mut V> {
+        let nd = self.find_node(k);
+        if nd == LIBCXX_NIL {
+            None
+        } else {
+            self.values[nd].as_mut()
+        }
+    }
+
+    /// `__emplace_unique_key_args(k, ...)`: the node of the key, a new node holding `make()` at
+    /// the front of its bucket when the key is not there. Returns (node, inserted).
+    fn emplace_unique(&mut self, k: i32, make: impl FnOnce() -> V) -> (usize, bool) {
+        let found = self.find_node(k);
+        if found != LIBCXX_NIL {
+            return (found, false);
+        }
+        let mut bc = self.buckets.len();
+        if (self.size + 1) as f32 > bc as f32 * 1.0f32 || bc == 0 {
+            let a = 2 * bc + (!libcxx_is_hash_power2(bc)) as usize;
+            let b = ((self.size + 1) as f32 / 1.0f32).ceil() as usize;
+            self.rehash(a.max(b));
+            bc = self.buckets.len();
+        }
+        let chash = libcxx_constrain_hash(libcxx_hash_int(k), bc);
+        let nd = self.keys.len();
+        self.keys.push(k);
+        self.values.push(Some(make()));
+        self.next.push(LIBCXX_NIL);
+        let pn = self.buckets[chash];
+        if pn == LIBCXX_NIL {
+            self.next[nd] = self.next[0];
+            self.next[0] = nd;
+            self.buckets[chash] = 0;
+            if self.next[nd] != LIBCXX_NIL {
+                let nh = libcxx_constrain_hash(self.hash_of(self.next[nd]), bc);
+                self.buckets[nh] = nd;
+            }
+        } else {
+            self.next[nd] = self.next[pn];
+            self.next[pn] = nd;
+        }
+        self.size += 1;
+        (nd, true)
+    }
+
+    /// `insert({k, v})` / `emplace(k, v)`: false (and no change) when the key is there.
+    pub fn insert(&mut self, k: i32, v: V) -> bool {
+        let mut v = Some(v);
+        self.emplace_unique(k, || v.take().expect("one value")).1
+    }
+
+    /// `__node_insert_multi(k, v)`: after the last node of its bucket (copy assignment uses it).
+    fn insert_multi(&mut self, k: i32, v: V) {
+        let mut bc = self.buckets.len();
+        if (self.size + 1) as f32 > bc as f32 * 1.0f32 || bc == 0 {
+            let a = 2 * bc + (!libcxx_is_hash_power2(bc)) as usize;
+            let b = ((self.size + 1) as f32 / 1.0f32).ceil() as usize;
+            self.rehash(a.max(b));
+            bc = self.buckets.len();
+        }
+        let h = libcxx_hash_int(k);
+        let chash = libcxx_constrain_hash(h, bc);
+        let mut pn = self.buckets[chash];
+        if pn != LIBCXX_NIL {
+            let mut found = false;
+            while self.next[pn] != LIBCXX_NIL && libcxx_constrain_hash(self.hash_of(self.next[pn]), bc) == chash {
+                let eq = self.hash_of(self.next[pn]) == h && self.keys[self.next[pn]] == k;
+                if found != eq {
+                    if !found {
+                        found = true;
+                    } else {
+                        break;
+                    }
+                }
+                pn = self.next[pn];
+            }
+        }
+        let cp = self.keys.len();
+        self.keys.push(k);
+        self.values.push(Some(v));
+        self.next.push(LIBCXX_NIL);
+        if pn == LIBCXX_NIL {
+            self.next[cp] = self.next[0];
+            self.next[0] = cp;
+            self.buckets[chash] = 0;
+            if self.next[cp] != LIBCXX_NIL {
+                let nh = libcxx_constrain_hash(self.hash_of(self.next[cp]), bc);
+                self.buckets[nh] = cp;
+            }
+        } else {
+            self.next[cp] = self.next[pn];
+            self.next[pn] = cp;
+            if self.next[cp] != LIBCXX_NIL {
+                let nhash = libcxx_constrain_hash(self.hash_of(self.next[cp]), bc);
+                if nhash != chash {
+                    self.buckets[nhash] = cp;
+                }
+            }
+        }
+        self.size += 1;
+    }
+
+    /// `erase(k)` (`__hash_table::remove`): the number of elements removed.
+    pub fn erase(&mut self, k: i32) -> usize {
+        let cn = self.find_node(k);
+        if cn == LIBCXX_NIL {
+            return 0;
+        }
+        let bc = self.buckets.len();
+        let chash = libcxx_constrain_hash(self.hash_of(cn), bc);
+        let mut pn = self.buckets[chash];
+        while self.next[pn] != cn {
+            pn = self.next[pn];
+        }
+        if pn == 0 || libcxx_constrain_hash(self.hash_of(pn), bc) != chash {
+            if self.next[cn] == LIBCXX_NIL || libcxx_constrain_hash(self.hash_of(self.next[cn]), bc) != chash {
+                self.buckets[chash] = LIBCXX_NIL;
+            }
+        }
+        if self.next[cn] != LIBCXX_NIL {
+            let nhash = libcxx_constrain_hash(self.hash_of(self.next[cn]), bc);
+            if nhash != chash {
+                self.buckets[nhash] = pn;
+            }
+        }
+        self.next[pn] = self.next[cn];
+        self.next[cn] = LIBCXX_NIL;
+        self.values[cn] = None;
+        self.size -= 1;
+        1
+    }
+
+    /// `clear()`: no element left, the bucket count kept.
+    pub fn clear(&mut self) {
+        if self.size > 0 {
+            self.keys.truncate(1);
+            self.values.truncate(1);
+            self.next.truncate(1);
+            self.next[0] = LIBCXX_NIL;
+            for b in self.buckets.iter_mut() {
+                *b = LIBCXX_NIL;
+            }
+            self.size = 0;
+        }
+    }
+
+    /// The nodes from `begin()` to `end()`.
+    fn order(&self) -> Vec<usize> {
+        let mut out = Vec::with_capacity(self.size);
+        let mut nd = self.next[0];
+        while nd != LIBCXX_NIL {
+            out.push(nd);
+            nd = self.next[nd];
+        }
+        out
+    }
+
+    /// The pairs from `begin()` to `end()`.
+    pub fn iter(&self) -> impl Iterator<Item = (i32, &V)> + '_ {
+        self.order().into_iter().map(move |nd| (self.keys[nd], self.values[nd].as_ref().expect("a node with a value")))
+    }
+
+    /// The keys from `begin()` to `end()`.
+    pub fn keys(&self) -> Vec<i32> {
+        self.order().into_iter().map(|nd| self.keys[nd]).collect()
+    }
+}
+
+impl<V: Default> UnorderedMapInt<V> {
+    /// `operator[](k)`: the value of the key, added with the default value when it is not there.
+    pub fn entry(&mut self, k: i32) -> &mut V {
+        let (nd, _) = self.emplace_unique(k, V::default);
+        self.values[nd].as_mut().expect("a node with a value")
+    }
+}
+
+impl<V: Clone> UnorderedMapInt<V> {
+    /// Copy assignment (`__hash_table::operator=(const __hash_table&)`, `__assign_multi`): the
+    /// elements dropped, the bucket count kept, the elements of `other` inserted in its order
+    /// after the last node of their bucket.
+    pub fn assign_from(&mut self, other: &UnorderedMapInt<V>) {
+        // __detach(): every bucket emptied, size 0
+        self.keys.truncate(1);
+        self.values.truncate(1);
+        self.next.truncate(1);
+        self.next[0] = LIBCXX_NIL;
+        for b in self.buckets.iter_mut() {
+            *b = LIBCXX_NIL;
+        }
+        self.size = 0;
+        for nd in other.order() {
+            self.insert_multi(other.keys[nd], other.values[nd].clone().expect("a node with a value"));
+        }
+    }
+}
+
+impl<V: Clone> Clone for UnorderedMapInt<V> {
+    /// Copy construction (`unordered_map(const unordered_map&)`): `__rehash_unique(bucket_count())`
+    /// then `insert(begin(), end())`, each element at the front of its bucket.
+    fn clone(&self) -> Self {
+        let mut m = UnorderedMapInt::new();
+        m.rehash(self.buckets.len());
+        for nd in self.order() {
+            m.insert(self.keys[nd], self.values[nd].clone().expect("a node with a value"));
+        }
+        m
+    }
+}
+
 // MultiNozzleUtils.cpp:840  // ==================== NozzleStatusRecorder 实现 ====================
 // MultiNozzleUtils.hpp:213  class NozzleStatusRecorder
 #[derive(Debug, Clone)]
 pub struct NozzleStatusRecorder {
     // MultiNozzleUtils.hpp:216  std::unordered_map<int, int> nozzle_filament_status;
-    nozzle_filament_status: HashMap<i32, i32>,
+    nozzle_filament_status: UnorderedMapInt<i32>,
     // MultiNozzleUtils.hpp:217  std::unordered_map<int, int> extruder_nozzle_status;
-    extruder_nozzle_status: HashMap<i32, i32>,
+    extruder_nozzle_status: UnorderedMapInt<i32>,
     // MultiNozzleUtils.hpp:218  int current_extruder_id_ = -1;
     current_extruder_id_: i32,
 }
@@ -1833,8 +2328,8 @@ impl NozzleStatusRecorder {
     // MultiNozzleUtils.hpp:221  NozzleStatusRecorder() = default;
     pub fn new() -> Self {
         NozzleStatusRecorder {
-            nozzle_filament_status: HashMap::new(),
-            extruder_nozzle_status: HashMap::new(),
+            nozzle_filament_status: UnorderedMapInt::new(),
+            extruder_nozzle_status: UnorderedMapInt::new(),
             current_extruder_id_: -1,
         }
     }
@@ -1844,7 +2339,7 @@ impl NozzleStatusRecorder {
         // MultiNozzleUtils.cpp:844  auto iter = nozzle_filament_status.find(nozzle_id);
         // MultiNozzleUtils.cpp:845  if (iter == nozzle_filament_status.end()) return true;
         // MultiNozzleUtils.cpp:846  return false;
-        !self.nozzle_filament_status.contains_key(&nozzle_id)
+        !self.nozzle_filament_status.contains_key(nozzle_id)
     }
 
     // MultiNozzleUtils.cpp:849  int NozzleStatusRecorder::get_filament_in_nozzle(int nozzle_id) const
@@ -1852,7 +2347,7 @@ impl NozzleStatusRecorder {
         // MultiNozzleUtils.cpp:851  auto iter = nozzle_filament_status.find(nozzle_id);
         // MultiNozzleUtils.cpp:852  if (iter == nozzle_filament_status.end()) return -1;
         // MultiNozzleUtils.cpp:853  return iter->second;
-        match self.nozzle_filament_status.get(&nozzle_id) {
+        match self.nozzle_filament_status.get(nozzle_id) {
             Some(&v) => v,
             None => -1,
         }
@@ -1863,7 +2358,7 @@ impl NozzleStatusRecorder {
         // MultiNozzleUtils.cpp:858  auto iter = extruder_nozzle_status.find(extruder_id);
         // MultiNozzleUtils.cpp:859  if (iter == extruder_nozzle_status.end()) return -1;
         // MultiNozzleUtils.cpp:860  return iter->second;
-        match self.extruder_nozzle_status.get(&extruder_id) {
+        match self.extruder_nozzle_status.get(extruder_id) {
             Some(&v) => v,
             None => -1,
         }
@@ -1878,11 +2373,11 @@ impl NozzleStatusRecorder {
     //   header default: int extruder_id = -1  (MultiNozzleUtils.hpp:231)
     pub fn set_nozzle_status(&mut self, nozzle_id: i32, filament_id: i32, extruder_id: i32) {
         // MultiNozzleUtils.cpp:867  nozzle_filament_status[nozzle_id] = filament_id;
-        self.nozzle_filament_status.insert(nozzle_id, filament_id);
+        *self.nozzle_filament_status.entry(nozzle_id) = filament_id;
         // MultiNozzleUtils.cpp:868  if (extruder_id != -1) {
         if extruder_id != -1 {
             // MultiNozzleUtils.cpp:869  extruder_nozzle_status[extruder_id] = nozzle_id;
-            self.extruder_nozzle_status.insert(extruder_id, nozzle_id);
+            *self.extruder_nozzle_status.entry(extruder_id) = nozzle_id;
         }
     }
 
@@ -1891,7 +2386,7 @@ impl NozzleStatusRecorder {
         // MultiNozzleUtils.cpp:875  auto iter = nozzle_filament_status.find(nozzle_id);
         // MultiNozzleUtils.cpp:876  if (iter == nozzle_filament_status.end()) return;
         // MultiNozzleUtils.cpp:877  nozzle_filament_status.erase(iter);
-        self.nozzle_filament_status.remove(&nozzle_id);
+        self.nozzle_filament_status.erase(nozzle_id);
     }
 
     // MultiNozzleUtils.hpp:228  void set_current_extruder_id(int extruder_id) { current_extruder_id_ = extruder_id; }
@@ -1900,12 +2395,12 @@ impl NozzleStatusRecorder {
     }
 
     // MultiNozzleUtils.hpp:234  const std::unordered_map<int, int>& get_nozzle_filament_map() const
-    pub fn get_nozzle_filament_map(&self) -> &HashMap<i32, i32> {
+    pub fn get_nozzle_filament_map(&self) -> &UnorderedMapInt<i32> {
         &self.nozzle_filament_status
     }
 
     // MultiNozzleUtils.hpp:236  const std::unordered_map<int, int>& get_extruder_nozzle_map() const
-    pub fn get_extruder_nozzle_map(&self) -> &HashMap<i32, i32> {
+    pub fn get_extruder_nozzle_map(&self) -> &UnorderedMapInt<i32> {
         &self.extruder_nozzle_status
     }
 }

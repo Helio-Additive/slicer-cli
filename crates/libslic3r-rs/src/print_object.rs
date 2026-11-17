@@ -7157,3 +7157,813 @@ impl Default for PrintObject {
     }
 }
 
+
+// =================================================================================================
+// PrintObject.cpp on the Print.hpp classes of `print::faithful` (the C++ shape of PrintObject, its
+// Print, its instances and regions). The live `PrintObject` above keeps the pipeline's own shape.
+// =================================================================================================
+
+/// PrintObject.cpp functions on [`crate::print::faithful::PrintObject`], in the order of the C++
+/// file. A function that reaches the Print through `m_print` takes the Print (or, when the object
+/// is borrowed out of the Print, the Print's step state and model).
+pub mod faithful {
+    use crate::config::{ConfigBase, ConfigOptionResolver};
+    use crate::geometry::{ExPolygon, Point};
+    use crate::libslic3r::{EPSILON, SCALING_FACTOR};
+    use crate::model::{Model, ModelObject};
+    use crate::print::faithful::{
+        psCount, static_config_defaults, Print, PrintInstances, PrintObject, PrintObjectConfig, PrintObjectStep, PrintRegion, PrintRegionConfig,
+        PrintStep,
+    };
+    use crate::print_base::{ApplyStatus, PrintBaseWithState};
+    use crate::print_config::config_def::DynamicPrintConfig;
+    use crate::print_config::enums::{BrimType, SupportType};
+    use crate::slicing::SlicingParams;
+
+    /// The Print a PrintObject reaches through `m_print` when it invalidates steps: the Print's
+    /// step state, its full configuration and its cancel callback.
+    pub type PrintStepState = PrintBaseWithState<PrintStep, { psCount }>;
+
+    fn cfg_int(config: &DynamicPrintConfig, key: &str) -> i32 {
+        config.option(key).and_then(|o| o.get_int().ok()).unwrap_or(0)
+    }
+    fn cfg_float(config: &DynamicPrintConfig, key: &str) -> f64 {
+        *config.opt_float(key)
+    }
+    fn cfg_floats_or_empty(config: &DynamicPrintConfig, key: &str) -> Vec<f64> {
+        if config.option(key).is_some() {
+            crate::gcode::wipe_tower::cfg_floats(config, key)
+        } else {
+            Vec::new()
+        }
+    }
+    fn sort_remove_duplicates<T: Ord>(v: &mut Vec<T>) {
+        v.sort();
+        v.dedup();
+    }
+    /// libslic3r.h `is_approx(value, test_value)` with EPSILON.
+    fn is_approx(value: f64, test_value: f64) -> bool {
+        (value - test_value).abs() < EPSILON
+    }
+
+    /// Print.cpp:459-466 `bool Print::invalidate_step(PrintStep step)` on the Print's step state:
+    /// the step and, for every other step, the G-code export.
+    pub fn print_invalidate_step(print: &mut PrintStepState, step: PrintStep) -> bool {
+        let mut invalidated = print.invalidate_step(step);
+        // Propagate to dependent steps.
+        if step != PrintStep::psGCodeExport {
+            invalidated |= print.invalidate_step(PrintStep::psGCodeExport);
+        }
+        invalidated
+    }
+
+    impl PrintObject {
+        /// PrintObject.cpp:68-101 `PrintObject::PrintObject(Print* print, ModelObject* model_object, const
+        /// Transform3d& trafo, PrintInstances&& instances)`: the centering offset, the size and the top
+        /// of the object from the 1st instance, then `set_instances`.
+        ///
+        /// FIDELITY-NOTE: the instances point at their object by its index in `Print::m_objects`,
+        /// which the caller knows once the object is placed (`usize::MAX` until then).
+        pub fn new(print: &mut Print, model_object: usize, trafo: crate::geometry::geometry::Transform3d, instances: PrintInstances) -> PrintObject {
+            use crate::geometry::geometry::eigen;
+            let mut object = PrintObject::with_model_object(model_object, trafo, Vec::new());
+            {
+                let mo = &print.m_model.objects[model_object];
+                // Snug bounding box of a rotated and scaled object by the 1st instantion, without the instance translation applied.
+                let mut bbox = mo.raw_bounding_box().expect("PrintObject of a ModelObject without instances");
+                let c = bbox.center();
+                let mut bbox_center = eigen::Vec3d::new(c.x, c.y, c.z);
+
+                // We may need to rotate the bbox / bbox_center from the original instance to the current instance.
+                let z_diff = crate::geometry::geometry::rotation_diff_z(
+                    &mo.instances[0].get_rotation(),
+                    &mo.instances[instances[0].model_instance].get_rotation(),
+                );
+                if z_diff.abs() > EPSILON {
+                    let z_rot = eigen::AngleAxisd::new(z_diff, eigen::Vec3d::new(0., 0., 1.)).to_rotation_matrix();
+                    let t = eigen::transform_from_linear(&z_rot);
+                    let mut rows = [[0.0f64; 4]; 4];
+                    for (r, row) in rows.iter_mut().enumerate() {
+                        for (col, v) in row.iter_mut().enumerate() {
+                            *v = t[(r, col)];
+                        }
+                    }
+                    bbox = bbox.transformed(&rows);
+                    bbox_center = eigen::mat3_mul_vec(&z_rot, &bbox_center);
+                }
+
+                // Center of the transformed mesh (without translation): Point::new_scale, a truncation.
+                object.m_center_offset = Point::new((bbox_center.x / SCALING_FACTOR) as i64, (bbox_center.y / SCALING_FACTOR) as i64);
+                // Size of the transformed mesh. This bounding may not be snug in XY plane, but it is snug in Z.
+                let size = bbox.size();
+                let k = 1. / SCALING_FACTOR;
+                object.m_size = [(size.x * k) as i64, (size.y * k) as i64, (size.z * k) as i64];
+                // scaled<coord_t>(): a truncation, kept in the double member.
+                object.m_max_z = ((mo.instance_bounding_box(0, false).max.z / SCALING_FACTOR) as i64) as f64;
+            }
+            object.set_instances(&mut print.base, instances, usize::MAX);
+            object
+        }
+
+        /// PrintObject.cpp:110-130 `PrintBase::ApplyStatus PrintObject::set_instances(PrintInstances &&instances)`.
+        /// `self_index` is the object's index in `Print::m_objects` (`i.print_object = this`).
+        pub fn set_instances(&mut self, print: &mut PrintStepState, mut instances: PrintInstances, self_index: usize) -> ApplyStatus {
+            for i in instances.iter_mut() {
+                // Add the center offset, which will be subtracted from the mesh when slicing.
+                i.shift = i.shift + self.m_center_offset;
+            }
+            // Invalidate and set copies.
+            let mut status = ApplyStatus::ApplyStatusUnchanged;
+            let equal_length = instances.len() == self.m_instances.len();
+            let equal = equal_length
+                && instances.iter().zip(self.m_instances.iter()).all(|(lhs, rhs)| lhs.model_instance == rhs.model_instance && lhs.shift == rhs.shift);
+            if !equal {
+                status = ApplyStatus::ApplyStatusChanged;
+                if print.invalidate_steps([PrintStep::psWipeTower, PrintStep::psSkirtBrim, PrintStep::psGCodeExport])
+                    || (!equal_length && print_invalidate_step(print, PrintStep::psWipeTower))
+                {
+                    status = ApplyStatus::ApplyStatusInvalidated;
+                }
+                self.m_instances = instances;
+                for i in self.m_instances.iter_mut() {
+                    i.print_object = self_index;
+                }
+            }
+            status
+        }
+
+        /// PrintObject.cpp:1549-1877 `bool PrintObject::invalidate_state_by_config_options(const
+        /// ConfigOptionResolver &old_config, const ConfigOptionResolver &new_config, const
+        /// std::vector<t_config_option_key> &opt_keys)`. `model` is the Print's model (for
+        /// `is_mm_painted()`).
+        pub fn invalidate_state_by_config_options(
+            &mut self,
+            print: &mut PrintStepState,
+            model: &Model,
+            old_config: &DynamicPrintConfig,
+            new_config: &DynamicPrintConfig,
+            opt_keys: &[String],
+        ) -> bool {
+            use PrintObjectStep::*;
+            if opt_keys.is_empty() {
+                return false;
+            }
+
+            let mut steps: Vec<PrintObjectStep> = Vec::new();
+            let mut invalidated = false;
+            for opt_key in opt_keys {
+                let k = opt_key.as_str();
+                if matches!(
+                    k,
+                    "brim_width"
+                        | "brim_object_gap"
+                        | "brim_type"
+                        // BBS: brim generation depends on printing speed
+                        | "outer_wall_speed"
+                        | "sparse_infill_speed"
+                        | "inner_wall_speed"
+                        | "support_speed"
+                        | "internal_solid_infill_speed"
+                        | "top_surface_speed"
+                ) {
+                    // Brim is printed below supports, support invalidates brim and skirt.
+                    steps.push(posSupportMaterial);
+                    if k == "brim_type" {
+                        let old_brim_type = cfg_int(old_config, k);
+                        let new_brim_type = cfg_int(new_config, k);
+                        //BBS: When switch to manual brim, the object must have brim, then re-generate perimeter
+                        //to make the wall order of first layer to be outer-first
+                        if old_brim_type == BrimType::BtOuterOnly as i32 || new_brim_type == BrimType::BtOuterOnly as i32 {
+                            steps.push(posPerimeters);
+                        }
+                    }
+                } else if matches!(k, "periodic_modifier" | "periodic_modifier_skip_layers" | "periodic_modifier_apply_layers" | "modifier_ignore_infill") {
+                    // Region assignment changes per layer when a modifier is skipped.
+                    steps.push(posSlice);
+                } else if matches!(
+                    k,
+                    "wall_loops"
+                        | "top_one_wall_type"
+                        | "top_area_threshold"
+                        | "only_one_wall_first_layer"
+                        | "initial_layer_line_width"
+                        | "inner_wall_line_width"
+                        | "infill_wall_overlap"
+                        | "apply_scarf_seam_on_circles"
+                ) {
+                    steps.push(posPerimeters);
+                } else if k == "gap_infill_speed" || k == "filter_out_gap_fill" {
+                    // Return true if gap-fill speed has changed from zero value to non-zero or from non-zero value to zero.
+                    let is_gap_fill_changed_state_due_to_speed = || -> bool {
+                        if k == "gap_infill_speed" {
+                            let old_gap_fill_speed = cfg_floats_or_empty(old_config, k);
+                            let new_gap_fill_speed = cfg_floats_or_empty(new_config, k);
+                            return old_gap_fill_speed.len() != new_gap_fill_speed.len() || old_gap_fill_speed != new_gap_fill_speed;
+                        }
+                        false
+                    };
+                    // Filtering of unprintable regions in multi-material segmentation depends on if gap-fill is enabled or not.
+                    if model.objects[self.m_model_object].is_mm_painted()
+                        && ((k == "gap_infill_speed" || k == "filter_out_gap_fill") && is_gap_fill_changed_state_due_to_speed())
+                    {
+                        steps.push(posSlice);
+                    }
+                    steps.push(posPerimeters);
+                } else if matches!(
+                    k,
+                    "layer_height"
+                        | "mmu_segmented_region_max_width"
+                        | "mmu_segmented_region_interlocking_depth"
+                        | "raft_layers"
+                        | "raft_contact_distance"
+                        | "slice_closing_radius"
+                        | "slicing_mode"
+                        | "interlocking_beam"
+                        | "interlocking_orientation"
+                        | "interlocking_beam_layer_count"
+                        | "interlocking_depth"
+                        | "interlocking_boundary_avoidance"
+                        | "interlocking_beam_width"
+                ) {
+                    steps.push(posSlice);
+                } else if matches!(
+                    k,
+                    "elefant_foot_compensation" | "support_top_z_distance" | "support_bottom_z_distance" | "xy_hole_compensation" | "xy_contour_compensation"
+                ) {
+                    steps.push(posSlice);
+                } else if k == "enable_support" {
+                    steps.push(posSupportMaterial);
+                    if cfg_float(&self.m_config, "support_top_z_distance") == 0. {
+                        // Enabling / disabling supports while soluble support interface is enabled.
+                        // This changes the bridging logic (bridging enabled without supports, disabled with supports).
+                        // Reset everything.
+                        steps.push(posSlice);
+                    }
+                } else if matches!(
+                    k,
+                    "support_type"
+                        | "support_angle"
+                        | "support_on_build_plate_only"
+                        | "support_critical_regions_only"
+                        | "support_remove_small_overhang"
+                        | "enforce_support_layers"
+                        | "support_filament"
+                        | "support_line_width"
+                        | "support_interface_top_layers"
+                        | "support_interface_bottom_layers"
+                        | "support_interface_pattern"
+                        | "support_interface_loop_pattern"
+                        | "support_interface_filament"
+                        | "support_interface_not_for_body"
+                        | "support_interface_spacing"
+                        | "support_bottom_interface_spacing"
+                        | "support_base_pattern"
+                        | "support_style"
+                        | "support_object_xy_distance"
+                        | "support_object_first_layer_gap"
+                        | "support_base_pattern_spacing"
+                        | "support_expansion"
+                        | "support_threshold_angle"
+                        | "enable_support_ironing"
+                        | "support_ironing_pattern"
+                        | "support_ironing_flow"
+                        | "support_ironing_spacing"
+                        | "support_ironing_inset"
+                        | "support_ironing_direction"
+                        | "support_ironing_speed"
+                        | "raft_expansion"
+                        | "raft_first_layer_density"
+                        | "raft_first_layer_expansion"
+                        | "bridge_no_support"
+                        | "max_bridge_length"
+                        | "tree_support_branch_distance"
+                        | "tree_support_branch_diameter"
+                        | "tree_support_branch_angle"
+                        | "tree_support_branch_diameter_angle"
+                        | "tree_support_tip_diameter"
+                        | "tree_support_wall_count"
+                ) {
+                    steps.push(posSupportMaterial);
+                    if cfg_float(&self.m_config, "support_top_z_distance") == 0. {
+                        // Zero-gap contact refinement in prepare_infill reads these support settings.
+                        steps.push(posPrepareInfill);
+                    }
+                } else if matches!(
+                    k,
+                    "bottom_shell_layers" | "top_shell_layers" | "top_color_penetration_layers" | "bottom_color_penetration_layers" | "infill_instead_top_bottom_surfaces"
+                ) {
+                    steps.push(posSlice);
+                } else if matches!(
+                    k,
+                    "interface_shells"
+                        | "fill_multiline"
+                        | "infill_combination"
+                        | "bottom_shell_thickness"
+                        | "top_shell_thickness"
+                        | "minimum_sparse_infill_area"
+                        | "sparse_infill_filament"
+                        | "solid_infill_filament"
+                        | "sparse_infill_line_width"
+                        | "skin_infill_line_width"
+                        | "skeleton_infill_line_width"
+                        | "infill_direction"
+                        | "ensure_vertical_shell_thickness"
+                        | "bridge_angle"
+                ) {
+                    steps.push(posPrepareInfill);
+                } else if matches!(
+                    k,
+                    "top_surface_pattern"
+                        | "top_surface_density"
+                        | "monotonic_travel_into_wall"
+                        | "bottom_surface_pattern"
+                        | "bottom_surface_density"
+                        | "internal_solid_infill_pattern"
+                        | "sub_top_surface_pattern"
+                        | "external_fill_link_max_length"
+                        | "sparse_infill_anchor"
+                        | "sparse_infill_anchor_max"
+                        | "top_surface_line_width"
+                        | "detect_floating_vertical_shell"
+                ) {
+                    steps.push(posInfill);
+                } else if matches!(
+                    k,
+                    "sparse_infill_pattern"
+                        | "conformal_infill"
+                        | "conformal_stagger"
+                        | "conformal_link_keep_layers"
+                        | "conformal_link_flip_layers"
+                        | "conformal_pole"
+                        | "conformal_ray_count"
+                        | "conformal_hub_radius"
+                        | "symmetric_infill_y_axis"
+                        | "infill_shift_step"
+                        | "sparse_infill_lattice_angle_1"
+                        | "sparse_infill_lattice_angle_2"
+                        | "infill_rotate_step"
+                        | "skeleton_infill_density"
+                        | "skin_infill_density"
+                        | "infill_lock_depth"
+                        | "skin_infill_depth"
+                        | "locked_skin_infill_pattern"
+                        | "locked_skeleton_infill_pattern"
+                ) {
+                    steps.push(posPrepareInfill);
+                } else if k == "sparse_infill_density" {
+                    // One likely wants to reslice only when switching between zero infill to simulate boolean difference (subtracting volumes),
+                    // normal infill and 100% (solid) infill.
+                    let old_density = cfg_float(old_config, k);
+                    let new_density = cfg_float(new_config, k);
+                    if is_approx(old_density, 0.) || is_approx(old_density, 100.) || is_approx(new_density, 0.) || is_approx(new_density, 100.) {
+                        steps.push(posPerimeters);
+                    }
+                    steps.push(posPrepareInfill);
+                } else if k == "internal_solid_infill_line_width" {
+                    // This value is used for calculating perimeter - infill overlap, thus perimeters need to be recalculated.
+                    steps.push(posPerimeters);
+                    steps.push(posPrepareInfill);
+                } else if matches!(
+                    k,
+                    "outer_wall_line_width"
+                        | "wall_filament"
+                        | "fuzzy_skin"
+                        | "fuzzy_skin_thickness"
+                        | "fuzzy_skin_point_distance"
+                        | "fuzzy_skin_first_layer"
+                        | "fuzzy_skin_noise_type"
+                        | "fuzzy_skin_scale"
+                        | "fuzzy_skin_octaves"
+                        | "fuzzy_skin_persistence"
+                        | "fuzzy_skin_mode"
+                        | "detect_overhang_wall"
+                        | "enable_overhang_speed"
+                        | "detect_thin_wall"
+                        | "precise_outer_wall"
+                ) {
+                    // filament_shrink is applied to slice contours in slice_volumes() (posSlice) using wall_filament.
+                    if k == "wall_filament" {
+                        steps.push(posSlice);
+                    }
+                    steps.push(posPerimeters);
+                    steps.push(posSupportMaterial);
+                } else if k == "bridge_flow" {
+                    steps.push(posPerimeters);
+                    steps.push(posInfill);
+                    steps.push(posSupportMaterial);
+                } else if matches!(
+                    k,
+                    "wall_generator"
+                        | "wall_transition_length"
+                        | "wall_transition_filter_deviation"
+                        | "wall_transition_angle"
+                        | "wall_distribution_count"
+                        | "min_feature_size"
+                        | "min_bead_width"
+                ) {
+                    steps.push(posSlice);
+                } else if matches!(
+                    k,
+                    "seam_position"
+                        | "seam_placement_away_from_overhangs"
+                        | "seam_slope_conditional"
+                        | "scarf_angle_threshold"
+                        | "seam_slope_entire_loop"
+                        | "seam_slope_steps"
+                        | "seam_slope_inner_walls"
+                        | "seam_gap"
+                        | "wipe_speed"
+                        | "role_base_wipe_speed"
+                        | "support_interface_speed"
+                        | "smooth_speed_discontinuity_area"
+                        | "smooth_coefficient"
+                        | "overhang_1_4_speed"
+                        | "overhang_2_4_speed"
+                        | "overhang_3_4_speed"
+                        | "overhang_4_4_speed"
+                        | "overhang_totally_speed"
+                        | "bridge_speed"
+                        | "small_perimeter_speed"
+                        | "small_perimeter_threshold"
+                        | "vertical_shell_speed"
+                        | "enable_height_slowdown"
+                        | "slowdown_start_height"
+                        | "slowdown_start_speed"
+                        | "slowdown_start_acc"
+                        | "slowdown_end_height"
+                        | "slowdown_end_speed"
+                        | "slowdown_end_acc"
+                ) {
+                    invalidated |= print_invalidate_step(print, PrintStep::psGCodeExport);
+                } else if matches!(k, "flush_into_infill" | "flush_into_objects" | "flush_into_support") {
+                    invalidated |= print_invalidate_step(print, PrintStep::psWipeTower);
+                    invalidated |= print_invalidate_step(print, PrintStep::psGCodeExport);
+                } else {
+                    // for legacy, if we can't handle this option let's invalidate all steps
+                    self.invalidate_all_steps(print);
+                    invalidated = true;
+                }
+            }
+
+            sort_remove_duplicates(&mut steps);
+            for step in steps {
+                invalidated |= self.invalidate_step(print, step);
+            }
+            invalidated
+        }
+
+        /// PrintObject.cpp:1879-1914 `bool PrintObject::invalidate_step(PrintObjectStep step)`
+        pub fn invalidate_step(&mut self, print: &mut PrintStepState, step: PrintObjectStep) -> bool {
+            use PrintObjectStep::*;
+            let cancel = print.base.cancel_callback();
+            let mut invalidated = self.m_state.invalidate(step, || cancel());
+
+            // propagate to dependent steps
+            if step == posPerimeters {
+                invalidated |= self.m_state.invalidate_multiple([posPrepareInfill, posInfill, posIroning, posSimplifyWall, posSimplifyInfill], || cancel());
+                invalidated |= print.invalidate_steps([PrintStep::psSkirtBrim]);
+            } else if step == posPrepareInfill {
+                invalidated |= self.m_state.invalidate_multiple([posInfill, posIroning, posSimplifyWall, posSimplifyInfill], || cancel());
+                invalidated |= print.invalidate_steps([PrintStep::psSkirtBrim]);
+            } else if step == posInfill {
+                invalidated |= self.m_state.invalidate_multiple([posIroning, posSimplifyInfill], || cancel());
+                invalidated |= print.invalidate_steps([PrintStep::psSkirtBrim]);
+            } else if step == posSlice {
+                invalidated |= self.m_state.invalidate_multiple(
+                    [posPerimeters, posPrepareInfill, posInfill, posIroning, posSupportMaterial, posSimplifyWall, posSimplifyInfill],
+                    || cancel(),
+                );
+                invalidated |= print.invalidate_steps([PrintStep::psSkirtBrim]);
+                self.m_slicing_params.valid = false;
+            } else if step == posSupportMaterial {
+                invalidated |= self.m_state.invalidate_multiple([posSimplifySupportPath], || cancel());
+                invalidated |= print.invalidate_steps([PrintStep::psSkirtBrim]);
+                self.m_slicing_params.valid = false;
+            }
+            // BBS multi-diameter: the support merge plan reads which filaments the walls and fills of each layer extrude.
+            if (step == posPerimeters || step == posPrepareInfill || step == posInfill)
+                && crate::print_config::config_def::multi_nozzle_diameter_mode_enabled(&print.base.m_full_print_config)
+            {
+                invalidated |= self.invalidate_step(print, posSupportMaterial);
+            }
+
+            // Wipe tower depends on the ordering of extruders, which in turn depends on everything.
+            invalidated |= print_invalidate_step(print, PrintStep::psWipeTower);
+            // Invalidate G-code export in any case.
+            invalidated |= print_invalidate_step(print, PrintStep::psGCodeExport);
+            invalidated
+        }
+
+        /// PrintObject.cpp:1916-1923 `bool PrintObject::invalidate_all_steps()`
+        pub fn invalidate_all_steps(&mut self, print: &mut PrintStepState) -> bool {
+            // First call the "invalidate" functions, which may cancel background processing.
+            let cancel = print.base.cancel_callback();
+            let result = self.m_state.invalidate_all(|| cancel()) | print.invalidate_all_steps();
+            // Then reset some of the depending values.
+            self.m_slicing_params.valid = false;
+            result
+        }
+
+        /// PrintObject.cpp:3840-3845 `void PrintObject::update_slicing_parameters()`, on the object
+        /// `object_idx` of the print.
+        pub fn update_slicing_parameters(print: &mut Print, object_idx: usize) {
+            if print.m_objects[object_idx].m_slicing_params.valid {
+                return;
+            }
+            let params = print.m_objects[object_idx].compute_slicing_parameters(print, print.single_diameter_layering_nozzle());
+            print.m_objects[object_idx].m_slicing_params = params;
+        }
+
+        /// PrintObject.cpp:3847-3860 `SlicingParameters PrintObject::compute_slicing_parameters(double
+        /// single_diameter_layering_nozzle) const`
+        pub fn compute_slicing_parameters(&self, print: &Print, single_diameter_layering_nozzle: f64) -> SlicingParams {
+            use crate::print_config::config_def::{layer_grid_nozzle_diameter, layer_grid_subdivision};
+            let full_config = print.full_print_config();
+            let subdivision = layer_grid_subdivision(full_config);
+            // BBS multi-diameter: a plate printing with one diameter only stacks that nozzle's band of grid steps into
+            // one sliced layer, which is the height the merge would have given every band.
+            let mut multiplier = 1;
+            if single_diameter_layering_nozzle > EPSILON {
+                multiplier = crate::adaptive_layer_merge::adaptive_layer_band_size(
+                    single_diameter_layering_nozzle,
+                    layer_grid_nozzle_diameter(full_config),
+                    cfg_float(&self.m_config, "layer_height") / (1.max(subdivision) as f64),
+                ) as i32;
+            }
+            SlicingParams::create_from_config(
+                print.config(),
+                &self.m_config,
+                self.model_object(print).bounding_box().max.z,
+                &self.object_extruders(print),
+                subdivision,
+                multiplier,
+                single_diameter_layering_nozzle,
+            )
+        }
+
+        /// PrintObject.cpp:3902-3923 `std::vector<unsigned int> PrintObject::object_extruders() const`:
+        /// 0-based indices of the extruders used to print the object (without brim, support and other
+        /// helper extrusions), the `#else` branch: the extruders of the object's volumes.
+        pub fn object_extruders(&self, print: &Print) -> Vec<u32> {
+            let mut extruders: Vec<u32> = Vec::with_capacity(self.all_regions().len() * 3);
+            let mo = self.model_object(print);
+            let global_features = crate::model::GlobalFeatureFilaments::from_config(
+                print.default_region_config(),
+                crate::gcode::wipe_tower::cfg_floats(print.config(), "filament_diameter").len(),
+            );
+            for mv in &mo.volumes {
+                let volume_extruders = mv.get_extruders(mo, &global_features);
+                for extruder in volume_extruders {
+                    debug_assert!(extruder > 0);
+                    extruders.push((extruder - 1) as u32);
+                }
+            }
+            sort_remove_duplicates(&mut extruders);
+            extruders
+        }
+
+        /// PrintObject.cpp:3925-3967 `bool PrintObject::update_layer_height_profile(const ModelObject
+        /// &model_object, const SlicingParameters &slicing_parameters, std::vector<coordf_t>
+        /// &layer_height_profile, bool &out_nozzle_range_reset)`
+        pub fn update_layer_height_profile(
+            model_object: &ModelObject,
+            slicing_parameters: &SlicingParams,
+            layer_height_profile: &mut Vec<f64>,
+            out_nozzle_range_reset: &mut bool,
+        ) -> bool {
+            let mut updated = false;
+            *out_nozzle_range_reset = false;
+
+            if layer_height_profile.is_empty() {
+                *layer_height_profile = model_object.layer_height_profile.get();
+                let mut i = 1;
+                while i < layer_height_profile.len() {
+                    layer_height_profile[i] = slicing_parameters.to_base_layer_height(layer_height_profile[i]);
+                    i += 2;
+                }
+                updated = true;
+            }
+
+            // Verify the layer_height_profile.
+            if !layer_height_profile.is_empty()
+                // Must not be of even length.
+                && ((layer_height_profile.len() & 1) != 0
+                    // Last entry must be at the top of the object.
+                    || (layer_height_profile[layer_height_profile.len() - 2] - slicing_parameters.object_print_z_max + slicing_parameters.object_print_z_min).abs() > 1e-3)
+            {
+                layer_height_profile.clear();
+            }
+
+            // Verify that all layer height values are within the allowed range for the current nozzle.
+            if !layer_height_profile.is_empty() {
+                let mut i = 1;
+                while i < layer_height_profile.len() {
+                    if layer_height_profile[i] < slicing_parameters.min_layer_height - EPSILON
+                        || layer_height_profile[i] > slicing_parameters.max_layer_height + EPSILON
+                    {
+                        *out_nozzle_range_reset = true;
+                        layer_height_profile.clear();
+                        break;
+                    }
+                    i += 2;
+                }
+            }
+
+            let mut not_match_flag = !slicing_parameters.has_raft(); // if there is raft layer_height_profile[1] could also be adaptive
+            not_match_flag &= !layer_height_profile.is_empty() && (layer_height_profile[1] != slicing_parameters.first_object_layer_height);
+            if layer_height_profile.is_empty() || not_match_flag {
+                *layer_height_profile = crate::slicing::layer_height_profile_from_ranges(slicing_parameters, &model_object.layer_config_ranges);
+                updated = true;
+            }
+
+            updated
+        }
+
+        /// PrintObject.cpp:3985-3993 `std::vector<Point> PrintObject::get_instances_shift_without_plate_offset() const`
+        pub fn get_instances_shift_without_plate_offset(&self, print: &Print) -> Vec<Point> {
+            let mut out: Vec<Point> = Vec::with_capacity(self.m_instances.len());
+            for instance in &self.m_instances {
+                out.push(instance.shift_without_plate_offset(print));
+            }
+            out
+        }
+    }
+
+    /// PrintObject.cpp:3862-3900 `SlicingParameters PrintObject::slicing_parameters(const DynamicPrintConfig&
+    /// full_config, const ModelObject& model_object, float object_max_z, std::vector<int> variant_index)`,
+    /// the static overload (the member one is `PrintObject::slicing_parameters()`). `model` is the
+    /// model of `model_object` (for the materials of its volumes).
+    pub fn slicing_parameters(
+        full_config: &DynamicPrintConfig,
+        model_object: &ModelObject,
+        model: Option<&Model>,
+        mut object_max_z: f32,
+        mut variant_index: Vec<i32>,
+    ) -> SlicingParams {
+        let static_apply = |class_name: &str| {
+            let mut config = static_config_defaults(class_name);
+            let keys = config.keys();
+            let _ = config.apply_only(full_config, &keys, true);
+            config
+        };
+        let print_config = static_apply("PrintConfig");
+        let mut object_config: PrintObjectConfig = static_apply("PrintObjectConfig");
+        let default_region_config: PrintRegionConfig = static_apply("PrintRegionConfig");
+        // BBS
+        let filament_extruders = crate::gcode::wipe_tower::cfg_floats(&print_config, "filament_diameter").len();
+        object_config = crate::print_apply::object_config_from_model_object(&object_config, model_object, filament_extruders, &mut variant_index);
+
+        let has_brim = cfg_int(&object_config, "brim_type") != BrimType::BtNoBrim as i32 && cfg_float(&object_config, "brim_width") > 0.;
+        let mut object_extruders: Vec<u32> = Vec::new();
+        for model_volume in &model_object.volumes {
+            if model_volume.is_model_part() {
+                PrintRegion::collect_object_printing_extruders_static(
+                    &print_config,
+                    &crate::print_apply::region_config_from_model_volume(
+                        &default_region_config,
+                        None,
+                        model_volume,
+                        model_object,
+                        model,
+                        filament_extruders,
+                        &mut variant_index,
+                    ),
+                    has_brim,
+                    &mut object_extruders,
+                );
+                for (_, range_config) in model_object.layer_config_ranges.iter() {
+                    if range_config.has("wall_filament") || range_config.has("sparse_infill_filament") || range_config.has("solid_infill_filament") {
+                        PrintRegion::collect_object_printing_extruders_static(
+                            &print_config,
+                            &crate::print_apply::region_config_from_model_volume(
+                                &default_region_config,
+                                Some(range_config.get()),
+                                model_volume,
+                                model_object,
+                                model,
+                                filament_extruders,
+                                &mut variant_index,
+                            ),
+                            has_brim,
+                            &mut object_extruders,
+                        );
+                    }
+                }
+            }
+        }
+        sort_remove_duplicates(&mut object_extruders);
+        //FIXME add painting extruders
+
+        if object_max_z <= 0.0 {
+            object_max_z = model_object.raw_bounding_box().map(|b| b.size().z).unwrap_or(0.) as f32;
+        }
+        // The interactive variable-layer editor works in the authored preset's height domain.
+        SlicingParams::create_from_config(&print_config, &object_config, object_max_z as f64, &object_extruders, 1, 1, 0.)
+    }
+
+    /// PrintObject.cpp:655 `const coord_t zero_gap_length_thresh = scale_(2);`
+    pub fn zero_gap_length_thresh() -> i64 {
+        (2.0 / SCALING_FACTOR) as i64
+    }
+
+    /// PrintObject.cpp:657-663 `double zero_gap_threshold_rad(const PrintObjectConfig &config)`: the
+    /// same thresh_angle convention as SupportMaterial::detect_overhangs: +1, clamp 89.
+    pub fn zero_gap_threshold_rad(config: &PrintObjectConfig) -> f64 {
+        let support_threshold_angle = cfg_int(config, "support_threshold_angle") as f64;
+        let mut thresh_angle = if support_threshold_angle > 0. { support_threshold_angle + 1. } else { 0. };
+        thresh_angle = thresh_angle.min(89.);
+        // Geometry::deg2rad: T(PI) * angle / T(180.0)
+        std::f64::consts::PI * thresh_angle / 180.0
+    }
+
+    /// PrintObject.cpp:675-694 `bool should_refine_zero_gap_contact(const PrintObjectConfig &config)`
+    pub fn should_refine_zero_gap_contact(config: &PrintObjectConfig) -> bool {
+        config.opt_bool("enable_support")
+            && cfg_float(config, "support_top_z_distance") == 0.
+            && cfg_int(config, "support_type") == SupportType::StNormalAuto as i32
+            && !config.opt_bool("support_on_build_plate_only")
+            && !config.opt_bool("support_critical_regions_only")
+            // Without interface layers the contact is printed with the sparse base pattern.
+            && cfg_int(config, "support_interface_top_layers") > 0
+            // Keep legacy Bridge classification whenever bridge_no_support is on.
+            && !config.opt_bool("bridge_no_support")
+    }
+
+    /// PrintObject.cpp:696-706 `bool is_significant_contact_piece(const ExPolygon &piece, float erode_r)`
+    pub fn is_significant_contact_piece(piece: &ExPolygon, erode_r: f32) -> bool {
+        if erode_r <= 0.0 {
+            return false;
+        }
+        let eroded =
+            crate::clipper_utils::offset_ex_expolygon_clib(piece, -(erode_r as f64), crate::clipper_utils::OffsetJoinType::Miter, 3.0);
+        if eroded.is_empty() {
+            return false;
+        }
+        let bbox_sz = crate::geometry::get_extents(&eroded).size();
+        bbox_sz.x > zero_gap_length_thresh() || bbox_sz.y > zero_gap_length_thresh()
+    }
+
+    /// PrintObject.cpp:708-716 `ExPolygons filter_significant_contact_pieces(ExPolygons pieces, float erode_r)`
+    pub fn filter_significant_contact_pieces(pieces: Vec<ExPolygon>, erode_r: f32) -> Vec<ExPolygon> {
+        let mut out: Vec<ExPolygon> = Vec::with_capacity(pieces.len());
+        for piece in pieces {
+            if is_significant_contact_piece(&piece, erode_r) {
+                out.push(piece);
+            }
+        }
+        out
+    }
+
+    /// PrintObject.cpp:2254-2258 `struct EffectiveShellParameters`
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct EffectiveShellParameters {
+        pub layers: i32,
+        pub thickness: f64,
+    }
+
+    /// PrintObject.cpp:2260-2268 `static int shell_band_size(const PrintObject &object, double
+    /// nozzle_diameter, double base_layer_height)`: the base layers one extrusion of this nozzle covers.
+    pub fn shell_band_size(print: &Print, nozzle_diameter: f64, base_layer_height: f64) -> i32 {
+        if print.single_diameter_layering_nozzle() > EPSILON {
+            return 1;
+        }
+        crate::adaptive_layer_merge::adaptive_layer_band_size(
+            nozzle_diameter,
+            crate::print_config::config_def::layer_grid_nozzle_diameter(print.full_print_config()),
+            base_layer_height,
+        ) as i32
+    }
+
+    /// PrintObject.cpp:2270-2283 `static EffectiveShellParameters effective_top_shell_parameters(const
+    /// PrintObject &object, const PrintRegionConfig &config, double base_layer_height)`
+    pub fn effective_top_shell_parameters(print: &Print, config: &PrintRegionConfig, base_layer_height: f64) -> EffectiveShellParameters {
+        use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, multi_nozzle_top_shell_layers, multi_nozzle_top_shell_thickness};
+        let mut out = EffectiveShellParameters { layers: cfg_int(config, "top_shell_layers"), thickness: cfg_float(config, "top_shell_thickness") };
+        if !multi_nozzle_diameter_mode_enabled(print.full_print_config()) {
+            return out;
+        }
+        let nozzle_diameter =
+            crate::print::faithful::nozzle_diameter_for_filament(print.config(), cfg_int(config, "solid_infill_filament") as u32) as f64;
+        out.layers = multi_nozzle_top_shell_layers(nozzle_diameter, out.layers);
+        out.layers *= shell_band_size(print, nozzle_diameter, base_layer_height);
+        out.thickness = multi_nozzle_top_shell_thickness(nozzle_diameter, out.thickness);
+        out
+    }
+
+    /// PrintObject.cpp:2285-2298 `static EffectiveShellParameters effective_bottom_shell_parameters(const
+    /// PrintObject &object, const PrintRegionConfig &config, double base_layer_height)`
+    pub fn effective_bottom_shell_parameters(print: &Print, config: &PrintRegionConfig, base_layer_height: f64) -> EffectiveShellParameters {
+        use crate::print_config::config_def::{multi_nozzle_bottom_shell_layers, multi_nozzle_bottom_shell_thickness, multi_nozzle_diameter_mode_enabled};
+        let mut out =
+            EffectiveShellParameters { layers: cfg_int(config, "bottom_shell_layers"), thickness: cfg_float(config, "bottom_shell_thickness") };
+        if !multi_nozzle_diameter_mode_enabled(print.full_print_config()) {
+            return out;
+        }
+        let nozzle_diameter =
+            crate::print::faithful::nozzle_diameter_for_filament(print.config(), cfg_int(config, "solid_infill_filament") as u32) as f64;
+        out.layers = multi_nozzle_bottom_shell_layers(nozzle_diameter, out.layers);
+        out.layers *= shell_band_size(print, nozzle_diameter, base_layer_height);
+        out.thickness = multi_nozzle_bottom_shell_thickness(nozzle_diameter, out.thickness);
+        out
+    }
+}

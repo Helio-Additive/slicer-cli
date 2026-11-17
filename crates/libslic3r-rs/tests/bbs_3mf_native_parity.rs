@@ -685,6 +685,15 @@ fn read_vectors(path: &std::path::Path) -> Vec<String> {
 
 /// Compares two dumps; returns the number of differing lines (reports the first ones) and the
 /// count of compared lines per line kind.
+/// The archives the store part writes carry the day they are written in their CreationDate and
+/// ModificationDate metadata (bbs_3mf.cpp `_add_model_file_to_archive`); read back, those values
+/// come out as `MD <hex key> <hex date>` lines. The vectors were written on another day, so two
+/// such lines are the same when everything but the date is.
+fn same_but_dated(e: &str, a: &str) -> bool {
+    const KEYS: [&str; 2] = ["MD 4372656174696f6e44617465 ", "MD 4d6f64696669636174696f6e44617465 "];
+    KEYS.iter().any(|k| e.starts_with(k) && a.starts_with(k) && e.len() == a.len())
+}
+
 fn compare(expected: &[String], actual: &[String]) -> (usize, BTreeMap<String, usize>) {
     let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
     let mut diffs = 0usize;
@@ -700,7 +709,7 @@ fn compare(expected: &[String], actual: &[String]) -> (usize, BTreeMap<String, u
             in_entry = false;
         }
         *kinds.entry(kind).or_default() += 1;
-        if e != a {
+        if e != a && !(same_but_dated(e, a)) {
             if diffs < 25 {
                 eprintln!("line {}:\n  C++:  {}\n  Rust: {}", i + 1, &e[..e.len().min(400)], &a[..a.len().min(400)]);
             }

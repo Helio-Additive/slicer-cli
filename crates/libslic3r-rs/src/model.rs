@@ -13,10 +13,16 @@
 //!   paint, `ModelInstance` transformations, object ids, materials. Every Model.cpp function
 //!   ported here works on these.
 //!
-//! FIDELITY-NOTE (back pointers): `ModelVolume::object`, `ModelInstance::object` and
-//! `ModelObject::m_model` are raw parent pointers in C++. Rust owns the tree by value, so a
-//! function that reads the parent takes it as an argument, and one that changes the parent's
-//! containers (`ModelVolume::split`, `ModelObject::split`) is called with the parent.
+//! FIDELITY-NOTE (back pointers): `ModelVolume::object`, `ModelInstance::object`,
+//! `ModelObject::m_model` and `ModelMaterial::m_model` are raw parent pointers in C++. Rust owns
+//! the tree by value, so a function that reads the parent takes it as an argument, and one that
+//! changes the parent's containers (`ModelVolume::split`, `ModelObject::split`) is called with the
+//! parent. The pointers themselves are kept as handles: the `ObjectID` of the parent (`None` for
+//! `nullptr`), set where the C++ sets the pointer (the constructors that take the parent,
+//! `set_model`, `set_model_object`, `assign_copy`, `update_links_bottom_up_recursive`). A pointer
+//! stays valid when its parent takes a new ID; a handle is moved along with the ID
+//! (`set_new_unique_id` / `assign_new_unique_ids_recursive` of the parent re-point the children
+//! that held the old one).
 //!
 //! FIDELITY-NOTE (meshes): a C++ `TriangleMesh` is `its` plus `TriangleMeshStats`; the crate's
 //! `triangle_mesh::TriangleMesh` is the earlier f64 mesh without stats. A volume holds its mesh
@@ -800,16 +806,29 @@ pub struct ModelMaterial {
     pub attributes: TModelMaterialAttributes,
     /// Model.hpp:168
     pub config: ModelConfigObject,
+    /// Model.hpp:176 `Model *m_model`: the parent model, held as its ID (FIDELITY-NOTE (back
+    /// pointers) at the top of this file); `None` is the C++ `nullptr`.
+    m_model: Option<ObjectID>,
 }
 
 impl ModelMaterial {
     /// Model.hpp:181 `ModelMaterial(Model *model)`: a new ID for the material and its config.
+    /// The parent is set by the model that adds it (`Model::add_material`).
     fn new() -> Self {
         let base = ObjectBase::new();
-        Self { base, attributes: BTreeMap::new(), config: ModelConfigObject::new() }
+        Self { base, attributes: BTreeMap::new(), config: ModelConfigObject::new(), m_model: None }
     }
     pub fn id(&self) -> ObjectID {
         self.base.id()
+    }
+    /// Model.hpp:170 `Model* get_model() const { return m_model; }`: the ID of the parent model.
+    pub fn get_model(&self) -> Option<ObjectID> {
+        self.m_model
+    }
+    /// Model.hpp:184 `void set_model(Model *model) { m_model = model; }`: `model` is the ID of
+    /// the parent model, `None` for `nullptr`.
+    pub fn set_model(&mut self, model: Option<ObjectID>) {
+        self.m_model = model;
     }
     /// Model.hpp:171-172
     pub fn apply(&mut self, attributes: &TModelMaterialAttributes) {
@@ -1841,6 +1860,9 @@ pub struct ModelVolume {
     m_origin_mesh_or_vertice_render: bool,
     /// Model.hpp:1255 — -1 unknown, 0 not splittable, 1 splittable
     m_is_splittable: Cell<i32>,
+    /// Model.hpp:1218 `ModelObject* object`: the parent object, held as its ID (FIDELITY-NOTE
+    /// (back pointers) at the top of this file).
+    object: Option<ObjectID>,
 }
 
 impl ModelVolume {
@@ -1886,6 +1908,7 @@ impl ModelVolume {
             m_text_info: TextInfo::default(),
             m_origin_mesh_or_vertice_render: true,
             m_is_splittable: Cell::new(-1),
+            object: None,
         }
     }
 
@@ -1949,6 +1972,7 @@ impl ModelVolume {
             m_text_info: other.m_text_info.clone(),
             m_origin_mesh_or_vertice_render: true,
             m_is_splittable: Cell::new(-1),
+            object: None,
         }
     }
 
@@ -1995,6 +2019,7 @@ impl ModelVolume {
             m_text_info: TextInfo::default(),
             m_origin_mesh_or_vertice_render: true,
             m_is_splittable: Cell::new(-1),
+            object: None,
         };
         v.config.set_new_unique_id();
         if facets > 1 {
@@ -2005,6 +2030,18 @@ impl ModelVolume {
 
     pub fn id(&self) -> ObjectID {
         self.base.id()
+    }
+
+    /// Model.hpp:1024 `ModelObject* get_object() const { return this->object; }`: the ID of the
+    /// parent object, `None` for `nullptr`.
+    pub fn get_object(&self) -> Option<ObjectID> {
+        self.object
+    }
+
+    /// Model.hpp:1208 `void set_model_object(ModelObject *model_object) { object = model_object; }`:
+    /// `model_object` is the ID of the parent object, `None` for `nullptr`.
+    pub fn set_model_object(&mut self, model_object: Option<ObjectID>) {
+        self.object = model_object;
     }
 
     /// Model.hpp:981
@@ -2802,6 +2839,8 @@ impl ModelVolume {
                 paint(this, cur_face_count);
             } else {
                 let mut new_mv = ModelVolume::new_copy_with_mesh(&object.volumes[this_idx], mesh);
+                // new ModelVolume(object, *this, std::move(mesh))
+                new_mv.set_model_object(Some(object.id()));
                 let n = new_mv.mesh_ptr().map(|m| m.its.indices.len()).unwrap_or(0);
                 paint(&mut new_mv, n);
                 ivolume += 1;
@@ -3109,6 +3148,9 @@ pub struct ModelInstance {
     pub arrange_order: i32,
     /// Model.hpp:1472
     pub loaded_id: usize,
+    /// Model.hpp:1573 `ModelObject* object`: the parent object, held as its ID (FIDELITY-NOTE
+    /// (back pointers) at the top of this file).
+    object: Option<ObjectID>,
 }
 
 /// The earlier name of [`ModelInstance`].
@@ -3133,6 +3175,7 @@ impl ModelInstance {
             use_loaded_id_for_label: false,
             arrange_order: 0,
             loaded_id: 0,
+            object: None,
         }
     }
 
@@ -3184,6 +3227,18 @@ impl ModelInstance {
     /// ObjectBase::assign_new_unique_ids_recursive
     pub fn assign_new_unique_ids_recursive(&mut self) {
         self.base.set_new_unique_id();
+    }
+
+    /// Model.hpp:1482 `ModelObject* get_object() const { return this->object; }`: the ID of the
+    /// parent object, `None` for `nullptr`.
+    pub fn get_object(&self) -> Option<ObjectID> {
+        self.object
+    }
+
+    /// Model.hpp:1569 `void set_model_object(ModelObject *model_object) { object = model_object; }`:
+    /// `model_object` is the ID of the parent object, `None` for `nullptr`.
+    pub fn set_model_object(&mut self, model_object: Option<ObjectID>) {
+        self.object = model_object;
     }
 
     /// Model.hpp:1474-1480
@@ -3878,15 +3933,22 @@ impl Model {
     /// Model.cpp:65-126 `assign_copy(const Model &rhs)`: the IDs copied.
     pub fn assign_copy(&mut self, rhs: &Model) -> &mut Self {
         self.base.copy_id(&rhs.base);
+        let this = Some(self.id());
         // copy materials
         self.clear_materials();
         self.materials = rhs.materials.clone();
+        for m in self.materials.values_mut() {
+            // Copy including the ID and m_model.
+            m.set_model(this);
+        }
         // copy objects
         self.clear_objects();
         self.objects.reserve(rhs.objects.len());
         for model_object in &rhs.objects {
             // Copy including the ID, leave ID set to invalid (zero).
-            self.objects.push(model_object.clone());
+            let mut mo = model_object.clone();
+            mo.set_model(this);
+            self.objects.push(mo);
         }
 
         // copy custom code per height
@@ -3922,12 +3984,51 @@ impl Model {
 
     /// Model.cpp:185-192
     pub fn assign_new_unique_ids_recursive(&mut self) {
+        let old_id = self.id();
         self.base.set_new_unique_id();
+        // FIDELITY-NOTE (back pointers): the children's handles follow the new ID.
+        self.relink_children_from(old_id);
         for m in self.materials.values_mut() {
             m.assign_new_unique_ids_recursive();
         }
         for model_object in &mut self.objects {
             model_object.assign_new_unique_ids_recursive();
+        }
+    }
+
+    /// The handles of the materials and objects that pointed at this model under `old_id` are
+    /// re-pointed at its current ID (a C++ pointer does not change when its target takes a new
+    /// ID; FIDELITY-NOTE (back pointers) at the top of this file).
+    fn relink_children_from(&mut self, old_id: ObjectID) {
+        let this = Some(self.id());
+        for m in self.materials.values_mut() {
+            if m.get_model() == Some(old_id) {
+                m.set_model(this);
+            }
+        }
+        for model_object in &mut self.objects {
+            if model_object.get_model() == Some(old_id) {
+                model_object.set_model(this);
+            }
+        }
+    }
+
+    /// Model.cpp:194-205 `update_links_bottom_up_recursive()`: point every material and object at
+    /// this model, and every instance and volume at its object.
+    pub fn update_links_bottom_up_recursive(&mut self) {
+        let this = Some(self.id());
+        for kvp in self.materials.values_mut() {
+            kvp.set_model(this);
+        }
+        for model_object in &mut self.objects {
+            model_object.set_model(this);
+            let object = Some(model_object.id());
+            for model_instance in &mut model_object.instances {
+                model_instance.set_model_object(object);
+            }
+            for model_volume in &mut model_object.volumes {
+                model_volume.set_model_object(object);
+            }
         }
     }
 
@@ -3941,23 +4042,239 @@ impl Model {
         self.m_loaded_assembly_steps_meta = Default::default();
     }
 
+    /// Model.cpp:226-282 `read_from_step(input_file, options, stepFn, stepIsUtf8Fn, step_mesh_fn,
+    /// linear_defletion, angle_defletion, is_split_compound, open_shell_warn_fn)`: a model of the
+    /// solids of a STEP file. `Err` is the `Slic3r::RuntimeError` the C++ throws.
+    ///
+    /// FIDELITY-NOTE: the reading and meshing (`Step::load`, `Step::mesh`) run on OpenCascade, which
+    /// `format/step.rs` does not bind: its `load()` returns `LOAD_ERROR` after the UTF-8 check, so
+    /// this function ends at "Loading of a model file failed." for every file. The control flow
+    /// after the load is the C++'s. `Step::get_unclosed_shells()` (STEP.hpp:134, filled by the OCCT
+    /// reader) has no counterpart in `format/step.rs`; `open_shell_warn_fn` would be called with
+    /// those shells after a successful load and is not called here.
+    #[allow(clippy::too_many_arguments)]
+    pub fn read_from_step(
+        input_file: &str,
+        options: crate::format::bbs_3mf::LoadStrategy,
+        step_fn: Option<crate::format::step::ImportStepProgressFn>,
+        _step_is_utf8_fn: Option<crate::format::step::StepIsUtf8Fn>,
+        step_mesh_fn: Option<&mut dyn FnMut(&mut crate::format::step::Step, &mut f64, &mut f64, &mut bool) -> i32>,
+        mut linear_defletion: f64,
+        mut angle_defletion: f64,
+        mut is_split_compound: bool,
+        open_shell_warn_fn: Option<&dyn Fn(&[String])>,
+    ) -> Result<Model, crate::exception::RuntimeError> {
+        use crate::exception::RuntimeError;
+        use crate::format::bbs_3mf::LoadStrategy;
+        use crate::format::step::{Step, StepStatus};
+
+        let mut model = Model::new();
+        let mut is_cb_cancel = false;
+        // Step step_file(input_file, stepFn): the stepIsUtf8Fn argument is not passed on.
+        let mut step_file = Step::from_path(input_file, step_fn, None);
+        let mut status = step_file.load();
+        '_finished: {
+            if status != StepStatus::LoadSuccess {
+                break '_finished;
+            }
+            // if (open_shell_warn_fn && !step_file.get_unclosed_shells().empty())
+            //     open_shell_warn_fn(step_file.get_unclosed_shells());
+            let _ = open_shell_warn_fn;
+            if let Some(step_mesh_fn) = step_mesh_fn {
+                if step_mesh_fn(&mut step_file, &mut linear_defletion, &mut angle_defletion, &mut is_split_compound) == -1 {
+                    status = StepStatus::Cancel;
+                    break '_finished;
+                }
+            }
+
+            status = step_file.mesh(&mut model, &mut is_cb_cancel, is_split_compound, linear_defletion, angle_defletion);
+        }
+
+        match status {
+            StepStatus::Cancel => {
+                let empty_model = Model::new();
+                return Ok(empty_model);
+            }
+            StepStatus::LoadError => return Err(RuntimeError::new("Loading of a model file failed.".to_string())),
+            StepStatus::MeshError => {
+                return Err(RuntimeError::new("Meshing of a model file failed or no valid shape.".to_string()))
+            }
+            _ => {}
+        }
+
+        if model.objects.is_empty() {
+            return Err(RuntimeError::new("The supplied file couldn't be read because it's empty".to_string()));
+        }
+
+        for o in &mut model.objects {
+            o.input_file = input_file.to_string();
+        }
+
+        if options.contains(LoadStrategy::AddDefaultInstances) {
+            model.add_default_instances();
+        }
+
+        Ok(model)
+    }
+
+    /// Model.cpp:494-579 `read_from_archive(input_file, config, config_substitutions, out_file_type,
+    /// options, plate_data, project_presets, file_version, proFn, project, color_group_map,
+    /// volume_color_data, has_textures, has_unit)`: a model of a project file (3MF or zipped AMF).
+    /// `Err` is the exception the C++ lets propagate (`Slic3r::RuntimeError`, or one of the
+    /// loaders'). `plate_data`, `project_presets` and `file_version` are references here:
+    /// `load_bbs_3mf` dereferences them unconditionally (bbs_3mf.cpp:10004).
+    ///
+    /// FIDELITY-NOTE: the PrusaSlicer 3MF importer (`format/three_mf.rs` `load_3mf`) and the AMF
+    /// importer (`format/amf.rs` `load_amf`) take the earlier placeholder `calib::DynamicPrintConfig`
+    /// and the `bbs_3mf::ConfigSubstitutionContext` shim, which carry no options: on those two paths
+    /// the model is read as the C++ reads it, the configuration they read is not merged into
+    /// `config`. The BBS 3MF path (`load_bbs_3mf`) reads into `config` as the C++ does.
+    #[allow(clippy::too_many_arguments)]
+    pub fn read_from_archive(
+        input_file: &str,
+        config: &mut DynamicPrintConfig,
+        config_substitutions: &mut crate::config::ConfigSubstitutionContext,
+        out_file_type: &mut En3mfType,
+        options: crate::format::bbs_3mf::LoadStrategy,
+        plate_data: &mut crate::format::bbs_3mf::PlateDataPtrs,
+        project_presets: &mut Vec<crate::preset::Preset>,
+        file_version: &mut crate::semver::Semver,
+        pro_fn: Option<&crate::format::bbs_3mf::Import3mfProgressFn>,
+        project: Option<&mut crate::project_task::BBLProject>,
+        color_group_map: Option<&mut BTreeMap<i32, Vec<String>>>,
+        volume_color_data: Option<&mut crate::format::bbs_3mf::VolumeColorInfoMap>,
+        has_textures: Option<&mut bool>,
+        has_unit: Option<&mut bool>,
+    ) -> Result<Model, crate::exception::Exception> {
+        use crate::exception::{Exception, RuntimeError};
+        use crate::format::bbs_3mf::{
+            load_bbs_3mf, LoadStrategy, IMPORT_STAGE_ADD_INSTANCE, IMPORT_STAGE_CHECK_MODE_GCODE, IMPORT_STAGE_UPDATE_GCODE,
+        };
+
+        let iends_with = |s: &str, suffix: &str| s.to_lowercase().ends_with(&suffix.to_lowercase());
+
+        let mut model = Model::new();
+
+        let mut result = false;
+        // bool is_bbl_3mf; (uninitialized; every path that reads it writes it first)
+        let mut is_bbl_3mf = false;
+        if iends_with(input_file, ".3mf") {
+            let mut prusa_file_parser = crate::format::three_mf::PrusaFileParser::new();
+            if prusa_file_parser.check_3mf_from_prusa(input_file) {
+                // for Prusa 3mf
+                let mut prusa_config = crate::calib::DynamicPrintConfig::default();
+                let mut prusa_substitutions = crate::format::bbs_3mf::ConfigSubstitutionContext::new();
+                result = crate::format::three_mf::load_3mf(input_file, &mut prusa_config, &mut prusa_substitutions, &mut model, true)
+                    .map_err(|e| Exception::new(e.to_string()))?;
+                *out_file_type = En3mfType::FromPrusa;
+                // PrusaSlicer always writes the unit, and load_3mf() converts by it.
+                if let Some(has_unit) = has_unit {
+                    *has_unit = true;
+                }
+            } else {
+                // BBS: add part plate related logic
+                // BBS: backup & restore
+                result = load_bbs_3mf(
+                    input_file,
+                    config,
+                    config_substitutions,
+                    &mut model,
+                    plate_data,
+                    project_presets,
+                    Some(&mut is_bbl_3mf),
+                    file_version,
+                    pro_fn,
+                    options,
+                    project,
+                    0,
+                    color_group_map,
+                    volume_color_data,
+                    has_textures,
+                    has_unit,
+                )
+                .map_err(|e| Exception::new(e.0))?;
+            }
+        } else if iends_with(input_file, ".zip.amf") {
+            let mut amf_config = crate::calib::DynamicPrintConfig::default();
+            let mut amf_substitutions = crate::format::bbs_3mf::ConfigSubstitutionContext::new();
+            result = crate::format::amf::load_amf(input_file, Some(&mut amf_config), Some(&mut amf_substitutions), &mut model, Some(&mut is_bbl_3mf));
+        } else {
+            return Err(RuntimeError::new("Unknown file format. Input file must have .3mf or .zip.amf extension.".to_string()).into());
+        }
+
+        if *out_file_type != En3mfType::FromPrusa {
+            *out_file_type = if is_bbl_3mf { En3mfType::FromBBS } else { En3mfType::FromOther };
+        }
+
+        if !result {
+            return Err(RuntimeError::new("Loading of a model file failed.".to_string()).into());
+        }
+
+        for o in &mut model.objects {
+            o.input_file = input_file.to_string();
+        }
+
+        let mut cb_cancel = false;
+        if options.contains(LoadStrategy::AddDefaultInstances) {
+            model.add_default_instances();
+            log::info!("import 3mf IMPORT_STAGE_ADD_INSTANCE\n");
+            if let Some(pro_fn) = pro_fn {
+                pro_fn(IMPORT_STAGE_ADD_INSTANCE, 0, 1, &mut cb_cancel);
+                if cb_cancel {
+                    return Err(RuntimeError::new("Canceled".to_string()).into());
+                }
+            }
+        }
+
+        log::info!("import 3mf IMPORT_STAGE_UPDATE_GCODE\n");
+        if let Some(pro_fn) = pro_fn {
+            pro_fn(IMPORT_STAGE_UPDATE_GCODE, 0, 1, &mut cb_cancel);
+            if cb_cancel {
+                return Err(RuntimeError::new("Canceled".to_string()).into());
+            }
+        }
+
+        //BBS
+        for plate_gcodes in model.plates_custom_gcodes.values_mut() {
+            crate::custom_g_code::check_mode_for_custom_gcode_per_print_z(plate_gcodes);
+        }
+
+        log::info!("import 3mf IMPORT_STAGE_CHECK_MODE_GCODE\n");
+        if let Some(pro_fn) = pro_fn {
+            pro_fn(IMPORT_STAGE_CHECK_MODE_GCODE, 0, 1, &mut cb_cancel);
+            if cb_cancel {
+                return Err(RuntimeError::new("Canceled".to_string()).into());
+            }
+        }
+
+        crate::print_config::config_def::handle_legacy_sla(config).map_err(|e| Exception::new(e.to_string()))?;
+
+        Ok(model)
+    }
+
     /// Insert a ModelObject into the objects collection and return its index (the loaders' form
     /// of Model.cpp:623 `add_object(const ModelObject &other)`, taking the object as it is).
-    pub fn add_object(&mut self, object: ModelObject) -> usize {
+    pub fn add_object(&mut self, mut object: ModelObject) -> usize {
         let id = self.objects.len();
+        object.set_model(Some(self.id()));
         self.objects.push(object);
         id
     }
 
     /// Model.cpp:581-585 `ModelObject* Model::add_object()`
     pub fn add_object_new(&mut self) -> &mut ModelObject {
-        self.objects.push(ModelObject::new_for_model());
+        // new ModelObject(this)
+        let mut new_object = ModelObject::new_for_model();
+        new_object.set_model(Some(self.id()));
+        self.objects.push(new_object);
         self.objects.last_mut().unwrap()
     }
 
     /// Model.cpp:605-621 `add_object(const char *name, const char *path, TriangleMesh &&mesh)`
     pub fn add_object_with_mesh(&mut self, name: &str, path: &str, mesh: ModelMesh) -> &mut ModelObject {
-        let new_object = ModelObject::new_for_model();
+        // new ModelObject(this)
+        let mut new_object = ModelObject::new_for_model();
+        new_object.set_model(Some(self.id()));
         self.objects.push(new_object);
         let object_idx = self.objects.len() as i32 - 1;
         let new_object = self.objects.last_mut().unwrap();
@@ -3984,6 +4301,7 @@ impl Model {
     /// FIDELITY-NOTE: the backup bookkeeping (`need_backup`) has no file side here.
     pub fn add_object_clone(&mut self, other: &ModelObject) -> &mut ModelObject {
         let mut new_object = ModelObject::new_clone(other);
+        new_object.set_model(Some(self.id()));
         // BBS: set default extruder id to 1
         if !new_object.config.has("extruder") || new_object.config.extruder() == 0 {
             new_object.config.set_key_value("extruder", Box::new(crate::config::ConfigOptionInt::with_value(1)));
@@ -4083,14 +4401,24 @@ impl Model {
 
     /// Model.cpp:787-794 `add_material(t_model_material_id material_id)`
     pub fn add_material(&mut self, material_id: &str) -> &mut ModelMaterial {
+        let created = !self.materials.contains_key(material_id);
         materials_add(&mut self.materials, material_id);
-        self.materials.get_mut(material_id).unwrap()
+        let this = Some(self.id());
+        let material = self.materials.get_mut(material_id).unwrap();
+        if created {
+            // new ModelMaterial(this)
+            material.set_model(this);
+        }
+        material
     }
 
     /// Model.cpp:796-807 `add_material(material_id, const ModelMaterial &other)`
     pub fn add_material_copy(&mut self, material_id: &str, other: &ModelMaterial) -> &mut ModelMaterial {
         materials_add_copy(&mut self.materials, material_id, other);
-        self.materials.get_mut(material_id).unwrap()
+        let this = Some(self.id());
+        let material = self.materials.get_mut(material_id).unwrap();
+        material.set_model(this);
+        material
     }
 
     /// Model.hpp:1870-1873
@@ -4467,6 +4795,19 @@ impl Model {
         self.backup_path.clone()
     }
 
+    /// Model.cpp:1191-1202 `remove_backup_path_if_exist()`: remove the backup directory (when it
+    /// exists) and forget it.
+    pub fn remove_backup_path_if_exist(&mut self) {
+        if !self.backup_path.is_empty() {
+            let temp_path = std::path::PathBuf::from(&self.backup_path);
+            if temp_path.exists() {
+                log::info!("model {:p}, id {} remove backup_path {}", self, self.id().id, self.backup_path);
+                let _ = std::fs::remove_dir_all(&temp_path);
+            }
+            self.backup_path.clear();
+        }
+    }
+
     /// Model.cpp:1204-1216 `get_backup_path(const std::string &sub_path)`
     pub fn get_backup_path_sub(&mut self, sub_path: &str) -> String {
         let path = format!("{}/{}", self.get_backup_path(), sub_path);
@@ -4688,6 +5029,80 @@ impl Model {
         thermal_length
     }
 
+    /// Model.cpp:4091-4148 `setPrintSpeedTable(const DynamicPrintConfig& config, const PrintConfig& print_config)`:
+    /// set the print speed table and find the maximum speed. `print_speed_map` is
+    /// `Model::printSpeedMap`; `bed_exclude_area` is `print_config.bed_exclude_area.values` (the
+    /// static PrintConfig has no struct in the crate with that member; `g_code.rs` takes the
+    /// option the same way).
+    pub fn set_print_speed_table(config: &DynamicPrintConfig, bed_exclude_area: &[crate::geometry::Vec2d], print_speed_map: &mut GlobalSpeedMap) {
+        let has = |key: &str| {
+            use crate::config::ConfigOptionResolver;
+            config.optptr(key).is_some()
+        };
+        //Slic3r::DynamicPrintConfig config = wxGetApp().preset_bundle->full_config();
+        print_speed_map.max_speed = 0.0;
+
+        // todo multi_extruders: the following parameters need get exact filament id
+        if has("inner_wall_speed") {
+            print_speed_map.perimeter_speed = *config.opt_float_nullable("inner_wall_speed", 0);
+            if print_speed_map.perimeter_speed > print_speed_map.max_speed {
+                print_speed_map.max_speed = print_speed_map.perimeter_speed;
+            }
+        }
+        if has("outer_wall_speed") {
+            print_speed_map.external_perimeter_speed = *config.opt_float_nullable("outer_wall_speed", 0);
+            print_speed_map.max_speed = std_max(print_speed_map.max_speed, print_speed_map.external_perimeter_speed);
+        }
+        if has("sparse_infill_speed") {
+            print_speed_map.infill_speed = *config.opt_float_nullable("sparse_infill_speed", 0);
+            if print_speed_map.infill_speed > print_speed_map.max_speed {
+                print_speed_map.max_speed = print_speed_map.infill_speed;
+            }
+        }
+        if has("internal_solid_infill_speed") {
+            print_speed_map.solid_infill_speed = *config.opt_float_nullable("internal_solid_infill_speed", 0);
+            if print_speed_map.solid_infill_speed > print_speed_map.max_speed {
+                print_speed_map.max_speed = print_speed_map.solid_infill_speed;
+            }
+        }
+        if has("top_surface_speed") {
+            print_speed_map.top_solid_infill_speed = *config.opt_float_nullable("top_surface_speed", 0);
+            if print_speed_map.top_solid_infill_speed > print_speed_map.max_speed {
+                print_speed_map.max_speed = print_speed_map.top_solid_infill_speed;
+            }
+        }
+        if has("support_speed") {
+            print_speed_map.support_speed = *config.opt_float_nullable("support_speed", 0);
+
+            if print_speed_map.support_speed > print_speed_map.max_speed {
+                print_speed_map.max_speed = print_speed_map.support_speed;
+            }
+        }
+
+        //auto& print = wxGetApp().plater()->get_partplate_list().get_current_fff_print();
+        //auto print_config = print.config();
+        //printSpeedMap.bed_poly.points = get_bed_shape(*(wxGetApp().plater()->config()));
+        print_speed_map.bed_poly.points = get_bed_shape(config, true);
+        let excluse_area_points = bed_exclude_area;
+        let mut exclude_polys: Vec<Polygon> = Vec::new();
+        let mut exclude_poly = Polygon::new();
+        for i in 0..excluse_area_points.len() {
+            let pt = excluse_area_points[i];
+            exclude_poly.points.push(crate::Point::new(coord_scale(pt.x), coord_scale(pt.y)));
+            if i % 4 == 3 {
+                // exclude areas are always rectangle
+                exclude_polys.push(exclude_poly.clone());
+                exclude_poly.points.clear();
+            }
+        }
+        let available_bed = crate::clipper_utils::diff_polygons_raw_clib(&[print_speed_map.bed_poly.clone()], &exclude_polys);
+        if !available_bed.is_empty() {
+            print_speed_map.bed_poly = available_bed.into_iter().next().unwrap();
+        } else {
+            print_speed_map.bed_poly.points.clear();
+        }
+    }
+
     /// Model.cpp:4151-4180 `setExtruderParams(const DynamicPrintConfig &config, int filament_count)`:
     /// the temperature of the heat end and bed and the material of each extruder, as the new
     /// `Model::extruderParamsMap`.
@@ -4863,6 +5278,9 @@ pub struct ModelObject {
     m_raw_bounding_box_valid: Cell<bool>,
     m_raw_mesh_bounding_box: Cell<BoundingBoxf3>,
     m_raw_mesh_bounding_box_valid: Cell<bool>,
+    /// Model.hpp:659 `Model *m_model = nullptr;`: the parent model, held as its ID
+    /// (FIDELITY-NOTE (back pointers) at the top of this file).
+    m_model: Option<ObjectID>,
 }
 
 /// ModelObject methods for geometry and instance management.
@@ -4907,6 +5325,7 @@ impl ModelObject {
             m_raw_bounding_box_valid: Cell::new(false),
             m_raw_mesh_bounding_box: Cell::new(BoundingBoxf3::new()),
             m_raw_mesh_bounding_box_valid: Cell::new(false),
+            m_model: None,
         }
     }
 
@@ -4932,9 +5351,40 @@ impl ModelObject {
 
     /// Model.hpp:650-654
     fn set_new_unique_id(&mut self) {
+        let old_id = self.id();
         self.base.set_new_unique_id();
         self.config.set_new_unique_id();
         self.layer_height_profile.set_new_unique_id();
+        // FIDELITY-NOTE (back pointers): the children's handles follow the new ID.
+        self.relink_children_from(old_id);
+    }
+
+    /// The handles of the volumes and instances that pointed at this object under `old_id` are
+    /// re-pointed at its current ID (FIDELITY-NOTE (back pointers) at the top of this file).
+    fn relink_children_from(&mut self, old_id: ObjectID) {
+        let this = Some(self.id());
+        for model_volume in &mut self.volumes {
+            if model_volume.get_object() == Some(old_id) {
+                model_volume.set_model_object(this);
+            }
+        }
+        for model_instance in &mut self.instances {
+            if model_instance.get_object() == Some(old_id) {
+                model_instance.set_model_object(this);
+            }
+        }
+    }
+
+    /// Model.hpp:398 `Model* get_model()` (and 399, its const overload): the ID of the parent
+    /// model, `None` for `nullptr`.
+    pub fn get_model(&self) -> Option<ObjectID> {
+        self.m_model
+    }
+
+    /// Model.hpp:673 `void set_model(Model *model) { m_model = model; }`: `model` is the ID of
+    /// the parent model, `None` for `nullptr`.
+    pub fn set_model(&mut self, model: Option<ObjectID>) {
+        self.m_model = model;
     }
 
     /// Model.cpp:1407-1415
@@ -4965,7 +5415,8 @@ impl ModelObject {
     /// Model.cpp:1450-1461 `add_volume(const TriangleMesh &mesh, bool modify_to_center_geometry)`
     /// and 1463-1474 `add_volume(TriangleMesh &&mesh, ModelVolumeType type, bool modify_to_center_geometry)`.
     pub fn add_volume_mesh(&mut self, mesh: ModelMesh, type_: ModelVolumeType, modify_to_center_geometry: bool) -> &mut ModelVolume {
-        let v = ModelVolume::new(mesh, type_);
+        let mut v = ModelVolume::new(mesh, type_);
+        v.set_model_object(Some(self.id()));
         self.volumes.push(v);
         if modify_to_center_geometry {
             self.volumes.last_mut().unwrap().center_geometry_after_creation(true);
@@ -4977,6 +5428,7 @@ impl ModelObject {
     /// Model.cpp:1476-1491 `add_volume(const ModelVolume &other, ModelVolumeType type)`
     pub fn add_volume_copy(&mut self, other: &ModelVolume, type_: ModelVolumeType) -> &mut ModelVolume {
         let mut v = ModelVolume::new_copy_of(other);
+        v.set_model_object(Some(self.id()));
         if type_ != ModelVolumeType::Invalid && v.type_() != type_ {
             v.set_type(type_);
         }
@@ -4990,7 +5442,8 @@ impl ModelObject {
 
     /// Model.cpp:1493-1502 `add_volume(const ModelVolume &other, TriangleMesh &&mesh)`
     pub fn add_volume(&mut self, other: &ModelVolume, mesh: ModelMesh) -> &mut ModelVolume {
-        let v = ModelVolume::new_copy_with_mesh(other, mesh);
+        let mut v = ModelVolume::new_copy_with_mesh(other, mesh);
+        v.set_model_object(Some(self.id()));
         self.volumes.push(v);
         self.volumes.last_mut().unwrap().center_geometry_after_creation(true);
         self.invalidate_bounding_box();
@@ -5001,6 +5454,7 @@ impl ModelObject {
     pub fn add_volume_with_shared_mesh(&mut self, other: &ModelVolume, type_: ModelVolumeType) -> &mut ModelVolume {
         let mesh = other.m_mesh.clone().unwrap_or_else(|| Arc::new(ModelMesh::new()));
         let mut v = ModelVolume::new_shared(mesh, ModelVolumeType::ModelPart);
+        v.set_model_object(Some(self.id()));
         if type_ != ModelVolumeType::Invalid && v.type_() != type_ {
             v.set_type(type_);
         }
@@ -5090,7 +5544,8 @@ impl ModelObject {
 
     /// Model.cpp:1603-1612 `add_instance()`
     pub fn add_instance(&mut self) -> &mut ModelInstance {
-        let i = ModelInstance::new();
+        let mut i = ModelInstance::new();
+        i.set_model_object(Some(self.id()));
         self.instances.push(i);
         self.invalidate_bounding_box();
         self.instances.last_mut().unwrap()
@@ -5099,13 +5554,16 @@ impl ModelObject {
     /// Add a new instance at the specified position (loaders); returns its index.
     pub fn add_instance_at(&mut self, position: Point3F) -> usize {
         let id = self.instances.len();
-        self.instances.push(ModelInstance::at(position));
+        let mut i = ModelInstance::at(position);
+        i.set_model_object(Some(self.id()));
+        self.instances.push(i);
         id
     }
 
     /// Model.cpp:1614-1620 `add_instance(const ModelInstance &other)`
     pub fn add_instance_copy(&mut self, other: &ModelInstance) -> &mut ModelInstance {
-        let i = ModelInstance::new_from(other);
+        let mut i = ModelInstance::new_from(other);
+        i.set_model_object(Some(self.id()));
         self.instances.push(i);
         self.invalidate_bounding_box();
         self.instances.last_mut().unwrap()
@@ -5489,6 +5947,7 @@ impl ModelObject {
             ConversionType::ConvToMeter => 0.001,
         };
 
+        new_object.set_model(None);
         new_object.brim_points.clear();
         new_object.clear_volumes();
         new_object.input_file.clear();
@@ -5724,6 +6183,7 @@ impl ModelObject {
     /// Model.cpp:2204-2213 `clone_for_cut(ModelObject **obj)`
     pub fn clone_for_cut(&self) -> ModelObject {
         let mut obj = ModelObject::new_clone(self);
+        obj.set_model(self.get_model());
         obj.clear_volumes();
         obj.input_file.clear();
         obj
@@ -5872,7 +6332,9 @@ impl ModelObject {
                 }
 
                 // XXX: this seems to be the only real usage of m_model, maybe refactor this so that it's not needed?
+                // m_model->add_object(): the new object's parent is this object's model.
                 let mut new_object = ModelObject::new_for_model();
+                new_object.set_model(self.m_model);
                 //BBS: refine the config logic
                 //use object as basic, and add volume's config
                 if meshes_len == 1 {
@@ -6542,6 +7004,80 @@ pub fn add_cut_volume(
         vol.m_material_id = src_volume.material_id();
     }
     vol.cut_info = src_volume.cut_info;
+}
+
+// =============================================================================================
+// PrintConfig.cpp:11450-11506 — the bed shape of a configuration (used by setPrintSpeedTable)
+// =============================================================================================
+
+/// PrintConfig.cpp:11450-11456 `static Points to_points(const std::vector<Vec2d> &dpts)`
+fn print_config_to_points(dpts: &[crate::geometry::Vec2d]) -> Vec<crate::Point> {
+    let mut pts = Vec::with_capacity(dpts.len());
+    for v in dpts {
+        pts.push(crate::Point::new(coord_scale(v.x), coord_scale(v.y)));
+    }
+    pts
+}
+
+/// PrintConfig.cpp:11458-11475 `Polygon get_shared_poly(const std::vector<Pointfs>& extruder_polys)`
+///
+/// FIDELITY-NOTE: a function of PrintConfig.cpp, which `print_config.rs` has not ported yet; it is
+/// here for `Model::set_print_speed_table` and belongs there.
+fn get_shared_poly(extruder_polys: &[Vec<crate::geometry::Vec2d>]) -> Polygon {
+    let mut result = Polygon::new();
+    for index in 0..extruder_polys.len() {
+        let extruder_area = &extruder_polys[index];
+        if index == 0 {
+            result.points = print_config_to_points(extruder_area);
+        } else {
+            let mut extruer_poly = Polygon::new();
+            extruer_poly.points = print_config_to_points(extruder_area);
+            let result_polygon = crate::clipper_utils::intersection_polygons_raw_clib(&[extruer_poly], &[result.clone()]);
+            if result_polygon.is_empty() {
+                return Polygon::new();
+            }
+            result = result_polygon[0].clone();
+        }
+    }
+    result
+}
+
+/// PrintConfig.cpp:11477-11506 `Points get_bed_shape(const DynamicPrintConfig &config, bool use_share)`
+///
+/// FIDELITY-NOTE: a function of PrintConfig.cpp, which `print_config.rs` has not ported yet; it is
+/// here for `Model::set_print_speed_table` and belongs there.
+fn get_bed_shape(config: &DynamicPrintConfig, use_share: bool) -> Vec<crate::Point> {
+    let bed_shape_opt = config.opt::<crate::config::ConfigOptionPoints>("printable_area");
+    let Some(bed_shape_opt) = bed_shape_opt else {
+        // Here, it is certain that the bed shape is missing, so an infinite one
+        // has to be used, but still, the center of bed can be queried
+        if let Some(center_opt) = config.opt::<crate::config::ConfigOptionPoint>("center") {
+            return vec![crate::Point::new(
+                (center_opt.value.x / SCALING_FACTOR) as crate::Coord,
+                (center_opt.value.y / SCALING_FACTOR) as crate::Coord,
+            )];
+        }
+
+        return Vec::new();
+    };
+
+    let mut bed_poly = Polygon::new();
+    if use_share {
+        let extruder_area_opt = config.opt::<crate::config::ConfigOptionPointsGroups>("extruder_printable_area");
+        if let Some(extruder_area_opt) = extruder_area_opt.filter(|o| !o.values.is_empty()) {
+            let extruder_areas = &extruder_area_opt.values;
+            bed_poly = get_shared_poly(extruder_areas);
+            if bed_poly.points.is_empty() {
+                bed_poly.points = print_config_to_points(&bed_shape_opt.values);
+            }
+        } else {
+            bed_poly.points = print_config_to_points(&bed_shape_opt.values);
+        }
+    } else {
+        bed_poly.points = print_config_to_points(&bed_shape_opt.values);
+    }
+
+    bed_poly.points
 }
 
 // =============================================================================================

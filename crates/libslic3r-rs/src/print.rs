@@ -6412,6 +6412,8 @@ pub mod faithful {
         /// The number of layers / support layers the slicing steps made (none here).
         pub m_layer_count: usize,
         pub m_support_layer_count: usize,
+        /// Print.hpp:685 `SlicingParameters m_slicing_params`
+        pub m_slicing_params: crate::slicing::SlicingParams,
     }
 
     impl PrintObject {
@@ -6440,6 +6442,7 @@ pub mod faithful {
                 has_variable_layer_heights: false,
                 m_layer_count: 0,
                 m_support_layer_count: 0,
+                m_slicing_params: crate::slicing::SlicingParams::zero_initialized(),
             }
         }
 
@@ -6558,6 +6561,10 @@ pub mod faithful {
         /// Print.hpp:526
         pub fn has_support_material(&self) -> bool {
             self.has_support() || self.has_raft()
+        }
+        /// Print.hpp:515 `const SlicingParameters& slicing_parameters() const`
+        pub fn slicing_parameters(&self) -> &crate::slicing::SlicingParams {
+            &self.m_slicing_params
         }
         /// Print.hpp:527-528
         pub fn support_stage_times(&self) -> &SupportStageTimes {
