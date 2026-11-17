@@ -4735,14 +4735,19 @@ for k in ("wipe_tower_x", "wipe_tower_y"):
 assert not bad, "; ".join(bad)
 ' e4c2-$e.gcode e4c3-$e.gcode e4s2-$e.gcode e4s3-$e.gcode || { fail "E4 $e: a plate without its own wipe_tower entry does not stand on the option's default corner"; e4_ok=0; }
 done
-# The same project loaded the way Bambu Studio loads it (the default): the app
-# gives a plate without a tower position the first plate's, here 100/120, and
-# keeps it inside the plate (PartPlate.cpp 5146-5148, 5153-5157 at
-# v02.09.01.70). OrcaSlicer and Snapmaker Orca do not touch the tower at load.
+# The same project loaded the way the apps load it (the default): a plate the
+# list holds no tower position for takes the first plate's, here 100/120.
+# Bambu Studio fills the list when it opens the project and keeps the tower
+# inside the plate (PartPlate.cpp 5146-5148, 5153-5157 at v02.09.01.70);
+# OrcaSlicer reads a short list as its first value when it slices (get_at,
+# Config.hpp 627 at 8500fcd).
 if [ $e4_ok = 1 ]; then
-    for p in 2 3; do
-        run e4a$p "$B" e4-bambu.3mf --plate $p -o e4a$p.gcode
-        [ "$(rc e4a$p)" = 0 ] && [ -s e4a$p.gcode ] || { show e4a$p; fail "E4 bambu: app-style plate $p exit $(rc e4a$p)"; e4_ok=0; }
+    for e in bambu orca; do
+        bin=$B; [ $e = orca ] && bin=$O
+        for p in 2 3; do
+            run e4a$p-$e "$bin" e4-$e.3mf --plate $p -o e4a$p-$e.gcode
+            [ "$(rc e4a$p-$e)" = 0 ] && [ -s e4a$p-$e.gcode ] || { show e4a$p-$e; fail "E4 $e: app-style plate $p exit $(rc e4a$p-$e)"; e4_ok=0; }
+        done
     done
     [ $e4_ok = 1 ] && { py '
 import re, sys
@@ -4758,9 +4763,9 @@ def tower_corner(path):
 for path in sys.argv[1:]:
     x, y = tower_corner(path)
     assert abs(x - 100.0) < 3 and abs(y - 120.0) < 3, (path, x, y, "want the first plate position 100/120, less the brim")
-' e4a2.gcode e4a3.gcode || { fail "E4 bambu: loaded the app way, a plate without its own tower position does not take the first plate's"; e4_ok=0; }; }
+' e4a2-bambu.gcode e4a3-bambu.gcode e4a2-orca.gcode e4a3-orca.gcode || { fail "E4: loaded the app way, a plate without its own tower position does not take the first plate's"; e4_ok=0; }; }
 fi
-[ $e4_ok = 1 ] && echo "PASS: E4 one-value settings are not padded with 0; a plate without its entry stands on the option's default tower corner (both engines)"
+[ $e4_ok = 1 ] && echo "PASS: E4 one-value settings are not padded with 0; a plate without its entry takes the first plate's tower position as the apps load it, and the option's default corner as saved (both engines)"
 
 # inherits_group and different_settings_to_system carry one entry per preset in
 # the project's order - process, filament 1 .. filament N, printer - or are

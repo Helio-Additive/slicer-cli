@@ -16,13 +16,12 @@ void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, int pla
         return;
     if (plate_index >= plate_count)
         return;
-    auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x", true);
-    auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y", true);
-    // One position per plate; a plate the file has none for takes the first
-    // plate's (PartPlate.cpp 5146-5148). --project-settings-as-saved leaves
-    // such a list as it is, as the official command line does.
-    wipe_x->values.resize(plate_count, wipe_x->values.empty() ? 0.0 : wipe_x->values.front());
-    wipe_y->values.resize(plate_count, wipe_y->values.empty() ? 0.0 : wipe_y->values.front());
+    project_load_tower_positions_per_plate(config, plate_count);
+    auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x");
+    auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y");
+    if (wipe_x == nullptr || wipe_y == nullptr || (int)wipe_x->values.size() <= plate_index ||
+        (int)wipe_y->values.size() <= plate_index)
+        return;
     Vec3d tower = tower_size(plate_filaments);
     if (is_approx(tower(0), 0.0) || is_approx(tower(1), 0.0))
         tower = tower_size(2);
@@ -41,6 +40,14 @@ void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, int pla
     wipe_y->set_at(&wt_y_opt, plate_index, 0);
 }
 #endif
+
+void project_load_tower_positions_per_plate(Slic3r::DynamicPrintConfig& config, int plate_count) {
+    using namespace Slic3r;
+    for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
+        if (auto* opt = config.option<ConfigOptionFloats>(key); opt != nullptr && !opt->values.empty() &&
+                                                                 (int)opt->values.size() < plate_count)
+            opt->values.resize(plate_count, opt->values.front());
+}
 
 std::vector<std::string> settings_replaced_by_presets(const Slic3r::DynamicPrintConfig& file,
                                                       const Slic3r::DynamicPrintConfig& loaded) {

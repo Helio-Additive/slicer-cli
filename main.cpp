@@ -9472,6 +9472,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         });
                 }
             }
+#else
+        // OrcaSlicer and Snapmaker Orca keep a project's saved tower position
+        // when they open it (cli_project_load.hpp), and their slice reads a
+        // plate the list holds no position for as the first plate's
+        // (get_at, Config.hpp 627 at 8500fcd; 438 at bac6fd5).
+        if (rs.project_loaded_like_desktop && !o.arrange_forced())
+            slicer_cli::project_load_tower_positions_per_plate(config, (int)rs.plates.size());
 #endif
         const bool has_unplaced_objects = std::any_of(model.objects.begin(), model.objects.end(),
             [](const Slic3r::ModelObject* obj) { return obj->instances.empty(); });

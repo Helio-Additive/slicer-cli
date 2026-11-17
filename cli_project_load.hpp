@@ -34,6 +34,13 @@ void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, int pla
                                      const std::function<Slic3r::Vec3d(int)>& tower_size);
 #endif
 
+/// One tower position per plate, a plate the list holds none for taking the
+/// first plate's, as the desktop apps read it (Bambu Studio at load,
+/// PartPlate.cpp 5146-5148; all three at slice, ConfigOptionVector::get_at).
+/// --project-settings-as-saved does not call it, so such a list keeps the
+/// official command line's reading.
+void project_load_tower_positions_per_plate(Slic3r::DynamicPrintConfig& config, int plate_count);
+
 /// The settings whose value in the project file the presets replaced when the
 /// project was loaded the way its desktop app loads it: the desktop drops them
 /// without a word, and a caller that edited the file must be able to read what
