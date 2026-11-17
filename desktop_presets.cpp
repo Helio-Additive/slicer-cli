@@ -800,4 +800,49 @@ Slic3r::DynamicPrintConfig load_project_embedded_presets(Slic3r::PresetBundle& b
 }
 #endif
 
+bool record_changed_settings(Slic3r::PresetBundle& bundle, const std::string& path,
+                             Slic3r::DynamicPrintConfig& project, const std::set<std::string>* given,
+                             std::string& error) {
+    using namespace Slic3r;
+    try {
+        DynamicPrintConfig copy = project;
+        const auto* filaments = copy.option<ConfigOptionStrings>("filament_settings_id");
+        const size_t slots = (filaments ? filaments->values.size() : 1) + 2;
+        // Every key listed as changed: the load then replaces none of the
+        // sliced values with a preset's (Preset.cpp load_external_preset ->
+        // update_non_diff_values_to_base_config), and the presets the bundle
+        // ends with are the run's own settings over their system presets.
+        copy.option<ConfigOptionStrings>("different_settings_to_system", true)
+            ->values.assign(slots, escape_strings_cstyle(copy.keys()));
+        const auto version = Semver::parse(SLIC3R_VERSION);
+        bundle.load_config_model(path, std::move(copy), version ? *version : Semver());
+#ifdef ENGINE_SNAPMAKER
+        const DynamicPrintConfig full = bundle.full_config();
+#else
+        const DynamicPrintConfig full = bundle.full_config(false);
+#endif
+        std::vector<std::string> changed;
+        if (const auto* list = full.option<ConfigOptionStrings>("different_settings_to_system"))
+            changed = list->values;
+        changed.resize(slots);
+        std::vector<std::string>& listed =
+            project.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
+        listed.resize(slots);
+        for (size_t slot = 0; slot < slots; ++slot) {
+            std::vector<std::string> keys, found;
+            unescape_strings_cstyle(listed[slot], keys);
+            unescape_strings_cstyle(changed[slot], found);
+            for (const std::string& key : found)
+                if ((given == nullptr || given->count(key) != 0) &&
+                    std::find(keys.begin(), keys.end(), key) == keys.end())
+                    keys.push_back(key);
+            listed[slot] = escape_strings_cstyle(keys);
+        }
+        return true;
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    }
+}
+
 } // namespace slicer_cli

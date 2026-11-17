@@ -132,11 +132,11 @@ compiles about 1,500 engine files.
   result back when there is one, and states that the programs that call
   slicer-cli get their own PRs for it before they use the release that
   carries the change.
-- **A Bambu Studio project loads the way the Bambu Studio app loads it.** The
-  app keeps the settings the maker changed and takes every other value from
-  the preset it has today; slicing the file's saved copy as it stands was a
-  defect of `slicer_cli` (the other two programs already loaded such projects
-  the app's way). `--project-settings-as-saved` slices the saved copy.
+- **A project loads the way its desktop app loads it, on all three programs.**
+  Each app keeps the settings the maker changed and takes every other value
+  from the preset it has today, for its own projects too.
+  `--project-settings-as-saved` slices the saved copy. A step an app does on
+  load is checked in all three apps' source before it is ported for one.
 - **slicer-cli takes what the official programs take, and what their apps'
   screens choose.** On an engine update, list every setting each official
   command line reads from the flags (`m_extra_config`) and every choice the

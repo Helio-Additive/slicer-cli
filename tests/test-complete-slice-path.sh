@@ -1316,6 +1316,11 @@ with zipfile.ZipFile("ftproj/out/ftproj.3mf") as zin, zipfile.ZipFile("ftsurf.3m
             d.update({"top_surface_filament_id": "2", "enable_support": "0", "raft_layers": "0",
                       "enable_prime_tower": "1", "wipe_tower_x": ["118"], "wipe_tower_y": ["118"],
                       "filament_colour": ["#FF0000", "#0000FF"]})
+            # The changes of the maker, as the app lists them when it saves: a
+            # project loads over the presets and keeps only what is listed.
+            diff = d.get("different_settings_to_system") or [""]
+            diff[0] = "top_surface_filament_id;enable_support;raft_layers;enable_prime_tower"
+            d["different_settings_to_system"] = diff
             data = json.dumps(d, indent=4).encode()
         zout.writestr(item, data)
 '
@@ -1363,6 +1368,9 @@ with zipfile.ZipFile("k2proj/out/k2proj.3mf") as zin, zipfile.ZipFile("k2surf.3m
             d = json.loads(data)
             d.update({"top_surface_filament_id": "2", "enable_support": "0", "raft_layers": "0",
                       "enable_prime_tower": "1", "filament_colour": ["#FF0000", "#0000FF"]})
+            diff = d.get("different_settings_to_system") or [""]
+            diff[0] = "top_surface_filament_id;enable_support;raft_layers;enable_prime_tower"
+            d["different_settings_to_system"] = diff
             data = json.dumps(d, indent=4).encode()
         zout.writestr(item, data)
 '
