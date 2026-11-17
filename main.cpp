@@ -5486,6 +5486,11 @@ static void apply_file_inherits(const std::string& argv0, const std::string& fil
     try {
         Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
         own.load_from_json(file, substitutions, /*load_inherits_in_config=*/false, key_values, reason);
+#ifdef ENGINE_SNAPMAKER
+        // This file's own values are laid over `config` again below, so the
+        // flow-type words its first read converted are converted here too.
+        slicer_cli::convert_flow_type_spelling(own, substitutions, file, /*announce=*/false);
+#endif
     } catch (...) {
         return;
     }

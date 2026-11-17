@@ -487,6 +487,28 @@ PY
     else
         record "flow-type-unknown-word-refused" 0 "exit=$UNKNOWN_EXIT: want a refusal naming the value"
     fi
+    # A settings file that inherits a shipped preset is read twice (its own
+    # values, then over the preset it inherits); both reads keep the flow type.
+    printf '%s\n' '{"type":"machine","name":"Flow test U1","from":"User","inherits":"Snapmaker U1 (0.4 nozzle)","nozzle_volume_type":["High Flow","Standard","Standard","Standard"]}' > "$FLOW_DIR/machine.json"
+    python3 - "$FLOW_DIR/cube.stl" <<'PY'
+import sys
+v = [(0,0,0),(10,0,0),(10,10,0),(0,10,0),(0,0,10),(10,0,10),(10,10,10),(0,10,10)]
+f = [(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)]
+with open(sys.argv[1], "w") as o:
+    o.write("solid c\n")
+    for t in f:
+        o.write("facet normal 0 0 0\nouter loop\n" + "".join("vertex %g %g %g\n" % v[i] for i in t) + "endloop\nendfacet\n")
+    o.write("endsolid c\n")
+PY
+    set +e
+    "$BINARY" "$FLOW_DIR/cube.stl" --machine "$FLOW_DIR/machine.json" --slice 1 --outputdir "$FLOW_DIR/c" > "$FLOW_DIR/c.out" 2>&1; MACHINE_EXIT=$?
+    set -e
+    MACHINE_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/c/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r')
+    if [ "$MACHINE_EXIT" -eq 0 ] && [ "$MACHINE_HEADER" = "high_flow,standard,standard,standard" ]; then
+        record "flow-type-bambu-spelling-in-inheriting-settings-file" 1
+    else
+        record "flow-type-bambu-spelling-in-inheriting-settings-file" 0 "exit=$MACHINE_EXIT nozzle_volume_type='$MACHINE_HEADER' (want high_flow,standard,standard,standard)"
+    fi
     rm -rf "$GC" "$FLOW_DIR"
 fi
 

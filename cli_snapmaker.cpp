@@ -1205,7 +1205,7 @@ bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config) 
 }
 
 void convert_flow_type_spelling(Slic3r::DynamicPrintConfig& config, Slic3r::ConfigSubstitutionContext& ctx,
-                                const std::string& source) {
+                                const std::string& source, bool announce) {
     // Bambu Studio and OrcaSlicer spell the flow type "Standard" / "High Flow"
     // (BambuStudio PrintConfig.cpp 897-903 at v02.09.01.70; OrcaSlicer
     // PrintConfig.cpp 573-576 at 8500fcd), and a public Snapmaker U1 project
@@ -1244,7 +1244,8 @@ void convert_flow_type_spelling(Slic3r::DynamicPrintConfig& config, Slic3r::Conf
             ++it;
             continue;
         }
-        emit({{"event", "config_normalized"},
+        if (announce)
+            emit({{"event", "config_normalized"},
               {"tag", "FlowTypeSpellingConverted"},
               {"source", source},
               {"opt_key", key},
