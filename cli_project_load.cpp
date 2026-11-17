@@ -14,13 +14,15 @@ void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, int pla
     using namespace Slic3r;
     if (plate_index < 0)
         return;
-    auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x", true);
-    auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y", true);
-    // A plate with no entry of its own takes the first plate's (PartPlate.cpp 5147-5148).
-    if ((int)wipe_x->values.size() <= plate_index)
-        wipe_x->values.resize(plate_index + 1, wipe_x->values.empty() ? 0.0 : wipe_x->values.front());
-    if ((int)wipe_y->values.size() <= plate_index)
-        wipe_y->values.resize(plate_index + 1, wipe_y->values.empty() ? 0.0 : wipe_y->values.front());
+    auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x");
+    auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y");
+    // Only a position the plate has. The desktop saves one per plate; a file
+    // with fewer is not the desktop's, and its other plates keep standing on
+    // the option's default corner, as this command line already slices them
+    // (the desktop would give them the first plate's, PartPlate.cpp 5147-5148).
+    if (wipe_x == nullptr || wipe_y == nullptr || (int)wipe_x->values.size() <= plate_index ||
+        (int)wipe_y->values.size() <= plate_index)
+        return;
     Vec3d tower = tower_size(plate_filaments);
     if (is_approx(tower(0), 0.0) || is_approx(tower(1), 0.0))
         tower = tower_size(2);
