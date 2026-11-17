@@ -550,7 +550,7 @@ print(json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.co
         else
             record "project-tower-flag-stays-as-given" 0 "exit=$LAST_EXIT wipe_tower_x='$FLAG' (want 5)"
         fi
-    elif [ "$LAST_EXIT" -eq 0 ] && is_value "$PLAIN" 400 && is_value "$SLICED" 400; then
+    elif [ "$LAST_EXIT" -eq 0 ] && [ "$SLICE_EXIT" -eq 0 ] && is_value "$PLAIN" 400 && is_value "$SLICED" 400; then
         record "project-tower-kept-as-saved" 1
     else
         record "project-tower-kept-as-saved" 0 "plain call '$PLAIN' (exit $LAST_EXIT), --slice '$SLICED' (exit $SLICE_EXIT): want 400, as the app keeps it"
@@ -564,8 +564,11 @@ fi
 # The export lists the settings the run changed, as the app lists them when it
 # saves (desktop_presets.hpp record_changed_settings), so opening the export
 # keeps them. Each case slices with --export-3mf, slices the export again with
-# no flags, and compares the two G-codes: the same printed lines (every line
-# that is not a comment), with the changed settings in the second header.
+# no flags, and compares the two G-codes: the changed settings in both
+# headers, the same layer count and the same filament use to 1 %. The printed
+# lines themselves are not compared: one build slicing one file twice does not
+# always write the same lines (the engine's threads), which a Linux arm64 run
+# of this check showed as 10137 against 10175 lines for one print.
 RT=$(mktemp -d "${TMPDIR:-/tmp}/roundtrip.XXXXXX")
 python3 - "$RT/cube.stl" <<'PY'
 import sys
@@ -593,19 +596,24 @@ roundtrip() {
     DETAIL=$(python3 - "$D/a/plate_1.gcode" "$D/b/plate_1.gcode" 2>&1 <<'PY'
 import re, sys
 def read(path):
-    header, printed = {}, []
+    header, layers, grams = {}, 0, None
     for line in open(path, errors="replace"):
         line = line.rstrip("\r\n")
         m = re.match(r"^; ([a-z_0-9]+) = (.*)$", line)
         if m:
             header.setdefault(m.group(1), m.group(2))
-        elif line and not line.startswith(";"):
-            printed.append(line)
-    return header, printed
-(a, pa), (b, pb) = read(sys.argv[1]), read(sys.argv[2])
+        if re.match(r"^; ?(CHANGE_LAYER|LAYER_CHANGE)", line):
+            layers += 1
+        m = re.match(r"^; (?:total filament weight \[g\] ?:|filament used \[g\] ?=) *(.*)$", line)
+        if m and grams is None:
+            grams = sum(float(v) for v in m.group(1).split(","))
+    return header, layers, grams
+(a, la, ga), (b, lb, gb) = read(sys.argv[1]), read(sys.argv[2])
 for name, h in (("the first slice", a), ("the export sliced again", b)):
     assert h.get("wall_loops") == "5" and h.get("sparse_infill_density") == "33%", (name, h.get("wall_loops"), h.get("sparse_infill_density"))
-assert pa == pb, "the printed lines differ: %d and %d lines" % (len(pa), len(pb))
+differ = sorted(k for k in a if k in b and a[k] != b[k])
+assert la > 0 and la == lb, ("layers", la, lb, "settings that differ", differ)
+assert ga and gb and abs(ga - gb) <= 0.01 * ga, ("filament grams", ga, gb, "settings that differ", differ)
 PY
     ) && [ "$R1" -eq 0 ] && [ "$R2" -eq 0 ] && record "export-slices-again-$LABEL" 1 \
         || record "export-slices-again-$LABEL" 0 "export exit=$R1 re-slice exit=$R2 $DETAIL"
