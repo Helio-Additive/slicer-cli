@@ -119,6 +119,7 @@
 #include "cli_nozzle_diameter.hpp"
 #include "cli_filament_map.hpp"
 #include "cli_nozzle_options.hpp"
+#include "cli_project_load.hpp"
 #include "cli_pipe.hpp"
 
 #ifdef __APPLE__
@@ -4901,60 +4902,6 @@ static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, cons
     wipe_y->set_at(&wt_y_opt, plate_index, 0);
 }
 
-#ifdef ENGINE_BAMBU
-/// Opening a project, Bambu Studio puts each plate's saved tower position back
-/// inside the plate (Plater.cpp 12270-12276 at v02.09.01.70:
-/// set_default_wipe_tower_pos_for_plate with keep_existing, PartPlate.cpp
-/// 5141-5221). The tower is sized for the filaments the plate's objects use,
-/// and for two when that size is zero (5183-5187); its corner is then kept
-/// WIPE_TOWER_MARGIN inside the area every nozzle reaches, pinned to the low
-/// edge when the tower is larger than that area (wipe_tower_legal_corner_range
-/// and wipe_tower_pullback_then_avoid, WipeTowerPlacement.cpp 86-97, 403-417;
-/// a kept position has no forbidden regions, PartPlate.cpp 5194-5196).
-/// OrcaSlicer and Snapmaker Orca keep the saved position when they open a
-/// project: their Plater calls this only after a printer change (OrcaSlicer
-/// Plater.cpp 10903-10907; Snapmaker_Orca PartPlate.cpp 3799, 4277, 4686).
-static void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
-                                            int plate_index) {
-    using namespace Slic3r;
-    const auto* area = config.option<ConfigOptionPoints>("printable_area");
-    if (plate_index < 0 || !area || area->values.size() < 3)
-        return;
-    auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x", true);
-    auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y", true);
-    // A plate with no entry of its own takes the first plate's (PartPlate.cpp 5147-5148).
-    if ((int)wipe_x->values.size() <= plate_index)
-        wipe_x->values.resize(plate_index + 1, wipe_x->values.empty() ? 0.0 : wipe_x->values.front());
-    if ((int)wipe_y->values.size() <= plate_index)
-        wipe_y->values.resize(plate_index + 1, wipe_y->values.empty() ? 0.0 : wipe_y->values.front());
-    const BoundingBoxf reach = tower_reach_box(config, *area);
-    const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
-    const BoundingBoxf3 plate_box(Vec3d(reach.min.x(), reach.min.y(), 0.), Vec3d(reach.max.x(), reach.max.y(), height));
-    const TowerWipeParams wipe = tower_wipe_params(config);
-    const auto exclude = arrange_exclude_boxes(config);
-    const auto size_for = [&](int filaments) {
-        return arrange_estimate_wipe_tower_size(model, config, wipe.width, wipe.volume, wipe.extruder_count, filaments,
-                                                wipe.wrapping, plate_box, exclude, nullptr, /*legacy_behavior=*/false);
-    };
-    Vec3d tower = size_for((int)arrange_plate_extruders(model, config, plate_index).size());
-    if (is_approx(tower(0), 0.0) || is_approx(tower(1), 0.0))
-        tower = size_for(2);
-    if (is_approx(tower(0), 0.0) || is_approx(tower(1), 0.0))
-        return;
-    // The build volume is the reach area widened by SceneEpsilon
-    // (PartPlate::get_build_volume, PartPlate.cpp 3711-3733): a tower the app
-    // put on the low edge is saved at 15 - 0.0001.
-    const double m = WIPE_TOWER_MARGIN, eps = BuildVolume::SceneEpsilon;
-    const double lo_x = reach.min.x() - eps + m, lo_y = reach.min.y() - eps + m;
-    const double hi_x = std::max(lo_x, reach.max.x() + eps - tower(0) - m);
-    const double hi_y = std::max(lo_y, reach.max.y() + eps - tower(1) - m);
-    ConfigOptionFloat wt_x_opt(std::clamp((float)wipe_x->values[plate_index], (float)lo_x, (float)hi_x));
-    ConfigOptionFloat wt_y_opt(std::clamp((float)wipe_y->values[plate_index], (float)lo_y, (float)hi_y));
-    wipe_x->set_at(&wt_x_opt, plate_index, 0);
-    wipe_y->set_at(&wt_y_opt, plate_index, 0);
-}
-#endif
-
 /// PartPlate::estimate_wipe_tower_polygon with use_global_objects (Bambu
 /// PartPlate.cpp 2236-2281; Orca 2174-2220): plate_index's tower position
 /// clamped inside a plate of plate_width x plate_depth (the plate list's
@@ -8798,31 +8745,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #endif
                 }
                 if (rebase) {
-                    // Every setting whose value in the file the presets
-                    // replaced, by name: the desktop drops them without a
-                    // word, and a caller that edited the file must be able to
-                    // read what was not kept. The two lists the load itself
-                    // rewrites are not settings.
-                    // A list that only changed its length (one value where the
-                    // loaded presets hold the same value once per extruder or
-                    // variant) holds the same setting, and is not named.
-                    const auto same_value_repeated = [](const Slic3r::ConfigOption* a, const Slic3r::ConfigOption* b) {
-                        const auto* va = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(a);
-                        const auto* vb = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(b);
-                        if (va == nullptr || vb == nullptr)
-                            return false;
-                        const std::vector<std::string> sa = va->vserialize(), sb = vb->vserialize();
-                        if (sa.empty() || sb.empty())
-                            return false;
-                        const auto all_are = [](const std::vector<std::string>& v, const std::string& x) {
-                            return std::all_of(v.begin(), v.end(), [&x](const std::string& e) { return e == x; });
-                        };
-                        return all_are(sa, sa.front()) && all_are(sb, sa.front());
-                    };
-                    for (const std::string& key : config.diff(rebased))
-                        if (key != "different_settings_to_system" && key != "inherits_group" &&
-                            !same_value_repeated(config.option(key), rebased.option(key)))
-                            outcome.settings_replaced_by_presets.push_back(key);
+                    outcome.settings_replaced_by_presets = slicer_cli::settings_replaced_by_presets(config, rebased);
                     config = std::move(rebased);
                     rs.project_loaded_like_desktop = true;
                     emit_event({{"event","config_normalized"},
@@ -8831,11 +8754,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                 {"print_settings_id", config_id_text(config, "print_settings_id")},
                                 {"replaced_settings", outcome.settings_replaced_by_presets},
                                 {"message","The project was loaded over this engine's system presets, as the desktop loads it: "
-                                           "every setting the file does not list as changed by its maker "
-                                           "(different_settings_to_system) takes the preset's value. " +
-                                           std::to_string(outcome.settings_replaced_by_presets.size()) +
-                                           " value(s) of the file were replaced (replaced_settings); "
-                                           "--project-settings-as-saved slices the file's values"}});
+                                           "every key the maker did not change takes the preset's value"}});
                 } else {
                     // The engine ships no preset to load the project over, so
                     // the file's own settings are sliced, as before.
@@ -9522,6 +9441,37 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // instance is on it, at the origin.
         if (rs.plates.empty())
             rs.plates.assign(1, RunPlate());
+#ifdef ENGINE_BAMBU
+        // Bambu Studio puts each plate's saved tower back inside the plate
+        // when it opens a project (cli_project_load.hpp). Here, before the
+        // flags are laid on the settings: a position a flag gives stays as
+        // given, and the project's settings, which the exports write, hold
+        // the corrected one. Every plate whose objects are loaded (one plate
+        // with --slice N or --plate N). --arrange places the tower itself.
+        if (rs.project_loaded_like_desktop && !o.arrange_forced())
+            if (const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
+                area != nullptr && area->values.size() >= 3) {
+                const Slic3r::BoundingBoxf reach = tower_reach_box(config, *area);
+                const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+                const Slic3r::BoundingBoxf3 plate_box(Slic3r::Vec3d(reach.min.x(), reach.min.y(), 0.),
+                                                      Slic3r::Vec3d(reach.max.x(), reach.max.y(), height));
+                const TowerWipeParams wipe = tower_wipe_params(config);
+                const auto exclude = arrange_exclude_boxes(config);
+                for (int index = 0; index < (int)rs.plates.size(); ++index) {
+                    if (plate_id > 0 && index != plate_id - 1)
+                        continue;
+                    PlateScope scope(model, rs.plates[index]);
+                    slicer_cli::project_load_tower_inside_plate(
+                        config, index, reach, (int)arrange_plate_extruders(model, config, index).size(),
+                        [&](int filaments) {
+                            return arrange_estimate_wipe_tower_size(model, config, wipe.width, wipe.volume,
+                                                                    wipe.extruder_count, filaments, wipe.wrapping,
+                                                                    plate_box, exclude, nullptr,
+                                                                    /*legacy_behavior=*/false);
+                        });
+                }
+            }
+#endif
         const bool has_unplaced_objects = std::any_of(model.objects.begin(), model.objects.end(),
             [](const Slic3r::ModelObject* obj) { return obj->instances.empty(); });
 
@@ -11427,11 +11377,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #ifdef ENGINE_BAMBU
                 if (!manual_map_extruders_fit(config, model, step_plate, outcome))
                     return 1;
-#endif
-#ifdef ENGINE_BAMBU
-                // --arrange places the tower itself.
-                if (rs.project_loaded_like_desktop && !o.arrange_forced())
-                    project_load_tower_inside_plate(config, model, step_plate - 1);
 #endif
                 if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced())) {
                     std::cerr << "Error: " << outcome.error_string << "\n";

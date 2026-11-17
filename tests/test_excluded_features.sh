@@ -448,6 +448,60 @@ else
     skip "own-project-loads-like-the-app" "fixture missing: $BASE_3MF"
 fi
 
+# ── A saved prime tower outside the plate ───────────────────────────────────
+# Bambu Studio puts a project's saved tower back inside the plate when it opens
+# the project (Plater.cpp 12270-12276 at v02.09.01.70); OrcaSlicer and
+# Snapmaker Orca keep the saved position. On the plain call and with --slice
+# alike; a position given as a flag stays as given; the exported project
+# states the position the load gave.
+if [ -f "$BASE_3MF" ]; then
+    TOWER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/tower_load.XXXXXX")
+    python3 - "$BASE_3MF" "$TOWER_DIR/far.3mf" <<'PY'
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["wipe_tower_x"] = ["400"]
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PY
+    tower_x() { sed -n 's/^; wipe_tower_x = //p' "$1" | head -n 1 | tr -d '\r'; }
+    inside() { python3 -c 'import sys; x = float(sys.argv[1].split(",")[0]); sys.exit(0 if 0 < x < 300 else 1)' "$1" 2>/dev/null; }
+    GC=$(mktmp_gcode)
+    run_slice "$GC" "$TOWER_DIR/far.3mf"
+    PLAIN=$(tower_x "$GC")
+    set +e
+    "$BINARY" "$TOWER_DIR/far.3mf" --slice 1 --outputdir "$TOWER_DIR/s" --export-3mf p.3mf > "$TOWER_DIR/s.out" 2>&1; SLICE_EXIT=$?
+    set -e
+    SLICED=$(tower_x "$TOWER_DIR/s/plate_1.gcode" 2>/dev/null || true)
+    EXPORTED=$(python3 -c '
+import json, sys, zipfile
+print(json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config"))["wipe_tower_x"][0])' "$TOWER_DIR/s/p.3mf" 2>/dev/null || true)
+    if [ "$ENGINE" = bambu ]; then
+        if [ "$LAST_EXIT" -eq 0 ] && [ "$SLICE_EXIT" -eq 0 ] && inside "$PLAIN" && [ "$PLAIN" = "$SLICED" ] && inside "$EXPORTED"; then
+            record "project-tower-put-inside-plate" 1
+        else
+            record "project-tower-put-inside-plate" 0 "plain call '$PLAIN' (exit $LAST_EXIT), --slice '$SLICED' (exit $SLICE_EXIT), exported '$EXPORTED': want one position inside the plate"
+        fi
+        run_slice "$GC" "$TOWER_DIR/far.3mf" --wipe-tower-x 5
+        FLAG=$(tower_x "$GC")
+        if [ "$LAST_EXIT" -eq 0 ] && [ "$FLAG" = 5 ]; then
+            record "project-tower-flag-stays-as-given" 1
+        else
+            record "project-tower-flag-stays-as-given" 0 "exit=$LAST_EXIT wipe_tower_x='$FLAG' (want 5)"
+        fi
+    elif [ "$LAST_EXIT" -eq 0 ] && [ "$PLAIN" = 400 ] && [ "$SLICED" = 400 ]; then
+        record "project-tower-kept-as-saved" 1
+    else
+        record "project-tower-kept-as-saved" 0 "plain call '$PLAIN' (exit $LAST_EXIT), --slice '$SLICED' (exit $SLICE_EXIT): want 400, as the app keeps it"
+    fi
+    rm -rf "$GC" "$TOWER_DIR"
+else
+    skip "project-tower-*" "fixture missing: $BASE_3MF"
+fi
+
 # ── An exported project slices again with the same settings ─────────────────
 # The export lists the settings the run changed, as the app lists them when it
 # saves (desktop_presets.hpp record_changed_settings), so opening the export
