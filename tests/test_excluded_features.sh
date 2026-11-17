@@ -456,7 +456,19 @@ else:
     else
         record "own-project-result-names-only-what-printed-differently" 0 "result.json run and plate lists: '$REPLACED' (want $WANT_REPLACED for both)"
     fi
-    rm -rf "$REPLACED_DIR" "$REPLACED_DIR.out"
+    # A setting a flag gives is the flag's, not the presets': --infill writes
+    # sparse_infill_density, so the edit is no longer named.
+    set +e
+    "$BINARY" "$OWN_3MF" --infill 20% --slice 1 --outputdir "$REPLACED_DIR/f" > "$REPLACED_DIR.f.out" 2>&1
+    set -e
+    FLAGGED=$(python3 -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1])).get("settings_replaced_by_presets")))' "$REPLACED_DIR/f/result.json" 2>/dev/null || true)
+    WANT_FLAGGED=$(python3 -c 'import json, sys; print(json.dumps([k for k in json.loads(sys.argv[1]) if k != "sparse_infill_density"]))' "$WANT_REPLACED")
+    if [ -n "$FLAGGED" ] && [ "$FLAGGED" = "$WANT_FLAGGED" ]; then
+        record "own-project-result-leaves-out-what-a-flag-set" 1
+    else
+        record "own-project-result-leaves-out-what-a-flag-set" 0 "with --infill 20%: '$FLAGGED' (want $WANT_FLAGGED)"
+    fi
+    rm -rf "$REPLACED_DIR" "$REPLACED_DIR.out" "$REPLACED_DIR.f.out"
     run_slice "$GC" "$OWN_3MF" --project-settings-as-saved
     DENSITY=$(header "$GC" sparse_infill_density)
     if [ "$LAST_EXIT" -eq 0 ] && [ "$DENSITY" = "33%" ]; then

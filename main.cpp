@@ -11686,18 +11686,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                                 "' states no layer height; it keeps the object's " +
                                                 mm(filled.layer_height) + " mm."}});
                 print.apply(model, config);
-                // What the load replaced and the print then used other than
-                // the file's value (cli_project_load.hpp).
-                if (!outcome.settings_replaced_by_presets.empty()) {
-                    std::set<std::string> command_line;
-                    for (const std::string& key : rs.extra.keys())
-                        command_line.insert(key);
-                    for (const auto& override_value : o.overrides)
-                        command_line.insert(override_value.first);
-                    slicer_cli::keep_replaced_printed_differently(outcome.settings_replaced_by_presets,
-                                                                  outcome.replaced_file_values,
-                                                                  print.full_print_config(), command_line);
-                }
 #ifdef ENGINE_ORCA
                 // The Orca desktop applies again before Slice (Plater.cpp 15855/15893 at v2.4.2).
                 // On Bambu a second apply moves the output away from the desktop's own G-code (7
@@ -11732,6 +11720,28 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                            ": the plate's filaments are counted with its regions"}});
                 }
 #endif
+                // What the load replaced and the print, after its last apply,
+                // used other than the file's value (cli_project_load.hpp). The
+                // setting flags count by the settings they write: a short flag
+                // writes other keys than its own name (--infill writes
+                // sparse_infill_density, --bed-temp the plate type's keys).
+                if (!outcome.settings_replaced_by_presets.empty()) {
+                    std::set<std::string> command_line;
+                    for (const std::string& key : rs.extra.keys())
+                        command_line.insert(key);
+                    Slic3r::DynamicPrintConfig written;
+                    if (const Slic3r::ConfigOption* bed = config.option("curr_bed_type"))
+                        written.set_key_value("curr_bed_type", bed->clone());
+                    apply_command_line_overrides(written, o.overrides, /*report_rejections=*/false);
+                    for (const std::string& key : written.keys())
+                        if (key != "curr_bed_type" || o.overrides.count(key) != 0)
+                            command_line.insert(key);
+                    for (const auto& override_value : o.overrides)
+                        command_line.insert(override_value.first);
+                    slicer_cli::keep_replaced_printed_differently(outcome.settings_replaced_by_presets,
+                                                                  outcome.replaced_file_values,
+                                                                  print.full_print_config(), command_line);
+                }
             }
 #ifdef ENGINE_ORCA
             // OrcaSlicer's WipeTowerData::height is read on a path that never
