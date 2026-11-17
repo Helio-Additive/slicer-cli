@@ -509,6 +509,15 @@ PY
     else
         record "flow-type-bambu-spelling-in-inheriting-settings-file" 0 "exit=$MACHINE_EXIT nozzle_volume_type='$MACHINE_HEADER' (want high_flow,standard,standard,standard)"
     fi
+    set +e
+    "$BINARY" "$FLOW_DIR/cube.stl" --load-settings "$FLOW_DIR/machine.json" --slice 1 --outputdir "$FLOW_DIR/d" > "$FLOW_DIR/d.out" 2>&1; LOAD_EXIT=$?
+    set -e
+    LOAD_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/d/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r')
+    if [ "$LOAD_EXIT" -eq 0 ] && [ "$LOAD_HEADER" = "high_flow,standard,standard,standard" ]; then
+        record "flow-type-bambu-spelling-in-load-settings" 1
+    else
+        record "flow-type-bambu-spelling-in-load-settings" 0 "exit=$LOAD_EXIT nozzle_volume_type='$LOAD_HEADER' (want high_flow,standard,standard,standard)"
+    fi
     rm -rf "$GC" "$FLOW_DIR"
 fi
 

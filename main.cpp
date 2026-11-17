@@ -5484,12 +5484,17 @@ static void apply_file_inherits(const std::string& argv0, const std::string& fil
     std::map<std::string, std::string> key_values;
     std::string reason;
     try {
-        Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
-        own.load_from_json(file, substitutions, /*load_inherits_in_config=*/false, key_values, reason);
 #ifdef ENGINE_SNAPMAKER
         // This file's own values are laid over `config` again below, so the
-        // flow-type words its first read converted are converted here too.
+        // flow-type words its first read converted are converted here too:
+        // the substitutions are recorded (EnableSilent records none,
+        // Config.cpp 683-684 at bac6fd5) and nothing reports them.
+        Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+        own.load_from_json(file, substitutions, /*load_inherits_in_config=*/false, key_values, reason);
         slicer_cli::convert_flow_type_spelling(own, substitutions, file, /*announce=*/false);
+#else
+        Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+        own.load_from_json(file, substitutions, /*load_inherits_in_config=*/false, key_values, reason);
 #endif
     } catch (...) {
         return;
