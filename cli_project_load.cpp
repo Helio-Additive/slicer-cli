@@ -71,9 +71,16 @@ void keep_replaced_printed_differently(std::vector<std::string>& replaced,
                                        const Slic3r::DynamicPrintConfig& printed,
                                        const std::set<std::string>& command_line) {
     using namespace Slic3r;
+    // The keys that index each preset type's per-variant lists, not settings
+    // of the print: Preset::get_extruder_names_and_keysets (BambuStudio
+    // Preset.cpp 957-980 at v02.09.01.70), and filament_self_index, which the
+    // engine sizes to filament_extruder_variant (PresetBundle.cpp 4866-4868).
+    static const std::set<std::string> variant_index = {"print_extruder_id",       "print_extruder_variant",
+                                                        "printer_extruder_id",     "printer_extruder_variant",
+                                                        "filament_extruder_variant", "filament_self_index"};
     replaced.erase(std::remove_if(replaced.begin(), replaced.end(),
                                   [&](const std::string& key) {
-                                      if (command_line.count(key) != 0)
+                                      if (command_line.count(key) != 0 || variant_index.count(key) != 0)
                                           return true;
                                       const ConfigOption* used = printed.option(key);
                                       const auto file = file_values.find(key);

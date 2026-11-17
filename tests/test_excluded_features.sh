@@ -436,6 +436,19 @@ else:
     else
         record "own-project-names-what-the-presets-replaced" 0 "replaced_settings does not hold sparse_infill_density without wall_loops"
     fi
+    # result.json names a setting only when the print used a value other than
+    # the file's: here the one unlisted edit, nothing else.
+    REPLACED_DIR=$(mktemp -d "${TMPDIR:-/tmp}/replaced.XXXXXX")
+    set +e
+    "$BINARY" "$OWN_3MF" --slice 1 --outputdir "$REPLACED_DIR" > "$REPLACED_DIR.out" 2>&1
+    set -e
+    REPLACED=$(python3 -c 'import json, sys; r = json.load(open(sys.argv[1])); print(json.dumps(r.get("settings_replaced_by_presets")), json.dumps(r["sliced_plates"][0].get("settings_replaced_by_presets")))' "$REPLACED_DIR/result.json" 2>/dev/null || true)
+    if [ "$REPLACED" = '["sparse_infill_density"] ["sparse_infill_density"]' ]; then
+        record "own-project-result-names-only-what-printed-differently" 1
+    else
+        record "own-project-result-names-only-what-printed-differently" 0 "result.json run and plate lists: '$REPLACED' (want [\"sparse_infill_density\"] for both)"
+    fi
+    rm -rf "$REPLACED_DIR" "$REPLACED_DIR.out"
     run_slice "$GC" "$OWN_3MF" --project-settings-as-saved
     DENSITY=$(header "$GC" sparse_infill_density)
     if [ "$LAST_EXIT" -eq 0 ] && [ "$DENSITY" = "33%" ]; then
@@ -446,6 +459,51 @@ else:
     rm -f "$GC" "$OWN_3MF"
 else
     skip "own-project-loads-like-the-app" "fixture missing: $BASE_3MF"
+fi
+
+# ── A printer with nozzle variants ──────────────────────────────────────────
+# The presets of an H2D hold one value per nozzle variant, which the print
+# narrows to the plate's own; a project exported from them and loaded again
+# names only the setting it edited without listing it.
+if [ "$ENGINE" = bambu ]; then
+    VAR_DIR=$(mktemp -d "${TMPDIR:-/tmp}/variant_project.XXXXXX")
+    python3 - "$VAR_DIR/cube.stl" <<'PY'
+import sys
+v = [(0,0,0),(10,0,0),(10,10,0),(0,10,0),(0,0,10),(10,0,10),(10,10,10),(0,10,10)]
+f = [(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)]
+with open(sys.argv[1], "w") as o:
+    o.write("solid c\n")
+    for t in f:
+        o.write("facet normal 0 0 0\nouter loop\n" + "".join("vertex %g %g %g\n" % v[i] for i in t) + "endloop\nendfacet\n")
+    o.write("endsolid c\n")
+PY
+    set +e
+    "$BINARY" "$VAR_DIR/cube.stl" --printer-preset "Bambu Lab H2D 0.4 nozzle" --filament-preset "Bambu PLA Basic @BBL H2D" \
+        --slice 1 --outputdir "$VAR_DIR/a" --export-3mf p.3mf > "$VAR_DIR/a.out" 2>&1; VAR_EXPORT=$?
+    set -e
+    python3 - "$VAR_DIR/a/p.3mf" "$VAR_DIR/edited.3mf" <<'PY' 2>/dev/null || true
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename.startswith("Metadata/plate_") and item.filename.endswith((".gcode", ".md5")):
+            continue
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["sparse_infill_density"] = "33%"
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PY
+    set +e
+    "$BINARY" "$VAR_DIR/edited.3mf" --slice 1 --outputdir "$VAR_DIR/b" > "$VAR_DIR/b.out" 2>&1; VAR_EXIT=$?
+    set -e
+    VAR_REPLACED=$(python3 -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1])).get("settings_replaced_by_presets")))' "$VAR_DIR/b/result.json" 2>/dev/null || true)
+    if [ "$VAR_EXPORT" -eq 0 ] && [ "$VAR_EXIT" -eq 0 ] && [ "$VAR_REPLACED" = '["sparse_infill_density"]' ]; then
+        record "variant-printer-project-names-only-what-printed-differently" 1
+    else
+        record "variant-printer-project-names-only-what-printed-differently" 0 "export exit=$VAR_EXPORT, slice exit=$VAR_EXIT, settings_replaced_by_presets=$VAR_REPLACED (want [\"sparse_infill_density\"])"
+    fi
+    rm -rf "$VAR_DIR"
 fi
 
 # ── Bambu Studio's spelling of the flow type ────────────────────────────────

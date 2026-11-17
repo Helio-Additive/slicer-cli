@@ -60,7 +60,8 @@ std::vector<std::string> settings_replaced_by_presets(const Slic3r::DynamicPrint
 /// key can differ at load and print with the file's value. A key the command
 /// line set (`command_line`: the setting flags and the short flags) is its own change, not the presets', and a key
 /// the print does not hold (a preset's list of compatible printers and the
-/// like) prints nothing. `file_values` holds each key's value in the file.
+/// like) prints nothing, and the keys that index the per-variant lists are
+/// not settings. `file_values` holds each key's value in the file.
 void keep_replaced_printed_differently(std::vector<std::string>& replaced,
                                        const std::map<std::string, std::string>& file_values,
                                        const Slic3r::DynamicPrintConfig& printed,
