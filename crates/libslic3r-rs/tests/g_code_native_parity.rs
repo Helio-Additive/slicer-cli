@@ -316,6 +316,133 @@ fn line_of(t: &[&str]) -> Option<String> {
             s += &format!(" {}", last);
             s
         }
+        "est" => {
+            // est <normal> <stealth> <enabled> <kv> <6 results> | <n> (<id> <volume>)* <n> (<id> <volume>)*
+            let (normal, stealth, enabled) = (f32of(t[1]), f32of(t[2]), t[3] == "1");
+            let (kv, i) = read_kv(t, 4);
+            let j = i + 7;
+            let n: usize = t[j].parse().unwrap();
+            let total: std::collections::BTreeMap<usize, f64> =
+                (0..n).map(|k| (t[j + 1 + 2 * k].parse().unwrap(), f64of(t[j + 2 + 2 * k]))).collect();
+            let k0 = j + 1 + 2 * n;
+            let m: usize = t[k0].parse().unwrap();
+            let model: std::collections::BTreeMap<usize, f64> =
+                (0..m).map(|k| (t[k0 + 1 + 2 * k].parse().unwrap(), f64of(t[k0 + 2 + 2 * k]))).collect();
+            let mut proc_ = slicer::gcode::g_code_processor::GCodeProcessor::new();
+            proc_.result_mut().print_statistics.modes[0].time = normal;
+            proc_.result_mut().print_statistics.modes[1].time = stealth;
+            proc_.result_mut().print_statistics.total_volumes_per_extruder = total.clone();
+            proc_.result_mut().print_statistics.model_volumes_per_extruder = model;
+            proc_.enable_stealth_time_estimator(enabled);
+            let mut w = slicer::g_code_writer::GCodeWriter::new();
+            w.apply_print_config(&kv_print_cfg(&kv));
+            w.set_extruders(vec![0, 1, 2]);
+            let mut ps = slicer::print::faithful::PrintStatistics::new();
+            update_print_estimated_stats(&proc_, w.extruders(), &mut ps);
+            let mut s = format!(
+                "est {} {} {} {} {} {} {} {} {} {} | {}",
+                t[1],
+                t[2],
+                t[3],
+                kv_str(&kv),
+                hex(&ps.estimated_normal_print_time),
+                hex(&ps.estimated_silent_print_time),
+                f64h(ps.total_extruded_volume),
+                f64h(ps.total_used_filament),
+                f64h(ps.total_weight),
+                f64h(ps.total_cost),
+                total.len()
+            );
+            for (id, v) in &total {
+                s += &format!(" {} {}", id, f64h(*v));
+            }
+            s += &format!(" {}", ps.filament_stats.len());
+            for (id, v) in &ps.filament_stats {
+                s += &format!(" {} {}", id, f64h(*v));
+            }
+            s
+        }
+        "stats" => {
+            // stats <has> <toolchanges> <n> <used>* <kv> <n> <extrude>* -> <out> <7 results>
+            let has = t[1] == "1";
+            let toolchanges: i32 = t[2].parse().unwrap();
+            let n: usize = t[3].parse().unwrap();
+            let used: Vec<f32> = (0..n).map(|k| f32of(t[4 + k])).collect();
+            let (kv, i) = read_kv(t, 4 + n);
+            let m: usize = t[i].parse().unwrap();
+            let extrude: Vec<f64> = (0..m).map(|k| f64of(t[i + 1 + k])).collect();
+            let mut w = slicer::g_code_writer::GCodeWriter::new();
+            w.apply_print_config(&kv_print_cfg(&kv));
+            w.set_extruders(vec![0, 1, 2]);
+            for (k, x) in extrude.iter().enumerate() {
+                w.toolchange(k as u32, 0);
+                w.extrude_to_xy(slicer::geometry::Vec2d::new(10.0 * k as f64, 5.0), *x, "", false);
+                w.retract(false);
+            }
+            let mut wtd = slicer::print::faithful::WipeTowerData::new();
+            wtd.number_of_toolchanges = toolchanges;
+            wtd.used_filament = used;
+            let mut ps = slicer::print::faithful::PrintStatistics::new();
+            ps.total_weight = 99.0;
+            let out = update_print_stats_and_format_filament_stats(has, &wtd, w.extruders(), &mut ps);
+            format!(
+                "{} {} {} {} {} {} {} {} {}",
+                t[..i + 1 + m].join(" "),
+                hex(&out),
+                ps.total_toolchanges,
+                f64h(ps.total_weight),
+                f64h(ps.total_cost),
+                f64h(ps.total_used_filament),
+                f64h(ps.total_extruded_volume),
+                f64h(ps.total_wipe_tower_filament),
+                f64h(ps.total_wipe_tower_cost)
+            )
+        }
+        "pts" => {
+            let (ox, oy) = (f64of(t[1]), f64of(t[2]));
+            let n: usize = t[3].parse().unwrap();
+            let pts: Vec<Point> = (0..n).map(|k| Point::new(t[4 + 2 * k].parse().unwrap(), t[5 + 2 * k].parse().unwrap())).collect();
+            let mut print = slicer::print::faithful::Print::new();
+            print.set_plate_origin([ox, oy, 0.0]);
+            let poly = slicer::geometry::Polygon::from_points(pts);
+            format!("{} {}", t[..4 + 2 * n].join(" "), hex(&polygon_to_string(&poly, &print)))
+        }
+        "apc" => {
+            let (kv, _) = read_kv(t, 1);
+            let mut g = GCode::new();
+            g.apply_print_config(&kv_print_cfg(&kv));
+            let m = g.m_writer.parity_members();
+            let flavor = (0..13).find(|&c| slicer::extruder::gcode_flavor_from_int(c) == g.m_writer.config.gcode_flavor).unwrap();
+            format!(
+                "apc {} {} {} {} {} {} {} {} {}",
+                kv_str(&kv),
+                f64h(g.m_scaled_resolution),
+                m.max_acceleration,
+                f64h(m.max_jerk),
+                m.single_extruder_multi_material as i32,
+                flavor,
+                hex(&g.m_config.opt_serialize("z_hop").unwrap()),
+                hex(&g.m_config.opt_serialize("resolution").unwrap()),
+                hex(&g.m_config.opt_serialize("printable_area").unwrap())
+            )
+        }
+        "flp" => {
+            let n: usize = t[1].parse().unwrap();
+            let pts: Vec<Point> = (0..n).map(|k| Point::new(t[2 + 2 * k].parse().unwrap(), t[3 + 2 * k].parse().unwrap())).collect();
+            let mut print = slicer::print::faithful::Print::new();
+            print.m_first_layer_convex_hull = slicer::geometry::Polygon::from_points(pts);
+            let g = GCode::new();
+            let b = g.first_layer_projection(&print);
+            format!(
+                "{} {} {} {} {} {}",
+                t[..2 + 2 * n].join(" "),
+                b.is_defined() as i32,
+                f64h(b.min.x),
+                f64h(b.min.y),
+                f64h(b.max.x),
+                f64h(b.max.y)
+            )
+        }
         _ => return None,
     })
 }

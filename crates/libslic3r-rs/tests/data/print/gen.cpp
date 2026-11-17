@@ -43,6 +43,7 @@
 #undef protected
 #undef private
 #include "libslic3r/TriangleMesh.hpp"
+#include "libslic3r/GCode/ConflictChecker.hpp"
 
 using namespace Slic3r;
 
@@ -126,6 +127,14 @@ static DynamicPrintConfig base_config(int scenario)
         config.set_key_value("enable_prime_tower", new ConfigOptionBool(true));
         config.set_key_value("print_sequence", new ConfigOptionEnum<PrintSequence>(PrintSequence::ByObject));
     }
+    if (scenario == 4) {
+        config.set_key_value("enable_prime_tower", new ConfigOptionBool(true));
+        config.set_key_value("wipe_tower_no_sparse_layers", new ConfigOptionBool(true));
+        config.set_key_value("wall_filament", new ConfigOptionInt(2));
+        config.set_key_value("initial_layer_line_width", new ConfigOptionFloat(0.5));
+        config.set_key_value("skirt_loops", new ConfigOptionInt(2));
+        config.set_key_value("brim_width", new ConfigOptionFloat(3.));
+    }
     return config;
 }
 
@@ -168,6 +177,20 @@ static Model build_model(int scenario)
         o->layer_config_ranges[{10.0, 14.0}].set("wall_filament", 2);
         o->layer_config_ranges[{10.0, 14.0}].set("layer_height", 0.2);
         o->add_instance()->set_offset(Vec3d(150., 50., 0.));
+    }
+    if (scenario == 4) {
+        ModelObject *o = model.add_object();
+        o->name = "tall";
+        o->add_volume(TriangleMesh(box_its(10, 10, 40, -5.f, -5.f, 0.f)));
+        o->add_instance()->set_offset(Vec3d(32., 232., 0.));
+        ModelObject *o2 = model.add_object();
+        o2->name = "short";
+        o2->config.set("extruder", 2);
+        o2->add_volume(TriangleMesh(box_its(12, 8, 2, -6.f, -4.f, 0.f)));
+        o2->add_instance()->set_offset(Vec3d(150., 150., 0.));
+        ModelInstance *i2 = o2->add_instance();
+        i2->set_offset(Vec3d(20., 200., 0.));
+        i2->set_rotation(Vec3d(0., 0., 0.25));
     }
     if (scenario == 3) {
         ModelObject *o = model.add_object();
@@ -332,16 +355,130 @@ static void dump_verify(int scenario, Print &print)
     }
 }
 
+
+static std::string FLOW(const Flow &f) { return hF(f.width()) + " " + hF(f.height()) + " " + hF(f.spacing()) + " " + hF(f.nozzle_diameter()); }
+static std::string POLY(const Polygon &p)
+{
+    std::string o = hI((long long) p.points.size());
+    for (const Point &pt : p.points) o += " " + hI(pt.x()) + " " + hI(pt.y());
+    return o;
+}
+static std::string POLYS(const Polygons &ps)
+{
+    std::string o = hI((long long) ps.size());
+    for (const Polygon &p : ps) o += " " + POLY(p);
+    return o;
+}
+static std::string BB(const BoundingBox &b) { return hI(b.min.x()) + " " + hI(b.min.y()) + " " + hI(b.max.x()) + " " + hI(b.max.y()); }
+
+// The slicing parameters of the objects, the printed filaments, the brim and skirt flows, the wipe tower
+// estimate and the compacted wipe tower clearance of Print.cpp.
+static void dump_more(int scenario, Print &print)
+{
+    std::string sc = "s" + std::to_string(scenario);
+    for (size_t io = 0; io < print.objects().size(); ++io) {
+        PrintObject *po = print.m_objects[io];
+        SlicingParameters sp = po->compute_slicing_parameters(0.);
+        out(sc + " o" + hI(io) + " sp " + hB(sp.valid) + " " + hI(sp.base_raft_layers) + " " + hI(sp.interface_raft_layers) + " " +
+            hD(sp.base_raft_layer_height) + " " + hD(sp.interface_raft_layer_height) + " " + hD(sp.contact_raft_layer_height) + " " +
+            hD(sp.layer_height) + " " + hI(sp.layer_grid_subdivision) + " " + hI(sp.layer_grid_multiplier) + " " +
+            hB(sp.single_diameter_layering) + " " + hD(sp.min_layer_height) + " " + hD(sp.max_layer_height) + " " +
+            hD(sp.max_suport_layer_height) + " " + hD(sp.first_print_layer_height) + " " + hD(sp.first_object_layer_height) + " " +
+            hB(sp.first_object_layer_bridging) + " " + hB(sp.soluble_interface) + " " + hD(sp.gap_raft_object) + " " +
+            hD(sp.gap_object_support) + " " + hD(sp.gap_support_object) + " " + hD(sp.raft_base_top_z) + " " +
+            hD(sp.raft_interface_top_z) + " " + hD(sp.raft_contact_top_z) + " " + hD(sp.object_print_z_min) + " " +
+            hD(sp.object_print_z_max));
+        po->update_slicing_parameters();
+        out(sc + " o" + hI(io) + " sp_valid " + hB(po->slicing_parameters().valid) + " " + hD(po->slicing_parameters().object_print_z_max));
+    }
+    out(sc + " printed_filaments " + VI(print.printed_filaments()) + " single_nozzle " + hD(print.resolve_single_diameter_layering_nozzle()));
+    out(sc + " brim_flow " + FLOW(print.brim_flow()));
+    out(sc + " skirt_flow " + FLOW(print.skirt_flow()));
+    for (unsigned int f = 1; f <= 3; ++f)
+        out(sc + " skirt_flow_f" + hI(f) + " " + FLOW(print.skirt_flow(f)) + " " + FLOW(print.skirt_flow(*print.objects().back(), f)));
+    const PrintObject &o0 = *print.objects().front();
+    out(sc + " md_flows " + FLOW(print.multi_diameter_brim_flow(o0, 2)) + " " + FLOW(print.multi_diameter_skirt_flow_on_brim_layer(o0, 2)) + " " +
+        FLOW(print.multi_diameter_support_brim_flow(o0)));
+    const WipeTowerData &wtd = print.wipe_tower_data(print.extruders().size());
+    out(sc + " wtd " + hF(wtd.depth) + " " + hF(wtd.brim_width));
+    out(sc + " height_limit_lines " + hB(should_show_height_limit_lines(print)));
+    Polygons polys;
+    std::vector<std::pair<Polygon, float>> hp;
+    StringObjectException e = Print::compacted_wipe_tower_clearance_valid(print, &polys, &hp);
+    std::string hps = hI((long long) hp.size());
+    for (auto &h : hp) hps += " " + POLY(h.first) + " " + hF(h.second);
+    out(sc + " compacted_valid " + hB(! e.string.empty()) + " " + ID(e.object ? e.object->id() : ObjectID()) + " " + POLYS(polys) + " hp " + hps);
+    out(sc + " compacted_valid_msg " + e.string);
+
+    const PrintConfig &cfg = print.config();
+    out(sc + " padding " + hD(compacted_tower_footprint_padding(cfg, 2.)) + " " + hD(compacted_tower_footprint_padding(cfg, -1.)));
+    Polygon fp;
+    fp.points = {Point(1000000, 2000000), Point(4500000, 2000000), Point(4500000, 6000000), Point(1000000, 6000000)};
+    CompactedTowerZone zone = compacted_wipe_tower_zone(cfg, fp);
+    out(sc + " zone " + POLY(zone.hull) + " body " + POLYS(zone.grown_body) + " nozzle " + POLYS(zone.grown_nozzle) + " rod " + BB(zone.bbox_rod) +
+        " " + hD(zone.body_radius));
+    for (coord_t dx : {0, 3000000, 8000000})
+        for (double rise : {1., 30.}) {
+            Polygon h;
+            h.points = {Point(5000000 + dx, 2500000), Point(6000000 + dx, 2500000), Point(6000000 + dx, 4000000), Point(5000000 + dx, 4000000)};
+            CompactedTowerClearance c = compacted_wipe_tower_clearance(cfg, zone, h, rise);
+            out(sc + " clearance " + hI(dx) + " " + hD(rise) + " " + hD(c.allowed_rise) + " " + hD(c.far_clearance) + " " + hB(c.near_body) + " " +
+                hD(c.body_clearance) + " " + hB(compacted_tower_body_tier(c)) + " offender " + POLY(compacted_wipe_tower_offender_outline(h, c.body_clearance)));
+        }
+    out(sc + " rings " + POLYS(compacted_wipe_tower_rings(zone, false)) + " " + hI((long long) compacted_wipe_tower_rings(zone, true).size()));
+}
+
+// FakeWipeTower::getTrueExtrusionLayersFromWipeTower and WipeTowerData::construct_mesh on fixed inputs.
+static void dump_wipe_tower(Print &print)
+{
+    FakeWipeTower fwt;
+    fwt.pos = Vec2f(12.25f, 30.5f);
+    fwt.outer_wall[0.2f] = {Polyline(Points{Point(0, 0), Point(100000, 0), Point(100000, 50000)})};
+    fwt.outer_wall[0.4f] = {Polyline(Points{Point(10, 20), Point(30, 40)}), Polyline(Points{Point(-5, 7), Point(9, -11), Point(13, 17)})};
+    fwt.outer_wall[0.68f] = {Polyline(Points{Point(1, 2), Point(3, 4)})};
+    ExtrusionLayers els = fwt.getTrueExtrusionLayersFromWipeTower();
+    out("wt layers " + hI((long long) els.size()) + " " + hI(int(els.type)));
+    for (const ExtrusionLayer &el : els) {
+        std::string l = "wt layer " + hF(el.bottom_z) + " " + hI((long long) el.paths.size());
+        for (const ExtrusionPath &p : el.paths) {
+            l += " | " + hF(p.height) + " " + hF(p.width) + " " + hD(p.mm3_per_mm) + " " + hI(int(p.role()));
+            for (const Point &pt : p.polyline.points) l += " " + hI(pt.x()) + " " + hI(pt.y());
+        }
+        out(l);
+    }
+    WipeTowerData &wtd = print.m_wipe_tower_data;
+    wtd.rib_offset = Vec2f(1.5f, -0.75f);
+    auto mesh_line = [](const std::string &name, const TriangleMesh &m) {
+        std::string l = name + " " + hI((long long) m.its.vertices.size()) + " " + hI((long long) m.its.indices.size());
+        for (size_t i = 0; i < m.its.vertices.size() && i < 12; ++i)
+            l += " " + hF(m.its.vertices[i].x()) + " " + hF(m.its.vertices[i].y()) + " " + hF(m.its.vertices[i].z());
+        for (size_t i = 0; i < m.its.indices.size() && i < 4; ++i)
+            l += " " + hI(m.its.indices[i].x()) + " " + hI(m.its.indices[i].y()) + " " + hI(m.its.indices[i].z());
+        out(l);
+    };
+    wtd.construct_mesh(35.f, 20.f, 30.f, 3.f, false, 8.f, 4.f, false);
+    out("wt mesh_bottom " + POLY(wtd.wipe_tower_mesh_data->bottom));
+    mesh_line("wt mesh_tower", wtd.wipe_tower_mesh_data->real_wipe_tower_mesh);
+    mesh_line("wt mesh_brim", wtd.wipe_tower_mesh_data->real_brim_mesh);
+    // The rib tower branch is left out: its brim triangulation trips an assert of Triangulation.cpp:99
+    // (`is_unique(points)`) that the release build of the C++ compiles out and the Rust port keeps.
+    wtd.construct_mesh(0.f, 30.f, 25.f, 2.f, true, 8.f, 4.f, true);
+    out("wt empty " + hB(wtd.wipe_tower_mesh_data.has_value()) + " " + hI((long long) wtd.wipe_tower_mesh_data->bottom.points.size()));
+}
+
 int main()
 {
-    for (int scenario = 0; scenario < 4; ++scenario) {
+    for (int scenario = 0; scenario < 5; ++scenario) {
         Model model = build_model(scenario);
         DynamicPrintConfig config = base_config(scenario);
         dump_helpers(scenario, model, config);
         Print print;
         print.apply(model, config);
         dump_print(scenario, print, model);
+        dump_more(scenario, print);
         dump_verify(scenario, print);
+        if (scenario == 4)
+            dump_wipe_tower(print);
     }
     return 0;
 }

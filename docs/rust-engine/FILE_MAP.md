@@ -44,26 +44,26 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 59 (plus 23 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 6003 (66%) |
-| estimate: faithful | 5223 (87% of matched) |
-| estimate: partial | 534 (9% of matched) |
-| estimate: divergent | 224 (4% of matched) |
-| estimate: stub | 22 (0% of matched) |
-| missing in the paired Rust file | 2916 |
-| of those, a function of that name exists in another Rust file | 1376 |
-| of the rest, another overload of the name is ported | 355 |
-| of the rest, under 25 tokens (accessors, one-liners) | 242 |
-| of the rest, 25 tokens or more | 943 |
+| matched to a Rust function in the paired file | 6198 (68%) |
+| estimate: faithful | 5413 (87% of matched) |
+| estimate: partial | 544 (9% of matched) |
+| estimate: divergent | 220 (4% of matched) |
+| estimate: stub | 21 (0% of matched) |
+| missing in the paired Rust file | 2721 |
+| of those, a function of that name exists in another Rust file | 1362 |
+| of the rest, another overload of the name is ported | 365 |
+| of the rest, under 25 tokens (accessors, one-liners) | 216 |
+| of the rest, 25 tokens or more | 778 |
 | in a C++ unit with no Rust file | 133 |
-| Rust functions with no C++ function of that name in the pair | 7081 |
+| Rust functions with no C++ function of that name in the pair | 7199 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 4773 | 4153 | 435 | 174 | 11 | 2078 |
+| 1 | 180 | 180 | 6851 | 4917 | 4296 | 443 | 168 | 10 | 1934 |
 | 2 | 15 | 15 | 392 | 150 | 124 | 20 | 5 | 1 | 242 |
-| 3 | 92 | 88 | 1374 | 837 | 729 | 60 | 43 | 5 | 537 |
+| 3 | 92 | 88 | 1374 | 888 | 776 | 62 | 45 | 5 | 486 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
 
 ## Biggest gaps
@@ -73,43 +73,39 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 
 | Tier | C++ unit | Rust file | C++ fns | faithful | partial | divergent | stub | missing | missing, real |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | `Print` | `print.rs` | 236 | 133 | 8 | 8 | 0 | 87 | 43 |
-| 1 | `PrintObject` | `print_object.rs` | 82 | 22 | 8 | 9 | 0 | 43 | 31 |
-| 1 | `GCode` | `g_code.rs` | 152 | 99 | 9 | 11 | 1 | 32 | 27 |
+| 1 | `GCode` | `g_code.rs` | 152 | 105 | 12 | 11 | 1 | 23 | 18 |
 | 1 | `ClipperUtils` | `clipper_utils.rs` | 227 | 32 | 3 | 3 | 0 | 189 | 25 |
-| 1 | `FilamentGroup` | `filament_group.rs` | 49 | 22 | 0 | 4 | 0 | 23 | 19 |
 | 1 | `Arrange` | `arrange.rs` | 44 | 5 | 1 | 0 | 0 | 38 | 21 |
+| 1 | `PrintObject` | `print_object.rs` | 82 | 41 | 8 | 9 | 0 | 24 | 12 |
 | 1 | `utils` | `utils.rs` | 66 | 30 | 9 | 11 | 4 | 12 | 6 |
 | 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 158 | 24 | 4 | 1 | 26 | 15 |
 | 1 | `PrintObjectSlice` | `print_object_slice.rs` | 24 | 1 | 2 | 0 | 0 | 21 | 20 |
 | 1 | `MultiMaterialSegmentation` | `multi_material_segmentation.rs` | 74 | 39 | 4 | 3 | 0 | 28 | 16 |
+| 1 | `Print` | `print.rs` | 236 | 168 | 9 | 7 | 0 | 52 | 12 |
 | 1 | `GCode/AvoidCrossingPerimeters` | `gcode/avoid_crossing_perimeters.rs` | 59 | 31 | 3 | 0 | 0 | 25 | 17 |
 | 1 | `GCode/TimelapsePosPicker` | `gcode/timelapse_pos_picker.rs` | 20 | 1 | 0 | 0 | 0 | 19 | 17 |
-| 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 50 | 14 | 8 | 0 | 13 | 9 |
-| 1 | `Layer` | `layer.rs` | 56 | 15 | 4 | 2 | 0 | 35 | 15 |
-| 1 | `TriangleMeshSlicer` | `triangle_mesh_slicer.rs` | 45 | 15 | 7 | 1 | 0 | 22 | 15 |
+| 1 | `Layer` | `layer.rs` | 56 | 15 | 4 | 2 | 0 | 35 | 14 |
 | 1 | `EdgeGrid` | `edge_grid.rs` | 47 | 11 | 2 | 2 | 0 | 32 | 11 |
-| 1 | `Model` | `model.rs` | 374 | 264 | 29 | 6 | 0 | 75 | 7 |
 | 1 | `PerimeterGenerator` | `perimeter_generator.rs` | 29 | 4 | 2 | 0 | 0 | 23 | 13 |
-| 1 | `PrintConfig` | `print_config.rs` | 137 | 95 | 9 | 3 | 0 | 30 | 10 |
+| 1 | `PrintConfig` | `print_config.rs` | 137 | 98 | 9 | 3 | 0 | 27 | 10 |
 | 1 | `TriangleMesh` | `triangle_mesh.rs` | 136 | 62 | 1 | 4 | 0 | 69 | 9 |
 | 1 | `Line` | `geometry/line.rs` | 56 | 14 | 4 | 7 | 0 | 31 | 5 |
 | 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 33 | 6 | 0 | 0 | 29 | 10 |
 | 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 183 | 20 | 7 | 2 | 6 | 0 |
 | 1 | `LayerRegion` | `layer_region.rs` | 29 | 1 | 3 | 0 | 0 | 25 | 9 |
 | 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 119 | 10 | 9 | 0 | 3 | 0 |
+| 1 | `TriangleMeshSlicer` | `triangle_mesh_slicer.rs` | 45 | 22 | 7 | 1 | 0 | 15 | 8 |
 | 1 | `Color` | `color.rs` | 97 | 72 | 1 | 0 | 0 | 24 | 8 |
+| 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 58 | 15 | 8 | 0 | 4 | 0 |
 | 1 | `libslic3r` | `libslic3r.rs` | 28 | 1 | 0 | 0 | 0 | 27 | 8 |
-| 1 | `Calib` | `calib.rs` | 51 | 40 | 2 | 2 | 1 | 6 | 4 |
 | 1 | `ExtrusionEntity` | `extrusion_entity.rs` | 125 | 89 | 1 | 5 | 0 | 30 | 2 |
 | 1 | `GCode/PrintExtents` | `gcode/print_extents.rs` | 10 | 2 | 1 | 1 | 1 | 5 | 5 |
-| 1 | `MultiNozzleUtils` | `multi_nozzle_utils.rs` | 59 | 43 | 5 | 0 | 0 | 11 | 7 |
 | 1 | `Time` | `time.rs` | 22 | 7 | 1 | 2 | 0 | 12 | 5 |
 | 1 | `AABBTreeIndirect` | `aabb_tree_indirect.rs` | 41 | 26 | 1 | 5 | 0 | 9 | 1 |
 | 1 | `Config` | `config.rs` | 327 | 212 | 32 | 4 | 0 | 79 | 2 |
 | 1 | `Fill/FillAdaptive` | `fill/fill_adaptive.rs` | 32 | 16 | 1 | 2 | 0 | 13 | 4 |
 | 1 | `GCode/SeamPlacer` | `gcode/seam_placer.rs` | 45 | 32 | 7 | 1 | 0 | 5 | 5 |
-| 1 | `GCodeWriter` | `g_code_writer.rs` | 84 | 64 | 5 | 3 | 0 | 12 | 3 |
+| 1 | `Model` | `model.rs` | 374 | 271 | 29 | 6 | 0 | 68 | 0 |
 | 1 | `ModelArrange` | `model_arrange.rs` | 14 | 2 | 1 | 0 | 0 | 11 | 6 |
 | 1 | `Orient` | `orient.rs` | 22 | 7 | 2 | 0 | 0 | 13 | 6 |
 | 1 | `SVG` | `svg.rs` | 64 | 17 | 4 | 0 | 0 | 43 | 6 |
@@ -123,7 +119,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `MutablePriorityQueue` | `mutable_priority_queue.rs` | 37 | 20 | 4 | 5 | 0 | 8 | 0 |
 | 1 | `Point` | `geometry/point.rs` | 103 | 20 | 7 | 4 | 0 | 72 | 1 |
 | 1 | `RegionExpansion` | `region_expansion.rs` | 23 | 9 | 5 | 0 | 0 | 9 | 5 |
-| 1 | `FilamentGroupUtils` | `filament_group_utils.rs` | 17 | 11 | 2 | 0 | 0 | 4 | 4 |
 | 1 | `Fill/FillRectilinear` | `fill/fill_rectilinear.rs` | 109 | 48 | 2 | 1 | 0 | 58 | 3 |
 | 1 | `Fill/Lightning/Generator` | `fill/lightning/generator.rs` | 6 | 0 | 1 | 0 | 0 | 5 | 4 |
 | 1 | `Geometry` | `geometry/geometry.rs` | 86 | 53 | 2 | 1 | 0 | 30 | 3 |
@@ -134,12 +129,12 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 178 | 23 | 3 | 0 | 1 | 0 |
 | 1 | `GCode/ToolOrderUtils` | `gcode/tool_order_utils.rs` | 32 | 26 | 1 | 0 | 0 | 5 | 3 |
+| 1 | `GCodeWriter` | `g_code_writer.rs` | 84 | 77 | 4 | 3 | 0 | 0 | 0 |
 | 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 3 | 0 | 1 | 0 | 12 | 2 |
 | 1 | `Polyline` | `geometry/polyline.rs` | 52 | 29 | 3 | 1 | 0 | 19 | 2 |
 | 1 | `Utils` | `utils.rs` | 36 | 21 | 3 | 3 | 0 | 9 | 0 |
 | 1 | `Arachne/WallToolPaths` | `arachne/wall_tool_paths.rs` | 16 | 8 | 3 | 1 | 0 | 4 | 1 |
 | 1 | `Circle` | `circle.rs` | 27 | 24 | 0 | 0 | 0 | 3 | 2 |
-| 1 | `CustomGCode` | `custom_g_code.rs` | 6 | 4 | 0 | 0 | 0 | 2 | 2 |
 | 1 | `Fill/FillPlanePath` | `fill/fill_plane_path.rs` | 25 | 12 | 2 | 0 | 0 | 11 | 2 |
 | 1 | `Fill/Lightning/TreeNode` | `fill/lightning/tree_node.rs` | 27 | 17 | 2 | 1 | 0 | 7 | 1 |
 | 1 | `GCode/PostProcessor` | `gcode/post_processor.rs` | 7 | 0 | 3 | 0 | 0 | 4 | 2 |
@@ -153,6 +148,11 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Arachne/utils/PolylineStitcher` | `arachne/utils/polyline_stitcher.rs` | 7 | 0 | 0 | 0 | 0 | 7 | 1 |
 | 1 | `BridgeDetector` | `bridge_detector.rs` | 11 | 5 | 2 | 0 | 0 | 4 | 1 |
 | 1 | `BuildVolume` | `build_volume.rs` | 20 | 17 | 0 | 0 | 0 | 3 | 1 |
+| 1 | `CustomGCode` | `custom_g_code.rs` | 6 | 4 | 0 | 0 | 0 | 2 | 1 |
+| 1 | `ExtrusionSimulator` | `extrusion_simulator.rs` | 22 | 19 | 0 | 1 | 0 | 2 | 0 |
+| 1 | `FilamentGroup` | `filament_group.rs` | 49 | 46 | 2 | 1 | 0 | 0 | 0 |
+| 1 | `Fill/Fill` | `fill/fill.rs` | 7 | 3 | 0 | 0 | 0 | 4 | 1 |
+| 1 | `Fill/Lightning/DistanceField` | `fill/lightning/distance_field.rs` | 11 | 9 | 0 | 0 | 0 | 2 | 1 |
 
 ## C++ units with no Rust file
 
@@ -1197,15 +1197,15 @@ Missing in the Rust file:
 - `BoundingBox::rotated` :46 (98 tokens, overload) — in `geometry/expolygon.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
 - `BoundingBoxBase::contains` :50 (51 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
 - `BoundingBoxBase::contains` :54 (17 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
-- `BoundingBoxBase::merge` :73 (57 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
+- `BoundingBoxBase::merge` :73 (57 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
 - `BoundingBoxBase::construct` :89 (136 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
-- `BoundingBoxBase::merge` :89 (12 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
-- `BoundingBoxBase::merge` :97 (108 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
-- `BoundingBox3Base::merge` :137 (57 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
+- `BoundingBoxBase::merge` :89 (12 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
+- `BoundingBoxBase::merge` :97 (108 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
+- `BoundingBox3Base::merge` :137 (57 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
 - `BoundingBox3Base::contains` :150 (37 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
-- `BoundingBox3Base::merge` :152 (12 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
+- `BoundingBox3Base::merge` :152 (12 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
 - `BoundingBox3Base::contains` :154 (17 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
-- `BoundingBox3Base::merge` :159 (122 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
+- `BoundingBox3Base::merge` :159 (122 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
 - `BoundingBox::rotate` :206 (16 tokens, overload) — in `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`, `gcode/wipe_tower.rs`
 - `empty` :249 (36 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `empty` :255 (50 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
@@ -1390,52 +1390,46 @@ Rust only:
 
 ### `Calib` (.cpp+.hpp) and `calib.rs`
 
-Tier 1. C++ functions 51 (plus 6 constructors, 1 destructors, 0 operators), Rust functions 70. Matched 45: faithful 40, partial 2, divergent 2, stub 1.
+Tier 1. C++ functions 51 (plus 6 constructors, 1 destructors, 0 operators), Rust functions 81. Matched 51: faithful 48, partial 3, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `CalibPressureAdvance::convert_number_to_string` :41 and `CalibPressureAdvance::convert_number_to_string` :1041 (33%, 1.27x)
-- divergent: `CalibPressureAdvanceLine::generate_test` :415 and `CalibPressureAdvanceLine::generate_test` :1192 (4%, 0.11x)
-- partial: `CalibPressureAdvanceLine::is_delta` :433 and `CalibPressureAdvanceLine::is_delta` :1212 (0%, 0.16x)
-- divergent: `CalibPressureAdvancePattern::generate_custom_gcodes` :506 and `CalibPressureAdvancePattern::generate_custom_gcodes` :1332 (1%, 0.01x)
-- stub: `CalibPressureAdvancePattern::_refresh_writer` :687 and `CalibPressureAdvancePattern::_refresh_writer` :1443 (0%, 0.01x)
-
-Missing in the Rust file:
-
-- `CalibPressureAdvance::move_to` :20 (60 tokens) — in `sla/agg/path_storage.rs`, `sla/agg/rasterizer_scanline_aa.rs`, `sla/agg/rasterizer_sl_clip.rs`
-- `CalibPressureAdvance::draw_digit` :50 (1046 tokens)
-- `CalibPressureAdvance::draw_number` :187 (136 tokens)
-- `CalibPressureAdvance::draw_line` :207 (150 tokens) — in `svg.rs`
-- `CalibPressureAdvance::draw_box` :226 (1296 tokens)
-- `CalibPressureAdvanceLine::print_pa_lines` :435 (508 tokens)
+- partial: `CalibPressureAdvance::convert_number_to_string` :41 and `CalibPressureAdvance::convert_number_to_string` :1046 (33%, 1.27x)
+- partial: `CalibPressureAdvancePattern::generate_custom_gcodes` :506 and `CalibPressureAdvancePattern::generate_custom_gcodes` :1980 (79%, 1.41x)
+- partial: `CalibPressureAdvancePattern::_refresh_writer` :687 and `CalibPressureAdvancePattern::_refresh_writer` :2325 (82%, 1.16x)
 
 Rust only:
 
-- `CalibMode::default` :119
-- `CalibState::default` :158
-- `FlowRatioCalibrationType::default` :177
-- `DrawDigitMode::default` :213
-- `CalibParams::default` :288
-- `X1CCalibInfo::default` :358
-- `CaliPresetInfo::default` :436
-- `PrinterCaliInfo::default` :478
-- `PACalibResult::default` :555
-- `PACalibIndexInfo::default` :622
-- `PACalibExtruderInfo::default` :676
-- `PACalibTabInfo::default` :708
-- `FlowRatioCalibResult::default` :747
-- `DrawBoxOptArgs::new` :787
-- `DrawBoxOptArgs::default` :801
-- `SuggestedConfigCalibPAPattern::brim_pair` :857
-- `SuggestedConfigCalibPAPattern::default` :865
-- `std_min` :886
-- `std_max` :896
-- `floats_nullable_at` :906
-- `floats_at` :917
-- `CalibPressureAdvance::new` :972
-- `CalibPressureAdvanceLine::new` :1165
-- `CalibPressureAdvancePattern::with_defaults` :1291
-- `CalibPressureAdvancePattern::new` :1311
+- `CalibMode::default` :120
+- `CalibState::default` :159
+- `FlowRatioCalibrationType::default` :178
+- `DrawDigitMode::default` :214
+- `CalibParams::default` :289
+- `X1CCalibInfo::default` :359
+- `CaliPresetInfo::default` :437
+- `PrinterCaliInfo::default` :479
+- `PACalibResult::default` :556
+- `PACalibIndexInfo::default` :623
+- `PACalibExtruderInfo::default` :677
+- `PACalibTabInfo::default` :709
+- `FlowRatioCalibResult::default` :748
+- `DrawBoxOptArgs::new` :788
+- `DrawBoxOptArgs::default` :802
+- `SuggestedConfigCalibPAPattern::brim_pair` :858
+- `SuggestedConfigCalibPAPattern::default` :866
+- `std_min` :887
+- `std_max` :897
+- `floats_nullable_at` :907
+- `floats_at` :918
+- `floats_values` :923
+- `CalibPressureAdvance::new` :977
+- `CalibPressureAdvanceLine::new` :1652
+- `CalibPressureAdvanceLine::line_width` :1720
+- `CalibPressureAdvanceLine::height_layer` :1725
+- `CalibPressureAdvanceLine::draw_numbers` :1736
+- `printable_area_of` :1880
+- `CalibPressureAdvancePattern::with_defaults` :1943
+- `CalibPressureAdvancePattern::new` :1964
 
 ### `Circle` (.cpp+.hpp) and `circle.rs`
 
@@ -2462,7 +2456,7 @@ Tier 1. C++ functions 6 (plus 0 constructors, 0 destructors, 5 operators), Rust 
 Missing in the Rust file:
 
 - `update_custom_gcode_per_print_z_from_config` :15 (148 tokens)
-- `custom_tool_changes_up_to` :74 (85 tokens)
+- `custom_tool_changes_up_to` :74 (85 tokens) — in `print.rs`
 
 Rust only:
 
@@ -2506,15 +2500,15 @@ Missing in the Rust file:
 - `EdgeGrid::Grid::create` :104 (127 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
 - `Grid::create` :111 (13 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
 - `EdgeGrid::Grid::create` :117 (158 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
-- `Grid::intersect` :120 (18 tokens) — in `clipper2/clipper_h.rs`
-- `Grid::intersect` :121 (36 tokens) — in `clipper2/clipper_h.rs`
-- `Grid::intersect` :122 (52 tokens) — in `clipper2/clipper_h.rs`
-- `Grid::intersect` :123 (36 tokens) — in `clipper2/clipper_h.rs`
+- `Grid::intersect` :120 (18 tokens) — in `clipper2/clipper_h.rs`, `mesh_boolean.rs`
+- `Grid::intersect` :121 (36 tokens) — in `clipper2/clipper_h.rs`, `mesh_boolean.rs`
+- `Grid::intersect` :122 (52 tokens) — in `clipper2/clipper_h.rs`, `mesh_boolean.rs`
+- `Grid::intersect` :123 (36 tokens) — in `clipper2/clipper_h.rs`, `mesh_boolean.rs`
 - `EdgeGrid::Grid::create_from_m_contours` :142 (1397 tokens)
 - `Grid::ClosestPointResult::valid` :147 (10 tokens) — in `build_volume.rs`, `fill/fill_base.rs`, `gcode/conflict_checker.rs`
 - `Grid::visit_intersect_line_impl` :173 (762 tokens)
 - `div_floor` :339 (30 tokens)
-- `EdgeGrid::Grid::intersect` :347 (915 tokens) — in `clipper2/clipper_h.rs`
+- `EdgeGrid::Grid::intersect` :347 (915 tokens) — in `clipper2/clipper_h.rs`, `mesh_boolean.rs`
 - `Grid::line` :402 (39 tokens) — in `file_parser_error.rs`, `fill/fill_line.rs`, `gcode/wipe_tower.rs`
 - `Grid::cell_inside_or_crossing` :420 (78 tokens)
 - `EdgeGrid::Grid::line_cell_intersect` :484 (368 tokens)
@@ -2766,7 +2760,7 @@ Rust only:
 
 ### `Extruder` (.cpp+.hpp) and `extruder.rs`
 
-Tier 1. C++ functions 31 (plus 2 constructors, 1 destructors, 4 operators), Rust functions 59. Matched 31: faithful 31, partial 0, divergent 0, stub 0.
+Tier 1. C++ functions 31 (plus 2 constructors, 1 destructors, 4 operators), Rust functions 60. Matched 31: faithful 31, partial 0, divergent 0, stub 0.
 
 Rust only:
 
@@ -2792,12 +2786,13 @@ Rust only:
 - `Extruder::new` :585
 - `Extruder::config` :609 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
 - `Extruder::share_retracted` :683
-- `Extruder::volume_type` :713 — C++ has it in `NozzleInventory`
-- `Extruder::extruder_type` :727
-- `Extruder::retract_lift` :1035
-- `Extruder::eq` :1159
-- `Extruder::partial_cmp` :1165
-- `Extruder::cmp` :1170
+- `Extruder::exclusive_nozzle` :700
+- `Extruder::volume_type` :720 — C++ has it in `NozzleInventory`
+- `Extruder::extruder_type` :734
+- `Extruder::retract_lift` :1042
+- `Extruder::eq` :1166
+- `Extruder::partial_cmp` :1172
+- `Extruder::cmp` :1177
 
 ### `ExtrusionEntity` (.cpp+.hpp) and `extrusion_entity.rs`
 
@@ -3037,91 +3032,74 @@ Rust only:
 
 ### `FilamentGroup` (.cpp+.hpp) and `filament_group.rs`
 
-Tier 1. C++ functions 49 (plus 5 constructors, 0 destructors, 1 operators), Rust functions 43. Matched 26: faithful 22, partial 0, divergent 4, stub 0.
+Tier 1. C++ functions 49 (plus 5 constructors, 0 destructors, 1 operators), Rust functions 75. Matched 49: faithful 46, partial 2, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `KMediods::calc_cost` :716 and `KMediods2::calc_cost` :1075 (27%, 0.22x)
-- divergent: `KMediods::assign_cluster_label` :808 and `KMediods2::assign_cluster_label` :935 (19%, 1.21x)
-- divergent: `KMediods::do_clustering` :890 and `KMediods2::do_clustering` :1092 (27%, 0.75x)
-- divergent: `FilamentGroup::calc_min_flush_group` :1019 and `FilamentGroup::calc_min_flush_group` :2013 (16%, 0.16x)
-
-Missing in the Rust file:
-
-- `calc_match_mode_cost` :20 (87 tokens)
-- `filament_diameter_matches_nozzle_volume` :40 (38 tokens)
-- `FlushTimeMachine::time_machine_start` :41 (14 tokens)
-- `FlushTimeMachine::time_machine_end` :46 (43 tokens)
-- `fnv_hash_nozzle` :78 (150 tokens)
-- `calc_change_time_for_group` :119 (29 tokens)
-- `full_evaluate` :135 (510 tokens)
-- `estimate_dedup_enum_count` :220 (247 tokens)
-- `KMediods::set_placable_limits` :230 (6 tokens)
-- `KMediods::set_unplacable_limits` :233 (6 tokens)
-- `KMediods::set_one_change_budget` :236 (6 tokens)
-- `FilamentGroup::calc_one_change_budget` :252 (190 tokens)
-- `FilamentGroup::calc_group_by_enum` :279 (1289 tokens)
-- `FilamentGroup::calc_group_by_kmedoids` :428 (385 tokens)
-- `KMediods::set_cluster_group_size` :707 (54 tokens)
-- `KMediods::have_enough_size` :747 (151 tokens)
-- `KMediods::init_cluster_center` :766 (311 tokens)
-- `FilamentGroupContext::available_only` :969 (301 tokens)
-- `map_to_full_nozzle_ids` :1012 (37 tokens)
-- `calc_filament_group_for_match_multi_nozzle` :1510 (127 tokens)
-- `calc_filament_group_for_nozzle_match` :1527 (1996 tokens)
-- `plan_filament_nozzle_mapping_and_order` :1778 (995 tokens)
-- `calc_filament_group_for_manual_multi_nozzle` :1909 (112 tokens)
+- divergent: `FlushTimeMachine::time_machine_end` :46 and `FlushTimeMachine::time_machine_end` :126 (20%, 0.35x)
+- partial: `FlushDistanceEvaluator::get_distance` :685 and `FlushDistanceEvaluator::get_distance` :1147 (80%, 0.44x)
+- partial: `FilamentGroup::calc_filament_group_for_match` :1197 and `FilamentGroup::calc_filament_group_for_match` :1875 (92%, 1.15x)
 
 Rust only:
 
-- `MemoryedGroup::new` :97
-- `MemoryedGroup::gt` :107
-- `HeapOrderedGroup::eq` :128
-- `HeapOrderedGroup::cmp` :136
-- `HeapOrderedGroup::partial_cmp` :153
-- `GroupInfo::default` :282
-- `fnv_hash_two_ints` :401
-- `FlushDistanceEvaluator::new` :649
-- `TimeEvaluator::new` :767
-- `KMediods2::new` :824
-- `KMediods2::set_unplaceable_limits` :854
-- `KMediods2::cluster_small_data` :875
-- `FilamentGroup::new` :1222
-- `FilamentGroup::calc_min_flush_group_by_enum` :2034
-- `FilamentGroup::calc_min_flush_group_by_pam2` :2294
-- `FilamentGroupMultiNozzle::new` :2454
-- `FilamentGroupMultiNozzle::calc_filament_group_by_mcmf` :2527
+- `FilamentGroupError::fmt` :91
+- `runtime_error` :100
+- `FlushTimeMachine::default` :114
+- `MemoryedGroup::new` :144
+- `MemoryedGroup::gt` :149
+- `MemoryedGroupHeap::new` :163
+- `MemoryedGroupHeap::comp` :168
+- `MemoryedGroupHeap::sift_up` :174
+- `MemoryedGroupHeap::c` :190
+- `MemoryedGroupHeap::empty` :195 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `MemoryedGroupHeap::size` :200 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
+- `MemoryedGroupHeap::top` :205
+- `MemoryedGroupHeap::push` :210 — C++ has it in `Channel`, `MeshSplitImpl`, `MutablePriorityQueue`
+- `MemoryedGroupHeap::pop` :219 — C++ has it in `Channel`, `MeshSplitImpl`, `MutablePriorityQueue`
+- `libcxx_uniform_int_ptrdiff` :252
+- `libcxx_shuffle` :272
+- `limits_as_hash_map` :640
+- `FlushDistanceEvaluator::new` :1100
+- `TimeEvaluator::new` :1160
+- `KMediods::new` :1201
+- `FilamentGroup::new` :1663
+- `nozzle_match_diameter_matches` :2283
+- `nozzle_match_can_place_unloaded` :2292
+- `nozzle_match_is_fixed_nozzle` :2323
+- `nozzle_match_append_virtual_nozzle` :2331
+- `nozzle_match_assign_unmatched` :2342
 
 ### `FilamentGroupUtils` (.cpp+.hpp) and `filament_group_utils.rs`
 
-Tier 1. C++ functions 17 (plus 3 constructors, 0 destructors, 5 operators), Rust functions 25. Matched 13: faithful 11, partial 2, divergent 0, stub 0.
+Tier 1. C++ functions 17 (plus 3 constructors, 0 destructors, 5 operators), Rust functions 36. Matched 17: faithful 14, partial 3, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Color::to_hex_str` :50 and `Color::to_hex_str` :136 (50%, 0.49x)
-- partial: `remove_intersection` :213 and `remove_intersection` :332 (50%, 0.69x)
-
-Missing in the Rust file:
-
-- `build_full_machine_filaments` :91 (417 tokens)
-- `build_machine_filaments` :146 (317 tokens)
-- `extract_unprintable_limit_indices` :236 (101 tokens)
-- `extract_unprintable_limit_indices` :253 (106 tokens)
+- partial: `Color::to_hex_str` :50 and `Color::to_hex_str` :132 (50%, 0.56x)
+- partial: `build_full_machine_filaments` :91 and `build_full_machine_filaments` :375 (69%, 1.37x)
+- partial: `remove_intersection` :213 and `remove_intersection` :543 (50%, 0.82x)
 
 Rust only:
 
-- `Color::default` :65
-- `Color::new` :78
-- `Color::from_hex_str` :84
-- `Color::eq` :154
-- `Color::cmp` :164
-- `Color::partial_cmp` :183
-- `MachineFilamentInfo::lt` :230
-- `FilamentGroupException::new` :271
-- `FilamentGroupException::fmt` :292
-- `extract_unprintable_limit_indices_map` :451
-- `extract_unprintable_limit_indices_multimap` :489
-- `sort_remove_duplicates` :679 — C++ has it in `libslic3r`
+- `Color::default` :56
+- `istream_hex_to_uint` :67
+- `Color::new` :104
+- `Color::from_hex_str` :109
+- `Color::eq` :150
+- `Color::cmp` :158
+- `Color::partial_cmp` :173
+- `MachineFilamentInfo::lt` :222
+- `MachineFilamentInfo::eq` :237
+- `MachineFilamentInfo::cmp` :243
+- `MachineFilamentInfo::partial_cmp` :254
+- `NozzleLoadedFilamentInfo::default` :273
+- `NozzleLoadedFilamentInfo::eq` :280
+- `FilamentGroupException::new` :313
+- `FilamentGroupException::fmt` :329
+- `option_string_at0` :362
+- `is_regex_word` :370
+- `extract_unprintable_limit_indices` :634
+- `sort_remove_duplicates` :732 — C++ has it in `libslic3r`
 
 ### `FileParserError` (.hpp) and `file_parser_error.rs`
 
@@ -4082,28 +4060,31 @@ Rust only:
 
 ### `GCode` (.cpp+.hpp) and `g_code.rs`
 
-Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Rust functions 295. Matched 120: faithful 99, partial 9, divergent 11, stub 1.
+Tier 1. C++ functions 152 (plus 10 constructors, 1 destructors, 0 operators), Rust functions 304. Matched 129: faithful 105, partial 12, divergent 11, stub 1.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - divergent: `WipeTowerIntegration::append_tcr` :741 and `append_tcr` :632 (17%, 0.7x)
 - divergent: `WipeTowerIntegration::post_process_wipe_tower_moves` :1383 and `post_process_wipe_tower_moves` :503 (25%, 0.89x)
-- divergent: `WipeTowerIntegration::prime` :1477 and `WipeTowerIntegration::prime` :13563 (0%, 0.14x)
-- stub: `WipeTowerIntegration::finalize` :1554 and `WipeTowerIntegration::finalize` :13609 (0%, 0.11x)
-- partial: `validate_custom_gcode` :1895 and `validate_custom_gcode` :13880 (40%, 1.04x)
+- divergent: `WipeTowerIntegration::prime` :1477 and `WipeTowerIntegration::prime` :13567 (0%, 0.14x)
+- stub: `WipeTowerIntegration::finalize` :1554 and `WipeTowerIntegration::finalize` :13613 (0%, 0.11x)
+- partial: `validate_custom_gcode` :1895 and `validate_custom_gcode` :13884 (40%, 1.04x)
+- partial: `GCode::first_layer_projection` :1965 and `GCode::first_layer_projection` :14365 (82%, 2.88x)
+- partial: `sort_object_instances_by_max_z` :2406 and `sort_object_instances_by_max_z` :14286 (62%, 0.93x)
+- partial: `sort_object_instances_by_model_order` :2421 and `sort_object_instances_by_model_order` :14305 (68%, 1.31x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :1461 (8%, 1.33x)
-- divergent: `GCode::print_machine_envelope` :4132 and `GCode::print_machine_envelope` :12852 (26%, 1.13x)
-- partial: `get_instance_name` :4568 and `get_instance_name` :12032 (44%, 0.59x)
+- divergent: `GCode::print_machine_envelope` :4132 and `GCode::print_machine_envelope` :12856 (26%, 1.13x)
+- partial: `get_instance_name` :4568 and `get_instance_name` :12033 (44%, 0.59x)
 - partial: `GCode::change_layer` :6473 and `change_layer` :5410 (39%, 1.11x)
-- partial: `GCode::is_enable_overhang_speed` :6601 and `GCode::is_enable_overhang_speed` :13034 (55%, 1.77x)
-- partial: `GCode::get_path_speed` :6615 and `GCode::get_path_speed` :13051 (43%, 1.35x)
+- partial: `GCode::is_enable_overhang_speed` :6601 and `GCode::is_enable_overhang_speed` :13038 (55%, 1.77x)
+- partial: `GCode::get_path_speed` :6615 and `GCode::get_path_speed` :13055 (43%, 1.35x)
 - divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :2016 (18%, 1.94x)
 - divergent: `GCode::extrude_path` :6927 and `extrude_path` :3246 (5%, 0.05x)
 - divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :4006 (28%, 1.68x)
 - partial: `GCode::extrude_support` :7011 and `extrude_support` :4414 (33%, 1.62x)
-- divergent: `GCode::GCodeOutputStream::write_format` :7125 and `GCodeOutputStream::write_format` :12451 (24%, 0.17x)
-- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :11402 (50%, 1.06x)
-- partial: `encodeBase64` :8091 and `encode_base64` :11986 (50%, 0.56x)
+- divergent: `GCode::GCodeOutputStream::write_format` :7125 and `GCodeOutputStream::write_format` :12452 (24%, 0.17x)
+- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :11403 (50%, 1.06x)
+- partial: `encodeBase64` :8091 and `encode_base64` :11987 (50%, 0.56x)
 - divergent: `GCode::travel_to` :8198 and `travel_to` :4574 (11%, 0.21x)
 - partial: `GCode::update_placeholder_parser_with_variant_params` :8551 and `GCodePlaceholders::update_placeholder_parser_with_variant_params` :9182 (42%, 1.12x)
 - divergent: `GCode::set_extruder` :8617 and `set_extruder` :4963 (6%, 0.1x)
@@ -4113,16 +4094,11 @@ Missing in the Rust file:
 - `WipeTowerIntegration::tool_change` :1489 (197 tokens) — in `g_code_writer.rs`, `gcode/tool_ordering.rs`, `gcode/wipe_tower.rs`
 - `GCode::collect_layers_to_print` :1576 (1261 tokens)
 - `GCode::collect_layers_to_print` :1769 (593 tokens)
-- `update_print_estimated_stats` :1853 (267 tokens)
-- `GCode::first_layer_projection` :1965 (156 tokens)
 - `GCode::do_export` :1986 (1513 tokens)
 - `init_gcode_processor` :2193 (60 tokens)
 - `autospeed_volumetric_limit` :2207 (445 tokens)
 - `init_ooze_prevention` :2266 (278 tokens)
 - `export_thumbnails_to_file` :2301 (312 tokens)
-- `update_print_stats_and_format_filament_stats` :2344 (356 tokens)
-- `sort_object_instances_by_max_z` :2406 (149 tokens)
-- `sort_object_instances_by_model_order` :2421 (356 tokens)
 - `GCode::_do_export` :2478 (9884 tokens)
 - `GCode::export_layer_filaments` :3670 (760 tokens)
 - `GCode::process_layers` :3830 (1176 tokens)
@@ -4133,15 +4109,11 @@ Missing in the Rust file:
 - `GCode::generate_timelapse_gcode` :4735 (922 tokens)
 - `GCode::filament_in_first_layer_phase` :4844 (635 tokens)
 - `GCode::process_layer` :4919 (10987 tokens) — in `gcode/cooling.rs`, `gcode/spiral_vase.rs`
-- `GCode::apply_print_config` :6403 (30 tokens)
 - `calculate_layer_edge_grid` :6543 (148 tokens)
 - `GCode::extrude_multi_path` :6884 (213 tokens)
 - `GCode::GCodeOutputStream::write` :7106 (65 tokens, overload) — in `log.rs`, `nozzle_inventory.rs`, `zipper.rs`
 - `GCode::_extrude` :7587 (3174 tokens) — in `extruder.rs`, `gcode/extruder.rs`, `gcode/wipe_tower.rs`
 - `GCode::needs_retraction` :8363 (926 tokens)
-- `GCode::update_layer_related_config` :8531 (110 tokens)
-- `polygon_to_string` :8993 (119 tokens)
-- `GCode::set_object_info` :9007 (183 tokens)
 
 Rust only:
 
@@ -4265,61 +4237,61 @@ Rust only:
 - `reset_export_placeholders` :9432
 - `injected_number` :9441
 - `ExportPlaceholderInputs::from_settings` :9464
-- `export_placeholders_key` :9514
-- `new_export_placeholder_slot` :9532
-- `export_placeholder_parser_process` :9556
-- `export_placeholder_parser_process_at` :9567
-- `export_template_override` :9602
-- `template_name_and_filament` :9647
-- `install_export_placeholders` :9667
-- `with_export_placeholders` :9673
-- `context_number` :9678
-- `change_filament_override` :9723
-- `filament_template_override` :9931
-- `config_string_value` :9953
-- `writeln_to` :9967
-- `process_gcode_template` :9985
-- `eval_condition` :10544
-- `eval_expr` :10731
-- `resolve_all_vars_in_expr` :10869
-- `eval_math` :10919
-- `scale_` :11093 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale_` :11098 — C++ has it in `Point`, `libslic3r`
-- `point_mul_f64` :11104
-- `path_from` :11111
-- `poly_len` :11144
-- `scale_` :11647 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale` :11653 — C++ has it in `Point`, `libslic3r`
-- `point_from_f64` :11660
-- `pp_points` :11670
-- `strtol10` :11865
-- `base64_encode` :11997
-- `OozePrevention::new` :12053
-- `Wipe::new` :12129
-- `ColorPrintColors::get` :12261 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `LayerToPrint::new` :12283
-- `LayerResult::new` :12344
-- `GCodeOutputStream::new` :12376
-- `GCode::default` :12552
-- `GCode::new` :12559
-- `GCode::origin` :12627
-- `GCode::last_pos` :12641
-- `GCode::last_scarf_seam_flag` :12646
-- `GCode::scarf_seam_start_flag` :12651
-- `GCode::current_extruder_id` :12656
-- `GCode::config` :12681 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `GCode::print_config` :12686 — C++ has it in `SLA/Rotfinder`
-- `GCode::layer_id` :12696
-- `GCode::writer` :12701
-- `GCode::writer_mut` :12706
-- `GCode::filament_config_index` :12822
-- `GCode::nozzle_config_index` :12828
-- `GCode::current_filament_id` :12833
-- `GCode::bed_temperature` :12905
-- `WipeTowerIntegration::new` :13509
-- `Island::by_region_per_copy` :13742
-- `object_by_extruder` :13827
-- `object_islands_by_extruder` :13844
+- `export_placeholders_key` :9515
+- `new_export_placeholder_slot` :9533
+- `export_placeholder_parser_process` :9557
+- `export_placeholder_parser_process_at` :9568
+- `export_template_override` :9603
+- `template_name_and_filament` :9648
+- `install_export_placeholders` :9668
+- `with_export_placeholders` :9674
+- `context_number` :9679
+- `change_filament_override` :9724
+- `filament_template_override` :9932
+- `config_string_value` :9954
+- `writeln_to` :9968
+- `process_gcode_template` :9986
+- `eval_condition` :10545
+- `eval_expr` :10732
+- `resolve_all_vars_in_expr` :10870
+- `eval_math` :10920
+- `scale_` :11094 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale_` :11099 — C++ has it in `Point`, `libslic3r`
+- `point_mul_f64` :11105
+- `path_from` :11112
+- `poly_len` :11145
+- `scale_` :11648 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale` :11654 — C++ has it in `Point`, `libslic3r`
+- `point_from_f64` :11661
+- `pp_points` :11671
+- `strtol10` :11866
+- `base64_encode` :11998
+- `OozePrevention::new` :12054
+- `Wipe::new` :12130
+- `ColorPrintColors::get` :12262 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `LayerToPrint::new` :12284
+- `LayerResult::new` :12345
+- `GCodeOutputStream::new` :12377
+- `GCode::default` :12555
+- `GCode::new` :12562
+- `GCode::origin` :12631
+- `GCode::last_pos` :12645
+- `GCode::last_scarf_seam_flag` :12650
+- `GCode::scarf_seam_start_flag` :12655
+- `GCode::current_extruder_id` :12660
+- `GCode::config` :12685 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `GCode::print_config` :12690 — C++ has it in `SLA/Rotfinder`
+- `GCode::layer_id` :12700
+- `GCode::writer` :12705
+- `GCode::writer_mut` :12710
+- `GCode::filament_config_index` :12826
+- `GCode::nozzle_config_index` :12832
+- `GCode::current_filament_id` :12837
+- `GCode::bed_temperature` :12909
+- `WipeTowerIntegration::new` :13513
+- `Island::by_region_per_copy` :13746
+- `object_by_extruder` :13831
+- `object_islands_by_extruder` :13848
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
@@ -4867,23 +4839,24 @@ Rust only:
 
 ### `GCode/ToolOrdering` (.cpp+.hpp) and `gcode/tool_ordering.rs`
 
-Tier 1. C++ functions 85 (plus 3 constructors, 0 destructors, 6 operators), Rust functions 184. Matched 72: faithful 50, partial 14, divergent 8, stub 0.
+Tier 1. C++ functions 85 (plus 3 constructors, 0 destructors, 6 operators), Rust functions 194. Matched 81: faithful 58, partial 15, divergent 8, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `WipingExtrusions::is_overriddable_and_mark` :53 and `WipingExtrusions::is_overriddable_and_mark` :4763 (43%, 0.85x)
+- partial: `WipingExtrusions::is_overriddable_and_mark` :53 and `WipingExtrusions::is_overriddable_and_mark` :6229 (43%, 0.85x)
 - divergent: `WipingExtrusions::is_entity_overridden` :96 and `WipingExtrusions::is_entity_overridden` :431 (14%, 1.13x)
 - partial: `LayerTools::wall_filament` :138 and `LayerTools::wall_filament` :1100 (38%, 1.3x)
 - partial: `LayerTools::sparse_infill_filament` :145 and `LayerTools::sparse_infill_filament` :1115 (38%, 1.3x)
 - partial: `LayerTools::solid_infill_filament` :152 and `LayerTools::solid_infill_filament` :1131 (38%, 1.3x)
-- partial: `LayerTools::filament_slot` :167 and `LayerTools::filament_slot` :2639 (50%, 0.41x)
+- partial: `LayerTools::filament_slot` :167 and `LayerTools::filament_slot` :2643 (50%, 0.41x)
 - partial: `LayerTools::has_extruder` :175 and `LayerTools::has_extruder` :1091 (67%, 0.32x)
-- partial: `object_max_layer_height` :223 and `object_max_layer_height` :2745 (44%, 0.58x)
+- partial: `object_max_layer_height` :223 and `object_max_layer_height` :2749 (44%, 0.58x)
 - divergent: `ToolOrdering::clear` :305 and `WipingExtrusions::clear` :484 (0%, 1.19x)
-- divergent: `ToolOrdering::has_wipe_tower` :352 and `ToolOrdering::has_wipe_tower` :2177 (25%, 1.04x)
-- partial: `ToolOrdering::handle_dontcare_extruder` :383 and `ToolOrdering::handle_dontcare_extruder` :2932 (47%, 1.06x)
-- divergent: `ToolOrdering::collect_extruder_statistics` :1402 and `ToolOrdering::collect_extruder_statistics` :1831 (12%, 1.06x)
-- partial: `ToolOrdering::prepare_ordering_context` :2815 and `ToolOrdering::prepare_ordering_context` :3878 (52%, 1.02x)
+- divergent: `ToolOrdering::has_wipe_tower` :352 and `ToolOrdering::has_wipe_tower` :2181 (25%, 1.04x)
+- partial: `ToolOrdering::handle_dontcare_extruder` :383 and `ToolOrdering::handle_dontcare_extruder` :2936 (47%, 1.06x)
+- divergent: `ToolOrdering::collect_extruder_statistics` :1402 and `ToolOrdering::collect_extruder_statistics` :1835 (12%, 1.06x)
+- partial: `build_manual_nozzle_map` :1617 and `build_manual_nozzle_map` :3762 (76%, 1.08x)
+- partial: `ToolOrdering::prepare_ordering_context` :2815 and `ToolOrdering::prepare_ordering_context` :5192 (52%, 1.02x)
 - divergent: `WipingExtrusions::set_extruder_override` :3811 and `WipingExtrusions::set_extruder_override` :396 (25%, 1.1x)
 - partial: `WipingExtrusions::first_nonsoluble_extruder_on_layer` :3839 and `WipingExtrusions::first_nonsoluble_extruder_on_layer` :605 (44%, 0.62x)
 - partial: `WipingExtrusions::last_nonsoluble_extruder_on_layer` :3850 and `WipingExtrusions::last_nonsoluble_extruder_on_layer` :615 (36%, 0.68x)
@@ -4891,8 +4864,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `WipingExtrusions::is_obj_overriddable` :3874 and `is_obj_overriddable` :938 (43%, 0.69x)
 - partial: `WipingExtrusions::is_support_overriddable` :3886 and `is_support_overriddable` :957 (40%, 0.62x)
 - divergent: `WipingExtrusions::get_extruder_overrides` :4120 and `WipingExtrusions::get_extruder_overrides` :452 (25%, 0.9x)
-- divergent: `WipingExtrusions::get_support_extruder_overrides` :4134 and `WipingExtrusions::get_support_extruder_overrides` :4802 (0%, 0.9x)
-- divergent: `WipingExtrusions::get_support_interface_extruder_overrides` :4143 and `WipingExtrusions::get_support_interface_extruder_overrides` :4810 (0%, 0.9x)
+- divergent: `WipingExtrusions::get_support_extruder_overrides` :4134 and `WipingExtrusions::get_support_extruder_overrides` :6268 (0%, 0.9x)
+- divergent: `WipingExtrusions::get_support_interface_extruder_overrides` :4143 and `WipingExtrusions::get_support_interface_extruder_overrides` :6276 (0%, 0.9x)
 
 Missing in the Rust file:
 
@@ -4900,15 +4873,6 @@ Missing in the Rust file:
 - `ToolOrdering::begin` :347 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
 - `ToolOrdering::end` :348 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `ToolOrdering::empty` :349 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `ToolOrdering::sort_and_build_data` :447 (166 tokens)
-- `ToolOrdering::sort_and_build_data` :478 (121 tokens)
-- `build_manual_nozzle_map` :1617 (577 tokens)
-- `build_filament_group_context` :1710 (3170 tokens)
-- `refine_groups_by_Nozzle_State` :2204 (1036 tokens)
-- `plan_filament_mapping_and_order_by_combo_ranges` :2347 (824 tokens)
-- `ToolOrdering::get_recommended_filament_maps` :2511 (1336 tokens)
-- `ToolOrdering::calculate_and_store_statistics` :2709 (477 tokens)
-- `ToolOrdering::reorder_extruders_for_minimum_flush_volume` :3510 (552 tokens)
 
 Rust only:
 
@@ -4952,78 +4916,79 @@ Rust only:
 - `ToolOrderingConfig::is_filament_soluble` :1291
 - `ToolOrderingConfig::is_filament_support` :1299
 - `ToolOrderingConfig::get_flush_volume` :1307
-- `ToolOrderingConfigPtr::fmt` :1376
-- `ToolOrdering::new` :1383
-- `ToolOrdering::cpp_default` :1412
-- `ToolOrdering::with_default_config` :1417
-- `ToolOrdering::add_extruder_to_layer` :1467
-- `ToolOrdering::add_support_extruder_to_layer` :1479
-- `ToolOrdering::layer_tools_for_layer` :1494
-- `ToolOrdering::layer_tools_for_layer_mut` :1508
-- `ToolOrdering::handle_dontcare_extruders` :1522
-- `ToolOrdering::handle_dontcare_extruders_with_first_layer_order` :1587
-- `ToolOrdering::reorder_extruders_for_minimum_flush` :1651
-- `ToolOrdering::reorder_extruders_for_minimum_flush_internal` :1656
-- `ToolOrdering::calculate_optimal_sequences` :1682
-- `ToolOrdering::get_custom_sequence_for_layer` :1740
-- `ToolOrdering::optimize_extruder_order` :1759
-- `ToolOrdering::fill_wipe_tower_partitions` :1869
-- `ToolOrdering::mark_skirt_layers` :1918
-- `ToolOrdering::assign_custom_gcodes` :1967
-- `ToolOrdering::generate_first_layer_tool_order` :2025
-- `ToolOrdering::calculate_most_used_extruder` :2075
-- `ToolOrdering::calculate_filament_change_stats` :2093
-- `ToolOrdering::calculate_stats_for_sequence` :2098
-- `ToolOrdering::all_extruders` :2152
-- `ToolOrdering::get_layer_tools` :2157
-- `ToolOrdering::get_layer_tools_mut` :2162
-- `ToolOrdering::layer_tools` :2167
-- `ToolOrdering::layer_tools_mut` :2172
-- `ToolOrdering::is_sorted` :2189
-- `ToolOrdering::len` :2194
-- `ToolOrdering::is_empty` :2199 — C++ has it in `PresetBundle`
-- `ToolOrdering::front` :2204 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
-- `ToolOrdering::back` :2209 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
-- `ToolOrdering::clear` :2218 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ToolOrdering::iter` :2239
-- `ToolOrdering::iter_mut` :2244
-- `ToolOrdering::into_iter` :2253
-- `&'a ToolOrdering::into_iter` :2262
-- `calculate_flush_volume` :2272
-- `optimize_extruder_sequence` :2284
-- `generate_all_orderings` :2341
-- `find_optimal_ordering_exhaustive` :2364
-- `cfg_floats` :2429
-- `cfg_ints` :2448
-- `cfg_bools` :2467
-- `cfg_strings` :2480
-- `cfg_bool` :2491
-- `cfg_int` :2496
-- `cfg_float` :2502
-- `get_at` :2507 — C++ has it in `Config`
-- `sort_remove_duplicates_u32` :2516
-- `sort_remove_duplicates_f64` :2522
-- `entity_role` :2528
-- `ToolOrdering::used_mixed_filaments` :3425
-- `ToolOrdering::directly_used_filaments` :3430
-- `ToolOrdering::get_layered_nozzle_group_result` :3435 — C++ has it in `Print`
-- `ToolOrdering::get_nozzle_status` :3440
-- `get_flush_volumes_matrix` :3763
-- `ToolOrdering::tools_for_layer_index` :4648
-- `ToolOrdering::tools_for_layer` :4669
-- `ToolOrdering::tools_for_layer_mut` :4674
-- `sort_remove_duplicates_usize` :4702
-- `llround` :4708
-- `sscanf_two_floats` :4713
-- `scan_float` :4721
-- `config_option_float` :4943 — C++ has it in `Config`
-- `survives_first_layer_shrink` :4948
-- `first_layer_print_sequence` :4956
-- `first_layer_tool_order_from_areas` :4964
-- `ToolOrdering::from_object` :5594
-- `ToolOrdering::from_print` :5661
-- `expect_collection` :5761
-- `get_flush_volumes_matrix_all` :5769
+- `ToolOrderingConfigPtr::fmt` :1379
+- `ToolOrdering::new` :1386
+- `ToolOrdering::cpp_default` :1416
+- `ToolOrdering::with_default_config` :1421
+- `ToolOrdering::add_extruder_to_layer` :1471
+- `ToolOrdering::add_support_extruder_to_layer` :1483
+- `ToolOrdering::layer_tools_for_layer` :1498
+- `ToolOrdering::layer_tools_for_layer_mut` :1512
+- `ToolOrdering::handle_dontcare_extruders` :1526
+- `ToolOrdering::handle_dontcare_extruders_with_first_layer_order` :1591
+- `ToolOrdering::reorder_extruders_for_minimum_flush` :1655
+- `ToolOrdering::reorder_extruders_for_minimum_flush_internal` :1660
+- `ToolOrdering::calculate_optimal_sequences` :1686
+- `ToolOrdering::get_custom_sequence_for_layer` :1744
+- `ToolOrdering::optimize_extruder_order` :1763
+- `ToolOrdering::fill_wipe_tower_partitions` :1873
+- `ToolOrdering::mark_skirt_layers` :1922
+- `ToolOrdering::assign_custom_gcodes` :1971
+- `ToolOrdering::generate_first_layer_tool_order` :2029
+- `ToolOrdering::calculate_most_used_extruder` :2079
+- `ToolOrdering::calculate_filament_change_stats` :2097
+- `ToolOrdering::calculate_stats_for_sequence` :2102
+- `ToolOrdering::all_extruders` :2156
+- `ToolOrdering::get_layer_tools` :2161
+- `ToolOrdering::get_layer_tools_mut` :2166
+- `ToolOrdering::layer_tools` :2171
+- `ToolOrdering::layer_tools_mut` :2176
+- `ToolOrdering::is_sorted` :2193
+- `ToolOrdering::len` :2198
+- `ToolOrdering::is_empty` :2203 — C++ has it in `PresetBundle`
+- `ToolOrdering::front` :2208 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
+- `ToolOrdering::back` :2213 — C++ has it in `Arachne/utils/ExtrusionLine`, `Print`
+- `ToolOrdering::clear` :2222 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ToolOrdering::iter` :2243
+- `ToolOrdering::iter_mut` :2248
+- `ToolOrdering::into_iter` :2257
+- `&'a ToolOrdering::into_iter` :2266
+- `calculate_flush_volume` :2276
+- `optimize_extruder_sequence` :2288
+- `generate_all_orderings` :2345
+- `find_optimal_ordering_exhaustive` :2368
+- `cfg_floats` :2433
+- `cfg_ints` :2452
+- `cfg_bools` :2471
+- `cfg_strings` :2484
+- `cfg_bool` :2495
+- `cfg_int` :2500
+- `cfg_float` :2506
+- `get_at` :2511 — C++ has it in `Config`
+- `sort_remove_duplicates_u32` :2520
+- `sort_remove_duplicates_f64` :2526
+- `entity_role` :2532
+- `ToolOrderingCalibParams::default` :3087
+- `ToolOrdering::used_mixed_filaments` :3479
+- `ToolOrdering::directly_used_filaments` :3484
+- `ToolOrdering::get_layered_nozzle_group_result` :3489 — C++ has it in `Print`
+- `ToolOrdering::get_nozzle_status` :3494
+- `get_flush_volumes_matrix` :4397
+- `ToolOrdering::tools_for_layer_index` :6114
+- `ToolOrdering::tools_for_layer` :6135
+- `ToolOrdering::tools_for_layer_mut` :6140
+- `sort_remove_duplicates_usize` :6168
+- `llround` :6174
+- `sscanf_two_floats` :6179
+- `scan_float` :6187
+- `config_option_float` :6409 — C++ has it in `Config`
+- `survives_first_layer_shrink` :6414
+- `first_layer_print_sequence` :6422
+- `first_layer_tool_order_from_areas` :6430
+- `ToolOrdering::from_object` :7138
+- `ToolOrdering::from_print` :7206
+- `expect_collection` :7306
+- `get_flush_volumes_matrix_all` :7314
 
 ### `GCode/WipeTower` (.cpp+.hpp) and `gcode/wipe_tower.rs`
 
@@ -5361,77 +5326,55 @@ Rust only:
 
 ### `GCodeWriter` (.cpp+.hpp) and `g_code_writer.rs`
 
-Tier 1. C++ functions 84 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 113. Matched 72: faithful 64, partial 5, divergent 3, stub 0.
+Tier 1. C++ functions 84 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 119. Matched 84: faithful 77, partial 4, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `GCodeWriter::set_extruders` :69 and `GCodeWriter::set_extruders` :219 (44%, 0.75x)
-- divergent: `GCodeWriter::preamble` :100 and `GCodeWriter::preamble` :267 (25%, 1.46x)
-- divergent: `GCodeWriter::postamble` :128 and `GCodeWriter::postamble` :305 (25%, 1.25x)
-- partial: `GCodeWriter::set_temperature` :136 and `GCodeWriter::set_temperature` :318 (43%, 1.3x)
-- partial: `GCodeFormatter::emit_string` :266 and `GCodeFormatter::emit_string` :2124 (40%, 0.97x)
-- partial: `GCodeWriter::set_pressure_advance` :331 and `GCodeWriter::set_pressure_advance` :631 (50%, 1.01x)
-- divergent: `GCodeWriter::toolchange_prefix` :413 and `GCodeWriter::toolchange_prefix` :797 (0%, 2.04x)
-- partial: `GCodeWriter::init_extruder` :1081 and `GCodeWriter::init_extruder` :1820 (43%, 0.82x)
-
-Missing in the Rust file:
-
-- `GCodeWriter::apply_print_config` :21 (375 tokens)
-- `GCodeWriter::filament` :43 (19 tokens, overload)
-- `GCodeWriter::filament` :44 (19 tokens, overload)
-- `GCodeWriter::filament` :45 (17 tokens, overload)
-- `GCodeWriter::update_exclusive_nozzles` :88 (103 tokens)
-- `GCodeWriter::set_avoid_z_descent_travel` :137 (6 tokens)
-- `GCodeWriter::set_travel_acceleration` :231 (6 tokens, overload) — in `gcode/g_code_processor.rs`, `gcode/wipe_tower.rs`, `gcode/writer.rs`
-- `GCodeWriter::set_travel_acceleration` :266 (101 tokens, overload) — in `gcode/g_code_processor.rs`, `gcode/wipe_tower.rs`, `gcode/writer.rs`
-- `GCodeWriter::travel_to_xy` :464 (99 tokens, overload)
-- `GCodeWriter::spiral_arc_within_bed` :515 (130 tokens)
-- `GCodeWriter::travel_to_xyz` :602 (963 tokens, overload) — in `gcode/writer.rs`
-- `GCodeWriter::set_fan` :982 (158 tokens, overload) — in `gcode/wipe_tower.rs`
+- divergent: `GCodeWriter::preamble` :100 and `GCodeWriter::preamble` :448 (25%, 1.46x)
+- divergent: `GCodeWriter::postamble` :128 and `GCodeWriter::postamble` :482 (25%, 1.25x)
+- partial: `GCodeWriter::set_temperature` :136 and `GCodeWriter::set_temperature` :495 (52%, 1.39x)
+- partial: `GCodeFormatter::emit_string` :266 and `GCodeFormatter::emit_string` :2198 (40%, 0.97x)
+- partial: `GCodeWriter::set_pressure_advance` :331 and `GCodeWriter::set_pressure_advance` :741 (50%, 1.01x)
+- divergent: `GCodeWriter::toolchange_prefix` :413 and `GCodeWriter::toolchange_prefix` :866 (0%, 1.8x)
+- partial: `GCodeWriter::set_fan` :982 and `GCodeWriter::set_fan` :1945 (50%, 1.2x)
 
 Rust only:
 
-- `GCodeWriter::default` :114
-- `GCodeWriter::new` :121
-- `GCodeWriter::filament_by_id` :175
-- `GCodeWriter::filament_mut` :192
-- `GCodeWriter::extruders` :248 — C++ has it in `Print`
-- `GCodeWriter::set_travel_acceleration_vec` :477
-- `GCodeWriter::get_travel_acceleration` :495 — C++ has it in `GCode/GCodeProcessor`
-- `GCodeWriter::get_travel_short_acceleration` :500
-- `GCodeWriter::set_travel_acceleration_impl` :529
-- `GCodeWriter::lower_bound_filament` :811
-- `GCodeWriter::travel_feedrate` :898
-- `GCodeWriter::travel_to_xy_impl` :913
-- `GCodeWriter::travel_to_xyz_impl` :1051
-- `GCodeWriter::_travel_to_z_default` :1264
-- `GCodeWriter::_spiral_travel_to_z_default` :1306
-- `GCodeWriter::set_fan_static` :1662
-- `format_g` :1888
-- `ostream_double` :1940
-- `format_setprecision_4` :1947
-- `Vec::end_index` :1956
-- `GCodeFormatter::new` :1985
-- `GCodeFormatter::default` :2159
-- `GCodeG1Formatter::new` :2171
-- `GCodeG1Formatter::emit_xy` :2181
-- `GCodeG1Formatter::emit_xyz` :2184
-- `GCodeG1Formatter::emit_z` :2187
-- `GCodeG1Formatter::emit_e` :2190
-- `GCodeG1Formatter::emit_f` :2193
-- `GCodeG1Formatter::emit_string` :2196
-- `GCodeG1Formatter::emit_comment` :2199
-- `GCodeG1Formatter::string` :2202
-- `GCodeG1Formatter::default` :2208
-- `GCodeG2G3Formatter::new` :2220
-- `GCodeG2G3Formatter::emit_xy` :2230
-- `GCodeG2G3Formatter::emit_z` :2233
-- `GCodeG2G3Formatter::emit_e` :2236
-- `GCodeG2G3Formatter::emit_f` :2239
-- `GCodeG2G3Formatter::emit_ij` :2242
-- `GCodeG2G3Formatter::emit_string` :2245
-- `GCodeG2G3Formatter::emit_comment` :2248
-- `GCodeG2G3Formatter::string` :2251
+- `GCodeWriter::default` :147
+- `print_config_option` :155
+- `print_config_floats` :169
+- `GCodeWriter::new` :179
+- `GCodeWriter::filament_at` :244
+- `GCodeWriter::filament_mut` :260
+- `GCodeWriter::extruders` :429 — C++ has it in `Print`
+- `GCodeWriter::get_travel_acceleration` :648 — C++ has it in `GCode/GCodeProcessor`
+- `GCodeWriter::get_travel_short_acceleration` :653
+- `GCodeWriter::lower_bound_filament` :880
+- `GCodeWriter::parity_members` :1581
+- `format_g` :1989
+- `ostream_double` :2025
+- `format_setprecision_4` :2031
+- `GCodeFormatter::new` :2059
+- `GCodeFormatter::default` :2233
+- `GCodeG1Formatter::new` :2245
+- `GCodeG1Formatter::emit_xy` :2255
+- `GCodeG1Formatter::emit_xyz` :2258
+- `GCodeG1Formatter::emit_z` :2261
+- `GCodeG1Formatter::emit_e` :2264
+- `GCodeG1Formatter::emit_f` :2267
+- `GCodeG1Formatter::emit_string` :2270
+- `GCodeG1Formatter::emit_comment` :2273
+- `GCodeG1Formatter::string` :2276
+- `GCodeG1Formatter::default` :2282
+- `GCodeG2G3Formatter::new` :2294
+- `GCodeG2G3Formatter::emit_xy` :2304
+- `GCodeG2G3Formatter::emit_z` :2307
+- `GCodeG2G3Formatter::emit_e` :2310
+- `GCodeG2G3Formatter::emit_f` :2313
+- `GCodeG2G3Formatter::emit_ij` :2316
+- `GCodeG2G3Formatter::emit_string` :2319
+- `GCodeG2G3Formatter::emit_comment` :2322
+- `GCodeG2G3Formatter::string` :2325
 
 ### `Geometry` (.cpp+.hpp) and `geometry/geometry.rs`
 
@@ -6051,15 +5994,15 @@ Missing in the Rust file:
 - `Layer::get_region` :194 (8 tokens, overload) — in `app_config.rs`
 - `Layer::any_internal_region_slice_contains` :210 (28 tokens)
 - `Layer::any_bottom_region_slice_contains` :214 (28 tokens)
-- `Layer::has_extrusions` :239 (23 tokens, overload)
-- `Layer::effective_print_height` :242 (50 tokens)
+- `Layer::has_extrusions` :239 (23 tokens, overload) — in `print.rs`
+- `Layer::effective_print_height` :242 (50 tokens) — in `print.rs`
 - `Layer::is_adaptive_merged_out` :256 (45 tokens)
 - `Layer::simplify_wall_extrusion_path` :266 (15 tokens)
 - `Layer::simplify_infill_extrusion_path` :267 (15 tokens)
 - `Layer::idx_higher_or_equal` :278 (148 tokens) — in `support/support_common.rs`
-- `SupportLayer::has_extrusions` :366 (10 tokens, overload)
-- `SupportLayer::effective_print_height` :367 (20 tokens)
-- `SupportLayer::interface_id` :372 (5 tokens)
+- `SupportLayer::has_extrusions` :366 (10 tokens, overload) — in `print.rs`
+- `SupportLayer::effective_print_height` :367 (20 tokens) — in `print.rs`
+- `SupportLayer::interface_id` :372 (5 tokens) — in `print.rs`
 - `SupportLayer::simplify_support_extrusion_path` :374 (10 tokens)
 - `zs_from_layers` :411 (45 tokens)
 - `ContinuitiousDistancer::distance_from_perimeter` :428 (144 tokens) — in `gcode/seam_placer.rs`, `overhang_detector.rs`
@@ -6352,45 +6295,45 @@ Rust only:
 
 ### `Model` (.cpp+.hpp) and `model.rs`
 
-Tier 1. C++ functions 374 (plus 33 constructors, 2 destructors, 3 operators), Rust functions 535. Matched 299: faithful 264, partial 29, divergent 6, stub 0.
+Tier 1. C++ functions 374 (plus 33 constructors, 2 destructors, 3 operators), Rust functions 542. Matched 306: faithful 271, partial 29, divergent 6, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `new_clone` :139 and `ModelObject::new_clone` :5334 (28%, 0.41x)
-- divergent: `make_clone` :146 and `ModelObject::make_clone` :5341 (28%, 0.44x)
-- partial: `Model::assign_new_unique_ids_recursive` :185 and `Model::assign_new_unique_ids_recursive` :3986 (100%, 1.18x)
-- partial: `ModelObject::const_volumes` :397 and `ModelObject::const_volumes` :5411 (50%, 0.52x)
-- partial: `Model::delete_object` :674 and `Model::delete_object` :4350 (50%, 0.28x)
-- partial: `Model::delete_material` :771 and `Model::delete_material` :4393 (50%, 0.25x)
-- partial: `Model::clear_materials` :780 and `Model::clear_materials` :4398 (50%, 0.4x)
-- partial: `Model::update_print_volume_state` :840 and `Model::update_print_volume_state` :5195 (42%, 0.27x)
-- partial: `Model::get_backup_path` :1204 and `Model::get_backup_path` :4765 (45%, 3.91x)
-- divergent: `Model::set_backup_path` :1218 and `Model::set_backup_path` :4824 (25%, 0.35x)
-- partial: `Model::is_fdm_support_painted` :1279 and `Model::is_fdm_support_painted` :4854 (50%, 0.5x)
-- partial: `Model::is_seam_painted` :1284 and `Model::is_seam_painted` :4859 (50%, 0.5x)
-- partial: `Model::is_mm_painted` :1289 and `Model::is_mm_painted` :4864 (50%, 0.5x)
-- partial: `ModelObject::is_fdm_support_painted` :1567 and `ModelObject::is_fdm_support_painted` :5505 (50%, 0.5x)
-- partial: `ModelObject::is_seam_painted` :1572 and `ModelObject::is_seam_painted` :5510 (50%, 0.5x)
-- partial: `ModelObject::is_mm_painted` :1577 and `ModelObject::is_mm_painted` :5515 (50%, 0.5x)
-- partial: `ModelObject::is_fuzzy_skin_painted` :1582 and `ModelObject::is_fuzzy_skin_painted` :5520 (50%, 0.5x)
-- partial: `ModelObject::delete_instance` :1632 and `ModelObject::delete_instance` :5583 (75%, 0.47x)
-- divergent: `ModelObject::instance_bounding_box` :1777 and `ModelObject::instance_bounding_box` :5759 (23%, 0.23x)
-- partial: `ModelObject::convex_hull_2d` :1820 and `ModelObject::convex_hull_2d` :5794 (53%, 0.37x)
-- partial: `Model::get_material` :1870 and `Model::get_material` :4425 (67%, 0.29x)
-- partial: `ModelObject::clone_for_cut` :2204 and `ModelObject::clone_for_cut` :6184 (60%, 0.46x)
-- partial: `ModelObject::update_instances_print_volume_state` :3078 and `ModelObject::update_instances_print_volume_state` :6658 (74%, 1.05x)
-- partial: `ModelVolume::set_material_id` :3252 and `ModelVolume::set_material_id` :2265 (40%, 1.04x)
-- partial: `ModelVolume::set_material` :3330 and `ModelVolume::set_material` :2360 (50%, 1.03x)
-- partial: `ModelVolume::rotate` :3876 and `ModelVolume::rotate` :2926 (50%, 1.28x)
-- divergent: `ModelInstance::transform_polygon` :4076 and `ModelInstance::transform_polygon` :3461 (20%, 6.85x)
-- divergent: `ModelInstance::get_auto_brim_width` :4521 and `ModelInstance::get_auto_brim_width` :3556 (0%, 0.09x)
-- partial: `ModelInstance::apply_arrange_result` :4590 and `ModelInstance::apply_arrange_result` :3562 (50%, 1.22x)
-- partial: `FacetsAnnotation::get_facets` :4599 and `ModelFacetsAnnotation::get_facets` :1568 (43%, 0.45x)
-- partial: `FacetsAnnotation::get_facets_strict` :4644 and `ModelFacetsAnnotation::get_facets_strict` :1612 (43%, 0.45x)
-- partial: `FacetsAnnotation::set` :4657 and `FacetsAnnotation::set` :1390 (60%, 0.45x)
-- partial: `FacetsAnnotation::get_triangle_as_string` :4678 and `FacetsAnnotation::get_triangle_as_string` :1409 (50%, 0.98x)
-- partial: `FacetsAnnotation::set_triangle_from_string` :4704 and `FacetsAnnotation::set_triangle_from_string` :1443 (42%, 0.67x)
-- partial: `FacetsAnnotation::equals` :4736 and `FacetsAnnotation::equals` :1475 (75%, 0.39x)
+- divergent: `new_clone` :139 and `ModelObject::new_clone` :5588 (28%, 0.41x)
+- divergent: `make_clone` :146 and `ModelObject::make_clone` :5595 (28%, 0.44x)
+- partial: `Model::assign_new_unique_ids_recursive` :185 and `Model::assign_new_unique_ids_recursive` :4023 (100%, 1.18x)
+- partial: `ModelObject::const_volumes` :397 and `ModelObject::const_volumes` :5693 (50%, 0.52x)
+- partial: `Model::delete_object` :674 and `Model::delete_object` :4387 (50%, 0.28x)
+- partial: `Model::delete_material` :771 and `Model::delete_material` :4430 (50%, 0.25x)
+- partial: `Model::clear_materials` :780 and `Model::clear_materials` :4435 (50%, 0.4x)
+- partial: `Model::update_print_volume_state` :840 and `Model::update_print_volume_state` :5449 (42%, 0.27x)
+- partial: `Model::get_backup_path` :1204 and `Model::get_backup_path` :4802 (45%, 3.91x)
+- divergent: `Model::set_backup_path` :1218 and `Model::set_backup_path` :4861 (25%, 0.35x)
+- partial: `Model::is_fdm_support_painted` :1279 and `Model::is_fdm_support_painted` :4891 (50%, 0.5x)
+- partial: `Model::is_seam_painted` :1284 and `Model::is_seam_painted` :4896 (50%, 0.5x)
+- partial: `Model::is_mm_painted` :1289 and `Model::is_mm_painted` :4901 (50%, 0.5x)
+- partial: `ModelObject::is_fdm_support_painted` :1567 and `ModelObject::is_fdm_support_painted` :5787 (50%, 0.5x)
+- partial: `ModelObject::is_seam_painted` :1572 and `ModelObject::is_seam_painted` :5792 (50%, 0.5x)
+- partial: `ModelObject::is_mm_painted` :1577 and `ModelObject::is_mm_painted` :5797 (50%, 0.5x)
+- partial: `ModelObject::is_fuzzy_skin_painted` :1582 and `ModelObject::is_fuzzy_skin_painted` :5802 (50%, 0.5x)
+- partial: `ModelObject::delete_instance` :1632 and `ModelObject::delete_instance` :5865 (75%, 0.47x)
+- divergent: `ModelObject::instance_bounding_box` :1777 and `ModelObject::instance_bounding_box` :6041 (23%, 0.23x)
+- partial: `ModelObject::convex_hull_2d` :1820 and `ModelObject::convex_hull_2d` :6076 (53%, 0.37x)
+- partial: `Model::get_material` :1870 and `Model::get_material` :4462 (67%, 0.29x)
+- partial: `ModelObject::clone_for_cut` :2204 and `ModelObject::clone_for_cut` :6466 (60%, 0.46x)
+- partial: `ModelObject::update_instances_print_volume_state` :3078 and `ModelObject::update_instances_print_volume_state` :7127 (74%, 1.05x)
+- partial: `ModelVolume::set_material_id` :3252 and `ModelVolume::set_material_id` :2302 (40%, 1.04x)
+- partial: `ModelVolume::set_material` :3330 and `ModelVolume::set_material` :2397 (50%, 1.03x)
+- partial: `ModelVolume::rotate` :3876 and `ModelVolume::rotate` :2963 (50%, 1.28x)
+- divergent: `ModelInstance::transform_polygon` :4076 and `ModelInstance::transform_polygon` :3498 (20%, 6.85x)
+- divergent: `ModelInstance::get_auto_brim_width` :4521 and `ModelInstance::get_auto_brim_width` :3593 (0%, 0.09x)
+- partial: `ModelInstance::apply_arrange_result` :4590 and `ModelInstance::apply_arrange_result` :3599 (50%, 1.22x)
+- partial: `FacetsAnnotation::get_facets` :4599 and `ModelFacetsAnnotation::get_facets` :1605 (43%, 0.45x)
+- partial: `FacetsAnnotation::get_facets_strict` :4644 and `ModelFacetsAnnotation::get_facets_strict` :1649 (43%, 0.45x)
+- partial: `FacetsAnnotation::set` :4657 and `FacetsAnnotation::set` :1414 (60%, 0.45x)
+- partial: `FacetsAnnotation::get_triangle_as_string` :4678 and `FacetsAnnotation::get_triangle_as_string` :1433 (50%, 0.98x)
+- partial: `FacetsAnnotation::set_triangle_from_string` :4704 and `FacetsAnnotation::set_triangle_from_string` :1466 (50%, 0.8x)
+- partial: `FacetsAnnotation::equals` :4736 and `FacetsAnnotation::equals` :1512 (75%, 0.39x)
 
 Missing in the Rust file:
 
@@ -6436,7 +6379,6 @@ Missing in the Rust file:
 - `Model::propose_export_file_name_and_path` :1274 (25 tokens, overload)
 - `ModelVolume::load` :1388 (243 tokens, overload) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `ModelVolume::save` :1420 (113 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
-- `ModelObject::make_boolean` :1429 (112 tokens)
 - `ModelObject::add_volume` :1450 (52 tokens, overload) — in `format/assembly_steps_json.rs`
 - `ModelObject::add_volume` :1463 (59 tokens, overload) — in `format/assembly_steps_json.rs`
 - `ModelObject::add_volume` :1476 (65 tokens, overload) — in `format/assembly_steps_json.rs`
@@ -6451,19 +6393,13 @@ Missing in the Rust file:
 - `Model::load` :1940 (28 tokens, overload) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `ModelObject::rotate` :1940 (33 tokens, overload) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`
 - `Model::save` :1944 (29 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
-- `ModelObject::process_connector_cut` :2268 (425 tokens)
-- `ModelObject::process_volume_cut` :2373 (140 tokens)
-- `ModelObject::process_solid_part_cut` :2401 (144 tokens)
 - `ModelObject::cut` :2509 (647 tokens) — in `cut_utils.rs`
-- `ModelObject::segment` :2616 (564 tokens) — in `edge_grid.rs`
+- `ModelObject::segment` :2616 (564 tokens) — in `edge_grid.rs`, `mesh_boolean.rs`
 - `ModelVolume::set_transformation` :3622 (9 tokens, overload)
 - `ModelVolume::rotate` :3865 (66 tokens, overload) — in `bounding_box.rs`, `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`
 - `ModelVolume::transform_this_mesh` :3917 (73 tokens, overload)
 - `ModelInstance::set_scaling_factor` :4012 (15 tokens, overload) — in `geometry/geometry.rs`
 - `ModelInstance::transform_bounding_box_in_assembly_view` :4065 (40 tokens, overload)
-- `Model::obj_import_color_deal` :4191 (186 tokens)
-- `Model::obj_import_vertex_color_deal` :4224 (996 tokens)
-- `Model::obj_import_face_color_deal` :4340 (225 tokens)
 - `Model::getThermalLength` :4426 (43 tokens, overload)
 - `ModelInstance::get_auto_brim_width` :4439 (196 tokens, overload)
 - `FacetsAnnotation::get_facets` :4608 (28 tokens, overload) — in `triangle_selector.rs`
@@ -6490,224 +6426,224 @@ Rust only:
 - `bbox_merge_point` :210
 - `bbox_merge` :222
 - `eigen_squared_norm3` :237
-- `eigen_is_approx_vec3` :243
-- `eigen_is_approx_mat4` :251
-- `eigen_angle_axis_rotation_matrix` :267
-- `coord_scale` :273
-- `CutConnectorParas::default` :329
-- `CutConnectorAttributes::with` :349
-- `CutConnectorAttributes::default` :355
-- `CutConnectorAttributes::partial_cmp` :365
-- `CutConnectorAttributes::cmp` :372
-- `CutConnector::default` :397
-- `CutConnector::new` :413
-- `ModelVolumeType::type_from_string` :448 — C++ has it in `Format/3mf`
-- `ModelVolumeType::type_to_string` :452
-- `ModelObjectCutAttributes::has` :478 — C++ has it in `AppConfig`, `Config`, `GCodeReader`
-- `ModelObjectCutAttributes::with` :482
-- `extruder_params_map_default` :557
-- `print_speed_map_default` :571
-- `ModelConfig::default` :602
-- `ModelConfig::fmt` :608
-- `ModelConfig::assign_config` :621
-- `ModelConfig::assign_config_data` :629
-- `ModelConfig::apply` :638 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `ModelConfig::set_key_value` :646 — C++ has it in `Config`
-- `ModelConfig::set_deserialize` :662 — C++ has it in `Config`
-- `ModelConfig::erase` :676 — C++ has it in `AppConfig`, `Config`, `Point`
-- `ModelConfig::size` :693 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
-- `ModelConfig::keys` :697 — C++ has it in `Config`
-- `ModelConfig::has` :701 — C++ has it in `AppConfig`, `Config`, `GCodeReader`
-- `ModelConfig::option` :705 — C++ has it in `Config`, `PlaceholderParser`
-- `ModelConfig::opt_int` :710 — C++ has it in `Config`
-- `ModelConfig::extruder` :714 — C++ has it in `Extruder`, `GCode/ToolOrdering`, `PrintRegion`
-- `ModelConfig::timestamp` :718 — C++ has it in `ObjectID`
-- `ModelConfig::timestamp_matches` :722 — C++ has it in `ObjectID`
-- `ModelConfig::touch` :726 — C++ has it in `ObjectID`
-- `ModelConfig::operator_eq` :730
-- `opt_get_int` :736
-- `ModelConfigObject::default` :749
-- `ModelConfigObject::deref` :756
-- `ModelConfigObject::deref_mut` :762
-- `ModelConfigObject::new` :769
-- `ModelConfigObject::new_invalid` :773
-- `ModelConfigObject::id` :776 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `ModelConfigObject::set_new_unique_id` :779 — C++ has it in `ObjectID`
-- `ModelConfigObject::timestamp` :783 — C++ has it in `ObjectID`
-- `ModelMaterial::new` :817
-- `ModelMaterial::id` :821 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `ModelMaterial::assign_new_unique_ids_recursive` :845 — C++ has it in `ObjectID`
-- `materials_add` :851
-- `materials_add_copy` :859
-- `LayerHeightProfile::new` :878
-- `LayerHeightProfile::new_invalid` :882
-- `LayerHeightProfile::id` :885 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `LayerHeightProfile::timestamp` :888 — C++ has it in `ObjectID`
-- `LayerHeightProfile::set_new_unique_id` :891 — C++ has it in `ObjectID`
-- `LayerHeightProfile::get` :902 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `ModelMesh::default` :943
-- `ModelMesh::new` :950
-- `ModelMesh::from_its` :955
-- `ModelMesh::from_its_with_errors` :962
-- `ModelMesh::from_triangle_mesh` :970
-- `ModelMesh::to_triangle_mesh` :982
-- `ModelMesh::clear` :994 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `ModelMesh::volume` :1000 — C++ has it in `BoundingBox`, `TriangleMesh`
-- `ModelMesh::mirror` :1045 — C++ has it in `TriangleMesh`
-- `ModelMesh::update_bounding_box` :1059 — C++ has it in `TriangleMesh`
-- `ModelMesh::transform` :1064 — C++ has it in `BrimEarsPoint`, `Line`, `Point`
-- `ModelMesh::transform_matrix3` :1080
-- `ModelMesh::flip_triangles` :1098 — C++ has it in `TriangleMesh`
-- `ModelMesh::is_splittable` :1104 — C++ has it in `TriangleMesh`
-- `ModelMesh::split` :1109 — C++ has it in `TriangleMesh`
-- `ModelMesh::split_and_save_relationship` :1129 — C++ has it in `TriangleMesh`
-- `ModelMesh::merge` :1152 — C++ has it in `BoundingBox`, `Format/bbs_3mf`, `MeshBoolean`
-- `ModelMesh::bounding_box` :1158 — C++ has it in `BoundingBox`, `CutSurface`, `MultiPoint`
-- `ModelMesh::transformed_bounding_box` :1167 — C++ has it in `TriangleMesh`
-- `ModelMesh::size` :1176 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
-- `ModelMesh::center` :1181 — C++ has it in `BoundingBox`, `Emboss`, `TriangleMesh`
-- `ModelMesh::convex_hull_3d` :1190 — C++ has it in `TriangleMesh`
-- `ModelMesh::facets_count` :1195 — C++ has it in `TextureToColor/TriMesh`, `TriangleMesh`
-- `ModelMesh::empty` :1200 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
-- `ModelMesh::stats` :1205
-- `ModelMesh::set_init_shift` :1210 — C++ has it in `TriangleMesh`
-- `ModelMesh::get_init_shift` :1215 — C++ has it in `TriangleMesh`
-- `its_convex_hull` :1226 — C++ has it in `TriangleMesh`
-- `FacetsAnnotation::is_empty` :1373 — C++ has it in `PresetBundle`
-- `FacetsAnnotation::facet_count` :1378
-- `FacetsAnnotation::get_data` :1383
-- `FacetsAnnotation::reset` :1400 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
-- `ModelFacetsAnnotation::deref` :1492
-- `ModelFacetsAnnotation::deref_mut` :1498
-- `ModelFacetsAnnotation::new` :1505
-- `ModelFacetsAnnotation::new_invalid` :1509
-- `ModelFacetsAnnotation::id` :1512 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `ModelFacetsAnnotation::set_new_unique_id` :1515 — C++ has it in `ObjectID`
-- `ModelFacetsAnnotation::timestamp_matches` :1521 — C++ has it in `ObjectID`
-- `ModelFacetsAnnotation::annotation` :1525
-- `ModelFacetsAnnotation::set` :1536 — C++ has it in `AABBTreeIndirect`, `AppConfig`, `Color`
-- `ModelFacetsAnnotation::reset` :1544 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
-- `ModelFacetsAnnotation::touch` :1549 — C++ has it in `ObjectID`
-- `ModelFacetsAnnotation::set_data` :1553
-- `ModelFacetsAnnotation::selector_of` :1559
-- `ModelFacetsAnnotation::get_facets_per_type` :1573
-- `TextInfo::default` :1650
-- `ModelVolumeSource::default` :1724
-- `ModelVolumeCutInfo::default` :1756
-- `ModelVolumeCutInfo::new` :1773
-- `ModelVolume::with_fresh_ids` :1872
-- `ModelVolume::new` :1916
-- `ModelVolume::new_shared` :1926
-- `ModelVolume::new_with_hull` :1931
-- `ModelVolume::new_copy_of` :1942
-- `ModelVolume::new_copy_with_mesh` :1982
-- `ModelVolume::id` :2031 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `ModelVolume::mesh` :2065 — C++ has it in `Format/STEP`
-- `ModelVolume::set_mesh_shared` :2077
-- `ModelVolume::get_mesh_shared_ptr` :2085
-- `ModelVolume::get_text_configuration` :2135
-- `ModelVolume::get_text_info` :2164
-- `ModelVolume::part_guid` :2207
-- `ModelVolume::assembly_src_guid` :2215
-- `ModelVolume::ensure_part_guid` :2235
-- `ModelVolume::get_convex_hull_2d` :2617 — C++ has it in `Print`
-- `ModelVolume::get_convex_hull_shared_ptr` :2660
-- `ModelVolume::get_transformation` :2665
-- `ModelVolume::set_transformation_matrix` :2675
-- `ModelVolume::get_assemble_transformation` :2680
-- `ModelVolume::get_convex_hull` :2717
-- `ModelVolume::rotate_axis` :2917
-- `ModelVolume::transform_this_mesh_matrix3` :2971
-- `ModelVolume::get_matrix` :2999
-- `ModelVolume::matrix` :3004
-- `ModelVolume::get_offset_axis` :3013
-- `ModelVolume::set_offset_axis` :3021
-- `ModelVolume::get_rotation_axis` :3029
-- `ModelVolume::get_scaling_factor_axis` :3041
-- `ModelVolume::set_scaling_factor_axis` :3049
-- `ModelVolume::get_mirror_axis` :3057
-- `ModelVolume::set_mirror_axis` :3069
-- `random_uuid_string` :3075
-- `ModelInstance::new` :3162
-- `ModelInstance::new_from` :3184
-- `ModelInstance::at` :3197 — C++ has it in `Print`
-- `ModelInstance::with_rotation` :3204
-- `ModelInstance::with_scale` :3210
-- `ModelInstance::transform` :3216 — C++ has it in `BrimEarsPoint`, `Line`, `Point`
-- `ModelInstance::id` :3223 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `ModelInstance::assign_new_unique_ids_recursive` :3228 — C++ has it in `ObjectID`
-- `ModelInstance::get_transformation` :3254
-- `ModelInstance::get_assemble_transformation` :3265
-- `ModelInstance::get_assemble_offset` :3290
-- `ModelInstance::get_offset_to_assembly` :3323
-- `ModelInstance::get_offset_axis` :3331
-- `ModelInstance::set_offset_axis` :3339
-- `ModelInstance::get_rotation_axis` :3347
-- `ModelInstance::get_scaling_factor_axis` :3366
-- `ModelInstance::set_scaling_factor_axis` :3377
-- `ModelInstance::get_mirror_axis` :3387
-- `ModelInstance::set_mirror_axis` :3399
-- `ModelInstance::transform_volume_bounding_box_in_assembly_view` :3450
-- `ModelInstance::get_matrix` :3482
-- `ModelInstance::matrix` :3487
-- `ModelInstance::get_auto_brim_width_with` :3503
-- `eigen_angle_axis_matrix3` :3682
-- `ModelInstance::default` :3688
-- `ModelWipeTower::new` :3709
-- `ModelWipeTower::id` :3712 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `Model::fmt` :3824
-- `Model::default` :3836
-- `Model::clone` :3881 — C++ has it in `Config`, `ExtrusionEntity`, `ExtrusionEntityCollection`
-- `Model::new` :3925
-- `Model::id` :3929 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `Model::assign_copy` :3934
-- `Model::relink_children_from` :4002
-- `Model::add_object_new` :4265
-- `Model::add_object_with_mesh` :4274
-- `Model::add_object_clone` :4302
-- `Model::delete_object_by_id` :4355
-- `Model::add_material_copy` :4416
-- `Model::get_backup_path_sub` :4812
-- `Model::propose_export_file_name_and_path_ext` :4847
-- `Model::get_assembly_tree_data` :4878
-- `Model::get_assembly_steps_tree_data` :4886
-- `Model::loaded_assembly_steps_meta` :4898
-- `Model::get_assembly_tree_json_str` :4902
-- `Model::get_assembly_steps_json_str` :4906
-- `Model::get_assembly_model_json_str` :4910
-- `Model::get_thermal_length_volumes` :5022
-- `Model::total_instances` :5204
-- `Model::is_empty` :5209 — C++ has it in `PresetBundle`
-- `Model::object_count` :5214
-- `Model::get_object` :5219 — C++ has it in `Print`, `SLAPrint`
-- `Model::get_object_mut` :5224
-- `ModelObject::new` :5290
-- `ModelObject::new_for_model` :5300
-- `ModelObject::id` :5348 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `ModelObject::relink_children_from` :5364
-- `ModelObject::add_volume_mesh` :5417
-- `ModelObject::add_volume_copy` :5429
-- `ModelObject::add_instance_at` :5555
-- `ModelObject::add_instance_copy` :5564
-- `ModelObject::add_instance_with` :5573
-- `ModelObject::instance_count` :5600
-- `ModelObject::set_printable` :5605
-- `ModelObject::invalidate_bounding_box_cells` :5615
-- `ModelObject::bounding_box` :5623 — C++ has it in `BoundingBox`, `CutSurface`, `MultiPoint`
-- `ModelObject::bounding_box_in_assembly_view` :5637
-- `ModelObject::raw_mesh_bounding_box` :5713
-- `ModelObject::raw_bounding_box` :5738
-- `ModelObject::instance_bounding_box_of` :5764
-- `ModelObject::instance_convex_hull_bounding_box_of` :5781
-- `ModelObject::translate_vec` :5861
-- `ModelObject::rotate_axis` :5895
-- `print_config_to_points` :7014
-- `get_shared_poly` :7026 — C++ has it in `PrintConfig`
-- `get_bed_shape` :7049 — C++ has it in `PrintConfig`
-- `model_volume_list_changed_by` :7114
-- `model_volume_list_changed_types` :7162
-- `load_model` :7367
-- `_unused_legacy_bbox` :7427
+- `eigen_squared_norm3f` :244
+- `eigen_dot3f` :250
+- `eigen_normalized3f` :255
+- `eigen_is_approx_vec3` :267
+- `eigen_is_approx_mat4` :275
+- `eigen_angle_axis_rotation_matrix` :291
+- `coord_scale` :297
+- `CutConnectorParas::default` :353
+- `CutConnectorAttributes::with` :373
+- `CutConnectorAttributes::default` :379
+- `CutConnectorAttributes::partial_cmp` :389
+- `CutConnectorAttributes::cmp` :396
+- `CutConnector::default` :421
+- `CutConnector::new` :437
+- `ModelVolumeType::type_from_string` :472 — C++ has it in `Format/3mf`
+- `ModelVolumeType::type_to_string` :476
+- `ModelObjectCutAttributes::has` :502 — C++ has it in `AppConfig`, `Config`, `GCodeReader`
+- `ModelObjectCutAttributes::with` :506
+- `extruder_params_map_default` :581
+- `print_speed_map_default` :595
+- `ModelConfig::default` :626
+- `ModelConfig::fmt` :632
+- `ModelConfig::assign_config` :645
+- `ModelConfig::assign_config_data` :653
+- `ModelConfig::apply` :662 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `ModelConfig::set_key_value` :670 — C++ has it in `Config`
+- `ModelConfig::set_deserialize` :686 — C++ has it in `Config`
+- `ModelConfig::erase` :700 — C++ has it in `AppConfig`, `Config`, `Point`
+- `ModelConfig::size` :717 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
+- `ModelConfig::keys` :721 — C++ has it in `Config`
+- `ModelConfig::has` :725 — C++ has it in `AppConfig`, `Config`, `GCodeReader`
+- `ModelConfig::option` :729 — C++ has it in `Config`, `PlaceholderParser`
+- `ModelConfig::opt_int` :734 — C++ has it in `Config`
+- `ModelConfig::extruder` :738 — C++ has it in `Extruder`, `GCode/ToolOrdering`, `PrintRegion`
+- `ModelConfig::timestamp` :742 — C++ has it in `ObjectID`
+- `ModelConfig::timestamp_matches` :746 — C++ has it in `ObjectID`
+- `ModelConfig::touch` :750 — C++ has it in `ObjectID`
+- `ModelConfig::operator_eq` :754
+- `opt_get_int` :760
+- `ModelConfigObject::default` :773
+- `ModelConfigObject::deref` :780
+- `ModelConfigObject::deref_mut` :786
+- `ModelConfigObject::new` :793
+- `ModelConfigObject::new_invalid` :797
+- `ModelConfigObject::id` :800 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `ModelConfigObject::set_new_unique_id` :803 — C++ has it in `ObjectID`
+- `ModelConfigObject::timestamp` :807 — C++ has it in `ObjectID`
+- `ModelMaterial::new` :841
+- `ModelMaterial::id` :845 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `ModelMaterial::assign_new_unique_ids_recursive` :869 — C++ has it in `ObjectID`
+- `materials_add` :875
+- `materials_add_copy` :883
+- `LayerHeightProfile::new` :902
+- `LayerHeightProfile::new_invalid` :906
+- `LayerHeightProfile::id` :909 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `LayerHeightProfile::timestamp` :912 — C++ has it in `ObjectID`
+- `LayerHeightProfile::set_new_unique_id` :915 — C++ has it in `ObjectID`
+- `LayerHeightProfile::get` :926 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `ModelMesh::default` :967
+- `ModelMesh::new` :974
+- `ModelMesh::from_its` :979
+- `ModelMesh::from_its_with_errors` :986
+- `ModelMesh::from_triangle_mesh` :994
+- `ModelMesh::to_triangle_mesh` :1006
+- `ModelMesh::clear` :1018 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `ModelMesh::volume` :1024 — C++ has it in `BoundingBox`, `TriangleMesh`
+- `ModelMesh::mirror` :1069 — C++ has it in `TriangleMesh`
+- `ModelMesh::update_bounding_box` :1083 — C++ has it in `TriangleMesh`
+- `ModelMesh::transform` :1088 — C++ has it in `BrimEarsPoint`, `Line`, `Point`
+- `ModelMesh::transform_matrix3` :1104
+- `ModelMesh::flip_triangles` :1122 — C++ has it in `TriangleMesh`
+- `ModelMesh::is_splittable` :1128 — C++ has it in `TriangleMesh`
+- `ModelMesh::split` :1133 — C++ has it in `TriangleMesh`
+- `ModelMesh::split_and_save_relationship` :1153 — C++ has it in `TriangleMesh`
+- `ModelMesh::merge` :1176 — C++ has it in `BoundingBox`, `Format/bbs_3mf`, `MeshBoolean`
+- `ModelMesh::bounding_box` :1182 — C++ has it in `BoundingBox`, `CutSurface`, `MultiPoint`
+- `ModelMesh::transformed_bounding_box` :1191 — C++ has it in `TriangleMesh`
+- `ModelMesh::size` :1200 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
+- `ModelMesh::center` :1205 — C++ has it in `BoundingBox`, `Emboss`, `TriangleMesh`
+- `ModelMesh::convex_hull_3d` :1214 — C++ has it in `TriangleMesh`
+- `ModelMesh::facets_count` :1219 — C++ has it in `TextureToColor/TriMesh`, `TriangleMesh`
+- `ModelMesh::empty` :1224 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `ModelMesh::stats` :1229
+- `ModelMesh::set_init_shift` :1234 — C++ has it in `TriangleMesh`
+- `ModelMesh::get_init_shift` :1239 — C++ has it in `TriangleMesh`
+- `its_convex_hull` :1250 — C++ has it in `TriangleMesh`
+- `FacetsAnnotation::is_empty` :1397 — C++ has it in `PresetBundle`
+- `FacetsAnnotation::facet_count` :1402
+- `FacetsAnnotation::get_data` :1407
+- `FacetsAnnotation::reset` :1424 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `ModelFacetsAnnotation::deref` :1529
+- `ModelFacetsAnnotation::deref_mut` :1535
+- `ModelFacetsAnnotation::new` :1542
+- `ModelFacetsAnnotation::new_invalid` :1546
+- `ModelFacetsAnnotation::id` :1549 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `ModelFacetsAnnotation::set_new_unique_id` :1552 — C++ has it in `ObjectID`
+- `ModelFacetsAnnotation::timestamp_matches` :1558 — C++ has it in `ObjectID`
+- `ModelFacetsAnnotation::annotation` :1562
+- `ModelFacetsAnnotation::set` :1573 — C++ has it in `AABBTreeIndirect`, `AppConfig`, `Color`
+- `ModelFacetsAnnotation::reset` :1581 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `ModelFacetsAnnotation::touch` :1586 — C++ has it in `ObjectID`
+- `ModelFacetsAnnotation::set_data` :1590
+- `ModelFacetsAnnotation::selector_of` :1596
+- `ModelFacetsAnnotation::get_facets_per_type` :1610
+- `TextInfo::default` :1687
+- `ModelVolumeSource::default` :1761
+- `ModelVolumeCutInfo::default` :1793
+- `ModelVolumeCutInfo::new` :1810
+- `ModelVolume::with_fresh_ids` :1909
+- `ModelVolume::new` :1953
+- `ModelVolume::new_shared` :1963
+- `ModelVolume::new_with_hull` :1968
+- `ModelVolume::new_copy_of` :1979
+- `ModelVolume::new_copy_with_mesh` :2019
+- `ModelVolume::id` :2068 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `ModelVolume::mesh` :2102 — C++ has it in `Format/STEP`
+- `ModelVolume::set_mesh_shared` :2114
+- `ModelVolume::get_mesh_shared_ptr` :2122
+- `ModelVolume::get_text_configuration` :2172
+- `ModelVolume::get_text_info` :2201
+- `ModelVolume::part_guid` :2244
+- `ModelVolume::assembly_src_guid` :2252
+- `ModelVolume::ensure_part_guid` :2272
+- `ModelVolume::get_convex_hull_2d` :2654 — C++ has it in `Print`
+- `ModelVolume::get_convex_hull_shared_ptr` :2697
+- `ModelVolume::get_transformation` :2702
+- `ModelVolume::set_transformation_matrix` :2712
+- `ModelVolume::get_assemble_transformation` :2717
+- `ModelVolume::get_convex_hull` :2754
+- `ModelVolume::rotate_axis` :2954
+- `ModelVolume::transform_this_mesh_matrix3` :3008
+- `ModelVolume::get_matrix` :3036
+- `ModelVolume::matrix` :3041
+- `ModelVolume::get_offset_axis` :3050
+- `ModelVolume::set_offset_axis` :3058
+- `ModelVolume::get_rotation_axis` :3066
+- `ModelVolume::get_scaling_factor_axis` :3078
+- `ModelVolume::set_scaling_factor_axis` :3086
+- `ModelVolume::get_mirror_axis` :3094
+- `ModelVolume::set_mirror_axis` :3106
+- `random_uuid_string` :3112
+- `ModelInstance::new` :3199
+- `ModelInstance::new_from` :3221
+- `ModelInstance::at` :3234 — C++ has it in `Print`
+- `ModelInstance::with_rotation` :3241
+- `ModelInstance::with_scale` :3247
+- `ModelInstance::transform` :3253 — C++ has it in `BrimEarsPoint`, `Line`, `Point`
+- `ModelInstance::id` :3260 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `ModelInstance::assign_new_unique_ids_recursive` :3265 — C++ has it in `ObjectID`
+- `ModelInstance::get_transformation` :3291
+- `ModelInstance::get_assemble_transformation` :3302
+- `ModelInstance::get_assemble_offset` :3327
+- `ModelInstance::get_offset_to_assembly` :3360
+- `ModelInstance::get_offset_axis` :3368
+- `ModelInstance::set_offset_axis` :3376
+- `ModelInstance::get_rotation_axis` :3384
+- `ModelInstance::get_scaling_factor_axis` :3403
+- `ModelInstance::set_scaling_factor_axis` :3414
+- `ModelInstance::get_mirror_axis` :3424
+- `ModelInstance::set_mirror_axis` :3436
+- `ModelInstance::transform_volume_bounding_box_in_assembly_view` :3487
+- `ModelInstance::get_matrix` :3519
+- `ModelInstance::matrix` :3524
+- `ModelInstance::get_auto_brim_width_with` :3540
+- `eigen_angle_axis_matrix3` :3719
+- `ModelInstance::default` :3725
+- `ModelWipeTower::new` :3746
+- `ModelWipeTower::id` :3749 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `Model::fmt` :3861
+- `Model::default` :3873
+- `Model::clone` :3918 — C++ has it in `Config`, `ExtrusionEntity`, `ExtrusionEntityCollection`
+- `Model::new` :3962
+- `Model::id` :3966 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `Model::assign_copy` :3971
+- `Model::relink_children_from` :4039
+- `Model::add_object_new` :4302
+- `Model::add_object_with_mesh` :4311
+- `Model::add_object_clone` :4339
+- `Model::delete_object_by_id` :4392
+- `Model::add_material_copy` :4453
+- `Model::get_backup_path_sub` :4849
+- `Model::propose_export_file_name_and_path_ext` :4884
+- `Model::get_assembly_tree_data` :4915
+- `Model::get_assembly_steps_tree_data` :4923
+- `Model::loaded_assembly_steps_meta` :4935
+- `Model::get_assembly_tree_json_str` :4939
+- `Model::get_assembly_steps_json_str` :4943
+- `Model::get_assembly_model_json_str` :4947
+- `Model::get_thermal_length_volumes` :5276
+- `Model::total_instances` :5458
+- `Model::is_empty` :5463 — C++ has it in `PresetBundle`
+- `Model::object_count` :5468
+- `Model::get_object` :5473 — C++ has it in `Print`, `SLAPrint`
+- `Model::get_object_mut` :5478
+- `ModelObject::new` :5544
+- `ModelObject::new_for_model` :5554
+- `ModelObject::id` :5602 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `ModelObject::relink_children_from` :5618
+- `ModelObject::add_volume_mesh` :5699
+- `ModelObject::add_volume_copy` :5711
+- `ModelObject::add_instance_at` :5837
+- `ModelObject::add_instance_copy` :5846
+- `ModelObject::add_instance_with` :5855
+- `ModelObject::instance_count` :5882
+- `ModelObject::set_printable` :5887
+- `ModelObject::invalidate_bounding_box_cells` :5897
+- `ModelObject::bounding_box` :5905 — C++ has it in `BoundingBox`, `CutSurface`, `MultiPoint`
+- `ModelObject::bounding_box_in_assembly_view` :5919
+- `ModelObject::raw_mesh_bounding_box` :5995
+- `ModelObject::raw_bounding_box` :6020
+- `ModelObject::instance_bounding_box_of` :6046
+- `ModelObject::instance_convex_hull_bounding_box_of` :6063
+- `ModelObject::translate_vec` :6143
+- `ModelObject::rotate_axis` :6177
+- `model_volume_list_changed_by` :7509
+- `model_volume_list_changed_types` :7557
+- `load_model` :7762
+- `_unused_legacy_bbox` :7822
 
 ### `ModelArrange` (.cpp+.hpp) and `model_arrange.rs`
 
@@ -6844,89 +6780,83 @@ Rust only:
 
 ### `MultiNozzleUtils` (.cpp+.hpp) and `multi_nozzle_utils.rs`
 
-Tier 1. C++ functions 59 (plus 4 constructors, 0 destructors, 3 operators), Rust functions 105. Matched 48: faithful 43, partial 5, divergent 0, stub 0.
+Tier 1. C++ functions 59 (plus 4 constructors, 0 destructors, 3 operators), Rust functions 119. Matched 58: faithful 53, partial 5, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `StaticNozzleGroupResult::get_nozzle_from_id` :712 and `StaticNozzleGroupResult::get_nozzle_from_id` :1399 (50%, 0.44x)
-- partial: `NozzleStatusRecorder::is_nozzle_empty` :1064 and `NozzleStatusRecorder::is_nozzle_empty` :2338 (67%, 0.39x)
-- partial: `NozzleStatusRecorder::get_filament_in_nozzle` :1071 and `NozzleStatusRecorder::get_filament_in_nozzle` :2346 (50%, 0.87x)
-- partial: `NozzleStatusRecorder::get_nozzle_in_extruder` :1078 and `NozzleStatusRecorder::get_nozzle_in_extruder` :2357 (50%, 0.87x)
-- partial: `NozzleStatusRecorder::clear_nozzle_status` :1095 and `NozzleStatusRecorder::clear_nozzle_status` :2385 (75%, 0.35x)
+- partial: `StaticNozzleGroupResult::get_nozzle_from_id` :712 and `StaticNozzleGroupResult::get_nozzle_from_id` :1689 (50%, 0.44x)
+- partial: `NozzleStatusRecorder::is_nozzle_empty` :1064 and `NozzleStatusRecorder::is_nozzle_empty` :2632 (67%, 0.39x)
+- partial: `NozzleStatusRecorder::get_filament_in_nozzle` :1071 and `NozzleStatusRecorder::get_filament_in_nozzle` :2640 (50%, 0.87x)
+- partial: `NozzleStatusRecorder::get_nozzle_in_extruder` :1078 and `NozzleStatusRecorder::get_nozzle_in_extruder` :2651 (50%, 0.87x)
+- partial: `NozzleStatusRecorder::clear_nozzle_status` :1095 and `NozzleStatusRecorder::clear_nozzle_status` :2679 (75%, 0.35x)
 
 Missing in the Rust file:
 
-- `build_nozzle_list_from_extruder_nozzles` :36 (471 tokens)
-- `resolve_manual_nozzle_map_to_index` :101 (511 tokens)
 - `build_nozzle_list` :181 (163 tokens, overload)
-- `LayeredNozzleGroupResult::get_used_nozzles_in_extruder` :445 (190 tokens, overload)
-- `LayeredNozzleGroupResult::get_used_extruders` :476 (130 tokens, overload)
-- `LayeredNozzleGroupResult::get_used_filaments` :545 (69 tokens, overload)
-- `lookup_filament_ams_type` :1211 (37 tokens)
-- `recalc_single_extruder_ams` :1219 (364 tokens)
-- `build_input_from_slice` :1278 (218 tokens)
-- `estimate_mapped_print_time_impl` :1310 (54 tokens)
-- `estimate_mapped_print_time` :1328 (41 tokens)
 
 Rust only:
 
-- `nozzle_volume_type_enum_values` :42
-- `get_nozzle_volume_type_string` :61 — C++ has it in `PrintConfig`
-- `NozzleInfo::default` :81
-- `NozzleInfo::lt` :93
-- `NozzleGroupInfo::default` :135
-- `NozzleGroupInfo::new` :147
-- `NozzleGroupInfo::lt` :162
-- `NozzleGroupInfo::eq` :188
-- `stoi` :281
-- `FilamentChangeTimeParams::default` :311
-- `build_nozzle_list_from_maps` :364
-- `LayeredNozzleGroupResult::default` :596
-- `LayeredNozzleGroupResult::with_support` :603
-- `LayeredNozzleGroupResult::is_support_dynamic_nozzle_map` :616
-- `LayeredNozzleGroupResult::create` :623 — C++ has it in `EdgeGrid`, `Fill/Lightning/TreeNode`, `SLA/SupportTree`
-- `LayeredNozzleGroupResult::get_used_nozzles_in_extruder_layer` :900
-- `LayeredNozzleGroupResult::get_used_extruders_layer` :957
-- `LayeredNozzleGroupResult::get_used_filaments_layer` :1074
-- `LayeredNozzleGroupResult::get_layer_filament_nozzle_map` :1236
-- `LayeredNozzleGroupResult::get_layer_filament_nozzle_maps` :1246
-- `LayeredNozzleGroupResult::get_layer_filament_sequences` :1251
-- `StaticNozzleGroupResult::with_support` :1332
-- `libcxx_hash_int` :1903
-- `libcxx_constrain_hash` :1908
-- `libcxx_next_prime` :1919
-- `libcxx_is_hash_power2` :1939
-- `libcxx_next_hash_pow2` :1944
-- `UnorderedMapInt::default` :1968
-- `UnorderedMapInt::new` :1975
-- `UnorderedMapInt::with_bucket_count` :1980
-- `UnorderedMapInt::hash_of` :1986
-- `UnorderedMapInt::bucket_count` :1991
-- `UnorderedMapInt::len` :1996
-- `UnorderedMapInt::is_empty` :2001 — C++ has it in `PresetBundle`
-- `UnorderedMapInt::rehash` :2006
-- `UnorderedMapInt::do_rehash` :2025
-- `UnorderedMapInt::reserve` :2059 — C++ has it in `Fill/FillPlanePath`, `Model`, `MutablePriorityQueue`
-- `UnorderedMapInt::find_node` :2064
-- `UnorderedMapInt::contains_key` :2086
-- `UnorderedMapInt::count` :2091 — C++ has it in `NozzleInventory`, `PrintApply`, `TriangleMesh`
-- `UnorderedMapInt::get` :2096 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `UnorderedMapInt::get_mut` :2106
-- `UnorderedMapInt::emplace_unique` :2117
-- `UnorderedMapInt::insert` :2152 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
-- `UnorderedMapInt::insert_multi` :2158
-- `UnorderedMapInt::erase` :2209 — C++ has it in `AppConfig`, `Config`, `Point`
-- `UnorderedMapInt::clear` :2239 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `UnorderedMapInt::order` :2253
-- `UnorderedMapInt::iter` :2264
-- `UnorderedMapInt::keys` :2269 — C++ has it in `Config`
-- `UnorderedMapInt::entry` :2276
-- `UnorderedMapInt::assign_from` :2286
-- `UnorderedMapInt::clone` :2305 — C++ has it in `Config`, `ExtrusionEntity`, `ExtrusionEntityCollection`
-- `NozzleStatusRecorder::new` :2329
-- `NozzleStatusRecorder::get_nozzle_filament_map` :2398
-- `NozzleStatusRecorder::get_extruder_nozzle_map` :2403
-- `NozzleStatusRecorder::default` :2409
+- `nozzle_volume_type_enum_values` :49
+- `get_nozzle_volume_type_string` :70 — C++ has it in `PrintConfig`
+- `NozzleInfo::default` :91
+- `NozzleInfo::lt` :104
+- `NozzleGroupInfo::default` :146
+- `NozzleGroupInfo::new` :158
+- `NozzleGroupInfo::lt` :173
+- `NozzleGroupInfo::eq` :199
+- `stoi` :292
+- `FilamentChangeTimeParams::default` :322
+- `print_config_ints` :374
+- `print_config_floats` :382
+- `build_nozzle_list_from_maps` :601
+- `LayeredNozzleGroupResult::default` :833
+- `LayeredNozzleGroupResult::with_support` :840
+- `LayeredNozzleGroupResult::is_support_dynamic_nozzle_map` :853
+- `LayeredNozzleGroupResult::create` :860 — C++ has it in `EdgeGrid`, `Fill/Lightning/TreeNode`, `SLA/SupportTree`
+- `LayeredNozzleGroupResult::get_layer_filament_nozzle_map` :1505
+- `LayeredNozzleGroupResult::get_layer_filament_nozzle_maps` :1515
+- `LayeredNozzleGroupResult::get_layer_filament_sequences` :1520
+- `LayeredNozzleGroupResult::get_used_nozzles_in_extruder_layer` :1583
+- `LayeredNozzleGroupResult::get_used_extruders_layer` :1588
+- `LayeredNozzleGroupResult::get_used_filaments_layer` :1593
+- `StaticNozzleGroupResult::with_support` :1616
+- `libcxx_hash_int` :2193
+- `libcxx_constrain_hash` :2198
+- `libcxx_next_prime` :2210
+- `libcxx_is_hash_power2` :2233
+- `libcxx_next_hash_pow2` :2238
+- `UnorderedMapInt::default` :2262
+- `UnorderedMapInt::new` :2269
+- `UnorderedMapInt::with_bucket_count` :2274
+- `UnorderedMapInt::hash_of` :2280
+- `UnorderedMapInt::bucket_count` :2285
+- `UnorderedMapInt::len` :2290
+- `UnorderedMapInt::is_empty` :2295 — C++ has it in `PresetBundle`
+- `UnorderedMapInt::rehash` :2300
+- `UnorderedMapInt::do_rehash` :2319
+- `UnorderedMapInt::reserve` :2353 — C++ has it in `Fill/FillPlanePath`, `Model`, `MutablePriorityQueue`
+- `UnorderedMapInt::find_node` :2358
+- `UnorderedMapInt::contains_key` :2380
+- `UnorderedMapInt::count` :2385 — C++ has it in `NozzleInventory`, `PrintApply`, `TriangleMesh`
+- `UnorderedMapInt::get` :2390 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `UnorderedMapInt::get_mut` :2400
+- `UnorderedMapInt::emplace_unique` :2411
+- `UnorderedMapInt::insert` :2446 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
+- `UnorderedMapInt::insert_multi` :2452
+- `UnorderedMapInt::erase` :2503 — C++ has it in `AppConfig`, `Config`, `Point`
+- `UnorderedMapInt::clear` :2533 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `UnorderedMapInt::order` :2547
+- `UnorderedMapInt::iter` :2558
+- `UnorderedMapInt::keys` :2563 — C++ has it in `Config`
+- `UnorderedMapInt::entry` :2570
+- `UnorderedMapInt::assign_from` :2580
+- `UnorderedMapInt::clone` :2599 — C++ has it in `Config`, `ExtrusionEntity`, `ExtrusionEntityCollection`
+- `NozzleStatusRecorder::new` :2623
+- `NozzleStatusRecorder::get_nozzle_filament_map` :2692
+- `NozzleStatusRecorder::get_extruder_nozzle_map` :2697
+- `NozzleStatusRecorder::assign_from` :2707
+- `NozzleStatusRecorder::default` :2715
+- `PrintTimeRecalcInput::new` :2795
 
 ### `MultiPoint` (.cpp+.hpp) and `multi_point.rs`
 
@@ -7072,9 +7002,9 @@ Missing in the Rust file:
 - `MutablePriorityQueue::end` :37 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MutablePriorityQueue::cbegin` :38 (9 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MutablePriorityQueue::cend` :39 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `MutablePriorityQueue::push` :74 (36 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `geometry/polygon.rs`
+- `MutablePriorityQueue::push` :74 (36 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `filament_group.rs`
 - `MutableSkipHeapPriorityQueue::empty` :280 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `MutableSkipHeapPriorityQueue::push` :326 (58 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `geometry/polygon.rs`
+- `MutableSkipHeapPriorityQueue::push` :326 (58 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `filament_group.rs`
 
 Rust only:
 
@@ -7614,7 +7544,7 @@ Missing in the Rust file:
 - `has_duplicate_points` :116 (10 tokens, overload) — in `ex_polygon.rs`, `geometry/point.rs`, `multi_point.rs`
 - `area` :132 (26 tokens, overload) — in `adaptive_layer_merge.rs`, `arachne/utils/extrusion_line.rs`, `arrange.rs`
 - `polygons_append` :153 (56 tokens, overload) — in `bridge_detector.rs`, `geometry/expolygon.rs`, `surface.rs`
-- `to_points` :190 (36 tokens, overload) — in `ex_polygon_collection.rs`, `geometry/expolygon.rs`
+- `to_points` :190 (36 tokens, overload) — in `ex_polygon_collection.rs`, `geometry/expolygon.rs`, `print_config.rs`
 - `to_lines` :211 (120 tokens, overload) — in `geometry/expolygon.rs`, `geometry/polyline.rs`, `jump_point_search.rs`
 - `to_polylines` :242 (101 tokens, overload) — in `geometry/expolygon.rs`, `geometry/polyline.rs`
 - `to_polygons` :267 (35 tokens, overload) — in `bridge_detector.rs`, `clipper_utils.rs`, `ex_polygon_collection.rs`
@@ -8240,26 +8170,26 @@ Rust only:
 
 ### `Print` (.cpp+.hpp) and `print.rs`
 
-Tier 1. C++ functions 236 (plus 12 constructors, 1 destructors, 7 operators), Rust functions 266. Matched 149: faithful 133, partial 8, divergent 8, stub 0.
+Tier 1. C++ functions 236 (plus 12 constructors, 1 destructors, 7 operators), Rust functions 316. Matched 184: faithful 168, partial 9, divergent 7, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `Print::invalidate_state_by_config_options` :87 and `Print::invalidate_state_by_config_options` :7358 (81%, 0.29x)
-- partial: `PrintObject::trafo_centered` :421 and `PrintObject::trafo_centered` :6482 (33%, 1.46x)
-- partial: `Print::is_step_done` :470 and `PrintObject::is_step_done` :6626 (33%, 0.36x)
-- partial: `Print::is_all_objects_are_short` :1192 and `Print::is_all_objects_are_short` :7909 (50%, 0.83x)
+- partial: `Print::invalidate_state_by_config_options` :87 and `Print::invalidate_state_by_config_options` :7584 (81%, 0.29x)
+- partial: `PrintObject::trafo_centered` :421 and `PrintObject::trafo_centered` :6514 (33%, 1.46x)
+- partial: `Print::is_step_done` :470 and `PrintObject::is_step_done` :6736 (33%, 0.36x)
+- partial: `Print::is_all_objects_are_short` :1192 and `Print::is_all_objects_are_short` :8135 (50%, 0.83x)
 - divergent: `Print::validate` :1413 and `Print::validate` :2176 (5%, 0.15x)
-- partial: `Print::skirt_first_layer_height` :1903 and `Print::skirt_first_layer_height` :8029 (38%, 0.97x)
-- divergent: `PrintObject::clear_shared_object` :2079 and `PrintObject::clear_shared_object` :6612 (14%, 0.91x)
+- partial: `PrintObject::clear_shared_object` :2079 and `PrintObject::clear_shared_object` :6648 (43%, 1.0x)
 - divergent: `Print::process` :2178 and `Print::process` :2275 (12%, 1.17x)
 - divergent: `Print::export_gcode` :2839 and `Print::export_gcode` :641 (25%, 45.64x)
 - divergent: `Print::_make_skirt` :2869 and `Print::_make_skirt` :3469 (23%, 0.41x)
 - divergent: `Print::get_filament_temp_type` :3116 and `Print::get_filament_temp_type` :3835 (21%, 0.39x)
-- divergent: `Print::get_hrc_by_nozzle_type` :3155 and `Print::get_hrc_by_nozzle_type` :8084 (28%, 0.41x)
-- divergent: `Print::update_filament_maps_to_config` :3241 and `Print::update_filament_maps_to_config` :8103 (27%, 0.93x)
-- partial: `Print::get_extruder_printable_polygons` :3573 and `Print::get_extruder_printable_polygons` :8383 (50%, 0.76x)
-- partial: `Print::has_wipe_tower` :3655 and `Print::has_wipe_tower` :8464 (38%, 1.64x)
-- partial: `Print::set_gcode_file_ready` :4414 and `Print::set_gcode_file_ready` :8535 (50%, 1.0x)
+- divergent: `Print::get_hrc_by_nozzle_type` :3155 and `Print::get_hrc_by_nozzle_type` :8310 (28%, 0.41x)
+- partial: `Print::get_incompatible_filaments_by_nozzle` :3188 and `Print::get_incompatible_filaments_by_nozzle` :9257 (47%, 1.44x)
+- divergent: `Print::update_filament_maps_to_config` :3241 and `Print::update_filament_maps_to_config` :8329 (27%, 0.93x)
+- partial: `Print::get_extruder_printable_polygons` :3573 and `Print::get_extruder_printable_polygons` :8609 (50%, 0.76x)
+- partial: `Print::has_wipe_tower` :3655 and `Print::has_wipe_tower` :8690 (38%, 1.64x)
+- partial: `Print::set_gcode_file_ready` :4414 and `Print::set_gcode_file_ready` :8761 (50%, 1.0x)
 
 Missing in the Rust file:
 
@@ -8271,54 +8201,21 @@ Missing in the Rust file:
 - `ConstVectorOfPtrsAdaptor::empty` :213 (9 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `ConstVectorOfPtrsAdaptor::at` :215 (10 tokens) — in `format/objparser.rs`, `g_code_reader.rs`, `model.rs`
 - `ConstVectorOfPtrsAdaptor::vector` :216 (25 tokens) — in `geometry/line.rs`, `texture_to_color/cgal_utils.rs`
-- `PrintObject::get_layer` :475 (8 tokens) — in `gcode/multi_material.rs`
-- `PrintObject::get_layer` :476 (8 tokens) — in `gcode/multi_material.rs`
+- `PrintObject::get_layer` :475 (8 tokens, overload) — in `gcode/multi_material.rs`
 - `PrintObject::clear_tree_support_preview_cache` :497 (8 tokens)
-- `PrintObject::get_support_layer` :501 (18 tokens)
 - `PrintObject::is_fuzzy_skin_painted` :532 (13 tokens) — in `model.rs`
 - `PrintObject::slice_support_blockers` :544 (12 tokens)
 - `PrintObject::slice_support_enforcers` :545 (12 tokens)
-- `Print::printed_filaments` :578 (203 tokens)
-- `Print::resolve_single_diameter_layering_nozzle` :646 (445 tokens)
-- `Print::layers_sorted_for_object` :758 (136 tokens)
 - `Print::sequential_print_clearance_valid` :777 (2771 tokens)
 - `Print::get_object` :996 (15 tokens, overload) — in `model.rs`, `texture_painting.rs`
 - `Print::get_object` :999 (59 tokens, overload) — in `model.rs`, `texture_painting.rs`
 - `layered_print_cleareance_valid` :1124 (973 tokens)
 - `Print::get_config_index` :1360 (146 tokens, overload)
-- `CompactedTowerZone::empty` :1387 (11 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `Print::bounding_box` :1849 (68 tokens, overload) — in `build_volume.rs`, `geometry/expolygon.rs`, `geometry/polygon.rs`
-- `Print::total_bounding_box` :1864 (205 tokens)
-- `Print::brim_flow` :1918 (125 tokens)
-- `multi_diameter_brim_flow_on_nozzle` :1946 (105 tokens)
-- `Print::multi_diameter_brim_flow` :1967 (67 tokens)
-- `Print::multi_diameter_support_brim_flow` :1978 (171 tokens)
-- `Print::skirt_flow` :2001 (95 tokens)
-- `Print::skirt_flow` :2017 (17 tokens)
-- `Print::skirt_flow` :2022 (74 tokens)
-- `Print::multi_diameter_skirt_flow_on_brim_layer` :2037 (90 tokens)
-- `PrintObject::copy_layers_from_shared_object` :2092 (82 tokens)
-- `PrintObject::copy_layers_overhang_from_shared_object` :2110 (91 tokens)
-- `PrintObject::get_first_layer_bbox` :2125 (123 tokens)
-- `getObjectExtruderMap` :2150 (212 tokens)
-- `Print::first_layer_islands` :3061 (164 tokens)
+- `Print::skirt_flow` :2017 (17 tokens, overload)
+- `Print::skirt_flow` :2022 (74 tokens, overload)
 - `Print::translate_to_print_space` :3112 (34 tokens, overload)
-- `Print::get_incompatible_filaments_by_nozzle` :3188 (340 tokens)
-- `Print::finalize_first_layer_convex_hull` :3229 (73 tokens)
 - `Print::resolve_manual_nozzle_map` :3322 (166 tokens)
 - `Print::update_to_config_by_nozzle_group_result` :3347 (414 tokens)
-- `convex_outline_gap` :3749 (138 tokens)
-- `compacted_tower_footprint_padding` :3763 (28 tokens)
-- `compacted_wipe_tower_rings` :3782 (25 tokens)
-- `compacted_wipe_tower_zone` :3790 (299 tokens)
-- `compacted_wipe_tower_clearance` :3839 (287 tokens)
-- `compacted_wipe_tower_offender_outline` :3883 (44 tokens)
-- `should_show_height_limit_lines` :3893 (46 tokens)
-- `compacted_wipe_tower_clearance_error` :3905 (18 tokens)
-- `print_instance_hull` :3912 (118 tokens)
-- `estimated_wipe_tower_footprint` :3930 (405 tokens)
-- `Print::compacted_wipe_tower_clearance_valid` :3984 (305 tokens)
-- `Print::validate_compacted_wipe_tower_clearance` :4052 (592 tokens)
 - `Print::export_gcode_from_previous_file` :4428 (168 tokens)
 - `PrintStatistics::finalize_output_path` :4484 (118 tokens) — in `sla_print.rs`
 - `to_json` :4596 (35 tokens) — in `debug/validation.rs`, `format/assembly_steps_json.rs`, `gcode/thumbnail_data.rs`
@@ -8348,8 +8245,6 @@ Missing in the Rust file:
 - `Print::export_cached_data` :5316 (1663 tokens) — in `print_base.rs`
 - `Print::load_cached_data` :5597 (1678 tokens) — in `print_base.rs`
 - `PrintInstance::get_convex_hull_2d` :5840 (30 tokens) — in `model.rs`
-- `FakeWipeTower::getTrueExtrusionLayersFromWipeTower` :5854 (283 tokens)
-- `WipeTowerData::construct_mesh` :5888 (304 tokens)
 
 Rust only:
 
@@ -8385,91 +8280,106 @@ Rust only:
 - `wipe_tower_layer_tools` :4735
 - `get_flush_volumes_matrix` :4921
 - `build_default_nozzle_list` :4931 — C++ has it in `GCode/ToolOrdering`
-- `wiping_objects_for_layer` :4954
-- `wiping_role_volume` :5006
-- `wiping_overrides_of` :5018
-- `tcr_gcode_for_append_tcr` :5047
-- `full_print_config_from_settings` :5078
-- `Print::export_set_extruders_ids` :5190
-- `Print::full_print_config_from_raw_settings` :5244
-- `Print::set_nozzle_group_result` :5253 — C++ has it in `GCode/WipeTower`
-- `Print::get_layered_nozzle_group_result` :5258
-- `Print::get_wipe_tower_depth` :5263
-- `Print::get_wipe_tower_bbx` :5268
-- `Print::get_rib_offset` :5273 — C++ has it in `GCode/WipeTower`
-- `Print::enable_timelapse_print` :5279 — C++ has it in `GCode`
-- `static_config_defaults` :5833
-- `boost_hash_combine` :5839
-- `static_config_hash` :5852
-- `static_config_equal` :5863
-- `cfg_bool` :5868
-- `cfg_int` :5873
-- `cfg_string` :5878
-- `cfg_points` :5887
-- `sort_remove_duplicates` :5896 — C++ has it in `libslic3r`
-- `nozzle_diameter_for_filament` :5904 — C++ has it in `PrintConfig`
-- `has_multiple_used_nozzle_diameters` :5920 — C++ has it in `AdaptiveLayerMerge`
-- `PrintStep::index` :5948
-- `PrintStep::from_index` :5951
-- `PrintObjectStep::index` :5980
-- `PrintObjectStep::from_index` :5983
-- `PrintRegion::new` :6041
-- `PrintRegion::with_hash` :6048
-- `PrintRegion::config` :6060 — C++ has it in `PrintApply`, `SLAPrint`
-- `PrintRegion::extruder` :6081 — C++ has it in `Extruder`, `GCode/ToolOrdering`, `PrintRegion`
-- `PrintRegion::collect_object_printing_extruders_static` :6094
-- `PrintRegion::collect_object_printing_extruders` :6119 — C++ has it in `PrintRegion`
-- `PrintRegion::fmt` :6137
-- `PrintRegion::eq` :6149
-- `AlignedBox3f::default` :6208
-- `AlignedBox3f::new` :6215
-- `AlignedBox3f::extend` :6219 — C++ has it in `Line`
-- `AlignedBox3f::is_empty` :6226 — C++ has it in `PresetBundle`
-- `AlignedBox3f::intersects` :6230 — C++ has it in `BoundingBox`, `Frustum`, `SLA/Pad`
-- `AlignedBox3f::contains` :6234 — C++ has it in `AdaptiveLayerMerge`, `BoundingBox`, `ExPolygon`
-- `PrintObject::with_model_object` :6423
-- `PrintObject::id` :6450 — C++ has it in `Extruder`, `Layer`, `ObjectID`
-- `PrintObject::model_object` :6454 — C++ has it in `Model`, `PrintBase`
-- `PrintObject::config` :6462 — C++ has it in `PrintApply`, `SLAPrint`
-- `PrintObject::trafo` :6478 — C++ has it in `PaintReproject`, `SLA/AGGRaster`, `SLA/RasterBase`
-- `PrintObject::instances` :6492
-- `PrintObject::center_offset` :6511
-- `PrintObject::printing_region` :6539
-- `PrintObject::all_regions` :6543 — C++ has it in `PrintObject`
-- `PrintObject::slicing_parameters` :6566 — C++ has it in `PrintObject`
-- `PrintObject::support_stage_times` :6570
-- `PrintObject::is_step_done_unguarded` :6622 — C++ has it in `PrintBase`
-- `WipeTowerData::new` :6731
-- `PrintStatistics::new` :6771
-- `FilamentIndexKey::hash` :6864 — C++ has it in `Config`, `SLAPrintSteps`
-- `PrintIndexKey::hash` :6882 — C++ has it in `Config`, `SLAPrintSteps`
-- `nozzle_type_eumn_to_str` :6904
-- `FilamentIndexMap::config_index_lookup` :6933
-- `FilamentIndexMap::config_index_insert` :6939
-- `PrintIndexMap::config_index_lookup` :6946
-- `PrintIndexMap::config_index_insert` :6952
-- `Print::default` :7271
-- `Print::new` :7278
-- `Print::full_print_config` :7318 — C++ has it in `PrintConfig`
-- `Print::model` :7323 — C++ has it in `Model`
-- `Print::invalidate_all_steps` :7340 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
-- `Print::print_object_invalidate_step` :7461
-- `Print::invalidate_steps` :7498 — C++ has it in `PrintBase`
-- `Print::is_object_step_done` :7529
-- `Print::config` :7750 — C++ has it in `PrintApply`, `SLAPrint`
-- `Print::default_object_config` :7754
-- `Print::default_region_config` :7758
-- `Print::print_statistics` :7776
-- `Print::get_extruder_filament_info` :7786 — C++ has it in `PresetBundle`
-- `Print::get_slice_used_mixed_filaments` :7839
-- `Print::get_slice_directly_used_filaments` :7847
-- `Print::get_print_region` :7856
-- `Print::get_fake_wipe_tower` :7904
-- `Print::translate_point_to_print_space` :8073
-- `Print::print_object_object_extruders` :8277
-- `Print::extruder_printable_areas` :8374
-- `polygon_new_scale` :8574
-- `Print::default` :8585
+- `wiping_objects_for_layer` :4955
+- `wiping_role_volume` :5007
+- `wiping_overrides_of` :5019
+- `tcr_gcode_for_append_tcr` :5048
+- `full_print_config_from_settings` :5079
+- `Print::export_set_extruders_ids` :5191
+- `Print::full_print_config_from_raw_settings` :5245
+- `Print::set_nozzle_group_result` :5254 — C++ has it in `GCode/WipeTower`
+- `Print::get_layered_nozzle_group_result` :5259
+- `Print::get_wipe_tower_depth` :5264
+- `Print::get_wipe_tower_bbx` :5269
+- `Print::get_rib_offset` :5274 — C++ has it in `GCode/WipeTower`
+- `Print::enable_timelapse_print` :5280 — C++ has it in `GCode`
+- `static_config_defaults` :5834
+- `boost_hash_combine` :5840
+- `static_config_hash` :5853
+- `static_config_equal` :5864
+- `cfg_bool` :5869
+- `cfg_int` :5874
+- `cfg_string` :5879
+- `cfg_points` :5888
+- `sort_remove_duplicates` :5897 — C++ has it in `libslic3r`
+- `nozzle_diameter_for_filament` :5905 — C++ has it in `PrintConfig`
+- `has_multiple_used_nozzle_diameters` :5921 — C++ has it in `AdaptiveLayerMerge`
+- `PrintStep::index` :5949
+- `PrintStep::from_index` :5952
+- `PrintObjectStep::index` :5981
+- `PrintObjectStep::from_index` :5984
+- `PrintRegion::new` :6042
+- `PrintRegion::with_hash` :6049
+- `PrintRegion::config` :6061 — C++ has it in `PrintApply`, `SLAPrint`
+- `PrintRegion::extruder` :6082 — C++ has it in `Extruder`, `GCode/ToolOrdering`, `PrintRegion`
+- `PrintRegion::collect_object_printing_extruders_static` :6095
+- `PrintRegion::collect_object_printing_extruders` :6120 — C++ has it in `PrintRegion`
+- `PrintRegion::fmt` :6138
+- `PrintRegion::eq` :6150
+- `groupedVolumeSlices::default` :6180
+- `AlignedBox3f::default` :6231
+- `AlignedBox3f::new` :6238
+- `AlignedBox3f::extend` :6242 — C++ has it in `Line`
+- `AlignedBox3f::is_empty` :6249 — C++ has it in `PresetBundle`
+- `AlignedBox3f::intersects` :6253 — C++ has it in `BoundingBox`, `Frustum`, `SLA/Pad`
+- `AlignedBox3f::contains` :6257 — C++ has it in `AdaptiveLayerMerge`, `BoundingBox`, `ExPolygon`
+- `PrintObject::with_model_object` :6452
+- `PrintObject::id` :6482 — C++ has it in `Extruder`, `Layer`, `ObjectID`
+- `PrintObject::model_object` :6486 — C++ has it in `Model`, `PrintBase`
+- `PrintObject::config` :6494 — C++ has it in `PrintApply`, `SLAPrint`
+- `PrintObject::trafo` :6510 — C++ has it in `PaintReproject`, `SLA/AGGRaster`, `SLA/RasterBase`
+- `PrintObject::instances` :6524
+- `PrintObject::center_offset` :6543
+- `PrintObject::printing_region` :6575
+- `PrintObject::all_regions` :6579 — C++ has it in `PrintObject`
+- `PrintObject::slicing_parameters` :6602 — C++ has it in `PrintObject`
+- `PrintObject::support_stage_times` :6606
+- `PrintObject::firstLayerObjSlice` :6715
+- `PrintObject::firstLayerObjGroups` :6719
+- `PrintObject::is_step_done_unguarded` :6732 — C++ has it in `PrintBase`
+- `WipeTowerData::new` :6895
+- `PrintStatistics::new` :6997
+- `FilamentIndexKey::hash` :7090 — C++ has it in `Config`, `SLAPrintSteps`
+- `PrintIndexKey::hash` :7108 — C++ has it in `Config`, `SLAPrintSteps`
+- `nozzle_type_eumn_to_str` :7130
+- `FilamentIndexMap::config_index_lookup` :7159
+- `FilamentIndexMap::config_index_insert` :7165
+- `PrintIndexMap::config_index_lookup` :7172
+- `PrintIndexMap::config_index_insert` :7178
+- `Print::default` :7497
+- `Print::new` :7504
+- `Print::full_print_config` :7544 — C++ has it in `PrintConfig`
+- `Print::model` :7549 — C++ has it in `Model`
+- `Print::invalidate_all_steps` :7566 — C++ has it in `PrintBase`, `PrintObject`, `SLAPrint`
+- `Print::print_object_invalidate_step` :7687
+- `Print::invalidate_steps` :7724 — C++ has it in `PrintBase`
+- `Print::is_object_step_done` :7755
+- `Print::config` :7976 — C++ has it in `PrintApply`, `SLAPrint`
+- `Print::default_object_config` :7980
+- `Print::default_region_config` :7984
+- `Print::print_statistics` :8002
+- `Print::get_extruder_filament_info` :8012 — C++ has it in `PresetBundle`
+- `Print::get_slice_used_mixed_filaments` :8065
+- `Print::get_slice_directly_used_filaments` :8073
+- `Print::get_print_region` :8082
+- `Print::get_fake_wipe_tower` :8130
+- `Print::translate_point_to_print_space` :8299
+- `Print::print_object_object_extruders` :8503
+- `Print::extruder_printable_areas` :8600
+- `flow_new_from_config_width` :8780
+- `cfg_option_float` :8802
+- `bounding_box_offset` :8808
+- `custom_tool_changes_up_to` :8818 — C++ has it in `CustomGCode`
+- `SupportLayer::new` :8849
+- `SupportLayer::has_extrusions` :8865 — C++ has it in `Layer`
+- `SupportLayer::effective_print_height` :8873 — C++ has it in `Layer`
+- `SupportLayer::interface_id` :8877 — C++ has it in `Layer`
+- `Print::skirt_flow_for_filament` :9193
+- `Print::skirt_flow_for_object` :9198
+- `Print::wipe_tower_data` :9328
+- `offset_round` :9732
+- `polygon_new_scale` :9982
+- `Print::default` :9993
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 
@@ -8592,7 +8502,7 @@ Rust only:
 
 ### `PrintConfig` (.cpp+.hpp) and `print_config.rs`
 
-Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Rust functions 246. Matched 107: faithful 95, partial 9, divergent 3, stub 0.
+Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Rust functions 249. Matched 110: faithful 98, partial 9, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -8628,11 +8538,8 @@ Missing in the Rust file:
 - `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :9996 (1248 tokens)
 - `DynamicPrintConfig::update_filament_config_values_for_multiple_extruders` :10194 (913 tokens)
 - `DynamicPrintAndCLIConfig::handle_legacy` :11439 (66 tokens, overload) — in `config.rs`
-- `to_points` :11450 (56 tokens) — in `ex_polygon_collection.rs`, `geometry/expolygon.rs`, `geometry/polygon.rs`
-- `get_shared_poly` :11458 (97 tokens) — in `model.rs`
-- `get_bed_shape` :11477 (170 tokens) — in `model.rs`
-- `get_bed_shape` :11508 (102 tokens) — in `model.rs`
-- `get_bed_shape` :11527 (12 tokens) — in `model.rs`
+- `get_bed_shape` :11508 (102 tokens, overload)
+- `get_bed_shape` :11527 (12 tokens, overload)
 - `get_bed_shape_with_excluded_area` :11529 (212 tokens)
 - `has_skirt` :11558 (73 tokens) — in `print.rs`
 - `skirt_expansion_params` :11568 (138 tokens)
@@ -8786,14 +8693,14 @@ Rust only:
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 
-Tier 1. C++ functions 82 (plus 2 constructors, 1 destructors, 0 operators), Rust functions 83. Matched 39: faithful 22, partial 8, divergent 9, stub 0.
+Tier 1. C++ functions 82 (plus 2 constructors, 1 destructors, 0 operators), Rust functions 105. Matched 58: faithful 41, partial 8, divergent 9, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5509 (25%, 0.69x)
 - partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5525 (52%, 1.18x)
 - divergent: `PrintObject::make_perimeters` :470 and `PrintObject::make_perimeters` :1898 (26%, 1.08x)
-- partial: `should_refine_zero_gap_contact` :679 and `should_refine_zero_gap_contact` :7880 (30%, 1.43x)
+- partial: `should_refine_zero_gap_contact` :679 and `should_refine_zero_gap_contact` :7908 (30%, 1.43x)
 - divergent: `PrintObject::prepare_infill` :902 and `PrintObject::prepare_infill` :2173 (19%, 1.13x)
 - partial: `PrintObject::infill` :1154 and `PrintObject::infill` :4595 (61%, 5.43x)
 - divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5386 (8%, 4.07x)
@@ -8810,25 +8717,11 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `PrintObject::detect_extruder_geometric_unprintables` :202 (968 tokens)
-- `PrintObject::calc_estimated_filament_print_time` :328 (1231 tokens)
-- `scaled_external_perimeter_width` :667 (46 tokens)
-- `compute_zero_gap_contact_mask` :726 (482 tokens)
-- `refine_fill_surfaces_for_zero_gap_contact` :817 (233 tokens)
-- `type_bridges_over_suppressed_orphans` :866 (259 tokens)
-- `volume_slices_by_id` :1075 (26 tokens)
-- `conformal_modifier_islands` :1085 (729 tokens)
 - `PrintObject::generate_support_material` :1330 (353 tokens, overload)
 - `PrintObject::prepare_adaptive_infill_data` :1430 (344 tokens)
 - `PrintObject::prepare_lightning_infill_data` :1467 (101 tokens)
 - `PrintObject::get_support_layer_at_printz` :1501 (25 tokens, overload)
 - `PrintObject::alloc_tree_support_preview_cache` :1520 (39 tokens)
-- `PrintObject::add_tree_support_layer` :1530 (30 tokens)
-- `PrintObject::add_support_layer` :1536 (30 tokens)
-- `PrintObject::insert_support_layer` :1542 (26 tokens)
-- `PrintObject::reset_slice_surfaces` :1925 (133 tokens)
-- `layer_skips_periodic_modifier` :2245 (60 tokens)
-- `PrintObject::discover_shell_for_perimeters` :2698 (467 tokens)
 - `clamp_exturder_to_default_protect0` :3617 (34 tokens) — in `print_apply.rs`
 - `PrintObject::object_config_from_model_object` :3627 (61 tokens) — in `print_apply.rs`
 - `apply_to_print_region_config` :3644 (234 tokens) — in `print_apply.rs`
@@ -8836,13 +8729,8 @@ Missing in the Rust file:
 - `restore_parent_internal_infill` :3732 (55 tokens) — in `print_apply.rs`
 - `region_config_from_model_volume` :3742 (543 tokens) — in `print_apply.rs`
 - `PrintObject::generate_support_preview` :3826 (96 tokens)
-- `PrintObject::get_certain_layers` :3970 (83 tokens)
-- `PrintObject::clip_fill_surfaces` :4003 (531 tokens)
-- `band_reference_nozzle` :4283 (171 tokens)
 - `PrintObject::compute_adaptive_merge_groups` :4312 (4881 tokens)
-- `collect_span_bridges` :5008 (155 tokens)
 - `PrintObject::combine_adaptive_infill` :5035 (4873 tokens)
-- `PrintObject::combine_infill` :5724 (741 tokens)
 - `PrintObject::collected_support_areas` :5960 (541 tokens)
 - `PrintObject::warn_uncovered_overhangs` :6040 (2246 tokens)
 - `PrintObject::remove_bridges_from_contacts` :6361 (1075 tokens)
@@ -8899,7 +8787,10 @@ Rust only:
 - `is_approx` :7205 — C++ has it in `Point`, `libslic3r`
 - `print_invalidate_step` :7211
 - `PrintObject::new` :7227
-- `zero_gap_length_thresh` :7865
+- `zero_gap_length_thresh` :7893
+- `expolygons_of_polygons` :8006
+- `periodic_modifier_active` :8277
+- `PrintObject::has_interlocking_beam` :8935
 
 ### `PrintObjectSlice` (.cpp) and `print_object_slice.rs`
 
@@ -9771,7 +9662,7 @@ Rust only:
 
 ### `TriangleMeshSlicer` (.cpp+.hpp) and `triangle_mesh_slicer.rs`
 
-Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 63. Matched 23: faithful 15, partial 7, divergent 1, stub 0.
+Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 74. Matched 30: faithful 22, partial 7, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -9786,14 +9677,10 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `is_equal_for_sort` :50 (12 tokens)
 - `is_equal` :54 (42 tokens, overload) — in `circle.rs`, `geometry/voronoi_utils_cgal.rs`, `multi_material_segmentation.rs`
 - `slice_mesh_ex` :86 (23 tokens, overload)
-- `slice_facet_for_cut_mesh` :323 (1101 tokens)
 - `slice_make_lines` :538 (265 tokens, overload)
 - `remove_tangent_edges` :985 (395 tokens)
-- `cut_plane_xy_equal` :1393 (33 tokens)
-- `find_cut_plane_vertex_index` :1402 (284 tokens)
 - `make_loops` :1433 (540 tokens)
 - `make_loops` :1534 (308 tokens)
 - `remove_short_backtracks` :1790 (320 tokens)
@@ -9802,12 +9689,9 @@ Missing in the Rust file:
 - `transform_mesh_vertices_for_slicing` :1958 (117 tokens)
 - `slice_mesh` :2059 (514 tokens, overload)
 - `slice_mesh_ex` :2121 (335 tokens, overload)
-- `triangulate_slice` :2280 (963 tokens)
 - `project_mesh` :2403 (88 tokens)
 - `project_mesh` :2419 (60 tokens)
-- `cut_mesh` :2430 (2455 tokens)
-- `calc_plane_normal` :2717 (47 tokens)
-- `cut_mesh` :2727 (368 tokens)
+- `cut_mesh` :2727 (368 tokens, overload)
 
 Rust only:
 
@@ -9851,6 +9735,10 @@ Rust only:
 - `transform_verts_unified` :2869
 - `transform_verts_for_slicing` :2880
 - `transform_verts_affine_f32_pair` :2895
+- `is_equal_vec3f` :2915
+- `to_2d_f` :2921
+- `lower_bound_by_predicate` :3108 — C++ has it in `libslic3r`
+- `cut_mesh_plane_points` :3726
 
 ### `TriangleSelector` (.cpp+.hpp) and `triangle_selector.rs`
 
@@ -10234,7 +10122,7 @@ Missing in the Rust file:
 - `remove_nulls` :197 (46 tokens)
 - `sort_remove_duplicates` :205 (47 tokens) — in `filament_group_utils.rs`, `preset_bundle.rs`, `print.rs`
 - `make_unique` :213 (26 tokens)
-- `lower_bound_by_predicate` :220 (85 tokens) — in `fill/fill_base.rs`
+- `lower_bound_by_predicate` :220 (85 tokens) — in `fill/fill_base.rs`, `triangle_mesh_slicer.rs`
 - `binary_find` :242 (35 tokens)
 - `binary_find_by_predicate` :254 (28 tokens)
 - `contains` :264 (28 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
@@ -10588,7 +10476,7 @@ Missing in the Rust file:
 - `SupportGeneratorLayerExtruded::empty` :827 (15 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `SupportGeneratorLayerExtruded::set_polygons_to_extrude` :831 (36 tokens)
 - `SupportGeneratorLayerExtruded::could_merge` :840 (48 tokens)
-- `SupportGeneratorLayerExtruded::merge` :847 (230 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
+- `SupportGeneratorLayerExtruded::merge` :847 (230 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
 - `SupportGeneratorLayerExtruded::polygons_append` :875 (28 tokens) — in `bridge_detector.rs`, `geometry/expolygon.rs`, `geometry/polygon.rs`
 - `LoopInterfaceProcessor::generate` :918 (1284 tokens) — in `arachne/wall_tool_paths.rs`, `debug/validation.rs`, `fill/fill_plane_path.rs`
 - `dbg_index_to_color` :1124 (48 tokens)
@@ -11257,7 +11145,7 @@ Tier 3. C++ functions 7 (plus 4 constructors, 1 destructors, 1 operators), Rust 
 
 Missing in the Rust file:
 
-- `Channel::push` :50 (38 tokens, overload) — in `boost_polygon_voronoi.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
+- `Channel::push` :50 (38 tokens, overload) — in `boost_polygon_voronoi.rs`, `filament_group.rs`, `geometry/polygon.rs`
 
 Rust only:
 
@@ -11403,12 +11291,12 @@ Missing in the Rust file:
 - `CutProgressRange::canceled` :49 (9 tokens) — in `print_base.rs`
 - `add_cut_volume` :52 (224 tokens) — in `model.rs`
 - `CutProgressRange::map` :52 (29 tokens)
-- `process_volume_cut` :96 (235 tokens)
+- `process_volume_cut` :96 (235 tokens) — in `model.rs`
 - `Cut::set_progress` :113 (11 tokens)
 - `Cut::was_canceled` :114 (5 tokens)
-- `process_connector_cut` :142 (515 tokens)
+- `process_connector_cut` :142 (515 tokens) — in `model.rs`
 - `process_modifier_cut` :238 (148 tokens) — in `model.rs`
-- `process_solid_part_cut` :261 (345 tokens)
+- `process_solid_part_cut` :261 (345 tokens) — in `model.rs`
 - `reset_instance_transformation` :311 (376 tokens) — in `model.rs`
 - `Cut::set_progress` :380 (21 tokens)
 - `Cut::post_process` :410 (107 tokens, overload) — in `gcode/g_code_processor.rs`
@@ -12401,64 +12289,63 @@ Rust only:
 
 ### `MeshBoolean` (.cpp+.hpp) and `mesh_boolean.rs`
 
-Tier 3. C++ functions 54 (plus 1 constructors, 0 destructors, 2 operators), Rust functions 5. Matched 4: faithful 4, partial 0, divergent 0, stub 0.
+Tier 3. C++ functions 54 (plus 1 constructors, 0 destructors, 2 operators), Rust functions 57. Matched 34: faithful 30, partial 2, divergent 2, stub 0.
+
+Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
+
+- partial: `triangle_mesh_to_eigen` :55 and `triangle_mesh_to_eigen` :100 (50%, 1.09x)
+- divergent: `_cgal_do` :274 and `cgal_do` :420 (25%, 1.16x)
+- partial: `merge` :394 and `merge` :537 (50%, 1.26x)
+- divergent: `make_boolean` :498 and `make_boolean` :650 (22%, 0.53x)
 
 Missing in the Rust file:
 
-- `eigen_to_triangle_mesh` :38 (139 tokens)
-- `triangle_mesh_to_cgal` :49 (14 tokens)
-- `triangle_mesh_to_cgal` :53 (10 tokens)
-- `triangle_mesh_to_eigen` :55 (91 tokens)
-- `minus` :68 (83 tokens)
-- `minus` :81 (27 tokens)
-- `self_union` :88 (75 tokens)
-- `self_union` :100 (22 tokens)
-- `save_CGALMesh` :123 (22 tokens)
-- `triangle_mesh_to_cgal` :132 (230 tokens)
-- `triangle_mesh_to_cgal` :162 (138 tokens)
-- `to_vec3f` :181 (32 tokens) — in `open_vdb_utils.rs`
-- `to_vec3f` :186 (50 tokens) — in `open_vdb_utils.rs`
-- `cgal_to_indexed_triangle_set` :194 (195 tokens)
-- `cgal_to_triangle_mesh` :227 (21 tokens)
-- `triangle_mesh_to_cgal` :233 (32 tokens)
-- `cgal_to_triangle_mesh` :242 (13 tokens)
-- `cgal_to_indexed_triangle_set` :247 (10 tokens)
-- `_cgal_diff` :256 (36 tokens)
-- `_cgal_union` :262 (36 tokens)
-- `_cgal_intersection` :268 (36 tokens)
-- `_cgal_do` :274 (124 tokens)
-- `minus` :296 (11 tokens)
-- `plus` :297 (11 tokens)
-- `intersect` :298 (11 tokens) — in `clipper2/clipper_h.rs`
-- `does_self_intersect` :299 (12 tokens)
-- `segment` :301 (345 tokens) — in `edge_grid.rs`
-- `segment` :365 (75 tokens) — in `edge_grid.rs`
-- `merge` :381 (65 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
-- `merge` :394 (70 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
-- `_mesh_boolean_do` :406 (56 tokens)
-- `_mesh_boolean_do` :418 (62 tokens)
-- `minus` :430 (11 tokens)
-- `plus` :435 (11 tokens)
-- `intersect` :440 (11 tokens) — in `clipper2/clipper_h.rs`
-- `minus` :445 (11 tokens)
-- `plus` :450 (11 tokens)
-- `intersect` :455 (11 tokens) — in `clipper2/clipper_h.rs`
-- `does_self_intersect` :460 (34 tokens)
-- `does_bound_a_volume` :469 (21 tokens)
-- `empty` :474 (11 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `clone` :479 (12 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `is_enabled` :488 (13 tokens) — in `gcode/ironing.rs`, `print_config.rs`
-- `make_boolean` :498 (49 tokens)
+- `triangle_mesh_to_cgal` :49 (14 tokens, overload)
+- `triangle_mesh_to_cgal` :53 (10 tokens, overload)
+- `minus` :68 (83 tokens, overload)
+- `self_union` :88 (75 tokens, overload)
+- `triangle_mesh_to_cgal` :132 (230 tokens, overload)
+- `triangle_mesh_to_cgal` :162 (138 tokens, overload)
+- `to_vec3f` :186 (50 tokens, overload) — in `open_vdb_utils.rs`
+- `cgal_to_indexed_triangle_set` :194 (195 tokens, overload)
+- `cgal_to_triangle_mesh` :227 (21 tokens, overload)
+- `minus` :296 (11 tokens, overload)
+- `plus` :297 (11 tokens, overload)
+- `intersect` :298 (11 tokens, overload) — in `clipper2/clipper_h.rs`
+- `segment` :301 (345 tokens, overload) — in `edge_grid.rs`
+- `merge` :381 (65 tokens, overload) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
+- `_mesh_boolean_do` :406 (56 tokens, overload)
+- `minus` :430 (11 tokens, overload)
+- `plus` :435 (11 tokens, overload)
+- `intersect` :440 (11 tokens, overload) — in `clipper2/clipper_h.rs`
+- `does_self_intersect` :460 (34 tokens, overload)
 - `triangle_mesh_to_mcut` :555 (39 tokens, overload)
-- `mcDebugOutput` :604 (182 tokens)
-- `do_boolean_single` :652 (1274 tokens)
-- `do_boolean` :853 (603 tokens)
-- `make_boolean` :949 (231 tokens)
-- `make_boolean` :994 (45 tokens)
 
 Rust only:
 
-- `triangle_mesh_to_mcut_from_its` :147
+- `MeshBooleanError::fmt` :37
+- `minus_eigen` :109
+- `self_union_eigen` :127
+- `CGALMesh::from_epic` :170
+- `triangle_mesh_to_cgal_oriented` :255
+- `triangle_mesh_to_cgal_into` :291
+- `cgal_to_indexed_triangle_set_epic` :318
+- `cgal_to_triangle_mesh_epic` :354
+- `triangle_mesh_to_cgal_its` :368
+- `triangle_mesh_to_cgal_mesh` :373
+- `minus_cgal` :448
+- `plus_cgal` :452
+- `intersect_cgal` :456
+- `does_self_intersect_cgal` :460
+- `segment_cgal` :467
+- `merge_epic` :524
+- `mesh_boolean_do_its` :549
+- `minus_its` :596
+- `plus_its` :601
+- `intersect_its` :606
+- `triangle_mesh_to_mcut_its` :804
+- `triangle_mesh_to_mcut_from_its` :813
+- `boolean_opts_flags` :892
 
 ### `MeshDiagnostics` (.cpp+.hpp) and `mesh_diagnostics.rs`
 
@@ -12599,39 +12486,71 @@ Rust only:
 
 ### `ObjColorUtils` (.cpp+.hpp) and `obj_color_utils.rs`
 
-Tier 3. C++ functions 24 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 2. Matched 0: faithful 0, partial 0, divergent 0, stub 0.
+Tier 3. C++ functions 24 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 76. Matched 21: faithful 21, partial 0, divergent 0, stub 0.
 
 Missing in the Rust file:
 
-- `obj_color_deal_algo` :9 (40 tokens)
-- `standard_3mf_corner_color` :29 (151 tokens)
-- `QuantKMeans::apply` :36 (42 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
-- `QuantKMeans::apply_aplha` :45 (100 tokens)
-- `volume_to_textured_mesh` :53 (622 tokens)
-- `QuantKMeans::apply` :57 (128 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
-- `QuantKMeans::apply` :68 (29 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
-- `QuantKMeans::apply` :80 (428 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
-- `QuantKMeans::apply_color_cluster_kmeans` :127 (75 tokens)
-- `append_textured_mesh` :132 (268 tokens)
-- `QuantKMeans::apply_color_cluster_image` :136 (150 tokens)
-- `standard_3mf_to_textured_meshes` :153 (380 tokens)
-- `QuantKMeans::sort_center_and_relabel` :155 (395 tokens)
-- `QuantKMeans::more_than_request` :186 (107 tokens)
-- `QuantKMeans::compute_num_colors` :201 (75 tokens)
-- `QuantKMeans::find_color_index` :213 (69 tokens)
-- `QuantKMeans::is_in` :221 (48 tokens)
-- `QuantKMeans::repeat_center` :228 (179 tokens)
-- `QuantKMeans::replace_centers` :248 (96 tokens)
-- `QuantKMeans::repalce_centers_aplha` :258 (175 tokens)
-- `QuantKMeans::convert_color_space` :277 (85 tokens)
-- `QuantKMeans::flatten` :297 (105 tokens) — in `extrusion_entity_collection.rs`
-- `QuantKMeans::flatten_alpha` :309 (207 tokens)
-- `QuantKMeans::flatten_vector` :328 (112 tokens)
+- `QuantKMeans::apply` :36 (42 tokens, overload) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
+- `QuantKMeans::apply` :57 (128 tokens, overload) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
+- `QuantKMeans::apply` :80 (428 tokens, overload) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
 
 Rust only:
 
-- `check_is_all_undefined_color` :72
-- `get_face_color_from_binding` :87
+- `Mat8u::new` :54
+- `Mat8u::px` :58
+- `Mat8u::px_mut` :62
+- `Mat8u::vec3b` :67
+- `Mat32f::new` :83
+- `Mat32f::row` :87
+- `Mat32f::row_mut` :91
+- `Rng::default` :109
+- `Rng::new` :116
+- `Rng::next` :120 — C++ has it in `Arachne/utils/PolygonsPointIndex`, `Geometry/ConvexHull`, `MutablePolygon`
+- `Rng::as_unsigned` :125
+- `Rng::as_float` :129
+- `Rng::as_double` :133
+- `the_rng_state` :145
+- `set_the_rng_state` :150
+- `norm_l2_sqr` :161
+- `sum_f64` :198
+- `generate_random_center` :236
+- `generate_centers_pp` :246
+- `kmeans` :330
+- `cv_descale` :570
+- `saturate_u8` :576
+- `cv_round_f32` :582
+- `cv_round_f64` :586
+- `d65` :626
+- `softfloat_cbrt` :632
+- `apply_gamma` :674
+- `apply_inv_gamma` :684
+- `create_lab_tabs` :704
+- `init_lut_for_abxz` :772
+- `lab_tabs` :791
+- `rgb2lab_b_coeffs` :798
+- `rgb2lab_b` :813
+- `lab2rgb_integer_coeffs` :841
+- `lab2rgb_b` :857
+- `hsv_tables` :924
+- `rgb2hsv_b` :940
+- `frecpe_f32` :977
+- `frecps_f32` :1016
+- `carotene_recip` :1024
+- `carotene_convert_to_hsv_lane` :1030
+- `carotene_convert_to_hsv` :1069
+- `carotene_rgb2hsv` :1099
+- `compute_sector_and_clamped_h` :1120
+- `hsv2rgb_native` :1129
+- `hsv2rgb_simd_lane` :1153
+- `hsv2rgb_b` :1191
+- `cvt_color` :1260
+- `QuantKMeans::default` :1310
+- `QuantKMeans::new` :1317
+- `QuantKMeans::apply_image` :1323
+- `QuantKMeans::apply_flatten` :1353
+- `QuantKMeans::apply_mat` :1401
+- `QuantKMeans::centers_mat` :1744
+- `QuantKMeans::set_centers_mat` :1752
 
 ### `ObjectID` (.cpp+.hpp) and `object_id.rs`
 

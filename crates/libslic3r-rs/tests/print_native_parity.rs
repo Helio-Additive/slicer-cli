@@ -125,6 +125,14 @@ fn base_config(scenario: i32) -> DynamicPrintConfig {
         deser(&mut config, "enable_prime_tower", "1");
         deser(&mut config, "print_sequence", "by object");
     }
+    if scenario == 4 {
+        deser(&mut config, "enable_prime_tower", "1");
+        deser(&mut config, "wipe_tower_no_sparse_layers", "1");
+        deser(&mut config, "wall_filament", "2");
+        deser(&mut config, "initial_layer_line_width", "0.5");
+        deser(&mut config, "skirt_loops", "2");
+        deser(&mut config, "brim_width", "3");
+    }
     config
 }
 
@@ -180,6 +188,22 @@ fn build_model(scenario: i32, o: &mut Out) -> Model {
         }
         ob.add_instance().set_offset(&Vec3d::new(150.0, 50.0, 0.0));
     }
+    if scenario == 4 {
+        {
+            let ob = model.add_object_new();
+            ob.name = "tall".into();
+            ob.add_volume_mesh(mesh(box_its(10.0, 10.0, 40.0, -5.0, -5.0, 0.0)), ModelVolumeType::ModelPart, true);
+            ob.add_instance().set_offset(&Vec3d::new(32.0, 232.0, 0.0));
+        }
+        let ob = model.add_object_new();
+        ob.name = "short".into();
+        ob.config.set("extruder", 2);
+        ob.add_volume_mesh(mesh(box_its(12.0, 8.0, 2.0, -6.0, -4.0, 0.0)), ModelVolumeType::ModelPart, true);
+        ob.add_instance().set_offset(&Vec3d::new(150.0, 150.0, 0.0));
+        let i2 = ob.add_instance();
+        i2.set_offset(&Vec3d::new(20.0, 200.0, 0.0));
+        i2.set_rotation(&Vec3d::new(0.0, 0.0, 0.25));
+    }
     if scenario == 3 {
         let ob = model.add_object_new();
         ob.name = "support".into();
@@ -200,7 +224,8 @@ fn assemble(model: &Model, config: &DynamicPrintConfig) -> Print {
     }
     // PrintApply.cpp:1323-1325: no objects on the fresh Print, no used filaments.
     new_full_config.normalize_fdm_1().unwrap();
-    let _ = new_full_config.normalize_fdm_2(0, 0, None).unwrap();
+    let mut changed_keys_ori_values = slicer::config::DynamicConfig::new();
+    let _ = new_full_config.normalize_fdm_2(0, 0, Some(&mut changed_keys_ori_values)).unwrap();
     // PrintApply.cpp:1438-1456: one extruder.
     let mut print_variant_index: Vec<i32> = vec![0];
     print.base.base.m_ori_full_print_config = new_full_config.clone();
@@ -237,7 +262,8 @@ fn assemble(model: &Model, config: &DynamicPrintConfig) -> Print {
         let model_object = &print.m_model.objects[*mo_idx];
         let config = object_config_from_model_object(&print.m_default_object_config, model_object, num_extruders, &mut print_variant_index);
         for pi in print_instances {
-            let mut po = PrintObject::with_model_object(*mo_idx, pi.trafo, pi.instances.clone());
+            // PrintApply.cpp:1983 `new PrintObject(this, model_object, trafo, std::move(instances))`
+            let mut po = PrintObject::new(&mut print, *mo_idx, pi.trafo, pi.instances.clone());
             po.m_config = config.clone();
             print.m_objects.push(po);
         }
@@ -280,6 +306,29 @@ fn assemble(model: &Model, config: &DynamicPrintConfig) -> Print {
         i = end;
     }
     print.update_print_regions_from_objects();
+    // PrintApply.cpp:2053-2090: the config checked again with the objects in place.
+    let new_used_filaments = print.extruders(true).len() as i32;
+    let new_changed_keys =
+        new_full_config.normalize_fdm_2(print.m_objects.len() as i32, new_used_filaments, Some(&mut changed_keys_ori_values)).unwrap();
+    if !new_changed_keys.is_empty() {
+        print.invalidate_state_by_config_options(&new_changed_keys);
+        print.invalidate_step(slicer::print::faithful::PrintStep::psGCodeExport);
+        let _ = print.m_config.apply_only(&new_full_config, &new_changed_keys, true);
+        let _ = print.m_default_object_config.apply_only(&new_full_config, &new_changed_keys, true);
+        let _ = print.m_default_region_config.apply_only(&new_full_config, &new_changed_keys, true);
+        print.base.base.m_full_print_config = new_full_config.clone();
+        print.update_filament_self_index_cache();
+    }
+    // PrintApply.cpp:2294-2306: the single-diameter layering nozzle (0 off multi-diameter mode).
+    let single_nozzle = print.resolve_single_diameter_layering_nozzle();
+    if (single_nozzle - print.m_single_diameter_layering_nozzle).abs() > slicer::libslic3r::EPSILON {
+        print.m_single_diameter_layering_nozzle = single_nozzle;
+    }
+    // PrintApply.cpp:2326-2331
+    for i in 0..print.m_objects.len() {
+        PrintObject::update_slicing_parameters(&mut print, i);
+        print.m_support_used |= print.m_objects[i].m_config.opt_bool("enable_support");
+    }
     print
 }
 
@@ -437,7 +486,7 @@ fn dump_print(o: &mut Out, scenario: i32, print: &Print) {
         sc,
         print.num_object_instances(),
         hd(print.max_allowed_layer_height()),
-        hd(print.skirt_first_layer_height(None))
+        hd(print.skirt_first_layer_height())
     ));
     let usage: Vec<i32> = print.get_filament_usage_type().iter().map(|t| *t as i32).collect();
     o.out(format!("{} usage {}", sc, vi(&usage)));
@@ -513,6 +562,191 @@ fn dump_verify(o: &mut Out, scenario: i32, print: &mut Print) {
     }
 }
 
+
+fn flow_s(f: &slicer::flow::Flow) -> String {
+    format!("{} {} {} {}", hf(f.width() as f32), hf(f.height() as f32), hf(f.spacing() as f32), hf(f.nozzle_diameter() as f32))
+}
+fn poly_s(p: &slicer::geometry::Polygon) -> String {
+    let mut o = format!("{}", p.points.len());
+    for pt in &p.points {
+        o += &format!(" {} {}", pt.x, pt.y);
+    }
+    o
+}
+fn polys_s(ps: &[slicer::geometry::Polygon]) -> String {
+    let mut o = format!("{}", ps.len());
+    for p in ps {
+        o += &format!(" {}", poly_s(p));
+    }
+    o
+}
+fn bb_s(b: &slicer::geometry::BoundingBox) -> String {
+    format!("{} {} {} {}", b.min.x, b.min.y, b.max.x, b.max.y)
+}
+
+/// gen.cpp `dump_more`: the slicing parameters, the printed filaments, the flows, the wipe tower estimate
+/// and the compacted wipe tower clearance.
+fn dump_more(o: &mut Out, scenario: i32, print: &mut Print) {
+    use slicer::print::faithful::*;
+    let sc = format!("s{}", scenario);
+    for io in 0..print.m_objects.len() {
+        let sp = print.m_objects[io].compute_slicing_parameters(print, 0.0);
+        o.out(format!(
+            "{} o{} sp {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+            sc,
+            io,
+            hb(sp.valid),
+            sp.base_raft_layers,
+            sp.interface_raft_layers,
+            hd(sp.base_raft_layer_height),
+            hd(sp.interface_raft_layer_height),
+            hd(sp.contact_raft_layer_height),
+            hd(sp.layer_height),
+            sp.layer_grid_subdivision,
+            sp.layer_grid_multiplier,
+            hb(sp.single_diameter_layering),
+            hd(sp.min_layer_height),
+            hd(sp.max_layer_height),
+            hd(sp.max_suport_layer_height),
+            hd(sp.first_print_layer_height),
+            hd(sp.first_object_layer_height),
+            hb(sp.first_object_layer_bridging),
+            hb(sp.soluble_interface),
+            hd(sp.gap_raft_object),
+            hd(sp.gap_object_support),
+            hd(sp.gap_support_object),
+            hd(sp.raft_base_top_z),
+            hd(sp.raft_interface_top_z),
+            hd(sp.raft_contact_top_z),
+            hd(sp.object_print_z_min),
+            hd(sp.object_print_z_max)
+        ));
+        PrintObject::update_slicing_parameters(print, io);
+        let sp = print.m_objects[io].slicing_parameters();
+        o.out(format!("{} o{} sp_valid {} {}", sc, io, hb(sp.valid), hd(sp.object_print_z_max)));
+    }
+    o.out(format!("{} printed_filaments {} single_nozzle {}", sc, vi(&print.printed_filaments()), hd(print.resolve_single_diameter_layering_nozzle())));
+    o.out(format!("{} brim_flow {}", sc, flow_s(&print.brim_flow().unwrap())));
+    o.out(format!("{} skirt_flow {}", sc, flow_s(&print.skirt_flow().unwrap())));
+    for f in 1..=3u32 {
+        let last = print.m_objects.len() - 1;
+        o.out(format!(
+            "{} skirt_flow_f{} {} {}",
+            sc,
+            f,
+            flow_s(&print.skirt_flow_for_filament(f).unwrap()),
+            flow_s(&print.skirt_flow_for_object(&print.m_objects[last], f).unwrap())
+        ));
+    }
+    {
+        let o0 = &print.m_objects[0];
+        o.out(format!(
+            "{} md_flows {} {} {}",
+            sc,
+            flow_s(&print.multi_diameter_brim_flow(o0, 2).unwrap()),
+            flow_s(&print.multi_diameter_skirt_flow_on_brim_layer(o0, 2).unwrap()),
+            flow_s(&print.multi_diameter_support_brim_flow(o0).unwrap())
+        ));
+    }
+    let n = print.extruders(false).len();
+    let wtd = print.wipe_tower_data(n);
+    o.out(format!("{} wtd {} {}", sc, hf(wtd.depth), hf(wtd.brim_width)));
+    o.out(format!("{} height_limit_lines {}", sc, hb(should_show_height_limit_lines(print))));
+    let mut polys: Vec<slicer::geometry::Polygon> = Vec::new();
+    let mut hp: Vec<(slicer::geometry::Polygon, f32)> = Vec::new();
+    let e = Print::compacted_wipe_tower_clearance_valid(print, Some(&mut polys), Some(&mut hp));
+    let mut hps = format!("{}", hp.len());
+    for h in &hp {
+        hps += &format!(" {} {}", poly_s(&h.0), hf(h.1));
+    }
+    let eid = o.id(e.object.unwrap_or(ObjectID { id: 0 }));
+    o.out(format!("{} compacted_valid {} {} {} hp {}", sc, hb(!e.string.is_empty()), eid, polys_s(&polys), hps));
+    o.out(format!("{} compacted_valid_msg {}", sc, e.string));
+
+    let cfg = print.config();
+    o.out(format!("{} padding {} {}", sc, hd(compacted_tower_footprint_padding(cfg, 2.0)), hd(compacted_tower_footprint_padding(cfg, -1.0))));
+    let pt = |x: i64, y: i64| slicer::geometry::Point::new(x, y);
+    let fp = slicer::geometry::Polygon::from_points(vec![pt(1000000, 2000000), pt(4500000, 2000000), pt(4500000, 6000000), pt(1000000, 6000000)]);
+    let zone = compacted_wipe_tower_zone(cfg, &fp);
+    o.out(format!(
+        "{} zone {} body {} nozzle {} rod {} {}",
+        sc,
+        poly_s(&zone.hull),
+        polys_s(&zone.grown_body),
+        polys_s(&zone.grown_nozzle),
+        bb_s(&zone.bbox_rod),
+        hd(zone.body_radius)
+    ));
+    for dx in [0i64, 3000000, 8000000] {
+        for rise in [1.0f64, 30.0] {
+            let h = slicer::geometry::Polygon::from_points(vec![
+                pt(5000000 + dx, 2500000),
+                pt(6000000 + dx, 2500000),
+                pt(6000000 + dx, 4000000),
+                pt(5000000 + dx, 4000000),
+            ]);
+            let c = compacted_wipe_tower_clearance(cfg, &zone, &h, rise);
+            o.out(format!(
+                "{} clearance {} {} {} {} {} {} {} offender {}",
+                sc,
+                dx,
+                hd(rise),
+                hd(c.allowed_rise),
+                hd(c.far_clearance),
+                hb(c.near_body),
+                hd(c.body_clearance),
+                hb(compacted_tower_body_tier(&c)),
+                poly_s(&compacted_wipe_tower_offender_outline(&h, c.body_clearance))
+            ));
+        }
+    }
+    o.out(format!("{} rings {} {}", sc, polys_s(&compacted_wipe_tower_rings(&zone, false)), compacted_wipe_tower_rings(&zone, true).len()));
+}
+
+/// gen.cpp `dump_wipe_tower`
+fn dump_wipe_tower(o: &mut Out, print: &mut Print) {
+    use slicer::geometry::{Point, Polyline};
+    use slicer::print::faithful::FakeWipeTower;
+    let mut fwt = FakeWipeTower::default();
+    fwt.pos = [12.25, 30.5];
+    let pl = |pts: &[(i64, i64)]| Polyline::from_points(pts.iter().map(|&(x, y)| Point::new(x, y)).collect());
+    fwt.outer_wall.insert(ordered_float::OrderedFloat(0.2f32), vec![pl(&[(0, 0), (100000, 0), (100000, 50000)])]);
+    fwt.outer_wall.insert(ordered_float::OrderedFloat(0.4f32), vec![pl(&[(10, 20), (30, 40)]), pl(&[(-5, 7), (9, -11), (13, 17)])]);
+    fwt.outer_wall.insert(ordered_float::OrderedFloat(0.68f32), vec![pl(&[(1, 2), (3, 4)])]);
+    let els = fwt.getTrueExtrusionLayersFromWipeTower();
+    o.out(format!("wt layers {} {}", els.layers.len(), 3));
+    for el in &els.layers {
+        let mut l = format!("wt layer {} {}", hf(el.bottom_z), el.paths.len());
+        for p in &el.paths {
+            l += &format!(" | {} {} {} {}", hf(p.height as f32), hf(p.width as f32), hd(p.mm3_per_mm), p.role as i32);
+            for pt in &p.polyline.points {
+                l += &format!(" {} {}", pt.x, pt.y);
+            }
+        }
+        o.out(l);
+    }
+    let wtd = &mut print.m_wipe_tower_data;
+    wtd.rib_offset = [1.5, -0.75];
+    fn mesh_line(o: &mut Out, name: &str, m: &slicer::model::ModelMesh) {
+        let mut l = format!("{} {} {}", name, m.its.vertices.len(), m.its.indices.len());
+        for v in m.its.vertices.iter().take(12) {
+            l += &format!(" {} {} {}", hf(v.x), hf(v.y), hf(v.z));
+        }
+        for f in m.its.indices.iter().take(4) {
+            l += &format!(" {} {} {}", f[0], f[1], f[2]);
+        }
+        o.out(l);
+    }
+    wtd.construct_mesh(35.0, 20.0, 30.0, 3.0, false, 8.0, 4.0, false);
+    let d = wtd.wipe_tower_mesh_data.as_ref().unwrap();
+    o.out(format!("wt mesh_bottom {}", poly_s(&d.bottom)));
+    mesh_line(o, "wt mesh_tower", &d.real_wipe_tower_mesh);
+    mesh_line(o, "wt mesh_brim", &d.real_brim_mesh);
+    // gen.cpp leaves the rib tower branch out (see there).
+    wtd.construct_mesh(0.0, 30.0, 25.0, 2.0, true, 8.0, 4.0, true);
+    o.out(format!("wt empty {} {}", hb(wtd.wipe_tower_mesh_data.is_some()), wtd.wipe_tower_mesh_data.as_ref().unwrap().bottom.points.len()));
+}
+
 fn read_vectors() -> String {
     let path = format!("{}/tests/data/print/vectors.txt", env!("CARGO_MANIFEST_DIR"));
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
@@ -521,13 +755,17 @@ fn read_vectors() -> String {
 #[test]
 fn print_native_parity() {
     let mut o = Out { lines: Vec::new(), base: 0 };
-    for scenario in 0..4 {
+    for scenario in 0..5 {
         let model = build_model(scenario, &mut o);
         let config = base_config(scenario);
         dump_helpers(&mut o, scenario, &model, &config);
         let mut print = assemble(&model, &config);
         dump_print(&mut o, scenario, &print);
+        dump_more(&mut o, scenario, &mut print);
         dump_verify(&mut o, scenario, &mut print);
+        if scenario == 4 {
+            dump_wipe_tower(&mut o, &mut print);
+        }
     }
     let expected = read_vectors();
     let expected: Vec<&str> = expected.lines().collect();

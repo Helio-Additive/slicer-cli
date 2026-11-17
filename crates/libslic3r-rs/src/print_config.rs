@@ -19430,4 +19430,74 @@ pub mod config_def {
     pub fn printer_nozzle_diameter_mode_multi() -> &'static str {
         "multi"
     }
+
+    /// libslic3r.h:58 `SCALING_FACTOR` (the crate's `SCALING_FACTOR` is its inverse).
+    const LIBSLIC3R_SCALING_FACTOR: f64 = 0.00001;
+
+    /// PrintConfig.cpp:11450-11456 `static Points to_points(const std::vector<Vec2d> &dpts)`:
+    /// `coord_t(scale_(v))`, divide then truncate.
+    fn to_points(dpts: &[Vec2d]) -> Vec<crate::Point> {
+        let mut pts = Vec::with_capacity(dpts.len());
+        for v in dpts {
+            pts.push(crate::Point::new((v.x / LIBSLIC3R_SCALING_FACTOR) as crate::Coord, (v.y / LIBSLIC3R_SCALING_FACTOR) as crate::Coord));
+        }
+        pts
+    }
+
+    /// PrintConfig.cpp:11458-11476 `Polygon get_shared_poly(const std::vector<Pointfs>& extruder_polys)`:
+    /// the intersection of the extruders' printable areas, empty when they do not overlap.
+    pub fn get_shared_poly(extruder_polys: &[Vec<Vec2d>]) -> crate::Polygon {
+        let mut result = crate::Polygon::new();
+        for index in 0..extruder_polys.len() {
+            let extruder_area = &extruder_polys[index];
+            if index == 0 {
+                result.points = to_points(extruder_area);
+            } else {
+                let mut extruer_poly = crate::Polygon::new();
+                extruer_poly.points = to_points(extruder_area);
+                // ClipperUtils.cpp `intersection(const Polygon&, const Polygon&)`
+                let result_polygon = crate::clipper_utils::intersection_polygons_raw_clib(&[extruer_poly], &[result.clone()]);
+                if result_polygon.is_empty() {
+                    return crate::Polygon::new();
+                }
+                result = result_polygon[0].clone();
+            }
+        }
+        result
+    }
+
+    /// PrintConfig.cpp:11477-11506 `Points get_bed_shape(const DynamicPrintConfig &config, bool use_share)`
+    pub fn get_bed_shape(config: &DynamicPrintConfig, use_share: bool) -> Vec<crate::Point> {
+        let Some(bed_shape_opt) = config.opt::<ConfigOptionPoints>("printable_area") else {
+            // Here, it is certain that the bed shape is missing, so an infinite one
+            // has to be used, but still, the center of bed can be queried
+            if let Some(center_opt) = config.opt::<ConfigOptionPoint>("center") {
+                // libslic3r.h `scaled(const Eigen::MatrixBase&)`: `(v / SCALING_FACTOR).cast<coord_t>()`
+                return vec![crate::Point::new(
+                    (center_opt.value.x / LIBSLIC3R_SCALING_FACTOR) as crate::Coord,
+                    (center_opt.value.y / LIBSLIC3R_SCALING_FACTOR) as crate::Coord,
+                )];
+            }
+
+            return Vec::new();
+        };
+
+        let mut bed_poly = crate::Polygon::new();
+        if use_share {
+            let extruder_area_opt = config.opt::<ConfigOptionPointsGroups>("extruder_printable_area");
+            if let Some(extruder_area_opt) = extruder_area_opt.filter(|o| !o.values.is_empty()) {
+                let extruder_areas = &extruder_area_opt.values;
+                bed_poly = get_shared_poly(extruder_areas);
+                if bed_poly.points.is_empty() {
+                    bed_poly.points = to_points(&bed_shape_opt.values);
+                }
+            } else {
+                bed_poly.points = to_points(&bed_shape_opt.values);
+            }
+        } else {
+            bed_poly.points = to_points(&bed_shape_opt.values);
+        }
+
+        bed_poly.points
+    }
 }

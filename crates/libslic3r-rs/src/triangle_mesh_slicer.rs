@@ -2896,3 +2896,907 @@ pub fn transform_verts_affine_f32_pair(a16: &[f64; 16], b16: &[f64; 16], verts_i
     let tr = transform3f_mul_transform3f(&transform3d_cast_float(a16), &transform3d_cast_float(b16));
     transform_flat(&tr, verts_in, [0.0; 3])
 }
+
+// ---------------------------------------------------------------------------
+// Cutting a mesh into two halves: TriangleMeshSlicer.cpp:50-56, 323-473,
+// 1386-1431, 2279-2401, 2430-2788.
+// ---------------------------------------------------------------------------
+
+/// `Vec2f`.
+type Vec2f = nalgebra::Vector2<f32>;
+
+/// TriangleMeshSlicer.cpp:50-52 `bool is_equal_for_sort(float lh, float rh)`: the float
+/// difference against the double `1e-8`.
+pub fn is_equal_for_sort(lh: f32, rh: f32) -> bool {
+    ((lh - rh).abs() as f64) <= 1e-8
+}
+
+/// TriangleMeshSlicer.cpp:54-56 `bool is_equal(const Vec3f &lh, const Vec3f &rh)`
+pub fn is_equal_vec3f(lh: &StlVertex, rh: &StlVertex) -> bool {
+    is_equal(lh[0], rh[0]) && is_equal(lh[1], rh[1]) && is_equal(lh[2], rh[2])
+}
+
+/// `to_2d(const Vec3f&)`
+#[inline]
+fn to_2d_f(v: &StlVertex) -> Vec2f {
+    Vec2f::new(v.x, v.y)
+}
+
+// TriangleMeshSlicer.cpp:322-473
+// Return true, if the facet has been sliced and line_out has been filled.
+// `slice_facet` with the tolerant `is_equal` comparisons of the cut and the third vertex of the
+// edge (`c`) deciding the side of an edge on the plane.
+fn slice_facet_for_cut_mesh(
+    // Z height of the slice in XY plane. Scaled or unscaled (same as vertices[].z()).
+    slice_z: f32,
+    // 3 vertices of the triangle, XY scaled. Z scaled or unscaled (same as slice_z).
+    vertices: &[StlVertex; 3],
+    indices: &StlTriangleVertexIndices,
+    edge_ids: &Vec3i,
+    idx_vertex_lowest: i32,
+    horizontal: bool,
+    line_out: &mut IntersectionLine,
+) -> FacetSliceType {
+    let mut points: [IntersectionPoint; 3] =
+        [IntersectionPoint::default(), IntersectionPoint::default(), IntersectionPoint::default()];
+    let mut num_points: usize = 0;
+    let mut point_on_layer: usize = usize::MAX;
+
+    // Reorder vertices so that the first one is the one with lowest Z.
+    // This is needed to get all intersection lines in a consistent order
+    // (external on the right of the line)
+    for j in 0..3 {
+        // loop through facet edges
+        let edge_id;
+        let (mut a, mut b, c): (usize, usize, usize);
+        let (mut a_id, mut b_id): (i32, i32);
+        {
+            let k = ((idx_vertex_lowest + j) % 3) as usize;
+            let l = (k + 1) % 3;
+            edge_id = edge_ids[k];
+            a_id = indices[k];
+            a = k;
+            b_id = indices[l];
+            b = l;
+            c = (k + 2) % 3;
+        }
+
+        // Is edge or face aligned with the cutting plane?
+        if is_equal(vertices[a].z, slice_z) && is_equal(vertices[b].z, slice_z) {
+            // Edge is horizontal and belongs to the current layer.
+            // The following rotation of the three vertices may not be efficient, but this branch happens rarely.
+            let v0 = &vertices[0];
+            let v1 = &vertices[1];
+            let v2 = &vertices[2];
+            // We may ignore this edge for slicing purposes, but we may still use it for object cutting.
+            let result;
+            if horizontal {
+                // All three vertices are aligned with slice_z.
+                line_out.edge_type = FacetEdgeType::Horizontal;
+                result = FacetSliceType::Cutting;
+                // float differences and products in one expression (the first product fused under
+                // -ffp-contract=on), then double
+                let normal = (v1.x - v0.x).mul_add(v2.y - v1.y, -((v1.y - v0.y) * (v2.x - v1.x))) as f64;
+                if normal < 0.0 {
+                    // If normal points downwards this is a bottom horizontal facet so we reverse its point order.
+                    std::mem::swap(&mut a, &mut b);
+                    std::mem::swap(&mut a_id, &mut b_id);
+                }
+            } else {
+                // Two vertices are aligned with the cutting plane, the third vertex is below or above the cutting plane.
+                // Is the third vertex below the cutting plane?
+                let third_below = vertices[c].z < slice_z;
+                // Two vertices on the cutting plane, the third vertex is below the plane. Consider the edge to be part of the slice
+                // only if it is the upper edge.
+                // (the bottom most edge resp. vertex of a triangle is not owned by the triangle, but the top most edge resp. vertex is part of the triangle
+                // in respect to the cutting plane).
+                result = if third_below { FacetSliceType::Slicing } else { FacetSliceType::Cutting };
+                if third_below {
+                    line_out.edge_type = FacetEdgeType::Top;
+                    std::mem::swap(&mut a, &mut b);
+                    std::mem::swap(&mut a_id, &mut b_id);
+                } else {
+                    line_out.edge_type = FacetEdgeType::Bottom;
+                }
+            }
+            // float -> coord_t
+            line_out.a.x = vertices[a].x as i64;
+            line_out.a.y = vertices[a].y as i64;
+            line_out.b.x = vertices[b].x as i64;
+            line_out.b.y = vertices[b].y as i64;
+            line_out.a_id = a_id;
+            line_out.b_id = b_id;
+            debug_assert!(line_out.a != line_out.b);
+            return result;
+        }
+
+        if is_equal(vertices[a].z, slice_z) {
+            // Only point a alings with the cutting plane.
+            if point_on_layer == usize::MAX || points[point_on_layer].point_id != a_id {
+                point_on_layer = num_points;
+                let point = &mut points[num_points];
+                num_points += 1;
+                point.point.x = vertices[a].x as i64;
+                point.point.y = vertices[a].y as i64;
+                point.point_id = a_id;
+            }
+        } else if is_equal(vertices[b].z, slice_z) {
+            // Only point b alings with the cutting plane.
+            if point_on_layer == usize::MAX || points[point_on_layer].point_id != b_id {
+                point_on_layer = num_points;
+                let point = &mut points[num_points];
+                num_points += 1;
+                point.point.x = vertices[b].x as i64;
+                point.point.y = vertices[b].y as i64;
+                point.point_id = b_id;
+            }
+        } else if (vertices[a].z < slice_z && vertices[b].z > slice_z) || (vertices[b].z < slice_z && vertices[a].z > slice_z) {
+            // A general case. The face edge intersects the cutting plane. Calculate the intersection point.
+            debug_assert!(a_id != b_id);
+            // Sort the edge to give a consistent answer.
+            if a_id > b_id {
+                std::mem::swap(&mut a_id, &mut b_id);
+                std::mem::swap(&mut a, &mut b);
+            }
+            let (pa, pb) = (vertices[a], vertices[b]);
+            let t = (slice_z as f64 - pb.z as f64) / (pa.z as f64 - pb.z as f64);
+            if t <= 0.0 {
+                if point_on_layer == usize::MAX || points[point_on_layer].point_id != a_id {
+                    let point = &mut points[num_points];
+                    point.point.x = pa.x as i64;
+                    point.point.y = pa.y as i64;
+                    point_on_layer = num_points;
+                    num_points += 1;
+                    point.point_id = a_id;
+                }
+            } else if t >= 1.0 {
+                if point_on_layer == usize::MAX || points[point_on_layer].point_id != b_id {
+                    let point = &mut points[num_points];
+                    point.point.x = pb.x as i64;
+                    point.point.y = pb.y as i64;
+                    point_on_layer = num_points;
+                    num_points += 1;
+                    point.point_id = b_id;
+                }
+            } else {
+                let point = &mut points[num_points];
+                // `double(b->x()) + (double(a->x()) - double(b->x())) * t + 0.5`: the product
+                // and the first sum are one expression (fused under -ffp-contract=on).
+                point.point.x = ((pa.x as f64 - pb.x as f64).mul_add(t, pb.x as f64) + 0.5).floor() as i64;
+                point.point.y = ((pa.y as f64 - pb.y as f64).mul_add(t, pb.y as f64) + 0.5).floor() as i64;
+                point.edge_id = edge_id;
+                num_points += 1;
+            }
+        }
+    }
+
+    // Facets must intersect each plane 0 or 2 times, or it may touch the plane at a single vertex only.
+    debug_assert!(num_points < 3);
+    if num_points == 2 {
+        line_out.edge_type = FacetEdgeType::General;
+        line_out.a = points[1].point;
+        line_out.b = points[0].point;
+        line_out.a_id = points[1].point_id;
+        line_out.b_id = points[0].point_id;
+        line_out.edge_a_id = points[1].edge_id;
+        line_out.edge_b_id = points[0].edge_id;
+        // Not a zero lenght edge.
+        // FIXME slice_facet() may create zero length edges due to rounding of doubles into coord_t.
+        // assert(line_out.a != line_out.b);
+        // The plane cuts at least one edge in a general position.
+        debug_assert!(line_out.a_id == -1 || line_out.b_id == -1);
+        debug_assert!(line_out.edge_a_id != -1 || line_out.edge_b_id != -1);
+        // General slicing position, use the segment for both slicing and object cutting.
+
+        return FacetSliceType::Slicing;
+    }
+    FacetSliceType::NoSlice
+}
+
+// Several mesh indices may sit at one position of the cut plane: the intersection vertices
+// inserted while splitting the facets, plus the original vertices the plane happens to pass
+// through (CAD models often stack a few of those). Shell faces and cap triangles have to agree
+// on a single index per position, otherwise the cap does not close the shell and the cut leaves
+// open edges behind.
+/// TriangleMeshSlicer.cpp:1393-1396
+fn cut_plane_xy_equal(l: &Vec2f, r: &Vec2f) -> bool {
+    is_equal(l.x, r.x) && is_equal(l.y, r.y)
+}
+
+/// libslic3r.h:219-238 `lower_bound_by_predicate(first, last, lower_than_key)`: the binary search
+/// of `std::lower_bound` with a one-argument predicate.
+fn lower_bound_by_predicate<T>(v: &[T], lower_than_key: impl Fn(&T) -> bool) -> usize {
+    let mut first = 0usize;
+    let mut count = v.len();
+    while count > 0 {
+        let mut it = first;
+        let step = count / 2;
+        it += step;
+        if lower_than_key(&v[it]) {
+            it += 1;
+            first = it;
+            count -= step + 1;
+        } else {
+            count = step;
+        }
+    }
+    first
+}
+
+// Index the welded map holds for a cut plane position, -1 when the position is not in the map.
+// The accepted distance is much wider than the rounding the cap coordinates went through, so the
+// closest entry is taken rather than the first one hit: several distinct positions may be within
+// the tolerance and only the closest one is the vertex the shell uses here.
+/// TriangleMeshSlicer.cpp:1402-1429
+fn find_cut_plane_vertex_index(map_vertex_to_index: &[(Vec2f, i32)], v: &Vec2f) -> i32 {
+    let mut best_idx: i32 = -1;
+    let mut best_dist: f32 = 0.0;
+    let mut consider = |e: &(Vec2f, i32)| {
+        if !cut_plane_xy_equal(&e.0, v) {
+            return;
+        }
+        // `(e.first - v).squaredNorm()` of a Vec2f: the redux of the two squares.
+        let d = e.0 - v;
+        let dist = d.x * d.x + d.y * d.y;
+        if best_idx == -1 || dist < best_dist || (dist == best_dist && e.1 < best_idx) {
+            best_idx = e.1;
+            best_dist = dist;
+        }
+    };
+    let it = lower_bound_by_predicate(map_vertex_to_index, |l: &(Vec2f, i32)| {
+        l.0.x < v.x || (is_equal_for_sort(l.0.x, v.x) && l.0.y < v.y)
+    });
+    // is_equal() accepts a wider distance than the sort key, so candidates sit on either side.
+    let mut cur = it;
+    while cur < map_vertex_to_index.len() && is_equal(map_vertex_to_index[cur].0.x, v.x) {
+        consider(&map_vertex_to_index[cur]);
+        cur += 1;
+    }
+    let mut cur = it;
+    while cur != 0 {
+        cur -= 1;
+        if !is_equal(map_vertex_to_index[cur].0.x, v.x) {
+            break;
+        }
+        consider(&map_vertex_to_index[cur]);
+    }
+    best_idx
+}
+
+// Remove duplicates of slice_vertices, optionally triangulate the cut.
+/// TriangleMeshSlicer.cpp:2279-2401 `triangulate_slice`
+///
+/// FIDELITY-NOTE: the cap triangles come from `tesselate::triangulate_expolygons_3d`, which runs
+/// earcut where the C++ runs the GLU tesselator (see tesselate.rs): the caps of a cut cover the
+/// same region with other triangles. Everything else (the welding of the cut plane vertices, the
+/// shell faces) follows the C++.
+fn triangulate_slice(
+    its: &mut indexed_triangle_set,
+    lines: &mut IntersectionLines,
+    slice_vertices: &mut Vec<i32>,
+    // Z height of the slice.
+    z: f32,
+    triangulate: bool,
+    normals_down: bool,
+    mut src_faces: Option<&mut Vec<i32>>,
+    section_vertices_map: &std::collections::BTreeMap<i32, StlVertex>,
+) {
+    // libslic3r.h:205-209 sort_remove_duplicates
+    slice_vertices.sort();
+    slice_vertices.dedup();
+
+    // 1) Create map of the cut plane vertices from positions to mesh indices.
+    // As the caller will likely add duplicate points when intersecting triangle edges, there will be duplicates.
+    // The original vertices the plane passes through are registered as well, so that a stack of
+    // coincident vertices ends up in a single group of step 2 instead of forking shell and cap.
+    let mut map_vertex_to_index: Vec<(Vec2f, i32)> = Vec::with_capacity(slice_vertices.len() + section_vertices_map.len());
+    for &i in slice_vertices.iter() {
+        map_vertex_to_index.push((to_2d_f(&its.vertices[i as usize]), i));
+    }
+    for (&kvp_first, _) in section_vertices_map.iter() {
+        if kvp_first >= 0 && kvp_first < its.vertices.len() as i32 && is_equal(its.vertices[kvp_first as usize].z, z) {
+            map_vertex_to_index.push((to_2d_f(&its.vertices[kvp_first as usize]), kvp_first));
+        }
+    }
+    crate::clipper::libcxx_sort(&mut map_vertex_to_index, |l: &(Vec2f, i32), r: &(Vec2f, i32)| {
+        l.0.x < r.0.x || (is_equal_for_sort(l.0.x, r.0.x) && (l.0.y < r.0.y || (is_equal_for_sort(l.0.y, r.0.y) && l.1 < r.1)))
+    });
+
+    // 2) Discover duplicate points on the slice. Remap duplicate vertices to a vertex with a lowest index.
+    //    Remove denegerate triangles, if they happen to be created by merging duplicate vertices.
+    //    Every entry lies on the cut plane, so entries sharing a position describe the same point
+    //    and the lowest index becomes the one index both the shell and the cap below refer to.
+    {
+        let mut map_duplicate_vertex: Vec<i32> = vec![-1; its.vertices.len()];
+        let mut grouped: Vec<u8> = vec![0; map_vertex_to_index.len()];
+        let mut i: i32 = 0;
+        while i < map_vertex_to_index.len() as i32 {
+            let iu = i as usize;
+            if grouped[iu] != 0 {
+                i += 1;
+                continue;
+            }
+            let ipos = map_vertex_to_index[iu].0;
+            // The entries are ordered by x alone, so the ones describing this position are not
+            // necessarily adjacent: another vertex of the same x band but of a far away y may sit
+            // between them. Walk the whole band and collect what is close to this anchor, rather
+            // than stopping at the first neighbour that does not match.
+            let mut band_end = iu;
+            while band_end < map_vertex_to_index.len() && is_equal(ipos.x, map_vertex_to_index[band_end].0.x) {
+                band_end += 1;
+            }
+            let mut iidx = map_vertex_to_index[iu].1;
+            for t in iu + 1..band_end {
+                if grouped[t] == 0 && cut_plane_xy_equal(&ipos, &map_vertex_to_index[t].0) {
+                    iidx = iidx.min(map_vertex_to_index[t].1);
+                }
+            }
+            for t in iu..band_end {
+                if grouped[t] != 0 || !cut_plane_xy_equal(&ipos, &map_vertex_to_index[t].0) {
+                    continue;
+                }
+                grouped[t] = 1;
+                if map_vertex_to_index[t].1 != iidx {
+                    map_duplicate_vertex[map_vertex_to_index[t].1 as usize] = iidx;
+                }
+                // Keep every registered position pointing at the canonical index instead of keeping
+                // the group representative alone: the tolerant comparison is not transitive, so a cap
+                // vertex may well match one member of the group while missing that representative.
+                map_vertex_to_index[t].1 = iidx;
+            }
+            i += 1;
+        }
+        debug_assert!(src_faces.as_ref().map_or(true, |s| s.len() == its.indices.len()));
+        let mut i: usize = 0;
+        while i < its.indices.len() {
+            {
+                let f = &mut its.indices[i];
+                // Remap the face vertices that lost against another index of the same position.
+                for k in 0..3 {
+                    if f[k] >= 0 && f[k] < map_duplicate_vertex.len() as i32 && map_duplicate_vertex[f[k] as usize] >= 0 {
+                        f[k] = map_duplicate_vertex[f[k] as usize];
+                    }
+                }
+            }
+            let f = its.indices[i];
+            if f[0] == f[1] || f[0] == f[2] || f[1] == f[2] {
+                // Remove degenerate face.
+                let back = *its.indices.last().unwrap();
+                its.indices[i] = back;
+                its.indices.pop();
+                if let Some(src_faces) = src_faces.as_deref_mut() {
+                    let back = *src_faces.last().unwrap();
+                    src_faces[i] = back;
+                    src_faces.pop();
+                }
+            } else {
+                // Keep the face.
+                i += 1;
+            }
+        }
+    }
+
+    if triangulate {
+        let idx_vertex_new_first = its.vertices.len();
+        let triangles =
+            crate::tesselate::triangulate_expolygons_3d(&make_expolygons_simple(lines), z as f64, normals_down).unwrap_or_default();
+        let mut i = 0usize;
+        while i < triangles.len() {
+            let mut facet = StlTriangleVertexIndices::new(0, 0, 0);
+            for j in 0..3 {
+                let t = triangles[i];
+                i += 1;
+                let v = StlVertex::new(t.x as f32, t.y as f32, t.z as f32);
+                // The cap lies on the cut plane, so the map welded above yields the very index the shell uses.
+                let mut idx = find_cut_plane_vertex_index(&map_vertex_to_index, &to_2d_f(&v));
+                if idx == -1 {
+                    // Try to find the vertex in the list of newly added vertices. Those vertices are not matched on the cut and they shall be rare.
+                    for k in idx_vertex_new_first..its.vertices.len() {
+                        if its.vertices[k] == v {
+                            idx = k as i32;
+                            break;
+                        }
+                    }
+                    if idx == -1 {
+                        idx = its.vertices.len() as i32;
+                        its.vertices.push(v);
+                    }
+                }
+                facet[j] = idx;
+            }
+            if facet[0] != facet[1] && facet[0] != facet[2] && facet[1] != facet[2] {
+                its.indices.push(facet);
+            }
+        }
+    }
+
+    // Remove vertices, which are not referenced by any face.
+    crate::triangle_mesh::its_compactify_vertices(its, true);
+
+    // Degenerate faces should not be created.
+    // its_remove_degenerate_faces(its);
+}
+
+/// Tesselate.hpp:13-14
+const NORMALS_UP: bool = false;
+const NORMALS_DOWN: bool = true;
+
+/// TriangleMeshSlicer.cpp:2430-2714 `cut_mesh(mesh, z, upper, lower, triangulate_caps,
+/// upper_src_faces, lower_src_faces, progress, cancel)`: the faces above `z` into `upper`, those
+/// below into `lower`, the faces the plane crosses split, the caps triangulated when asked
+/// (`triangulate_caps` defaults to true in the C++). `None` is the C++ `nullptr`.
+#[allow(clippy::too_many_arguments)]
+pub fn cut_mesh(
+    mesh: &indexed_triangle_set,
+    z: f32,
+    mut upper: Option<&mut indexed_triangle_set>,
+    mut lower: Option<&mut indexed_triangle_set>,
+    triangulate_caps: bool,
+    mut upper_src_faces: Option<&mut Vec<i32>>,
+    mut lower_src_faces: Option<&mut Vec<i32>>,
+    progress: Option<&dyn Fn(i32)>,
+    cancel: Option<&dyn Fn() -> bool>,
+) {
+    debug_assert!(upper.is_some() || lower.is_some());
+    if upper.is_none() && lower.is_none() {
+        return;
+    }
+
+    // BOOST_LOG_TRIVIAL(trace) << "slicing object";
+
+    if let Some(upper) = upper.as_deref_mut() {
+        *upper = indexed_triangle_set::default();
+        upper.vertices = mesh.vertices.clone();
+        upper.indices.reserve(mesh.indices.len());
+        if let Some(upper_src_faces) = upper_src_faces.as_deref_mut() {
+            upper_src_faces.clear();
+            upper_src_faces.reserve(mesh.indices.len());
+        }
+    }
+
+    if let Some(lower) = lower.as_deref_mut() {
+        *lower = indexed_triangle_set::default();
+        lower.vertices = mesh.vertices.clone();
+        lower.indices.reserve(mesh.indices.len());
+        if let Some(lower_src_faces) = lower_src_faces.as_deref_mut() {
+            lower_src_faces.clear();
+            lower_src_faces.reserve(mesh.indices.len());
+        }
+    }
+
+    // To triangulate the caps after slicing.
+    let mut upper_lines: IntersectionLines = Vec::new();
+    let mut lower_lines: IntersectionLines = Vec::new();
+    let mut upper_slice_vertices: Vec<i32> = Vec::new();
+    let mut lower_slice_vertices: Vec<i32> = Vec::new();
+    let facets_edge_ids: Vec<Vec3i> = its_face_edge_ids(mesh);
+    // std::map<int, Vec3f*>: the keys are what is read.
+    let mut section_vertices_map: std::collections::BTreeMap<i32, StlVertex> = std::collections::BTreeMap::new();
+
+    // Report / poll in chunks: the callbacks reach a mutex and a condition variable, so
+    // doing it per facet would cost more than the slicing itself. One chunk of a large
+    // mesh takes single-digit milliseconds, which is short enough for a responsive Cancel.
+    const PROGRESS_CHUNK_FACETS: i32 = 8192;
+    // Leave the last 20% of the range to the two cap triangulations below.
+    const SLICE_PERCENT_SPAN: i32 = 80;
+    let facet_count = mesh.indices.len() as i32;
+    let mut canceled = false;
+
+    // libslic3r.h:52 EPSILON
+    const EPSILON: f64 = 1e-4;
+
+    for facet_idx in 0..facet_count {
+        if facet_idx % PROGRESS_CHUNK_FACETS == 0 {
+            if let Some(cancel) = cancel {
+                if cancel() {
+                    canceled = true;
+                    break;
+                }
+            }
+            // Widened: facet_idx * 80 overflows int past ~2.7e7 facets, which large scans reach.
+            if let Some(progress) = progress {
+                progress((facet_idx as i64 * SLICE_PERCENT_SPAN as i64 / facet_count as i64) as i32);
+            }
+        }
+        let facet = mesh.indices[facet_idx as usize];
+        let vertices: [StlVertex; 3] =
+            [mesh.vertices[facet[0] as usize], mesh.vertices[facet[1] as usize], mesh.vertices[facet[2] as usize]];
+        let min_z = vertices[0].z.min(vertices[1].z.min(vertices[2].z));
+        let max_z = vertices[0].z.max(vertices[1].z.max(vertices[2].z));
+
+        for i in 0..3 {
+            if is_equal(z, vertices[i].z) && !section_vertices_map.contains_key(&facet[i]) {
+                section_vertices_map.insert(facet[i], StlVertex::new(vertices[i].x, vertices[i].y, vertices[i].z));
+            }
+        }
+        // intersect facet with cutting plane
+        let mut line = IntersectionLine::default();
+        let idx_vertex_lowest: i32 = if is_equal(vertices[1].z, min_z) {
+            1
+        } else if is_equal(vertices[2].z, min_z) {
+            2
+        } else {
+            0
+        };
+        let mut slice_type = FacetSliceType::NoSlice;
+        if (z as f64) > min_z as f64 - EPSILON && (z as f64) < max_z as f64 + EPSILON {
+            let mut vertices_scaled: [StlVertex; 3] = [StlVertex::zeros(); 3];
+            for i in 0..3 {
+                let src = &vertices[i];
+                let dst = &mut vertices_scaled[i];
+                // scale_(val) = ((val) / SCALING_FACTOR), stored as float
+                dst.x = (src.x as f64 / 0.00001) as f32;
+                dst.y = (src.y as f64 / 0.00001) as f32;
+                dst.z = src.z;
+            }
+            slice_type = slice_facet_for_cut_mesh(
+                z,
+                &vertices_scaled,
+                &mesh.indices[facet_idx as usize],
+                &facets_edge_ids[facet_idx as usize],
+                idx_vertex_lowest,
+                is_equal(min_z, max_z),
+                &mut line,
+            );
+        }
+
+        if slice_type != FacetSliceType::NoSlice {
+            // Save intersection lines for generating correct triangulations.
+            if line.edge_type == FacetEdgeType::Top {
+                lower_lines.push(line.clone());
+                lower_slice_vertices.push(line.a_id);
+                lower_slice_vertices.push(line.b_id);
+            } else if line.edge_type == FacetEdgeType::Bottom {
+                upper_lines.push(line.clone());
+                upper_slice_vertices.push(line.a_id);
+                upper_slice_vertices.push(line.b_id);
+            } else if line.edge_type == FacetEdgeType::General {
+                lower_lines.push(line.clone());
+                upper_lines.push(line.clone());
+            }
+        }
+
+        if min_z > z || (is_equal(min_z, z) && max_z > z) {
+            // facet is above the cut plane and does not belong to it
+            if let Some(upper) = upper.as_deref_mut() {
+                upper.indices.push(facet);
+                if let Some(upper_src_faces) = upper_src_faces.as_deref_mut() {
+                    upper_src_faces.push(facet_idx);
+                }
+            }
+        } else if max_z < z || (is_equal(max_z, z) && min_z < z) {
+            // facet is below the cut plane and does not belong to it
+            if let Some(lower) = lower.as_deref_mut() {
+                lower.indices.push(facet);
+                if let Some(lower_src_faces) = lower_src_faces.as_deref_mut() {
+                    lower_src_faces.push(facet_idx);
+                }
+            }
+        } else if min_z < z && max_z > z {
+            // Facet is cut by the slicing plane.
+            debug_assert!(slice_type == FacetSliceType::Slicing);
+            debug_assert!(line.edge_type == FacetEdgeType::General);
+            debug_assert!(line.edge_a_id != -1);
+            debug_assert!(line.edge_b_id != -1);
+
+            // look for the vertex on whose side of the slicing plane there are no other vertices
+            let isolated_vertex: i32;
+            let mut isolated_vertex_option: i32 = -1;
+            let list: [i32; 3] = [0, 1, 2];
+            let get_third = |isolated_vertex: i32, temp: i32| -> i32 {
+                // not use vertex data
+                for i in 0..list.len() {
+                    if list[i] != isolated_vertex && list[i] != temp {
+                        return list[i];
+                    }
+                }
+                -1
+            };
+            if is_equal(vertices[0].z, z) {
+                isolated_vertex = if vertices[1].z > z { 1 } else { 2 };
+                isolated_vertex_option = get_third(isolated_vertex, 0);
+            } else if is_equal(vertices[1].z, z) {
+                isolated_vertex = if vertices[2].z > z { 2 } else { 0 };
+                isolated_vertex_option = get_third(isolated_vertex, 1);
+            } else if is_equal(vertices[2].z, z) {
+                isolated_vertex = if vertices[0].z > z { 0 } else { 1 };
+                isolated_vertex_option = get_third(isolated_vertex, 2);
+            } else {
+                isolated_vertex = if (vertices[0].z > z) == (vertices[1].z > z) {
+                    2
+                } else if (vertices[1].z > z) == (vertices[2].z > z) {
+                    0
+                } else {
+                    1
+                };
+            }
+            // get vertices starting from the isolated one
+            let mut v0v1 = StlVertex::zeros();
+            let mut v2v0 = StlVertex::zeros();
+            // Unscale to doubles first, then to floats to reach the same accuracy as triangulate_expolygons_2d().
+            let unscaled_3d = |p: &Point| -> StlVertex {
+                StlVertex::new((p.x as f64 * 0.00001) as f32, (p.y as f64 * 0.00001) as f32, z)
+            };
+            let mut calc_isolated_vertex = |iv: i32, is_find: &mut bool| {
+                debug_assert!(
+                    facets_edge_ids[facet_idx as usize][iv as usize] == line.edge_a_id
+                        || facets_edge_ids[facet_idx as usize][iv as usize] == line.edge_b_id
+                );
+                *is_find = true;
+                if facets_edge_ids[facet_idx as usize][iv as usize] == line.edge_a_id {
+                    v0v1 = unscaled_3d(&line.a);
+                    v2v0 = unscaled_3d(&line.b);
+                } else if facets_edge_ids[facet_idx as usize][iv as usize] == line.edge_b_id {
+                    v0v1 = unscaled_3d(&line.b);
+                    v2v0 = unscaled_3d(&line.a);
+                } else {
+                    *is_find = false;
+                }
+            };
+            let mut find_isolated_vertex = false;
+            let mut iv: i32;
+            calc_isolated_vertex(isolated_vertex, &mut find_isolated_vertex);
+            if !find_isolated_vertex && isolated_vertex_option != -1 {
+                calc_isolated_vertex(isolated_vertex_option, &mut find_isolated_vertex);
+                if !find_isolated_vertex {
+                    // BOOST_LOG_TRIVIAL(trace) << "error:could not find isolated_vertex";
+                    continue;
+                }
+                iv = isolated_vertex_option;
+            } else {
+                iv = isolated_vertex;
+            }
+            let v0 = vertices[iv as usize];
+            let iv0 = facet[iv as usize];
+            iv += 1;
+            if iv == 3 {
+                iv = 0;
+            }
+            let v1 = vertices[iv as usize];
+            let iv1 = facet[iv as usize];
+            iv += 1;
+            if iv == 3 {
+                iv = 0;
+            }
+            let v2 = vertices[iv as usize];
+            let iv2 = facet[iv as usize];
+
+            // intersect v0-v1 and v2-v0 with cutting plane and make new vertices
+            let mut new_vertex = |a: &StlVertex,
+                                  ia: i32,
+                                  b: &StlVertex,
+                                  ib: i32,
+                                  c: &StlVertex,
+                                  ic: i32,
+                                  new_pt: &StlVertex,
+                                  is_new_vertex: &mut bool|
+             -> (i32, i32) {
+                let mut iupper: i32 = -1;
+                let mut ilower: i32 = -1;
+                *is_new_vertex = false;
+                if is_equal_vec3f(new_pt, a) {
+                    iupper = ia;
+                    ilower = ia;
+                } else if is_equal_vec3f(new_pt, b) {
+                    iupper = ib;
+                    ilower = ib;
+                } else if is_equal_vec3f(new_pt, c) {
+                    iupper = ic;
+                    ilower = ic;
+                } else {
+                    // Insert a new vertex into upper / lower.
+                    *is_new_vertex = true;
+                    if let Some(upper) = upper.as_deref_mut() {
+                        iupper = upper.vertices.len() as i32;
+                        upper.vertices.push(*new_pt);
+                        upper_slice_vertices.push(iupper);
+                    }
+                    if let Some(lower) = lower.as_deref_mut() {
+                        ilower = lower.vertices.len() as i32;
+                        lower.vertices.push(*new_pt);
+                        lower_slice_vertices.push(ilower);
+                    }
+                }
+                (iupper, ilower)
+            };
+            let mut is_new_vertex_v0v1 = false;
+            let mut is_new_vertex_v2v0 = false;
+            let (iv0v1_upper, iv0v1_lower) = new_vertex(&v1, iv1, &v0, iv0, &v2, iv2, &v0v1, &mut is_new_vertex_v0v1);
+            let (iv2v0_upper, iv2v0_lower) = new_vertex(&v2, iv2, &v0, iv0, &v1, iv1, &v2v0, &mut is_new_vertex_v2v0);
+            // `new_face(its, i, j, k)`: `its == upper` / `its == lower` pick the source face list.
+            fn new_face(its: Option<&mut indexed_triangle_set>, src_faces: Option<&mut Vec<i32>>, facet_idx: i32, i: i32, j: i32, k: i32) {
+                if let Some(its) = its {
+                    if i != j && i != k && j != k {
+                        its.indices.push(StlTriangleVertexIndices::new(i, j, k));
+                        if let Some(src_faces) = src_faces {
+                            src_faces.push(facet_idx);
+                        }
+                    }
+                }
+            }
+            macro_rules! new_face_upper {
+                ($i:expr, $j:expr, $k:expr) => {
+                    new_face(upper.as_deref_mut(), upper_src_faces.as_deref_mut(), facet_idx, $i, $j, $k)
+                };
+            }
+            macro_rules! new_face_lower {
+                ($i:expr, $j:expr, $k:expr) => {
+                    new_face(lower.as_deref_mut(), lower_src_faces.as_deref_mut(), facet_idx, $i, $j, $k)
+                };
+            }
+            if is_new_vertex_v0v1 && is_new_vertex_v2v0 {
+                if v0.z > z {
+                    new_face_upper!(iv0, iv0v1_upper, iv2v0_upper);
+                    new_face_lower!(iv1, iv2, iv0v1_lower);
+                    new_face_lower!(iv2, iv2v0_lower, iv0v1_lower);
+                } else {
+                    new_face_upper!(iv1, iv2, iv0v1_upper);
+                    new_face_upper!(iv2, iv2v0_upper, iv0v1_upper);
+                    new_face_lower!(iv0, iv0v1_lower, iv2v0_lower);
+                }
+            } else if is_new_vertex_v0v1 {
+                if v0.z > z {
+                    new_face_upper!(iv0, iv0v1_upper, iv2);
+                    new_face_lower!(iv1, iv2, iv0v1_lower);
+                } else {
+                    new_face_lower!(iv0, iv0v1_lower, iv2);
+                    new_face_upper!(iv1, iv2, iv0v1_upper);
+                }
+            } else if is_new_vertex_v2v0 {
+                if v0.z > z {
+                    new_face_upper!(iv0, iv1, iv2v0_upper);
+                    new_face_lower!(iv1, iv2, iv2v0_lower);
+                } else {
+                    new_face_lower!(iv0, iv1, iv2v0_lower);
+                    new_face_upper!(iv1, iv2, iv2v0_upper);
+                }
+            }
+        }
+    }
+
+    if !canceled {
+        if let Some(upper) = upper.as_deref_mut() {
+            if let Some(progress) = progress {
+                progress(SLICE_PERCENT_SPAN);
+            }
+            triangulate_slice(
+                upper,
+                &mut upper_lines,
+                &mut upper_slice_vertices,
+                z,
+                triangulate_caps,
+                NORMALS_DOWN,
+                upper_src_faces.as_deref_mut(),
+                &section_vertices_map,
+            );
+            if let Some(upper_src_faces) = upper_src_faces.as_deref_mut() {
+                debug_assert!(upper_src_faces.len() <= upper.indices.len());
+                upper_src_faces.resize(upper.indices.len(), -1);
+                debug_assert!(upper_src_faces.len() == upper.indices.len());
+            }
+        }
+    }
+
+    if !canceled {
+        if let Some(lower) = lower.as_deref_mut() {
+            if let Some(progress) = progress {
+                progress(90);
+            }
+            triangulate_slice(
+                lower,
+                &mut lower_lines,
+                &mut lower_slice_vertices,
+                z,
+                triangulate_caps,
+                NORMALS_UP,
+                lower_src_faces.as_deref_mut(),
+                &section_vertices_map,
+            );
+            if let Some(lower_src_faces) = lower_src_faces.as_deref_mut() {
+                debug_assert!(lower_src_faces.len() <= lower.indices.len());
+                lower_src_faces.resize(lower.indices.len(), -1);
+                debug_assert!(lower_src_faces.len() == lower.indices.len());
+            }
+        }
+    }
+    if !canceled {
+        if let Some(progress) = progress {
+            progress(100);
+        }
+    }
+    // The map owns these; triangulate_slice() above only reads them.
+}
+
+// BBS: implement plane cut with cgal
+/// TriangleMeshSlicer.cpp:2717-2725 `calc_plane_normal(const std::array<Vec3d, 4>& plane_points)`
+fn calc_plane_normal(plane_points: &[crate::geometry::geometry::Vec3d; 4]) -> crate::geometry::geometry::Vec3d {
+    use crate::geometry::geometry::eigen;
+    let v01 = plane_points[1] - plane_points[0];
+    let v12 = plane_points[2] - plane_points[1];
+
+    let mut plane_normal = eigen::cross3(&v01, &v12);
+    eigen::normalize3(&mut plane_normal);
+    plane_normal
+}
+
+/// TriangleMeshSlicer.cpp:2727-2788 `cut_mesh(mesh, std::array<Vec3d, 4> plane_points, upper,
+/// lower, triangulate_caps)`: the cut by the plane of four points (model object coordinates): the
+/// mesh is moved to put the plane at z = 0, cut there, and moved back. As in the C++, the cuts it
+/// makes triangulate their caps whatever `triangulate_caps` says.
+pub fn cut_mesh_plane_points(
+    mesh: &indexed_triangle_set,
+    mut plane_points: [crate::geometry::geometry::Vec3d; 4],
+    mut upper: Option<&mut indexed_triangle_set>,
+    mut lower: Option<&mut indexed_triangle_set>,
+    _triangulate_caps: bool,
+) {
+    use crate::geometry::geometry::{eigen, Vec3d};
+    // libslic3r.h:52 EPSILON
+    const EPSILON: f64 = 1e-4;
+
+    debug_assert!(upper.is_some() || lower.is_some());
+    if upper.is_none() && lower.is_none() {
+        return;
+    }
+
+    // BOOST_LOG_TRIVIAL(trace) << "slicing object";
+
+    let mut plane_normal = calc_plane_normal(&plane_points);
+    if plane_normal[0].abs() < EPSILON && plane_normal[1].abs() < EPSILON {
+        cut_mesh(mesh, plane_points[0][2] as f32, upper, lower, true, None, None, None, None);
+        return;
+    }
+
+    // BBS
+    if plane_normal[2].abs() < EPSILON {
+        // keep the side on the normal direction
+    } else if plane_normal[2] < 0.0 {
+        plane_points.reverse();
+    }
+    plane_normal = calc_plane_normal(&plane_points);
+
+    let mut mid_point = Vec3d::new(0.0, 0.0, 0.0);
+    for pt in plane_points.iter() {
+        mid_point += pt;
+    }
+    mid_point /= plane_points.len() as f64;
+    let mut movement = -mid_point;
+
+    let mut axis = Vec3d::new(0.0, 0.0, 0.0);
+    let mut phi = 0.0;
+    let mut matrix = nalgebra::Matrix3::<f64>::identity();
+    crate::geometry::geometry::rotation_from_two_vectors(plane_normal, Vec3d::new(0.0, 0.0, 1.0), &mut axis, &mut phi, Some(&mut matrix));
+    let angles = crate::geometry::geometry::extract_euler_angles_from_matrix(&matrix);
+
+    movement = eigen::mat3_mul_vec(&matrix, &movement);
+    let mut transfo = eigen::identity();
+    eigen::translate(&mut transfo, &movement);
+    let rot = eigen::mat3_mul(
+        &eigen::mat3_mul(
+            &crate::model::eigen_angle_axis_matrix3(angles[2], &Vec3d::new(0.0, 0.0, 1.0)),
+            &crate::model::eigen_angle_axis_matrix3(angles[1], &Vec3d::new(0.0, 1.0, 0.0)),
+        ),
+        &crate::model::eigen_angle_axis_matrix3(angles[0], &Vec3d::new(1.0, 0.0, 0.0)),
+    );
+    eigen::rotate(&mut transfo, &rot);
+
+    // admesh/stl.h its_transform(its, const Transform3d&): `(t * v.cast<double>()).cast<float>()`
+    let its_transform = |its: &mut indexed_triangle_set, t: &crate::geometry::geometry::Transform3d| {
+        for v in its.vertices.iter_mut() {
+            let p = eigen::transform_mul_vec(t, &Vec3d::new(v.x as f64, v.y as f64, v.z as f64));
+            *v = StlVertex::new(p.x as f32, p.y as f32, p.z as f32);
+        }
+    };
+    let mut mesh_temp = mesh.clone();
+    its_transform(&mut mesh_temp, &transfo);
+    cut_mesh(&mesh_temp, 0.0, upper.as_deref_mut(), lower.as_deref_mut(), true, None, None, None, None);
+
+    let transfo_inv = eigen::transform_inverse(&transfo);
+    if let Some(upper) = upper.as_deref_mut() {
+        its_transform(upper, &transfo_inv);
+    }
+
+    if let Some(lower) = lower.as_deref_mut() {
+        its_transform(lower, &transfo_inv);
+    }
+}

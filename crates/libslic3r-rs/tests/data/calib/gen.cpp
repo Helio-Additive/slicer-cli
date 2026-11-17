@@ -23,6 +23,13 @@
 // model of one box with one instance, and Calib_Params; the case line `case <n>` is followed by
 // one line per member: its name, then the result (doubles as 16 hexadecimal digits, ints and
 // floats' bits as decimal / 8 hexadecimal digits, texts as the hexadecimal of their bytes).
+//
+// `./gen gcode | gzip -9n > $DATA/calib_gcode.txt.gz` writes the G-code the classes write through
+// their GCodeWriter, for the same cases: CalibPressureAdvancePattern::generate_custom_gcodes (the
+// custom G-code items it stores in the model), the drawing members of CalibPressureAdvance on the
+// pattern's writer (draw_digit, draw_number, draw_box, draw_line, move_to), and
+// CalibPressureAdvanceLine::generate_test on a GCode generator whose writer is set up from the
+// case's configuration.
 
 #include <cstdint>
 #include <cstdio>
@@ -42,6 +49,7 @@
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/Flow.hpp"
+#include "libslic3r/GCode.hpp"
 #undef private
 #undef protected
 
@@ -85,7 +93,90 @@ struct Case
     double offset[3];
 };
 
-int main()
+struct BoxArgs
+{
+    double min_x, min_y, size_x, size_y;
+    int    perimeters;
+    double height, line_width, speed;
+    bool   filled;
+};
+
+static int gcode_vectors(const std::vector<Case> &cases)
+{
+    const char *beds[] = {"0x0,256x0,256x256,0x256", "0x0,180x0,180x180,0x180", "0x0,250x0,250x220,0x220",
+                          "0x0,350x0,350x320,0x320", "-90x0,-64x-64,0x-90,64x-64,90x0,64x64,0x90,-64x64", "10x10,110x10,110x80,10x80"};
+    const BoxArgs boxes[] = {{30, 40, 12, 5, 2, 0.2, 0.45, 3000, true},   {5, 6, 5, 14, 3, 0.25, 0.5, 1800, true},
+                             {8.5, 9.25, 8, 8, 3, 0.2, 0.42, 1200, false}, {0, 0, 40, 3, 5, 0.3, 0.62, 2400, true},
+                             {-3, 2, 2, 2, 4, 0.2, 0.4, 600, true},       {50, 60, 23.7, 9.3, 1, 0.16, 0.44, 4800, true}};
+    for (size_t n = 0; n < cases.size(); ++n) {
+        const Case &c = cases[n];
+        DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+        for (auto &kv : c.opts) config.set_deserialize_strict(kv.first, kv.second);
+        Model model;
+        ModelObject *obj = model.add_object();
+        obj->add_volume(TriangleMesh(its_make_cube(c.box[0], c.box[1], c.box[2])));
+        for (auto &kv : c.object_opts) {
+            ConfigSubstitutionContext ctxt(ForwardCompatibilitySubstitutionRule::Disable);
+            obj->config.set_deserialize(kv.first, kv.second, ctxt);
+        }
+        obj->add_instance()->set_offset(Vec3d(c.offset[0], c.offset[1], c.offset[2]));
+        Calib_Params params;
+        params.start = c.start;
+        params.end   = c.end;
+        params.step  = c.step;
+        params.mode  = CalibMode::Calib_PA_Pattern;
+        CalibPressureAdvancePattern p(params, config, false, model, Vec3d(5, 7, 0));
+        if (n == 4)
+            p.set_bbl_bowden_mode();
+        p.generate_custom_gcodes(config, false, model, Vec3d(5, 7, 0));
+        const CustomGCode::Info &info = model.plates_custom_gcodes[model.curr_plate_index];
+        std::printf("pattern %zu %d %zu\n", n, int(info.mode), info.gcodes.size());
+        for (const CustomGCode::Item &item : info.gcodes)
+            std::printf("item %s %d %s\n", hD(item.print_z).c_str(), int(item.type), hT(item.extra).c_str());
+
+        // The drawing members on the pattern's writer, where generate_custom_gcodes left it.
+        for (int mode = 0; mode < 2; ++mode)
+            for (char ch : std::string("0123456789.x")) {
+                std::string s = p.draw_digit(10.5, 20.25, ch, CalibPressureAdvance::DrawDigitMode(mode), 0.45, 0.0331, p.m_writer);
+                std::printf("digit %d %c %s\n", mode, ch, hT(s).c_str());
+            }
+        for (int mode = 0; mode < 2; ++mode)
+            for (double v : {0.0325, 1.5, 12345.678, 0.0001, 0.1}) {
+                std::string s = p.draw_number(12.5, 30.25, v, CalibPressureAdvance::DrawDigitMode(mode), 0.42, 0.034, 1800, p.m_writer);
+                std::printf("number %d %s %s\n", mode, hD(v).c_str(), hT(s).c_str());
+            }
+        for (const BoxArgs &b : boxes) {
+            DrawBoxOptArgs args(b.perimeters, b.height, b.line_width, b.speed);
+            args.is_filled = b.filled;
+            std::string s  = p.draw_box(p.m_writer, b.min_x, b.min_y, b.size_x, b.size_y, args);
+            std::printf("box %s\n", hT(s).c_str());
+        }
+        std::printf("line_to %s\n", hT(p.draw_line(p.m_writer, Vec2d(77.125, 13.5), 0.45, 0.2, 2400, "comment")).c_str());
+        std::printf("move_to %s\n", hT(p.move_to(Vec2d(1.0625, 2.5), p.m_writer, "Glyph")).c_str());
+
+        // The line test on a GCode generator whose writer is set up from the configuration.
+        DynamicPrintConfig line_config = config;
+        line_config.set_deserialize_strict("printable_area", beds[n % 6]);
+        GCode g;
+        g.m_config.apply(line_config, true);
+        PrintConfig pc;
+        pc.apply(line_config, true);
+        g.m_writer.apply_print_config(pc);
+        g.m_writer.set_extruders({0});
+        g.m_writer.set_extruder(0, 0);
+        CalibPressureAdvanceLine pa(&g);
+        pa.set_speed(n == 1 ? 180.7 : 100.0, n == 1 ? 25.3 : 20.0);
+        pa.draw_numbers() = n % 2 == 0 || n == 5;
+        if (n == 3)
+            pa.set_bbl_bowden_mode();
+        const int count = int(std::llround(std::ceil((c.end - c.start) / c.step)) + 1);
+        std::string s = pa.generate_test(c.start, c.step, count);
+        std::printf("line %zu %d %d %s %s %s\n", n, count, int(pa.is_delta()), hD(pa.line_width()).c_str(), hD(pa.height_layer()).c_str(), hT(s).c_str());
+    }
+    return 0;
+}
+
+int main(int argc, char **argv)
 {
     std::vector<Case> cases = {
         {{{"nozzle_diameter", "0.4"}, {"line_width", "0.45"}, {"initial_layer_line_width", "0.5"}, {"wall_loops", "3"},
@@ -119,6 +210,8 @@ int main()
          {},
          0.0, 0.0333, 0.001111, {20, 30, 1}, {100, 120, 0}},
     };
+    if (argc > 1 && std::string(argv[1]) == "gcode")
+        return gcode_vectors(cases);
 
     for (size_t n = 0; n < cases.size(); ++n) {
         const Case &c = cases[n];

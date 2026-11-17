@@ -7779,6 +7779,34 @@ pub mod faithful {
             updated
         }
 
+        /// PrintObject.cpp:3969-3983 `void PrintObject::get_certain_layers(float start, float end,
+        /// std::vector<LayerPtrs> &out, std::vector<BoundingBox> &boundingbox_objects)`. A layer is the
+        /// object's index `self_index` in `Print::m_objects` and the layer's index in `m_layers`.
+        pub fn get_certain_layers(
+            &self,
+            self_index: usize,
+            start: f32,
+            end: f32,
+            out: &mut Vec<Vec<(usize, usize)>>,
+            boundingbox_objects: &mut Vec<crate::geometry::BoundingBox>,
+        ) {
+            let mut temp = crate::geometry::BoundingBox::new();
+            let mut out_temp: Vec<(usize, usize)> = Vec::new();
+            for (layer_idx, layer) in self.layers().iter().enumerate() {
+                if layer.print_z < start as f64 {
+                    continue;
+                }
+
+                if layer.print_z > end as f64 + EPSILON {
+                    break;
+                }
+                temp.merge(&layer.loverhangs_bbox);
+                out_temp.push((self_index, layer_idx));
+            }
+            boundingbox_objects.push(temp);
+            out.push(out_temp);
+        }
+
         /// PrintObject.cpp:3985-3993 `std::vector<Point> PrintObject::get_instances_shift_without_plate_offset() const`
         pub fn get_instances_shift_without_plate_offset(&self, print: &Print) -> Vec<Point> {
             let mut out: Vec<Point> = Vec::with_capacity(self.m_instances.len());
@@ -7965,5 +7993,1140 @@ pub mod faithful {
         out.layers *= shell_band_size(print, nozzle_diameter, base_layer_height);
         out.thickness = multi_nozzle_bottom_shell_thickness(nozzle_diameter, out.thickness);
         out
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // PrintObject.cpp functions over the object's layers (`m_layers`, the crate's Layer and
+    // LayerRegion) and its shared regions (the PrintRegionConfig of `print::faithful`).
+    // ---------------------------------------------------------------------------------------------
+
+    /// ClipperLib `pftNonZero`
+    const PFT_NON_ZERO: i32 = 1;
+
+    fn expolygons_of_polygons(polygons: &[crate::geometry::Polygon]) -> Vec<ExPolygon> {
+        polygons.iter().map(|p| ExPolygon::new(p.clone())).collect()
+    }
+
+    /// PrintObject.cpp:665-673 `float scaled_external_perimeter_width(const Layer &layer)`: the real
+    /// external-perimeter flow width rather than config.line_width (which may be 0). Max across regions is
+    /// conservative: a larger guard_r only shrinks the Bottom mask.
+    pub fn scaled_external_perimeter_width(layer: &crate::layer::Layer) -> f32 {
+        let mut fw: f32 = 0.0;
+        for layerm in layer.regions() {
+            let w = layerm.flow(crate::flow::FlowRole::ExternalPerimeter, layer.height).map(|f| f.scaled_width()).unwrap_or(0);
+            fw = fw.max(w as f32);
+        }
+        fw
+    }
+
+    /// PrintObject.cpp:719-723 `struct ZeroGapContactMask`
+    #[derive(Debug, Clone, Default)]
+    pub struct ZeroGapContactMask {
+        pub polygons: Vec<ExPolygon>,
+        /// leftover / inset sliver filter, <= the opening radius
+        pub sliver_r: f32,
+    }
+
+    /// PrintObject.cpp:725-811 `ZeroGapContactMask compute_zero_gap_contact_mask(const PrintObject &object, const
+    /// Layer &layer, const Layer &lower_layer, size_t layer_id, const std::vector<Polygons> &blockers, const
+    /// std::vector<Polygons> &enforcers)`: lightweight zero-gap top-contact candidate, intentionally
+    /// conservative vs classic detect_overhangs.
+    pub fn compute_zero_gap_contact_mask(
+        object: &PrintObject,
+        layer: &crate::layer::Layer,
+        lower_layer: &crate::layer::Layer,
+        layer_id: usize,
+        blockers: &[Vec<crate::geometry::Polygon>],
+        enforcers: &[Vec<crate::geometry::Polygon>],
+    ) -> ZeroGapContactMask {
+        use crate::clipper_utils::{
+            difference_clib, intersection_clib, offset2_ex_clib, offset_expolygons_clib_scaled, offset_polygons_clib_ml, union_ex_clib,
+            union_flat_clib, OffsetJoinType,
+        };
+        let mut result = ZeroGapContactMask::default();
+        let extrusion_width_scaled = scaled_external_perimeter_width(layer);
+        if extrusion_width_scaled <= 0.0 {
+            return result;
+        }
+
+        let config = object.config();
+        let threshold_rad = zero_gap_threshold_rad(config);
+        let angle_offset: f32 = if threshold_rad > 0. {
+            ((lower_layer.height / threshold_rad.tan()) / SCALING_FACTOR) as f32
+        } else {
+            0.5 * extrusion_width_scaled
+        };
+        // Opening radius covering both the threshold angle and the small-overhang lower bound.
+        let guard_r = (2.5f32 * extrusion_width_scaled).max(angle_offset);
+        result.sliver_r = 2.5 * extrusion_width_scaled;
+        if guard_r <= 0.0 {
+            return result;
+        }
+
+        let lower_polygons = crate::geometry::to_polygons(&lower_layer.lslices);
+
+        // Automatic overhangs, approximating detect_overhangs: the opening drops what the
+        // threshold angle and small-overhang removal would have dropped.
+        let mut mask: Vec<ExPolygon> = Vec::new();
+        {
+            let lower_expanded =
+                if angle_offset > 0.0 { offset_polygons_clib_ml(&lower_polygons, angle_offset as f64, OffsetJoinType::Square, 0.) } else { lower_polygons.clone() };
+            let raw = difference_clib(&layer.lslices, &expolygons_of_polygons(&lower_expanded));
+            if !raw.is_empty() {
+                // opening_ex(raw, guard_r) = offset2_ex(raw, -guard_r, guard_r)
+                let guard_mm = guard_r as f64 * SCALING_FACTOR;
+                mask = intersection_clib(&offset2_ex_clib(&raw, -guard_mm, guard_mm, OffsetJoinType::Miter), &raw);
+                mask = filter_significant_contact_pieces(mask, guard_r);
+            }
+        }
+
+        // Support enforcers, mirroring detect_contacts: they enforce support as if the slope were
+        // 90 degrees, so neither the threshold angle nor small-overhang removal applies.
+        if layer_id < enforcers.len() && !enforcers[layer_id].is_empty() {
+            let mut enforced = difference_clib(
+                &intersection_clib(&layer.lslices, &expolygons_of_polygons(&enforcers[layer_id])),
+                &expolygons_of_polygons(&offset_polygons_clib_ml(&lower_polygons, (0.05f32 * extrusion_width_scaled) as f64, OffsetJoinType::Square, 0.)),
+            );
+            enforced = filter_significant_contact_pieces(enforced, result.sliver_r);
+            if !enforced.is_empty() {
+                mask = if mask.is_empty() {
+                    enforced
+                } else {
+                    let mut all = crate::geometry::to_polygons(&mask);
+                    all.extend(crate::geometry::to_polygons(&enforced));
+                    union_ex_clib(&all, PFT_NON_ZERO)
+                };
+            }
+        }
+        if mask.is_empty() {
+            return result;
+        }
+
+        // Support blockers (expand slightly, matching SupportMaterial). Classic support lets an
+        // enforcer win over a blocker; subtracting from the whole mask is stricter on purpose.
+        if layer_id < blockers.len() && !blockers[layer_id].is_empty() {
+            // expand(union_(blockers), float(1000. * SCALED_EPSILON)): jtMiter, miter limit 3.
+            let blocker = offset_polygons_clib_ml(
+                &union_flat_clib(&blockers[layer_id]),
+                ((1000. * crate::libslic3r::SCALED_EPSILON) as f32) as f64,
+                OffsetJoinType::Miter,
+                3.,
+            );
+            mask = difference_clib(&mask, &expolygons_of_polygons(&blocker));
+            if mask.is_empty() {
+                return result;
+            }
+        }
+
+        // Negative support_expansion shrinks contacts in classic support; mirror that.
+        let xy_expansion = (cfg_float(config, "support_expansion") / SCALING_FACTOR) as f32;
+        if (xy_expansion as f64) < -crate::libslic3r::SCALED_EPSILON {
+            mask = offset_expolygons_clib_scaled(&mask, xy_expansion as f64, OffsetJoinType::Miter);
+            if mask.is_empty() {
+                return result;
+            }
+        }
+
+        // Lateral gap between support and object wall is not covered by the opening;
+        // erode so the unsupported rim stays Bridge.
+        let xy_gap = (cfg_float(config, "support_object_xy_distance") / SCALING_FACTOR) as f32;
+        if xy_gap as f64 > crate::libslic3r::SCALED_EPSILON {
+            mask = offset_expolygons_clib_scaled(&mask, -(xy_gap as f64), OffsetJoinType::Miter);
+            if mask.is_empty() {
+                return result;
+            }
+        }
+
+        // Re-filter leftover slivers after shrinks. Use sliver_r, not guard_r.
+        result.polygons = filter_significant_contact_pieces(mask, result.sliver_r);
+        result
+    }
+
+    /// PrintObject.cpp:813-858 `void refine_fill_surfaces_for_zero_gap_contact(LayerRegion &layerm, const
+    /// ExPolygons &mask, float sliver_r)`: split each stBottomBridge fill surface into supported (stBottom) /
+    /// unsupported (stBottomBridge).
+    pub fn refine_fill_surfaces_for_zero_gap_contact(layerm: &mut crate::layer::LayerRegion, mask: &[ExPolygon], sliver_r: f32) {
+        use crate::clipper_utils::{difference_clib, intersection_clib};
+        use crate::surface::SurfaceType;
+        if mask.is_empty() || sliver_r <= 0.0 {
+            return;
+        }
+
+        let mut out: Vec<crate::surface::Surface> = Vec::with_capacity(layerm.fill_surfaces.surfaces.len());
+
+        for surface in &layerm.fill_surfaces.surfaces {
+            if surface.surface_type != SurfaceType::BottomBridge {
+                out.push(surface.clone());
+                continue;
+            }
+
+            // fill_surfaces is already inset by perimeters; do not re-apply the full
+            // overhang opening radius here or a valid contact would fail the bbox test.
+            let candidates = intersection_clib(std::slice::from_ref(&surface.expolygon), mask);
+            let mut promoted: Vec<ExPolygon> = Vec::with_capacity(candidates.len());
+            for expoly in candidates {
+                if is_significant_contact_piece(&expoly, sliver_r) {
+                    promoted.push(expoly);
+                }
+            }
+
+            if promoted.is_empty() {
+                out.push(surface.clone());
+                continue;
+            }
+
+            // Remainder must be computed before moving promoted polygons.
+            let remainder = difference_clib(std::slice::from_ref(&surface.expolygon), &promoted);
+            for expoly in promoted {
+                let mut refined = surface.clone();
+                refined.expolygon = expoly;
+                refined.surface_type = SurfaceType::Bottom;
+                out.push(refined);
+            }
+            // Original minus promoted: rim, true overhang, and rejected slivers stay Bridge together.
+            for expoly in remainder {
+                let mut s = surface.clone();
+                s.expolygon = expoly;
+                out.push(s);
+            }
+        }
+
+        layerm.fill_surfaces.surfaces = out;
+    }
+
+    /// PrintObject.cpp:862-900 `static void type_bridges_over_suppressed_orphans(const LayerPtrs &layers)`:
+    /// BBS multi-diameter: a suppressed orphan is sliced but never extruded, so the step above it rests on
+    /// nothing there; type it as the bridge it really is, in the outline of the face that was dropped.
+    /// `adaptive_merge_patches[layer][region]` stands for `LayerRegion::adaptive_merge_patches`, which the
+    /// crate's LayerRegion does not carry.
+    pub fn type_bridges_over_suppressed_orphans(
+        layers: &mut [crate::layer::Layer],
+        adaptive_merge_patches: &[Vec<Vec<crate::adaptive_layer_merge::AdaptiveMergePatch>>],
+    ) {
+        use crate::adaptive_layer_merge::{adaptive_suppressed_orphan_area, AdaptiveSuppressedOrphanRegion};
+        use crate::clipper_utils::{difference_clib, intersection_clib};
+        use crate::surface::SurfaceType;
+        let no_patches: Vec<crate::adaptive_layer_merge::AdaptiveMergePatch> = Vec::new();
+        for layer_idx in 1..layers.len() {
+            let dropped = {
+                let lower = &layers[layer_idx - 1];
+                let regions: Vec<AdaptiveSuppressedOrphanRegion<'_>> = lower
+                    .regions()
+                    .iter()
+                    .enumerate()
+                    .map(|(region_id, layerm)| AdaptiveSuppressedOrphanRegion {
+                        adaptive_merge_patches: adaptive_merge_patches
+                            .get(layer_idx - 1)
+                            .and_then(|l| l.get(region_id))
+                            .map(|p| p.as_slice())
+                            .unwrap_or(&no_patches),
+                        slices: &layerm.slices.surfaces,
+                    })
+                    .collect();
+                adaptive_suppressed_orphan_area(&regions)
+            };
+            if dropped.is_empty() {
+                continue;
+            }
+            let retype = |surfaces: &mut crate::surface_collection::SurfaceCollection| {
+                let mut out: Vec<crate::surface::Surface> = Vec::new();
+                let mut changed = false;
+                for surface in &surfaces.surfaces {
+                    let mut bridge: Vec<ExPolygon> = Vec::new();
+                    if surface.surface_type == SurfaceType::Internal || surface.surface_type == SurfaceType::InternalSolid {
+                        bridge = intersection_clib(std::slice::from_ref(&surface.expolygon), &dropped);
+                    }
+                    if bridge.is_empty() {
+                        out.push(surface.clone());
+                        continue;
+                    }
+                    changed = true;
+                    for expolygon in difference_clib(std::slice::from_ref(&surface.expolygon), &dropped) {
+                        let mut s = surface.clone();
+                        s.expolygon = expolygon;
+                        out.push(s);
+                    }
+                    for expolygon in bridge {
+                        let mut s = surface.clone();
+                        s.expolygon = expolygon;
+                        s.surface_type = SurfaceType::BottomBridge;
+                        s.bridge_angle = None;
+                        out.push(s);
+                    }
+                }
+                if changed {
+                    surfaces.surfaces = out;
+                }
+            };
+            for layerm in layers[layer_idx].regions_mut().iter_mut() {
+                retype(&mut layerm.slices);
+                retype(&mut layerm.fill_surfaces);
+            }
+        }
+    }
+
+    /// PrintObject.cpp:1075-1081 `static const VolumeSlices *volume_slices_by_id(const std::vector<VolumeSlices>
+    /// &all, const ObjectID id)`
+    pub fn volume_slices_by_id(all: &[crate::print::faithful::VolumeSlices], id: crate::object_id::ObjectID) -> Option<&crate::print::faithful::VolumeSlices> {
+        all.iter().find(|vs| vs.volume_id == id)
+    }
+
+    /// PrintConfig.hpp:1303-1312 `inline bool periodic_modifier_active(const PrintRegionConfig &cfg, int layer_id)`
+    ///
+    /// FIDELITY-NOTE: PrintConfig.hpp's inline function, kept here until print_config.rs carries it.
+    pub fn periodic_modifier_active(cfg: &PrintRegionConfig, layer_id: i32) -> bool {
+        if !cfg.opt_bool("periodic_modifier") || cfg_int(cfg, "periodic_modifier_apply_layers") < 1 || layer_id < 0 {
+            return true;
+        }
+        let m = cfg_int(cfg, "periodic_modifier_apply_layers");
+        let mut n = cfg_int(cfg, "periodic_modifier_skip_layers");
+        if n < 0 {
+            n = 0;
+        }
+        (layer_id % (m + n)) < m
+    }
+
+    /// PrintObject.cpp:1083-1152 `static std::vector<std::vector<ExPolygon>> conformal_modifier_islands(const
+    /// PrintObject &po, size_t region_id, size_t nlid, size_t lid0)`: the island of a conformal modifier after
+    /// earlier modifiers/model, before later volumes carve it.
+    pub fn conformal_modifier_islands(po: &PrintObject, print: &Print, region_id: usize, nlid: usize, lid0: usize) -> Vec<Vec<ExPolygon>> {
+        use crate::clipper_utils::{difference_clib, intersection_clib, union_ex_clib};
+        let mut out: Vec<Vec<ExPolygon>> = vec![Vec::new(); nlid];
+        let regions = po.shared_regions();
+        let vol_slices = po.firstLayerObjSlice();
+        if regions.is_none() || vol_slices.is_empty() || po.layer_count() == 0 {
+            return out;
+        }
+        let regions = regions.unwrap();
+        let regions = regions.borrow();
+        let mo = po.model_object(print);
+
+        for zi in 0..po.layer_count() {
+            let layer = po.get_layer(zi as i32);
+            let lid = layer.id().wrapping_sub(lid0);
+            if lid >= nlid {
+                continue;
+            }
+            let z = layer.slice_z;
+            let mut it = 0usize;
+            while it < regions.layer_ranges.len() {
+                let r = regions.layer_ranges[it].layer_height_range;
+                if r.0 <= z + EPSILON && z <= r.1 + EPSILON {
+                    break;
+                }
+                it += 1;
+            }
+            if it == regions.layer_ranges.len() {
+                continue;
+            }
+            if (z - regions.layer_ranges[it].layer_height_range.1).abs() < EPSILON {
+                let nxt = it + 1;
+                if nxt != regions.layer_ranges.len() && (regions.layer_ranges[nxt].layer_height_range.0 - z).abs() < EPSILON {
+                    it = nxt;
+                }
+            }
+            let layer_range = &regions.layer_ranges[it];
+            if layer_range.volume_regions.is_empty() {
+                continue;
+            }
+
+            let mut temp: Vec<Vec<ExPolygon>> = vec![Vec::new(); layer_range.volume_regions.len()];
+            for i in 0..layer_range.volume_regions.len() {
+                let mv = &mo.volumes[layer_range.volume_regions[i].model_volume.unwrap()];
+                if let Some(vs) = volume_slices_by_id(vol_slices, mv.id()) {
+                    if zi < vs.slices.len() {
+                        temp[i] = vs.slices[zi].clone();
+                    }
+                }
+            }
+
+            for idx in 0..layer_range.volume_regions.len() as i32 {
+                if temp[idx as usize].is_empty() {
+                    continue;
+                }
+                let vr = &layer_range.volume_regions[idx as usize];
+                let model_volume = &mo.volumes[vr.model_volume.unwrap()];
+                if !model_volume.is_modifier() || vr.parent < 0 {
+                    continue;
+                }
+                let next_same = idx + 1 < layer_range.volume_regions.len() as i32
+                    && layer_range.volume_regions[(idx + 1) as usize].model_volume == vr.model_volume;
+                let source = temp[idx as usize].clone();
+                let skip_periodic = match &vr.region {
+                    Some(r) => {
+                        let r = r.borrow();
+                        r.config().opt_bool("periodic_modifier") && !periodic_modifier_active(r.config(), zi as i32)
+                    }
+                    None => false,
+                };
+                let parent = vr.parent as usize;
+                if skip_periodic || temp[parent].is_empty() {
+                    temp[idx as usize].clear();
+                } else {
+                    temp[idx as usize] = intersection_clib(&temp[parent], &source);
+                    temp[parent] = difference_clib(&temp[parent], &source);
+                }
+                if next_same {
+                    temp[(idx + 1) as usize] = source;
+                }
+                if let Some(r) = &vr.region {
+                    let r = r.borrow();
+                    if r.print_object_region_id() as usize == region_id && r.config().opt_bool("conformal_infill") && !temp[idx as usize].is_empty() {
+                        out[lid].extend(temp[idx as usize].iter().cloned());
+                    }
+                }
+            }
+        }
+        for row in out.iter_mut() {
+            if row.len() > 1 {
+                *row = union_ex_clib(&crate::geometry::to_polygons(row), PFT_NON_ZERO);
+            }
+        }
+        out
+    }
+
+    /// PrintObject.cpp:2245-2253 `static bool layer_skips_periodic_modifier(const PrintObject &object, int layer_id)`
+    pub fn layer_skips_periodic_modifier(object: &PrintObject, layer_id: i32) -> bool {
+        for i in 0..object.num_printing_regions() {
+            let region = object.printing_region(i);
+            let region = region.borrow();
+            let cfg = region.config();
+            if cfg.opt_bool("periodic_modifier") && !periodic_modifier_active(cfg, layer_id) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// PrintObject.cpp:4283-4306 `static double band_reference_nozzle(const PrintObject &object)`
+    pub fn band_reference_nozzle(object: &PrintObject, print: &Print) -> f64 {
+        let primary = crate::print_config::config_def::layer_grid_nozzle_diameter(print.full_print_config());
+        if primary > EPSILON {
+            return primary;
+        }
+        // No printer preset to read the variant from. Fall back to the finest nozzle laying material down.
+        let print_config = print.config();
+        let mut min_nozzle = 0.0;
+        for region_id in 0..object.num_printing_regions() {
+            let mut prints_anything = false;
+            for layer in object.layers() {
+                if !layer.get_region(region_id).map(|r| r.raw_slices.is_empty()).unwrap_or(true) {
+                    prints_anything = true;
+                    break;
+                }
+            }
+            if !prints_anything {
+                continue;
+            }
+            let nozzle = crate::print::faithful::nozzle_diameter_for_filament(
+                print_config,
+                cfg_int(object.printing_region(region_id).borrow().config(), "wall_filament") as u32,
+            ) as f64;
+            if nozzle > EPSILON && (min_nozzle <= EPSILON || nozzle < min_nozzle) {
+                min_nozzle = nozzle;
+            }
+        }
+        min_nozzle
+    }
+
+    /// PrintObject.cpp:5008-5030 `static Surfaces collect_span_bridges(const LayerPtrs &layers, size_t region_id,
+    /// size_t bottom_idx, size_t top_idx, const ExPolygons &merge_area)`
+    pub fn collect_span_bridges(
+        layers: &[crate::layer::Layer],
+        region_id: usize,
+        bottom_idx: usize,
+        top_idx: usize,
+        merge_area: &[ExPolygon],
+    ) -> Vec<crate::surface::Surface> {
+        use crate::clipper_utils::{difference_clib, intersection_clib, union_ex_clib};
+        let mut out: Vec<crate::surface::Surface> = Vec::new();
+        let mut claimed: Vec<crate::geometry::Polygon> = Vec::new();
+
+        let mut claim = |templ: &crate::surface::Surface, mut area: Vec<ExPolygon>| {
+            if !claimed.is_empty() {
+                area = difference_clib(&area, &union_ex_clib(&claimed, PFT_NON_ZERO));
+            }
+            for expolygon in area {
+                let mut s = templ.clone();
+                s.expolygon = expolygon;
+                claimed.extend(crate::geometry::to_polygons_expoly(&s.expolygon));
+                out.push(s);
+            }
+        };
+
+        for layer_idx in bottom_idx..=top_idx {
+            if let Some(layerm) = layers[layer_idx].get_region(region_id) {
+                for surface in &layerm.fill_surfaces.surfaces {
+                    if surface.is_bridge() {
+                        claim(surface, intersection_clib(std::slice::from_ref(&surface.expolygon), merge_area));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    impl PrintObject {
+        /// PrintObject.cpp:1530-1534 `SupportLayer* PrintObject::add_tree_support_layer(int id, coordf_t height,
+        /// coordf_t print_z, coordf_t slice_z)`
+        pub fn add_tree_support_layer(&mut self, id: i32, height: f64, print_z: f64, slice_z: f64) -> &mut crate::print::faithful::SupportLayer {
+            let object_id = self.m_model_object;
+            self.m_support_layers.push(crate::print::faithful::SupportLayer::new(id as usize, 0, object_id, height, print_z, slice_z));
+            self.m_support_layers.last_mut().unwrap()
+        }
+
+        /// PrintObject.cpp:1536-1540 `SupportLayer* PrintObject::add_support_layer(int id, int interface_id, coordf_t
+        /// height, coordf_t print_z)`
+        pub fn add_support_layer(&mut self, id: i32, interface_id: i32, height: f64, print_z: f64) -> &mut crate::print::faithful::SupportLayer {
+            let object_id = self.m_model_object;
+            self.m_support_layers.push(crate::print::faithful::SupportLayer::new(id as usize, interface_id as usize, object_id, height, print_z, -1.0));
+            self.m_support_layers.last_mut().unwrap()
+        }
+
+        /// PrintObject.cpp:1542-1545 `SupportLayerPtrs::iterator PrintObject::insert_support_layer(SupportLayerPtrs::iterator
+        /// pos, size_t id, size_t interface_id, coordf_t height, coordf_t print_z, coordf_t slice_z)`: the position
+        /// is an index, the result the index of the new layer.
+        pub fn insert_support_layer(&mut self, pos: usize, id: usize, interface_id: usize, height: f64, print_z: f64, slice_z: f64) -> usize {
+            let object_id = self.m_model_object;
+            self.m_support_layers.insert(pos, crate::print::faithful::SupportLayer::new(id, interface_id, object_id, height, print_z, slice_z));
+            pos
+        }
+
+        /// PrintObject.cpp:202-324 `std::vector<std::set<int>> PrintObject::detect_extruder_geometric_unprintables() const`.
+        /// The region of a layer region is the object's printing region of its index. The C++ runs the
+        /// printable-area check over the layers in parallel with concurrent sets; running the layers in order is
+        /// one of its schedules.
+        pub fn detect_extruder_geometric_unprintables(&self, print: &Print) -> Vec<std::collections::BTreeSet<i32>> {
+            use crate::clipper_utils::{difference_clib, intersection_clib, offset_polygons_clib, OffsetJoinType};
+            use std::collections::BTreeSet;
+            let extruder_size = crate::gcode::wipe_tower::cfg_floats(print.config(), "nozzle_diameter").len();
+            if extruder_size == 1 {
+                return vec![BTreeSet::new(); 1];
+            }
+
+            let mut geometric_unprintables: Vec<BTreeSet<i32>> = vec![BTreeSet::new(); extruder_size]; // the container to return
+
+            let printable_height_per_extruder = crate::gcode::wipe_tower::cfg_floats(print.config(), "extruder_printable_height");
+            debug_assert!(printable_height_per_extruder.len() == extruder_size);
+            let filaments_of = |region_id: usize| {
+                let region = self.printing_region(region_id);
+                let region = region.borrow();
+                (
+                    cfg_int(region.config(), "wall_filament"),
+                    cfg_int(region.config(), "solid_infill_filament"),
+                    cfg_int(region.config(), "sparse_infill_filament"),
+                )
+            };
+
+            // check unprintable filaments caused by printable height limit
+            for extruder_id in 0..printable_height_per_extruder.len() {
+                let printable_height = printable_height_per_extruder[extruder_id];
+                for layer in &self.m_layers {
+                    if layer.print_z <= printable_height {
+                        continue;
+                    }
+                    for layerm in layer.regions() {
+                        let (wall_filament, solid_infill_filament, sparse_infill_filament) = filaments_of(layerm.region_id());
+
+                        if !layerm.fills.entities.is_empty() {
+                            if solid_infill_filament > 0 {
+                                geometric_unprintables[extruder_id].insert(solid_infill_filament - 1);
+                            }
+                            if sparse_infill_filament > 0 {
+                                geometric_unprintables[extruder_id].insert(sparse_infill_filament - 1);
+                            }
+                        }
+                        if !layerm.perimeters.entities.is_empty() && wall_filament > 0 {
+                            geometric_unprintables[extruder_id].insert(wall_filament - 1);
+                        }
+                    }
+                }
+            }
+
+            let mut tbb_geometric_unprintables: Vec<BTreeSet<i32>> = vec![BTreeSet::new(); extruder_size]; // the container used in tbb
+
+            let mut unprintable_area_in_obj_coord = print.get_extruder_unprintable_polygons();
+            let mut unprintable_area_bbox: Vec<crate::geometry::BoundingBox> = Vec::new();
+
+            // transform the unprintable areas to obj coord is cheaper than thransform obj into world coord
+            let shift = self.m_instances[0].shift_without_plate_offset(print);
+            for polys in unprintable_area_in_obj_coord.iter_mut() {
+                for poly in polys.iter_mut() {
+                    poly.translate(Point::new(-shift.x, -shift.y));
+                }
+                // shrink(polys, float(SCALED_EPSILON)): the exclusion area shrunk slightly, so a slice only sharing an
+                // edge with it does not count as intersecting.
+                *polys = offset_polygons_clib(polys, -((crate::libslic3r::SCALED_EPSILON as f32) as f64), OffsetJoinType::Miter);
+                unprintable_area_bbox.push(crate::geometry::BoundingBox::from_points(&polys.iter().flat_map(|p| p.points.iter().copied()).collect::<Vec<_>>()));
+            }
+            // BoundingBoxBase::overlap
+            let overlap = |a: &crate::geometry::BoundingBox, b: &crate::geometry::BoundingBox| {
+                !(a.max.x < b.min.x || a.min.x > b.max.x || a.max.y < b.min.y || a.min.y > b.max.y)
+            };
+            let extents = |expolys: &[ExPolygon]| crate::geometry::get_extents(expolys);
+
+            // check unprintbale filaments caused by printable area limit
+            for layer in &self.m_layers {
+                for layerm in layer.regions() {
+                    let (wall_filament, solid_infill_filament, sparse_infill_filament) = filaments_of(layerm.region_id());
+                    let mut fill_expolys: Option<Vec<ExPolygon>> = None;
+                    let mut fill_bbox = crate::geometry::BoundingBox::new();
+                    let mut wall_expolys: Option<Vec<ExPolygon>> = None;
+                    let mut wall_bbox = crate::geometry::BoundingBox::new();
+
+                    for idx in 0..unprintable_area_in_obj_coord.len() {
+                        let set = &mut tbb_geometric_unprintables[idx];
+                        let do_infill_filament_detect = (solid_infill_filament > 0 && !set.contains(&(solid_infill_filament - 1)))
+                            || (sparse_infill_filament > 0 && !set.contains(&(sparse_infill_filament - 1)));
+
+                        let mut infill_unprintable = !layerm.fills.entities.is_empty()
+                            && ((solid_infill_filament > 0 && set.contains(&(solid_infill_filament - 1)))
+                                || (sparse_infill_filament > 0 && set.contains(&(sparse_infill_filament - 1))));
+
+                        let area = expolygons_of_polygons(&unprintable_area_in_obj_coord[idx]);
+                        if !layerm.fills.entities.is_empty() && do_infill_filament_detect {
+                            if fill_expolys.is_none() {
+                                fill_expolys = Some(layerm.fill_expolygons.clone());
+                                fill_bbox = extents(fill_expolys.as_ref().unwrap());
+                            }
+                            if overlap(&fill_bbox, &unprintable_area_bbox[idx]) && !intersection_clib(fill_expolys.as_ref().unwrap(), &area).is_empty() {
+                                if solid_infill_filament > 0 {
+                                    set.insert(solid_infill_filament - 1);
+                                }
+                                if sparse_infill_filament > 0 {
+                                    set.insert(sparse_infill_filament - 1);
+                                }
+                                infill_unprintable = true;
+                            }
+                        }
+
+                        let do_wall_filament_detect = wall_filament > 0 && !set.contains(&(wall_filament - 1));
+                        if !layerm.perimeters.entities.is_empty() && do_wall_filament_detect {
+                            // if infill is unprintable, no need to check wall since wall contour surrounds infill contour
+                            if infill_unprintable {
+                                set.insert(wall_filament - 1);
+                                continue;
+                            }
+
+                            if wall_expolys.is_none() {
+                                if fill_expolys.is_none() {
+                                    fill_expolys = Some(layerm.fill_expolygons.clone());
+                                    fill_bbox = extents(fill_expolys.as_ref().unwrap());
+                                }
+                                wall_expolys = Some(difference_clib(&crate::surface::to_expolygons(&layerm.raw_slices.surfaces), fill_expolys.as_ref().unwrap()));
+                                wall_bbox = extents(wall_expolys.as_ref().unwrap());
+                            }
+
+                            if overlap(&wall_bbox, &unprintable_area_bbox[idx]) && !intersection_clib(wall_expolys.as_ref().unwrap(), &area).is_empty() {
+                                set.insert(wall_filament - 1);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // add the elems in tbb container to final contianer
+            for idx in 0..extruder_size {
+                let elems: Vec<i32> = tbb_geometric_unprintables[idx].iter().copied().collect();
+                geometric_unprintables[idx].extend(elems);
+            }
+
+            geometric_unprintables
+        }
+
+        /// PrintObjectSlice.cpp:21 `bool PrintObject::infill_only_where_needed = false;`
+        pub const infill_only_where_needed: bool = false;
+
+        /// PrintObject.cpp:4003-4088 `void PrintObject::clip_fill_surfaces()`: only active if
+        /// infill_only_where_needed (never set at the pin). Trims the sparse infill, so it acts as an internal
+        /// support; all other infill types are kept intact.
+        pub fn clip_fill_surfaces(&mut self) {
+            use crate::clipper_utils::{
+                diff_polygons_raw_clib, difference_clib_safety, intersection_clib_safety, intersection_polygons_raw_clib, offset_polygons_clib,
+                offset_polygons_clib_ml, OffsetJoinType,
+            };
+            use crate::surface::SurfaceType;
+            if !PrintObject::infill_only_where_needed {
+                return;
+            }
+            let mut has_infill = false;
+            for i in 0..self.num_printing_regions() {
+                if cfg_float(self.printing_region(i).borrow().config(), "sparse_infill_density") > 0. {
+                    has_infill = true;
+                    break;
+                }
+            }
+            if !has_infill {
+                return;
+            }
+
+            // We only want infill under ceilings; this is almost like an
+            // internal support material.
+            // Proceed top-down, skipping the bottom layer.
+            let mut upper_internal: Vec<crate::geometry::Polygon> = Vec::new();
+            let mut layer_id = self.m_layers.len() as i32 - 1;
+            while layer_id > 0 {
+                let (lid, llid) = (layer_id as usize, layer_id as usize - 1);
+                // Detect things that we need to support.
+                // Cummulative fill surfaces.
+                let mut fill_surfaces: Vec<crate::geometry::Polygon> = Vec::new();
+                // Solid surfaces to be supported.
+                let mut overhangs: Vec<crate::geometry::Polygon> = Vec::new();
+                for layerm in self.m_layers[lid].regions() {
+                    for surface in &layerm.fill_surfaces.surfaces {
+                        let polygons = crate::geometry::to_polygons_expoly(&surface.expolygon);
+                        if surface.is_solid() {
+                            overhangs.extend(polygons.iter().cloned());
+                        }
+                        fill_surfaces.extend(polygons);
+                    }
+                }
+                let mut lower_layer_fill_surfaces: Vec<crate::geometry::Polygon> = Vec::new();
+                let mut lower_layer_internal_surfaces: Vec<crate::geometry::Polygon> = Vec::new();
+                for layerm in self.m_layers[llid].regions() {
+                    for surface in &layerm.fill_surfaces.surfaces {
+                        let polygons = crate::geometry::to_polygons_expoly(&surface.expolygon);
+                        if surface.surface_type == SurfaceType::Internal || surface.surface_type == SurfaceType::InternalVoid {
+                            lower_layer_internal_surfaces.extend(polygons.iter().cloned());
+                        }
+                        lower_layer_fill_surfaces.extend(polygons);
+                    }
+                }
+                // We also need to support perimeters when there's at least one full unsupported loop
+                {
+                    let layer = &self.m_layers[lid];
+                    // Get perimeters area as the difference between slices and fill_surfaces
+                    // Only consider the area that is not supported by lower perimeters
+                    let perimeters = intersection_polygons_raw_clib(
+                        &diff_polygons_raw_clib(&crate::geometry::to_polygons(&layer.lslices), &fill_surfaces),
+                        &lower_layer_fill_surfaces,
+                    );
+                    // Only consider perimeter areas that are at least one extrusion width thick.
+                    let mut pw = f32::MAX;
+                    for layerm in layer.regions() {
+                        pw = pw.min(layerm.flow(crate::flow::FlowRole::Perimeter, layer.height).map(|f| f.scaled_width()).unwrap_or(0) as f32);
+                    }
+                    // Append such thick perimeters to the areas that need support: opening(perimeters, pw).
+                    let shrunk = offset_polygons_clib(&perimeters, -(pw as f64), OffsetJoinType::Miter);
+                    overhangs.extend(offset_polygons_clib(&shrunk, pw as f64, OffsetJoinType::Miter));
+                }
+                // Merge the new overhangs, find new internal infill.
+                upper_internal.extend(overhangs);
+                // static constexpr const auto closing_radius = scaled<float>(2.f);
+                let closing_radius = (2.0f32 as f64 / SCALING_FACTOR) as f32 as f64;
+                // closing(upper_internal, closing_radius, jtSquare, 0.)
+                let closed = offset_polygons_clib_ml(
+                    &offset_polygons_clib_ml(&upper_internal, closing_radius, OffsetJoinType::Square, 0.),
+                    -closing_radius,
+                    OffsetJoinType::Square,
+                    0.,
+                );
+                upper_internal = intersection_polygons_raw_clib(
+                    // Regularize the overhang regions, so that the infill areas will not become excessively jagged.
+                    &crate::mutable_polygon::smooth_outward_polygons(closed, (0.1 / SCALING_FACTOR) as i64),
+                    &lower_layer_internal_surfaces,
+                );
+                // Apply new internal infill to regions.
+                let upper = expolygons_of_polygons(&upper_internal);
+                for region_id in 0..self.m_layers[llid].regions().len() {
+                    let density = cfg_float(self.printing_region(self.m_layers[llid].regions()[region_id].region_id()).borrow().config(), "sparse_infill_density");
+                    let layerm = &mut self.m_layers[llid].regions_mut()[region_id];
+                    if density == 0. {
+                        continue;
+                    }
+                    let mut internal: Vec<ExPolygon> = Vec::new();
+                    for surface in &layerm.fill_surfaces.surfaces {
+                        if surface.surface_type == SurfaceType::Internal || surface.surface_type == SurfaceType::InternalVoid {
+                            internal.push(surface.expolygon.clone());
+                        }
+                    }
+                    layerm.fill_surfaces.remove_types(&[SurfaceType::Internal, SurfaceType::InternalVoid]);
+                    layerm.fill_surfaces.append(intersection_clib_safety(&internal, &upper), SurfaceType::Internal);
+                    layerm.fill_surfaces.append(difference_clib_safety(&internal, &upper), SurfaceType::InternalVoid);
+                    // If there are voids it means that our internal infill is not adjacent to
+                    // perimeters. In this case it would be nice to add a loop around infill to
+                    // make it more robust and nicer. TODO.
+                }
+                layer_id -= 1;
+            }
+        }
+
+        /// PrintObject.cpp:328-465 `std::unordered_map<int, std::unordered_map<int, double>>
+        /// PrintObject::calc_estimated_filament_print_time() const`. The region of a layer region is the object's
+        /// printing region of its index.
+        pub fn calc_estimated_filament_print_time(&self, print: &Print) -> std::collections::HashMap<i32, std::collections::HashMap<i32, f64>> {
+            use crate::extrusion_entity::{ExtrusionEntity, ExtrusionEntityType, ExtrusionLoop, ExtrusionMultiPath, ExtrusionPath, ExtrusionRole};
+            use crate::gcode::wipe_tower::{cfg_bools, cfg_floats, cfg_ints, cfg_strings};
+            use std::collections::HashMap;
+            let full_print_config = &print.base.base.m_ori_full_print_config;
+            let extruder_variant_list = cfg_strings(print.config(), "printer_extruder_variant");
+
+            if !full_print_config.has("filament_extruder_variant")
+                || !full_print_config.has("filament_self_index")
+                || !full_print_config.has("filament_max_volumetric_speed")
+                || !full_print_config.has("filament_flow_ratio")
+            {
+                log::warn!("filament_* config option missing, skip estimation");
+                return HashMap::new();
+            }
+            let filament_variant_list = cfg_strings(full_print_config, "filament_extruder_variant");
+            let filament_self_idx = cfg_ints(full_print_config, "filament_self_index");
+            let filament_max_volumetric_speed = cfg_floats(full_print_config, "filament_max_volumetric_speed");
+            let filament_flow_ratio = cfg_floats(full_print_config, "filament_flow_ratio");
+
+            let get_limit_from_volumetric_speed = |filament_idx: i32, extruder_idx: i32, width: f64, height: f64| -> f64 {
+                let extruder_variant = &extruder_variant_list[extruder_idx as usize];
+
+                let mut idx_for_filament = 0usize;
+                for idx in 0..filament_self_idx.len() {
+                    if filament_self_idx[idx] - 1 == filament_idx && *extruder_variant == filament_variant_list[idx] {
+                        idx_for_filament = idx;
+                        break;
+                    }
+                }
+
+                let max_volumetric_speed = filament_max_volumetric_speed[idx_for_filament];
+                let flow_ratio = filament_flow_ratio[idx_for_filament];
+
+                // height * (width - height * (1 - PI / 4)) * flow_ratio: the inner difference contracts to an fma.
+                let mm3_per_mm = height * (-height).mul_add(1.0 - std::f64::consts::PI / 4.0, width) * flow_ratio;
+                max_volumetric_speed / mm3_per_mm
+            };
+
+            let print_config = print.config();
+            let get_speed_from_role_with_filament = |role: ExtrusionRole, filament_id: i32, region_config: &PrintRegionConfig, extruder_id: i32| -> f64 {
+                let e = extruder_id as usize;
+                match role {
+                    ExtrusionRole::Perimeter => cfg_floats(region_config, "inner_wall_speed")[e],
+                    ExtrusionRole::ExternalPerimeter => cfg_floats(region_config, "outer_wall_speed")[e],
+                    ExtrusionRole::OverhangPerimeter | ExtrusionRole::BridgeInfill | ExtrusionRole::SupportTransition => {
+                        let use_filament_bridge_speed = crate::gcode::wipe_tower::get_at(&cfg_bools(print_config, "filament_enable_overhang_speed"), filament_id as usize);
+
+                        if use_filament_bridge_speed {
+                            cfg_floats(print_config, "filament_bridge_speed")[filament_id as usize]
+                        } else {
+                            cfg_floats(region_config, "bridge_speed")[e]
+                        }
+                    }
+                    ExtrusionRole::InternalInfill => cfg_floats(region_config, "sparse_infill_speed")[e],
+                    ExtrusionRole::FloatingVerticalShell | ExtrusionRole::SolidInfill => cfg_floats(region_config, "internal_solid_infill_speed")[e],
+                    ExtrusionRole::TopSolidInfill => cfg_floats(region_config, "top_surface_speed")[e],
+                    ExtrusionRole::BottomSurface => cfg_floats(print_config, "initial_layer_speed")[e],
+                    ExtrusionRole::GapFill => cfg_floats(region_config, "gap_infill_speed")[e],
+                    _ => cfg_floats(region_config, "internal_solid_infill_speed")[e],
+                }
+            };
+
+            let mut filament_print_time: HashMap<i32, HashMap<i32, f64>> = HashMap::new();
+
+            fn process_paths(
+                paths: &[ExtrusionPath],
+                filament: i32,
+                eidx: i32,
+                speed_from_config: f64,
+                limit: &dyn Fn(i32, i32, f64, f64) -> f64,
+                time: &mut HashMap<i32, HashMap<i32, f64>>,
+            ) {
+                for path in paths {
+                    let speed_from_filament = limit(filament, eidx, path.width, path.height);
+                    let speed_applied = speed_from_filament.min(speed_from_config);
+                    *time.entry(filament).or_default().entry(eidx).or_insert(0.0) += path.length() * SCALING_FACTOR / speed_applied;
+                }
+            }
+            fn process_entity(
+                filament: i32,
+                eidx: i32,
+                entity: &ExtrusionEntityType,
+                speed_from_config: f64,
+                limit: &dyn Fn(i32, i32, f64, f64) -> f64,
+                time: &mut HashMap<i32, HashMap<i32, f64>>,
+            ) {
+                match entity {
+                    // 如果是集合类型，则递归处理其子entity
+                    ExtrusionEntityType::Collection(collection) => {
+                        for sub_entity in &collection.entities {
+                            process_entity(filament, eidx, sub_entity, speed_from_config, limit, time);
+                        }
+                    }
+                    ExtrusionEntityType::Path(path) => process_paths(std::slice::from_ref(path), filament, eidx, speed_from_config, limit, time),
+                    ExtrusionEntityType::Loop(eloop) => process_paths(&eloop.paths, filament, eidx, speed_from_config, limit, time),
+                    ExtrusionEntityType::MultiPath(empath) => process_paths(&empath.paths, filament, eidx, speed_from_config, limit, time),
+                }
+            }
+            // ExtrusionEntityCollection.hpp:54-61 `ExtrusionRole role() const` for a collection, the entity's own role otherwise.
+            fn entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
+                match entity {
+                    ExtrusionEntityType::Path(p) => p.role,
+                    ExtrusionEntityType::MultiPath(m) => ExtrusionEntity::role(m as &ExtrusionMultiPath),
+                    ExtrusionEntityType::Loop(l) => ExtrusionEntity::role(l as &ExtrusionLoop),
+                    ExtrusionEntityType::Collection(c) => {
+                        let mut out = ExtrusionRole::None;
+                        for ee in &c.entities {
+                            let er = entity_role(ee);
+                            out = if out == ExtrusionRole::None || out == er { er } else { ExtrusionRole::Mixed };
+                        }
+                        out
+                    }
+                }
+            }
+
+            // Iterate through all layers and regions to calculate the print area for each filament.
+            let extruder_num = cfg_floats(print.config(), "nozzle_diameter").len() as i32;
+            for layer in &self.m_layers {
+                for layerm in layer.regions() {
+                    let region = self.printing_region(layerm.region_id());
+                    let region = region.borrow();
+                    let region_config = region.config();
+
+                    let entity_list: [&Vec<ExtrusionEntityType>; 3] = [&layerm.fills.entities, &layerm.thin_fills.entities, &layerm.perimeters.entities];
+                    for eidx in 0..extruder_num {
+                        for entities in entity_list.iter() {
+                            for entity in entities.iter() {
+                                let role = entity_role(entity);
+                                let filament: i32;
+                                if crate::extrusion_entity::is_perimeter(role) {
+                                    filament = cfg_int(region_config, "wall_filament") - 1;
+                                } else if crate::extrusion_entity::is_solid_infill(role) {
+                                    filament = cfg_int(region_config, "solid_infill_filament") - 1;
+                                } else if crate::extrusion_entity::is_infill(role) {
+                                    filament = cfg_int(region_config, "sparse_infill_filament") - 1;
+                                } else {
+                                    continue;
+                                }
+
+                                let speed_from_config = get_speed_from_role_with_filament(role, filament, region_config, eidx);
+                                process_entity(filament, eidx, entity, speed_from_config, &get_limit_from_volumetric_speed, &mut filament_print_time);
+                            }
+                        }
+                    }
+                }
+            }
+            filament_print_time
+        }
+
+        /// PrintObject.cpp:1925-1940 `void PrintObject::reset_slice_surfaces(const
+        /// std::vector<std::vector<SurfaceCollection>> &slice_surfaces_cpy)`: reset infill surface and slice
+        /// data back.
+        pub fn reset_slice_surfaces(&mut self, slice_surfaces_cpy: &[Vec<crate::surface_collection::SurfaceCollection>]) {
+            use crate::print_config::enums::InfillPattern;
+            use crate::surface::SurfaceType;
+            for region_id in 0..self.num_printing_regions() {
+                let (instead, locked_zag) = {
+                    let region = self.printing_region(region_id);
+                    let region = region.borrow();
+                    (
+                        region.config().opt_bool("infill_instead_top_bottom_surfaces"),
+                        cfg_int(region.config(), "sparse_infill_pattern") == InfillPattern::IpLockedZag as i32,
+                    )
+                };
+                for idx_layer in 0..self.m_layers.len() {
+                    let layerm = &mut self.m_layers[idx_layer].regions_mut()[region_id];
+                    if instead && locked_zag {
+                        layerm.slices = slice_surfaces_cpy[idx_layer][region_id].clone();
+                        let mut exps: Vec<ExPolygon> = Vec::new();
+                        layerm.fill_surfaces.keep_type_collect_exps(SurfaceType::Internal, &mut exps);
+                        layerm.fill_surfaces.append(exps, SurfaceType::Top);
+                    }
+                }
+            }
+        }
+
+        /// PrintObject.cpp:2690-2696 `bool PrintObject::has_interlocking_beam() const`
+        pub fn has_interlocking_beam(&self) -> bool {
+            for region_id in 0..self.num_printing_regions() {
+                if self.printing_region(region_id).borrow().config().opt_bool("interlocking_beam") {
+                    return true;
+                }
+            }
+            false
+        }
+
+        /// PrintObject.cpp:2698-2749 `void PrintObject::discover_shell_for_perimeters()`. The C++ runs the layers
+        /// in parallel; each one reads its own `fill_expolygons` and writes the `fill_surfaces` of the layer
+        /// below, so running them in order gives the same result.
+        pub fn discover_shell_for_perimeters(&mut self) {
+            use crate::clipper_utils::{difference_clib, intersection_clib, offset_expolygons_clib_scaled, union_ex_clib, OffsetJoinType};
+            use crate::surface::SurfaceType;
+            let num_regions = self.num_printing_regions();
+
+            for idx_layer in 0..self.m_layers.len() {
+                let lower_idx = match self.m_layers[idx_layer].lower_layer_id {
+                    Some(i) => i,
+                    None => continue,
+                };
+
+                let mut infill_areas: Vec<ExPolygon> = Vec::new();
+                let mut max_line_width: f32 = 0.0;
+                let perimeter_areas = {
+                    let layer = &self.m_layers[idx_layer];
+                    for region_id in 0..num_regions {
+                        let layerm = &layer.regions()[region_id];
+                        let extflow = layerm.flow(crate::flow::FlowRole::ExternalPerimeter, layer.height);
+                        infill_areas.extend(layerm.fill_expolygons.iter().cloned());
+                        if let Ok(extflow) = extflow {
+                            max_line_width = max_line_width.max(0.5f32 * (extflow.scaled_width() + extflow.scaled_spacing()) as f32);
+                        }
+                    }
+                    infill_areas = union_ex_clib(&crate::geometry::to_polygons(&infill_areas), PFT_NON_ZERO);
+                    offset_expolygons_clib_scaled(&difference_clib(&layer.lslices, &infill_areas), max_line_width as f64, OffsetJoinType::Miter)
+                };
+
+                for region_id in 0..num_regions {
+                    let lower_layerm = &mut self.m_layers[lower_idx].regions_mut()[region_id];
+
+                    let mut new_perimeter_solid = intersection_clib(&perimeter_areas, &lower_layerm.fill_expolygons);
+                    new_perimeter_solid.retain(|expoly| {
+                        !crate::ex_polygon::is_narrow_expolygon(expoly, 3.0 * max_line_width as f64, (1.0 / SCALING_FACTOR) * (1.0 / SCALING_FACTOR), 0.1)
+                    });
+                    if new_perimeter_solid.is_empty() {
+                        continue;
+                    }
+
+                    let old_internal = crate::surface::to_expolygons_ptr(&lower_layerm.fill_surfaces.filter_by_type(SurfaceType::Internal));
+                    let old_internal_void = crate::surface::to_expolygons_ptr(&lower_layerm.fill_surfaces.filter_by_type(SurfaceType::InternalVoid));
+                    let old_internal_solid = crate::surface::to_expolygons_ptr(&lower_layerm.fill_surfaces.filter_by_type(SurfaceType::InternalSolid));
+                    let bottom_area = crate::surface::to_expolygons_ptr(&lower_layerm.fill_surfaces.filter_by_type(SurfaceType::Bottom));
+
+                    lower_layerm.fill_surfaces.remove_types(&[SurfaceType::Internal, SurfaceType::InternalVoid, SurfaceType::InternalSolid]);
+
+                    let mut solid_and_new = crate::geometry::to_polygons(&old_internal_solid);
+                    solid_and_new.extend(crate::geometry::to_polygons(&new_perimeter_solid));
+                    let new_internal_solid = difference_clib(&union_ex_clib(&solid_and_new, PFT_NON_ZERO), &bottom_area);
+                    let new_internal = difference_clib(&old_internal, &new_perimeter_solid);
+                    let new_internal_void = difference_clib(&old_internal_void, &new_perimeter_solid);
+                    lower_layerm.fill_surfaces.append(new_internal, SurfaceType::Internal);
+                    lower_layerm.fill_surfaces.append(new_internal_void, SurfaceType::InternalVoid);
+                    lower_layerm.fill_surfaces.append(new_internal_solid, SurfaceType::InternalSolid);
+                }
+            }
+        }
+
+        /// PrintObject.cpp:5724-5832 `void PrintObject::combine_infill()`: combine fill surfaces to honor the
+        /// "infill every N layers" option.
+        pub fn combine_infill(&mut self, print: &Print) {
+            use crate::clipper_utils::{difference_clib, intersection_clib, offset_expolygons_clib_scaled, OffsetJoinType};
+            use crate::print_config::enums::InfillPattern;
+            use crate::surface::SurfaceType;
+            // Work on each region separately.
+            for region_id in 0..self.num_printing_regions() {
+                let region = self.printing_region(region_id);
+                let region = region.borrow();
+                //BBS
+                let enable_combine_infill = region.config().opt_bool("infill_combination");
+                if !enable_combine_infill || cfg_float(region.config(), "sparse_infill_density") == 0. {
+                    continue;
+                }
+                // Limit the number of combined layers to the sparse-infill nozzle diameter. Solid fill is not
+                // combined here and must not constrain the sparse-infill band size.
+                //FIXME limit the layer height to max_layer_height
+                let nozzle_diameter =
+                    crate::print::faithful::nozzle_diameter_for_filament(print.config(), cfg_int(region.config(), "sparse_infill_filament") as u32) as f64;
+                // define the combinations
+                let mut combine: Vec<usize> = vec![0; self.m_layers.len()];
+                {
+                    let mut current_height = 0.0;
+                    let mut num_layers = 0usize;
+                    for layer_idx in 0..self.m_layers.len() {
+                        let layer = &self.m_layers[layer_idx];
+                        if layer.id() == 0 {
+                            // Skip first print layer (which may not be first layer in array because of raft).
+                            continue;
+                        }
+                        // Check whether the combination of this layer with the lower layers' buffer
+                        // would exceed max layer height or max combined layer count.
+                        // BBS: automatically calculate how many layers should be combined
+                        if current_height + layer.height > nozzle_diameter + EPSILON {
+                            // Append combination to lower layer.
+                            combine[layer_idx - 1] = num_layers;
+                            current_height = 0.;
+                            num_layers = 0;
+                        }
+                        current_height += layer.height;
+                        num_layers += 1;
+                    }
+
+                    // Append lower layers (if any) to uppermost layer.
+                    let last = self.m_layers.len() - 1;
+                    combine[last] = num_layers;
+                }
+
+                let pattern = cfg_int(region.config(), "sparse_infill_pattern");
+                // loop through layers to which we have assigned layers to combine
+                for layer_idx in 0..self.m_layers.len() {
+                    let num_layers = combine[layer_idx];
+                    if num_layers <= 1 {
+                        continue;
+                    }
+                    // Get all the LayerRegion objects to be combined: the layers layer_idx + 1 - num_layers ..= layer_idx.
+                    let first = layer_idx + 1 - num_layers;
+                    // We need to perform a multi-layer intersection, so let's split it in pairs.
+                    // Initialize the intersection with the candidates of the lowest layer.
+                    let mut intersection =
+                        crate::surface::to_expolygons_ptr(&self.m_layers[first].regions()[region_id].fill_surfaces.filter_by_type(SurfaceType::Internal));
+                    // Start looping from the second layer and intersect the current intersection with it.
+                    for i in (first + 1)..=layer_idx {
+                        intersection = intersection_clib(
+                            &crate::surface::to_expolygons_ptr(&self.m_layers[i].regions()[region_id].fill_surfaces.filter_by_type(SurfaceType::Internal)),
+                            &intersection,
+                        );
+                    }
+                    let area_threshold = self.m_layers[first].regions()[region_id].infill_area_threshold();
+                    if !intersection.is_empty() && area_threshold > 0. {
+                        intersection.retain(|expoly| !(expoly.area() <= area_threshold));
+                    }
+                    if intersection.is_empty() {
+                        continue;
+                    }
+                    // intersection now contains the regions that can be combined across the full amount of layers,
+                    // so let's remove those areas from all layers.
+                    let (perimeter_w, solid_w) = {
+                        let top = &self.m_layers[layer_idx];
+                        let layerm = &top.regions()[region_id];
+                        (
+                            layerm.flow(crate::flow::FlowRole::Perimeter, top.height).map(|f| f.scaled_width()).unwrap_or(0) as f32,
+                            layerm.flow(crate::flow::FlowRole::SolidInfill, top.height).map(|f| f.scaled_width()).unwrap_or(0) as f32,
+                        )
+                    };
+                    let grows = pattern == InfillPattern::IpRectilinear as i32
+                        || pattern == InfillPattern::IpMonotonic as i32
+                        || pattern == InfillPattern::IpGrid as i32
+                        || pattern == InfillPattern::Ip2DLattice as i32
+                        || pattern == InfillPattern::IpLine as i32
+                        || pattern == InfillPattern::IpHoneycomb as i32;
+                    let clearance_offset: f32 = 0.5f32 * perimeter_w
+                        // Because fill areas for rectilinear and honeycomb are grown
+                        // later to overlap perimeters, we need to counteract that too.
+                        + (if grows { 1.5f32 } else { 0.5f32 }) * solid_w;
+                    let mut intersection_with_clearance: Vec<crate::geometry::Polygon> = Vec::with_capacity(intersection.len());
+                    for expoly in &intersection {
+                        // offset(const ExPolygon&, float delta): jtMiter, miter limit 3, as polygons.
+                        for e in offset_expolygons_clib_scaled(std::slice::from_ref(expoly), clearance_offset as f64, OffsetJoinType::Miter) {
+                            intersection_with_clearance.extend(crate::geometry::to_polygons_expoly(&e));
+                        }
+                    }
+                    let clearance = expolygons_of_polygons(&intersection_with_clearance);
+                    let mut thickness = 0.0;
+                    for i in first..=layer_idx {
+                        thickness += self.m_layers[i].height;
+                    }
+                    for i in first..=layer_idx {
+                        let layerm = &mut self.m_layers[i].regions_mut()[region_id];
+                        let internal = crate::surface::to_expolygons_ptr(&layerm.fill_surfaces.filter_by_type(SurfaceType::Internal));
+                        layerm.fill_surfaces.remove_type(SurfaceType::Internal);
+                        layerm.fill_surfaces.append(difference_clib(&internal, &clearance), SurfaceType::Internal);
+                        if i == layer_idx {
+                            // Apply surfaces back with adjusted depth to the uppermost layer.
+                            let mut templ = crate::surface::Surface::new(SurfaceType::Internal, ExPolygon::default());
+                            templ.thickness = thickness;
+                            templ.thickness_layers = num_layers;
+                            layerm.fill_surfaces.append_expolygons_templ(intersection.clone(), &templ);
+                        } else {
+                            // Save void surfaces.
+                            layerm.fill_surfaces.append(intersection_clib(&internal, &clearance), SurfaceType::InternalVoid);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

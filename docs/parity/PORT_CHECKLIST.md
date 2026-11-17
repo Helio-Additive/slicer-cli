@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**61.7% of the named C++ functions are ported or verified (5911 of 9574); 53.1% by size of body.**
+**63.7% of the named C++ functions are ported or verified (6103 of 9574); 56.2% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 1233 | 12.9% | 22.8% |
-| partial `[~]` | 2430 | 25.4% | 24.1% |
-| ported `[x]` | 3892 | 40.7% | 26.8% |
-| verified `[v]` | 2019 | 21.1% | 26.3% |
+| not started `[ ]` | 1041 | 10.9% | 19.6% |
+| partial `[~]` | 2430 | 25.4% | 24.2% |
+| ported `[x]` | 3869 | 40.4% | 27.8% |
+| verified `[v]` | 2234 | 23.3% | 28.3% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -99,7 +99,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `BrimEarsPoint` | 2 | `brim_ears_point.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `BuildVolume` | 1 | `build_volume.rs` | partial | 20 | 1 | 2 | 17 | 0 |
 | `ByObjectPrintData` | 3 | `by_object_print_data.rs` | partial | 4 | 2 | 1 | 1 | 0 |
-| `Calib` | 1 | `calib.rs` | partial | 51 | 4 | 6 | 7 | 34 |
+| `Calib` | 1 | `calib.rs` | partial | 51 | 0 | 1 | 8 | 42 |
 | `Channel` | 3 | `channel.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `Circle` | 1 | `circle.rs` | partial | 27 | 2 | 1 | 24 | 0 |
 | `clipper` | 3 | `clipper.rs` | ported | 0 | 0 | 0 | 0 | 0 |
@@ -127,9 +127,9 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `CSGMesh/TriangleMeshAdapter` | 3 | `csg_mesh/triangle_mesh_adapter.rs` | partial | 16 | 0 | 12 | 4 | 0 |
 | `CSGMesh/VoxelizeCSGMesh` | 3 | `csg_mesh/voxelize_csg_mesh.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `CurveAnalyzer` | 3 | `curve_analyzer.rs` | ported | 1 | 0 | 0 | 1 | 0 |
-| `CustomGCode` | 1 | `custom_g_code.rs` | partial | 6 | 2 | 0 | 4 | 0 |
+| `CustomGCode` | 1 | `custom_g_code.rs` | partial | 6 | 1 | 1 | 4 | 0 |
 | `CutSurface` | 3 | `cut_surface.rs` | partial | 92 | 77 | 8 | 7 | 0 |
-| `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 10 | 8 | 1 | 0 |
+| `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 7 | 11 | 1 | 0 |
 | `Debounce` | 3 | `debounce.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Desensitize` | 3 | `desensitize.rs` | verified | 9 | 0 | 0 | 0 | 9 |
 | `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 12 | 24 | 11 | 0 |
@@ -150,8 +150,8 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `ExtrusionEntityCollection` | 1 | `extrusion_entity_collection.rs` | partial | 35 | 1 | 24 | 10 | 0 |
 | `ExtrusionSimulator` | 1 | `extrusion_simulator.rs` | partial | 22 | 0 | 3 | 19 | 0 |
 | `FaceDetector` | 3 | `face_detector.rs` | ported | 1 | 0 | 0 | 1 | 0 |
-| `FilamentGroup` | 1 | `filament_group.rs` | partial | 49 | 23 | 4 | 22 | 0 |
-| `FilamentGroupUtils` | 1 | `filament_group_utils.rs` | partial | 17 | 4 | 2 | 11 | 0 |
+| `FilamentGroup` | 1 | `filament_group.rs` | partial | 49 | 0 | 3 | 0 | 46 |
+| `FilamentGroupUtils` | 1 | `filament_group_utils.rs` | partial | 17 | 0 | 3 | 14 | 0 |
 | `FilamentMixer` | 3 | `filament_mixer.rs` | partial | 37 | 11 | 2 | 24 | 0 |
 | `FilamentMixerModel` | 3 | `filament_mixer_model.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `FileParserError` | 1 | `file_parser_error.rs` | partial | 4 | 0 | 1 | 3 | 0 |
@@ -196,7 +196,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Format/svg` | 3 | `format/svg.rs` | partial | 8 | 0 | 2 | 6 | 0 |
 | `Frustum` | 3 | `frustum.rs` | partial | 11 | 0 | 8 | 3 | 0 |
 | `FuzzySkin` | 2 | `fuzzy_skin.rs` | partial | 10 | 2 | 2 | 6 | 0 |
-| `GCode` | 1 | `g_code.rs` | partial | 152 | 27 | 18 | 87 | 20 |
+| `GCode` | 1 | `g_code.rs` | partial | 152 | 18 | 20 | 93 | 21 |
 | `GCode/AvoidCrossingPerimeters` | 1 | `gcode/avoid_crossing_perimeters.rs` | partial | 59 | 18 | 10 | 31 | 0 |
 | `GCode/BedExcludeChecker` | 1 | `gcode/bed_exclude_checker.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `GCode/ConflictChecker` | 1 | `gcode/conflict_checker.rs` | partial | 19 | 0 | 3 | 16 | 0 |
@@ -212,12 +212,12 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `GCode/SpiralVase` | 1 | `gcode/spiral_vase.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `GCode/ThumbnailData` | 1 | `gcode/thumbnail_data.rs` | ported | 9 | 0 | 0 | 9 | 0 |
 | `GCode/TimelapsePosPicker` | 1 | `gcode/timelapse_pos_picker.rs` | partial | 20 | 17 | 2 | 1 | 0 |
-| `GCode/ToolOrdering` | 1 | `gcode/tool_ordering.rs` | partial | 85 | 10 | 3 | 33 | 39 |
+| `GCode/ToolOrdering` | 1 | `gcode/tool_ordering.rs` | partial | 85 | 1 | 4 | 41 | 39 |
 | `GCode/ToolOrderUtils` | 1 | `gcode/tool_order_utils.rs` | partial | 32 | 3 | 3 | 26 | 0 |
 | `GCode/WipeTower` | 1 | `gcode/wipe_tower.rs` | partial | 218 | 0 | 10 | 116 | 92 |
 | `GCodeReader` | 1 | `g_code_reader.rs` | partial | 71 | 0 | 8 | 63 | 0 |
 | `GCodeSender` | 3 | `gcode_sender.rs` | partial | 24 | 0 | 13 | 11 | 0 |
-| `GCodeWriter` | 1 | `g_code_writer.rs` | partial | 84 | 4 | 16 | 64 | 0 |
+| `GCodeWriter` | 1 | `g_code_writer.rs` | partial | 84 | 0 | 6 | 0 | 78 |
 | `Geometry` | 1 | `geometry/geometry.rs` | partial | 86 | 6 | 26 | 24 | 30 |
 | `Geometry/Bicubic` | 1 | `geometry/bicubic.rs` | ported | 53 | 0 | 0 | 53 | 0 |
 | `Geometry/Circle` | 1 | `geometry/circle.rs` | partial | 24 | 0 | 6 | 16 | 2 |
@@ -237,7 +237,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `IntersectionPoints` | 1 | `intersection_points.rs` | ported | 6 | 0 | 0 | 1 | 5 |
 | `JumpPointSearch` | 3 | `jump_point_search.rs` | partial | 14 | 0 | 4 | 10 | 0 |
 | `KDTreeIndirect` | 1 | `kd_tree_indirect.rs` | partial | 15 | 0 | 7 | 8 | 0 |
-| `Layer` | 1 | `layer.rs` | partial | 56 | 20 | 21 | 15 | 0 |
+| `Layer` | 1 | `layer.rs` | partial | 56 | 17 | 24 | 15 | 0 |
 | `LayerRegion` | 1 | `layer_region.rs` | partial | 29 | 9 | 19 | 1 | 0 |
 | `libslic3r` | 1 | `libslic3r.rs` | partial | 28 | 12 | 15 | 1 | 0 |
 | `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 27 | 23 | 0 |
@@ -249,26 +249,26 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `MarchingSquares` | 3 | `marching_squares.rs` | partial | 29 | 1 | 3 | 25 | 0 |
 | `Measure` | 3 | `measure.rs` | partial | 41 | 0 | 9 | 32 | 0 |
 | `MeasureUtils` | 3 | `measure_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
-| `MeshBoolean` | 3 | `mesh_boolean.rs` | partial | 54 | 37 | 13 | 4 | 0 |
-| `MeshBooleanOpenMeshCraft` | 3 | none | not started | 6 | 5 | 1 | 0 | 0 |
+| `MeshBoolean` | 3 | `mesh_boolean.rs` | partial | 54 | 0 | 24 | 30 | 0 |
+| `MeshBooleanOpenMeshCraft` | 3 | none | not started | 6 | 4 | 2 | 0 | 0 |
 | `MeshDiagnostics` | 3 | `mesh_diagnostics.rs` | verified | 11 | 0 | 0 | 0 | 11 |
 | `MeshRaycast` | 3 | `mesh_raycast.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `MeshSplitImpl` | 3 | `mesh_split_impl.rs` | partial | 11 | 0 | 1 | 10 | 0 |
 | `MinAreaBoundingBox` | 1 | `min_area_bounding_box.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `MinimumSpanningTree` | 3 | `minimum_spanning_tree.rs` | ported | 6 | 0 | 0 | 6 | 0 |
 | `miniz_extension` | 1 | `miniz_extension.rs` | partial | 9 | 3 | 4 | 2 | 0 |
-| `Model` | 1 | `model.rs` | partial | 374 | 7 | 73 | 167 | 127 |
+| `Model` | 1 | `model.rs` | partial | 374 | 0 | 73 | 174 | 127 |
 | `ModelArrange` | 1 | `model_arrange.rs` | partial | 14 | 7 | 5 | 2 | 0 |
 | `MTUtils` | 1 | `mt_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 21 | 14 | 38 | 1 |
-| `MultiNozzleUtils` | 1 | `multi_nozzle_utils.rs` | partial | 59 | 7 | 9 | 43 | 0 |
+| `MultiNozzleUtils` | 1 | `multi_nozzle_utils.rs` | partial | 59 | 0 | 6 | 0 | 53 |
 | `MultiPoint` | 1 | `multi_point.rs` | partial | 52 | 0 | 38 | 13 | 1 |
 | `MutablePolygon` | 1 | `mutable_polygon.rs` | partial | 47 | 0 | 20 | 27 | 0 |
 | `MutablePriorityQueue` | 1 | `mutable_priority_queue.rs` | partial | 37 | 0 | 17 | 20 | 0 |
 | `NormalUtils` | 3 | `normal_utils.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `NozzleInventory` | 3 | `nozzle_inventory.rs` | partial | 49 | 1 | 0 | 0 | 48 |
 | `NSVGUtils` | 3 | `nsvg_utils.rs` | partial | 16 | 8 | 3 | 5 | 0 |
-| `ObjColorUtils` | 3 | `obj_color_utils.rs` | partial | 24 | 19 | 5 | 0 | 0 |
+| `ObjColorUtils` | 3 | `obj_color_utils.rs` | partial | 24 | 0 | 3 | 0 | 21 |
 | `ObjectID` | 3 | `object_id.rs` | partial | 31 | 1 | 4 | 26 | 0 |
 | `OpenVDBUtils` | 3 | `open_vdb_utils.rs` | partial | 10 | 0 | 3 | 7 | 0 |
 | `Optimize/BruteforceOptimizer` | 3 | `optimize/bruteforce_optimizer.rs` | partial | 5 | 1 | 0 | 4 | 0 |
@@ -291,11 +291,11 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Preset` | 1 | `preset.rs` | partial | 108 | 0 | 16 | 15 | 77 |
 | `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 0 | 6 | 14 | 121 |
 | `PrincipalComponents2D` | 1 | `principal_components2_d.rs` | ported | 2 | 0 | 0 | 2 | 0 |
-| `Print` | 1 | `print.rs` | partial | 236 | 49 | 50 | 109 | 28 |
+| `Print` | 1 | `print.rs` | partial | 236 | 15 | 50 | 135 | 36 |
 | `PrintApply` | 1 | `print_apply.rs` | partial | 44 | 0 | 8 | 20 | 16 |
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 0 | 4 | 11 | 62 |
-| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 11 | 23 | 12 | 91 |
-| `PrintObject` | 1 | `print_object.rs` | partial | 82 | 31 | 29 | 22 | 0 |
+| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 11 | 20 | 15 | 91 |
+| `PrintObject` | 1 | `print_object.rs` | partial | 82 | 12 | 29 | 41 | 0 |
 | `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 20 | 3 | 1 | 0 |
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
 | `ProjectTask` | 1 | `project_task.rs` | partial | 11 | 0 | 5 | 6 | 0 |
@@ -360,7 +360,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Timer` | 1 | `timer.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 22 | 52 | 52 | 10 |
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
-| `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 16 | 13 | 15 | 1 |
+| `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 8 | 14 | 22 | 1 |
 | `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 0 | 20 | 45 | 38 |
 | `TriangleSetSampling` | 3 | `triangle_set_sampling.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `TriangulateWall` | 3 | `triangulate_wall.rs` | partial | 13 | 0 | 1 | 12 | 0 |
@@ -1220,16 +1220,16 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 **class `BoundingBox3Base`**
 
 - [x] `polygon` (line 118) → `bounding_box.rs:881`
-- [~] `merge` (line 137) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
+- [~] `merge` (line 137) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
 - [x] `translate` (line 142) → `bounding_box.rs:254`
 - [x] `translate` (line 143) → `bounding_box.rs:1071`
 - [x] `inflated` (line 145) → `bounding_box.rs:1099`
 - [x] `volume` (line 148) → `bounding_box.rs:816`
 - [~] `contains` (line 150) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
-- [~] `merge` (line 152) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
+- [~] `merge` (line 152) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
 - [~] `contains` (line 154) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `intersects` (line 158) → `bounding_box.rs:1390`
-- [~] `merge` (line 159) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
+- [~] `merge` (line 159) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
 - [x] `size` (line 185) → `bounding_box.rs:1288`
 - [x] `radius` (line 203) → `bounding_box.rs:1298`
 - [x] `offset` (line 222) → `bounding_box.rs:1090`
@@ -1247,10 +1247,10 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [~] `contains` (line 54) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `overlap` (line 57) → `bounding_box.rs:1131`
 - [x] `scale` (line 63) → `bounding_box.rs:1041`
-- [~] `merge` (line 73) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
+- [~] `merge` (line 73) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
 - [~] `construct` (line 89) → `boost_polygon_voronoi.rs, fill/fill_adaptive.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `merge` (line 89) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
-- [~] `merge` (line 97) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
+- [~] `merge` (line 89) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
+- [~] `merge` (line 97) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
 - [x] `size` (line 176) → `bounding_box.rs:1050`
 - [x] `radius` (line 193) → `bounding_box.rs:1056`
 - [x] `offset` (line 212) → `bounding_box.rs:286`
@@ -1380,66 +1380,66 @@ Rust file: `calib.rs`. Status: **partial**. Not listed: 6 constructors, 1 destru
 
 **class `CalibPressureAdvance`**
 
-- [v] `find_optimal_PA_speed` (line 9) → `calib.rs:988` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [~] `move_to` (line 20) → `sla/agg/path_storage.rs, sla/agg/rasterizer_scanline_aa.rs, sla/agg/rasterizer_sl_clip.rs` — not in the paired file
-- [v] `e_per_mm` (line 33) → `calib.rs:1018` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `convert_number_to_string` (line 41) → `calib.rs:1041` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp (the body reads as partial to the estimate)
-- [ ] `draw_digit` (line 50) → `calib.rs`
-- [ ] `draw_number` (line 187) → `calib.rs`
-- [x] `set_bbl_bowden_mode` (line 200) → `calib.rs:1011`
-- [v] `get_distance` (line 205) → `calib.rs:1066` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [~] `draw_line` (line 207) → `svg.rs` — not in the paired file
-- [x] `delta_scale_bed_ext` (line 210) → `calib.rs:1085`
-- [x] `speed_adjust` (line 214) → `calib.rs:1073`
-- [v] `number_spacing` (line 217) → `calib.rs:1079` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `to_radians` (line 225) → `calib.rs:1059` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [ ] `draw_box` (line 226) → `calib.rs`
+- [v] `find_optimal_PA_speed` (line 9) → `calib.rs:993` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `move_to` (line 20) → `calib.rs:1102` — R916: tests/calib_native_parity.rs: the pressure-advance line and pattern G-code (move_to, digits, numbers, lines, boxes, generate_test, generate_custom_gcodes) against the pin's calib.cpp, byte-equal
+- [v] `e_per_mm` (line 33) → `calib.rs:1023` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `convert_number_to_string` (line 41) → `calib.rs:1046` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp (the body reads as partial to the estimate)
+- [v] `draw_digit` (line 50) → `calib.rs:1122` — R916: tests/calib_native_parity.rs: the pressure-advance line and pattern G-code (move_to, digits, numbers, lines, boxes, generate_test, generate_custom_gcodes) against the pin's calib.cpp, byte-equal
+- [v] `draw_number` (line 187) → `calib.rs:1283` — R916: tests/calib_native_parity.rs: the pressure-advance line and pattern G-code (move_to, digits, numbers, lines, boxes, generate_test, generate_custom_gcodes) against the pin's calib.cpp, byte-equal
+- [x] `set_bbl_bowden_mode` (line 200) → `calib.rs:1016`
+- [v] `get_distance` (line 205) → `calib.rs:1071` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `draw_line` (line 207) → `calib.rs:1320` — R916: tests/calib_native_parity.rs: the pressure-advance line and pattern G-code (move_to, digits, numbers, lines, boxes, generate_test, generate_custom_gcodes) against the pin's calib.cpp, byte-equal
+- [x] `delta_scale_bed_ext` (line 210) → `calib.rs:1090`
+- [x] `speed_adjust` (line 214) → `calib.rs:1078`
+- [v] `number_spacing` (line 217) → `calib.rs:1084` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `to_radians` (line 225) → `calib.rs:1064` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `draw_box` (line 226) → `calib.rs:1358` — R916: tests/calib_native_parity.rs: the pressure-advance line and pattern G-code (move_to, digits, numbers, lines, boxes, generate_test, generate_custom_gcodes) against the pin's calib.cpp, byte-equal
 
 **class `CalibPressureAdvanceLine`**
 
-- [x] `set_speed` (line 247) → `calib.rs:1219`
-- [~] `generate_test` (line 415) → `calib.rs:1192` — divergent
-- [~] `is_delta` (line 433) → `calib.rs:1212` — partial
-- [ ] `print_pa_lines` (line 435) → `calib.rs`
-- [x] `delta_modify_start` (line 492) → `calib.rs:1228`
+- [x] `set_speed` (line 247) → `calib.rs:1742`
+- [v] `generate_test` (line 415) → `calib.rs:1689` — R916: tests/calib_native_parity.rs: the pressure-advance line and pattern G-code (move_to, digits, numbers, lines, boxes, generate_test, generate_custom_gcodes) against the pin's calib.cpp, byte-equal
+- [v] `is_delta` (line 433) → `calib.rs:1731` — R916: tests/calib_native_parity.rs: the pressure-advance line and pattern G-code (move_to, digits, numbers, lines, boxes, generate_test, generate_custom_gcodes) against the pin's calib.cpp, byte-equal
+- [x] `print_pa_lines` (line 435) → `calib.rs:1750`
+- [x] `delta_modify_start` (line 492) → `calib.rs:1872`
 
 **class `CalibPressureAdvancePattern`**
 
-- [x] `handle_xy_size` (line 309) → `calib.rs:1354`
-- [x] `handle_spacing` (line 310) → `calib.rs:1359`
-- [v] `print_size_x` (line 311) → `calib.rs:1364` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `print_size_y` (line 312) → `calib.rs:1369` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `max_layer_z` (line 313) → `calib.rs:1375` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `speed_first_layer` (line 321) → `calib.rs:1380` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `speed_perimeter` (line 322) → `calib.rs:1385` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `line_width_first_layer` (line 323) → `calib.rs:1390` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `line_width` (line 324) → `calib.rs:1395` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `wall_count` (line 325) → `calib.rs:1400` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `height_first_layer` (line 332) → `calib.rs:1446` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `height_layer` (line 333) → `calib.rs:1451` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `get_num_patterns` (line 334) → `calib.rs:1457` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `line_spacing` (line 342) → `calib.rs:1462` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `line_spacing_first_layer` (line 343) → `calib.rs:1467` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `line_spacing_angle` (line 344) → `calib.rs:1472` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `frame_size_y` (line 348) → `calib.rs:1496` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [~] `generate_custom_gcodes` (line 506) → `calib.rs:1332` — divergent
-- [v] `set_start_offset` (line 658) → `calib.rs:1341` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `get_start_offset` (line 664) → `calib.rs:1349` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `refresh_setup` (line 666) → `calib.rs:1406` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `_refresh_starting_point` (line 676) → `calib.rs:1426` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [~] `_refresh_writer` (line 687) → `calib.rs:1443` — stub
-- [v] `object_size_x` (line 734) → `calib.rs:1477` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `object_size_y` (line 740) → `calib.rs:1488` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `glyph_start_x` (line 745) → `calib.rs:1501` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `glyph_length_x` (line 770) → `calib.rs:1518` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `glyph_tab_max_x` (line 776) → `calib.rs:1523` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `max_numbering_height` (line 789) → `calib.rs:1534` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `pattern_shift` (line 806) → `calib.rs:1555` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [x] `handle_xy_size` (line 309) → `calib.rs:2238`
+- [x] `handle_spacing` (line 310) → `calib.rs:2243`
+- [v] `print_size_x` (line 311) → `calib.rs:2248` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `print_size_y` (line 312) → `calib.rs:2253` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `max_layer_z` (line 313) → `calib.rs:2259` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `speed_first_layer` (line 321) → `calib.rs:2264` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `speed_perimeter` (line 322) → `calib.rs:2269` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `line_width_first_layer` (line 323) → `calib.rs:2274` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `line_width` (line 324) → `calib.rs:2279` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `wall_count` (line 325) → `calib.rs:2284` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `height_first_layer` (line 332) → `calib.rs:2378` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `height_layer` (line 333) → `calib.rs:2383` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `get_num_patterns` (line 334) → `calib.rs:2389` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `line_spacing` (line 342) → `calib.rs:2394` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `line_spacing_first_layer` (line 343) → `calib.rs:2399` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `line_spacing_angle` (line 344) → `calib.rs:2404` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `frame_size_y` (line 348) → `calib.rs:2428` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `generate_custom_gcodes` (line 506) → `calib.rs:1980` — R916: tests/calib_native_parity.rs: the pressure-advance line and pattern G-code (move_to, digits, numbers, lines, boxes, generate_test, generate_custom_gcodes) against the pin's calib.cpp, byte-equal (the body reads as partial to the estimate)
+- [v] `set_start_offset` (line 658) → `calib.rs:2225` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `get_start_offset` (line 664) → `calib.rs:2233` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `refresh_setup` (line 666) → `calib.rs:2290` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `_refresh_starting_point` (line 676) → `calib.rs:2310` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [~] `_refresh_writer` (line 687) → `calib.rs:2325` — partial
+- [v] `object_size_x` (line 734) → `calib.rs:2409` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `object_size_y` (line 740) → `calib.rs:2420` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `glyph_start_x` (line 745) → `calib.rs:2433` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `glyph_length_x` (line 770) → `calib.rs:2450` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `glyph_tab_max_x` (line 776) → `calib.rs:2455` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `max_numbering_height` (line 789) → `calib.rs:2466` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `pattern_shift` (line 806) → `calib.rs:2487` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
 
 **class `SuggestedConfigCalibPAPattern`**
 
-- [v] `initial_layer_print_height` (line 283) → `calib.rs:840` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
-- [v] `float_pairs` (line 288) → `calib.rs:849` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `initial_layer_print_height` (line 283) → `calib.rs:841` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
+- [v] `float_pairs` (line 288) → `calib.rs:850` — R915: tests/calib_native_parity.rs: 6 pressure-advance pattern setups (211 lines), find_optimal_PA_speed and the helpers against the pin's calib.cpp
 
 ### `Channel` (.hpp)
 
@@ -1448,7 +1448,7 @@ Rust file: `channel.rs`. Status: **partial**. Not listed: 4 constructors, 1 dest
 **class `Channel`**
 
 - [x] `push` (line 41) → `channel.rs:54`
-- [~] `push` (line 50) → `boost_polygon_voronoi.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
+- [~] `push` (line 50) → `boost_polygon_voronoi.rs, filament_group.rs, geometry/polygon.rs` — not in the paired file
 - [x] `pop` (line 59) → `channel.rs:70`
 - [x] `try_pop` (line 68) → `channel.rs:87`
 - [x] `size_hint` (line 81) → `channel.rs:106`
@@ -3146,7 +3146,7 @@ Rust file: `custom_g_code.rs`. Status: **partial**. Not listed: 5 operators.
 - [ ] `update_custom_gcode_per_print_z_from_config` (line 15) → `custom_g_code.rs`
 - [x] `check_mode_for_custom_gcode_per_print_z` (line 41) → `custom_g_code.rs:273`
 - [x] `custom_tool_changes` (line 62) → `custom_g_code.rs:305`
-- [ ] `custom_tool_changes_up_to` (line 74) → `custom_g_code.rs`
+- [~] `custom_tool_changes_up_to` (line 74) → `print.rs` — not in the paired file
 
 **class `Info`**
 
@@ -3284,10 +3284,10 @@ Rust file: `cut_utils.rs`. Status: **partial**. Not listed: 2 constructors, 1 de
 
 - [~] `apply_tolerance` (line 19) → `model.rs` — not in the paired file
 - [~] `add_cut_volume` (line 52) → `model.rs` — not in the paired file
-- [ ] `process_volume_cut` (line 96) → `cut_utils.rs`
-- [ ] `process_connector_cut` (line 142) → `cut_utils.rs`
+- [~] `process_volume_cut` (line 96) → `model.rs` — not in the paired file
+- [~] `process_connector_cut` (line 142) → `model.rs` — not in the paired file
 - [~] `process_modifier_cut` (line 238) → `model.rs` — not in the paired file
-- [ ] `process_solid_part_cut` (line 261) → `cut_utils.rs`
+- [~] `process_solid_part_cut` (line 261) → `model.rs` — not in the paired file
 - [~] `reset_instance_transformation` (line 311) → `model.rs` — not in the paired file
 - [ ] `distribute_modifiers_from_object` (line 556) → `cut_utils.rs`
 - [ ] `merge_solid_parts_inside_object` (line 588) → `cut_utils.rs`
@@ -3369,7 +3369,7 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 - [~] `create` (line 104) → `fill/lightning/tree_node.rs, measure.rs, mesh_split_impl.rs` — not in the paired file
 - [~] `create` (line 117) → `fill/lightning/tree_node.rs, measure.rs, mesh_split_impl.rs` — not in the paired file
 - [ ] `create_from_m_contours` (line 142) → `edge_grid.rs`
-- [~] `intersect` (line 347) → `clipper2/clipper_h.rs` — not in the paired file
+- [~] `intersect` (line 347) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
 - [ ] `line_cell_intersect` (line 484) → `edge_grid.rs`
 - [~] `inside` (line 536) → `fill/lightning/tree_node.rs` — not in the paired file
 - [~] `calculate_sdf` (line 672) → `edge_grid.rs:1247` — partial
@@ -3385,10 +3385,10 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 
 - [x] `set_bbox` (line 97) → `edge_grid.rs:308`
 - [~] `create` (line 111) → `fill/lightning/tree_node.rs, measure.rs, mesh_split_impl.rs` — not in the paired file
-- [~] `intersect` (line 120) → `clipper2/clipper_h.rs` — not in the paired file
-- [~] `intersect` (line 121) → `clipper2/clipper_h.rs` — not in the paired file
-- [~] `intersect` (line 122) → `clipper2/clipper_h.rs` — not in the paired file
-- [~] `intersect` (line 123) → `clipper2/clipper_h.rs` — not in the paired file
+- [~] `intersect` (line 120) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
+- [~] `intersect` (line 121) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
+- [~] `intersect` (line 122) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
+- [~] `intersect` (line 123) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
 - [x] `resolution` (line 160) → `edge_grid.rs:320`
 - [x] `rows` (line 161) → `edge_grid.rs:326`
 - [x] `cols` (line 162) → `edge_grid.rs:332`
@@ -3806,33 +3806,33 @@ Rust file: `extruder.rs`. Status: **ported**. Not listed: 2 constructors, 1 dest
 - [x] `extruder_id` (line 22) → `extruder.rs:654`
 - [x] `id` (line 32) → `extruder.rs:648`
 - [x] `retracted_slot_id` (line 36) → `extruder.rs:668`
-- [x] `E` (line 39) → `extruder.rs:918`
-- [x] `reset_E` (line 40) → `extruder.rs:928`
-- [x] `e_per_mm` (line 41) → `extruder.rs:937`
-- [x] `e_per_mm3` (line 42) → `extruder.rs:943`
-- [x] `filament_crossection` (line 49) → `extruder.rs:982`
-- [x] `get_share_retracted_length` (line 57) → `extruder.rs:1125`
-- [x] `is_share_extruder` (line 61) → `extruder.rs:1113`
-- [x] `nozzle_id` (line 62) → `extruder.rs:699`
+- [x] `E` (line 39) → `extruder.rs:925`
+- [x] `reset_E` (line 40) → `extruder.rs:935`
+- [x] `e_per_mm` (line 41) → `extruder.rs:944`
+- [x] `e_per_mm3` (line 42) → `extruder.rs:950`
+- [x] `filament_crossection` (line 49) → `extruder.rs:989`
+- [x] `get_share_retracted_length` (line 57) → `extruder.rs:1132`
+- [x] `is_share_extruder` (line 61) → `extruder.rs:1120`
+- [x] `nozzle_id` (line 62) → `extruder.rs:706`
 - [x] `set_exclusive_nozzle` (line 63) → `extruder.rs:693`
-- [x] `get_single_retracted_length` (line 64) → `extruder.rs:1119`
-- [x] `extrude` (line 71) → `extruder.rs:743`
-- [x] `retract` (line 100) → `extruder.rs:799`
-- [x] `unretract` (line 133) → `extruder.rs:878`
-- [x] `extruded_volume` (line 152) → `extruder.rs:949`
-- [x] `used_filament` (line 164) → `extruder.rs:962`
-- [x] `filament_diameter` (line 175) → `extruder.rs:975`
-- [x] `filament_density` (line 180) → `extruder.rs:988`
-- [x] `filament_cost` (line 185) → `extruder.rs:995`
-- [x] `filament_flow_ratio` (line 190) → `extruder.rs:1002`
-- [x] `retract_before_wipe` (line 196) → `extruder.rs:1012`
-- [x] `retraction_length` (line 201) → `extruder.rs:1025`
-- [x] `retract_speed` (line 206) → `extruder.rs:1043`
-- [x] `deretract_speed` (line 211) → `extruder.rs:1055`
-- [x] `retract_restart_extra` (line 217) → `extruder.rs:1073`
-- [x] `filament_toolchange_override` (line 222) → `extruder.rs:1135`
-- [x] `retract_length_toolchange` (line 237) → `extruder.rs:1083`
-- [x] `retract_restart_extra_toolchange` (line 244) → `extruder.rs:1098`
+- [x] `get_single_retracted_length` (line 64) → `extruder.rs:1126`
+- [x] `extrude` (line 71) → `extruder.rs:750`
+- [x] `retract` (line 100) → `extruder.rs:806`
+- [x] `unretract` (line 133) → `extruder.rs:885`
+- [x] `extruded_volume` (line 152) → `extruder.rs:956`
+- [x] `used_filament` (line 164) → `extruder.rs:969`
+- [x] `filament_diameter` (line 175) → `extruder.rs:982`
+- [x] `filament_density` (line 180) → `extruder.rs:995`
+- [x] `filament_cost` (line 185) → `extruder.rs:1002`
+- [x] `filament_flow_ratio` (line 190) → `extruder.rs:1009`
+- [x] `retract_before_wipe` (line 196) → `extruder.rs:1019`
+- [x] `retraction_length` (line 201) → `extruder.rs:1032`
+- [x] `retract_speed` (line 206) → `extruder.rs:1050`
+- [x] `deretract_speed` (line 211) → `extruder.rs:1062`
+- [x] `retract_restart_extra` (line 217) → `extruder.rs:1080`
+- [x] `filament_toolchange_override` (line 222) → `extruder.rs:1142`
+- [x] `retract_length_toolchange` (line 237) → `extruder.rs:1090`
+- [x] `retract_restart_extra_toolchange` (line 244) → `extruder.rs:1105`
 
 ### `ExtrusionEntity` (.cpp+.hpp)
 
@@ -4078,76 +4078,76 @@ Rust file: `filament_group.rs`. Status: **partial**. Not listed: 5 constructors,
 
 **free functions**
 
-- [ ] `calc_match_mode_cost` (line 20) → `filament_group.rs`
-- [ ] `filament_diameter_matches_nozzle_volume` (line 40) → `filament_group.rs`
-- [x] `change_memoryed_heaps_to_arrays` (line 51) → `filament_group.rs:352`
-- [x] `get_merged_filament_map` (line 65) → `filament_group.rs:382`
-- [ ] `fnv_hash_nozzle` (line 78) → `filament_group.rs`
-- [x] `evaluate_score` (line 112) → `filament_group.rs:428`
-- [ ] `calc_change_time_for_group` (line 119) → `filament_group.rs`
-- [ ] `full_evaluate` (line 135) → `filament_group.rs`
-- [ ] `estimate_dedup_enum_count` (line 220) → `filament_group.rs`
-- [x] `select_best_group_for_ams` (line 492) → `filament_group.rs:455`
-- [x] `collect_sorted_used_filaments` (line 635) → `filament_group.rs:616`
-- [ ] `map_to_full_nozzle_ids` (line 1012) → `filament_group.rs`
-- [ ] `calc_filament_group_for_match_multi_nozzle` (line 1510) → `filament_group.rs`
-- [ ] `calc_filament_group_for_nozzle_match` (line 1527) → `filament_group.rs`
-- [ ] `plan_filament_nozzle_mapping_and_order` (line 1778) → `filament_group.rs`
-- [ ] `calc_filament_group_for_manual_multi_nozzle` (line 1909) → `filament_group.rs`
+- [v] `calc_match_mode_cost` (line 20) → `filament_group.rs:362` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `filament_diameter_matches_nozzle_volume` (line 40) → `filament_group.rs:384` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `change_memoryed_heaps_to_arrays` (line 51) → `filament_group.rs:397` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `get_merged_filament_map` (line 65) → `filament_group.rs:412` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `fnv_hash_nozzle` (line 78) → `filament_group.rs:425` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `evaluate_score` (line 112) → `filament_group.rs:458` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_change_time_for_group` (line 119) → `filament_group.rs:469` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `full_evaluate` (line 135) → `filament_group.rs:494` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `estimate_dedup_enum_count` (line 220) → `filament_group.rs:591` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `select_best_group_for_ams` (line 492) → `filament_group.rs:926` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `collect_sorted_used_filaments` (line 635) → `filament_group.rs:1076` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `map_to_full_nozzle_ids` (line 1012) → `filament_group.rs:1642` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_filament_group_for_match_multi_nozzle` (line 1510) → `filament_group.rs:2256` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_filament_group_for_nozzle_match` (line 1527) → `filament_group.rs:2382` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `plan_filament_nozzle_mapping_and_order` (line 1778) → `filament_group.rs:2579` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_filament_group_for_manual_multi_nozzle` (line 1909) → `filament_group.rs:2721` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
 
 **class `FilamentGroup`**
 
-- [x] `get_memoryed_groups` (line 162) → `filament_group.rs:1231`
-- [ ] `calc_one_change_budget` (line 252) → `filament_group.rs`
-- [ ] `calc_group_by_enum` (line 279) → `filament_group.rs`
-- [ ] `calc_group_by_kmedoids` (line 428) → `filament_group.rs`
-- [~] `calc_min_flush_group` (line 1019) → `filament_group.rs:2013` — divergent
-- [x] `rebuild_unprintables` (line 1068) → `filament_group.rs:1237`
-- [x] `try_merge_filaments` (line 1096) → `filament_group.rs:1295`
-- [x] `seperate_merged_filaments` (line 1131) → `filament_group.rs:1353`
-- [x] `rebuild_context` (line 1143) → `filament_group.rs:1376`
-- [x] `calc_filament_group` (line 1179) → `filament_group.rs:2381`
-- [x] `calc_filament_group_for_match` (line 1197) → `filament_group.rs:1433`
-- [x] `calc_filament_group_for_flush` (line 1408) → `filament_group.rs:2408`
-- [x] `calc_filament_group_for_tpu` (line 1425) → `filament_group.rs:1899`
-- [x] `rebuild_nozzle_unprintables` (line 1473) → `filament_group.rs:2460`
+- [v] `get_memoryed_groups` (line 162) → `filament_group.rs:1668` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_one_change_budget` (line 252) → `filament_group.rs:650` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_group_by_enum` (line 279) → `filament_group.rs:685` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_group_by_kmedoids` (line 428) → `filament_group.rs:855` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_min_flush_group` (line 1019) → `filament_group.rs:1673` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `rebuild_unprintables` (line 1068) → `filament_group.rs:1738` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `try_merge_filaments` (line 1096) → `filament_group.rs:1769` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `seperate_merged_filaments` (line 1131) → `filament_group.rs:1809` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `rebuild_context` (line 1143) → `filament_group.rs:1820` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_filament_group` (line 1179) → `filament_group.rs:1855` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [~] `calc_filament_group_for_match` (line 1197) → `filament_group.rs:1875` — partial
+- [v] `calc_filament_group_for_flush` (line 1408) → `filament_group.rs:2125` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_filament_group_for_tpu` (line 1425) → `filament_group.rs:2150` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `rebuild_nozzle_unprintables` (line 1473) → `filament_group.rs:2204` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
 
 **class `FilamentGroupContext`**
 
-- [ ] `available_only` (line 969) → `filament_group.rs`
+- [v] `available_only` (line 969) → `filament_group.rs:1587` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
 
 **class `FilamentGroupUtils`**
 
-- [x] `update_memoryed_groups` (line 591) → `filament_group.rs:163`
+- [v] `update_memoryed_groups` (line 591) → `filament_group.rs:1029` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
 
 **class `FlushDistanceEvaluator`**
 
-- [x] `get_distance` (line 685) → `filament_group.rs:739`
+- [~] `get_distance` (line 685) → `filament_group.rs:1147` — partial
 
 **class `FlushTimeMachine`**
 
-- [ ] `time_machine_start` (line 41) → `filament_group.rs`
-- [ ] `time_machine_end` (line 46) → `filament_group.rs`
+- [v] `time_machine_start` (line 41) → `filament_group.rs:121` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [~] `time_machine_end` (line 46) → `filament_group.rs:126` — divergent
 
 **class `KMediods`**
 
-- [x] `set_max_cluster_size` (line 225) → `filament_group.rs:848`
-- [ ] `set_placable_limits` (line 230) → `filament_group.rs`
-- [ ] `set_unplacable_limits` (line 233) → `filament_group.rs`
-- [x] `set_memory_threshold` (line 235) → `filament_group.rs:859`
-- [ ] `set_one_change_budget` (line 236) → `filament_group.rs`
-- [x] `get_memoryed_groups` (line 237) → `filament_group.rs:864`
-- [x] `get_cluster_labels` (line 240) → `filament_group.rs:869`
-- [ ] `set_cluster_group_size` (line 707) → `filament_group.rs`
-- [~] `calc_cost` (line 716) → `filament_group.rs:1075` — divergent
-- [ ] `have_enough_size` (line 747) → `filament_group.rs`
-- [ ] `init_cluster_center` (line 766) → `filament_group.rs`
-- [~] `assign_cluster_label` (line 808) → `filament_group.rs:935` — divergent
-- [~] `do_clustering` (line 890) → `filament_group.rs:1092` — divergent
+- [v] `set_max_cluster_size` (line 225) → `filament_group.rs:1220` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `set_placable_limits` (line 230) → `filament_group.rs:1226` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `set_unplacable_limits` (line 233) → `filament_group.rs:1232` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `set_memory_threshold` (line 235) → `filament_group.rs:1237` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `set_one_change_budget` (line 236) → `filament_group.rs:1242` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `get_memoryed_groups` (line 237) → `filament_group.rs:1247` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `get_cluster_labels` (line 240) → `filament_group.rs:1252` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `set_cluster_group_size` (line 707) → `filament_group.rs:1257` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `calc_cost` (line 716) → `filament_group.rs:1269` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `have_enough_size` (line 747) → `filament_group.rs:1304` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `init_cluster_center` (line 766) → `filament_group.rs:1327` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `assign_cluster_label` (line 808) → `filament_group.rs:1389` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
+- [v] `do_clustering` (line 890) → `filament_group.rs:1473` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
 
 **class `TimeEvaluator`**
 
-- [x] `get_estimated_time` (line 693) → `filament_group.rs:775`
+- [v] `get_estimated_time` (line 693) → `filament_group.rs:1165` — R916: tests/filament_group_native_parity.rs: the pin's FilamentGroup.cpp compiled into the generator: its file-static functions, FilamentGroup, KMediods, FlushDistanceEvaluator, TimeEvaluator, FilamentGroupContext and the free grouping functions on random grouping contexts (15,319 lines); floats bit for bit, unordered maps in libc++ iteration order
 
 ### `FilamentGroupUtils` (.cpp+.hpp)
 
@@ -4155,29 +4155,29 @@ Rust file: `filament_group_utils.rs`. Status: **partial**. Not listed: 3 constru
 
 **free functions**
 
-- [x] `calc_max_group_size` (line 73) → `filament_group_utils.rs:302`
-- [ ] `build_full_machine_filaments` (line 91) → `filament_group_utils.rs`
-- [ ] `build_machine_filaments` (line 146) → `filament_group_utils.rs`
-- [x] `collect_unprintable_limits` (line 182) → `filament_group_utils.rs:352`
-- [~] `remove_intersection` (line 213) → `filament_group_utils.rs:332` — partial
-- [x] `extract_indices` (line 224) → `filament_group_utils.rs:423`
-- [ ] `extract_unprintable_limit_indices` (line 236) → `filament_group_utils.rs`
-- [ ] `extract_unprintable_limit_indices` (line 253) → `filament_group_utils.rs`
-- [x] `check_printable` (line 271) → `filament_group_utils.rs:529`
-- [x] `get_estimate_extruder_change_count` (line 282) → `filament_group_utils.rs:552`
-- [x] `get_estimate_nozzle_change_count` (line 292) → `filament_group_utils.rs:572`
-- [x] `get_estimate_extruder_filament_change_count` (line 306) → `filament_group_utils.rs:605`
-- [x] `build_extruder_nozzle_list` (line 323) → `filament_group_utils.rs:639`
-- [x] `update_used_filament_values` (line 336) → `filament_group_utils.rs:659`
+- [x] `calc_max_group_size` (line 73) → `filament_group_utils.rs:337`
+- [~] `build_full_machine_filaments` (line 91) → `filament_group_utils.rs:375` — partial
+- [x] `build_machine_filaments` (line 146) → `filament_group_utils.rs:451`
+- [x] `collect_unprintable_limits` (line 182) → `filament_group_utils.rs:495`
+- [~] `remove_intersection` (line 213) → `filament_group_utils.rs:543` — partial
+- [x] `extract_indices` (line 224) → `filament_group_utils.rs:561`
+- [x] `extract_unprintable_limit_indices` (line 236) → `filament_group_utils.rs:584`
+- [x] `extract_unprintable_limit_indices` (line 253) → `filament_group_utils.rs:607`
+- [x] `check_printable` (line 271) → `filament_group_utils.rs:643`
+- [x] `get_estimate_extruder_change_count` (line 282) → `filament_group_utils.rs:658`
+- [x] `get_estimate_nozzle_change_count` (line 292) → `filament_group_utils.rs:669`
+- [x] `get_estimate_extruder_filament_change_count` (line 306) → `filament_group_utils.rs:686`
+- [x] `build_extruder_nozzle_list` (line 323) → `filament_group_utils.rs:704`
+- [x] `update_used_filament_values` (line 336) → `filament_group_utils.rs:722`
 
 **class `Color`**
 
-- [~] `to_hex_str` (line 50) → `filament_group_utils.rs:136` — partial
+- [~] `to_hex_str` (line 50) → `filament_group_utils.rs:132` — partial
 
 **class `FilamentGroupException`**
 
-- [x] `code` (line 82) → `filament_group_utils.rs:278`
-- [x] `what` (line 86) → `filament_group_utils.rs:285`
+- [x] `code` (line 82) → `filament_group_utils.rs:318`
+- [x] `what` (line 86) → `filament_group_utils.rs:323`
 
 ### `FilamentMixer` (.cpp+.hpp)
 
@@ -5939,62 +5939,62 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 
 **free functions**
 
-- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:11685` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:11686` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:8253`
 - [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:8273`
-- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:11724`
+- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:11725`
 - [v] `check_add_eol` (line 298) → `g_code.rs:49` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `custom_gcode_changes_tool` (line 306) → `g_code.rs:58` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `transform_gcode` (line 378) → `g_code.rs:133` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `get_wipe_avoid_pos_x` (line 428) → `g_code.rs:224` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:11855`
+- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:11856`
 - [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:8330`
-- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:11892` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [ ] `update_print_estimated_stats` (line 1853) → `g_code.rs`
-- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:13880` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:11893` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:14191`
+- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:13884` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
 - [ ] `init_gcode_processor` (line 2193) → `g_code.rs`
 - [ ] `autospeed_volumetric_limit` (line 2207) → `g_code.rs`
 - [ ] `init_ooze_prevention` (line 2266) → `g_code.rs`
 - [ ] `export_thumbnails_to_file` (line 2301) → `g_code.rs`
-- [ ] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs`
-- [ ] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs`
-- [ ] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs`
+- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:14243`
+- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:14286` — partial
+- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:14305` — partial
 - [~] `to_bambu_bed_type` (line 2461) → `g_code.rs:1461` — divergent
-- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:14117`
-- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:13966`
-- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:13992`
-- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:14055`
-- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:14081`
-- [x] `get_instance_name` (line 4568) → `g_code.rs:12032` — read against the C++ in R915 (the estimate says partial)
+- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:14121`
+- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:13970`
+- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:13996`
+- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:14059`
+- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:14085`
+- [x] `get_instance_name` (line 4568) → `g_code.rs:12033` — read against the C++ in R915 (the estimate says partial)
 - [~] `get_instance_name` (line 4576) → `g_code.rs` — another overload of the name is ported
 - [ ] `calculate_layer_edge_grid` (line 6543) → `g_code.rs`
-- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:13860` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `need_smooth_speed` (line 7205) → `g_code.rs:11137`
-- [v] `encodeBase64` (line 8091) → `g_code.rs:11986` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
-- [ ] `polygon_to_string` (line 8993) → `g_code.rs`
+- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:13864` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `need_smooth_speed` (line 7205) → `g_code.rs:11138`
+- [v] `encodeBase64` (line 8091) → `g_code.rs:11987` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `polygon_to_string` (line 8993) → `g_code.rs:14348`
 
 **class `GCode`**
 
-- [x] `set_gcode_offset` (line 211) → `g_code.rs:12621`
-- [v] `set_origin` (line 216) → `g_code.rs:13463` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `layer` (line 223) → `g_code.rs:12691`
-- [x] `enable_cooling_markers` (line 231) → `g_code.rs:12711`
-- [x] `layer_count` (line 234) → `g_code.rs:12716`
-- [x] `set_layer_count` (line 235) → `g_code.rs:12721`
-- [x] `set_smooth_coff` (line 252) → `g_code.rs:12765`
-- [x] `set_last_pos` (line 420) → `g_code.rs:12770`
-- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:12776`
-- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:12781`
-- [x] `last_pos_defined` (line 423) → `g_code.rs:12786`
-- [x] `on_first_layer` (line 713) → `g_code.rs:13428`
-- [x] `path_touches_bed` (line 716) → `g_code.rs:13437`
-- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:13445`
-- [x] `object_layer_over_raft` (line 725) → `g_code.rs:13456`
+- [x] `set_gcode_offset` (line 211) → `g_code.rs:12625`
+- [v] `set_origin` (line 216) → `g_code.rs:13467` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `layer` (line 223) → `g_code.rs:12695`
+- [x] `enable_cooling_markers` (line 231) → `g_code.rs:12715`
+- [x] `layer_count` (line 234) → `g_code.rs:12720`
+- [x] `set_layer_count` (line 235) → `g_code.rs:12725`
+- [x] `set_smooth_coff` (line 252) → `g_code.rs:12769`
+- [x] `set_last_pos` (line 420) → `g_code.rs:12774`
+- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:12780`
+- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:12785`
+- [x] `last_pos_defined` (line 423) → `g_code.rs:12790`
+- [x] `on_first_layer` (line 713) → `g_code.rs:13432`
+- [x] `path_touches_bed` (line 716) → `g_code.rs:13441`
+- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:13449`
+- [x] `object_layer_over_raft` (line 725) → `g_code.rs:13460`
 - [ ] `collect_layers_to_print` (line 1576) → `g_code.rs`
 - [ ] `collect_layers_to_print` (line 1769) → `g_code.rs`
-- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:12757`
-- [x] `unretract` (line 1959) → `g_code.rs:12751`
-- [ ] `first_layer_projection` (line 1965) → `g_code.rs`
+- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:12761`
+- [x] `unretract` (line 1959) → `g_code.rs:12755`
+- [v] `first_layer_projection` (line 1965) → `g_code.rs:14365` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
 - [ ] `do_export` (line 1986) → `g_code.rs`
 - [ ] `_do_export` (line 2478) → `g_code.rs`
 - [ ] `export_layer_filaments` (line 3670) → `g_code.rs`
@@ -6002,29 +6002,29 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [x] `get_extruder_id` (line 3793) → `g_code.rs:8806`
 - [x] `get_filament_config_index` (line 3802) → `g_code.rs:8819`
 - [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:8825`
-- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:12838`
+- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:12842`
 - [ ] `process_layers` (line 3830) → `g_code.rs`
 - [ ] `process_layers` (line 3973) → `g_code.rs`
 - [x] `placeholder_parser_process` (line 4110) → `g_code.rs:9276`
-- [v] `print_machine_envelope` (line 4132) → `g_code.rs:12852` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [v] `print_machine_envelope` (line 4132) → `g_code.rs:12856` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
 - [x] `get_bed_temperature` (line 4173) → `g_code.rs:8831`
 - [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:8839`
-- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:12915`
-- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:12956`
+- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:12919`
+- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:12960`
 - [ ] `sort_print_object_instances` (line 4284) → `g_code.rs`
 - [ ] `compute_farthest_point` (line 4582) → `g_code.rs`
 - [ ] `generate_timelapse_gcode` (line 4735) → `g_code.rs`
 - [ ] `filament_in_first_layer_phase` (line 4844) → `g_code.rs`
 - [~] `process_layer` (line 4919) → `gcode/cooling.rs, gcode/spiral_vase.rs` — not in the paired file
-- [ ] `apply_print_config` (line 6403) → `g_code.rs`
-- [v] `append_full_config` (line 6410) → `g_code.rs:12728` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `set_extruders` (line 6433) → `g_code.rs:12792`
-- [v] `set_origin` (line 6446) → `g_code.rs:12632` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `preamble` (line 6458) → `g_code.rs:12807`
+- [x] `apply_print_config` (line 6403) → `g_code.rs:14417`
+- [v] `append_full_config` (line 6410) → `g_code.rs:12732` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `set_extruders` (line 6433) → `g_code.rs:12796`
+- [v] `set_origin` (line 6446) → `g_code.rs:12636` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `preamble` (line 6458) → `g_code.rs:12811`
 - [~] `change_layer` (line 6473) → `g_code.rs:5410` — partial
-- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:13002` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:13034` — read against the C++ in R915 (the estimate says partial)
-- [x] `get_path_speed` (line 6615) → `g_code.rs:13051` — read against the C++ in R915 (the estimate says partial)
+- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:13006` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:13038` — read against the C++ in R915 (the estimate says partial)
+- [x] `get_path_speed` (line 6615) → `g_code.rs:13055` — read against the C++ in R915 (the estimate says partial)
 - [~] `extrude_loop` (line 6664) → `g_code.rs:2016` — divergent
 - [ ] `extrude_multi_path` (line 6884) → `g_code.rs`
 - [x] `extrude_entity` (line 6914) → `g_code.rs:3777`
@@ -6032,86 +6032,86 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [~] `extrude_perimeters` (line 6959) → `g_code.rs:4006` — divergent
 - [x] `extrude_infill` (line 6983) → `g_code.rs:4070`
 - [~] `extrude_support` (line 7011) → `g_code.rs:4414` — partial
-- [x] `mapping_speed` (line 7158) → `g_code.rs:11119`
-- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:11129`
-- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:13103`
-- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:11156`
-- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:11402` — partial
-- [x] `set_speed_transition` (line 7403) → `g_code.rs:11452`
-- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:11615`
-- [x] `slowDownByHeight` (line 7513) → `g_code.rs:13178`
-- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:13249` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `mapping_speed` (line 7158) → `g_code.rs:11120`
+- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:11130`
+- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:13107`
+- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:11157`
+- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:11403` — partial
+- [x] `set_speed_transition` (line 7403) → `g_code.rs:11453`
+- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:11616`
+- [x] `slowDownByHeight` (line 7513) → `g_code.rs:13182`
+- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:13253` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [~] `_extrude` (line 7587) → `extruder.rs, gcode/extruder.rs, gcode/wipe_tower.rs` — not in the paired file
-- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:13280` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:13300`
-- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:13305` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:13314` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:13333`
-- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:13363` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:13371`
+- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:13284` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:13304`
+- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:13309` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:13318` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:13337`
+- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:13367` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:13375`
 - [~] `travel_to` (line 8198) → `g_code.rs:4574` — divergent
-- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:13383`
+- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:13387`
 - [x] `to_lift_type` (line 8348) → `g_code.rs:5375`
 - [ ] `needs_retraction` (line 8363) → `g_code.rs`
-- [x] `retract` (line 8498) → `g_code.rs:13389`
-- [ ] `update_layer_related_config` (line 8531) → `g_code.rs`
+- [x] `retract` (line 8498) → `g_code.rs:13393`
+- [x] `update_layer_related_config` (line 8531) → `g_code.rs:14430`
 - [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:9182` — partial
 - [~] `set_extruder` (line 8617) → `g_code.rs:4963` — divergent
-- [ ] `set_object_info` (line 9007) → `g_code.rs`
-- [x] `point_to_gcode` (line 9029) → `g_code.rs:12662`
-- [x] `gcode_to_point` (line 9036) → `g_code.rs:12672`
+- [x] `set_object_info` (line 9007) → `g_code.rs:14459`
+- [x] `point_to_gcode` (line 9029) → `g_code.rs:12666`
+- [x] `gcode_to_point` (line 9036) → `g_code.rs:12676`
 
 **class `GCode::GCodeOutputStream`**
 
-- [x] `is_open` (line 300) → `g_code.rs:12381`
-- [x] `write` (line 311) → `g_code.rs:12420`
-- [x] `is_error` (line 7082) → `g_code.rs:12386`
-- [x] `get_last_error` (line 7087) → `g_code.rs:12391`
-- [x] `flush` (line 7092) → `g_code.rs:12400`
-- [x] `close` (line 7098) → `g_code.rs:12413`
+- [x] `is_open` (line 300) → `g_code.rs:12382`
+- [x] `write` (line 311) → `g_code.rs:12421`
+- [x] `is_error` (line 7082) → `g_code.rs:12387`
+- [x] `get_last_error` (line 7087) → `g_code.rs:12392`
+- [x] `flush` (line 7092) → `g_code.rs:12401`
+- [x] `close` (line 7098) → `g_code.rs:12414`
 - [~] `write` (line 7106) → `log.rs, nozzle_inventory.rs, zipper.rs` — not in the paired file
-- [x] `writeln` (line 7119) → `g_code.rs:12438`
-- [v] `write_format` (line 7125) → `g_code.rs:12451` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `writeln` (line 7119) → `g_code.rs:12439`
+- [v] `write_format` (line 7125) → `g_code.rs:12452` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
 
 **class `GCode::LayerToPrint`**
 
-- [x] `layer` (line 261) → `g_code.rs:12288`
-- [x] `object` (line 272) → `g_code.rs:12302`
-- [x] `print_z` (line 276) → `g_code.rs:12307`
+- [x] `layer` (line 261) → `g_code.rs:12289`
+- [x] `object` (line 272) → `g_code.rs:12303`
+- [x] `print_z` (line 276) → `g_code.rs:12308`
 
 **class `GCode::ObjectByExtruder::Island::Region`**
 
-- [x] `append` (line 9106) → `g_code.rs:13697`
+- [x] `append` (line 9106) → `g_code.rs:13701`
 
 **class `OozePrevention`**
 
-- [x] `pre_toolchange` (line 332) → `g_code.rs:12058`
-- [x] `post_toolchange` (line 362) → `g_code.rs:12092`
-- [x] `_get_temp` (line 369) → `g_code.rs:12103`
+- [x] `pre_toolchange` (line 332) → `g_code.rs:12059`
+- [x] `post_toolchange` (line 362) → `g_code.rs:12093`
+- [x] `_get_temp` (line 369) → `g_code.rs:12104`
 
 **class `Wipe`**
 
-- [x] `has_path` (line 63) → `g_code.rs:12134`
-- [x] `reset_path` (line 64) → `g_code.rs:12139`
-- [x] `wipe` (line 440) → `g_code.rs:12146`
+- [x] `has_path` (line 63) → `g_code.rs:12135`
+- [x] `reset_path` (line 64) → `g_code.rs:12140`
+- [x] `wipe` (line 440) → `g_code.rs:12147`
 
 **class `WipeTowerIntegration`**
 
-- [x] `next_layer` (line 106) → `g_code.rs:13568`
-- [x] `is_first_print` (line 112) → `g_code.rs:13627`
-- [x] `set_is_first_print` (line 113) → `g_code.rs:13632`
-- [x] `enable_timelapse_print` (line 115) → `g_code.rs:13637`
-- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:13642`
-- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:13647`
-- [x] `set_rib_offset` (line 118) → `g_code.rs:13652`
+- [x] `next_layer` (line 106) → `g_code.rs:13572`
+- [x] `is_first_print` (line 112) → `g_code.rs:13631`
+- [x] `set_is_first_print` (line 113) → `g_code.rs:13636`
+- [x] `enable_timelapse_print` (line 115) → `g_code.rs:13641`
+- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:13646`
+- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:13651`
+- [x] `set_rib_offset` (line 118) → `g_code.rs:13656`
 - [x] `generate_path_to_wipe_tower` (line 623) → `g_code.rs:258`
 - [~] `append_tcr` (line 741) → `g_code.rs:632` — divergent
 - [~] `post_process_wipe_tower_moves` (line 1383) → `g_code.rs:503` — divergent
-- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:13615`
-- [x] `prime` (line 1477) → `g_code.rs:13563` — read against the C++ in R915 (the estimate says divergent)
+- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:13619`
+- [x] `prime` (line 1477) → `g_code.rs:13567` — read against the C++ in R915 (the estimate says divergent)
 - [~] `tool_change` (line 1489) → `g_code_writer.rs, gcode/tool_ordering.rs, gcode/wipe_tower.rs` — not in the paired file
-- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:13575`
-- [~] `finalize` (line 1554) → `g_code.rs:13609` — stub
+- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:13579`
+- [~] `finalize` (line 1554) → `g_code.rs:13613` — stub
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp)
 
@@ -6862,22 +6862,22 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 
 **free functions**
 
-- [v] `extrusion_touches_bed` (line 60) → `gcode/tool_ordering.rs:2546` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `get_filament_by_type` (line 75) → `gcode/tool_ordering.rs:2560` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `check_filament_printable_after_group` (line 103) → `gcode/tool_ordering.rs:2574` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [x] `object_max_layer_height` (line 223) → `gcode/tool_ordering.rs:2745` — read against the C++ in R914 (the estimate says partial)
-- [v] `calc_max_layer_height` (line 229) → `gcode/tool_ordering.rs:2754` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `calc_filament_change_info_by_toolorder` (line 244) → `gcode/tool_ordering.rs:2772` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `create_custom_seq_function` (line 1560) → `gcode/tool_ordering.rs:3628` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `build_nozzle_groups` (line 1588) → `gcode/tool_ordering.rs:3662` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [ ] `build_manual_nozzle_map` (line 1617) → `gcode/tool_ordering.rs`
-- [v] `build_default_nozzle_list` (line 1694) → `gcode/tool_ordering.rs:3705` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [ ] `build_filament_group_context` (line 1710) → `gcode/tool_ordering.rs`
-- [v] `prepare_flush_matrices` (line 2176) → `gcode/tool_ordering.rs:3722` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [ ] `refine_groups_by_Nozzle_State` (line 2204) → `gcode/tool_ordering.rs`
-- [ ] `plan_filament_mapping_and_order_by_combo_ranges` (line 2347) → `gcode/tool_ordering.rs`
-- [v] `validate_manual_diameter_or_throw` (line 2470) → `gcode/tool_ordering.rs:3776` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `snap_to_simple_fraction` (line 2875) → `gcode/tool_ordering.rs:3938` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `extrusion_touches_bed` (line 60) → `gcode/tool_ordering.rs:2550` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `get_filament_by_type` (line 75) → `gcode/tool_ordering.rs:2564` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `check_filament_printable_after_group` (line 103) → `gcode/tool_ordering.rs:2578` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [x] `object_max_layer_height` (line 223) → `gcode/tool_ordering.rs:2749` — read against the C++ in R914 (the estimate says partial)
+- [v] `calc_max_layer_height` (line 229) → `gcode/tool_ordering.rs:2758` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `calc_filament_change_info_by_toolorder` (line 244) → `gcode/tool_ordering.rs:2776` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `create_custom_seq_function` (line 1560) → `gcode/tool_ordering.rs:3683` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `build_nozzle_groups` (line 1588) → `gcode/tool_ordering.rs:3717` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [~] `build_manual_nozzle_map` (line 1617) → `gcode/tool_ordering.rs:3762` — partial
+- [v] `build_default_nozzle_list` (line 1694) → `gcode/tool_ordering.rs:3863` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [x] `build_filament_group_context` (line 1710) → `gcode/tool_ordering.rs:3881`
+- [v] `prepare_flush_matrices` (line 2176) → `gcode/tool_ordering.rs:4356` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [x] `refine_groups_by_Nozzle_State` (line 2204) → `gcode/tool_ordering.rs:4409`
+- [x] `plan_filament_mapping_and_order_by_combo_ranges` (line 2347) → `gcode/tool_ordering.rs:4573`
+- [v] `validate_manual_diameter_or_throw` (line 2470) → `gcode/tool_ordering.rs:4722` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `snap_to_simple_fraction` (line 2875) → `gcode/tool_ordering.rs:5252` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 
 **class `FilamentChangeStats`**
 
@@ -6889,59 +6889,59 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [v] `wall_filament` (line 138) → `gcode/tool_ordering.rs:1100` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
 - [v] `sparse_infill_filament` (line 145) → `gcode/tool_ordering.rs:1115` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
 - [v] `solid_infill_filament` (line 152) → `gcode/tool_ordering.rs:1131` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
-- [v] `extruder` (line 160) → `gcode/tool_ordering.rs:2628` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `filament_slot` (line 167) → `gcode/tool_ordering.rs:2639` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
+- [v] `extruder` (line 160) → `gcode/tool_ordering.rs:2632` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `filament_slot` (line 167) → `gcode/tool_ordering.rs:2643` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
 - [x] `has_extruder` (line 175) → `gcode/tool_ordering.rs:1091` — read against the C++ in R914 (the estimate says partial)
-- [v] `filament_slot_by_role` (line 176) → `gcode/tool_ordering.rs:2653` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `resolve_mixed` (line 216) → `gcode/tool_ordering.rs:2709` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `mixed_group_by_slot` (line 260) → `gcode/tool_ordering.rs:2717` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [x] `is_mixed_slot` (line 267) → `gcode/tool_ordering.rs:2727`
+- [v] `filament_slot_by_role` (line 176) → `gcode/tool_ordering.rs:2657` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `resolve_mixed` (line 216) → `gcode/tool_ordering.rs:2713` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `mixed_group_by_slot` (line 260) → `gcode/tool_ordering.rs:2721` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [x] `is_mixed_slot` (line 267) → `gcode/tool_ordering.rs:2731`
 
 **class `ToolOrdering`**
 
-- [v] `handle_dontcare_extruder` (line 294) → `gcode/tool_ordering.rs:2839` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `handle_dontcare_extruder` (line 294) → `gcode/tool_ordering.rs:2843` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [x] `clear` (line 305) → `gcode/tool_ordering.rs:484` — read against the C++ in R914 (the estimate says divergent)
-- [x] `first_extruder` (line 320) → `gcode/tool_ordering.rs:2142`
-- [x] `last_extruder` (line 323) → `gcode/tool_ordering.rs:2147`
+- [x] `first_extruder` (line 320) → `gcode/tool_ordering.rs:2146`
+- [x] `last_extruder` (line 323) → `gcode/tool_ordering.rs:2151`
 - [~] `begin` (line 347) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
 - [~] `end` (line 348) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `empty` (line 349) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [x] `has_wipe_tower` (line 352) → `gcode/tool_ordering.rs:2177` — read against the C++ in R914 (the estimate says divergent)
-- [x] `get_most_used_extruder` (line 358) → `gcode/tool_ordering.rs:2184`
-- [v] `handle_dontcare_extruder` (line 383) → `gcode/tool_ordering.rs:2932` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
-- [x] `set_nozzle_status` (line 420) → `gcode/tool_ordering.rs:3445`
-- [ ] `sort_and_build_data` (line 447) → `gcode/tool_ordering.rs`
-- [ ] `sort_and_build_data` (line 478) → `gcode/tool_ordering.rs`
-- [v] `generate_first_layer_tool_order` (line 642) → `gcode/tool_ordering.rs:5004` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `generate_first_layer_tool_order` (line 730) → `gcode/tool_ordering.rs:5070` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `initialize_layers` (line 814) → `gcode/tool_ordering.rs:1426` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `collect_extruders` (line 830) → `gcode/tool_ordering.rs:5132` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `fill_wipe_tower_partitions` (line 1208) → `gcode/tool_ordering.rs:3050` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `seed_first_tower_layer` (line 1394) → `gcode/tool_ordering.rs:3452` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `collect_extruder_statistics` (line 1402) → `gcode/tool_ordering.rs:1831` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as divergent to the estimate)
-- [v] `calc_most_used_extruder` (line 1436) → `gcode/tool_ordering.rs:3463` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `cal_max_additional_fan` (line 1472) → `gcode/tool_ordering.rs:3498` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `cal_non_support_filaments` (line 1490) → `gcode/tool_ordering.rs:3516` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `has_non_support_filament` (line 1548) → `gcode/tool_ordering.rs:3604` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [ ] `get_recommended_filament_maps` (line 2511) → `gcode/tool_ordering.rs`
-- [x] `get_filament_change_stats` (line 2692) → `gcode/tool_ordering.rs:2129`
-- [ ] `calculate_and_store_statistics` (line 2709) → `gcode/tool_ordering.rs`
-- [x] `collect_layer_and_unprintable_data` (line 2789) → `gcode/tool_ordering.rs:3853`
-- [x] `prepare_ordering_context` (line 2815) → `gcode/tool_ordering.rs:3878` — read against the C++ in R914 (the estimate says partial)
-- [x] `execute_filament_ordering` (line 2844) → `gcode/tool_ordering.rs:3903`
-- [v] `resolve_mixed_filaments` (line 2893) → `gcode/tool_ordering.rs:3962` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `enforce_mixed_component_order` (line 3424) → `gcode/tool_ordering.rs:4551` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [ ] `reorder_extruders_for_minimum_flush_volume` (line 3510) → `gcode/tool_ordering.rs`
-- [v] `mark_skirt_layers` (line 3636) → `gcode/tool_ordering.rs:3266` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `assign_custom_gcodes` (line 3691) → `gcode/tool_ordering.rs:3328` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [v] `first_layer_extruders` (line 3792) → `gcode/tool_ordering.rs:4681` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [x] `has_wipe_tower` (line 352) → `gcode/tool_ordering.rs:2181` — read against the C++ in R914 (the estimate says divergent)
+- [x] `get_most_used_extruder` (line 358) → `gcode/tool_ordering.rs:2188`
+- [v] `handle_dontcare_extruder` (line 383) → `gcode/tool_ordering.rs:2936` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
+- [x] `set_nozzle_status` (line 420) → `gcode/tool_ordering.rs:3499`
+- [x] `sort_and_build_data` (line 447) → `gcode/tool_ordering.rs:6605`
+- [x] `sort_and_build_data` (line 478) → `gcode/tool_ordering.rs:6645`
+- [v] `generate_first_layer_tool_order` (line 642) → `gcode/tool_ordering.rs:6470` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `generate_first_layer_tool_order` (line 730) → `gcode/tool_ordering.rs:6536` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `initialize_layers` (line 814) → `gcode/tool_ordering.rs:1430` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `collect_extruders` (line 830) → `gcode/tool_ordering.rs:6676` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `fill_wipe_tower_partitions` (line 1208) → `gcode/tool_ordering.rs:3104` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `seed_first_tower_layer` (line 1394) → `gcode/tool_ordering.rs:3506` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `collect_extruder_statistics` (line 1402) → `gcode/tool_ordering.rs:1835` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as divergent to the estimate)
+- [v] `calc_most_used_extruder` (line 1436) → `gcode/tool_ordering.rs:3517` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `cal_max_additional_fan` (line 1472) → `gcode/tool_ordering.rs:3552` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `cal_non_support_filaments` (line 1490) → `gcode/tool_ordering.rs:3570` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `has_non_support_filament` (line 1548) → `gcode/tool_ordering.rs:3658` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [x] `get_recommended_filament_maps` (line 2511) → `gcode/tool_ordering.rs:4787`
+- [x] `get_filament_change_stats` (line 2692) → `gcode/tool_ordering.rs:2133`
+- [x] `calculate_and_store_statistics` (line 2709) → `gcode/tool_ordering.rs:5014`
+- [x] `collect_layer_and_unprintable_data` (line 2789) → `gcode/tool_ordering.rs:5167`
+- [x] `prepare_ordering_context` (line 2815) → `gcode/tool_ordering.rs:5192` — read against the C++ in R914 (the estimate says partial)
+- [x] `execute_filament_ordering` (line 2844) → `gcode/tool_ordering.rs:5217`
+- [v] `resolve_mixed_filaments` (line 2893) → `gcode/tool_ordering.rs:5276` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `enforce_mixed_component_order` (line 3424) → `gcode/tool_ordering.rs:5865` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [x] `reorder_extruders_for_minimum_flush_volume` (line 3510) → `gcode/tool_ordering.rs:5963`
+- [v] `mark_skirt_layers` (line 3636) → `gcode/tool_ordering.rs:3320` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `assign_custom_gcodes` (line 3691) → `gcode/tool_ordering.rs:3382` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `first_layer_extruders` (line 3792) → `gcode/tool_ordering.rs:6147` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 
 **class `WipingExtrusions`**
 
 - [x] `is_anything_overridden` (line 34) → `gcode/tool_ordering.rs:381`
-- [v] `is_overriddable_and_mark` (line 53) → `gcode/tool_ordering.rs:4763` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
-- [x] `is_obj_overriddable_and_mark` (line 60) → `gcode/tool_ordering.rs:4776`
-- [v] `is_support_overriddable_and_mark` (line 69) → `gcode/tool_ordering.rs:4788` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
+- [v] `is_overriddable_and_mark` (line 53) → `gcode/tool_ordering.rs:6229` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
+- [x] `is_obj_overriddable_and_mark` (line 60) → `gcode/tool_ordering.rs:6242`
+- [v] `is_support_overriddable_and_mark` (line 69) → `gcode/tool_ordering.rs:6254` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [x] `is_support_overridden` (line 75) → `gcode/tool_ordering.rs:441`
 - [x] `is_support_interface_overridden` (line 79) → `gcode/tool_ordering.rs:446`
 - [ ] `set_layer_tools_ptr` (line 83) → `gcode/tool_ordering.rs`
@@ -6957,8 +6957,8 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [x] `mark_wiping_extrusions` (line 3906) → `gcode/tool_ordering.rs:629`
 - [x] `ensure_perimeters_infills_order` (line 4055) → `gcode/tool_ordering.rs:807`
 - [x] `get_extruder_overrides` (line 4120) → `gcode/tool_ordering.rs:452` — read against the C++ in R914 (the estimate says divergent)
-- [x] `get_support_extruder_overrides` (line 4134) → `gcode/tool_ordering.rs:4802` — read against the C++ in R914 (the estimate says divergent)
-- [x] `get_support_interface_extruder_overrides` (line 4143) → `gcode/tool_ordering.rs:4810` — read against the C++ in R914 (the estimate says divergent)
+- [x] `get_support_extruder_overrides` (line 4134) → `gcode/tool_ordering.rs:6268` — read against the C++ in R914 (the estimate says divergent)
+- [x] `get_support_interface_extruder_overrides` (line 4143) → `gcode/tool_ordering.rs:6276` — read against the C++ in R914 (the estimate says divergent)
 
 ### `GCode/ToolOrderUtils` (.cpp+.hpp)
 
@@ -7384,93 +7384,93 @@ Rust file: `g_code_writer.rs`. Status: **partial**. Not listed: 4 constructors.
 
 **class `GCodeFormatter`**
 
-- [x] `emit_xy` (line 238) → `g_code_writer.rs:2080`
-- [x] `emit_xyz` (line 243) → `g_code_writer.rs:2088`
-- [x] `emit_z` (line 249) → `g_code_writer.rs:2098`
-- [x] `emit_e` (line 253) → `g_code_writer.rs:2104`
-- [x] `emit_f` (line 257) → `g_code_writer.rs:2110`
-- [x] `emit_ij` (line 261) → `g_code_writer.rs:2116`
-- [~] `emit_string` (line 266) → `g_code_writer.rs:2124` — partial
-- [x] `emit_comment` (line 271) → `g_code_writer.rs:2133`
-- [x] `string` (line 278) → `g_code_writer.rs:2149`
-- [x] `emit_axis` (line 1097) → `g_code_writer.rs:1995`
+- [v] `emit_xy` (line 238) → `g_code_writer.rs:2154` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `emit_xyz` (line 243) → `g_code_writer.rs:2162` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `emit_z` (line 249) → `g_code_writer.rs:2172` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `emit_e` (line 253) → `g_code_writer.rs:2178` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `emit_f` (line 257) → `g_code_writer.rs:2184` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `emit_ij` (line 261) → `g_code_writer.rs:2190` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [~] `emit_string` (line 266) → `g_code_writer.rs:2198` — partial
+- [v] `emit_comment` (line 271) → `g_code_writer.rs:2207` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `string` (line 278) → `g_code_writer.rs:2223` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `emit_axis` (line 1097) → `g_code_writer.rs:2069` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
 
 **class `GCodeWriter`**
 
-- [ ] `apply_print_config` (line 21) → `g_code_writer.rs`
-- [~] `filament` (line 43) → `g_code_writer.rs` — another overload of the name is ported
-- [~] `filament` (line 44) → `g_code_writer.rs` — another overload of the name is ported
-- [~] `filament` (line 45) → `g_code_writer.rs` — another overload of the name is ported
-- [x] `filament` (line 46) → `g_code_writer.rs:182`
-- [x] `get_curr_extruder_id` (line 48) → `g_code_writer.rs:201`
-- [x] `extruder_ids` (line 56) → `g_code_writer.rs:253`
-- [~] `set_extruders` (line 69) → `g_code_writer.rs:219` — partial
-- [ ] `update_exclusive_nozzles` (line 88) → `g_code_writer.rs`
-- [x] `get_current_speed` (line 90) → `g_code_writer.rs:891`
-- [~] `preamble` (line 100) → `g_code_writer.rs:267` — divergent
-- [x] `get_position` (line 110) → `g_code_writer.rs:1850`
-- [x] `set_position` (line 111) → `g_code_writer.rs:1854`
-- [x] `set_xy_offset` (line 114) → `g_code_writer.rs:1859`
-- [x] `get_xy_offset` (line 115) → `g_code_writer.rs:1864`
-- [x] `set_object_start_str` (line 125) → `g_code_writer.rs:1754`
-- [x] `empty_object_start_str` (line 126) → `g_code_writer.rs:1758`
-- [x] `set_object_end_str` (line 127) → `g_code_writer.rs:1762`
-- [x] `empty_object_end_str` (line 128) → `g_code_writer.rs:1766`
-- [~] `postamble` (line 128) → `g_code_writer.rs:305` — divergent
-- [x] `set_current_position_clear` (line 134) → `g_code_writer.rs:1869`
-- [x] `is_current_position_clear` (line 135) → `g_code_writer.rs:1873`
-- [x] `set_is_bbl_printer` (line 136) → `g_code_writer.rs:1877`
-- [~] `set_temperature` (line 136) → `g_code_writer.rs:318` — partial
-- [ ] `set_avoid_z_descent_travel` (line 137) → `g_code_writer.rs`
-- [x] `set_bed_temperature` (line 183) → `g_code_writer.rs:402`
-- [x] `set_chamber_temperature` (line 207) → `g_code_writer.rs:440`
-- [x] `set_acceleration` (line 226) → `g_code_writer.rs:471`
-- [~] `set_travel_acceleration` (line 231) → `gcode/g_code_processor.rs, gcode/wipe_tower.rs, gcode/writer.rs` — not in the paired file
-- [x] `set_travel_short_acceleration` (line 236) → `g_code_writer.rs:483`
-- [x] `reset_last_acceleration` (line 241) → `g_code_writer.rs:489`
-- [x] `set_first_layer_travel_acceleration` (line 246) → `g_code_writer.rs:505`
-- [x] `set_first_layer` (line 251) → `g_code_writer.rs:511`
-- [x] `set_extrude_acceleration` (line 256) → `g_code_writer.rs:517`
-- [x] `set_travel_acceleration` (line 261) → `g_code_writer.rs:523`
-- [~] `set_travel_acceleration` (line 266) → `gcode/g_code_processor.rs, gcode/wipe_tower.rs, gcode/writer.rs` — not in the paired file
-- [x] `set_acceleration_impl` (line 288) → `g_code_writer.rs:565`
-- [~] `set_pressure_advance` (line 331) → `g_code_writer.rs:631` — partial
-- [x] `set_jerk_xy` (line 351) → `g_code_writer.rs:684`
-- [x] `reset_e` (line 372) → `g_code_writer.rs:721`
-- [x] `update_progress` (line 397) → `g_code_writer.rs:766`
-- [~] `toolchange_prefix` (line 413) → `g_code_writer.rs:797` — divergent
-- [x] `toolchange` (line 419) → `g_code_writer.rs:830`
-- [x] `set_speed` (line 446) → `g_code_writer.rs:871`
-- [x] `travel_to_xy` (line 459) → `g_code_writer.rs:907`
-- [~] `travel_to_xy` (line 464) → `g_code_writer.rs` — another overload of the name is ported
-- [x] `lazy_lift` (line 484) → `g_code_writer.rs:943`
-- [ ] `spiral_arc_within_bed` (line 515) → `g_code_writer.rs`
-- [x] `eager_lift` (line 539) → `g_code_writer.rs:985`
-- [x] `travel_to_xyz` (line 597) → `g_code_writer.rs:1045`
-- [~] `travel_to_xyz` (line 602) → `gcode/writer.rs` — not in the paired file
-- [x] `travel_to_z` (line 746) → `g_code_writer.rs:1238`
-- [x] `_travel_to_z` (line 765) → `g_code_writer.rs:1268`
-- [x] `_spiral_travel_to_z` (line 783) → `g_code_writer.rs:1310`
-- [x] `will_move_z` (line 803) → `g_code_writer.rs:1359`
-- [x] `extrude_to_xy` (line 820) → `g_code_writer.rs:1380`
-- [x] `extrude_arc_to_xy` (line 843) → `g_code_writer.rs:1418`
-- [x] `extrude_to_xyz` (line 862) → `g_code_writer.rs:1459`
-- [x] `retract` (line 881) → `g_code_writer.rs:1500`
-- [x] `retract_for_toolchange` (line 892) → `g_code_writer.rs:1516`
-- [x] `_retract` (line 903) → `g_code_writer.rs:1532`
-- [x] `unretract` (line 930) → `g_code_writer.rs:1576`
-- [x] `get_extruder_retracted_length` (line 957) → `g_code_writer.rs:1619`
-- [x] `unlift` (line 971) → `g_code_writer.rs:1644`
-- [~] `set_fan` (line 982) → `gcode/wipe_tower.rs` — not in the paired file
-- [x] `set_fan` (line 1016) → `g_code_writer.rs:1708`
-- [x] `set_additional_fan` (line 1023) → `g_code_writer.rs:1714`
-- [x] `set_exhaust_fan` (line 1040) → `g_code_writer.rs:1738`
-- [x] `add_object_start_labels` (line 1050) → `g_code_writer.rs:1771`
-- [x] `add_object_end_labels` (line 1058) → `g_code_writer.rs:1782`
-- [x] `add_object_change_labels` (line 1066) → `g_code_writer.rs:1793`
-- [x] `set_extruder` (line 1072) → `g_code_writer.rs:1801`
-- [~] `init_extruder` (line 1081) → `g_code_writer.rs:1820` — partial
-- [x] `need_toolchange` (line 1092) → `g_code_writer.rs:1841`
+- [v] `apply_print_config` (line 21) → `g_code_writer.rs:275` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `filament` (line 43) → `g_code_writer.rs:1679` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `filament` (line 44) → `g_code_writer.rs:1688` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `filament` (line 45) → `g_code_writer.rs:1696` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `filament` (line 46) → `g_code_writer.rs:249` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `get_curr_extruder_id` (line 48) → `g_code_writer.rs:265` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `extruder_ids` (line 56) → `g_code_writer.rs:434` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_extruders` (line 69) → `g_code_writer.rs:375` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `update_exclusive_nozzles` (line 88) → `g_code_writer.rs:408` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `get_current_speed` (line 90) → `g_code_writer.rs:952` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [~] `preamble` (line 100) → `g_code_writer.rs:448` — divergent
+- [v] `get_position` (line 110) → `g_code_writer.rs:1543` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_position` (line 111) → `g_code_writer.rs:1547` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_xy_offset` (line 114) → `g_code_writer.rs:1552` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `get_xy_offset` (line 115) → `g_code_writer.rs:1557` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_object_start_str` (line 125) → `g_code_writer.rs:1460` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `empty_object_start_str` (line 126) → `g_code_writer.rs:1464` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_object_end_str` (line 127) → `g_code_writer.rs:1468` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `empty_object_end_str` (line 128) → `g_code_writer.rs:1472` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [~] `postamble` (line 128) → `g_code_writer.rs:482` — divergent
+- [v] `set_current_position_clear` (line 134) → `g_code_writer.rs:1562` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `is_current_position_clear` (line 135) → `g_code_writer.rs:1566` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_is_bbl_printer` (line 136) → `g_code_writer.rs:1570` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [~] `set_temperature` (line 136) → `g_code_writer.rs:495` — partial
+- [v] `set_avoid_z_descent_travel` (line 137) → `g_code_writer.rs:1574` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_bed_temperature` (line 183) → `g_code_writer.rs:572` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_chamber_temperature` (line 207) → `g_code_writer.rs:603` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_acceleration` (line 226) → `g_code_writer.rs:628` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_travel_acceleration` (line 231) → `g_code_writer.rs:633` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_travel_short_acceleration` (line 236) → `g_code_writer.rs:638` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `reset_last_acceleration` (line 241) → `g_code_writer.rs:643` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_first_layer_travel_acceleration` (line 246) → `g_code_writer.rs:658` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_first_layer` (line 251) → `g_code_writer.rs:663` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_extrude_acceleration` (line 256) → `g_code_writer.rs:668` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_travel_acceleration` (line 261) → `g_code_writer.rs:1904` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_travel_acceleration` (line 266) → `g_code_writer.rs:1911` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_acceleration_impl` (line 288) → `g_code_writer.rs:673` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [~] `set_pressure_advance` (line 331) → `g_code_writer.rs:741` — partial
+- [v] `set_jerk_xy` (line 351) → `g_code_writer.rs:770` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `reset_e` (line 372) → `g_code_writer.rs:804` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `update_progress` (line 397) → `g_code_writer.rs:842` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [~] `toolchange_prefix` (line 413) → `g_code_writer.rs:866` — divergent
+- [v] `toolchange` (line 419) → `g_code_writer.rs:897` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_speed` (line 446) → `g_code_writer.rs:937` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `travel_to_xy` (line 459) → `g_code_writer.rs:957` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `travel_to_xy` (line 464) → `g_code_writer.rs:1707` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `lazy_lift` (line 484) → `g_code_writer.rs:965` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `spiral_arc_within_bed` (line 515) → `g_code_writer.rs:1003` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `eager_lift` (line 539) → `g_code_writer.rs:1029` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `travel_to_xyz` (line 597) → `g_code_writer.rs:1100` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `travel_to_xyz` (line 602) → `g_code_writer.rs:1731` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `travel_to_z` (line 746) → `g_code_writer.rs:1105` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `_travel_to_z` (line 765) → `g_code_writer.rs:1126` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `_spiral_travel_to_z` (line 783) → `g_code_writer.rs:1150` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `will_move_z` (line 803) → `g_code_writer.rs:1178` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `extrude_to_xy` (line 820) → `g_code_writer.rs:1196` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `extrude_arc_to_xy` (line 843) → `g_code_writer.rs:1224` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `extrude_to_xyz` (line 862) → `g_code_writer.rs:1257` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `retract` (line 881) → `g_code_writer.rs:1281` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `retract_for_toolchange` (line 892) → `g_code_writer.rs:1292` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `_retract` (line 903) → `g_code_writer.rs:1303` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `unretract` (line 930) → `g_code_writer.rs:1340` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `get_extruder_retracted_length` (line 957) → `g_code_writer.rs:1378` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `unlift` (line 971) → `g_code_writer.rs:1399` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_fan` (line 982) → `g_code_writer.rs:1945` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal (the body reads as partial to the estimate)
+- [v] `set_fan` (line 1016) → `g_code_writer.rs:1415` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_additional_fan` (line 1023) → `g_code_writer.rs:1422` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_exhaust_fan` (line 1040) → `g_code_writer.rs:1446` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `add_object_start_labels` (line 1050) → `g_code_writer.rs:1477` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `add_object_end_labels` (line 1058) → `g_code_writer.rs:1485` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `add_object_change_labels` (line 1066) → `g_code_writer.rs:1493` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `set_extruder` (line 1072) → `g_code_writer.rs:1499` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `init_extruder` (line 1081) → `g_code_writer.rs:1516` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
+- [v] `need_toolchange` (line 1092) → `g_code_writer.rs:1535` — R916: tests/g_code_writer_native_parity.rs: writer programs after apply_print_config from varied configurations against the pin's GCodeWriter.cpp and Extruder.cpp: every call's G-code and the writer's state byte-equal
 
 ### `Geometry` (.cpp+.hpp)
 
@@ -8097,8 +8097,8 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [ ] `any_internal_region_slice_contains` (line 210) → `layer.rs`
 - [ ] `any_bottom_region_slice_contains` (line 214) → `layer.rs`
 - [x] `make_fills` (line 223) → `layer.rs:2747`
-- [~] `has_extrusions` (line 239) → `layer.rs` — another overload of the name is ported
-- [ ] `effective_print_height` (line 242) → `layer.rs`
+- [~] `has_extrusions` (line 239) → `print.rs` — not in the paired file
+- [~] `effective_print_height` (line 242) → `print.rs` — not in the paired file
 - [ ] `is_adaptive_merged_out` (line 256) → `layer.rs`
 - [ ] `simplify_wall_extrusion_path` (line 266) → `layer.rs`
 - [ ] `simplify_infill_extrusion_path` (line 267) → `layer.rs`
@@ -8127,9 +8127,9 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **class `SupportLayer`**
 
-- [~] `has_extrusions` (line 366) → `layer.rs` — another overload of the name is ported
-- [ ] `effective_print_height` (line 367) → `layer.rs`
-- [ ] `interface_id` (line 372) → `layer.rs`
+- [~] `has_extrusions` (line 366) → `print.rs` — not in the paired file
+- [~] `effective_print_height` (line 367) → `print.rs` — not in the paired file
+- [~] `interface_id` (line 372) → `print.rs` — not in the paired file
 - [ ] `simplify_support_extrusion_path` (line 374) → `layer.rs`
 
 ### `LayerRegion` (.cpp)
@@ -8187,7 +8187,7 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 - [ ] `remove_nulls` (line 197) → `libslic3r.rs`
 - [~] `sort_remove_duplicates` (line 205) → `filament_group_utils.rs, preset_bundle.rs, print.rs` — not in the paired file
 - [ ] `make_unique` (line 213) → `libslic3r.rs`
-- [~] `lower_bound_by_predicate` (line 220) → `fill/fill_base.rs` — not in the paired file
+- [~] `lower_bound_by_predicate` (line 220) → `fill/fill_base.rs, triangle_mesh_slicer.rs` — not in the paired file
 - [ ] `binary_find` (line 242) → `libslic3r.rs`
 - [ ] `binary_find_by_predicate` (line 254) → `libslic3r.rs`
 - [~] `contains` (line 264) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
@@ -8491,60 +8491,60 @@ Rust file: `mesh_boolean.rs`. Status: **partial**. Not listed: 1 constructors, 2
 
 **free functions**
 
-- [ ] `eigen_to_triangle_mesh` (line 38) → `mesh_boolean.rs`
-- [ ] `triangle_mesh_to_cgal` (line 49) → `mesh_boolean.rs`
-- [ ] `triangle_mesh_to_cgal` (line 53) → `mesh_boolean.rs`
-- [ ] `triangle_mesh_to_eigen` (line 55) → `mesh_boolean.rs`
-- [ ] `minus` (line 68) → `mesh_boolean.rs`
-- [ ] `minus` (line 81) → `mesh_boolean.rs`
-- [ ] `self_union` (line 88) → `mesh_boolean.rs`
-- [ ] `self_union` (line 100) → `mesh_boolean.rs`
-- [ ] `save_CGALMesh` (line 123) → `mesh_boolean.rs`
-- [ ] `triangle_mesh_to_cgal` (line 132) → `mesh_boolean.rs`
-- [ ] `triangle_mesh_to_cgal` (line 162) → `mesh_boolean.rs`
-- [~] `to_vec3f` (line 181) → `open_vdb_utils.rs` — not in the paired file
+- [x] `eigen_to_triangle_mesh` (line 38) → `mesh_boolean.rs:80`
+- [~] `triangle_mesh_to_cgal` (line 49) → `mesh_boolean.rs` — another overload of the name is ported
+- [~] `triangle_mesh_to_cgal` (line 53) → `mesh_boolean.rs` — another overload of the name is ported
+- [~] `triangle_mesh_to_eigen` (line 55) → `mesh_boolean.rs:100` — partial
+- [~] `minus` (line 68) → `mesh_boolean.rs` — another overload of the name is ported
+- [x] `minus` (line 81) → `mesh_boolean.rs:120`
+- [~] `self_union` (line 88) → `mesh_boolean.rs` — another overload of the name is ported
+- [x] `self_union` (line 100) → `mesh_boolean.rs:145`
+- [x] `save_CGALMesh` (line 123) → `mesh_boolean.rs:227`
+- [~] `triangle_mesh_to_cgal` (line 132) → `mesh_boolean.rs` — another overload of the name is ported
+- [~] `triangle_mesh_to_cgal` (line 162) → `mesh_boolean.rs` — another overload of the name is ported
+- [x] `to_vec3f` (line 181) → `mesh_boolean.rs:312`
 - [~] `to_vec3f` (line 186) → `open_vdb_utils.rs` — not in the paired file
-- [ ] `cgal_to_indexed_triangle_set` (line 194) → `mesh_boolean.rs`
-- [ ] `cgal_to_triangle_mesh` (line 227) → `mesh_boolean.rs`
-- [ ] `triangle_mesh_to_cgal` (line 233) → `mesh_boolean.rs`
-- [ ] `cgal_to_triangle_mesh` (line 242) → `mesh_boolean.rs`
-- [ ] `cgal_to_indexed_triangle_set` (line 247) → `mesh_boolean.rs`
-- [ ] `_cgal_diff` (line 256) → `mesh_boolean.rs`
-- [ ] `_cgal_union` (line 262) → `mesh_boolean.rs`
-- [ ] `_cgal_intersection` (line 268) → `mesh_boolean.rs`
-- [ ] `_cgal_do` (line 274) → `mesh_boolean.rs`
-- [ ] `minus` (line 296) → `mesh_boolean.rs`
-- [ ] `plus` (line 297) → `mesh_boolean.rs`
+- [~] `cgal_to_indexed_triangle_set` (line 194) → `mesh_boolean.rs` — another overload of the name is ported
+- [~] `cgal_to_triangle_mesh` (line 227) → `mesh_boolean.rs` — another overload of the name is ported
+- [x] `triangle_mesh_to_cgal` (line 233) → `mesh_boolean.rs:361`
+- [x] `cgal_to_triangle_mesh` (line 242) → `mesh_boolean.rs:378`
+- [x] `cgal_to_indexed_triangle_set` (line 247) → `mesh_boolean.rs:383`
+- [x] `_cgal_diff` (line 256) → `mesh_boolean.rs:400`
+- [x] `_cgal_union` (line 262) → `mesh_boolean.rs:405`
+- [x] `_cgal_intersection` (line 268) → `mesh_boolean.rs:410`
+- [~] `_cgal_do` (line 274) → `mesh_boolean.rs:420` — divergent
+- [~] `minus` (line 296) → `mesh_boolean.rs` — another overload of the name is ported
+- [~] `plus` (line 297) → `mesh_boolean.rs` — another overload of the name is ported
 - [~] `intersect` (line 298) → `clipper2/clipper_h.rs` — not in the paired file
-- [ ] `does_self_intersect` (line 299) → `mesh_boolean.rs`
+- [x] `does_self_intersect` (line 299) → `mesh_boolean.rs:611`
 - [~] `segment` (line 301) → `edge_grid.rs` — not in the paired file
-- [~] `segment` (line 365) → `edge_grid.rs` — not in the paired file
+- [x] `segment` (line 365) → `mesh_boolean.rs:504`
 - [~] `merge` (line 381) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
-- [~] `merge` (line 394) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
-- [ ] `_mesh_boolean_do` (line 406) → `mesh_boolean.rs`
-- [ ] `_mesh_boolean_do` (line 418) → `mesh_boolean.rs`
-- [ ] `minus` (line 430) → `mesh_boolean.rs`
-- [ ] `plus` (line 435) → `mesh_boolean.rs`
+- [~] `merge` (line 394) → `mesh_boolean.rs:537` — partial
+- [~] `_mesh_boolean_do` (line 406) → `mesh_boolean.rs` — another overload of the name is ported
+- [x] `_mesh_boolean_do` (line 418) → `mesh_boolean.rs:568`
+- [~] `minus` (line 430) → `mesh_boolean.rs` — another overload of the name is ported
+- [~] `plus` (line 435) → `mesh_boolean.rs` — another overload of the name is ported
 - [~] `intersect` (line 440) → `clipper2/clipper_h.rs` — not in the paired file
-- [ ] `minus` (line 445) → `mesh_boolean.rs`
-- [ ] `plus` (line 450) → `mesh_boolean.rs`
-- [~] `intersect` (line 455) → `clipper2/clipper_h.rs` — not in the paired file
-- [ ] `does_self_intersect` (line 460) → `mesh_boolean.rs`
-- [ ] `does_bound_a_volume` (line 469) → `mesh_boolean.rs`
-- [~] `empty` (line 474) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `clone` (line 479) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `is_enabled` (line 488) → `gcode/ironing.rs, print_config.rs` — not in the paired file
-- [ ] `make_boolean` (line 498) → `mesh_boolean.rs`
-- [x] `empty` (line 528) → `mesh_boolean.rs:73`
-- [x] `triangle_mesh_to_mcut` (line 529) → `mesh_boolean.rs:88`
+- [x] `minus` (line 445) → `mesh_boolean.rs:581`
+- [x] `plus` (line 450) → `mesh_boolean.rs:586`
+- [x] `intersect` (line 455) → `mesh_boolean.rs:591`
+- [~] `does_self_intersect` (line 460) → `mesh_boolean.rs` — another overload of the name is ported
+- [x] `does_bound_a_volume` (line 469) → `mesh_boolean.rs:618`
+- [x] `empty` (line 474) → `mesh_boolean.rs:624`
+- [x] `clone` (line 479) → `mesh_boolean.rs:629`
+- [x] `is_enabled` (line 488) → `mesh_boolean.rs:644`
+- [~] `make_boolean` (line 498) → `mesh_boolean.rs:650` — divergent
+- [x] `empty` (line 528) → `mesh_boolean.rs:771`
+- [x] `triangle_mesh_to_mcut` (line 529) → `mesh_boolean.rs:777`
 - [~] `triangle_mesh_to_mcut` (line 555) → `mesh_boolean.rs` — another overload of the name is ported
-- [x] `mcut_to_triangle_mesh` (line 563) → `mesh_boolean.rs:159`
-- [x] `merge_mcut_meshes` (line 595) → `mesh_boolean.rs:214`
-- [ ] `mcDebugOutput` (line 604) → `mesh_boolean.rs`
-- [ ] `do_boolean_single` (line 652) → `mesh_boolean.rs`
-- [ ] `do_boolean` (line 853) → `mesh_boolean.rs`
-- [ ] `make_boolean` (line 949) → `mesh_boolean.rs`
-- [ ] `make_boolean` (line 994) → `mesh_boolean.rs`
+- [x] `mcut_to_triangle_mesh` (line 563) → `mesh_boolean.rs:818`
+- [x] `merge_mcut_meshes` (line 595) → `mesh_boolean.rs:855`
+- [x] `mcDebugOutput` (line 604) → `mesh_boolean.rs:866`
+- [x] `do_boolean_single` (line 652) → `mesh_boolean.rs:908`
+- [x] `do_boolean` (line 853) → `mesh_boolean.rs:1112`
+- [x] `make_boolean` (line 949) → `mesh_boolean.rs:1194`
+- [x] `make_boolean` (line 994) → `mesh_boolean.rs:1250`
 
 ### `MeshBooleanOpenMeshCraft` (.cpp)
 
@@ -8556,7 +8556,7 @@ Rust file: none. Status: **not started**.
 - [ ] `BAMBU_OMC_CALLreceive_openmeshcraft_result` (line 53)
 - [ ] `openmeshcraft_to_triangle_mesh` (line 69)
 - [ ] `append_oriented_result` (line 88)
-- [ ] `make_boolean` (line 111)
+- [~] `make_boolean` (line 111) → `mesh_boolean.rs, model.rs` — a function of this name is in another Rust file
 
 **class `OMCInput`**
 
@@ -8670,33 +8670,33 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 **free functions**
 
-- [v] `new_clone` (line 139) → `model.rs:5334` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
-- [~] `make_clone` (line 146) → `model.rs:5341` — divergent
-- [x] `add_textured_mesh_to_model` (line 284) → `model.rs:6881`
-- [x] `auto_extruder_id` (line 920) → `model.rs:6871`
-- [x] `add_cut_volume` (line 1295) → `model.rs:6981`
-- [x] `model_volumes_sort_by_id` (line 1434) → `model.rs:3099`
-- [x] `model_volume_find_by_id` (line 1439) → `model.rs:3104`
-- [x] `invalidate_translations` (line 2434) → `model.rs:6856`
-- [x] `reset_instance_transformation` (line 2447) → `model.rs:6898`
-- [x] `get_real_filament_id` (line 4182) → `model.rs:3613`
-- [v] `getadhesionCoeff` (line 4481) → `model.rs:3576` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `getTemperatureFromExtruder` (line 4498) → `model.rs:3592` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_object_list_equal` (line 4744) → `model.rs:7088` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_object_list_extended` (line 4756) → `model.rs:7101` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `new_clone` (line 139) → `model.rs:5588` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
+- [~] `make_clone` (line 146) → `model.rs:5595` — divergent
+- [x] `add_textured_mesh_to_model` (line 284) → `model.rs:7350`
+- [x] `auto_extruder_id` (line 920) → `model.rs:7340`
+- [x] `add_cut_volume` (line 1295) → `model.rs:7450`
+- [x] `model_volumes_sort_by_id` (line 1434) → `model.rs:3136`
+- [x] `model_volume_find_by_id` (line 1439) → `model.rs:3141`
+- [x] `invalidate_translations` (line 2434) → `model.rs:7325`
+- [x] `reset_instance_transformation` (line 2447) → `model.rs:7367`
+- [x] `get_real_filament_id` (line 4182) → `model.rs:3650`
+- [v] `getadhesionCoeff` (line 4481) → `model.rs:3613` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `getTemperatureFromExtruder` (line 4498) → `model.rs:3629` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_object_list_equal` (line 4744) → `model.rs:7483` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_object_list_extended` (line 4756) → `model.rs:7496` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `model_volume_list_changed` (line 4767) → `model.rs` — another overload of the name is ported
-- [v] `model_volume_list_changed` (line 4804) → `model.rs:7157` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_volume_list_changed` (line 4804) → `model.rs:7552` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `model_volume_list_changed` (line 4809) → `model.rs` — another overload of the name is ported
-- [x] `model_property_changed` (line 4817) → `model.rs:7167`
-- [v] `model_custom_supports_data_changed` (line 4841) → `model.rs:7197` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_custom_fuzzy_skin_data_changed` (line 4848) → `model.rs:7204` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_custom_seam_data_changed` (line 4855) → `model.rs:7211` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_mmu_segmentation_data_changed` (line 4862) → `model.rs:7218` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_brim_points_data_changed` (line 4869) → `model.rs:7225` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_has_multi_part_objects` (line 4880) → `model.rs:7238` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_has_advanced_features` (line 4888) → `model.rs:7248` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `check_model_ids_validity` (line 4907) → `model.rs:7269`
-- [x] `check_model_ids_equal` (line 4931) → `model.rs:7295`
+- [x] `model_property_changed` (line 4817) → `model.rs:7562`
+- [v] `model_custom_supports_data_changed` (line 4841) → `model.rs:7592` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_custom_fuzzy_skin_data_changed` (line 4848) → `model.rs:7599` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_custom_seam_data_changed` (line 4855) → `model.rs:7606` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_mmu_segmentation_data_changed` (line 4862) → `model.rs:7613` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_brim_points_data_changed` (line 4869) → `model.rs:7620` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_has_multi_part_objects` (line 4880) → `model.rs:7633` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_has_advanced_features` (line 4888) → `model.rs:7643` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `check_model_ids_validity` (line 4907) → `model.rs:7664`
+- [x] `check_model_ids_equal` (line 4931) → `model.rs:7690`
 
 **class `CutConnector`**
 
@@ -8709,373 +8709,373 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 **class `FacetsAnnotation`**
 
 - [~] `assign` (line 784) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
-- [x] `assign` (line 785) → `model.rs:895`
-- [x] `empty` (line 800) → `model.rs:689`
-- [x] `reserve` (line 810) → `model.rs:1464`
-- [x] `shrink_to_fit` (line 814) → `model.rs:1469`
+- [x] `assign` (line 785) → `model.rs:919`
+- [x] `empty` (line 800) → `model.rs:713`
+- [x] `reserve` (line 810) → `model.rs:1501`
+- [x] `shrink_to_fit` (line 814) → `model.rs:1506`
 - [~] `serialize` (line 836) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
-- [v] `get_facets` (line 4599) → `model.rs:1568` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `get_facets` (line 4599) → `model.rs:1605` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
 - [~] `get_facets` (line 4608) → `triangle_selector.rs` — not in the paired file
-- [v] `shift_states_above` (line 4615) → `model.rs:1578` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `replace_state` (line 4624) → `model.rs:1589` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `set_enforcer_block_type_limit` (line 4634) → `model.rs:1599` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_facets_strict` (line 4644) → `model.rs:1612` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `has_facets` (line 4652) → `model.rs:1617` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `set` (line 4657) → `model.rs:1390` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `reset` (line 4668) → `model.rs:615` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_triangle_as_string` (line 4678) → `model.rs:1409` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `set_triangle_from_string` (line 4704) → `model.rs:1443` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [x] `equals` (line 4736) → `model.rs:1475` — read against the C++ in R914 (the estimate says partial)
+- [v] `shift_states_above` (line 4615) → `model.rs:1615` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `replace_state` (line 4624) → `model.rs:1626` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `set_enforcer_block_type_limit` (line 4634) → `model.rs:1636` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_facets_strict` (line 4644) → `model.rs:1649` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `has_facets` (line 4652) → `model.rs:1654` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `set` (line 4657) → `model.rs:1414` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `reset` (line 4668) → `model.rs:639` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_triangle_as_string` (line 4678) → `model.rs:1433` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `set_triangle_from_string` (line 4704) → `model.rs:1466` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `equals` (line 4736) → `model.rs:1512` — read against the C++ in R914 (the estimate says partial)
 
 **class `GlobalFeatureFilaments`**
 
-- [x] `from_config` (line 3399) → `model.rs:1682`
-- [x] `from_full_config` (line 3409) → `model.rs:1700`
+- [x] `from_config` (line 3399) → `model.rs:1719`
+- [x] `from_full_config` (line 3409) → `model.rs:1737`
 
 **class `LayerHeightProfile`**
 
 - [~] `assign` (line 208) → `config.rs, extrusion_entity_collection.rs, mutable_polygon.rs` — not in the paired file
-- [x] `assign` (line 209) → `model.rs:1529`
-- [x] `get` (line 211) → `model.rs:685`
-- [x] `empty` (line 212) → `model.rs:906`
-- [x] `set` (line 213) → `model.rs:654`
-- [x] `set` (line 214) → `model.rs:910`
-- [x] `clear` (line 215) → `model.rs:917`
+- [x] `assign` (line 209) → `model.rs:1566`
+- [x] `get` (line 211) → `model.rs:709`
+- [x] `empty` (line 212) → `model.rs:930`
+- [x] `set` (line 213) → `model.rs:678`
+- [x] `set` (line 214) → `model.rs:934`
+- [x] `clear` (line 215) → `model.rs:941`
 - [~] `serialize` (line 217) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `Model`**
 
-- [~] `assign_new_unique_ids_recursive` (line 185) → `model.rs:3986` — partial
-- [x] `update_links_bottom_up_recursive` (line 194) → `model.rs:4018`
-- [x] `clear_assembly_artifacts` (line 207) → `model.rs:4036`
-- [x] `read_from_step` (line 226) → `model.rs:4056`
+- [~] `assign_new_unique_ids_recursive` (line 185) → `model.rs:4023` — partial
+- [x] `update_links_bottom_up_recursive` (line 194) → `model.rs:4055`
+- [x] `clear_assembly_artifacts` (line 207) → `model.rs:4073`
+- [x] `read_from_step` (line 226) → `model.rs:4093`
 - [~] `read_from_file` (line 306) → `g_code.rs` — not in the paired file
-- [x] `read_from_archive` (line 494) → `model.rs:4133`
-- [v] `add_object` (line 581) → `model.rs:4257` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `read_from_archive` (line 494) → `model.rs:4170`
+- [v] `add_object` (line 581) → `model.rs:4294` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `add_object` (line 587) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
 - [~] `add_object` (line 605) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
 - [~] `add_object` (line 623) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
-- [x] `set_assembly_pos` (line 646) → `model.rs:4321`
-- [v] `delete_object` (line 674) → `model.rs:4350` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `set_assembly_pos` (line 646) → `model.rs:4358`
+- [v] `delete_object` (line 674) → `model.rs:4387` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
 - [~] `delete_object` (line 683) → `model.rs` — another overload of the name is ported
 - [~] `delete_object` (line 701) → `model.rs` — another overload of the name is ported
-- [v] `clear_objects` (line 719) → `model.rs:4366` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `collect_reusable_objects` (line 735) → `model.rs:5146` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `set_object_backup_id` (line 751) → `model.rs:4375`
+- [v] `clear_objects` (line 719) → `model.rs:4403` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `collect_reusable_objects` (line 735) → `model.rs:5400` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `set_object_backup_id` (line 751) → `model.rs:4412`
 - [~] `get_object_backup_id` (line 757) → `model.rs` — another overload of the name is ported
-- [x] `get_object_backup_id` (line 766) → `model.rs:4383`
-- [v] `delete_material` (line 771) → `model.rs:4393` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `clear_materials` (line 780) → `model.rs:4398` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `add_material` (line 787) → `model.rs:4403` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `get_object_backup_id` (line 766) → `model.rs:4420`
+- [v] `delete_material` (line 771) → `model.rs:4430` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `clear_materials` (line 780) → `model.rs:4435` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `add_material` (line 787) → `model.rs:4440` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `add_material` (line 796) → `model.rs` — another overload of the name is ported
-- [v] `add_default_instances` (line 810) → `model.rs:4430` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `bounding_box` (line 820) → `model.rs:4441` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `bounding_box_in_assembly_view` (line 828) → `model.rs:4451`
-- [v] `update_print_volume_state` (line 840) → `model.rs:5195` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `center_instances_around_point` (line 852) → `model.rs:4463` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `mesh` (line 874) → `model.rs:4497` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `duplicate_objects_grid` (line 882) → `model.rs:4506` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `looks_like_multipart_object` (line 900) → `model.rs:4529` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_multipart_object` (line 928) → `model.rs:4551` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `looks_like_imperial_units` (line 981) → `model.rs:4612` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_from_imperial_units` (line 1006) → `model.rs:4642` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `looks_like_saved_in_meters` (line 1028) → `model.rs:4664` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_from_meters` (line 1040) → `model.rs:4679` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `removed_objects_with_zero_volume` (line 1063) → `model.rs:4702` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `adjust_min_z` (line 1077) → `model.rs:4721` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `propose_export_file_name_and_path` (line 1098) → `model.rs:4737` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `get_auxiliary_file_temp_path` (line 1117) → `model.rs:4756`
+- [v] `add_default_instances` (line 810) → `model.rs:4467` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `bounding_box` (line 820) → `model.rs:4478` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `bounding_box_in_assembly_view` (line 828) → `model.rs:4488`
+- [v] `update_print_volume_state` (line 840) → `model.rs:5449` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `center_instances_around_point` (line 852) → `model.rs:4500` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `mesh` (line 874) → `model.rs:4534` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `duplicate_objects_grid` (line 882) → `model.rs:4543` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `looks_like_multipart_object` (line 900) → `model.rs:4566` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_multipart_object` (line 928) → `model.rs:4588` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `looks_like_imperial_units` (line 981) → `model.rs:4649` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_from_imperial_units` (line 1006) → `model.rs:4679` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `looks_like_saved_in_meters` (line 1028) → `model.rs:4701` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_from_meters` (line 1040) → `model.rs:4716` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `removed_objects_with_zero_volume` (line 1063) → `model.rs:4739` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `adjust_min_z` (line 1077) → `model.rs:4758` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `propose_export_file_name_and_path` (line 1098) → `model.rs:4774` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `get_auxiliary_file_temp_path` (line 1117) → `model.rs:4793`
 - [~] `get_backup_path` (line 1123) → `model.rs` — another overload of the name is ported
-- [x] `remove_backup_path_if_exist` (line 1191) → `model.rs:4800`
-- [~] `get_backup_path` (line 1204) → `model.rs:4765` — partial
-- [~] `set_backup_path` (line 1218) → `model.rs:4824` — divergent
-- [x] `load_from` (line 1234) → `model.rs:5162`
-- [x] `set_need_backup` (line 1269) → `model.rs:4836`
+- [x] `remove_backup_path_if_exist` (line 1191) → `model.rs:4837`
+- [~] `get_backup_path` (line 1204) → `model.rs:4802` — partial
+- [~] `set_backup_path` (line 1218) → `model.rs:4861` — divergent
+- [x] `load_from` (line 1234) → `model.rs:5416`
+- [x] `set_need_backup` (line 1269) → `model.rs:4873`
 - [~] `propose_export_file_name_and_path` (line 1274) → `model.rs` — another overload of the name is ported
-- [v] `is_fdm_support_painted` (line 1279) → `model.rs:4854` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `is_seam_painted` (line 1284) → `model.rs:4859` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `is_mm_painted` (line 1289) → `model.rs:4864` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [x] `SetDesigner` (line 1745) → `model.rs:4869`
-- [x] `set_assembly_tree_data` (line 1756) → `model.rs:4882`
-- [x] `set_assembly_tree_json_str` (line 1760) → `model.rs:4914`
-- [x] `set_assembly_steps_tree_data` (line 1765) → `model.rs:4890`
-- [x] `set_assembly_steps_json_str` (line 1769) → `model.rs:4918`
-- [x] `set_assembly_model_json_str` (line 1776) → `model.rs:4922`
-- [x] `note_loaded_assembly_steps_meta` (line 1779) → `model.rs:4894`
-- [x] `get_curr_plate_custom_gcodes` (line 1792) → `model.rs:4927`
-- [x] `getBedPolygon` (line 1841) → `model.rs:576`
-- [x] `get_material` (line 1870) → `model.rs:4425` — read against the C++ in R914 (the estimate says partial)
-- [v] `translate` (line 1886) → `model.rs:4490` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `print_info` (line 1903) → `model.rs:4935`
-- [x] `is_need_backup` (line 1917) → `model.rs:4841`
+- [v] `is_fdm_support_painted` (line 1279) → `model.rs:4891` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `is_seam_painted` (line 1284) → `model.rs:4896` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `is_mm_painted` (line 1289) → `model.rs:4901` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `SetDesigner` (line 1745) → `model.rs:4906`
+- [x] `set_assembly_tree_data` (line 1756) → `model.rs:4919`
+- [x] `set_assembly_tree_json_str` (line 1760) → `model.rs:4951`
+- [x] `set_assembly_steps_tree_data` (line 1765) → `model.rs:4927`
+- [x] `set_assembly_steps_json_str` (line 1769) → `model.rs:4955`
+- [x] `set_assembly_model_json_str` (line 1776) → `model.rs:4959`
+- [x] `note_loaded_assembly_steps_meta` (line 1779) → `model.rs:4931`
+- [x] `get_curr_plate_custom_gcodes` (line 1792) → `model.rs:4964`
+- [x] `getBedPolygon` (line 1841) → `model.rs:600`
+- [x] `get_material` (line 1870) → `model.rs:4462` — read against the C++ in R914 (the estimate says partial)
+- [v] `translate` (line 1886) → `model.rs:4527` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `print_info` (line 1903) → `model.rs:4972`
+- [x] `is_need_backup` (line 1917) → `model.rs:4878`
 - [~] `load` (line 1940) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 1944) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [x] `setPrintSpeedTable` (line 4091) → `model.rs:5037`
-- [v] `setExtruderParams` (line 4151) → `model.rs:5109` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [ ] `obj_import_color_deal` (line 4191) → `model.rs`
-- [ ] `obj_import_vertex_color_deal` (line 4224) → `model.rs`
-- [ ] `obj_import_face_color_deal` (line 4340) → `model.rs`
-- [v] `findMaxSpeed` (line 4368) → `model.rs:4943` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `getThermalLength` (line 4405) → `model.rs:5003` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `setPrintSpeedTable` (line 4091) → `model.rs:5291`
+- [v] `setExtruderParams` (line 4151) → `model.rs:5363` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `obj_import_color_deal` (line 4191) → `model.rs:4983`
+- [x] `obj_import_vertex_color_deal` (line 4224) → `model.rs:5023`
+- [x] `obj_import_face_color_deal` (line 4340) → `model.rs:5157`
+- [v] `findMaxSpeed` (line 4368) → `model.rs:5197` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `getThermalLength` (line 4405) → `model.rs:5257` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `getThermalLength` (line 4426) → `model.rs` — another overload of the name is ported
 
 **class `ModelConfigObject`**
 
-- [x] `timestamp` (line 93) → `model.rs:1518`
-- [x] `object_id_and_timestamp_match` (line 94) → `model.rs:787`
+- [x] `timestamp` (line 93) → `model.rs:1555`
+- [x] `object_id_and_timestamp_match` (line 94) → `model.rs:811`
 - [~] `serialize` (line 100) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ModelInfo`**
 
-- [x] `load` (line 1688) → `model.rs:3753`
+- [x] `load` (line 1688) → `model.rs:3790`
 
 **class `ModelInstance`**
 
-- [v] `get_labeled_id` (line 1474) → `model.rs:3245` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `get_object` (line 1482) → `model.rs:3234`
-- [x] `set_assemble_rotation` (line 1493) → `model.rs:3303`
-- [x] `rotate_assemble` (line 1494) → `model.rs:3310`
-- [x] `set_offset_to_assembly` (line 1499) → `model.rs:3319`
-- [x] `get_offset` (line 1503) → `model.rs:3327`
-- [x] `set_offset` (line 1505) → `model.rs:3335`
+- [v] `get_labeled_id` (line 1474) → `model.rs:3282` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `get_object` (line 1482) → `model.rs:3271`
+- [x] `set_assemble_rotation` (line 1493) → `model.rs:3340`
+- [x] `rotate_assemble` (line 1494) → `model.rs:3347`
+- [x] `set_offset_to_assembly` (line 1499) → `model.rs:3356`
+- [x] `get_offset` (line 1503) → `model.rs:3364`
+- [x] `set_offset` (line 1505) → `model.rs:3372`
 - [~] `set_offset` (line 1506) → `geometry/geometry.rs` — not in the paired file
-- [x] `get_rotation` (line 1509) → `model.rs:3343`
-- [x] `set_rotation` (line 1511) → `model.rs:3351`
-- [x] `get_scaling_factor` (line 1517) → `model.rs:3362`
-- [x] `get_mirror` (line 1523) → `model.rs:3383`
-- [x] `is_left_handed` (line 1524) → `model.rs:3391`
-- [x] `set_mirror` (line 1526) → `model.rs:3395`
+- [x] `get_rotation` (line 1509) → `model.rs:3380`
+- [x] `set_rotation` (line 1511) → `model.rs:3388`
+- [x] `get_scaling_factor` (line 1517) → `model.rs:3399`
+- [x] `get_mirror` (line 1523) → `model.rs:3420`
+- [x] `is_left_handed` (line 1524) → `model.rs:3428`
+- [x] `set_mirror` (line 1526) → `model.rs:3432`
 - [~] `set_mirror` (line 1527) → `geometry/geometry.rs` — not in the paired file
-- [v] `is_printable` (line 1545) → `model.rs:3492` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `is_assemble_initialized` (line 1546) → `model.rs:3497`
-- [x] `set_model_object` (line 1569) → `model.rs:3240`
+- [v] `is_printable` (line 1545) → `model.rs:3529` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `is_assemble_initialized` (line 1546) → `model.rs:3534`
+- [x] `set_model_object` (line 1569) → `model.rs:3277`
 - [~] `serialize` (line 1597) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
-- [v] `set_transformation` (line 3972) → `model.rs:3259` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `set_assemble_transformation` (line 3988) → `model.rs:2688`
-- [x] `set_assemble_from_transform` (line 3994) → `model.rs:2694`
-- [x] `set_assemble_offset` (line 4000) → `model.rs:2700`
-- [x] `set_scaling_factor` (line 4006) → `model.rs:3371`
+- [v] `set_transformation` (line 3972) → `model.rs:3296` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `set_assemble_transformation` (line 3988) → `model.rs:2725`
+- [x] `set_assemble_from_transform` (line 3994) → `model.rs:2731`
+- [x] `set_assemble_offset` (line 4000) → `model.rs:2737`
+- [x] `set_scaling_factor` (line 4006) → `model.rs:3408`
 - [~] `set_scaling_factor` (line 4012) → `geometry/geometry.rs` — not in the paired file
-- [v] `transform_mesh` (line 4018) → `model.rs:3404` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `rotate` (line 4023) → `model.rs:3356`
-- [x] `transform_mesh_bounding_box` (line 4029) → `model.rs:3409`
-- [v] `transform_bounding_box` (line 4056) → `model.rs:3439` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `transform_bounding_box_in_assembly_view` (line 4061) → `model.rs:3444`
+- [v] `transform_mesh` (line 4018) → `model.rs:3441` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `rotate` (line 4023) → `model.rs:3393`
+- [x] `transform_mesh_bounding_box` (line 4029) → `model.rs:3446`
+- [v] `transform_bounding_box` (line 4056) → `model.rs:3476` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `transform_bounding_box_in_assembly_view` (line 4061) → `model.rs:3481`
 - [~] `transform_bounding_box_in_assembly_view` (line 4065) → `model.rs` — another overload of the name is ported
-- [v] `transform_vector` (line 4071) → `model.rs:3456` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `transform_polygon` (line 4076) → `model.rs:3461` — read against the C++ in R914 (the estimate says divergent)
+- [v] `transform_vector` (line 4071) → `model.rs:3493` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `transform_polygon` (line 4076) → `model.rs:3498` — read against the C++ in R914 (the estimate says divergent)
 - [~] `get_auto_brim_width` (line 4439) → `model.rs` — another overload of the name is ported
-- [x] `convex_hull_2d` (line 4458) → `model.rs:3545`
-- [x] `invalidate_convex_hull_2d` (line 4475) → `model.rs:3552`
-- [v] `get_auto_brim_width` (line 4521) → `model.rs:3556` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
-- [x] `get_arrange_polygon` (line 4530) → `model.rs:3625`
-- [x] `apply_arrange_result` (line 4590) → `model.rs:3562` — read against the C++ in R914 (the estimate says partial)
+- [x] `convex_hull_2d` (line 4458) → `model.rs:3582`
+- [x] `invalidate_convex_hull_2d` (line 4475) → `model.rs:3589`
+- [v] `get_auto_brim_width` (line 4521) → `model.rs:3593` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
+- [x] `get_arrange_polygon` (line 4530) → `model.rs:3662`
+- [x] `apply_arrange_result` (line 4590) → `model.rs:3599` — read against the C++ in R914 (the estimate says partial)
 
 **class `ModelMaterial`**
 
 - [~] `get_model` (line 170) → `model.rs` — another overload of the name is ported
-- [x] `apply` (line 171) → `model.rs:834`
-- [x] `set_model` (line 184) → `model.rs:830`
-- [x] `set_new_unique_id` (line 185) → `model.rs:840`
+- [x] `apply` (line 171) → `model.rs:858`
+- [x] `set_model` (line 184) → `model.rs:854`
+- [x] `set_new_unique_id` (line 185) → `model.rs:864`
 - [~] `serialize` (line 192) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ModelObject`**
 
-- [x] `const_volumes` (line 397) → `model.rs:5411` — read against the C++ in R914 (the estimate says partial)
-- [x] `get_model` (line 398) → `model.rs:825`
-- [x] `get_model` (line 399) → `model.rs:5380`
-- [x] `get_config_value` (line 402) → `model.rs:6731`
-- [v] `is_multiparts` (line 417) → `model.rs:5525` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `has_custom_layering` (line 428) → `model.rs:5530` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `invalidate_bounding_box` (line 443) → `model.rs:5610`
-- [v] `translate` (line 478) → `model.rs:1034` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `scale` (line 481) → `model.rs:1008`
+- [x] `const_volumes` (line 397) → `model.rs:5693` — read against the C++ in R914 (the estimate says partial)
+- [x] `get_model` (line 398) → `model.rs:849`
+- [x] `get_model` (line 399) → `model.rs:5634`
+- [x] `get_config_value` (line 402) → `model.rs:7200`
+- [v] `is_multiparts` (line 417) → `model.rs:5807` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `has_custom_layering` (line 428) → `model.rs:5812` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `invalidate_bounding_box` (line 443) → `model.rs:5892`
+- [v] `translate` (line 478) → `model.rs:1058` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `scale` (line 481) → `model.rs:1032`
 - [~] `scale` (line 482) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
-- [v] `is_cut` (line 499) → `model.rs:6032` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `set_new_unique_id` (line 650) → `model.rs:5353`
-- [x] `set_model` (line 673) → `model.rs:5386`
+- [v] `is_cut` (line 499) → `model.rs:6314` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `set_new_unique_id` (line 650) → `model.rs:5607`
+- [x] `set_model` (line 673) → `model.rs:5640`
 - [~] `save` (line 686) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `load` (line 695) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [v] `assign_new_unique_ids_recursive` (line 1407) → `model.rs:5391` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `get_backup_id` (line 1426) → `model.rs:5403`
-- [ ] `make_boolean` (line 1429) → `model.rs`
+- [v] `assign_new_unique_ids_recursive` (line 1407) → `model.rs:5645` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `get_backup_id` (line 1426) → `model.rs:5657`
+- [x] `make_boolean` (line 1429) → `model.rs:5669`
 - [~] `add_volume` (line 1450) → `format/assembly_steps_json.rs` — not in the paired file
 - [~] `add_volume` (line 1463) → `format/assembly_steps_json.rs` — not in the paired file
 - [~] `add_volume` (line 1476) → `format/assembly_steps_json.rs` — not in the paired file
-- [v] `add_volume` (line 1493) → `model.rs:5444` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `add_volume_with_shared_mesh` (line 1504) → `model.rs:5454`
-- [v] `delete_volume` (line 1518) → `model.rs:5467` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `clear_volumes` (line 1557) → `model.rs:5499` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `is_fdm_support_painted` (line 1567) → `model.rs:5505` — read against the C++ in R914 (the estimate says partial)
-- [x] `is_seam_painted` (line 1572) → `model.rs:5510` — read against the C++ in R914 (the estimate says partial)
-- [v] `is_mm_painted` (line 1577) → `model.rs:5515` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [~] `is_fuzzy_skin_painted` (line 1582) → `model.rs:5520` — partial
-- [v] `sort_volumes` (line 1587) → `model.rs:5536` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `add_instance` (line 1603) → `model.rs:5546` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `add_volume` (line 1493) → `model.rs:5726` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `add_volume_with_shared_mesh` (line 1504) → `model.rs:5736`
+- [v] `delete_volume` (line 1518) → `model.rs:5749` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `clear_volumes` (line 1557) → `model.rs:5781` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `is_fdm_support_painted` (line 1567) → `model.rs:5787` — read against the C++ in R914 (the estimate says partial)
+- [x] `is_seam_painted` (line 1572) → `model.rs:5792` — read against the C++ in R914 (the estimate says partial)
+- [v] `is_mm_painted` (line 1577) → `model.rs:5797` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [~] `is_fuzzy_skin_painted` (line 1582) → `model.rs:5802` — partial
+- [v] `sort_volumes` (line 1587) → `model.rs:5818` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `add_instance` (line 1603) → `model.rs:5828` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `add_instance` (line 1614) → `format/assembly_steps_json.rs` — not in the paired file
 - [~] `add_instance` (line 1622) → `format/assembly_steps_json.rs` — not in the paired file
-- [v] `delete_instance` (line 1632) → `model.rs:5583` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `delete_last_instance` (line 1640) → `model.rs:5589` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `clear_instances` (line 1645) → `model.rs:5594` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `mesh` (line 1677) → `model.rs:5648` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `raw_mesh` (line 1692) → `model.rs:5660` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `raw_indexed_triangle_set` (line 1708) → `model.rs:5673` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `full_raw_mesh_bounding_box` (line 1750) → `model.rs:5728` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `instance_bounding_box` (line 1777) → `model.rs:5759` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
+- [v] `delete_instance` (line 1632) → `model.rs:5865` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `delete_last_instance` (line 1640) → `model.rs:5871` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `clear_instances` (line 1645) → `model.rs:5876` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `mesh` (line 1677) → `model.rs:5930` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `raw_mesh` (line 1692) → `model.rs:5942` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `raw_indexed_triangle_set` (line 1708) → `model.rs:5955` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `full_raw_mesh_bounding_box` (line 1750) → `model.rs:6010` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `instance_bounding_box` (line 1777) → `model.rs:6041` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
 - [~] `instance_bounding_box` (line 1789) → `model.rs` — another overload of the name is ported
-- [v] `instance_convex_hull_bounding_box` (line 1800) → `model.rs:5776` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `instance_convex_hull_bounding_box` (line 1800) → `model.rs:6058` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `instance_convex_hull_bounding_box` (line 1805) → `model.rs` — another overload of the name is ported
-- [x] `convex_hull_2d` (line 1820) → `model.rs:5794` — read against the C++ in R914 (the estimate says partial)
-- [v] `center_around_origin` (line 1870) → `model.rs:5806` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `ensure_on_bed` (line 1883) → `model.rs:5819` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `translate_instances` (line 1907) → `model.rs:5845` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `translate_instance` (line 1914) → `model.rs:5852` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `translate` (line 1922) → `model.rs:5866` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `scale` (line 1932) → `model.rs:5879`
+- [x] `convex_hull_2d` (line 1820) → `model.rs:6076` — read against the C++ in R914 (the estimate says partial)
+- [v] `center_around_origin` (line 1870) → `model.rs:6088` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `ensure_on_bed` (line 1883) → `model.rs:6101` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `translate_instances` (line 1907) → `model.rs:6127` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `translate_instance` (line 1914) → `model.rs:6134` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `translate` (line 1922) → `model.rs:6148` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `scale` (line 1932) → `model.rs:6161`
 - [~] `rotate` (line 1940) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
-- [x] `rotate` (line 1949) → `model.rs:5904`
-- [x] `mirror` (line 1964) → `model.rs:5919`
-- [v] `scale_mesh_after_creation` (line 1973) → `model.rs:5927` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_units` (line 1982) → `model.rs:5940` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `materials_count` (line 2049) → `model.rs:6004` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `facets_count` (line 2057) → `model.rs:6010` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `parts_count` (line 2066) → `model.rs:6021` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `has_connectors` (line 2075) → `model.rs:6037` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_connector_mesh` (line 2084) → `model.rs:6048` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `apply_cut_connectors` (line 2126) → `model.rs:6077` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `invalidate_cut` (line 2156) → `model.rs:6120` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `delete_connectors` (line 2163) → `model.rs:6128` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `synchronize_model_after_cut` (line 2171) → `model.rs:6140`
-- [v] `apply_cut_attributes` (line 2180) → `model.rs:6153` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `clone_for_cut` (line 2204) → `model.rs:6184` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [x] `calculate_cut_plane_inverse_matrix` (line 2238) → `model.rs:6193`
-- [ ] `process_connector_cut` (line 2268) → `model.rs`
-- [x] `process_modifier_cut` (line 2345) → `model.rs:6237`
-- [ ] `process_volume_cut` (line 2373) → `model.rs`
-- [ ] `process_solid_part_cut` (line 2401) → `model.rs`
+- [x] `rotate` (line 1949) → `model.rs:6186`
+- [x] `mirror` (line 1964) → `model.rs:6201`
+- [v] `scale_mesh_after_creation` (line 1973) → `model.rs:6209` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_units` (line 1982) → `model.rs:6222` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `materials_count` (line 2049) → `model.rs:6286` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `facets_count` (line 2057) → `model.rs:6292` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `parts_count` (line 2066) → `model.rs:6303` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `has_connectors` (line 2075) → `model.rs:6319` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_connector_mesh` (line 2084) → `model.rs:6330` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `apply_cut_connectors` (line 2126) → `model.rs:6359` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `invalidate_cut` (line 2156) → `model.rs:6402` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `delete_connectors` (line 2163) → `model.rs:6410` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `synchronize_model_after_cut` (line 2171) → `model.rs:6422`
+- [v] `apply_cut_attributes` (line 2180) → `model.rs:6435` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `clone_for_cut` (line 2204) → `model.rs:6466` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `calculate_cut_plane_inverse_matrix` (line 2238) → `model.rs:6475`
+- [x] `process_connector_cut` (line 2268) → `model.rs:6561`
+- [x] `process_modifier_cut` (line 2345) → `model.rs:6519`
+- [x] `process_volume_cut` (line 2373) → `model.rs:6664`
+- [x] `process_solid_part_cut` (line 2401) → `model.rs:6699`
 - [~] `cut` (line 2509) → `cut_utils.rs` — not in the paired file
-- [~] `segment` (line 2616) → `edge_grid.rs` — not in the paired file
-- [v] `split` (line 2720) → `model.rs:6279` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `merge` (line 2840) → `model.rs:6406` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `merge_volumes` (line 2860) → `model.rs:6427`
-- [x] `bake_xy_rotation_into_meshes` (line 2943) → `model.rs:6520`
-- [v] `get_min_z` (line 2995) → `model.rs:6574` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_max_z` (line 3008) → `model.rs:6587` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_instance_min_z` (line 3021) → `model.rs:6600` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_instance_max_z` (line 3057) → `model.rs:6632` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `update_instances_print_volume_state` (line 3078) → `model.rs:6658` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [x] `print_info` (line 3148) → `model.rs:6741`
-- [v] `get_export_filename` (line 3193) → `model.rs:6789` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_object_stl_stats` (line 3213) → `model.rs:6812` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_repaired_errors_count` (line 3241) → `model.rs:6840` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `scale_to_fit` (line 3842) → `model.rs:5888`
+- [~] `segment` (line 2616) → `edge_grid.rs, mesh_boolean.rs` — not in the paired file
+- [v] `split` (line 2720) → `model.rs:6748` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `merge` (line 2840) → `model.rs:6875` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `merge_volumes` (line 2860) → `model.rs:6896`
+- [x] `bake_xy_rotation_into_meshes` (line 2943) → `model.rs:6989`
+- [v] `get_min_z` (line 2995) → `model.rs:7043` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_max_z` (line 3008) → `model.rs:7056` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_instance_min_z` (line 3021) → `model.rs:7069` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_instance_max_z` (line 3057) → `model.rs:7101` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `update_instances_print_volume_state` (line 3078) → `model.rs:7127` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `print_info` (line 3148) → `model.rs:7210`
+- [v] `get_export_filename` (line 3193) → `model.rs:7258` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_object_stl_stats` (line 3213) → `model.rs:7281` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_repaired_errors_count` (line 3241) → `model.rs:7309` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `scale_to_fit` (line 3842) → `model.rs:6170`
 
 **class `ModelVolume`**
 
-- [x] `is_from_upper` (line 981) → `model.rs:2048`
-- [x] `reset_from_upper` (line 982) → `model.rs:2052`
-- [v] `is_cut_connector` (line 984) → `model.rs:2056` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `invalidate_cut_info` (line 985) → `model.rs:2060`
-- [x] `mesh_ptr` (line 989) → `model.rs:2069`
+- [x] `is_from_upper` (line 981) → `model.rs:2085`
+- [x] `reset_from_upper` (line 982) → `model.rs:2089`
+- [v] `is_cut_connector` (line 984) → `model.rs:2093` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `invalidate_cut_info` (line 985) → `model.rs:2097`
+- [x] `mesh_ptr` (line 989) → `model.rs:2106`
 - [~] `set_mesh` (line 990) → `print_object.rs, texture_painting.rs` — not in the paired file
 - [~] `set_mesh` (line 991) → `print_object.rs, texture_painting.rs` — not in the paired file
 - [~] `set_mesh` (line 992) → `print_object.rs, texture_painting.rs` — not in the paired file
 - [~] `set_mesh` (line 993) → `print_object.rs, texture_painting.rs` — not in the paired file
 - [~] `set_mesh` (line 994) → `print_object.rs, texture_painting.rs` — not in the paired file
-- [x] `set_mesh` (line 995) → `model.rs:2073`
-- [x] `reset_mesh` (line 996) → `model.rs:2081`
-- [x] `get_object` (line 1025) → `model.rs:2037`
-- [x] `type` (line 1026) → `model.rs:2090`
-- [v] `set_type` (line 1027) → `model.rs:2094` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `is_model_part` (line 1028) → `model.rs:2098`
-- [x] `is_negative_volume` (line 1029) → `model.rs:2102`
-- [x] `is_modifier` (line 1030) → `model.rs:2106`
-- [x] `is_support_enforcer` (line 1031) → `model.rs:2110`
-- [x] `is_support_blocker` (line 1032) → `model.rs:2114`
-- [x] `is_support_modifier` (line 1033) → `model.rs:2118`
-- [x] `is_svg` (line 1034) → `model.rs:2122`
-- [v] `material_id` (line 1036) → `model.rs:2126` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `set_mesh` (line 995) → `model.rs:2110`
+- [x] `reset_mesh` (line 996) → `model.rs:2118`
+- [x] `get_object` (line 1025) → `model.rs:2074`
+- [x] `type` (line 1026) → `model.rs:2127`
+- [v] `set_type` (line 1027) → `model.rs:2131` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `is_model_part` (line 1028) → `model.rs:2135`
+- [x] `is_negative_volume` (line 1029) → `model.rs:2139`
+- [x] `is_modifier` (line 1030) → `model.rs:2143`
+- [x] `is_support_enforcer` (line 1031) → `model.rs:2147`
+- [x] `is_support_blocker` (line 1032) → `model.rs:2151`
+- [x] `is_support_modifier` (line 1033) → `model.rs:2155`
+- [x] `is_svg` (line 1034) → `model.rs:2159`
+- [v] `material_id` (line 1036) → `model.rs:2163` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `translate` (line 1085) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `scale` (line 1088) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
 - [~] `scale` (line 1089) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
 - [~] `scale_geometry_after_creation` (line 1096) → `model.rs` — another overload of the name is ported
-- [x] `set_convex_hull_shared_ptr` (line 1107) → `model.rs:2655`
-- [x] `invalidate_convex_hull_2d` (line 1110) → `model.rs:2650`
-- [x] `is_assemble_initialized` (line 1131) → `model.rs:2706`
-- [x] `get_offset` (line 1134) → `model.rs:3009`
-- [x] `set_offset` (line 1136) → `model.rs:3017`
+- [x] `set_convex_hull_shared_ptr` (line 1107) → `model.rs:2692`
+- [x] `invalidate_convex_hull_2d` (line 1110) → `model.rs:2687`
+- [x] `is_assemble_initialized` (line 1131) → `model.rs:2743`
+- [x] `get_offset` (line 1134) → `model.rs:3046`
+- [x] `set_offset` (line 1136) → `model.rs:3054`
 - [~] `set_offset` (line 1137) → `geometry/geometry.rs` — not in the paired file
-- [x] `get_rotation` (line 1140) → `model.rs:3025`
-- [x] `set_rotation` (line 1142) → `model.rs:3033`
-- [x] `get_scaling_factor` (line 1145) → `model.rs:3037`
-- [x] `set_scaling_factor` (line 1147) → `model.rs:3045`
+- [x] `get_rotation` (line 1140) → `model.rs:3062`
+- [x] `set_rotation` (line 1142) → `model.rs:3070`
+- [x] `get_scaling_factor` (line 1145) → `model.rs:3074`
+- [x] `set_scaling_factor` (line 1147) → `model.rs:3082`
 - [~] `set_scaling_factor` (line 1148) → `geometry/geometry.rs` — not in the paired file
-- [x] `get_mirror` (line 1151) → `model.rs:3053`
-- [x] `is_left_handed` (line 1152) → `model.rs:3061`
-- [x] `set_mirror` (line 1154) → `model.rs:3065`
+- [x] `get_mirror` (line 1151) → `model.rs:3090`
+- [x] `is_left_handed` (line 1152) → `model.rs:3098`
+- [x] `set_mirror` (line 1154) → `model.rs:3102`
 - [~] `set_mirror` (line 1155) → `geometry/geometry.rs` — not in the paired file
-- [x] `set_text_info` (line 1161) → `model.rs:2156`
-- [x] `clear_text_info` (line 1162) → `model.rs:2160`
-- [x] `is_text` (line 1165) → `model.rs:2168`
-- [v] `set_new_unique_id` (line 1167) → `model.rs:2173` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `is_fdm_support_painted` (line 1176) → `model.rs:2183`
-- [x] `is_fuzzy_skin_facets_painted` (line 1177) → `model.rs:2187`
-- [x] `is_seam_painted` (line 1178) → `model.rs:2191`
-- [x] `is_mm_painted` (line 1179) → `model.rs:2195`
-- [x] `set_origin_mesh_render_type` (line 1181) → `model.rs:2199`
-- [x] `get_origin_mesh_or_vertice_render` (line 1184) → `model.rs:2203`
-- [x] `set_part_guid` (line 1188) → `model.rs:2211`
-- [x] `set_assembly_src_guid` (line 1193) → `model.rs:2219`
-- [x] `printable` (line 1197) → `model.rs:2223`
-- [x] `set_printable` (line 1198) → `model.rs:2227`
-- [x] `set_model_object` (line 1208) → `model.rs:2043`
+- [x] `set_text_info` (line 1161) → `model.rs:2193`
+- [x] `clear_text_info` (line 1162) → `model.rs:2197`
+- [x] `is_text` (line 1165) → `model.rs:2205`
+- [v] `set_new_unique_id` (line 1167) → `model.rs:2210` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `is_fdm_support_painted` (line 1176) → `model.rs:2220`
+- [x] `is_fuzzy_skin_facets_painted` (line 1177) → `model.rs:2224`
+- [x] `is_seam_painted` (line 1178) → `model.rs:2228`
+- [x] `is_mm_painted` (line 1179) → `model.rs:2232`
+- [x] `set_origin_mesh_render_type` (line 1181) → `model.rs:2236`
+- [x] `get_origin_mesh_or_vertice_render` (line 1184) → `model.rs:2240`
+- [x] `set_part_guid` (line 1188) → `model.rs:2248`
+- [x] `set_assembly_src_guid` (line 1193) → `model.rs:2256`
+- [x] `printable` (line 1197) → `model.rs:2260`
+- [x] `set_printable` (line 1198) → `model.rs:2264`
+- [x] `set_model_object` (line 1208) → `model.rs:2080`
 - [~] `load` (line 1388) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 1420) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [v] `is_the_only_one_part` (line 2223) → `model.rs:2243` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `set_material_id` (line 3252) → `model.rs:2265` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `reset_extra_facets` (line 3260) → `model.rs:2274` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `reproject_paint_keep` (line 3268) → `model.rs:2285`
-- [x] `commit_mesh_keep_paint` (line 3300) → `model.rs:2323`
-- [x] `set_mesh_keep_paint` (line 3312) → `model.rs:2333`
-- [x] `material` (line 3325) → `model.rs:2355`
-- [x] `set_material` (line 3330) → `model.rs:2360` — read against the C++ in R914 (the estimate says partial)
-- [v] `extruder_id` (line 3338) → `model.rs:2368` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `is_splittable` (line 3351) → `model.rs:2380` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `apply_tolerance` (line 3360) → `model.rs:2388`
-- [v] `get_extruders` (line 3416) → `model.rs:2436` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `update_extruder_count` (line 3468) → `model.rs:2496` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `update_extruder_count_when_delete_filament` (line 3483) → `model.rs:2518` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `center_geometry_after_creation` (line 3513) → `model.rs:2561` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `calculate_convex_hull` (line 3531) → `model.rs:2582` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `calculate_convex_hull_2d` (line 3538) → `model.rs:2587`
-- [v] `set_transformation` (line 3618) → `model.rs:2670` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `is_the_only_one_part` (line 2223) → `model.rs:2280` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `set_material_id` (line 3252) → `model.rs:2302` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `reset_extra_facets` (line 3260) → `model.rs:2311` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `reproject_paint_keep` (line 3268) → `model.rs:2322`
+- [x] `commit_mesh_keep_paint` (line 3300) → `model.rs:2360`
+- [x] `set_mesh_keep_paint` (line 3312) → `model.rs:2370`
+- [x] `material` (line 3325) → `model.rs:2392`
+- [x] `set_material` (line 3330) → `model.rs:2397` — read against the C++ in R914 (the estimate says partial)
+- [v] `extruder_id` (line 3338) → `model.rs:2405` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `is_splittable` (line 3351) → `model.rs:2417` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `apply_tolerance` (line 3360) → `model.rs:2425`
+- [v] `get_extruders` (line 3416) → `model.rs:2473` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `update_extruder_count` (line 3468) → `model.rs:2533` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `update_extruder_count_when_delete_filament` (line 3483) → `model.rs:2555` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `center_geometry_after_creation` (line 3513) → `model.rs:2598` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `calculate_convex_hull` (line 3531) → `model.rs:2619` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `calculate_convex_hull_2d` (line 3538) → `model.rs:2624`
+- [v] `set_transformation` (line 3618) → `model.rs:2707` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `set_transformation` (line 3622) → `model.rs` — another overload of the name is ported
-- [x] `set_assemble_transformation` (line 3634) → `model.rs:3276`
-- [x] `set_assemble_from_transform` (line 3640) → `model.rs:3282`
-- [x] `set_assemble_offset` (line 3646) → `model.rs:3295`
-- [x] `get_repaired_errors_count` (line 3652) → `model.rs:2711`
-- [x] `type_from_string` (line 3666) → `model.rs:2722`
-- [x] `type_to_string` (line 3685) → `model.rs:2744`
-- [v] `split` (line 3702) → `model.rs:2758` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `translate` (line 3832) → `model.rs:2895` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `scale` (line 3837) → `model.rs:2901`
-- [v] `assign_new_unique_ids_recursive` (line 3855) → `model.rs:2907` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `set_assemble_transformation` (line 3634) → `model.rs:3313`
+- [x] `set_assemble_from_transform` (line 3640) → `model.rs:3319`
+- [x] `set_assemble_offset` (line 3646) → `model.rs:3332`
+- [x] `get_repaired_errors_count` (line 3652) → `model.rs:2748`
+- [x] `type_from_string` (line 3666) → `model.rs:2759`
+- [x] `type_to_string` (line 3685) → `model.rs:2781`
+- [v] `split` (line 3702) → `model.rs:2795` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `translate` (line 3832) → `model.rs:2932` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `scale` (line 3837) → `model.rs:2938`
+- [v] `assign_new_unique_ids_recursive` (line 3855) → `model.rs:2944` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `rotate` (line 3865) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
-- [x] `rotate` (line 3876) → `model.rs:2926` — read against the C++ in R914 (the estimate says partial)
-- [x] `mirror` (line 3881) → `model.rs:2933`
-- [v] `scale_geometry_after_creation` (line 3895) → `model.rs:2945` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `transform_this_mesh` (line 3905) → `model.rs:2959`
+- [x] `rotate` (line 3876) → `model.rs:2963` — read against the C++ in R914 (the estimate says partial)
+- [x] `mirror` (line 3881) → `model.rs:2970`
+- [v] `scale_geometry_after_creation` (line 3895) → `model.rs:2982` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `transform_this_mesh` (line 3905) → `model.rs:2996`
 - [~] `transform_this_mesh` (line 3917) → `model.rs` — another overload of the name is ported
-- [v] `convert_from_imperial_units` (line 3929) → `model.rs:2983` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_from_meters` (line 3937) → `model.rs:2991` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `set_text_configuration` (line 3945) → `model.rs:2131`
-- [x] `check_boldness_skew_min_max` (line 3949) → `model.rs:2139`
+- [v] `convert_from_imperial_units` (line 3929) → `model.rs:3020` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_from_meters` (line 3937) → `model.rs:3028` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `set_text_configuration` (line 3945) → `model.rs:2168`
+- [x] `check_boldness_skew_min_max` (line 3949) → `model.rs:2176`
 
 **class `ModelVolume::CutInfo`**
 
-- [x] `set_processed` (line 974) → `model.rs:1786`
-- [x] `invalidate` (line 975) → `model.rs:1790`
-- [x] `reset_from_upper` (line 976) → `model.rs:1794`
+- [x] `set_processed` (line 974) → `model.rs:1823`
+- [x] `invalidate` (line 975) → `model.rs:1827`
+- [x] `reset_from_upper` (line 976) → `model.rs:1831`
 - [~] `serialize` (line 977) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 
 **class `ModelVolume::Source`**
@@ -9243,83 +9243,83 @@ Rust file: `multi_nozzle_utils.rs`. Status: **partial**. Not listed: 4 construct
 
 **free functions**
 
-- [x] `build_nozzle_list` (line 14) → `multi_nozzle_utils.rs:323`
-- [ ] `build_nozzle_list_from_extruder_nozzles` (line 36) → `multi_nozzle_utils.rs`
-- [ ] `resolve_manual_nozzle_map_to_index` (line 101) → `multi_nozzle_utils.rs`
+- [v] `build_nozzle_list` (line 14) → `multi_nozzle_utils.rs:334` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `build_nozzle_list_from_extruder_nozzles` (line 36) → `multi_nozzle_utils.rs:398` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `resolve_manual_nozzle_map_to_index` (line 101) → `multi_nozzle_utils.rs:492` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
 - [~] `build_nozzle_list` (line 181) → `multi_nozzle_utils.rs` — another overload of the name is ported
-- [x] `load_nozzle_infos_with_compatibility` (line 203) → `multi_nozzle_utils.rs:408`
-- [x] `has_filament_mapped_to_multiple_nozzles` (line 282) → `multi_nozzle_utils.rs:529`
-- [x] `simulate_filament_change_time` (line 797) → `multi_nozzle_utils.rs:1557`
-- [x] `calc_filament_change_gap_for_assignment` (line 993) → `multi_nozzle_utils.rs:1768`
-- [x] `find_optimal_physical_assignment` (line 1009) → `multi_nozzle_utils.rs:1794`
-- [x] `resolve_ams_load_unload` (line 1152) → `multi_nozzle_utils.rs:2417`
-- [ ] `lookup_filament_ams_type` (line 1211) → `multi_nozzle_utils.rs`
-- [ ] `recalc_single_extruder_ams` (line 1219) → `multi_nozzle_utils.rs`
-- [ ] `build_input_from_slice` (line 1278) → `multi_nozzle_utils.rs`
-- [ ] `estimate_mapped_print_time_impl` (line 1310) → `multi_nozzle_utils.rs`
-- [ ] `estimate_mapped_print_time` (line 1328) → `multi_nozzle_utils.rs`
+- [v] `load_nozzle_infos_with_compatibility` (line 203) → `multi_nozzle_utils.rs:645` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `has_filament_mapped_to_multiple_nozzles` (line 282) → `multi_nozzle_utils.rs:766` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `simulate_filament_change_time` (line 797) → `multi_nozzle_utils.rs:1847` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `calc_filament_change_gap_for_assignment` (line 993) → `multi_nozzle_utils.rs:2058` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `find_optimal_physical_assignment` (line 1009) → `multi_nozzle_utils.rs:2084` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `resolve_ams_load_unload` (line 1152) → `multi_nozzle_utils.rs:2723` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `lookup_filament_ams_type` (line 1211) → `multi_nozzle_utils.rs:2802` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `recalc_single_extruder_ams` (line 1219) → `multi_nozzle_utils.rs:2811` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `build_input_from_slice` (line 1278) → `multi_nozzle_utils.rs:2893` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `estimate_mapped_print_time_impl` (line 1310) → `multi_nozzle_utils.rs:2940` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `estimate_mapped_print_time` (line 1328) → `multi_nozzle_utils.rs:2957` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
 
 **class `LayeredNozzleGroupResult`**
 
-- [x] `get_used_filaments` (line 161) → `multi_nozzle_utils.rs:1069`
-- [x] `get_layer_count` (line 172) → `multi_nozzle_utils.rs:1231`
-- [x] `is_handle_nozzle_as_extruder` (line 176) → `multi_nozzle_utils.rs:632`
-- [x] `create` (line 310) → `multi_nozzle_utils.rs:679`
-- [x] `create` (line 329) → `multi_nozzle_utils.rs:704`
-- [x] `create` (line 355) → `multi_nozzle_utils.rs:738`
-- [x] `are_filaments_same_extruder` (line 411) → `multi_nozzle_utils.rs:837`
-- [x] `are_filaments_same_nozzle` (line 424) → `multi_nozzle_utils.rs:862`
-- [x] `get_extruder_count` (line 433) → `multi_nozzle_utils.rs:882`
-- [x] `get_used_nozzles_in_extruder` (line 440) → `multi_nozzle_utils.rs:894`
-- [~] `get_used_nozzles_in_extruder` (line 445) → `multi_nozzle_utils.rs` — another overload of the name is ported
-- [x] `get_used_extruders` (line 471) → `multi_nozzle_utils.rs:951`
-- [~] `get_used_extruders` (line 476) → `multi_nozzle_utils.rs` — another overload of the name is ported
-- [x] `get_extruder_map` (line 495) → `multi_nozzle_utils.rs:988`
-- [x] `get_nozzle_map` (line 515) → `multi_nozzle_utils.rs:1023`
-- [x] `get_volume_map` (line 530) → `multi_nozzle_utils.rs:1046`
-- [~] `get_used_filaments` (line 545) → `multi_nozzle_utils.rs` — another overload of the name is ported
-- [x] `get_nozzle_for_filament` (line 556) → `multi_nozzle_utils.rs:1096`
-- [x] `get_nozzles_for_filament` (line 566) → `multi_nozzle_utils.rs:1112`
-- [x] `get_first_nozzle_for_filament` (line 593) → `multi_nozzle_utils.rs:1155`
-- [x] `get_nozzle_from_id` (line 618) → `multi_nozzle_utils.rs:1199`
-- [x] `get_extruder_id` (line 624) → `multi_nozzle_utils.rs:1209`
-- [x] `get_nozzle_id` (line 630) → `multi_nozzle_utils.rs:1220`
-- [x] `estimate_seq_flush_weight` (line 642) → `multi_nozzle_utils.rs:1256`
+- [v] `get_used_filaments` (line 161) → `multi_nozzle_utils.rs:1326` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_layer_count` (line 172) → `multi_nozzle_utils.rs:1500` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `is_handle_nozzle_as_extruder` (line 176) → `multi_nozzle_utils.rs:869` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `create` (line 310) → `multi_nozzle_utils.rs:916` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `create` (line 329) → `multi_nozzle_utils.rs:941` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `create` (line 355) → `multi_nozzle_utils.rs:975` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `are_filaments_same_extruder` (line 411) → `multi_nozzle_utils.rs:1074` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `are_filaments_same_nozzle` (line 424) → `multi_nozzle_utils.rs:1099` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_extruder_count` (line 433) → `multi_nozzle_utils.rs:1119` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_used_nozzles_in_extruder` (line 440) → `multi_nozzle_utils.rs:1131` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_used_nozzles_in_extruder` (line 445) → `multi_nozzle_utils.rs:1146` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_used_extruders` (line 471) → `multi_nozzle_utils.rs:1196` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_used_extruders` (line 476) → `multi_nozzle_utils.rs:1211` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_extruder_map` (line 495) → `multi_nozzle_utils.rs:1245` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_nozzle_map` (line 515) → `multi_nozzle_utils.rs:1280` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_volume_map` (line 530) → `multi_nozzle_utils.rs:1303` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_used_filaments` (line 545) → `multi_nozzle_utils.rs:1340` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_nozzle_for_filament` (line 556) → `multi_nozzle_utils.rs:1365` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_nozzles_for_filament` (line 566) → `multi_nozzle_utils.rs:1381` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_first_nozzle_for_filament` (line 593) → `multi_nozzle_utils.rs:1424` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_nozzle_from_id` (line 618) → `multi_nozzle_utils.rs:1468` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_extruder_id` (line 624) → `multi_nozzle_utils.rs:1478` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_nozzle_id` (line 630) → `multi_nozzle_utils.rs:1489` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `estimate_seq_flush_weight` (line 642) → `multi_nozzle_utils.rs:1525` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
 
 **class `NozzleGroupInfo`**
 
-- [x] `is_same_type` (line 58) → `multi_nozzle_utils.rs:180`
-- [x] `serialize` (line 1117) → `multi_nozzle_utils.rs:197`
-- [x] `deserialize` (line 1127) → `multi_nozzle_utils.rs:213`
+- [v] `is_same_type` (line 58) → `multi_nozzle_utils.rs:191` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `serialize` (line 1117) → `multi_nozzle_utils.rs:208` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `deserialize` (line 1127) → `multi_nozzle_utils.rs:224` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
 
 **class `NozzleGroupResultBase`**
 
-- [x] `is_support_dynamic_nozzle_map` (line 97) → `multi_nozzle_utils.rs:1343`
+- [v] `is_support_dynamic_nozzle_map` (line 97) → `multi_nozzle_utils.rs:1627` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
 
 **class `NozzleInfo`**
 
-- [x] `serialize` (line 1104) → `multi_nozzle_utils.rs:111`
+- [v] `serialize` (line 1104) → `multi_nozzle_utils.rs:122` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
 
 **class `NozzleStatusRecorder`**
 
-- [x] `get_current_extruder_id` (line 233) → `multi_nozzle_utils.rs:2368`
-- [x] `set_current_extruder_id` (line 236) → `multi_nozzle_utils.rs:2393`
-- [~] `is_nozzle_empty` (line 1064) → `multi_nozzle_utils.rs:2338` — partial
-- [~] `get_filament_in_nozzle` (line 1071) → `multi_nozzle_utils.rs:2346` — partial
-- [~] `get_nozzle_in_extruder` (line 1078) → `multi_nozzle_utils.rs:2357` — partial
-- [x] `set_nozzle_status` (line 1087) → `multi_nozzle_utils.rs:2374`
-- [~] `clear_nozzle_status` (line 1095) → `multi_nozzle_utils.rs:2385` — partial
+- [v] `get_current_extruder_id` (line 233) → `multi_nozzle_utils.rs:2662` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `set_current_extruder_id` (line 236) → `multi_nozzle_utils.rs:2687` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [~] `is_nozzle_empty` (line 1064) → `multi_nozzle_utils.rs:2632` — partial
+- [~] `get_filament_in_nozzle` (line 1071) → `multi_nozzle_utils.rs:2640` — partial
+- [~] `get_nozzle_in_extruder` (line 1078) → `multi_nozzle_utils.rs:2651` — partial
+- [v] `set_nozzle_status` (line 1087) → `multi_nozzle_utils.rs:2668` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [~] `clear_nozzle_status` (line 1095) → `multi_nozzle_utils.rs:2679` — partial
 
 **class `StaticNozzleGroupResult`**
 
-- [x] `create` (line 676) → `multi_nozzle_utils.rs:1348`
-- [~] `get_nozzle_from_id` (line 712) → `multi_nozzle_utils.rs:1399` — partial
-- [x] `get_extruder_count` (line 719) → `multi_nozzle_utils.rs:1407`
-- [x] `get_used_nozzles_in_extruder` (line 726) → `multi_nozzle_utils.rs:1419`
-- [x] `get_used_extruders` (line 738) → `multi_nozzle_utils.rs:1436`
-- [x] `get_used_filaments` (line 745) → `multi_nozzle_utils.rs:1448`
-- [x] `get_nozzles_for_filament` (line 757) → `multi_nozzle_utils.rs:1466`
-- [x] `get_first_nozzle_for_filament` (line 772) → `multi_nozzle_utils.rs:1489`
+- [v] `create` (line 676) → `multi_nozzle_utils.rs:1632` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [~] `get_nozzle_from_id` (line 712) → `multi_nozzle_utils.rs:1689` — partial
+- [v] `get_extruder_count` (line 719) → `multi_nozzle_utils.rs:1697` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_used_nozzles_in_extruder` (line 726) → `multi_nozzle_utils.rs:1709` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_used_extruders` (line 738) → `multi_nozzle_utils.rs:1726` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_used_filaments` (line 745) → `multi_nozzle_utils.rs:1738` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_nozzles_for_filament` (line 757) → `multi_nozzle_utils.rs:1756` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
+- [v] `get_first_nozzle_for_filament` (line 772) → `multi_nozzle_utils.rs:1779` — R916: tests/multi_nozzle_utils_native_parity.rs: the pin's MultiNozzleUtils.cpp compiled into the generator: free functions and LayeredNozzleGroupResult, StaticNozzleGroupResult, NozzleStatusRecorder, NozzleInfo, NozzleGroupInfo on random nozzle lists, change sequences and configurations
 
 ### `MultiPoint` (.cpp+.hpp)
 
@@ -9472,7 +9472,7 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [~] `cbegin` (line 38) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `cend` (line 39) → `mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `clear` (line 59) → `mutable_priority_queue.rs:111` — divergent
-- [~] `push` (line 74) → `boost_polygon_voronoi.rs, channel.rs, geometry/polygon.rs` — not in the paired file
+- [~] `push` (line 74) → `boost_polygon_voronoi.rs, channel.rs, filament_group.rs` — not in the paired file
 - [x] `push` (line 83) → `mutable_priority_queue.rs:140`
 - [~] `pop` (line 92) → `mutable_priority_queue.rs:749` — divergent
 - [~] `remove` (line 113) → `mutable_priority_queue.rs:226` — partial
@@ -9487,7 +9487,7 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [~] `empty` (line 280) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `pop_back` (line 287) → `mutable_priority_queue.rs:873` — divergent
 - [~] `clear` (line 310) → `mutable_priority_queue.rs:690` — divergent
-- [~] `push` (line 326) → `boost_polygon_voronoi.rs, channel.rs, geometry/polygon.rs` — not in the paired file
+- [~] `push` (line 326) → `boost_polygon_voronoi.rs, channel.rs, filament_group.rs` — not in the paired file
 - [x] `push` (line 337) → `mutable_priority_queue.rs:723`
 - [~] `pop` (line 348) → `mutable_priority_queue.rs:165` — divergent
 - [~] `remove` (line 370) → `mutable_priority_queue.rs:793` — partial
@@ -9616,33 +9616,33 @@ Rust file: `obj_color_utils.rs`. Status: **partial**. Not listed: 1 constructors
 
 **free functions**
 
-- [ ] `obj_color_deal_algo` (line 9) → `obj_color_utils.rs`
-- [ ] `standard_3mf_corner_color` (line 29) → `obj_color_utils.rs`
-- [ ] `volume_to_textured_mesh` (line 53) → `obj_color_utils.rs`
-- [ ] `append_textured_mesh` (line 132) → `obj_color_utils.rs`
-- [ ] `standard_3mf_to_textured_meshes` (line 153) → `obj_color_utils.rs`
+- [v] `obj_color_deal_algo` (line 9) → `obj_color_utils.rs:1764` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `standard_3mf_corner_color` (line 29) → `obj_color_utils.rs:1786` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `volume_to_textured_mesh` (line 53) → `obj_color_utils.rs:1816` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `append_textured_mesh` (line 132) → `obj_color_utils.rs:1900` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `standard_3mf_to_textured_meshes` (line 153) → `obj_color_utils.rs:1922` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
 
 **class `QuantKMeans`**
 
 - [~] `apply` (line 36) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
-- [ ] `apply_aplha` (line 45) → `obj_color_utils.rs`
+- [v] `apply_aplha` (line 45) → `obj_color_utils.rs:1336` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
 - [~] `apply` (line 57) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
-- [~] `apply` (line 68) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [v] `apply` (line 68) → `obj_color_utils.rs:1383` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
 - [~] `apply` (line 80) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
-- [ ] `apply_color_cluster_kmeans` (line 127) → `obj_color_utils.rs`
-- [ ] `apply_color_cluster_image` (line 136) → `obj_color_utils.rs`
-- [ ] `sort_center_and_relabel` (line 155) → `obj_color_utils.rs`
-- [ ] `more_than_request` (line 186) → `obj_color_utils.rs`
-- [ ] `compute_num_colors` (line 201) → `obj_color_utils.rs`
-- [ ] `find_color_index` (line 213) → `obj_color_utils.rs`
-- [ ] `is_in` (line 221) → `obj_color_utils.rs`
-- [ ] `repeat_center` (line 228) → `obj_color_utils.rs`
-- [ ] `replace_centers` (line 248) → `obj_color_utils.rs`
-- [ ] `repalce_centers_aplha` (line 258) → `obj_color_utils.rs`
-- [ ] `convert_color_space` (line 277) → `obj_color_utils.rs`
-- [~] `flatten` (line 297) → `extrusion_entity_collection.rs` — not in the paired file
-- [ ] `flatten_alpha` (line 309) → `obj_color_utils.rs`
-- [ ] `flatten_vector` (line 328) → `obj_color_utils.rs`
+- [v] `apply_color_cluster_kmeans` (line 127) → `obj_color_utils.rs:1466` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `apply_color_cluster_image` (line 136) → `obj_color_utils.rs:1484` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `sort_center_and_relabel` (line 155) → `obj_color_utils.rs:1509` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `more_than_request` (line 186) → `obj_color_utils.rs:1554` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `compute_num_colors` (line 201) → `obj_color_utils.rs:1574` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `find_color_index` (line 213) → `obj_color_utils.rs:1588` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `is_in` (line 221) → `obj_color_utils.rs:1598` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `repeat_center` (line 228) → `obj_color_utils.rs:1609` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `replace_centers` (line 248) → `obj_color_utils.rs:1632` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `repalce_centers_aplha` (line 258) → `obj_color_utils.rs:1643` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `convert_color_space` (line 277) → `obj_color_utils.rs:1665` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `flatten` (line 297) → `obj_color_utils.rs:1688` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `flatten_alpha` (line 309) → `obj_color_utils.rs:1703` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
+- [v] `flatten_vector` (line 328) → `obj_color_utils.rs:1730` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
 
 ### `ObjectID` (.cpp+.hpp)
 
@@ -10295,7 +10295,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [x] `polygons_reverse` (line 173) → `geometry/polygon.rs:1744`
 - [x] `to_points` (line 179) → `geometry/polygon.rs:1768`
 - [x] `count_points` (line 184) → `geometry/polygon.rs:1758`
-- [~] `to_points` (line 190) → `ex_polygon_collection.rs, geometry/expolygon.rs` — not in the paired file
+- [~] `to_points` (line 190) → `ex_polygon_collection.rs, geometry/expolygon.rs, print_config.rs` — not in the paired file
 - [x] `to_lines` (line 199) → `geometry/polygon.rs:1779`
 - [~] `to_lines` (line 211) → `geometry/expolygon.rs, geometry/polyline.rs, jump_point_search.rs` — not in the paired file
 - [x] `to_polyline` (line 224) → `geometry/polygon.rs:1823`
@@ -10778,20 +10778,20 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 **free functions**
 
 - [ ] `layered_print_cleareance_valid` (line 1124) → `print.rs`
-- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:8551`
-- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:8569`
-- [ ] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs`
-- [ ] `getObjectExtruderMap` (line 2150) → `print.rs`
-- [ ] `convex_outline_gap` (line 3749) → `print.rs`
-- [ ] `compacted_tower_footprint_padding` (line 3763) → `print.rs`
-- [ ] `compacted_wipe_tower_rings` (line 3782) → `print.rs`
-- [ ] `compacted_wipe_tower_zone` (line 3790) → `print.rs`
-- [ ] `compacted_wipe_tower_clearance` (line 3839) → `print.rs`
-- [ ] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs`
-- [ ] `should_show_height_limit_lines` (line 3893) → `print.rs`
-- [ ] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs`
-- [ ] `print_instance_hull` (line 3912) → `print.rs`
-- [ ] `estimated_wipe_tower_footprint` (line 3930) → `print.rs`
+- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:9959`
+- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:9977`
+- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:9613`
+- [x] `getObjectExtruderMap` (line 2150) → `print.rs:9646`
+- [x] `convex_outline_gap` (line 3749) → `print.rs:9674`
+- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:9690`
+- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:9723`
+- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:9743`
+- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:9793`
+- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:9831`
+- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:9843`
+- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:9857`
+- [x] `print_instance_hull` (line 3912) → `print.rs:9863`
+- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:9890`
 - [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:4899`
 - [~] `to_json` (line 4596) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 - [~] `to_json` (line 4604) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
@@ -10820,7 +10820,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `CompactedTowerZone`**
 
-- [~] `empty` (line 1387) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `empty` (line 1387) → `print.rs:9717`
 
 **class `ConstVectorOfPtrsAdaptor`**
 
@@ -10828,233 +10828,233 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
-- [x] `size` (line 212) → `print.rs:6458`
+- [x] `size` (line 212) → `print.rs:6490`
 - [~] `empty` (line 213) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `at` (line 215) → `format/objparser.rs, g_code_reader.rs, model.rs` — not in the paired file
 - [~] `vector` (line 216) → `geometry/line.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `FakeWipeTower`**
 
-- [x] `set_fake_extrusion_data` (line 733) → `print.rs:6652`
-- [x] `set_pos` (line 744) → `print.rs:6663`
-- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:6669`
-- [ ] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs`
+- [x] `set_fake_extrusion_data` (line 733) → `print.rs:6762`
+- [x] `set_pos` (line 744) → `print.rs:6773`
+- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:6779`
+- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:6817`
 
 **class `Print`**
 
-- [x] `clear` (line 60) → `print.rs:7328`
-- [x] `has_tpu_filament` (line 74) → `print.rs:7345`
-- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:7358` — read against the C++ in R915 (the estimate says partial)
-- [x] `set_calib_params` (line 449) → `print.rs:7503`
-- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:7508`
-- [x] `invalidate_step` (line 459) → `print.rs:7513`
-- [x] `is_step_done` (line 470) → `print.rs:6626` — read against the C++ in R915 (the estimate says partial)
-- [v] `object_extruders` (line 482) → `print.rs:7545` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `support_material_extruders` (line 523) → `print.rs:7579` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `extruders` (line 558) → `print.rs:7615` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [ ] `printed_filaments` (line 578) → `print.rs`
-- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:7636` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [ ] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs`
-- [v] `num_object_instances` (line 713) → `print.rs:7680` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `max_allowed_layer_height` (line 721) → `print.rs:7689` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `print_object_ids` (line 732) → `print.rs:7699`
-- [v] `has_infinite_skirt` (line 742) → `print.rs:7708` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_skirt` (line 747) → `print.rs:7714` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_brim` (line 752) → `print.rs:7720` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [ ] `layers_sorted_for_object` (line 758) → `print.rs`
+- [x] `clear` (line 60) → `print.rs:7554`
+- [x] `has_tpu_filament` (line 74) → `print.rs:7571`
+- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:7584` — read against the C++ in R915 (the estimate says partial)
+- [x] `set_calib_params` (line 449) → `print.rs:7729`
+- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:7734`
+- [x] `invalidate_step` (line 459) → `print.rs:7739`
+- [x] `is_step_done` (line 470) → `print.rs:6736` — read against the C++ in R915 (the estimate says partial)
+- [v] `object_extruders` (line 482) → `print.rs:7771` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `support_material_extruders` (line 523) → `print.rs:7805` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `extruders` (line 558) → `print.rs:7841` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `printed_filaments` (line 578) → `print.rs:8884` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:7862` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:8916` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `num_object_instances` (line 713) → `print.rs:7906` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `max_allowed_layer_height` (line 721) → `print.rs:7915` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `print_object_ids` (line 732) → `print.rs:7925`
+- [v] `has_infinite_skirt` (line 742) → `print.rs:7934` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_skirt` (line 747) → `print.rs:7940` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_brim` (line 752) → `print.rs:7946` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `layers_sorted_for_object` (line 758) → `print.rs:9001`
 - [ ] `sequential_print_clearance_valid` (line 777) → `print.rs`
-- [x] `technology` (line 910) → `print.rs:7725`
-- [v] `empty` (line 918) → `print.rs:7730` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_step_done` (line 933) → `print.rs:7523`
-- [x] `finished` (line 937) → `print.rs:7735`
-- [v] `has_auto_brim` (line 943) → `print.rs:7740` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:7745`
-- [x] `objects` (line 994) → `print.rs:7762`
-- [x] `get_object` (line 995) → `print.rs:7766`
+- [x] `technology` (line 910) → `print.rs:7951`
+- [v] `empty` (line 918) → `print.rs:7956` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_step_done` (line 933) → `print.rs:7749`
+- [x] `finished` (line 937) → `print.rs:7961`
+- [v] `has_auto_brim` (line 943) → `print.rs:7966` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:7971`
+- [x] `objects` (line 994) → `print.rs:7988`
+- [x] `get_object` (line 995) → `print.rs:7992`
 - [~] `get_object` (line 996) → `model.rs, texture_painting.rs` — not in the paired file
 - [~] `get_object` (line 999) → `model.rs, texture_painting.rs` — not in the paired file
-- [x] `statistics_by_extruder` (line 1027) → `print.rs:7771`
-- [v] `is_sequential_print` (line 1038) → `print.rs:7781` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_extruder_filament_info` (line 1072) → `print.rs:7790`
-- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:7794`
-- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:7798`
-- [x] `set_filament_print_time` (line 1080) → `print.rs:7802`
-- [x] `get_filament_print_time` (line 1081) → `print.rs:7806`
-- [x] `set_nozzle_group_result` (line 1083) → `print.rs:7810`
-- [x] `get_nozzle_group_result` (line 1084) → `print.rs:7814`
-- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:7818`
-- [x] `set_slice_used_filaments` (line 1090) → `print.rs:7822`
-- [x] `get_slice_used_filaments` (line 1094) → `print.rs:7827`
-- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:7835`
-- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:7843`
-- [v] `num_print_regions` (line 1130) → `print.rs:7852` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_plate_origin` (line 1135) → `print.rs:7860`
-- [x] `get_plate_origin` (line 1136) → `print.rs:7864`
-- [x] `get_modified_count` (line 1142) → `print.rs:7868`
-- [x] `is_support_used` (line 1144) → `print.rs:7872`
-- [x] `is_BBL_Printer` (line 1145) → `print.rs:7876`
-- [x] `set_BBL_Printer` (line 1146) → `print.rs:7880`
-- [x] `get_conflict_string` (line 1147) → `print.rs:7884`
-- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:7892`
-- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:7896`
-- [x] `get_rib_offset` (line 1173) → `print.rs:7900`
-- [~] `is_all_objects_are_short` (line 1192) → `print.rs:7909` — partial
+- [x] `statistics_by_extruder` (line 1027) → `print.rs:7997`
+- [v] `is_sequential_print` (line 1038) → `print.rs:8007` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_extruder_filament_info` (line 1072) → `print.rs:8016`
+- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:8020`
+- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:8024`
+- [x] `set_filament_print_time` (line 1080) → `print.rs:8028`
+- [x] `get_filament_print_time` (line 1081) → `print.rs:8032`
+- [x] `set_nozzle_group_result` (line 1083) → `print.rs:8036`
+- [x] `get_nozzle_group_result` (line 1084) → `print.rs:8040`
+- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:8044`
+- [x] `set_slice_used_filaments` (line 1090) → `print.rs:8048`
+- [x] `get_slice_used_filaments` (line 1094) → `print.rs:8053`
+- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:8061`
+- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:8069`
+- [v] `num_print_regions` (line 1130) → `print.rs:8078` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_plate_origin` (line 1135) → `print.rs:8086`
+- [x] `get_plate_origin` (line 1136) → `print.rs:8090`
+- [x] `get_modified_count` (line 1142) → `print.rs:8094`
+- [x] `is_support_used` (line 1144) → `print.rs:8098`
+- [x] `is_BBL_Printer` (line 1145) → `print.rs:8102`
+- [x] `set_BBL_Printer` (line 1146) → `print.rs:8106`
+- [x] `get_conflict_string` (line 1147) → `print.rs:8110`
+- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:8118`
+- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:8122`
+- [x] `get_rib_offset` (line 1173) → `print.rs:8126`
+- [~] `is_all_objects_are_short` (line 1192) → `print.rs:8135` — partial
 - [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:3867`
 - [x] `is_filaments_compatible` (line 1268) → `print.rs:3899`
 - [x] `get_compatible_filament_type` (line 1285) → `print.rs:3923`
-- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:7915` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_indx` (line 1319) → `print.rs:7933`
-- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:7943`
-- [x] `get_nozzle_config_index` (line 1355) → `print.rs:7974`
+- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:8141` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_indx` (line 1319) → `print.rs:8159`
+- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:8169`
+- [x] `get_nozzle_config_index` (line 1355) → `print.rs:8200`
 - [~] `get_config_index` (line 1360) → `print.rs` — another overload of the name is ported
-- [x] `get_config_index` (line 1385) → `print.rs:7986`
+- [x] `get_config_index` (line 1385) → `print.rs:8212`
 - [~] `validate` (line 1413) → `print.rs:2176` — divergent
-- [~] `bounding_box` (line 1849) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [ ] `total_bounding_box` (line 1864) → `print.rs`
-- [v] `skirt_first_layer_height` (line 1903) → `print.rs:8029` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
-- [ ] `brim_flow` (line 1918) → `print.rs`
-- [ ] `multi_diameter_brim_flow` (line 1967) → `print.rs`
-- [ ] `multi_diameter_support_brim_flow` (line 1978) → `print.rs`
-- [ ] `skirt_flow` (line 2001) → `print.rs`
-- [ ] `skirt_flow` (line 2017) → `print.rs`
-- [ ] `skirt_flow` (line 2022) → `print.rs`
-- [ ] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs`
-- [v] `has_support_material` (line 2048) → `print.rs:8041` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `auto_assign_extruders` (line 2058) → `print.rs:8053`
+- [x] `bounding_box` (line 1849) → `print.rs:9031`
+- [x] `total_bounding_box` (line 1864) → `print.rs:9047`
+- [v] `skirt_first_layer_height` (line 1903) → `print.rs:8251` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `brim_flow` (line 1918) → `print.rs:9090` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:9125` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:9141` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `skirt_flow` (line 2001) → `print.rs:9175` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [~] `skirt_flow` (line 2017) → `print.rs` — another overload of the name is ported
+- [~] `skirt_flow` (line 2022) → `print.rs` — another overload of the name is ported
+- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:9217` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `has_support_material` (line 2048) → `print.rs:8267` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `auto_assign_extruders` (line 2058) → `print.rs:8279`
 - [~] `process` (line 2178) → `print.rs:2275` — divergent
 - [~] `export_gcode` (line 2839) → `print.rs:641` — divergent
 - [~] `_make_skirt` (line 2869) → `print.rs:3469` — divergent
-- [ ] `first_layer_islands` (line 3061) → `print.rs`
-- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:8493`
-- [x] `translate_to_print_space` (line 3107) → `print.rs:8068`
+- [x] `first_layer_islands` (line 3061) → `print.rs:9230`
+- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:8719`
+- [x] `translate_to_print_space` (line 3107) → `print.rs:8294`
 - [~] `translate_to_print_space` (line 3112) → `print.rs` — another overload of the name is ported
 - [~] `get_filament_temp_type` (line 3116) → `print.rs:3835` — divergent
-- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:8084` — divergent
-- [ ] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs`
-- [ ] `finalize_first_layer_convex_hull` (line 3229) → `print.rs`
-- [~] `update_filament_maps_to_config` (line 3241) → `print.rs:8103` — divergent
+- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:8310` — divergent
+- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:9257` — partial
+- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:9312`
+- [~] `update_filament_maps_to_config` (line 3241) → `print.rs:8329` — divergent
 - [ ] `resolve_manual_nozzle_map` (line 3322) → `print.rs`
 - [ ] `update_to_config_by_nozzle_group_result` (line 3347) → `print.rs`
-- [x] `apply_config_for_render` (line 3402) → `print.rs:8167`
-- [v] `get_filament_maps` (line 3407) → `print.rs:8174` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:8178`
-- [v] `get_filament_volume_maps` (line 3417) → `print.rs:8182` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_filament_map_mode` (line 3422) → `print.rs:8186` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:8191` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:8217`
-- [v] `get_filament_usage_type` (line 3474) → `print.rs:8240` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:8294` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:8332`
-- [x] `get_extruder_printable_height` (line 3568) → `print.rs:8369`
-- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:8383` — partial
-- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:8393`
-- [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:5285`
-- [v] `get_extruder_id` (line 3609) → `print.rs:8405` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_idx` (line 3618) → `print.rs:8414`
-- [x] `get_process_config_idx` (line 3623) → `print.rs:8420`
-- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:8434` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_wipe_tower` (line 3655) → `print.rs:8464` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
-- [v] `enable_timelapse_print` (line 3742) → `print.rs:8486` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [ ] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs`
-- [ ] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs`
-- [x] `_make_wipe_tower` (line 4157) → `print.rs:5325`
-- [x] `output_filename` (line 4402) → `print.rs:8524`
-- [~] `set_gcode_file_ready` (line 4414) → `print.rs:8535` — partial
-- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:8541`
+- [x] `apply_config_for_render` (line 3402) → `print.rs:8393`
+- [v] `get_filament_maps` (line 3407) → `print.rs:8400` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:8404`
+- [v] `get_filament_volume_maps` (line 3417) → `print.rs:8408` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_filament_map_mode` (line 3422) → `print.rs:8412` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:8417` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:8443`
+- [v] `get_filament_usage_type` (line 3474) → `print.rs:8466` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:8520` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:8558`
+- [x] `get_extruder_printable_height` (line 3568) → `print.rs:8595`
+- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:8609` — partial
+- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:8619`
+- [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:5286`
+- [v] `get_extruder_id` (line 3609) → `print.rs:8631` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_idx` (line 3618) → `print.rs:8640`
+- [x] `get_process_config_idx` (line 3623) → `print.rs:8646`
+- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:8660` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_wipe_tower` (line 3655) → `print.rs:8690` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
+- [v] `enable_timelapse_print` (line 3742) → `print.rs:8712` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:9417`
+- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:9492`
+- [x] `_make_wipe_tower` (line 4157) → `print.rs:5326`
+- [x] `output_filename` (line 4402) → `print.rs:8750`
+- [~] `set_gcode_file_ready` (line 4414) → `print.rs:8761` — partial
+- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:8767`
 - [ ] `export_gcode_from_previous_file` (line 4428) → `print.rs`
 - [~] `export_cached_data` (line 5316) → `print_base.rs` — not in the paired file
 - [~] `load_cached_data` (line 5597) → `print_base.rs` — not in the paired file
 
 **class `PrintInstance`**
 
-- [x] `get_bounding_box` (line 5836) → `print.rs:6185`
+- [x] `get_bounding_box` (line 5836) → `print.rs:6208`
 - [~] `get_convex_hull_2d` (line 5840) → `model.rs` — not in the paired file
-- [x] `shift_without_plate_offset` (line 5847) → `print.rs:6178`
+- [x] `shift_without_plate_offset` (line 5847) → `print.rs:6201`
 
 **class `PrintObject`**
 
-- [x] `configBrimWidth` (line 416) → `print.rs:6466`
-- [x] `layers` (line 417) → `print.rs:6470`
-- [x] `support_layers` (line 418) → `print.rs:6474`
-- [~] `trafo_centered` (line 421) → `print.rs:6482` — partial
-- [x] `bounding_box` (line 442) → `print.rs:6496`
-- [x] `height` (line 445) → `print.rs:6503`
-- [x] `max_z` (line 446) → `print.rs:6507`
-- [v] `has_brim` (line 457) → `print.rs:6515` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `total_layer_count` (line 472) → `print.rs:6523`
-- [x] `layer_count` (line 473) → `print.rs:6527`
+- [x] `configBrimWidth` (line 416) → `print.rs:6498`
+- [x] `layers` (line 417) → `print.rs:6502`
+- [x] `support_layers` (line 418) → `print.rs:6506`
+- [~] `trafo_centered` (line 421) → `print.rs:6514` — partial
+- [x] `bounding_box` (line 442) → `print.rs:6528`
+- [x] `height` (line 445) → `print.rs:6535`
+- [x] `max_z` (line 446) → `print.rs:6539`
+- [v] `has_brim` (line 457) → `print.rs:6547` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `total_layer_count` (line 472) → `print.rs:6555`
+- [x] `layer_count` (line 473) → `print.rs:6559`
 - [~] `get_layer` (line 475) → `gcode/multi_material.rs` — not in the paired file
-- [~] `get_layer` (line 476) → `gcode/multi_material.rs` — not in the paired file
+- [x] `get_layer` (line 476) → `print.rs:6563`
 - [ ] `clear_tree_support_preview_cache` (line 497) → `print.rs`
-- [x] `support_layer_count` (line 499) → `print.rs:6531`
-- [ ] `get_support_layer` (line 501) → `print.rs`
-- [x] `num_printing_regions` (line 518) → `print.rs:6535`
-- [x] `shared_regions` (line 522) → `print.rs:6550`
-- [x] `has_support` (line 524) → `print.rs:6554`
-- [x] `has_raft` (line 525) → `print.rs:6558`
-- [v] `has_support_material` (line 526) → `print.rs:6562` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_mm_painted` (line 530) → `print.rs:6574`
+- [x] `support_layer_count` (line 499) → `print.rs:6567`
+- [x] `get_support_layer` (line 501) → `print.rs:6724`
+- [x] `num_printing_regions` (line 518) → `print.rs:6571`
+- [x] `shared_regions` (line 522) → `print.rs:6586`
+- [x] `has_support` (line 524) → `print.rs:6590`
+- [x] `has_raft` (line 525) → `print.rs:6594`
+- [v] `has_support_material` (line 526) → `print.rs:6598` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_mm_painted` (line 530) → `print.rs:6610`
 - [~] `is_fuzzy_skin_painted` (line 532) → `model.rs` — not in the paired file
 - [ ] `slice_support_blockers` (line 544) → `print.rs`
 - [ ] `slice_support_enforcers` (line 545) → `print.rs`
-- [x] `get_shared_object` (line 560) → `print.rs:6578`
-- [x] `get_klipper_object_id` (line 578) → `print.rs:6582`
-- [x] `set_klipper_object_id` (line 579) → `print.rs:6586`
-- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:6590`
-- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:6594`
-- [x] `config_apply` (line 591) → `print.rs:6598`
-- [x] `config_apply_only` (line 592) → `print.rs:6604`
-- [x] `set_shared_object` (line 2073) → `print.rs:6608`
-- [~] `clear_shared_object` (line 2079) → `print.rs:6612` — divergent
-- [ ] `copy_layers_from_shared_object` (line 2092) → `print.rs`
-- [ ] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs`
-- [ ] `get_first_layer_bbox` (line 2125) → `print.rs`
+- [x] `get_shared_object` (line 560) → `print.rs:6614`
+- [x] `get_klipper_object_id` (line 578) → `print.rs:6618`
+- [x] `set_klipper_object_id` (line 579) → `print.rs:6622`
+- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:6626`
+- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:6630`
+- [x] `config_apply` (line 591) → `print.rs:6634`
+- [x] `config_apply_only` (line 592) → `print.rs:6640`
+- [x] `set_shared_object` (line 2073) → `print.rs:6644`
+- [~] `clear_shared_object` (line 2079) → `print.rs:6648` — partial
+- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:6661`
+- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:6678`
+- [x] `get_first_layer_bbox` (line 2125) → `print.rs:6691`
 
 **class `PrintObjectRegions`**
 
-- [x] `ref_cnt_inc` (line 353) → `print.rs:6344`
-- [x] `ref_cnt_dec` (line 354) → `print.rs:6349`
-- [x] `clear` (line 355) → `print.rs:6354`
+- [x] `ref_cnt_inc` (line 353) → `print.rs:6367`
+- [x] `ref_cnt_dec` (line 354) → `print.rs:6372`
+- [x] `clear` (line 355) → `print.rs:6377`
 
 **class `PrintObjectRegions::FuzzySkinPaintedRegion`**
 
-- [x] `parent_print_object_region` (line 5914) → `print.rs:6291`
-- [x] `parent_print_object_region_id` (line 5926) → `print.rs:6300`
+- [x] `parent_print_object_region` (line 5914) → `print.rs:6314`
+- [x] `parent_print_object_region_id` (line 5926) → `print.rs:6323`
 
 **class `PrintObjectRegions::LayerRangeRegions`**
 
-- [x] `has_volume` (line 335) → `print.rs:6321`
+- [x] `has_volume` (line 335) → `print.rs:6344`
 
 **class `PrintRegion`**
 
-- [x] `config_hash` (line 157) → `print.rs:6064`
-- [x] `print_region_id` (line 159) → `print.rs:6068`
-- [x] `print_object_region_id` (line 160) → `print.rs:6072`
-- [x] `gradient_volume_id` (line 164) → `print.rs:6076`
+- [x] `config_hash` (line 157) → `print.rs:6065`
+- [x] `print_region_id` (line 159) → `print.rs:6069`
+- [x] `print_object_region_id` (line 160) → `print.rs:6073`
+- [x] `gradient_volume_id` (line 164) → `print.rs:6077`
 - [~] `set_config` (line 179) → `print_region.rs` — not in the paired file
-- [x] `set_config` (line 180) → `print.rs:6124`
-- [x] `config_apply_only` (line 181) → `print.rs:6130`
+- [x] `set_config` (line 180) → `print.rs:6125`
+- [x] `config_apply_only` (line 181) → `print.rs:6131`
 
 **class `PrintStatistics`**
 
-- [x] `clear` (line 842) → `print.rs:6820`
-- [x] `config` (line 4454) → `print.rs:6778`
-- [x] `placeholders` (line 4473) → `print.rs:6798`
+- [x] `clear` (line 842) → `print.rs:7046`
+- [x] `config` (line 4454) → `print.rs:7004`
+- [x] `placeholders` (line 4473) → `print.rs:7024`
 - [~] `finalize_output_path` (line 4484) → `sla_print.rs` — not in the paired file
 
 **class `StatisticsByExtruderCount`**
 
-- [x] `clear` (line 877) → `print.rs:6847`
+- [x] `clear` (line 877) → `print.rs:7073`
 
 **class `SupportStageTimes`**
 
-- [x] `reset` (line 79) → `print.rs:6015`
-- [x] `total` (line 80) → `print.rs:6019`
+- [x] `reset` (line 79) → `print.rs:6016`
+- [x] `total` (line 80) → `print.rs:6020`
 
 **class `WipeTowerData`**
 
-- [x] `clear` (line 799) → `print.rs:6737`
-- [ ] `construct_mesh` (line 5888) → `print.rs`
+- [x] `clear` (line 799) → `print.rs:6901`
+- [v] `construct_mesh` (line 5888) → `print.rs:6914` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 
 ### `PrintApply` (.cpp)
 
@@ -11313,11 +11313,11 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [v] `filament_override_default_indices` (line 10574) → `print_config.rs:18964` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [v] `compute_filament_override_value` (line 10601) → `print_config.rs:19009` — R911: tests/print_config_def_native_parity.rs: against the pin's PrintConfig.cpp linked from the engine build: all 49 enum key maps, every field and default of the 733 option definitions in ordinal order, 944 handle_legacy cases, 2,497 lines of free functions and DynamicPrintConfig methods over 6 configurations, the static defaults and the multi-extruder update and override helpers
 - [~] `validate` (line 10643) → `print_config.rs:934` — divergent
-- [~] `to_points` (line 11450) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `get_shared_poly` (line 11458) → `model.rs` — not in the paired file
-- [~] `get_bed_shape` (line 11477) → `model.rs` — not in the paired file
-- [~] `get_bed_shape` (line 11508) → `model.rs` — not in the paired file
-- [~] `get_bed_shape` (line 11527) → `model.rs` — not in the paired file
+- [x] `to_points` (line 11450) → `print_config.rs:19439`
+- [x] `get_shared_poly` (line 11458) → `print_config.rs:19449`
+- [x] `get_bed_shape` (line 11477) → `print_config.rs:19470`
+- [~] `get_bed_shape` (line 11508) → `print_config.rs` — another overload of the name is ported
+- [~] `get_bed_shape` (line 11527) → `print_config.rs` — another overload of the name is ported
 - [ ] `get_bed_shape_with_excluded_area` (line 11529) → `print_config.rs`
 - [~] `has_skirt` (line 11558) → `print.rs` — not in the paired file
 - [ ] `skirt_expansion_params` (line 11568) → `print_config.rs`
@@ -11392,27 +11392,27 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 
 **free functions**
 
-- [x] `zero_gap_threshold_rad` (line 658) → `print_object.rs:7871`
-- [ ] `scaled_external_perimeter_width` (line 667) → `print_object.rs`
-- [~] `should_refine_zero_gap_contact` (line 679) → `print_object.rs:7880` — partial
-- [x] `is_significant_contact_piece` (line 698) → `print_object.rs:7893`
-- [x] `filter_significant_contact_pieces` (line 709) → `print_object.rs:7907`
-- [ ] `compute_zero_gap_contact_mask` (line 726) → `print_object.rs`
-- [ ] `refine_fill_surfaces_for_zero_gap_contact` (line 817) → `print_object.rs`
-- [ ] `type_bridges_over_suppressed_orphans` (line 866) → `print_object.rs`
-- [ ] `volume_slices_by_id` (line 1075) → `print_object.rs`
-- [ ] `conformal_modifier_islands` (line 1085) → `print_object.rs`
-- [ ] `layer_skips_periodic_modifier` (line 2245) → `print_object.rs`
-- [x] `shell_band_size` (line 2263) → `print_object.rs:7926`
-- [x] `effective_top_shell_parameters` (line 2271) → `print_object.rs:7939`
-- [x] `effective_bottom_shell_parameters` (line 2286) → `print_object.rs:7955`
+- [x] `zero_gap_threshold_rad` (line 658) → `print_object.rs:7899`
+- [x] `scaled_external_perimeter_width` (line 667) → `print_object.rs:8013`
+- [~] `should_refine_zero_gap_contact` (line 679) → `print_object.rs:7908` — partial
+- [x] `is_significant_contact_piece` (line 698) → `print_object.rs:7921`
+- [x] `filter_significant_contact_pieces` (line 709) → `print_object.rs:7935`
+- [x] `compute_zero_gap_contact_mask` (line 726) → `print_object.rs:8034`
+- [x] `refine_fill_surfaces_for_zero_gap_contact` (line 817) → `print_object.rs:8148`
+- [x] `type_bridges_over_suppressed_orphans` (line 866) → `print_object.rs:8202`
+- [x] `volume_slices_by_id` (line 1075) → `print_object.rs:8270`
+- [x] `conformal_modifier_islands` (line 1085) → `print_object.rs:8292`
+- [x] `layer_skips_periodic_modifier` (line 2245) → `print_object.rs:8389`
+- [x] `shell_band_size` (line 2263) → `print_object.rs:7954`
+- [x] `effective_top_shell_parameters` (line 2271) → `print_object.rs:7967`
+- [x] `effective_bottom_shell_parameters` (line 2286) → `print_object.rs:7983`
 - [~] `clamp_exturder_to_default_protect0` (line 3617) → `print_apply.rs` — not in the paired file
 - [~] `apply_to_print_region_config` (line 3644) → `print_apply.rs` — not in the paired file
 - [~] `volume_ignores_modifier_infill` (line 3724) → `print_apply.rs` — not in the paired file
 - [~] `restore_parent_internal_infill` (line 3732) → `print_apply.rs` — not in the paired file
 - [~] `region_config_from_model_volume` (line 3742) → `print_apply.rs` — not in the paired file
-- [ ] `band_reference_nozzle` (line 4283) → `print_object.rs`
-- [ ] `collect_span_bridges` (line 5008) → `print_object.rs`
+- [x] `band_reference_nozzle` (line 4283) → `print_object.rs:8402`
+- [x] `collect_span_bridges` (line 5008) → `print_object.rs:8434`
 - [ ] `project_triangles_to_slabs` (line 6540) → `print_object.rs`
 
 **class `PrintObject`**
@@ -11420,8 +11420,8 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [x] `set_instances` (line 110) → `print_object.rs:7270`
 - [~] `all_regions` (line 132) → `print_object.rs:5509` — divergent
 - [~] `merge_layer_node` (line 141) → `print_object.rs:5525` — partial
-- [ ] `detect_extruder_geometric_unprintables` (line 202) → `print_object.rs`
-- [ ] `calc_estimated_filament_print_time` (line 328) → `print_object.rs`
+- [x] `detect_extruder_geometric_unprintables` (line 202) → `print_object.rs:8499`
+- [x] `calc_estimated_filament_print_time` (line 328) → `print_object.rs:8757`
 - [~] `make_perimeters` (line 470) → `print_object.rs:1898` — divergent
 - [~] `prepare_infill` (line 902) → `print_object.rs:2173` — divergent
 - [~] `infill` (line 1154) → `print_object.rs:4595` — partial
@@ -11438,30 +11438,30 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [~] `get_support_layer_at_printz` (line 1501) → `print_object.rs` — another overload of the name is ported
 - [x] `clear_support_layers` (line 1506) → `print_object.rs:5705`
 - [ ] `alloc_tree_support_preview_cache` (line 1520) → `print_object.rs`
-- [ ] `add_tree_support_layer` (line 1530) → `print_object.rs`
-- [ ] `add_support_layer` (line 1536) → `print_object.rs`
-- [ ] `insert_support_layer` (line 1542) → `print_object.rs`
+- [x] `add_tree_support_layer` (line 1530) → `print_object.rs:8472`
+- [x] `add_support_layer` (line 1536) → `print_object.rs:8480`
+- [x] `insert_support_layer` (line 1542) → `print_object.rs:8489`
 - [x] `invalidate_state_by_config_options` (line 1549) → `print_object.rs:7299`
 - [x] `invalidate_step` (line 1879) → `print_object.rs:7616`
 - [x] `invalidate_all_steps` (line 1916) → `print_object.rs:7658`
-- [ ] `reset_slice_surfaces` (line 1925) → `print_object.rs`
+- [x] `reset_slice_surfaces` (line 1925) → `print_object.rs:8910`
 - [~] `detect_surfaces_type` (line 1951) → `print_object.rs:3987` — partial
 - [~] `process_external_surfaces` (line 2167) → `print_object.rs:7017` — divergent
-- [ ] `discover_shell_for_perimeters` (line 2698) → `print_object.rs`
+- [x] `discover_shell_for_perimeters` (line 2698) → `print_object.rs:8947`
 - [~] `object_config_from_model_object` (line 3627) → `print_apply.rs` — not in the paired file
 - [ ] `generate_support_preview` (line 3826) → `print_object.rs`
 - [x] `update_slicing_parameters` (line 3840) → `print_object.rs:7669`
 - [x] `compute_slicing_parameters` (line 3847) → `print_object.rs:7679`
-- [x] `slicing_parameters` (line 3862) → `print_object.rs:7796`
+- [x] `slicing_parameters` (line 3862) → `print_object.rs:7824`
 - [x] `object_extruders` (line 3903) → `print_object.rs:7707`
 - [x] `update_layer_height_profile` (line 3925) → `print_object.rs:7728`
-- [ ] `get_certain_layers` (line 3970) → `print_object.rs`
-- [x] `get_instances_shift_without_plate_offset` (line 3985) → `print_object.rs:7783`
-- [ ] `clip_fill_surfaces` (line 4003) → `print_object.rs`
+- [x] `get_certain_layers` (line 3970) → `print_object.rs:7785`
+- [x] `get_instances_shift_without_plate_offset` (line 3985) → `print_object.rs:7811`
+- [x] `clip_fill_surfaces` (line 4003) → `print_object.rs:8643`
 - [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6513` — partial
 - [ ] `compute_adaptive_merge_groups` (line 4312) → `print_object.rs`
 - [ ] `combine_adaptive_infill` (line 5035) → `print_object.rs`
-- [ ] `combine_infill` (line 5724) → `print_object.rs`
+- [x] `combine_infill` (line 5724) → `print_object.rs:9006`
 - [~] `discover_sub_top_surfaces` (line 5839) → `print_object.rs:2383` — partial
 - [~] `_generate_support_material` (line 5920) → `print_object.rs:5286` — divergent
 - [ ] `collected_support_areas` (line 5960) → `print_object.rs`
@@ -12588,7 +12588,7 @@ Rust file: `support/support_common.rs`. Status: **partial**. Not listed: 1 const
 - [~] `empty` (line 827) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [ ] `set_polygons_to_extrude` (line 831) → `support/support_common.rs`
 - [ ] `could_merge` (line 840) → `support/support_common.rs`
-- [~] `merge` (line 847) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
+- [~] `merge` (line 847) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
 - [~] `polygons_append` (line 875) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 
 ### `Support/SupportLayer` (.hpp)
@@ -13649,12 +13649,12 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 **free functions**
 
 - [x] `is_equal` (line 45) → `triangle_mesh_slicer.rs:40`
-- [ ] `is_equal_for_sort` (line 50) → `triangle_mesh_slicer.rs`
+- [x] `is_equal_for_sort` (line 50) → `triangle_mesh_slicer.rs:2910`
 - [~] `is_equal` (line 54) → `circle.rs, geometry/voronoi_utils_cgal.rs, multi_material_segmentation.rs` — not in the paired file
 - [x] `slice_mesh_ex` (line 78) → `triangle_mesh_slicer.rs:2083`
 - [~] `slice_mesh_ex` (line 86) → `triangle_mesh_slicer.rs` — another overload of the name is ported
 - [x] `slice_facet` (line 156) → `triangle_mesh_slicer.rs:209`
-- [ ] `slice_facet_for_cut_mesh` (line 323) → `triangle_mesh_slicer.rs`
+- [x] `slice_facet_for_cut_mesh` (line 323) → `triangle_mesh_slicer.rs:2929`
 - [x] `slice_facet_at_zs` (line 476) → `triangle_mesh_slicer.rs:391`
 - [~] `slice_make_lines` (line 511) → `triangle_mesh_slicer.rs:455` — partial
 - [~] `slice_make_lines` (line 538) → `triangle_mesh_slicer.rs` — another overload of the name is ported
@@ -13665,8 +13665,8 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 - [x] `open_polylines_sorted` (line 1166) → `triangle_mesh_slicer.rs:692`
 - [x] `chain_open_polylines_exact` (line 1182) → `triangle_mesh_slicer.rs:714`
 - [x] `chain_open_polylines_close_gaps` (line 1281) → `triangle_mesh_slicer.rs:1023`
-- [ ] `cut_plane_xy_equal` (line 1393) → `triangle_mesh_slicer.rs`
-- [ ] `find_cut_plane_vertex_index` (line 1402) → `triangle_mesh_slicer.rs`
+- [x] `cut_plane_xy_equal` (line 1393) → `triangle_mesh_slicer.rs:3102`
+- [x] `find_cut_plane_vertex_index` (line 1402) → `triangle_mesh_slicer.rs:3131`
 - [ ] `make_loops` (line 1433) → `triangle_mesh_slicer.rs`
 - [ ] `make_loops` (line 1534) → `triangle_mesh_slicer.rs`
 - [~] `make_slab_loops` (line 1589) → `triangle_mesh_slicer.rs:2549` — partial
@@ -13681,12 +13681,12 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 - [~] `slice_mesh` (line 2059) → `triangle_mesh_slicer.rs` — another overload of the name is ported
 - [~] `slice_mesh_ex` (line 2121) → `triangle_mesh_slicer.rs` — another overload of the name is ported
 - [~] `slice_mesh_slabs` (line 2177) → `triangle_mesh_slicer.rs:2626` — partial
-- [ ] `triangulate_slice` (line 2280) → `triangle_mesh_slicer.rs`
+- [x] `triangulate_slice` (line 2280) → `triangle_mesh_slicer.rs:3173`
 - [ ] `project_mesh` (line 2403) → `triangle_mesh_slicer.rs`
 - [ ] `project_mesh` (line 2419) → `triangle_mesh_slicer.rs`
-- [ ] `cut_mesh` (line 2430) → `triangle_mesh_slicer.rs`
-- [ ] `calc_plane_normal` (line 2717) → `triangle_mesh_slicer.rs`
-- [ ] `cut_mesh` (line 2727) → `triangle_mesh_slicer.rs`
+- [x] `cut_mesh` (line 2430) → `triangle_mesh_slicer.rs:3329`
+- [x] `calc_plane_normal` (line 2717) → `triangle_mesh_slicer.rs:3712`
+- [~] `cut_mesh` (line 2727) → `triangle_mesh_slicer.rs` — another overload of the name is ported
 
 **class `IntersectionLine`**
 

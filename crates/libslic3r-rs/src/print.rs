@@ -4942,6 +4942,7 @@ fn build_default_nozzle_list(
             group_id: idx as i32,
             extruder_id: idx as i32,
             volume_type: crate::extruder::NozzleVolumeType::from_i32(nozzle_volume_type[idx]),
+            installed: true,
         });
     }
     nozzle_list
@@ -6159,6 +6160,28 @@ pub mod faithful {
     // Print.hpp:248-270 `struct PrintInstance`
     // ------------------------------------------------------------------------
 
+    /// Print.hpp:84-88 `struct VolumeSlices` (moved from PrintObjectSlice.cpp)
+    #[derive(Debug, Clone, Default)]
+    pub struct VolumeSlices {
+        pub volume_id: ObjectID,
+        pub slices: Vec<crate::geometry::ExPolygons>,
+    }
+
+    /// Print.hpp:90-95 `struct groupedVolumeSlices`
+    #[allow(non_camel_case_types)]
+    #[derive(Debug, Clone)]
+    pub struct groupedVolumeSlices {
+        pub groupId: i32,
+        pub volume_ids: Vec<ObjectID>,
+        pub slices: crate::geometry::ExPolygons,
+    }
+
+    impl Default for groupedVolumeSlices {
+        fn default() -> Self {
+            groupedVolumeSlices { groupId: -1, volume_ids: Vec::new(), slices: Vec::new() }
+        }
+    }
+
     /// Print.hpp:248-270 `struct PrintInstance`: a single instance of a PrintObject.
     #[derive(Debug, Clone, PartialEq)]
     pub struct PrintInstance {
@@ -6368,9 +6391,8 @@ pub mod faithful {
 
     /// Print.hpp:401-712 `class PrintObject`, the members `Print::apply` sets and Print.cpp reads.
     ///
-    /// FIDELITY-NOTE: the layers, the slicing parameters and the per-object skirt of the C++ object
-    /// are made by the slicing steps, which run on the live `crate::print_object::PrintObject`; here
-    /// the object has no layers (`layer_count()` is 0).
+    /// The layers are made by the slicing steps, which run on the live
+    /// `crate::print_object::PrintObject`; here they are empty until a caller fills them.
     pub struct PrintObject {
         /// `ObjectBase` of `PrintObjectBase`.
         pub object_base: ObjectBase,
@@ -6409,9 +6431,16 @@ pub mod faithful {
         pub object_brim_print_z: f64,
         /// Print.hpp `bool has_variable_layer_heights`
         pub has_variable_layer_heights: bool,
-        /// The number of layers / support layers the slicing steps made (none here).
-        pub m_layer_count: usize,
-        pub m_support_layer_count: usize,
+        /// Print.hpp `LayerPtrs m_layers`: the layers the slicing steps made (none until they ran).
+        pub m_layers: Vec<crate::layer::Layer>,
+        /// Print.hpp `SupportLayerPtrs m_support_layers`
+        pub m_support_layers: Vec<SupportLayer>,
+        /// Print.hpp `BoundingBox firstLayerObjectBrimBoundingBox`
+        pub firstLayerObjectBrimBoundingBox: crate::geometry::BoundingBox,
+        /// Print.hpp:699 `std::vector<VolumeSlices> firstLayerObjSliceByVolume`
+        pub firstLayerObjSliceByVolume: Vec<VolumeSlices>,
+        /// Print.hpp:700 `std::vector<groupedVolumeSlices> firstLayerObjSliceByGroups`
+        pub firstLayerObjSliceByGroups: Vec<groupedVolumeSlices>,
         /// Print.hpp:685 `SlicingParameters m_slicing_params`
         pub m_slicing_params: crate::slicing::SlicingParams,
     }
@@ -6440,8 +6469,11 @@ pub mod faithful {
                 object_brim_filament: 0,
                 object_brim_print_z: 0.0,
                 has_variable_layer_heights: false,
-                m_layer_count: 0,
-                m_support_layer_count: 0,
+                m_layers: Vec::new(),
+                m_support_layers: Vec::new(),
+                firstLayerObjectBrimBoundingBox: crate::geometry::BoundingBox::default(),
+                firstLayerObjSliceByVolume: Vec::new(),
+                firstLayerObjSliceByGroups: Vec::new(),
                 m_slicing_params: crate::slicing::SlicingParams::zero_initialized(),
             }
         }
@@ -6466,13 +6498,13 @@ pub mod faithful {
         pub fn configBrimWidth(&mut self, m: f64) {
             let _ = self.m_config.set_key_value("brim_width", Box::new(crate::config::ConfigOptionFloat::with_value(m)));
         }
-        /// Print.hpp:407 (the object here has no layers, see the struct)
-        pub fn layers(&self) -> usize {
-            self.m_layer_count
+        /// Print.hpp:407 `const LayerPtrs& layers() const`
+        pub fn layers(&self) -> &[crate::layer::Layer] {
+            &self.m_layers
         }
-        /// Print.hpp:408
-        pub fn support_layers(&self) -> usize {
-            self.m_support_layer_count
+        /// Print.hpp:408 `const SupportLayerPtrs& support_layers() const`
+        pub fn support_layers(&self) -> &[SupportLayer] {
+            &self.m_support_layers
         }
         /// Print.hpp:409
         pub fn trafo(&self) -> &crate::geometry::geometry::Transform3d {
@@ -6525,11 +6557,15 @@ pub mod faithful {
         }
         /// Print.hpp:473
         pub fn layer_count(&self) -> usize {
-            self.m_layer_count
+            self.m_layers.len()
+        }
+        /// Print.hpp:475 `const Layer* get_layer(int idx) const { return m_layers[idx]; }`
+        pub fn get_layer(&self, idx: i32) -> &crate::layer::Layer {
+            &self.m_layers[idx as usize]
         }
         /// Print.hpp:499
         pub fn support_layer_count(&self) -> usize {
-            self.m_support_layer_count
+            self.m_support_layers.len()
         }
         /// Print.hpp:518
         pub fn num_printing_regions(&self) -> usize {
@@ -6611,11 +6647,85 @@ pub mod faithful {
         /// Print.cpp:2079-2090 `void PrintObject::clear_shared_object()`
         pub fn clear_shared_object(&mut self) {
             if self.m_shared_object.is_some() {
-                self.m_layer_count = 0;
-                self.m_support_layer_count = 0;
+                self.m_layers.clear();
+                self.m_support_layers.clear();
                 self.m_shared_object = None;
                 // invalidate_all_steps_without_cancel()
                 self.m_state.invalidate_all(|| {});
+            }
+        }
+        /// Print.cpp:2092-2108 `void PrintObject::copy_layers_from_shared_object()`. `shared_object` is the
+        /// object `m_shared_object` points at.
+        ///
+        /// FIDELITY-NOTE: the C++ shares the layer pointers of the shared object; here the layers are copied.
+        pub fn copy_layers_from_shared_object(&mut self, shared_object: Option<&PrintObject>) {
+            if let (Some(_), Some(shared_object)) = (self.m_shared_object, shared_object) {
+                self.m_layers.clear();
+                self.m_support_layers.clear();
+
+                self.firstLayerObjSliceByVolume.clear();
+                self.firstLayerObjSliceByGroups.clear();
+
+                self.m_layers = shared_object.layers().to_vec();
+                self.m_support_layers = shared_object.support_layers().to_vec();
+
+                self.firstLayerObjSliceByVolume = shared_object.firstLayerObjSlice().to_vec();
+                self.firstLayerObjSliceByGroups = shared_object.firstLayerObjGroups().to_vec();
+            }
+        }
+        /// Print.cpp:2110-2121 `void PrintObject::copy_layers_overhang_from_shared_object()`. `shared_object` is
+        /// the object `m_shared_object` points at.
+        pub fn copy_layers_overhang_from_shared_object(&mut self, shared_object: Option<&PrintObject>) {
+            if let (Some(_), Some(shared_object)) = (self.m_shared_object, shared_object) {
+                let mut index = 0;
+                while index < self.m_layers.len() && index < shared_object.m_layers.len() {
+                    let layer_src = &mut self.m_layers[index];
+                    layer_src.loverhangs = shared_object.m_layers[index].loverhangs.clone();
+                    layer_src.loverhangs_bbox = shared_object.m_layers[index].loverhangs_bbox;
+                    index += 1;
+                }
+            }
+        }
+        /// Print.cpp:2124-2147 `BoundingBox PrintObject::get_first_layer_bbox(float& a, float& layer_height,
+        /// std::string& name)`
+        pub fn get_first_layer_bbox(&self, print: &Print, a: &mut f32, layer_height: &mut f32, name: &mut String) -> crate::geometry::BoundingBox {
+            let mut bbox = crate::geometry::BoundingBox::new();
+            *a = 0.0;
+            *name = self.model_object(print).name.clone();
+            if self.layer_count() > 0 {
+                let layer = self.get_layer(0);
+                *layer_height = layer.height as f32;
+                // only work for object with single instance
+                let shift = self.instances()[0].shift_without_plate_offset(print);
+                for bb in &layer.lslices_bboxes {
+                    let mut bb = *bb;
+                    bb.translate(Point::new(shift.x, shift.y));
+                    bbox.merge(&bb);
+                }
+                for slice in &layer.lslices {
+                    *a = (*a as f64 + slice.area()) as f32;
+                }
+            }
+            if self.has_brim() {
+                bbox = self.firstLayerObjectBrimBoundingBox;
+            }
+            bbox
+        }
+        /// Print.hpp:452 `const std::vector<VolumeSlices>& firstLayerObjSlice() const`
+        pub fn firstLayerObjSlice(&self) -> &[VolumeSlices] {
+            &self.firstLayerObjSliceByVolume
+        }
+        /// Print.hpp:454 `const std::vector<groupedVolumeSlices>& firstLayerObjGroups() const`
+        pub fn firstLayerObjGroups(&self) -> &[groupedVolumeSlices] {
+            &self.firstLayerObjSliceByGroups
+        }
+        /// Print.hpp:501 `SupportLayer* get_support_layer(int idx) { return idx<m_support_layers.size()?
+        /// m_support_layers[idx]:nullptr; }`
+        pub fn get_support_layer(&self, idx: i32) -> Option<&SupportLayer> {
+            if (idx as usize) < self.m_support_layers.len() {
+                Some(&self.m_support_layers[idx as usize])
+            } else {
+                None
             }
         }
         /// PrintBase.hpp:667 `bool is_step_done_unguarded(PrintObjectStepEnum step) const`
@@ -6702,6 +6812,51 @@ pub mod faithful {
             }
             paths
         }
+
+        /// Print.cpp:5854-5886 `ExtrusionLayers FakeWipeTower::getTrueExtrusionLayersFromWipeTower() const`
+        pub fn getTrueExtrusionLayersFromWipeTower(&self) -> crate::gcode::conflict_checker::ExtrusionLayers {
+            use crate::gcode::conflict_checker::{ExtrusionLayer, ExtrusionLayers, ExtrusionLayersType};
+            let mut wtels = ExtrusionLayers { layers: Vec::new(), type_: ExtrusionLayersType::WipeTower };
+            let mut layer_heights: Vec<f32> = Vec::with_capacity(self.outer_wall.len());
+            let keys: Vec<f32> = self.outer_wall.keys().map(|k| k.0).collect();
+            let mut pre = 0usize;
+            for (it, key) in keys.iter().enumerate() {
+                if it == 0 {
+                    layer_heights.push(*key);
+                } else {
+                    layer_heights.push(*key - keys[pre]);
+                    pre += 1;
+                }
+            }
+            // Point trans = {scale_(pos.x()), scale_(pos.y())}: Point(double, double) rounds.
+            let trans = Point::new(
+                (self.pos[0] as f64 / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64,
+                (self.pos[1] as f64 / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64,
+            );
+            for (index, (key, polylines)) in self.outer_wall.iter().enumerate() {
+                let mut el = ExtrusionLayer::default();
+                let mut paths: Vec<crate::extrusion_entity::ExtrusionPath> = Vec::with_capacity(polylines.len());
+                for polyline in polylines {
+                    let mut path = crate::extrusion_entity::ExtrusionPath::with_params(
+                        crate::extrusion_entity::ExtrusionRole::WipeTower,
+                        0.0,
+                        0.0,
+                        layer_heights[index] as f64,
+                        false,
+                    );
+                    path.polyline = polyline.clone();
+                    for p in path.polyline.points.iter_mut() {
+                        *p = *p + trans;
+                    }
+                    paths.push(path);
+                }
+                el.paths = paths;
+                el.bottom_z = key.0 - layer_heights[index];
+                el.layer = std::ptr::null();
+                wtels.layers.push(el);
+            }
+            wtels
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -6722,8 +6877,17 @@ pub mod faithful {
         /// `BoundingBoxf bbx`: min and max, including brim.
         pub bbx: ((f64, f64), (f64, f64)),
         pub rib_offset: [f32; 2],
-        /// `std::optional<WipeTowerMeshData> wipe_tower_mesh_data`: its bottom outline.
-        pub wipe_tower_mesh_data_bottom: Option<Polygon>,
+        /// `std::optional<WipeTowerMeshData> wipe_tower_mesh_data`, rib_offset added.
+        pub wipe_tower_mesh_data: Option<WipeTowerMeshData>,
+    }
+
+    /// Print.hpp:776-781 `struct WipeTowerData::WipeTowerMeshData`
+    #[derive(Debug, Clone)]
+    pub struct WipeTowerMeshData {
+        pub bottom: Polygon,
+        /// `TriangleMesh real_wipe_tower_mesh` (the crate's TriangleMesh port is `ModelMesh`)
+        pub real_wipe_tower_mesh: crate::model::ModelMesh,
+        pub real_brim_mesh: crate::model::ModelMesh,
     }
 
     impl WipeTowerData {
@@ -6742,7 +6906,69 @@ pub mod faithful {
             self.number_of_toolchanges = -1;
             self.depth = 0.0;
             self.brim_width = 0.0;
-            self.wipe_tower_mesh_data_bottom = None;
+            self.wipe_tower_mesh_data = None;
+        }
+
+        /// Print.cpp:5888-5912 `void WipeTowerData::construct_mesh(float width, float depth, float height, float
+        /// brim_width, bool is_rib_wipe_tower, float rib_width, float rib_length, bool fillet_wall)`
+        pub fn construct_mesh(
+            &mut self,
+            width: f32,
+            depth: f32,
+            height: f32,
+            brim_width: f32,
+            is_rib_wipe_tower: bool,
+            rib_width: f32,
+            rib_length: f32,
+            fillet_wall: bool,
+        ) {
+            use crate::gcode::wipe_tower::WipeTower;
+            use crate::model::ModelMesh as TriangleMesh;
+            use crate::triangle_mesh::{its_make_cube, Vec3f};
+            let empty_mesh = || TriangleMesh::new();
+            self.wipe_tower_mesh_data =
+                Some(WipeTowerMeshData { bottom: Polygon::default(), real_wipe_tower_mesh: empty_mesh(), real_brim_mesh: empty_mesh() });
+            let first_layer_height: f32 = 0.08; //brim height
+            if (width as f64) < EPSILON || (depth as f64) < EPSILON || (height as f64) < EPSILON {
+                return;
+            }
+            // scaled(Vec2f) = `(v / SCALING_FACTOR).cast<coord_t>()`: Eigen divides the float vector by the
+            // scalar converted to float, then truncates.
+            let sf = crate::libslic3r::SCALING_FACTOR as f32;
+            let scaled_v2f = |x: f32, y: f32| Point::new((x / sf) as i64, (y / sf) as i64);
+            let rib_offset = self.rib_offset;
+            let data = self.wipe_tower_mesh_data.as_mut().unwrap();
+            if !is_rib_wipe_tower || (rib_length as f64) < EPSILON {
+                data.real_wipe_tower_mesh = TriangleMesh::from_its(its_make_cube(width as f64, depth as f64, height as f64));
+                data.real_brim_mesh = TriangleMesh::from_its(its_make_cube(
+                    (width + 2.0 * brim_width) as f64,
+                    (depth + 2.0 * brim_width) as f64,
+                    first_layer_height as f64,
+                ));
+                data.real_brim_mesh.translate(&Vec3f::new(-brim_width, -brim_width, 0.0));
+                data.bottom = Polygon::from_points(vec![
+                    scaled_v2f(-brim_width, -brim_width),
+                    scaled_v2f(width + brim_width, 0.0),
+                    scaled_v2f(width + brim_width, depth + brim_width),
+                    scaled_v2f(0.0, depth),
+                ]);
+            } else {
+                data.real_wipe_tower_mesh = TriangleMesh::from_its(WipeTower::its_make_rib_tower(width, depth, height, rib_length, rib_width, fillet_wall));
+                data.bottom = WipeTower::rib_section(width, depth, rib_length, rib_width, fillet_wall);
+                // offset(const Polygon&, float delta) of scaled(brim_width): jtMiter, miter limit 3.
+                let brim_bottom = crate::clipper_utils::offset_polygons_clib(
+                    std::slice::from_ref(&data.bottom),
+                    ((brim_width as f64 / crate::libslic3r::SCALING_FACTOR) as f32) as f64,
+                    crate::clipper_utils::OffsetJoinType::Miter,
+                );
+                if !brim_bottom.is_empty() {
+                    data.bottom = brim_bottom[0].clone();
+                }
+                data.real_brim_mesh = TriangleMesh::from_its(WipeTower::its_make_rib_brim(&data.bottom, first_layer_height));
+                data.real_wipe_tower_mesh.translate(&Vec3f::new(rib_offset[0], rib_offset[1], 0.0));
+                data.real_brim_mesh.translate(&Vec3f::new(rib_offset[0], rib_offset[1], 0.0));
+                data.bottom.translate(scaled_v2f(rib_offset[0], rib_offset[1]));
+            }
         }
     }
 
@@ -8022,17 +8248,17 @@ pub mod faithful {
         }
 
         /// Print.cpp:1903-1916 `double Print::skirt_first_layer_height() const`
-        ///
-        /// FIDELITY-NOTE: with a single-diameter layering nozzle the C++ returns the first object's
-        /// `slicing_parameters().first_print_layer_height`, which the slicing steps compute; the
-        /// objects here keep no slicing parameters, so `first_print_layer_height` is passed in.
-        pub fn skirt_first_layer_height(&self, first_object_first_print_layer_height: Option<f64>) -> f64 {
+        pub fn skirt_first_layer_height(&self) -> f64 {
+            // A multi-diameter plate printing with a single diameter lays its first layer at that nozzle's height, which is
+            // what the slicing parameters made of it. Every object shares it, resolve_single_diameter_layering_nozzle()
+            // only picks a nozzle on which they do: the brim and the skirt are laid on one layer.
+            // A non-zero nozzle is only resolved with objects on the plate, and apply() then updates their parameters.
             if self.m_single_diameter_layering_nozzle > EPSILON {
-                if let Some(h) = first_object_first_print_layer_height {
-                    return h;
-                }
+                debug_assert!(self.m_objects[0].slicing_parameters().valid);
+                return self.m_objects[0].slicing_parameters().first_print_layer_height;
             }
-            // Same first grid step as SlicingParameters: multi-diameter slicing subdivides the initial layer too.
+            // Same first grid step as SlicingParameters: multi-diameter slicing subdivides the initial layer too, and
+            // the brim is laid on that step, not on the authored initial layer height.
             cfg_float(&self.m_config, "initial_layer_print_height")
                 / (1.max(crate::print_config::config_def::layer_grid_subdivision(self.full_print_config())) as f64)
         }
@@ -8541,6 +8767,1188 @@ pub mod faithful {
         pub fn set_gcode_file_invalidated(&mut self) {
             self.invalidate_step(PrintStep::psGCodeExport);
         }
+    }
+
+    // ------------------------------------------------------------------------
+    // Print.cpp, the functions after the query functions: the plate's printed filaments, the bounding
+    // boxes, the brim and skirt flows, the first layer, the compacted wipe tower clearance.
+    // ------------------------------------------------------------------------
+
+    /// Flow.cpp:136-157 `Flow Flow::new_from_config_width(FlowRole role, const ConfigOptionFloat &width,
+    /// float preset_nozzle_diameter, float nozzle_diameter, float height, bool multi_nozzle_diameter_mode)`,
+    /// the overload of the pin (flow.rs carries the earlier one without the preset nozzle).
+    fn flow_new_from_config_width(
+        role: crate::flow::FlowRole,
+        width: &crate::config::ConfigOptionFloat,
+        preset_nozzle_diameter: f32,
+        nozzle_diameter: f32,
+        height: f32,
+        multi_nozzle_diameter_mode: bool,
+    ) -> crate::flow::FlowResult<crate::flow::Flow> {
+        use crate::flow::{Flow, FlowError};
+        if height <= 0.0 {
+            return Err(FlowError::InvalidArgument("Invalid flow height supplied to new_from_config_width()".to_string()));
+        }
+        let w: f32 = if width.value == 0.0 {
+            // If user left option to 0, calculate a sane default width.
+            Flow::auto_extrusion_width(role, nozzle_diameter as f64) as f32
+        } else {
+            Flow::extrusion_width_for_nozzle(width, preset_nozzle_diameter, nozzle_diameter, multi_nozzle_diameter_mode) as f32
+        };
+        Flow::new(w as f64, height as f64, nozzle_diameter as f64)
+    }
+
+    /// `ConfigOptionFloat` of a float option of a static config.
+    fn cfg_option_float(config: &DynamicPrintConfig, key: &str) -> crate::config::ConfigOptionFloat {
+        crate::config::ConfigOptionFloat::with_value(cfg_float(config, key))
+    }
+
+    /// BoundingBox.hpp `void offset(coordf_t delta)`: `PointType v(delta, delta)` (Point(double,
+    /// double) rounds), subtracted from min and added to max.
+    fn bounding_box_offset(bb: &mut crate::geometry::BoundingBox, delta: f64) {
+        let v = Point::new(delta.round_ties_even() as i64, delta.round_ties_even() as i64);
+        bb.min = bb.min - v;
+        bb.max = bb.max + v;
+    }
+
+    /// CustomGCode.cpp:74-83 `custom_tool_changes_up_to(const Info&, size_t num_extruders, double
+    /// max_print_z)`: the tool changes of `custom_tool_changes` at or below `max_print_z`.
+    ///
+    /// FIDELITY-NOTE: CustomGCode.cpp's function, kept here until custom_g_code.rs carries it.
+    fn custom_tool_changes_up_to(custom_gcode_per_print_z: &crate::custom_g_code::Info, num_extruders: usize, max_print_z: f64) -> Vec<(f64, u32)> {
+        let mut tool_changes = crate::custom_g_code::custom_tool_changes(custom_gcode_per_print_z, num_extruders);
+        tool_changes.retain(|tool_change| !(tool_change.0 > max_print_z + EPSILON));
+        tool_changes
+    }
+
+    /// Layer.hpp:333-408 `class SupportLayer : public Layer`, the members Print.cpp reads.
+    #[derive(Debug, Clone)]
+    pub struct SupportLayer {
+        /// The `Layer` base.
+        pub layer: crate::layer::Layer,
+        /// Polygons covered by the supports: base, interface and contact areas.
+        pub support_islands: crate::geometry::ExPolygons,
+        /// Extrusion paths for the support base and for the support interface and contacts.
+        pub support_fills: crate::extrusion_entity::ExtrusionEntityCollection,
+        /// for tree supports
+        pub base_areas: crate::geometry::ExPolygons,
+        /// BBS multi-diameter: the filament and nozzle the support merge plan pinned to this layer.
+        pub planned_filament_id: i32,
+        pub planned_nozzle_diameter: f64,
+        pub planned_interface_filament_id: i32,
+        pub planned_interface_nozzle_diameter: f64,
+        /// BBS multi-diameter: the height of the merged support slab printed at this layer.
+        pub base_slab_height: f64,
+        pub interface_slab_height: f64,
+        m_interface_id: usize,
+    }
+
+    impl SupportLayer {
+        /// Layer.hpp:382-383 `SupportLayer(size_t id, size_t interface_id, PrintObject *object, coordf_t
+        /// height, coordf_t print_z, coordf_t slice_z)`
+        pub fn new(id: usize, interface_id: usize, object_id: usize, height: f64, print_z: f64, slice_z: f64) -> Self {
+            SupportLayer {
+                layer: crate::layer::Layer::new(id, object_id, height, print_z, slice_z),
+                support_islands: Vec::new(),
+                support_fills: crate::extrusion_entity::ExtrusionEntityCollection::new(),
+                base_areas: Vec::new(),
+                planned_filament_id: 0,
+                planned_nozzle_diameter: 0.0,
+                planned_interface_filament_id: 0,
+                planned_interface_nozzle_diameter: 0.0,
+                base_slab_height: 0.0,
+                interface_slab_height: 0.0,
+                m_interface_id: interface_id,
+            }
+        }
+        /// Layer.hpp:366 `virtual bool has_extrusions() const { return ! support_fills.empty(); }`
+        pub fn has_extrusions(&self) -> bool {
+            !self.support_fills.is_empty()
+        }
+        /// Layer.hpp:367-369 `coordf_t effective_print_height() const override`
+        ///
+        /// FIDELITY-NOTE: `Layer::effective_print_height()` (Layer.hpp:242-249) raises the height to the
+        /// merged height of a group-top patch of a region; the crate's LayerRegion has no
+        /// `adaptive_merge_patches` member yet, so the base is the layer height.
+        pub fn effective_print_height(&self) -> f64 {
+            self.layer.height.max(self.base_slab_height).max(self.interface_slab_height)
+        }
+        /// Layer.hpp:372 `size_t interface_id() const { return m_interface_id; }`
+        pub fn interface_id(&self) -> usize {
+            self.m_interface_id
+        }
+    }
+
+    impl Print {
+        /// Print.cpp:578-604 `std::vector<unsigned int> Print::printed_filaments() const`
+        pub fn printed_filaments(&self) -> Vec<u32> {
+            let object_extruders = self.object_extruders();
+            let mut filaments = object_extruders.clone();
+            filaments.extend(self.support_material_extruders());
+
+            // Same gate as ToolOrdering: custom tool changes override the object filament only in MultiAsSingle mode
+            // on a plate whose objects print with a single filament.
+            let custom_gcodes = self.m_model.get_curr_plate_custom_gcodes();
+            let num_filaments = cfg_floats(&self.m_config, "filament_diameter").len();
+            if num_filaments > 1 && object_extruders.len() == 1 && custom_gcodes.mode == crate::custom_g_code::Mode::MultiAsSingle {
+                // A tool change above the top of the printed stack never takes effect. The stack is the one the plate
+                // is sliced on when only the object and support filaments count, read from the objects' current configs.
+                let mut single_nozzle = 0.0;
+                if !filaments.is_empty() && !has_multiple_used_nozzle_diameters(&self.m_config, &filaments) {
+                    single_nozzle = nozzle_diameter_for_filament(&self.m_config, filaments[0] + 1) as f64;
+                }
+                let mut max_print_z: f64 = 0.0;
+                for object in &self.m_objects {
+                    max_print_z = max_print_z.max(object.compute_slicing_parameters(self, single_nozzle).object_print_z_max);
+                }
+                for (_print_z, extruder) in custom_tool_changes_up_to(&custom_gcodes, num_filaments, max_print_z) {
+                    if extruder > 0 {
+                        filaments.push(extruder - 1);
+                    }
+                }
+            }
+
+            sort_remove_duplicates(&mut filaments);
+            filaments
+        }
+
+        /// Print.cpp:646-711 `double Print::resolve_single_diameter_layering_nozzle() const`
+        pub fn resolve_single_diameter_layering_nozzle(&self) -> f64 {
+            use crate::print_config::config_def::multi_nozzle_diameter_mode_enabled;
+            if !multi_nozzle_diameter_mode_enabled(self.full_print_config()) || self.m_objects.is_empty() {
+                return 0.0;
+            }
+
+            // printed_filaments() sees what the plate will actually print with: painted colours, part, feature and
+            // layer-range filaments, support filaments, and the custom G-code tool changes that take effect.
+            // A mixed filament prints with its components, whose diameters are in sync with its own.
+            let filaments = self.printed_filaments();
+            if filaments.is_empty() || has_multiple_used_nozzle_diameters(&self.m_config, &filaments) {
+                return 0.0;
+            }
+            let diameter = nozzle_diameter_for_filament(&self.m_config, filaments[0] + 1) as f64;
+            if diameter <= EPSILON {
+                return 0.0;
+            }
+            // The skirt, the brims and the first-layer checks of the G-code export lay one first layer for the whole plate.
+            // An object whose layer height falls outside the nozzle's printable window gets a larger band, and with it a
+            // first layer of its own, so such a plate keeps the merge path, where every object starts on the first grid step.
+            let first_layer_height = self.m_objects[0].compute_slicing_parameters(self, diameter).first_print_layer_height;
+            if self.m_objects[1..]
+                .iter()
+                .any(|object| (object.compute_slicing_parameters(self, diameter).first_print_layer_height - first_layer_height).abs() > EPSILON)
+            {
+                return 0.0;
+            }
+            // Variable layer height profiles and height ranges are scaled like the object's layer height, by the ratio of
+            // the nozzle's band to the authored height. Inside the preset nozzle's limits that ratio is the diameter ratio,
+            // and every height they carry lands inside the nozzle's printable window. An object layer height kept outside
+            // those limits changes the band and with it the ratio. A profile then leaving the window would be reset by the
+            // slicing, so such a plate keeps the merge path, where the profile is laid on the fine grid as authored.
+            let mut has_custom_layering = false;
+            for object in &self.m_objects {
+                let model_object = object.model_object(self);
+                if !model_object.has_custom_layering() {
+                    continue;
+                }
+                has_custom_layering = true;
+                if !crate::slicing::custom_layer_heights_within_limits(
+                    &object.compute_slicing_parameters(self, diameter),
+                    &model_object.layer_height_profile.get(),
+                    &model_object.layer_config_ranges,
+                ) {
+                    log::warn!(
+                        "nozzle_diameter={} custom layer heights of object {} leave the nozzle's printable window, keeping the merge path",
+                        diameter,
+                        model_object.name
+                    );
+                    return 0.0;
+                }
+            }
+            // A prime tower merges the objects' commensurate custom layer heights only through the merge planning of the
+            // fine grid. Sliced straight, the objects have to lay identical Z series, otherwise such a plate keeps the
+            // merge path.
+            if has_custom_layering && self.m_objects.len() > 1 && self.has_wipe_tower() {
+                let mut reference_layers: Vec<f64> = Vec::new();
+                for object in &self.m_objects {
+                    let params = object.compute_slicing_parameters(self, diameter);
+                    let mut profile: Vec<f64> = Vec::new();
+                    let mut nozzle_range_reset = false;
+                    PrintObject::update_layer_height_profile(object.model_object(self), &params, &mut profile, &mut nozzle_range_reset);
+                    let mut layers = crate::slicing::generate_object_layers(&params, &profile, cfg_bool(object.config(), "precise_z_height"));
+                    if reference_layers.len() < layers.len() {
+                        std::mem::swap(&mut reference_layers, &mut layers);
+                    }
+                    // The shorter series has to be a prefix of the taller one, as Print::validate() requires.
+                    for i in 0..layers.len() {
+                        if (layers[i] - reference_layers[i]).abs() > 0.5 * EPSILON {
+                            log::warn!(
+                                "nozzle_diameter={} objects lay different custom layer heights under a tool change structure, keeping the merge path",
+                                diameter
+                            );
+                            return 0.0;
+                        }
+                    }
+                }
+            }
+            diameter
+        }
+
+        /// Print.cpp:758-775 `std::vector<size_t> Print::layers_sorted_for_object(float start, float end,
+        /// std::vector<LayerPtrs> &layers_of_objects, std::vector<BoundingBox> &boundingBox_for_objects,
+        /// std::vector<Points> &objects_instances_shift)`. A layer is its object's index in `m_objects`
+        /// and its index in the object's `m_layers`.
+        pub fn layers_sorted_for_object(
+            &self,
+            start: f32,
+            end: f32,
+            layers_of_objects: &mut Vec<Vec<(usize, usize)>>,
+            bounding_box_for_objects: &mut Vec<crate::geometry::BoundingBox>,
+            objects_instances_shift: &mut Vec<Vec<Point>>,
+        ) -> Vec<usize> {
+            let mut idx_of_object_sorted: Vec<usize> = Vec::new();
+            let mut idx = 0usize;
+            for (object_idx, object) in self.m_objects.iter().enumerate() {
+                idx_of_object_sorted.push(idx);
+                idx += 1;
+                object.get_certain_layers(object_idx, start, end, layers_of_objects, bounding_box_for_objects);
+            }
+            let boxes = bounding_box_for_objects.clone();
+            crate::clipper::libcxx_sort(&mut idx_of_object_sorted, |left, right| {
+                (boxes[*left].width() as f64 * boxes[*left].height() as f64) > (boxes[*right].width() as f64 * boxes[*right].height() as f64)
+            });
+
+            objects_instances_shift.clear();
+            objects_instances_shift.reserve(self.m_objects.len());
+            for object in &self.m_objects {
+                objects_instances_shift.push(object.get_instances_shift_without_plate_offset(self));
+            }
+
+            idx_of_object_sorted
+        }
+
+        /// Print.cpp:1849-1859 `BoundingBox Print::bounding_box() const` (in the `#if 0` block of 1846-1901)
+        pub fn bounding_box(&self) -> crate::geometry::BoundingBox {
+            let mut bb = crate::geometry::BoundingBox::new();
+            for object in &self.m_objects {
+                for instance in object.instances() {
+                    let bb2 = object.bounding_box();
+                    bb.merge_point(bb2.min + instance.shift);
+                    bb.merge_point(bb2.max + instance.shift);
+                }
+            }
+            bb
+        }
+
+        /// Print.cpp:1861-1900 `BoundingBox Print::total_bounding_box() const`: the total bounding box of
+        /// extrusions, including skirt/brim/support material. Only configuration values and the first
+        /// layer of the first object are read. At the pin it sits in an `#if 0` block (1846-1901), where
+        /// `SUPPORT_MATERIAL_MARGIN` is the one of SupportMaterial.cpp:59.
+        pub fn total_bounding_box(&self) -> crate::flow::FlowResult<crate::geometry::BoundingBox> {
+            // get objects bounding box
+            let mut bb = self.bounding_box();
+
+            // we need to offset the objects bounding box by at least half the perimeters extrusion width
+            let first_layer = self.m_objects[0].get_layer(0);
+            let perimeter_flow = first_layer.regions()[0]
+                .flow(crate::flow::FlowRole::Perimeter, first_layer.height)
+                .map_err(|e| crate::flow::FlowError::InvalidArgument(e.to_string()))?;
+            let mut extra = perimeter_flow.width() / 2.0;
+
+            // consider support material
+            if self.has_support_material() {
+                extra = extra.max(crate::support::support_material::SUPPORT_MATERIAL_MARGIN);
+            }
+
+            // consider brim and skirt
+            if cfg_float(&self.m_config, "brim_width") > 0.0 {
+                let brim_flow = self.brim_flow()?;
+                extra = extra.max(cfg_float(&self.m_config, "brim_width") + brim_flow.width() / 2.0);
+            }
+            if self.has_skirt() {
+                let mut skirts = cfg_int(&self.m_config, "skirt_loops");
+                if skirts == 0 && self.has_infinite_skirt() {
+                    skirts = 1;
+                }
+                let skirt_flow = self.skirt_flow()?;
+                extra = extra.max(
+                    cfg_float(&self.m_config, "brim_width")
+                        + cfg_float(&self.m_config, "skirt_distance")
+                        + skirts as f64 * skirt_flow.spacing()
+                        + skirt_flow.width() / 2.0,
+                );
+            }
+
+            if extra > 0.0 {
+                bounding_box_offset(&mut bb, extra / crate::libslic3r::SCALING_FACTOR);
+            }
+
+            Ok(bb)
+        }
+
+        /// Print.cpp:1918-1943 `Flow Print::brim_flow() const`
+        pub fn brim_flow(&self) -> crate::flow::FlowResult<crate::flow::Flow> {
+            use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+            let first_region = self.m_print_regions[0].borrow();
+            let mut width = cfg_option_float(&self.m_config, "initial_layer_line_width");
+            if width.value == 0.0 {
+                width = cfg_option_float(first_region.config(), "inner_wall_line_width");
+            }
+            if width.value == 0.0 {
+                width = cfg_option_float(self.m_objects[0].config(), "line_width");
+            }
+
+            /* We currently use a random region's perimeter extruder.
+               While this works for most cases, we should probably consider all of the perimeter
+               extruders and take the one with, say, the smallest index.
+               The same logic should be applied to the code that selects the extruder during G-code
+               generation as well. */
+            // A multi-diameter plate printing with a single diameter prints every brim with that nozzle. The first region's
+            // wall filament may be painted over entirely, print nothing and carry another diameter.
+            let nozzle_diameter: f32 = if self.m_single_diameter_layering_nozzle > EPSILON {
+                self.m_single_diameter_layering_nozzle as f32
+            } else {
+                nozzle_diameter_for_filament(&self.m_config, cfg_int(first_region.config(), "wall_filament") as u32)
+            };
+            flow_new_from_config_width(
+                crate::flow::FlowRole::Perimeter,
+                &width,
+                primary_nozzle_diameter(self.full_print_config()) as f32,
+                nozzle_diameter,
+                self.skirt_first_layer_height() as f32,
+                multi_nozzle_diameter_mode_enabled(self.full_print_config()),
+            )
+        }
+
+        /// Print.cpp:1967-1976 `Flow Print::multi_diameter_brim_flow(const PrintObject &object, unsigned int
+        /// filament_id) const`
+        pub fn multi_diameter_brim_flow(&self, object: &PrintObject, filament_id: u32) -> crate::flow::FlowResult<crate::flow::Flow> {
+            if !self.uses_multiple_nozzle_diameters() || filament_id == 0 || object.object_brim_filament <= 0 || object.object_brim_print_z < EPSILON {
+                return self.brim_flow();
+            }
+
+            // The brim lies on the bed, so a brim printed at a merged band top is as tall as that band.
+            multi_diameter_brim_flow_on_nozzle(
+                self,
+                self.m_print_regions[0].borrow().config(),
+                object,
+                nozzle_diameter_for_filament(&self.m_config, filament_id),
+                object.object_brim_print_z as f32,
+            )
+        }
+
+        /// Print.cpp:1978-1999 `Flow Print::multi_diameter_support_brim_flow(const PrintObject &object) const`
+        pub fn multi_diameter_support_brim_flow(&self, object: &PrintObject) -> crate::flow::FlowResult<crate::flow::Flow> {
+            let flow = self.brim_flow()?;
+            if !self.uses_multiple_nozzle_diameters() {
+                return Ok(flow);
+            }
+
+            // A merged support base extrudes its bed band only at the band top, on the nozzle the merge plan pinned.
+            for support_layer in object.support_layers() {
+                if !support_layer.has_extrusions() {
+                    continue;
+                }
+                let height = support_layer.effective_print_height();
+                if support_layer.layer.print_z - height > EPSILON || height < EPSILON {
+                    return Ok(flow);
+                }
+                let mut nozzle = support_layer.planned_nozzle_diameter as f32;
+                if nozzle <= 0.0 && cfg_int(object.config(), "support_filament") > 0 {
+                    nozzle = nozzle_diameter_for_filament(&self.m_config, cfg_int(object.config(), "support_filament") as u32);
+                }
+                if nozzle <= 0.0 {
+                    nozzle = flow.nozzle_diameter() as f32;
+                }
+                return multi_diameter_brim_flow_on_nozzle(
+                    self,
+                    self.m_print_regions[0].borrow().config(),
+                    object,
+                    nozzle,
+                    support_layer.layer.print_z as f32,
+                );
+            }
+            Ok(flow)
+        }
+
+        /// Print.cpp:2001-2015 `Flow Print::skirt_flow() const`
+        pub fn skirt_flow(&self) -> crate::flow::FlowResult<crate::flow::Flow> {
+            // Shared skirt geometry has to fit the widest bead any filament of the plate lays. extruders() already holds
+            // the support filaments, a "don't care" support resolving to the object filaments it prints with.
+            let filaments = self.extruders(false);
+            if filaments.is_empty() {
+                return Err(crate::flow::FlowError::InvalidArgument("Skirt flow requested on a plate that prints with no filament.".to_string()));
+            }
+            let mut flow = self.skirt_flow_for_filament(filaments[0] + 1)?;
+            for &extruder_id in &filaments {
+                let candidate = self.skirt_flow_for_filament(extruder_id + 1)?;
+                if candidate.spacing() > flow.spacing() {
+                    flow = candidate;
+                }
+            }
+            Ok(flow)
+        }
+
+        /// Print.cpp:2017-2020 `Flow Print::skirt_flow(unsigned int filament_id) const`
+        pub fn skirt_flow_for_filament(&self, filament_id: u32) -> crate::flow::FlowResult<crate::flow::Flow> {
+            self.skirt_flow_for_object(&self.m_objects[0], filament_id)
+        }
+
+        /// Print.cpp:2022-2035 `Flow Print::skirt_flow(const PrintObject &object, unsigned int filament_id) const`
+        pub fn skirt_flow_for_object(&self, object: &PrintObject, filament_id: u32) -> crate::flow::FlowResult<crate::flow::Flow> {
+            use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+            let mut width = cfg_option_float(&self.m_config, "initial_layer_line_width");
+            if width.value == 0.0 {
+                width = cfg_option_float(object.config(), "line_width");
+            }
+
+            flow_new_from_config_width(
+                crate::flow::FlowRole::Perimeter,
+                &width,
+                primary_nozzle_diameter(self.full_print_config()) as f32,
+                nozzle_diameter_for_filament(&self.m_config, filament_id),
+                self.skirt_first_layer_height() as f32,
+                multi_nozzle_diameter_mode_enabled(self.full_print_config()),
+            )
+        }
+
+        /// Print.cpp:2037-2046 `Flow Print::multi_diameter_skirt_flow_on_brim_layer(const PrintObject &object,
+        /// unsigned int filament_id) const`
+        pub fn multi_diameter_skirt_flow_on_brim_layer(&self, object: &PrintObject, filament_id: u32) -> crate::flow::FlowResult<crate::flow::Flow> {
+            let flow = self.skirt_flow_for_object(object, filament_id)?;
+            if !self.uses_multiple_nozzle_diameters() || object.object_brim_filament <= 0 || object.object_brim_print_z < EPSILON {
+                return Ok(flow);
+            }
+            let mut height = object.object_brim_print_z as f32;
+            if flow.nozzle_diameter() as f32 > 0.0 {
+                height = height.min(crate::adaptive_layer_merge::adaptive_layer_height_range(flow.nozzle_diameter()).max_height as f32);
+            }
+            flow.with_height(height as f64)
+        }
+
+        /// Print.cpp:3061-3080 `Polygons Print::first_layer_islands() const`
+        pub fn first_layer_islands(&self) -> Vec<Polygon> {
+            let mut islands: Vec<Polygon> = Vec::new();
+            for object in &self.m_objects {
+                let mut object_islands: Vec<Polygon> = Vec::new();
+                for expoly in &object.m_layers[0].lslices {
+                    object_islands.push(expoly.contour.clone());
+                }
+                if !object.support_layers().is_empty() {
+                    let expolys_first_layer = &object.m_support_layers[0].support_islands;
+                    for expoly in expolys_first_layer {
+                        object_islands.push(expoly.contour.clone());
+                    }
+                }
+                islands.reserve(object_islands.len() * object.instances().len());
+                for instance in object.instances() {
+                    for poly in &object_islands {
+                        let mut p = poly.clone();
+                        p.translate(instance.shift);
+                        islands.push(p);
+                    }
+                }
+            }
+            islands
+        }
+
+        /// Print.cpp:3188-3227 `std::vector<std::string> Print::get_incompatible_filaments_by_nozzle(const float
+        /// nozzle_diameter, const std::optional<NozzleVolumeType> nozzle_volume_type)`
+        pub fn get_incompatible_filaments_by_nozzle(nozzle_diameter: f32, nozzle_volume_type: Option<NozzleVolumeType>) -> Vec<String> {
+            use crate::print_config::config_def::get_nozzle_volume_type_string;
+            static INCOMPATIBLE_FILAMENTS: std::sync::Mutex<BTreeMap<String, BTreeMap<String, Vec<String>>>> =
+                std::sync::Mutex::new(BTreeMap::new());
+            let mut incompatible_filaments = INCOMPATIBLE_FILAMENTS.lock().unwrap();
+            if incompatible_filaments.is_empty() {
+                let file_path = crate::utils::resources_dir().join("info").join("nozzle_incompatibles.json");
+                let parsed = std::fs::read_to_string(&file_path)
+                    .map_err(|e| e.to_string())
+                    .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).map_err(|e| e.to_string()));
+                match parsed {
+                    Ok(j) => {
+                        if let Some(volumes) = j.get("incompatible_nozzles").and_then(|v| v.as_object()) {
+                            for (volume_type, diameter_list) in volumes {
+                                if let Some(diameters) = diameter_list.as_object() {
+                                    for (diameter, filaments) in diameters {
+                                        let list: Vec<String> = filaments
+                                            .as_array()
+                                            .map(|a| a.iter().filter_map(|f| f.as_str().map(|s| s.to_string())).collect())
+                                            .unwrap_or_default();
+                                        incompatible_filaments.entry(volume_type.clone()).or_default().insert(diameter.clone(), list);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("parse {} got a nlohmann::detail::parse_error, reason = {}", file_path.display(), err);
+                        incompatible_filaments.insert(get_nozzle_volume_type_string(NozzleVolumeType::NvtHighFlow), BTreeMap::new());
+                        incompatible_filaments.insert(get_nozzle_volume_type_string(NozzleVolumeType::NvtStandard), BTreeMap::new());
+                    }
+                }
+            }
+            // std::fixed << std::setprecision(1) of the float
+            let diameter_str = format!("{:.1}", nozzle_diameter as f64);
+
+            if let Some(volume_type) = nozzle_volume_type {
+                return incompatible_filaments
+                    .entry(get_nozzle_volume_type_string(volume_type))
+                    .or_default()
+                    .entry(diameter_str)
+                    .or_default()
+                    .clone();
+            }
+
+            let mut incompatible_filaments_list: Vec<String> = Vec::new();
+            for (_volume_type, diameter_list) in incompatible_filaments.iter() {
+                if let Some(list) = diameter_list.get(&diameter_str) {
+                    incompatible_filaments_list.extend(list.iter().cloned());
+                }
+            }
+            incompatible_filaments_list
+        }
+
+        /// Print.cpp:3229-3239 `void Print::finalize_first_layer_convex_hull()`
+        pub fn finalize_first_layer_convex_hull(&mut self) {
+            let skirt = self.m_skirt_convex_hull.clone();
+            self.m_first_layer_convex_hull.points.extend(skirt);
+            if self.m_first_layer_convex_hull.is_empty() {
+                // Neither skirt nor brim was extruded. Collect points of printed objects from 1st layer.
+                for poly in self.first_layer_islands() {
+                    self.m_first_layer_convex_hull.points.extend(poly.points);
+                }
+            }
+            let corners = self.first_layer_wipe_tower_corners(true);
+            self.m_first_layer_convex_hull.points.extend(corners);
+            self.m_first_layer_convex_hull = crate::geometry::convex_hull_points(self.m_first_layer_convex_hull.points.clone());
+        }
+
+        /// Print.cpp:3671-3740 `const WipeTowerData& Print::wipe_tower_data(size_t filaments_cnt) const`. The
+        /// C++ writes the estimated depth and brim width through a `const_cast`; here the Print is `&mut`.
+        pub fn wipe_tower_data(&mut self, filaments_cnt: usize) -> &WipeTowerData {
+            use crate::gcode::wipe_tower::WipeTower;
+            use crate::print_config::enums::PrimeVolumeMode;
+            // If the wipe tower wasn't created yet, make sure the depth and brim_width members are set to default.
+            let mut max_height: f64 = 0.0;
+            for obj_idx in 0..self.m_objects.len() {
+                let object_z = self.m_objects[obj_idx].size()[2] as f64;
+                max_height = (object_z * crate::libslic3r::SCALING_FACTOR).max(max_height);
+            }
+            if max_height < EPSILON {
+                return &self.m_wipe_tower_data;
+            }
+
+            // `double layer_height = 0.08f; // hard code layer height`, then overwritten by the object's.
+            let layer_height = cfg_float(self.m_objects[0].config(), "layer_height");
+
+            let need_wipe_tower = (cfg_enum(&self.m_config, "timelapse_type") == TimelapseType::TlSmooth as i32)
+                | cfg_bool(&self.m_config, "prime_tower_rib_wall");
+            let extra_spacing = self.m_config.option("prime_tower_infill_gap").and_then(|o| o.get_float().ok()).unwrap_or(0.0) / 100.0;
+            let rib_width = self.m_config.option("prime_tower_rib_width").and_then(|o| o.get_float().ok()).unwrap_or(0.0);
+
+            let filament_change_volume;
+            {
+                let filament_change_lengths: Vec<f64> =
+                    if self.m_config.has("filament_change_length") { cfg_floats(&self.m_config, "filament_change_length") } else { Vec::new() };
+                let length = if filament_change_lengths.is_empty() {
+                    0.0
+                } else {
+                    filament_change_lengths.iter().cloned().fold(f64::NEG_INFINITY, |a, b| if b > a { b } else { a })
+                };
+                let mut diameter = 1.75;
+                let diameters: Vec<f64> = if self.m_config.has("filament_diameter") { cfg_floats(&self.m_config, "filament_diameter") } else { Vec::new() };
+                diameter = if diameters.is_empty() {
+                    diameter
+                } else {
+                    diameters.iter().cloned().fold(f64::NEG_INFINITY, |a, b| if b > a { b } else { a })
+                };
+                filament_change_volume = length * std::f64::consts::PI * diameter * diameter / 4.0;
+            }
+
+            if !self.is_step_done(PrintStep::psWipeTower) && filaments_cnt != 0 {
+                let mut filament_wipe_volume = cfg_floats(&self.m_config, "filament_prime_volume");
+                if cfg_enum(&self.m_config, "prime_volume_mode") == PrimeVolumeMode::PvmSaving as i32 {
+                    for v in filament_wipe_volume.iter_mut() {
+                        *v = 15.0f32 as f64;
+                    }
+                }
+                let wipe_volume = crate::utils::get_max_element(&filament_wipe_volume);
+                let nozzle_count = cfg_floats(&self.m_config, "nozzle_diameter").len();
+                let mut filament_depth_count = if nozzle_count == 2 { filaments_cnt as i64 } else { filaments_cnt as i64 - 1 };
+                if filaments_cnt == 1 && self.enable_timelapse_print() {
+                    filament_depth_count = 1;
+                }
+                let mut volume = wipe_volume * filament_depth_count as f64;
+                if nozzle_count == 2 {
+                    volume += filament_change_volume * ((filaments_cnt / 2) as i32) as f64;
+                }
+
+                if cfg_bool(&self.m_config, "prime_tower_rib_wall") {
+                    let mut depth = (volume / layer_height * extra_spacing).sqrt();
+                    if need_wipe_tower || filaments_cnt > 1 {
+                        let min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height as f32);
+                        depth = (min_wipe_tower_depth as f64).max(depth);
+                        depth += rib_width / 2.0f64.sqrt() + cfg_float(&self.m_config, "prime_tower_extra_rib_length");
+                        self.m_wipe_tower_data.depth = depth as f32;
+                        self.m_wipe_tower_data.brim_width = cfg_float(&self.m_config, "prime_tower_brim_width") as f32;
+                    }
+                } else {
+                    // BBS
+                    let width = cfg_float(&self.m_config, "prime_tower_width");
+                    let mut depth = volume / (layer_height * width) * extra_spacing;
+                    if need_wipe_tower || self.m_wipe_tower_data.depth as f64 > EPSILON {
+                        let min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height as f32);
+                        depth = (min_wipe_tower_depth as f64).max(depth);
+                    }
+                    self.m_wipe_tower_data.depth = depth as f32;
+                    self.m_wipe_tower_data.brim_width = cfg_float(&self.m_config, "prime_tower_brim_width") as f32;
+                }
+                if cfg_float(&self.m_config, "prime_tower_brim_width") < 0.0 {
+                    self.m_wipe_tower_data.brim_width = WipeTower::get_auto_brim_by_height(max_height as f32);
+                }
+            }
+            &self.m_wipe_tower_data
+        }
+
+        /// Print.cpp:3984-4040 `StringObjectException Print::compacted_wipe_tower_clearance_valid(const Print
+        /// &print, Polygons *polygons, std::vector<std::pair<Polygon, float>> *height_polygons)`. Pre-slice
+        /// counterpart of validate_compacted_wipe_tower_clearance(). The Print is `&mut` for
+        /// `wipe_tower_data()`.
+        pub fn compacted_wipe_tower_clearance_valid(
+            print: &mut Print,
+            polygons: Option<&mut Vec<Polygon>>,
+            mut height_polygons: Option<&mut Vec<(Polygon, f32)>>,
+        ) -> crate::print_base::StringObjectException {
+            use crate::gcode::wipe_tower::wipe_tower_sparse_layers_skipped;
+            if !wipe_tower_sparse_layers_skipped(print.config())
+                || cfg_enum(print.config(), "print_sequence") != PrintSequence::ByLayer as i32
+                || !print.has_wipe_tower()
+            {
+                return Default::default();
+            }
+
+            let footprint = estimated_wipe_tower_footprint(print);
+            let config = print.config();
+            let zone = compacted_wipe_tower_zone(config, &footprint);
+            if zone.empty() {
+                return Default::default();
+            }
+
+            let mut exception = crate::print_base::StringObjectException::default();
+            let mut offenders: Vec<Polygon> = Vec::new();
+            let mut body_tier_used = false;
+            for object in print.objects() {
+                let object_top = object.max_z() * crate::libslic3r::SCALING_FACTOR;
+                for instance in object.instances() {
+                    let inst_hull = print_instance_hull(print, object, instance);
+                    if inst_hull.points.is_empty() {
+                        continue;
+                    }
+                    let clearance = compacted_wipe_tower_clearance(config, &zone, &inst_hull, object_top);
+                    body_tier_used = body_tier_used || compacted_tower_body_tier(&clearance);
+                    // Every tier the precise check applies is applied here too, otherwise an object standing
+                    // within the toolhead radius would pass here and then be rejected mid-slice, which is the
+                    // one outcome this check exists to prevent. The compacted tower base is unknown before
+                    // slicing, so the rise is measured from the plate rather than from the tower top; that
+                    // overstates it by the tower's own height and makes this check err strict, never lax.
+                    if object_top <= clearance.allowed_rise + EPSILON {
+                        continue;
+                    }
+
+                    // Height-limit and too-close cases share one user-facing message: both mean the layout
+                    // violates the "No sparse layers" clearance rule, and the remedies are the same.
+                    let msg = compacted_wipe_tower_clearance_error();
+                    if exception.string.is_empty() {
+                        exception.string = msg;
+                        exception.object = Some(object.model_object(print).id());
+                    } else {
+                        // Same wording for every offender; keep a single copy and drop the object pointer.
+                        exception.object = None;
+                    }
+                    let outline = compacted_wipe_tower_offender_outline(&inst_hull, clearance.body_clearance);
+                    offenders.push(outline.clone());
+                    if let Some(hp) = height_polygons.as_deref_mut() {
+                        hp.push((outline, clearance.allowed_rise as f32));
+                    }
+                }
+            }
+
+            // Draw the tower's keep-out ring alongside the offending objects, so the collision area reads as
+            // "this object reaches into the space the toolhead needs around the tower" rather than as a lone
+            // highlighted object. Emitted only on a real collision; the plater discards polygons otherwise.
+            // Only the rings some object on this plate is actually measured against are drawn, so that a ring
+            // and an object outline touching always means that object is over its limit.
+            if let Some(polygons) = polygons {
+                if !offenders.is_empty() {
+                    polygons.extend(compacted_wipe_tower_rings(&zone, body_tier_used));
+                    polygons.extend(offenders);
+                }
+            }
+            exception
+        }
+
+        /// Print.cpp:4052-4142 `void Print::validate_compacted_wipe_tower_clearance() const`: the error
+        /// message when an object rises too close to the compacted tower.
+        pub fn validate_compacted_wipe_tower_clearance(&self) -> Result<(), String> {
+            use crate::gcode::wipe_tower::{compute_compacted_wipe_tower_z, prime_tower_side_scrape_margin, wipe_tower_layer_is_sparse, wipe_tower_sparse_layers_skipped};
+            // Nothing to check when the tower is not compacted: it then follows the object as usual and the
+            // regular by-layer clearance check already covers it. Asking wipe_tower_sparse_layers_skipped()
+            // rather than the raw option keeps this from rejecting plates whose tower is in fact full height.
+            if !wipe_tower_sparse_layers_skipped(&self.m_config) || cfg_enum(&self.m_config, "print_sequence") != PrintSequence::ByLayer as i32 {
+                return Ok(());
+            }
+
+            let tool_changes = &self.m_wipe_tower_data.tool_changes;
+            if tool_changes.is_empty() || self.m_objects.is_empty() {
+                return Ok(());
+            }
+
+            // Same accumulation the G-code emitter runs, so validation and output cannot disagree.
+            let tower_z = compute_compacted_wipe_tower_z(tool_changes);
+
+            // Wipe tower footprint: build it from the ACTUAL tool-change extrusions rather than the nominal
+            // width x depth rectangle returned by first_layer_wipe_tower_corners(). The extrusion end-points
+            // are stored in the wipe-tower local frame, so we map them to the bed frame with the same
+            // transform the G-code emitter applies: rotate by wipe_tower_rotation_angle, shift by
+            // rib_offset, then translate by (wipe_tower_x/y + plate origin).
+            let angle = std::f64::consts::PI * cfg_float(&self.m_config, "wipe_tower_rotation_angle") / 180.0;
+            let (sin, cos) = (angle.sin(), angle.cos());
+            let plate_index = self.base.base.m_plate_index as usize;
+            let wt_translate = (
+                get_at(&cfg_floats(&self.m_config, "wipe_tower_x"), plate_index) + self.m_origin[0],
+                get_at(&cfg_floats(&self.m_config, "wipe_tower_y"), plate_index) + self.m_origin[1],
+            );
+            let rib_off = (self.m_wipe_tower_data.rib_offset[0] as f64, self.m_wipe_tower_data.rib_offset[1] as f64);
+
+            let mut tower_pts: Vec<Point> = Vec::new();
+            for layer in tool_changes {
+                if layer.is_empty() || wipe_tower_layer_is_sparse(layer) {
+                    continue;
+                }
+                for tcr in layer {
+                    for i in 0..tcr.extrusions.len() {
+                        // A zero width marks a travel end-point. Keep it only when it opens a real extrusion, so
+                        // the hull covers the deposited material and nothing else; travels reach a bit further out
+                        // than the walls do.
+                        let e = &tcr.extrusions[i];
+                        if e.width == 0.0 && (i + 1 == tcr.extrusions.len() || tcr.extrusions[i + 1].width == 0.0) {
+                            continue;
+                        }
+                        let q = (e.pos.x as f64 + rib_off.0, e.pos.y as f64 + rib_off.1);
+                        // wt_rot * q: the rows of the rotation matrix times q.
+                        let p = ((-sin).mul_add(q.1, cos * q.0) + wt_translate.0, cos.mul_add(q.1, sin * q.0) + wt_translate.1);
+                        // emplace_back(scale_(x), scale_(y)): Point(double, double) rounds.
+                        tower_pts.push(Point::new(
+                            (p.0 / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64,
+                            (p.1 / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64,
+                        ));
+                    }
+                }
+            }
+            if tower_pts.is_empty() {
+                return Ok(());
+            }
+
+            // Travel end-points were dropped above because travels normally reach a bit further out than the
+            // walls. The side scrape is the one travel that has to be accounted for: it descends alongside the
+            // wall, so the nozzle really does occupy that ring at tower height. Grow the deposited hull by it.
+            let mut tower_hull = crate::geometry::convex_hull_points(tower_pts);
+            let side_scrape_margin = prime_tower_side_scrape_margin(&self.m_config);
+            if side_scrape_margin > 0.0 {
+                // offset(const Polygon&, float delta): jtMiter, miter limit 3.
+                let grown = crate::clipper_utils::offset_polygons_clib(
+                    std::slice::from_ref(&tower_hull),
+                    ((side_scrape_margin / crate::libslic3r::SCALING_FACTOR) as f32) as f64,
+                    crate::clipper_utils::OffsetJoinType::Miter,
+                );
+                if !grown.is_empty() {
+                    tower_hull = grown[0].clone();
+                }
+            }
+
+            let zone = compacted_wipe_tower_zone(&self.m_config, &tower_hull);
+            if zone.empty() {
+                return Ok(());
+            }
+
+            for object in &self.m_objects {
+                let object_top = object.max_z() * crate::libslic3r::SCALING_FACTOR;
+                for instance in object.instances() {
+                    let inst_hull = print_instance_hull(self, object, instance);
+                    if inst_hull.points.is_empty() {
+                        continue;
+                    }
+
+                    // Report the worst layer rather than the first offending one, it is the one that explains the
+                    // collision best. The rise has to be known before the clearance: it is what selects the
+                    // horizontal tier, the nozzle cone being out of the head body's reach.
+                    let mut max_rise = 0.0;
+                    for i in 0..tool_changes.len() {
+                        if tool_changes[i].is_empty() || wipe_tower_layer_is_sparse(&tool_changes[i]) {
+                            continue;
+                        }
+                        // Nothing above the current layer exists yet, so a tall object only counts up to it.
+                        let rise = object_top.min(tool_changes[i][0].print_z as f64) - tower_z[i] as f64;
+                        if rise > max_rise {
+                            max_rise = rise;
+                        }
+                    }
+
+                    let clearance = compacted_wipe_tower_clearance(&self.m_config, &zone, &inst_hull, max_rise);
+                    if max_rise <= clearance.allowed_rise + EPSILON {
+                        continue;
+                    }
+                    // Same wording as compacted_wipe_tower_clearance_valid(): height-limit and too-close
+                    // share one message, since both are layout violations of "No sparse layers".
+                    return Err(compacted_wipe_tower_clearance_error());
+                }
+            }
+            Ok(())
+        }
+    }
+
+    /// Print.cpp:1945-1965 `static Flow multi_diameter_brim_flow_on_nozzle(const Print &print, const
+    /// PrintRegionConfig &first_region_config, const PrintObject &object, float nozzle_diameter, float height)`:
+    /// the brim flow on a given nozzle and height, with the line width brim_flow() takes from the config.
+    pub fn multi_diameter_brim_flow_on_nozzle(
+        print: &Print,
+        first_region_config: &PrintRegionConfig,
+        object: &PrintObject,
+        nozzle_diameter: f32,
+        mut height: f32,
+    ) -> crate::flow::FlowResult<crate::flow::Flow> {
+        use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+        let mut width = cfg_option_float(print.config(), "initial_layer_line_width");
+        if width.value == 0.0 {
+            width = cfg_option_float(first_region_config, "inner_wall_line_width");
+        }
+        if width.value == 0.0 {
+            width = cfg_option_float(object.config(), "line_width");
+        }
+        // A band taller than the nozzle can print would end up with a negative spacing.
+        if nozzle_diameter > 0.0 {
+            height = height.min(crate::adaptive_layer_merge::adaptive_layer_height_range(nozzle_diameter as f64).max_height as f32);
+        }
+
+        flow_new_from_config_width(
+            crate::flow::FlowRole::Perimeter,
+            &width,
+            primary_nozzle_diameter(print.full_print_config()) as f32,
+            nozzle_diameter,
+            height,
+            multi_nozzle_diameter_mode_enabled(print.full_print_config()),
+        )
+    }
+
+    /// Print.cpp:2149-2175 `std::map<ObjectID, unsigned int> getObjectExtruderMap(const Print& print)`: map
+    /// print object with its first layer's first extruder.
+    #[allow(non_snake_case)]
+    pub fn getObjectExtruderMap(print: &Print) -> BTreeMap<ObjectID, u32> {
+        let mut object_extruder_map: BTreeMap<ObjectID, u32> = BTreeMap::new();
+        for object in print.objects() {
+            // BBS
+            if object.object_first_layer_wall_extruders.is_empty() {
+                let mut object_first_layer_first_extruder = cfg_floats(print.config(), "filament_diameter").len() as u32;
+                let first_layer_regions = object.layers()[0].regions();
+                if !first_layer_regions.is_empty() {
+                    for region_ptr in first_layer_regions {
+                        if region_ptr.has_extrusions() {
+                            object_first_layer_first_extruder = object_first_layer_first_extruder
+                                .min(region_ptr.region().extruder(crate::flow::FlowRole::ExternalPerimeter).unwrap_or(0));
+                        }
+                    }
+                }
+                object_extruder_map.entry(object.id()).or_insert(object_first_layer_first_extruder);
+            } else if print.uses_multiple_nozzle_diameters() && object.object_brim_filament > 0 {
+                // A coarse wall filament with the smallest id may print its bed band only above the first layer.
+                object_extruder_map.entry(object.id()).or_insert(object.object_brim_filament as u32);
+            } else {
+                object_extruder_map.entry(object.id()).or_insert(object.object_first_layer_wall_extruders[0] as u32);
+            }
+        }
+        object_extruder_map
+    }
+
+    /// Print.cpp:3747-3761 `static double convex_outline_gap(const Polygon &a, const Polygon &b)`:
+    /// boundary-to-boundary distance of two outlines.
+    pub fn convex_outline_gap(a: &Polygon, b: &Polygon) -> f64 {
+        let mut d2 = f64::MAX;
+        let mut scan = |poly: &Polygon, pts: &[Point]| {
+            let n = poly.points.len();
+            for p in pts {
+                for i in 0..n {
+                    d2 = d2.min(crate::geometry::Line::distance_to_squared(*p, poly.points[i], poly.points[(i + 1) % n]));
+                }
+            }
+        };
+        scan(a, &b.points);
+        scan(b, &a.points);
+        d2.sqrt() * crate::libslic3r::SCALING_FACTOR
+    }
+
+    /// Print.cpp:3763-3780 `double compacted_tower_footprint_padding(const PrintConfig &config, double brim_width)`
+    pub fn compacted_tower_footprint_padding(config: &PrintConfig, brim_width: f64) -> f64 {
+        // The brim is deposited material like any other and reaches past the wall on the first layer, so
+        // the sweeping rod has to clear it too. Allowing a line width per side covers the re-centring of
+        // the tower and the half line width of the deposited material. The diagonal side scrape takes the
+        // nozzle outside the wall, so it enlarges the space the tower needs just like the brim does.
+        0.0f64.max(brim_width) + 2.0 * get_at(&cfg_floats(config, "nozzle_diameter"), 0)
+            + crate::gcode::wipe_tower::prime_tower_side_scrape_margin(config)
+    }
+
+    /// Print.hpp:1372-1388 `struct CompactedTowerZone`: keep-out geometry a compacted tower projects
+    /// onto the plate, derived from its bare footprint.
+    #[derive(Debug, Clone, Default)]
+    pub struct CompactedTowerZone {
+        /// Footprint the checks work on: the raw outline grown by the spiral Z-hop envelope.
+        pub hull: Polygon,
+        /// hull grown by half the toolhead radius.
+        pub grown_body: Vec<Polygon>,
+        /// hull grown by half the bare nozzle cone radius, the innermost tier.
+        pub grown_nozzle: Vec<Polygon>,
+        /// hull bounding box grown by half extruder_clearance_dist_to_rod per side, the rod's Y band.
+        pub bbox_rod: crate::geometry::BoundingBox,
+        /// Full body clearance, of which grown_body carries half.
+        pub body_radius: f64,
+    }
+
+    impl CompactedTowerZone {
+        /// Print.hpp:1387 `bool empty() const { return hull.points.empty(); }`
+        pub fn empty(&self) -> bool {
+            self.hull.points.is_empty()
+        }
+    }
+
+    /// Print.cpp:3782-3788 `Polygons compacted_wipe_tower_rings(const CompactedTowerZone &zone, bool any_body_tier)`
+    pub fn compacted_wipe_tower_rings(zone: &CompactedTowerZone, any_body_tier: bool) -> Vec<Polygon> {
+        let mut rings = zone.grown_nozzle.clone();
+        if any_body_tier {
+            rings.extend(zone.grown_body.iter().cloned());
+        }
+        rings
+    }
+
+    /// `offset(const Polygon&, float delta, JoinType jtRound, double arc_tolerance)` of a scaled mm delta.
+    fn offset_round(polygon: &Polygon, delta_mm: f64, arc_tolerance_mm: f64) -> Vec<Polygon> {
+        crate::clipper_utils::offset_polygons_clib_ml(
+            std::slice::from_ref(polygon),
+            ((delta_mm / crate::libslic3r::SCALING_FACTOR) as f32) as f64,
+            crate::clipper_utils::OffsetJoinType::Round,
+            arc_tolerance_mm / crate::libslic3r::SCALING_FACTOR,
+        )
+    }
+
+    /// Print.cpp:3790-3837 `CompactedTowerZone compacted_wipe_tower_zone(const PrintConfig &config, const
+    /// Polygon &tower_footprint)`: grow a bare tower footprint (bed frame, scaled) into its keep-out zone.
+    pub fn compacted_wipe_tower_zone(config: &PrintConfig, tower_footprint: &Polygon) -> CompactedTowerZone {
+        let mut zone = CompactedTowerZone::default();
+        if tower_footprint.points.is_empty() {
+            return zone;
+        }
+
+        // Spiral Z-hop at wipe-tower entry (the G3 Z I J P1 that GCodeWriter::eager_lift emits) starts on
+        // the tower outline at a low Z. The spiral centre sits one radius away from the start point, so the
+        // circle reaches 2 * radius beyond the outline. radius = lift / (2*pi*atan(slope_threshold)) is the
+        // same formula eager_lift uses; z_hop is capped at 5 mm by the option definition.
+        let mut max_lift: f64 = 0.0;
+        let z_hop = cfg_floats(config, "z_hop");
+        for i in 0..z_hop.len() {
+            max_lift = max_lift.max(get_at(&z_hop, i));
+        }
+        if cfg_float(config, "prime_tower_lift_height") > 0.0 {
+            max_lift = max_lift.max(cfg_float(config, "prime_tower_lift_height"));
+        }
+        max_lift = max_lift.min(5.0);
+        let spiral_radius =
+            if max_lift < EPSILON { 0.0 } else { max_lift / (2.0 * std::f64::consts::PI * crate::g_code_writer::SLOPE_THRESHOLD.atan()) };
+        let spiral_reach = 2.0 * spiral_radius;
+
+        // Working footprint = outline grown by the spiral envelope. All later clearance tests use this, so
+        // a travel that leaves the deposited wall at low Z is still treated as part of the tower.
+        zone.hull = tower_footprint.clone();
+        if spiral_reach > EPSILON {
+            let grown = offset_round(tower_footprint, spiral_reach, 0.1);
+            if !grown.is_empty() {
+                zone.hull = crate::geometry::convex_hull_polygons(&grown);
+            }
+        }
+
+        // Y margin matches the sequential print check: half the nozzle-to-rod offset per side.
+        zone.bbox_rod = zone.hull.bounding_box();
+        bounding_box_offset(&mut zone.bbox_rod, cfg_float(config, "extruder_clearance_dist_to_rod") * 0.5 / crate::libslic3r::SCALING_FACTOR);
+
+        // Horizontal clearance, mirroring the sequential print check down to how the distance is split:
+        // half on the tower, half on the instance in compacted_wipe_tower_clearance(). The smaller
+        // MAX_OUTER_NOZZLE_RADIUS tier is the bare nozzle cone. Both rings are built here; which one a given
+        // object is measured against depends on its own height.
+        zone.body_radius = cfg_float(config, "extruder_clearance_max_radius");
+        zone.grown_body = offset_round(&zone.hull, compacted_tower_half_clearance(zone.body_radius), 0.1);
+        zone.grown_nozzle = offset_round(&zone.hull, compacted_tower_half_clearance(MAX_OUTER_NOZZLE_RADIUS as f64), 0.1);
+        zone
+    }
+
+    /// Print.cpp:3839-3881 `CompactedTowerClearance compacted_wipe_tower_clearance(const PrintConfig &config,
+    /// const CompactedTowerZone &zone, const Polygon &inst_hull, double object_rise)`: how far an object may
+    /// rise above the compacted tower base before the toolhead hits it.
+    pub fn compacted_wipe_tower_clearance(config: &PrintConfig, zone: &CompactedTowerZone, inst_hull: &Polygon, object_rise: f64) -> CompactedTowerClearance {
+        let mut inst_bbox = inst_hull.bounding_box();
+        bounding_box_offset(&mut inst_bbox, cfg_float(config, "extruder_clearance_dist_to_rod") * 0.5 / crate::libslic3r::SCALING_FACTOR);
+
+        // Only the Y span matters for the rod: it spans the whole X axis, so an object sharing the tower's
+        // Y band passes under it however far apart the two are in X.
+        let overlaps_in_y = inst_bbox.max.y.min(zone.bbox_rod.max.y) - inst_bbox.min.y.max(zone.bbox_rod.min.y) > 0;
+
+        let far_clearance = if overlaps_in_y {
+            cfg_float(config, "extruder_clearance_height_to_rod")
+        } else {
+            cfg_float(config, "extruder_clearance_height_to_lid")
+        };
+
+        // Which tier applies is a property of this object alone: the head body sits above the nozzle cone,
+        // so it cannot reach an object that stays below nozzle_height however close it stands.
+        let nozzle_height = cfg_float(config, "nozzle_height") as f32 as f64;
+        let object_is_short = object_rise <= nozzle_height + EPSILON;
+        let body_clearance = if object_is_short { MAX_OUTER_NOZZLE_RADIUS as f64 } else { zone.body_radius };
+
+        let inst_near_nozzle = offset_round(inst_hull, compacted_tower_half_clearance(MAX_OUTER_NOZZLE_RADIUS as f64), 0.1);
+        let near_nozzle = !crate::clipper_utils::intersection_polygons_raw_clib(&zone.grown_nozzle, &inst_near_nozzle).is_empty();
+        let mut near_body = false;
+        if !object_is_short {
+            let inst_near_body = offset_round(inst_hull, compacted_tower_half_clearance(zone.body_radius), 0.1);
+            near_body = !crate::clipper_utils::intersection_polygons_raw_clib(&zone.grown_body, &inst_near_body).is_empty();
+        }
+
+        let mut allowed_rise = far_clearance;
+        if near_nozzle {
+            allowed_rise = 0.0;
+        } else if near_body {
+            allowed_rise = far_clearance.min(nozzle_height);
+        }
+        CompactedTowerClearance { allowed_rise, far_clearance, near_body, body_clearance }
+    }
+
+    /// Print.cpp:3883-3891 `Polygon compacted_wipe_tower_offender_outline(const Polygon &inst_hull, double body_clearance)`
+    pub fn compacted_wipe_tower_offender_outline(inst_hull: &Polygon, body_clearance: f64) -> Polygon {
+        // Exactly the half-clearance the check grew this instance by, so the halo drawn around an object is
+        // the very outline that was tested against the tower ring of the same tier.
+        let grown = offset_round(inst_hull, compacted_tower_half_clearance(body_clearance), 0.1);
+        if grown.is_empty() {
+            inst_hull.clone()
+        } else {
+            grown[0].clone()
+        }
+    }
+
+    /// Print.cpp:3893-3901 `bool should_show_height_limit_lines(const Print &print)`
+    pub fn should_show_height_limit_lines(print: &Print) -> bool {
+        let config = print.config();
+        if cfg_enum(config, "print_sequence") == PrintSequence::ByObject as i32 {
+            return true;
+        }
+        // Same condition compacted_wipe_tower_clearance_valid() runs on, so the lines are shown for exactly
+        // the plates whose layout that check judges against the rod and the lid.
+        cfg_enum(config, "print_sequence") == PrintSequence::ByLayer as i32
+            && crate::gcode::wipe_tower::wipe_tower_sparse_layers_skipped(config)
+            && print.has_wipe_tower()
+    }
+
+    /// Print.cpp:3903-3908 `static std::string compacted_wipe_tower_clearance_error()`: the shared
+    /// user-facing message for every compacted-tower clearance failure.
+    pub fn compacted_wipe_tower_clearance_error() -> String {
+        "The relative position of the model and the prime tower does not meet the requirements of the \"No sparse layers\" feature. Please adjust their relative positions, lower the model height, or turn off \"No sparse layers\".".to_string()
+    }
+
+    /// Print.cpp:3910-3924 `static Polygon print_instance_hull(const PrintObject &object, const PrintInstance
+    /// &instance)`: convex hull of one print instance in bed coordinates.
+    pub fn print_instance_hull(print: &Print, object: &PrintObject, instance: &PrintInstance) -> Polygon {
+        let mut pts: Vec<Point> = Vec::new();
+        let mo = object.model_object(print);
+        let mi = &mo.instances[instance.model_instance];
+        for v in &mo.volumes {
+            if !v.is_model_part() {
+                continue;
+            }
+            let mut hull = v.get_convex_hull_2d(&crate::geometry::geometry::assemble_transform(
+                &crate::geometry::geometry::Vec3d::zeros(),
+                &mi.get_rotation(),
+                &mi.get_scaling_factor(),
+                &mi.get_mirror(),
+            ));
+            hull.translate(instance.shift - *object.center_offset());
+            pts.extend(hull.points);
+        }
+        if pts.is_empty() {
+            Polygon::default()
+        } else {
+            crate::geometry::convex_hull_points(pts)
+        }
+    }
+
+    /// Print.cpp:3926-3977 `static Polygon estimated_wipe_tower_footprint(const Print &print)`: footprint the
+    /// compacted prime tower is expected to occupy on the plate, in bed coordinates. The Print is `&mut`
+    /// for `wipe_tower_data()`.
+    pub fn estimated_wipe_tower_footprint(print: &mut Print) -> Polygon {
+        let filaments_cnt = print.extruders(false).len();
+        if filaments_cnt == 0 {
+            return Polygon::default();
+        }
+
+        let wtd = print.wipe_tower_data(filaments_cnt).clone();
+        let config = print.config();
+
+        let mut width: f64;
+        let mut depth: f64;
+        let brim: f64;
+        let mut local_min: (f64, f64);
+        let ((bmin_x, bmin_y), (bmax_x, bmax_y)) = wtd.bbx;
+        if bmax_x - bmin_x > EPSILON && bmax_y - bmin_y > EPSILON {
+            // The tower has already been generated once, so use its real box (brim included) instead of
+            // re-estimating. Same frame first_layer_wipe_tower_corners() works in.
+            width = bmax_x - bmin_x;
+            depth = bmax_y - bmin_y;
+            local_min = (bmin_x + wtd.rib_offset[0] as f64, bmin_y + wtd.rib_offset[1] as f64);
+            brim = 0.0;
+        } else {
+            depth = wtd.depth as f64;
+            if depth < EPSILON {
+                return Polygon::default();
+            }
+            // PartPlate::estimate_wipe_tower_size() squares the rib tower off and the preview box the user
+            // drags around is built from that, so match it here rather than keeping the nominal width.
+            width = if cfg_bool(config, "prime_tower_rib_wall") { depth } else { cfg_float(config, "prime_tower_width") };
+            local_min = (0.0, 0.0);
+            brim = wtd.brim_width as f64;
+        }
+
+        let padding = compacted_tower_footprint_padding(config, brim);
+        local_min = (local_min.0 - padding, local_min.1 - padding);
+        width += 2.0 * padding;
+        depth += 2.0 * padding;
+
+        let angle = std::f64::consts::PI * cfg_float(config, "wipe_tower_rotation_angle") / 180.0;
+        let (sin, cos) = (angle.sin(), angle.cos());
+        let plate_index = print.base.base.get_plate_index() as usize;
+        let translate = (
+            get_at(&cfg_floats(config, "wipe_tower_x"), plate_index) + print.get_plate_origin()[0],
+            get_at(&cfg_floats(config, "wipe_tower_y"), plate_index) + print.get_plate_origin()[1],
+        );
+
+        let mut footprint = Polygon::default();
+        for corner in [
+            local_min,
+            (local_min.0 + width, local_min.1),
+            (local_min.0 + width, local_min.1 + depth),
+            (local_min.0, local_min.1 + depth),
+        ] {
+            // rot * corner + translate
+            let p = ((-sin).mul_add(corner.1, cos * corner.0) + translate.0, cos.mul_add(corner.1, sin * corner.0) + translate.1);
+            // emplace_back(scale_(x), scale_(y)): Point(double, double) rounds.
+            footprint.points.push(Point::new(
+                (p.0 / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64,
+                (p.1 / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64,
+            ));
+        }
+        footprint
     }
 
     /// Print.hpp:45 `#define MAX_OUTER_NOZZLE_RADIUS 4`

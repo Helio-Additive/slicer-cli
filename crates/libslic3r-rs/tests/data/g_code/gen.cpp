@@ -495,6 +495,156 @@ static void skirt()
     }
 }
 
+// The free functions of namespace DoExport and the members of GCode over the print's statistics,
+// configuration and first layer.
+static void export_functions()
+{
+    // update_print_estimated_stats: a processor result's times and volumes, the extruders of a writer
+    struct Est
+    {
+        float                    normal, stealth;
+        bool                     stealth_enabled;
+        std::map<size_t, double> total, model;
+        KVs                      kv;
+    };
+    std::vector<Est> ests = {
+        {3725.5f, 4100.25f, false, {{0, 1234.5}, {2, 77.25}, {5, 10.}}, {{0, 1000.}, {2, 50.}}, {}},
+        {59.f, 61.f, true, {{1, 0.125}}, {{1, 0.1}}, {{"filament_diameter", "1.75,2.85"}, {"filament_density", "1.24,1.04"}, {"filament_cost", "20,35.5"}}},
+        {90061.f, 0.f, true, {}, {}, {}},
+        {0.f, 7.5f, false, {{0, 25000.}, {1, 3.75}, {2, 1.}}, {{2, 1.}}, {{"filament_diameter", "1.75,1.75,2.85"}, {"filament_density", "1.27"}, {"filament_cost", "0,12,30"}}},
+    };
+    for (const Est &e : ests) {
+        GCodeProcessor proc;
+        proc.m_result.print_statistics.modes[0].time = e.normal;
+        proc.m_result.print_statistics.modes[1].time = e.stealth;
+        proc.m_result.print_statistics.total_volumes_per_extruder = e.total;
+        proc.m_result.print_statistics.model_volumes_per_extruder = e.model;
+        proc.enable_stealth_time_estimator(e.stealth_enabled);
+        DynamicPrintConfig dc = DynamicPrintConfig::full_print_config();
+        for (const auto &p : e.kv)
+            dc.set_deserialize_strict(p.first, p.second);
+        PrintConfig pc;
+        pc.apply(dc, true);
+        GCodeWriter w;
+        w.apply_print_config(pc);
+        w.set_extruders({0, 1, 2});
+        PrintStatistics ps;
+        DoExport::update_print_estimated_stats(proc, w.extruders(), ps);
+        fprintf(g_out, "est %s %s %d %s %s %s %s %s %s %s %s %zu", f32(e.normal).c_str(), f32(e.stealth).c_str(), int(e.stealth_enabled),
+                kv_str(e.kv).c_str(), hex(ps.estimated_normal_print_time).c_str(), hex(ps.estimated_silent_print_time).c_str(),
+                f64(ps.total_extruded_volume).c_str(), f64(ps.total_used_filament).c_str(), f64(ps.total_weight).c_str(),
+                f64(ps.total_cost).c_str(), "|", e.total.size());
+        for (const auto &v : e.total)
+            fprintf(g_out, " %zu %s", v.first, f64(v.second).c_str());
+        fprintf(g_out, " %zu", ps.filament_stats.size());
+        for (const auto &v : ps.filament_stats)
+            fprintf(g_out, " %zu %s", v.first, f64(v.second).c_str());
+        fprintf(g_out, "\n");
+    }
+    // update_print_stats_and_format_filament_stats: the extruders of a writer after some extrusion
+    struct Stat
+    {
+        bool               has_wipe_tower;
+        int                toolchanges;
+        std::vector<float> used;
+        KVs                kv;
+        std::vector<double> extrude;
+    };
+    std::vector<Stat> stats = {
+        {false, -1, {}, {}, {1.5, 2.25, 0.125}},
+        {true, 7, {10.5f, 0.f, 3.25f}, {{"filament_density", "1.24,1.04,1.3"}, {"filament_cost", "20,35.5,0"}}, {12.5, 0., 4.}},
+        {true, 0, {0.f, 0.f, 0.f}, {{"filament_density", "0,1,1"}, {"filament_cost", "1,0,1"}}, {3., 2., 1.}},
+        {false, 3, {1.f, 1.f, 1.f}, {{"use_relative_e_distances", "1"}, {"filament_diameter", "2.85"}}, {100., 0.001, 7.}},
+    };
+    for (const Stat &s : stats) {
+        DynamicPrintConfig dc = DynamicPrintConfig::full_print_config();
+        for (const auto &p : s.kv)
+            dc.set_deserialize_strict(p.first, p.second);
+        PrintConfig pc;
+        pc.apply(dc, true);
+        GCodeWriter w;
+        w.apply_print_config(pc);
+        w.set_extruders({0, 1, 2});
+        for (size_t i = 0; i < s.extrude.size(); ++i) {
+            w.toolchange(unsigned(i), 0);
+            w.extrude_to_xy(Vec2d(10. * i, 5.), s.extrude[i]);
+            w.retract();
+        }
+        Print print;
+        print.m_wipe_tower_data.number_of_toolchanges = s.toolchanges;
+        print.m_wipe_tower_data.used_filament         = s.used;
+        PrintStatistics ps;
+        ps.total_weight = 99.;
+        std::string out = DoExport::update_print_stats_and_format_filament_stats(s.has_wipe_tower, print.m_wipe_tower_data, w.extruders(), ps);
+        fprintf(g_out, "stats %d %d %zu", int(s.has_wipe_tower), s.toolchanges, s.used.size());
+        for (float u : s.used)
+            fprintf(g_out, " %s", f32(u).c_str());
+        fprintf(g_out, " %s %zu", kv_str(s.kv).c_str(), s.extrude.size());
+        for (double x : s.extrude)
+            fprintf(g_out, " %s", f64(x).c_str());
+        fprintf(g_out, " %s %d %s %s %s %s %s %s\n", hex(out).c_str(), ps.total_toolchanges, f64(ps.total_weight).c_str(), f64(ps.total_cost).c_str(),
+                f64(ps.total_used_filament).c_str(), f64(ps.total_extruded_volume).c_str(), f64(ps.total_wipe_tower_filament).c_str(),
+                f64(ps.total_wipe_tower_cost).c_str());
+    }
+    // polygon_to_string
+    std::vector<std::pair<Vec3d, Points>> polys = {
+        {Vec3d(0, 0, 0), {Point(0, 0), Point(1000000, 0), Point(1000000, 2000000)}},
+        {Vec3d(128.5, -3.25, 0), {Point(12345678, -987654), Point(-1, 1), Point(33333333, 7)}},
+        {Vec3d(0.1, 0.2, 0), {Point(123456789012, 5)}},
+    };
+    for (const auto &pp : polys) {
+        Print print;
+        print.set_plate_origin(pp.first);
+        Polygon poly(pp.second);
+        fprintf(g_out, "pts %s %s %zu", f64(pp.first.x()).c_str(), f64(pp.first.y()).c_str(), pp.second.size());
+        for (const Point &q : pp.second)
+            fprintf(g_out, " %lld %lld", (long long) q.x(), (long long) q.y());
+        fprintf(g_out, " %s\n", hex(polygon_to_string(poly, &print)).c_str());
+    }
+    // GCode::apply_print_config
+    std::vector<KVs> apcs = {
+        {},
+        {{"resolution", "0.0125"}, {"gcode_flavor", "klipper"}, {"z_hop", "0.4,0.2"}, {"machine_max_acceleration_extruding", "8000"}},
+        {{"resolution", "0.3"}, {"gcode_flavor", "marlin2"}, {"machine_max_jerk_x", "7.5"}, {"machine_max_jerk_y", "6.4"},
+         {"printable_area", "0x0,300x0,300x250,0x250"}, {"single_extruder_multi_material", "1"}},
+    };
+    for (const KVs &kv : apcs) {
+        DynamicPrintConfig dc = DynamicPrintConfig::full_print_config();
+        for (const auto &p : kv)
+            dc.set_deserialize_strict(p.first, p.second);
+        PrintConfig pc;
+        pc.apply(dc, true);
+        GCode gg;
+        gg.apply_print_config(pc);
+        fprintf(g_out, "apc %s %s %u %s %d %d %s %s %s\n", kv_str(kv).c_str(), f64(gg.m_scaled_resolution).c_str(), gg.m_writer.m_max_acceleration,
+                f64(gg.m_writer.m_max_jerk).c_str(), int(gg.m_writer.m_single_extruder_multi_material), int(gg.m_writer.config.gcode_flavor.value),
+                hex(gg.m_config.opt_serialize("z_hop")).c_str(), hex(gg.m_config.opt_serialize("resolution")).c_str(),
+                hex(gg.m_config.opt_serialize("printable_area")).c_str());
+    }
+    // GCode::first_layer_projection of a print without objects
+    std::vector<Points> hulls = {
+        {Point(0, 0), Point(1000000, 0), Point(1000000, 2000000)},
+        {Point(-5000000, 300), Point(-5000000, 300)},
+        {Point(123456789, 987654321), Point(-123456789, 5), Point(0, -1)},
+        {},
+    };
+    for (const Points &h : hulls) {
+        Print print;
+        print.m_first_layer_convex_hull = Polygon(h);
+        GCode gg;
+        fprintf(g_out, "flp %zu", h.size());
+        for (const Point &q : h)
+            fprintf(g_out, " %lld %lld", (long long) q.x(), (long long) q.y());
+        try {
+            BoundingBoxf b = gg.first_layer_projection(print);
+            fprintf(g_out, " %d %s %s %s %s\n", int(b.defined), f64(b.min.x()).c_str(), f64(b.min.y()).c_str(), f64(b.max.x()).c_str(),
+                    f64(b.max.y()).c_str());
+        } catch (const std::exception &) {
+            fprintf(g_out, " throw\n");
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -506,6 +656,7 @@ int main(int argc, char **argv)
     free_functions();
     gcode_methods();
     skirt();
+    export_functions();
     fclose(g_out);
     return 0;
 }

@@ -30,12 +30,12 @@
 //! (`print_config::config_def`, re-exported here as [`FullDynamicPrintConfig`]) and are compared
 //! with the pin by `tests/calib_native_parity.rs`.
 //!
-//! PARTIAL: the G-code-emitting members (`move_to`, `draw_digit`, `draw_number`, `draw_line`,
-//! `draw_box`, `CalibPressureAdvanceLine::{generate_test, print_pa_lines}`,
-//! `CalibPressureAdvancePattern::{_refresh_writer, generate_custom_gcodes}`) write through a
-//! `GCodeWriter` that the C++ sets up with `apply_print_config(PrintConfig)` (and, for the line
-//! test, the `GCode` gcodegen's writer); the writer port (`g_code_writer.rs`) takes its
-//! `GCodeConfig` field by field and has no `apply_print_config`, so these are not ported yet.
+//! The G-code-emitting members (`move_to`, `draw_digit`, `draw_number`, `draw_line`, `draw_box`,
+//! `CalibPressureAdvanceLine::{generate_test, print_pa_lines}`,
+//! `CalibPressureAdvancePattern::{_refresh_writer, generate_custom_gcodes}`) write through the
+//! faithful writer (`g_code_writer.rs`, set up with `apply_print_config`) and, for the line test,
+//! the writer of a `g_code::gcode_class::GCode`; `tests/calib_native_parity.rs` compares their
+//! G-code with the pin's.
 //!
 //! The struct `DynamicPrintConfig` below is the earlier placeholder, still imported by other
 //! modules; the calibration classes do not use it.
@@ -44,6 +44,7 @@ use crate::config::{
     ConfigBase, ConfigOptionFloat, ConfigOptionFloats, ConfigOptionFloatsNullable, ConfigOptionInt, ConfigOptionResolverTyped,
 };
 use crate::flow::Flow;
+use crate::g_code_writer::GCodeWriter;
 use crate::geometry::{BoundingBoxF, PointF};
 /// The reflective `DynamicPrintConfig` of PrintConfig.hpp, which the calibration classes read
 /// (`m_config.option<...>(key)->get_at(i)`, `get_abs_value(key)`).
@@ -918,18 +919,22 @@ fn floats_at(config: &FullDynamicPrintConfig, key: &str, idx: usize) -> Result<f
     floats_nullable_at(config, key, idx)
 }
 
+/// `config.option<ConfigOptionFloats>(key)->values` (or the nullable class).
+fn floats_values(config: &FullDynamicPrintConfig, key: &str) -> Result<Vec<f64>> {
+    if let Some(o) = config.option_typed::<ConfigOptionFloatsNullable>(key) {
+        return Ok(o.values.clone());
+    }
+    if let Some(o) = config.option_typed::<ConfigOptionFloats>(key) {
+        return Ok(o.values.clone());
+    }
+    Err(Error::Config(format!("calib: no floats option {key}")))
+}
+
 // ============================================================================
 // Base Calibration Class
 // ============================================================================
 
 /// Base class for Pressure Advance calibration with common drawing primitives.
-///
-/// The pure-math primitives (`e_per_mm`, `convert_number_to_string`,
-/// `get_distance`, `to_radians`, `speed_adjust`, `number_spacing`,
-/// `delta_scale_bed_ext`) are ported faithfully. The G-code-emitting
-/// primitives (`move_to`, `draw_digit`, `draw_number`, `draw_line`,
-/// `draw_box`) and `find_optimal_PA_speed` are BLOCKED on the string-returning
-/// `GCodeWriter` and `DynamicPrintConfig` reflection (see member docs).
 ///
 /// Calib.hpp:193-235
 #[derive(Clone)]
@@ -1091,6 +1096,490 @@ impl CalibPressureAdvance {
         bed_ext.max.x *= scale;
         bed_ext.max.y *= scale;
     }
+
+    /// Calib.cpp:20-31 `std::string CalibPressureAdvance::move_to(Vec2d pt, GCodeWriter &writer,
+    /// std::string comment)`
+    pub fn move_to(&mut self, pt: PointF, writer: &mut GCodeWriter, comment: &str) -> String {
+        // Calib.cpp:22
+        let mut gcode = String::new();
+
+        // Calib.cpp:24-26
+        gcode += &writer.retract(false);
+        gcode += &writer.travel_to_xy(pt, comment);
+        gcode += &writer.unretract(0.0);
+
+        // Calib.cpp:28
+        self.last_pos = (pt.x, pt.y, 0.0);
+
+        // Calib.cpp:30
+        gcode
+    }
+
+    /// Calib.cpp:50-185 `std::string CalibPressureAdvance::draw_digit(double startx, double starty,
+    /// char c, CalibPressureAdvance::DrawDigitMode mode, double line_width, double e_per_mm,
+    /// GCodeWriter &writer)`
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_digit(
+        &mut self,
+        startx: f64,
+        starty: f64,
+        c: u8,
+        mode: DrawDigitMode,
+        line_width: f64,
+        e_per_mm: f64,
+        writer: &mut GCodeWriter,
+    ) -> String {
+        // Calib.cpp:53-54
+        let len = self.digit_segment_len;
+        let gap = line_width / 2.0;
+
+        // Calib.cpp:56-57
+        let d_e = e_per_mm * len;
+        let two_d_e = d_e * 2.0;
+
+        // Calib.cpp:59-62
+        let (p0, p1, p2, p3, p4, p5);
+        let (p0_5, p4_5);
+        let (gap_p0_toward_p3, gap_p2_toward_p3);
+        let dot_direction;
+
+        // Calib.cpp:64
+        if mode == DrawDigitMode::BottomToTop {
+            //  1-------2-------5
+            //  |       |       |
+            //  |       |       |
+            //  0-------3-------4
+            // Calib.cpp:69-76 (`startx + len * 2` fused)
+            p0 = PointF::new(startx, starty);
+            p0_5 = PointF::new(startx, starty + len / 2.0);
+            p1 = PointF::new(startx, starty + len);
+            p2 = PointF::new(startx + len, starty + len);
+            p3 = PointF::new(startx + len, starty);
+            p4 = PointF::new(len.mul_add(2.0, startx), starty);
+            p4_5 = PointF::new(len.mul_add(2.0, startx), starty + len / 2.0);
+            p5 = PointF::new(len.mul_add(2.0, startx), starty + len);
+
+            // Calib.cpp:78-79
+            gap_p0_toward_p3 = PointF::new(p0.x + gap, p0.y + 0.0);
+            gap_p2_toward_p3 = PointF::new(p2.x + 0.0, p2.y + gap);
+
+            // Calib.cpp:81
+            dot_direction = PointF::new(-len / 2.0, 0.0);
+        } else {
+            //  0-------1
+            //  |       |
+            //  3-------2
+            //  |       |
+            //  4-------5
+            // Calib.cpp:88-95 (`starty - len * 2` fused)
+            p0 = PointF::new(startx, starty);
+            p0_5 = PointF::new(startx + len / 2.0, starty);
+            p1 = PointF::new(startx + len, starty);
+            p2 = PointF::new(startx + len, starty - len);
+            p3 = PointF::new(startx, starty - len);
+            p4 = PointF::new(startx, (-len).mul_add(2.0, starty));
+            p4_5 = PointF::new(startx + len / 2.0, (-len).mul_add(2.0, starty));
+            p5 = PointF::new(startx + len, (-len).mul_add(2.0, starty));
+
+            // Calib.cpp:97-98
+            gap_p0_toward_p3 = PointF::new(p0.x - 0.0, p0.y - gap);
+            gap_p2_toward_p3 = PointF::new(p2.x - gap, p2.y - 0.0);
+
+            // Calib.cpp:100
+            dot_direction = PointF::new(0.0, len / 2.0);
+        }
+
+        // Calib.cpp:103
+        let mut gcode = String::new();
+
+        // Calib.cpp:105-182
+        match c {
+            b'0' => {
+                gcode += &self.move_to(p0, writer, "Glyph: 0");
+                gcode += &writer.extrude_to_xy(p1, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p5, two_d_e, "", false);
+                gcode += &writer.extrude_to_xy(p4, d_e, "", false);
+                gcode += &writer.extrude_to_xy(gap_p0_toward_p3, two_d_e, "", false);
+            }
+            b'1' => {
+                gcode += &self.move_to(p0_5, writer, "Glyph: 1");
+                gcode += &writer.extrude_to_xy(p4_5, two_d_e, "", false);
+            }
+            b'2' => {
+                gcode += &self.move_to(p0, writer, "Glyph: 2");
+                gcode += &writer.extrude_to_xy(p1, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p2, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p3, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p4, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p5, d_e, "", false);
+            }
+            b'3' => {
+                gcode += &self.move_to(p0, writer, "Glyph: 3");
+                gcode += &writer.extrude_to_xy(p1, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p5, two_d_e, "", false);
+                gcode += &writer.extrude_to_xy(p4, d_e, "", false);
+                gcode += &self.move_to(gap_p2_toward_p3, writer, "");
+                gcode += &writer.extrude_to_xy(p3, d_e, "", false);
+            }
+            b'4' => {
+                gcode += &self.move_to(p0, writer, "Glyph: 4");
+                gcode += &writer.extrude_to_xy(p3, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p2, d_e, "", false);
+                gcode += &self.move_to(p1, writer, "");
+                gcode += &writer.extrude_to_xy(p5, two_d_e, "", false);
+            }
+            b'5' => {
+                gcode += &self.move_to(p1, writer, "Glyph: 5");
+                gcode += &writer.extrude_to_xy(p0, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p3, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p2, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p5, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p4, d_e, "", false);
+            }
+            b'6' => {
+                gcode += &self.move_to(p1, writer, "Glyph: 6");
+                gcode += &writer.extrude_to_xy(p0, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p4, two_d_e, "", false);
+                gcode += &writer.extrude_to_xy(p5, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p2, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p3, d_e, "", false);
+            }
+            b'7' => {
+                gcode += &self.move_to(p0, writer, "Glyph: 7");
+                gcode += &writer.extrude_to_xy(p1, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p5, two_d_e, "", false);
+            }
+            b'8' => {
+                gcode += &self.move_to(p2, writer, "Glyph: 8");
+                gcode += &writer.extrude_to_xy(p3, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p4, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p5, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p1, two_d_e, "", false);
+                gcode += &writer.extrude_to_xy(p0, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p3, d_e, "", false);
+            }
+            b'9' => {
+                gcode += &self.move_to(p5, writer, "Glyph: 9");
+                gcode += &writer.extrude_to_xy(p1, two_d_e, "", false);
+                gcode += &writer.extrude_to_xy(p0, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p3, d_e, "", false);
+                gcode += &writer.extrude_to_xy(p2, d_e, "", false);
+            }
+            b'.' => {
+                gcode += &self.move_to(p4_5, writer, "Glyph: .");
+                gcode += &writer.extrude_to_xy(PointF::new(p4_5.x + dot_direction.x, p4_5.y + dot_direction.y), d_e, "", false);
+            }
+            _ => {}
+        }
+
+        // Calib.cpp:184
+        gcode
+    }
+
+    /// Calib.cpp:187-203 `std::string CalibPressureAdvance::draw_number(double startx, double starty,
+    /// double value, CalibPressureAdvance::DrawDigitMode mode, double line_width, double e_per_mm,
+    /// double speed, GCodeWriter &writer)`
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_number(
+        &mut self,
+        startx: f64,
+        starty: f64,
+        value: f64,
+        mode: DrawDigitMode,
+        line_width: f64,
+        e_per_mm: f64,
+        speed: f64,
+        writer: &mut GCodeWriter,
+    ) -> String {
+        // Calib.cpp:190-192
+        let s_number = self.convert_number_to_string(value);
+        let mut gcode = String::new();
+        gcode += &writer.set_speed(speed, "", "");
+
+        // Calib.cpp:194-200
+        let bytes = s_number.as_bytes();
+        for i in 0..bytes.len() {
+            if i > self.max_number_len {
+                break;
+            }
+            match mode {
+                // `starty + i * number_spacing()` (the sum fused)
+                DrawDigitMode::BottomToTop => {
+                    gcode += &self.draw_digit(startx, (i as f64).mul_add(self.number_spacing(), starty), bytes[i], mode, line_width, e_per_mm, writer)
+                }
+                _ => gcode += &self.draw_digit((i as f64).mul_add(self.number_spacing(), startx), starty, bytes[i], mode, line_width, e_per_mm, writer),
+            }
+        }
+
+        // Calib.cpp:202
+        gcode
+    }
+
+    /// Calib.cpp:207-224 `std::string CalibPressureAdvance::draw_line(GCodeWriter &writer, Vec2d to_pt,
+    /// double line_width, double layer_height, double speed, const std::string &comment)`
+    pub fn draw_line(
+        &mut self,
+        writer: &mut GCodeWriter,
+        to_pt: PointF,
+        line_width: f64,
+        layer_height: f64,
+        speed: f64,
+        comment: &str,
+    ) -> Result<String> {
+        // Calib.cpp:209-211 (the doubles of the options passed to the float parameters)
+        let e_per_mm = self.e_per_mm(
+            line_width,
+            layer_height,
+            floats_nullable_at(&self.config, "nozzle_diameter", 0)? as f32,
+            floats_at(&self.config, "filament_diameter", 0)? as f32,
+            floats_nullable_at(&self.config, "filament_flow_ratio", 0)? as f32,
+        )?;
+
+        // Calib.cpp:213-214
+        let length = self.get_distance(PointF::new(self.last_pos.0, self.last_pos.1), to_pt);
+        let d_e = e_per_mm * length;
+
+        // Calib.cpp:216
+        let mut gcode = String::new();
+
+        // Calib.cpp:218-219
+        gcode += &writer.set_speed(speed, "", "");
+        gcode += &writer.extrude_to_xy(to_pt, d_e, comment, false);
+
+        // Calib.cpp:221
+        self.last_pos = (to_pt.x, to_pt.y, 0.0);
+
+        // Calib.cpp:223
+        Ok(gcode)
+    }
+
+    /// Calib.cpp:226-405 `std::string CalibPressureAdvance::draw_box(GCodeWriter &writer, double min_x,
+    /// double min_y, double size_x, double size_y, DrawBoxOptArgs opt_args)`
+    pub fn draw_box(
+        &mut self,
+        writer: &mut GCodeWriter,
+        min_x: f64,
+        min_y: f64,
+        size_x: f64,
+        size_y: f64,
+        mut opt_args: DrawBoxOptArgs,
+    ) -> Result<String> {
+        // Calib.cpp:228
+        let mut gcode = String::new();
+
+        // Calib.cpp:230-233
+        let mut x = min_x;
+        let mut y = min_y;
+        let max_x = min_x + size_x;
+        let max_y = min_y + size_y;
+
+        // Calib.cpp:235  `opt_args.line_width - opt_args.height * (1 - M_PI / 4)` (fused)
+        let spacing = (-opt_args.height).mul_add(1.0 - std::f64::consts::PI / 4.0, opt_args.line_width);
+
+        // Calib.cpp:237-241  if number of perims exceeds size of box, reduce it to max; this is the
+        // equivalent of number of perims for concentric fill (std::min of the doubles, then the int)
+        let max_perimeters = std_min(
+            (size_x * self.to_radians(45.0).sin()).floor() / (spacing / self.to_radians(45.0).sin()),
+            (size_y * self.to_radians(45.0).sin()).floor() / (spacing / self.to_radians(45.0).sin()),
+        ) as i32;
+
+        // Calib.cpp:243
+        opt_args.num_perimeters = opt_args.num_perimeters.min(max_perimeters);
+
+        // Calib.cpp:245
+        gcode += &self.move_to(PointF::new(min_x, min_y), writer, "Move to box start");
+
+        // Calib.cpp:247-251  DrawLineOptArgs line_opt_args(*this);
+        let line_arg_height = opt_args.height;
+        let line_arg_line_width = opt_args.line_width;
+        let line_arg_speed = opt_args.speed;
+        let mut comment: &str;
+
+        // Calib.cpp:253
+        for i in 0..opt_args.num_perimeters {
+            // Calib.cpp:254-258  after first perimeter, step inwards to start next perimeter
+            if i != 0 {
+                x += spacing;
+                y += spacing;
+                gcode += &self.move_to(PointF::new(x, y), writer, "Step inwards to print next perimeter");
+            }
+
+            // Calib.cpp:260-262  `size_y - i * spacing * 2` (fused)
+            y += (-(i as f64 * spacing)).mul_add(2.0, size_y);
+            comment = "Draw perimeter (up)";
+            gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+
+            // Calib.cpp:264-266
+            x += (-(i as f64 * spacing)).mul_add(2.0, size_x);
+            comment = "Draw perimeter (right)";
+            gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+
+            // Calib.cpp:268-270
+            y -= (-(i as f64 * spacing)).mul_add(2.0, size_y);
+            comment = "Draw perimeter (down)";
+            gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+
+            // Calib.cpp:272-274
+            x -= (-(i as f64 * spacing)).mul_add(2.0, size_x);
+            comment = "Draw perimeter (left)";
+            gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+        }
+
+        // Calib.cpp:277
+        if !opt_args.is_filled {
+            return Ok(gcode);
+        }
+
+        // Calib.cpp:279-280  create box infill
+        let spacing_45 = spacing / self.to_radians(45.0).sin();
+
+        // Calib.cpp:282  `(spacing * (n - 1)) + (line_width * (1 - m_encroachment))` (the first
+        // product fused)
+        let bound_modifier =
+            spacing.mul_add((opt_args.num_perimeters - 1) as f64, opt_args.line_width * (1.0 - self.encroachment));
+        // Calib.cpp:283-288
+        let x_min_bound = min_x + bound_modifier;
+        let x_max_bound = max_x - bound_modifier;
+        let y_min_bound = min_y + bound_modifier;
+        let y_max_bound = max_y - bound_modifier;
+        let x_count = ((x_max_bound - x_min_bound) / spacing_45).floor() as i32;
+        let y_count = ((y_max_bound - y_min_bound) / spacing_45).floor() as i32;
+
+        // Calib.cpp:290-291  (std::fmod is the remainder of the truncated quotient: Rust's `%`)
+        let mut x_remainder = (x_max_bound - x_min_bound) % spacing_45;
+        let mut y_remainder = (y_max_bound - y_min_bound) % spacing_45;
+
+        // Calib.cpp:293-294
+        x = x_min_bound;
+        y = y_min_bound;
+
+        // Calib.cpp:296
+        gcode += &self.move_to(PointF::new(x, y), writer, "Move to fill start");
+
+        // Calib.cpp:298-299  this isn't the most robust way, but less expensive than finding line
+        // intersections (the bound is evaluated every iteration: the remainders change in the loop)
+        let mut i: i32 = 0;
+        while i < x_count + y_count + if x_remainder + y_remainder >= spacing_45 { 1 } else { 0 } {
+            // Calib.cpp:300
+            if i < x_count.min(y_count) {
+                if i % 2 == 0 {
+                    // Calib.cpp:302-309
+                    x += spacing_45;
+                    y = y_min_bound;
+                    gcode += &self.move_to(PointF::new(x, y), writer, "Fill: Step right");
+
+                    y += x - x_min_bound;
+                    x = x_min_bound;
+                    comment = "Fill: Print up/left";
+                    gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+                } else {
+                    // Calib.cpp:311-318
+                    y += spacing_45;
+                    x = x_min_bound;
+                    gcode += &self.move_to(PointF::new(x, y), writer, "Fill: Step up");
+
+                    x += y - y_min_bound;
+                    y = y_min_bound;
+                    comment = "Fill: Print down/right";
+                    gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+                }
+            } else if i < x_count.max(y_count) {
+                // Calib.cpp:320
+                if x_count > y_count {
+                    // box is wider than tall
+                    if i % 2 == 0 {
+                        // Calib.cpp:323-330
+                        x += spacing_45;
+                        y = y_min_bound;
+                        gcode += &self.move_to(PointF::new(x, y), writer, "Fill: Step right");
+
+                        x -= y_max_bound - y_min_bound;
+                        y = y_max_bound;
+                        comment = "Fill: Print up/left";
+                        gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+                    } else {
+                        // Calib.cpp:332-345
+                        if i == y_count {
+                            x += spacing_45 - y_remainder;
+                            y_remainder = 0.0;
+                        } else {
+                            x += spacing_45;
+                        }
+                        y = y_max_bound;
+                        gcode += &self.move_to(PointF::new(x, y), writer, "Fill: Step right");
+
+                        x += y_max_bound - y_min_bound;
+                        y = y_min_bound;
+                        comment = "Fill: Print down/right";
+                        gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+                    }
+                } else {
+                    // box is taller than wide
+                    if i % 2 == 0 {
+                        // Calib.cpp:350-363
+                        x = x_max_bound;
+                        if i == x_count {
+                            y += spacing_45 - x_remainder;
+                            x_remainder = 0.0;
+                        } else {
+                            y += spacing_45;
+                        }
+                        gcode += &self.move_to(PointF::new(x, y), writer, "Fill: Step up");
+
+                        x = x_min_bound;
+                        y += x_max_bound - x_min_bound;
+                        comment = "Fill: Print up/left";
+                        gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+                    } else {
+                        // Calib.cpp:365-372
+                        x = x_min_bound;
+                        y += spacing_45;
+                        gcode += &self.move_to(PointF::new(x, y), writer, "Fill: Step up");
+
+                        x = x_max_bound;
+                        y -= x_max_bound - x_min_bound;
+                        comment = "Fill: Print down/right";
+                        gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+                    }
+                }
+            } else {
+                // Calib.cpp:375
+                if i % 2 == 0 {
+                    // Calib.cpp:377-388
+                    x = x_max_bound;
+                    if i == x_count {
+                        y += spacing_45 - x_remainder;
+                    } else {
+                        y += spacing_45;
+                    }
+                    gcode += &self.move_to(PointF::new(x, y), writer, "Fill: Step up");
+
+                    x -= y_max_bound - y;
+                    y = y_max_bound;
+                    comment = "Fill: Print up/left";
+                    gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+                } else {
+                    // Calib.cpp:390-400
+                    if i == y_count {
+                        x += spacing_45 - y_remainder;
+                    } else {
+                        x += spacing_45;
+                    }
+                    y = y_max_bound;
+                    gcode += &self.move_to(PointF::new(x, y), writer, "Fill: Step right");
+
+                    y -= x_max_bound - x;
+                    x = x_max_bound;
+                    comment = "Fill: Print down/right";
+                    gcode += &self.draw_line(writer, PointF::new(x, y), line_arg_line_width, line_arg_height, line_arg_speed, comment)?;
+                }
+            }
+            i += 1;
+        }
+
+        // Calib.cpp:404
+        Ok(gcode)
+    }
 }
 
 // ============================================================================
@@ -1100,74 +1589,82 @@ impl CalibPressureAdvance {
 /// Pressure Advance line test calibration.
 ///
 /// Generates a series of horizontal lines with varying PA values and speeds
-/// to visualize the effect of pressure advance settings.
-///
-/// **PARTIAL:** `delta_modify_start` and `set_speed` are ported; the
-/// G-code-emitting members (`generate_test`, `print_pa_lines`, `is_delta`) are
-/// BLOCKED on the `GCode` gcodegen wrapper and the string-returning
-/// `GCodeWriter` (see member docs).
+/// to visualize the effect of pressure advance settings, through the writer of the `GCode`
+/// generator it is made for (`mp_gcodegen`).
 ///
 /// Calib.hpp:237-274
-#[derive(Clone)]
-pub struct CalibPressureAdvanceLine {
+pub struct CalibPressureAdvanceLine<'g, 'a> {
     /// Base calibration functionality
     pub base: CalibPressureAdvance,
 
+    /// Calib.hpp:261 `GCode *mp_gcodegen;`
+    mp_gcodegen: &'g mut crate::g_code::gcode_class::GCode<'a>,
+
     /// Nozzle diameter in mm
-    /// Calib.hpp:251
+    /// Calib.hpp:263
     pub nozzle_diameter: f64,
 
     /// Slow speed for PA test (mm/s)
-    /// Calib.hpp:252
+    /// Calib.hpp:264
+    /// FIDELITY-NOTE: the C++ leaves m_slow_speed / m_fast_speed uninitialized until set_speed();
+    /// they start at set_speed()'s defaults here.
     pub slow_speed: f64,
 
     /// Fast speed for PA test (mm/s)
-    /// Calib.hpp:252
+    /// Calib.hpp:264
     pub fast_speed: f64,
 
     /// Layer height in mm
-    /// Calib.hpp:254
+    /// Calib.hpp:266
     pub height_layer: f64,
 
     /// Line width in mm
-    /// Calib.hpp:255
+    /// Calib.hpp:267
     pub line_width: f64,
 
     /// Thin line width in mm (for fine details)
-    /// Calib.hpp:256
+    /// Calib.hpp:268
     pub thin_line_width: f64,
 
     /// Number line width in mm (for labels)
-    /// Calib.hpp:257
+    /// Calib.hpp:269
     pub number_line_width: f64,
 
     /// Vertical spacing between lines
-    /// Calib.hpp:258
+    /// Calib.hpp:270
     pub space_y: f64,
 
     /// Length of short line segments
-    /// Calib.hpp:260
+    /// Calib.hpp:272
     pub length_short: f64,
 
     /// Length of long line segments
-    /// Calib.hpp:260
+    /// Calib.hpp:272
     pub length_long: f64,
 
     /// Whether to draw value labels
-    /// Calib.hpp:261
+    /// Calib.hpp:273
     pub draw_numbers: bool,
 }
 
-impl CalibPressureAdvanceLine {
-    /// Create a new PA line calibration
-    /// Calib.hpp:222
-    /// Calib.cpp:407-413
-    pub fn new(config: FullDynamicPrintConfig) -> Self {
-        Self {
+impl<'g, 'a> CalibPressureAdvanceLine<'g, 'a> {
+    /// Calib.cpp:407-413 `CalibPressureAdvanceLine::CalibPressureAdvanceLine(GCode *gcodegen)`
+    pub fn new(gcodegen: &'g mut crate::g_code::gcode_class::GCode<'a>) -> Result<Self> {
+        // Calib.cpp:408  CalibPressureAdvance(gcodegen->config()) (`m_config.apply(config)` of the
+        // full configuration: every option of it), m_nozzle_diameter(config().nozzle_diameter.get_at(0))
+        let config = gcodegen.config().clone();
+        let nozzle_diameter = floats_nullable_at(&config, "nozzle_diameter", 0)?;
+        let initial_layer_print_height = config
+            .option_typed::<ConfigOptionFloat>("initial_layer_print_height")
+            .ok_or_else(|| Error::Config("calib: no initial_layer_print_height".to_string()))?
+            .value;
+        let mut this = Self {
             base: CalibPressureAdvance::new(config),
-            nozzle_diameter: 0.4,
+            mp_gcodegen: gcodegen,
+            nozzle_diameter,
             slow_speed: 20.0,
             fast_speed: 100.0,
+            // Calib.hpp:266-273  the member initializers
             height_layer: 0.2,
             line_width: 0.6,
             thin_line_width: 0.44,
@@ -1176,50 +1673,197 @@ impl CalibPressureAdvanceLine {
             length_short: 20.0,
             length_long: 40.0,
             draw_numbers: true,
+        };
+        // Calib.cpp:410
+        this.line_width = if this.nozzle_diameter < 0.51 { this.nozzle_diameter * 1.5 } else { this.nozzle_diameter * 1.05 };
+        // Calib.cpp:411
+        this.height_layer = initial_layer_print_height;
+        // Calib.cpp:412
+        this.thin_line_width = this.nozzle_diameter;
+        this.number_line_width = this.thin_line_width;
+        Ok(this)
+    }
+
+    /// Calib.cpp:415-431 `std::string CalibPressureAdvanceLine::generate_test(double start_pa /*= 0*/,
+    /// double step_pa /*= 0.002*/, int count /*= 10*/)`
+    pub fn generate_test(&mut self, start_pa: f64, step_pa: f64, mut count: i32) -> Result<String> {
+        // Calib.cpp:417  BoundingBoxf bed_ext = get_extents(mp_gcodegen->config().printable_area.values);
+        let printable_area = printable_area_of(self.mp_gcodegen.config())?;
+        let mut bed_ext = BoundingBoxF::new();
+        for p in &printable_area {
+            bed_ext.merge_point(*p);
         }
+        // Calib.cpp:418
+        if self.is_delta() {
+            self.base.delta_scale_bed_ext(&mut bed_ext);
+        }
+
+        // Calib.cpp:420-422  (BoundingBoxBase::size(): max - min)
+        let w = bed_ext.max.x - bed_ext.min.x;
+        let h = bed_ext.max.y - bed_ext.min.y;
+        // Calib.cpp:423
+        count = count.min(((h - 10.0) / self.space_y) as i32);
+
+        // Calib.cpp:425  40 + std::min(w - 120.0, 0.0)
+        self.length_long = 40.0 + std_min(w - 120.0, 0.0);
+
+        // Calib.cpp:427  `w - m_length_short * 2 - ...` (the first difference fused)
+        let startx = bed_ext.min.x + ((-self.length_short).mul_add(2.0, w) - self.length_long - 20.0) / 2.0;
+        // Calib.cpp:428  `h - count * m_space_y` (fused)
+        let starty = bed_ext.min.y + (-(count as f64)).mul_add(self.space_y, h) / 2.0;
+
+        // Calib.cpp:430
+        self.print_pa_lines(startx, starty, start_pa, step_pa, count)
     }
 
-    /// Generate PA line test G-code
-    ///
-    /// **BLOCKED:** Faithful translation requires the `GCode` gcodegen wrapper
-    /// (`config()`/`writer()`), the string-returning `GCodeWriter`
-    /// (`set_pressure_advance`, `travel_to_xy`, `extrude_to_xy`, `set_speed`, ...)
-    /// and `get_extents(printable_area.values)` — none ported in the required
-    /// form. See Calib.cpp:415-431 / print_pa_lines Calib.cpp:435-490.
-    ///
-    /// Calib.hpp:243
-    /// Calib.cpp:415-431
-    pub fn generate_test(
-        &mut self,
-        _start_pa: f64,
-        _step_pa: f64,
-        _count: usize,
-    ) -> Result<String> {
-        Err(Error::Config(
-            "CalibPressureAdvanceLine::generate_test blocked on GCode gcodegen + string GCodeWriter"
-                .to_string(),
-        ))
+    /// Calib.hpp:250 `const double &line_width()`
+    pub fn line_width(&self) -> f64 {
+        self.line_width
     }
 
-    /// Check if printer is delta type
-    ///
-    /// **BLOCKED:** C++ Calib.cpp:433 reads
-    /// `mp_gcodegen->config().printable_area.values.size() > 4`, which requires
-    /// the `GCode` gcodegen wrapper and the reflective config. Not ported.
-    ///
-    /// Calib.hpp:253
-    /// Calib.cpp:433
+    /// Calib.hpp:251 `const double &height_layer()`
+    pub fn height_layer(&self) -> f64 {
+        self.height_layer
+    }
+
+    /// Calib.cpp:433 `bool CalibPressureAdvanceLine::is_delta() const { return
+    /// mp_gcodegen->config().printable_area.values.size() > 4; }`
     pub fn is_delta(&self) -> bool {
-        // BLOCKED on GCode gcodegen / printable_area config.
-        false
+        printable_area_of(self.mp_gcodegen.config()).map(|v| v.len()).unwrap_or(0) > 4
+    }
+
+    /// Calib.hpp:253 `bool &draw_numbers()`
+    pub fn draw_numbers(&mut self) -> &mut bool {
+        &mut self.draw_numbers
     }
 
     /// Set speed parameters
-    /// Calib.hpp:245-249
+    /// Calib.hpp:244-248 `void set_speed(double fast = 100.0, double slow = 20.0)`
     pub fn set_speed(&mut self, fast: f64, slow: f64) {
-        // Calib.hpp:247-248 — m_slow_speed = slow; m_fast_speed = fast;
+        // Calib.hpp:246-247
         self.slow_speed = slow;
         self.fast_speed = fast;
+    }
+
+    /// Calib.cpp:435-490 `std::string CalibPressureAdvanceLine::print_pa_lines(double start_x, double
+    /// start_y, double start_pa, double step_pa, int num)`
+    fn print_pa_lines(&mut self, start_x: f64, start_y: f64, start_pa: f64, step_pa: f64, num: i32) -> Result<String> {
+        // Calib.cpp:437-438  auto &writer = mp_gcodegen->writer(); const auto &config = mp_gcodegen->config();
+        // Calib.cpp:440-441  filament_diameter.get_at(0); the ConfigOptionFloat print_flow_ratio
+        let filament_diameter = floats_at(self.mp_gcodegen.config(), "filament_diameter", 0)?;
+        let print_flow_ratio = self
+            .mp_gcodegen
+            .config()
+            .option_typed::<ConfigOptionFloat>("print_flow_ratio")
+            .ok_or_else(|| Error::Config("calib: no print_flow_ratio".to_string()))?
+            .value;
+
+        // Calib.cpp:443-445  (the doubles passed to the float parameters)
+        let e_per_mm = self.base.e_per_mm(
+            self.line_width,
+            self.height_layer,
+            self.nozzle_diameter as f32,
+            filament_diameter as f32,
+            print_flow_ratio as f32,
+        )?;
+        let _thin_e_per_mm = self.base.e_per_mm(
+            self.thin_line_width,
+            self.height_layer,
+            self.nozzle_diameter as f32,
+            filament_diameter as f32,
+            print_flow_ratio as f32,
+        )?;
+        let number_e_per_mm = self.base.e_per_mm(
+            self.number_line_width,
+            self.height_layer,
+            self.nozzle_diameter as f32,
+            filament_diameter as f32,
+            print_flow_ratio as f32,
+        )?;
+
+        // Calib.cpp:447-448  speed_adjust(int): the double speeds truncated
+        let fast = self.base.speed_adjust(self.fast_speed as i32);
+        let slow = self.base.speed_adjust(self.slow_speed as i32);
+        // Calib.cpp:449-450
+        let mut gcode = String::new();
+        gcode += &self.mp_gcodegen.m_writer.travel_to_z(self.height_layer, "");
+        let y_pos = start_y;
+
+        // Calib.cpp:453-456  prime line
+        let prime_x = start_x;
+        let writer = &mut self.mp_gcodegen.m_writer;
+        gcode += &self.base.move_to(PointF::new(prime_x, (num as f64).mul_add(self.space_y, y_pos)), writer, "");
+        gcode += &writer.set_speed(slow, "", "");
+        gcode += &writer.extrude_to_xy(PointF::new(prime_x, y_pos), e_per_mm * self.space_y * num as f64 * 1.2, "", false);
+
+        // Calib.cpp:458-467  (`y_pos + i * m_space_y`, `start_pa + i * step_pa` fused)
+        for i in 0..num {
+            let fi = i as f64;
+            gcode += &writer.set_pressure_advance(fi.mul_add(step_pa, start_pa), self.base.is_bbl_bowden);
+            gcode += &self.base.move_to(PointF::new(start_x, fi.mul_add(self.space_y, y_pos)), writer, "");
+            gcode += &writer.set_speed(slow, "", "");
+            gcode += &writer.extrude_to_xy(
+                PointF::new(start_x + self.length_short, fi.mul_add(self.space_y, y_pos)),
+                e_per_mm * self.length_short,
+                "",
+                false,
+            );
+            gcode += &writer.set_speed(fast, "", "");
+            gcode += &writer.extrude_to_xy(
+                PointF::new(start_x + self.length_short + self.length_long, fi.mul_add(self.space_y, y_pos)),
+                e_per_mm * self.length_long,
+                "",
+                false,
+            );
+            gcode += &writer.set_speed(slow, "", "");
+            gcode += &writer.extrude_to_xy(
+                PointF::new(start_x + self.length_short + self.length_long + self.length_short, fi.mul_add(self.space_y, y_pos)),
+                e_per_mm * self.length_short,
+                "",
+                false,
+            );
+        }
+        // Calib.cpp:468
+        gcode += &writer.set_pressure_advance(if self.base.is_bbl_bowden { 0.4 } else { 0.0 }, self.base.is_bbl_bowden);
+
+        // Calib.cpp:470
+        if self.draw_numbers {
+            // Calib.cpp:471-477  Orca: skip drawing indicator lines
+
+            // Calib.cpp:479-481
+            let box_start_x = start_x + self.length_short + self.length_long + self.length_short;
+            let mut default_box_opt_args = DrawBoxOptArgs::new(2, self.height_layer, self.line_width, fast);
+            default_box_opt_args.is_filled = true;
+            // Calib.cpp:482
+            gcode += &self.base.draw_box(
+                writer,
+                box_start_x,
+                start_y - self.space_y,
+                self.base.number_spacing() * 8.0,
+                (num + 1) as f64 * self.space_y,
+                default_box_opt_args,
+            )?;
+            // Calib.cpp:483
+            gcode += &writer.travel_to_z(self.height_layer * 2.0, "");
+            // Calib.cpp:484-487  (`y_pos + i * m_space_y`, `start_pa + i * step_pa` fused)
+            let mut i = 0;
+            while i < num {
+                let fi = i as f64;
+                gcode += &self.base.draw_number(
+                    box_start_x + 3.0 + self.line_width,
+                    fi.mul_add(self.space_y, y_pos) + self.space_y / 2.0,
+                    fi.mul_add(step_pa, start_pa),
+                    self.base.draw_digit_mode,
+                    self.number_line_width,
+                    number_e_per_mm,
+                    3600.0,
+                    writer,
+                );
+                i += 2;
+            }
+        }
+        // Calib.cpp:489
+        Ok(gcode)
     }
 
     /// Shift the start position for delta printers.
@@ -1232,18 +1876,23 @@ impl CalibPressureAdvanceLine {
     }
 }
 
+/// `config.printable_area.values`: the points of the ConfigOptionPoints `printable_area`.
+fn printable_area_of(config: &FullDynamicPrintConfig) -> Result<Vec<PointF>> {
+    config
+        .option_typed::<crate::config::ConfigOptionPoints>("printable_area")
+        .map(|o| o.values.clone())
+        .ok_or_else(|| Error::Config("calib: no printable_area".to_string()))
+}
+
+
 /// Pressure Advance pattern test calibration.
 ///
 /// Generates a grid of test patterns with varying PA values, using
 /// corner features to visualize the effect of pressure advance.
 ///
-/// PARTIAL: the configuration and geometry members are ported (Calib.hpp:302-374,
-/// Calib.cpp:498-504, 658-686, 734-806); `_refresh_writer` (Calib.cpp:687-732) and
-/// `generate_custom_gcodes` (Calib.cpp:506-656) need a `GCodeWriter` set up from a full
-/// `PrintConfig` (`apply_print_config`), which the writer port does not take yet.
+/// Calib.cpp:498-806.
 ///
 /// Calib.hpp:302-374
-#[derive(Clone)]
 pub struct CalibPressureAdvancePattern {
     /// Base calibration functionality
     pub base: CalibPressureAdvance,
@@ -1283,6 +1932,9 @@ pub struct CalibPressureAdvancePattern {
 
     /// Calib.hpp:373 `const double m_glyph_padding_vertical{1};`
     pub glyph_padding_vertical: f64,
+
+    /// Calib.hpp:360 `GCodeWriter m_writer;`
+    pub writer: GCodeWriter,
 }
 
 impl CalibPressureAdvancePattern {
@@ -1302,6 +1954,7 @@ impl CalibPressureAdvancePattern {
             pattern_spacing: 2,
             glyph_padding_horizontal: 1.0,
             glyph_padding_vertical: 1.0,
+            writer: GCodeWriter::new(),
         }
     }
 
@@ -1322,17 +1975,248 @@ impl CalibPressureAdvancePattern {
         Ok(this)
     }
 
-    /// Generate custom G-codes for PA pattern test
-    ///
-    /// PARTIAL (not ported): needs the `GCodeWriter` that `_refresh_writer` sets up from a full
-    /// `PrintConfig`, and `draw_box` / `draw_number` / `draw_line` on it.
-    ///
-    /// Calib.hpp:315
-    /// Calib.cpp:506-656
-    pub fn generate_custom_gcodes(&mut self) -> Result<()> {
-        Err(Error::Config(
-            "CalibPressureAdvancePattern::generate_custom_gcodes needs GCodeWriter::apply_print_config (partial)".to_string(),
-        ))
+    /// Calib.cpp:506-656 `void CalibPressureAdvancePattern::generate_custom_gcodes(const
+    /// DynamicPrintConfig &config, bool is_bbl_machine, Model &model, const Vec3d &origin)`
+    pub fn generate_custom_gcodes(
+        &mut self,
+        config: &FullDynamicPrintConfig,
+        is_bbl_machine: bool,
+        model: &mut crate::model::Model,
+        origin: &crate::geometry::geometry::Vec3d,
+    ) -> Result<()> {
+        use crate::custom_g_code::{Info, Item, Mode, Type};
+        // Calib.cpp:508-509
+        if model.objects.is_empty() {
+            return Ok(());
+        }
+        // Calib.cpp:510-511
+        let mut gcode = String::new();
+        gcode += "; start pressure advance pattern for layer\n";
+
+        // Calib.cpp:513
+        self.refresh_setup(config, is_bbl_machine, model, origin)?;
+
+        // Calib.cpp:515-516
+        self.writer.set_first_layer(true);
+        self.writer.reset_last_acceleration();
+
+        // Calib.cpp:518-520
+        let sp = self.starting_point;
+        gcode += &self.base.move_to(PointF::new(sp.0, sp.1), &mut self.writer, "Move to start XY position");
+        gcode += &self.writer.travel_to_z(self.height_first_layer(), "Move to start Z position");
+        gcode += &self.writer.set_pressure_advance(if self.base.is_bbl_bowden { 0.4 } else { self.params.start }, self.base.is_bbl_bowden);
+
+        // Calib.cpp:522  (speed_adjust(int): the double speed truncated)
+        let default_box_opt_args = DrawBoxOptArgs::new(
+            self.wall_count(),
+            self.height_first_layer(),
+            self.line_width_first_layer(),
+            self.base.speed_adjust(self.speed_first_layer() as i32),
+        );
+
+        // Calib.cpp:524-525  create anchoring frame
+        let (print_size_x, frame_size_y) = (self.print_size_x(), self.frame_size_y());
+        gcode += &self.base.draw_box(&mut self.writer, sp.0, sp.1, print_size_x, frame_size_y, default_box_opt_args)?;
+
+        // Calib.cpp:527-532  create tab for numbers (`... + m_glyph_padding_vertical * 2` fused)
+        let mut draw_box_opt_args = default_box_opt_args;
+        draw_box_opt_args.is_filled = true;
+        draw_box_opt_args.num_perimeters = self.wall_count();
+        let tab_y = sp.1 + self.frame_size_y() + self.line_spacing_first_layer();
+        let tab_size_x = self.glyph_tab_max_x() - sp.0;
+        let tab_size_y = self.glyph_padding_vertical.mul_add(2.0, self.max_numbering_height() + self.line_spacing_first_layer());
+        gcode += &self.base.draw_box(&mut self.writer, sp.0, tab_y, tab_size_x, tab_size_y, draw_box_opt_args)?;
+
+        // Calib.cpp:534-535
+        let mut gcode_items: Vec<Item> = Vec::new();
+        let num_patterns = self.get_num_patterns(); // "cache" for use in loops
+
+        // Calib.cpp:537-538  draw pressure advance pattern
+        for i in 0..self.num_layers {
+            // Calib.cpp:539-540  (`height_first_layer() + (i * height_layer())` fused)
+            let layer_height = (i as f64).mul_add(self.height_layer(), self.height_first_layer());
+            let zhop_height = layer_height + self.height_layer();
+
+            // Calib.cpp:542
+            if i > 0 {
+                // Calib.cpp:543-548  FIDELITY-NOTE: `CustomGCode::Item item;` leaves `extruder`
+                // uninitialized; 0 here.
+                gcode += "; end pressure advance pattern for layer\n";
+                let item = Item::new_with_extra(
+                    ((i - 1) as f64).mul_add(self.height_layer(), self.height_first_layer()),
+                    Type::Custom,
+                    0,
+                    String::new(),
+                    gcode.clone(),
+                );
+                gcode_items.push(item);
+
+                // Calib.cpp:550-551  reset for next layer contents
+                gcode = String::new();
+                gcode += "; start pressure advance pattern for layer\n";
+
+                // Calib.cpp:553-556
+                self.writer.reset_last_acceleration();
+                self.writer.set_first_layer(false);
+                gcode += &self.writer.travel_to_z(layer_height, "Move to layer height");
+                gcode += &self.writer.reset_e(false);
+            }
+
+            // Calib.cpp:559-560  line numbering
+            if i == 1 {
+                gcode += &self.writer.set_pressure_advance(if self.base.is_bbl_bowden { 0.4 } else { self.params.start }, self.base.is_bbl_bowden);
+
+                // Calib.cpp:562-564  (the doubles passed to the float parameters)
+                let number_e_per_mm = self.base.e_per_mm(
+                    self.line_width(),
+                    self.height_layer(),
+                    floats_nullable_at(&self.base.config, "nozzle_diameter", 0)? as f32,
+                    floats_at(&self.base.config, "filament_diameter", 0)? as f32,
+                    floats_nullable_at(&self.base.config, "filament_flow_ratio", 0)? as f32,
+                )?;
+
+                // Calib.cpp:566-570  glyph on every other line (`m_params.start + (j *
+                // m_params.step)` fused)
+                let mut j = 0;
+                while j < num_patterns {
+                    let start_x = self.glyph_start_x(j);
+                    let start_y = sp.1 + self.frame_size_y() + self.glyph_padding_vertical + self.line_width();
+                    let value = (j as f64).mul_add(self.params.step, self.params.start);
+                    let (mode, line_width, speed) = (self.base.draw_digit_mode, self.line_width(), self.speed_first_layer());
+                    gcode += &self.base.draw_number(start_x, start_y, value, mode, line_width, number_e_per_mm, speed, &mut self.writer);
+                    j += 2;
+                }
+            }
+
+            // Calib.cpp:573-574
+            if i == 0 {
+                gcode += &self.writer.set_pressure_advance(self.params.start, self.base.is_bbl_bowden);
+            }
+
+            // Calib.cpp:576-578
+            let mut to_x = sp.0 + self.pattern_shift();
+            let mut to_y = sp.1;
+            let mut side_length = self.wall_side_length;
+
+            // Calib.cpp:580-586  shrink first layer to fit inside frame
+            if i == 0 {
+                // `line_spacing_first_layer() * (wall_count() - 1) + (line_width_first_layer() * (1 -
+                // m_encroachment))` (the first product fused)
+                let inset = self
+                    .line_spacing_first_layer()
+                    .mul_add((self.wall_count() - 1) as f64, self.line_width_first_layer() * (1.0 - self.base.encroachment));
+                let shrink = inset / (self.base.to_radians(self.corner_angle as f64) / 2.0).sin();
+                side_length = self.wall_side_length - shrink;
+                // `to_x += shrink * std::sin(...)` (fused)
+                to_x = shrink.mul_add(
+                    (self.base.to_radians(90.0) - self.base.to_radians(self.corner_angle as f64) / 2.0).sin(),
+                    to_x,
+                );
+                to_y += self
+                    .line_spacing_first_layer()
+                    .mul_add((self.wall_count() - 1) as f64, self.line_width_first_layer() * (1.0 - self.base.encroachment));
+            }
+
+            // Calib.cpp:588-589
+            let initial_x = to_x;
+            let initial_y = to_y;
+
+            // Calib.cpp:591-593
+            gcode += &self.writer.travel_to_z(zhop_height, "z-hop before move");
+            gcode += &self.base.move_to(PointF::new(to_x, to_y), &mut self.writer, "Move to pattern start");
+            gcode += &self.writer.travel_to_z(layer_height, "undo z-hop");
+
+            // Calib.cpp:595
+            for j in 0..num_patterns {
+                // Calib.cpp:596-597  increment pressure advance
+                gcode += &self.writer.set_pressure_advance((j as f64).mul_add(self.params.step, self.params.start), self.base.is_bbl_bowden);
+
+                // Calib.cpp:599
+                for k in 0..self.wall_count() {
+                    // Calib.cpp:600-601  (`to_x += cos(...) * side_length` fused)
+                    let half_angle = self.base.to_radians(self.corner_angle as f64) / 2.0;
+                    to_x = half_angle.cos().mul_add(side_length, to_x);
+                    to_y = half_angle.sin().mul_add(side_length, to_y);
+
+                    // Calib.cpp:603-606  don't use line_width_first_layer so results are
+                    // consistent across all layers
+                    let draw_line_arg_height = if i == 0 { self.height_first_layer() } else { self.height_layer() };
+                    let draw_line_arg_line_width = self.line_width();
+                    let draw_line_arg_speed = if i == 0 {
+                        self.base.speed_adjust(self.speed_first_layer() as i32)
+                    } else {
+                        self.base.speed_adjust(self.speed_perimeter() as i32)
+                    };
+                    let draw_line_arg_comment = "Print pattern wall";
+                    // Calib.cpp:607
+                    gcode += &self.base.draw_line(
+                        &mut self.writer,
+                        PointF::new(to_x, to_y),
+                        draw_line_arg_line_width,
+                        draw_line_arg_height,
+                        draw_line_arg_speed,
+                        draw_line_arg_comment,
+                    )?;
+
+                    // Calib.cpp:609-610  (`to_x -= cos(...) * side_length` fused)
+                    to_x = (-half_angle.cos()).mul_add(side_length, to_x);
+                    to_y = half_angle.sin().mul_add(side_length, to_y);
+
+                    // Calib.cpp:612
+                    gcode += &self.base.draw_line(
+                        &mut self.writer,
+                        PointF::new(to_x, to_y),
+                        draw_line_arg_line_width,
+                        draw_line_arg_height,
+                        draw_line_arg_speed,
+                        draw_line_arg_comment,
+                    )?;
+
+                    // Calib.cpp:614
+                    to_y = initial_y;
+                    if k != self.wall_count() - 1 {
+                        // Calib.cpp:615-620  perimeters not done yet. move to next perimeter
+                        to_x += self.line_spacing_angle();
+                        gcode += &self.writer.travel_to_z(zhop_height, "z-hop before move");
+                        gcode += &self.base.move_to(PointF::new(to_x, to_y), &mut self.writer, "Move to start next pattern wall");
+                        gcode += &self.writer.travel_to_z(layer_height, "undo z-hop");
+                    } else if j != num_patterns - 1 {
+                        // Calib.cpp:621-626  patterns not done yet. move to next pattern
+                        to_x += self.pattern_spacing as f64 + self.line_width();
+                        gcode += &self.writer.travel_to_z(zhop_height, "z-hop before move");
+                        gcode += &self.base.move_to(PointF::new(to_x, to_y), &mut self.writer, "Move to next pattern");
+                        gcode += &self.writer.travel_to_z(layer_height, "undo z-hop");
+                    } else if i != self.num_layers - 1 {
+                        // Calib.cpp:627-633  layers not done yet. move back to start
+                        to_x = initial_x;
+                        gcode += &self.writer.travel_to_z(zhop_height, "z-hop before move");
+                        gcode += &self.base.move_to(PointF::new(to_x, to_y), &mut self.writer, "Move back to start position");
+                        gcode += &self.writer.travel_to_z(layer_height, "undo z-hop");
+                        gcode += &self.writer.reset_e(false); // reset extruder before printing placeholder cube to avoid
+                    } else {
+                        // everything done
+                    }
+                }
+            }
+        }
+
+        // Calib.cpp:640-641
+        gcode += &self.writer.set_pressure_advance(if self.base.is_bbl_bowden { 0.4 } else { self.params.start }, self.base.is_bbl_bowden);
+        gcode += "; end pressure advance pattern for layer\n";
+
+        // Calib.cpp:643-647  (`extruder` left 0, see above)
+        let item = Item::new_with_extra(self.max_layer_z(), Type::Custom, 0, String::new(), gcode);
+        gcode_items.push(item);
+
+        // Calib.cpp:649-651
+        let mut info = Info::new();
+        info.mode = Mode::SingleExtruder;
+        info.gcodes = gcode_items;
+
+        // Calib.cpp:653
+        let plate = model.curr_plate_index;
+        model.plates_custom_gcodes.insert(plate, info);
+        Ok(())
     }
 
     /// Set starting position offset
@@ -1418,7 +2302,7 @@ impl CalibPressureAdvancePattern {
         // Calib.cpp:672
         self._refresh_starting_point(model);
         // Calib.cpp:673
-        self._refresh_writer(is_bbl_machine, model, origin);
+        self._refresh_writer(is_bbl_machine, model, origin)?;
         Ok(())
     }
 
@@ -1437,10 +2321,58 @@ impl CalibPressureAdvancePattern {
     }
 
     /// Calib.cpp:687-732 `void _refresh_writer(bool is_bbl_machine, const Model &model, const Vec3d
-    /// &origin)`. PARTIAL (not ported): the C++ sets up `m_writer` from
-    /// `DynamicPrintConfig::full_print_config()` with `m_config` applied, through
-    /// `GCodeWriter::apply_print_config(PrintConfig)`, which the writer port does not take.
-    fn _refresh_writer(&mut self, _is_bbl_machine: bool, _model: &crate::model::Model, _origin: &crate::geometry::geometry::Vec3d) {}
+    /// &origin)`
+    fn _refresh_writer(&mut self, _is_bbl_machine: bool, model: &crate::model::Model, origin: &crate::geometry::geometry::Vec3d) -> Result<()> {
+        // Calib.cpp:689-695  Build a full config with all defaults first, then override with
+        // m_config. A bare PrintConfig() has empty vectors for many options (filament_volume_map,
+        // filament_self_index, etc.), which causes crashes in GCodeWriter if those keys are absent
+        // from m_config.
+        let mut full_defaults = FullDynamicPrintConfig::full_print_config();
+        full_defaults.apply(&self.base.config, true).map_err(|e| Error::Config(format!("{e:?}")))?;
+
+        // Calib.cpp:697-700  PrintConfig print_config; print_config.apply(full_defaults, true);
+        // m_writer.apply_print_config(print_config);
+        // FIDELITY-NOTE: the writer takes the full configuration, whose PrintConfig members are those
+        // `print_config.apply(full_defaults, true)` copies.
+        let print_config = full_defaults;
+        self.writer.apply_print_config(&print_config);
+        // Calib.cpp:701
+        self.writer.set_xy_offset(origin.x, origin.y);
+        // Calib.cpp:702  //m_writer.set_is_bbl_machine(is_bbl_machine);
+
+        // Calib.cpp:704-707
+        let object = &model.objects[0];
+        let model_extruder_id = object.volumes[0].extruder_id(object);
+        let filament_id: u32 = if model_extruder_id > 0 { (model_extruder_id - 1) as u32 } else { 0 };
+        self.writer.set_extruders(vec![filament_id]);
+        self.writer.set_extruder(filament_id, 0);
+
+        // Calib.cpp:709-720  `(unsigned int) floor(value + 0.5)`
+        let to_uints = |key: &str| -> Result<Vec<u32>> {
+            Ok(floats_values(&print_config, key)?.iter().map(|&value| (value + 0.5).floor() as u32).collect())
+        };
+        let travel_accelerations = to_uints("travel_acceleration")?;
+        let short_travel_accelerations = to_uints("travel_short_distance_acceleration")?;
+        let first_layer_travel_accelerations = to_uints("initial_layer_travel_acceleration")?;
+        // Calib.cpp:721-723
+        self.writer.set_travel_acceleration(&travel_accelerations);
+        self.writer.set_travel_short_acceleration(&short_travel_accelerations);
+        self.writer.set_first_layer_travel_acceleration(&first_layer_travel_accelerations);
+
+        // Calib.cpp:725-731  (get_process_config_idx of the PrintConfig: of its GCodeConfig members,
+        // which the writer's config holds)
+        let nozzle_idx = crate::extruder::get_process_config_idx(&self.writer.config, filament_id);
+        let default_acceleration = floats_values(&print_config, "default_acceleration")?;
+        let outer_wall_acceleration = floats_values(&print_config, "outer_wall_acceleration")?;
+        if nozzle_idx < default_acceleration.len() && nozzle_idx < outer_wall_acceleration.len() {
+            let default_acc = default_acceleration[nozzle_idx];
+            let outer_acc = outer_wall_acceleration[nozzle_idx];
+            if default_acc > 0.0 && outer_acc > 0.0 {
+                self.writer.set_acceleration((outer_acc + 0.5).floor() as u32);
+            }
+        }
+        Ok(())
+    }
 
     /// Calib.hpp:332 `m_config.option<ConfigOptionFloat>("initial_layer_print_height")->value`
     pub fn height_first_layer(&self) -> f64 {
@@ -1641,17 +2573,33 @@ mod tests {
         assert_eq!(calib.number_spacing(), 3.0); // 2.0 + 1.0
     }
 
+    /// A GCode generator on the full default configuration, as `CalibPressureAdvanceLine` takes
+    /// one (Calib.cpp:407).
+    fn default_gcodegen<'a>() -> crate::g_code::gcode_class::GCode<'a> {
+        let config = FullDynamicPrintConfig::full_print_config();
+        let mut g = crate::g_code::gcode_class::GCode::new();
+        g.m_config = config.clone();
+        g.m_writer.apply_print_config(&config);
+        g.m_writer.set_extruders(vec![0]);
+        g.m_writer.set_extruder(0, 0);
+        g
+    }
+
     #[test]
     fn test_calib_pressure_advance_line_new() {
-        let line = CalibPressureAdvanceLine::new(FullDynamicPrintConfig::default());
+        let mut g = default_gcodegen();
+        let line = CalibPressureAdvanceLine::new(&mut g).unwrap();
+        // Calib.cpp:410-411: the line width from the nozzle diameter (0.4 by default), the layer
+        // height from initial_layer_print_height (0.2 by default).
+        assert_eq!(line.line_width, 0.4 * 1.5);
         assert_eq!(line.height_layer, 0.2);
-        assert_eq!(line.line_width, 0.6);
         assert!(line.draw_numbers);
     }
 
     #[test]
     fn test_calib_pressure_advance_line_set_speed() {
-        let mut line = CalibPressureAdvanceLine::new(FullDynamicPrintConfig::default());
+        let mut g = default_gcodegen();
+        let mut line = CalibPressureAdvanceLine::new(&mut g).unwrap();
         line.set_speed(120.0, 30.0);
         assert_eq!(line.fast_speed, 120.0);
         assert_eq!(line.slow_speed, 30.0);
@@ -1727,7 +2675,8 @@ mod tests {
     #[test]
     fn test_delta_modify_start() {
         // Calib.cpp:492-496 — startx = -startx; starty = -(count * m_space_y) / 2.
-        let line = CalibPressureAdvanceLine::new(FullDynamicPrintConfig::default());
+        let mut g = default_gcodegen();
+        let line = CalibPressureAdvanceLine::new(&mut g).unwrap();
         let mut startx = 12.0;
         let mut starty = 99.0;
         line.delta_modify_start(&mut startx, &mut starty, 10);

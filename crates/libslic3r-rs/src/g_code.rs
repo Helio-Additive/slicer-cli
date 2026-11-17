@@ -9494,6 +9494,7 @@ impl ExportPlaceholderInputs {
             .map(|id| crate::multi_nozzle_utils::NozzleInfo {
                 diameter: crate::utils::format_diameter_to_str_default(pp_get_at(&nozzle_diameter, id)),
                 volume_type: crate::extruder::NozzleVolumeType::from_i32(pp_get_at(&volume_types, id).clamp(0, 3)),
+                installed: true,
                 extruder_id: id as i32,
                 group_id: id as i32,
             })
@@ -11636,7 +11637,7 @@ where
 pub mod gcode_class {
     use super::{pp_bool, pp_float, pp_floats, pp_get_at, pp_int, pp_ints, pp_string, pp_strings};
     use crate::config::{ConfigBase, ConfigOptionPoints, ConfigOptionResolver};
-    use crate::g_code_writer::{GCodeWriter, LiftType};
+    use crate::g_code_writer::{GCodeWriter, LiftType, TemperatureCommandType};
     use crate::geometry::{Point, Points, Polyline, Vec2d, Vec3d};
     use crate::gcode::g_code_processor::GCodeProcessor;
     use crate::libslic3r::{EPSILON, SCALED_EPSILON, SCALING_FACTOR};
@@ -12082,7 +12083,7 @@ pub mod gcode_class {
                 // we assume that heating is always slower than cooling, so no need to block
                 let temp = self._get_temp(gcodegen) + standby_temperature_delta;
                 let id = gcodegen.writer().filament().map(|f| f.id() as i32).unwrap_or(0);
-                gcode += &gcodegen.writer().set_temperature(temp as u32, false, id);
+                gcode += &gcodegen.writer().set_temperature(temp as u32, false, id, TemperatureCommandType::Default);
             }
 
             gcode
@@ -12093,7 +12094,7 @@ pub mod gcode_class {
             if pp_int(&gcodegen.config(), "standby_temperature_delta").unwrap_or(0) != 0 {
                 let temp = self._get_temp(gcodegen);
                 let id = gcodegen.writer().filament().map(|f| f.id() as i32).unwrap_or(0);
-                gcodegen.writer().set_temperature(temp as u32, true, id)
+                gcodegen.writer().set_temperature(temp as u32, true, id, TemperatureCommandType::Default)
             } else {
                 String::new()
             }
@@ -12546,6 +12547,8 @@ pub mod gcode_class {
         pub m_cur_layer_idx: usize,
         pub m_initial_layer_extruders: std::collections::BTreeSet<u32>,
         pub m_sorted_layer_filaments: Vec<Vec<u32>>,
+        /// GCode.hpp `const Print *m_print`: the print being exported (set by `_do_export`).
+        pub m_print: Option<&'a crate::print::faithful::Print>,
     }
 
     impl<'a> Default for GCode<'a> {
@@ -12614,6 +12617,7 @@ pub mod gcode_class {
                 m_cur_layer_idx: 0,
                 m_initial_layer_extruders: std::collections::BTreeSet::new(),
                 m_sorted_layer_filaments: Vec::new(),
+                m_print: None,
             }
         }
 
@@ -12971,14 +12975,14 @@ pub mod gcode_class {
                 if (0..1000).contains(&temp_by_gcode) {
                     temp = temp_by_gcode;
                 }
-                self.m_writer.set_temperature(temp as u32, wait, first_printing_extruder_id as i32);
+                self.m_writer.set_temperature(temp as u32, wait, first_printing_extruder_id as i32, TemperatureCommandType::Default);
             } else {
                 // Custom G-code does not set the extruder temperature. Do it now.
                 if pp_bool(&self.m_print_config, "single_extruder_multi_material").unwrap_or(false) {
                     // Set temperature of the first printing extruder only.
                     let temp = pp_get_at(&pc_temps, self.filament_config_index(first_printing_extruder_id as i32));
                     if temp > 0 {
-                        file.write(&self.m_writer.set_temperature(temp as u32, wait, first_printing_extruder_id as i32));
+                        file.write(&self.m_writer.set_temperature(temp as u32, wait, first_printing_extruder_id as i32, TemperatureCommandType::Default));
                     }
                 } else {
                     // Set temperatures of all the printing extruders.
@@ -12988,7 +12992,7 @@ pub mod gcode_class {
                             temp += pp_int(&self.m_print_config, "standby_temperature_delta").unwrap_or(0);
                         }
                         if temp > 0 {
-                            file.write(&self.m_writer.set_temperature(temp as u32, wait, tool_id as i32));
+                            file.write(&self.m_writer.set_temperature(temp as u32, wait, tool_id as i32, TemperatureCommandType::Default));
                         }
                     }
                 }
@@ -14175,5 +14179,325 @@ pub mod gcode_class {
         }
 
         gcode
+    }
+
+    // -----------------------------------------------------------------------
+    // GCode.cpp: the free functions of `namespace DoExport` and the members of GCode over the
+    // print (`print::faithful::Print`).
+    // -----------------------------------------------------------------------
+
+    /// GCode.cpp:1853-1886 `static void update_print_estimated_stats(const GCodeProcessor& processor,
+    /// const std::vector<Extruder>& extruders, PrintStatistics& print_statistics)`
+    pub fn update_print_estimated_stats(
+        processor: &GCodeProcessor,
+        extruders: &[crate::extruder::Extruder],
+        print_statistics: &mut crate::print::faithful::PrintStatistics,
+    ) {
+        use crate::gcode::g_code_processor::ETimeMode;
+        let result = processor.result();
+        print_statistics.estimated_normal_print_time =
+            crate::utils::get_time_dhms(result.print_statistics.modes[ETimeMode::Normal as usize].time);
+        print_statistics.estimated_silent_print_time = if processor.is_stealth_time_estimator_enabled() {
+            crate::utils::get_time_dhms(result.print_statistics.modes[ETimeMode::Stealth as usize].time)
+        } else {
+            "N/A".to_string()
+        };
+
+        // update filament statictics
+        let mut total_extruded_volume = 0.0f64;
+        let mut total_used_filament = 0.0f64;
+        let mut total_weight = 0.0f64;
+        let mut total_cost = 0.0f64;
+
+        for (&extruder_id, &volume) in &result.print_statistics.total_volumes_per_extruder {
+            total_extruded_volume += volume;
+
+            let extruder = match extruders.iter().find(|extr| extr.id() as usize == extruder_id) {
+                None => continue,
+                Some(e) => e,
+            };
+
+            // `PI * sqr(0.5* extruder->filament_diameter())` (sqr: Utils.hpp, a function)
+            let half = 0.5 * extruder.filament_diameter();
+            let s = std::f64::consts::PI * (half * half);
+            let weight = volume * extruder.filament_density() * 0.001;
+            total_used_filament += volume / s;
+            total_weight += weight;
+            // `total_cost += weight * extruder->filament_cost() * 0.001` (fused)
+            total_cost = (weight * extruder.filament_cost()).mul_add(0.001, total_cost);
+        }
+
+        print_statistics.total_extruded_volume = total_extruded_volume;
+        print_statistics.total_used_filament = total_used_filament;
+        print_statistics.total_weight = total_weight;
+        print_statistics.total_cost = total_cost;
+
+        print_statistics.filament_stats = result.print_statistics.model_volumes_per_extruder.clone();
+    }
+
+    /// GCode.cpp:2343-2402 `static std::string update_print_stats_and_format_filament_stats(const bool
+    /// has_wipe_tower, const WipeTowerData &wipe_tower_data, const std::vector<Extruder> &extruders,
+    /// PrintStatistics &print_statistics)`: fills in print_statistics and returns the formatted
+    /// string containing filament statistics to be inserted into G-code comment section (empty: the
+    /// C++ comments out every line that would append to it).
+    pub fn update_print_stats_and_format_filament_stats(
+        has_wipe_tower: bool,
+        wipe_tower_data: &crate::print::faithful::WipeTowerData,
+        extruders: &[crate::extruder::Extruder],
+        print_statistics: &mut crate::print::faithful::PrintStatistics,
+    ) -> String {
+        let filament_stats_string_out = String::new();
+
+        print_statistics.clear();
+        print_statistics.total_toolchanges = 0.max(wipe_tower_data.number_of_toolchanges);
+        if !extruders.is_empty() {
+            for extruder in extruders {
+                let id = extruder.id() as usize;
+                // `extruder.used_filament() + (has_wipe_tower ? wipe_tower_data.used_filament[id] : 0.f)`
+                let used_filament =
+                    extruder.used_filament() + if has_wipe_tower { wipe_tower_data.used_filament[id] as f64 } else { 0.0f32 as f64 };
+                let extruded_volume = extruder.extruded_volume()
+                    + if has_wipe_tower { wipe_tower_data.used_filament[id] as f64 * extruder.filament_crossection() } else { 0.0 };
+                let filament_weight = extruded_volume * extruder.filament_density() * 0.001;
+                let filament_cost = filament_weight * extruder.filament_cost() * 0.001;
+                if filament_weight > 0.0 {
+                    print_statistics.total_weight = print_statistics.total_weight + filament_weight;
+                    if filament_cost > 0.0 {
+                        print_statistics.total_cost = print_statistics.total_cost + filament_cost;
+                    }
+                }
+                print_statistics.total_used_filament += used_filament;
+                print_statistics.total_extruded_volume += extruded_volume;
+                print_statistics.total_wipe_tower_filament += if has_wipe_tower { used_filament - extruder.used_filament() } else { 0.0 };
+                print_statistics.total_wipe_tower_cost += if has_wipe_tower {
+                    (extruded_volume - extruder.extruded_volume()) * extruder.filament_density() * 0.001 * extruder.filament_cost() * 0.001
+                } else {
+                    0.0
+                };
+            }
+        }
+        filament_stats_string_out
+    }
+
+    /// GCode.cpp:2404-2418 `static inline std::vector<const PrintInstance*>
+    /// sort_object_instances_by_max_z(const Print &print)` (compiled out with `#if 0` at the pin):
+    /// the PrintObjects sorted by their increasing height, their instances in order; each instance
+    /// as (index of its object in `print.objects()`, index in the object's instances).
+    pub fn sort_object_instances_by_max_z(print: &crate::print::faithful::Print) -> Vec<(usize, usize)> {
+        let mut objects: Vec<usize> = (0..print.objects().len()).collect();
+        // std::sort with `po1->height() < po2->height()`
+        // FIDELITY-NOTE: std::sort leaves the order of equal heights unspecified; stable here.
+        objects.sort_by(|&a, &b| print.objects()[a].height().cmp(&print.objects()[b].height()));
+        let mut instances: Vec<(usize, usize)> = Vec::with_capacity(objects.len());
+        for &object in &objects {
+            for i in 0..print.objects()[object].instances().len() {
+                instances.push((object, i));
+            }
+        }
+        instances
+    }
+
+    /// GCode.cpp:2420-2452 `std::vector<const PrintInstance*> sort_object_instances_by_model_order(const
+    /// Print& print, bool init_order)`: the PrintInstances in the order of their respective
+    /// ModelInstances' `arrange_order` (BBS: add sort logic for seq-print); each instance as (index
+    /// of its object in `print.objects()`, index in the object's instances). With `init_order`, the
+    /// ModelInstances' `arrange_order` is set first (the C++ const_casts the print's model).
+    pub fn sort_object_instances_by_model_order(print: &mut crate::print::faithful::Print, init_order: bool) -> Vec<(usize, usize)> {
+        // Build up map from ModelInstance* to PrintInstance*: a ModelInstance as (index of its
+        // ModelObject in print.model().objects, index in its instances).
+        let mut model_instance_to_print_instance: Vec<((usize, usize), (usize, usize))> =
+            Vec::with_capacity(print.num_object_instances() as usize);
+        let n_objects = print.objects().len();
+        for po in 0..n_objects {
+            let mo = print.m_objects[po].m_model_object;
+            for pi in 0..print.m_objects[po].m_instances.len() {
+                let mi = print.m_objects[po].m_instances[pi].model_instance;
+                if init_order {
+                    let order = if n_objects == 1 { 1 } else { print.m_model.objects[mo].instances[mi].id().id as i32 };
+                    print.m_model.objects[mo].instances[mi].arrange_order = order;
+                }
+                model_instance_to_print_instance.push(((mo, mi), (po, pi)));
+            }
+        }
+        let model = &print.m_model;
+        let arrange_order = |m: (usize, usize)| model.objects[m.0].instances[m.1].arrange_order;
+        // FIDELITY-NOTE: std::sort leaves the order of equal arrange_order unspecified; stable here.
+        model_instance_to_print_instance.sort_by(|l, r| arrange_order(l.0).cmp(&arrange_order(r.0)));
+
+        let mut instances: Vec<(usize, usize)> = Vec::with_capacity(model_instance_to_print_instance.len());
+        for (mo, model_object) in model.objects.iter().enumerate() {
+            for mi in 0..model_object.instances.len() {
+                // std::lower_bound by arrange_order
+                let key = model_object.instances[mi].arrange_order;
+                let it = model_instance_to_print_instance.partition_point(|l| arrange_order(l.0) < key);
+                if it != model_instance_to_print_instance.len() && model_instance_to_print_instance[it].0 == (mo, mi) {
+                    instances.push(model_instance_to_print_instance[it].1);
+                }
+            }
+        }
+        let print_ref = &*print;
+        let order_of = |p: &(usize, usize)| {
+            let pi = &print_ref.m_objects[p.0].m_instances[p.1];
+            print_ref.m_model.objects[print_ref.m_objects[p.0].m_model_object].instances[pi.model_instance].arrange_order
+        };
+        instances.sort_by(|l, r| order_of(l).cmp(&order_of(r)));
+        instances
+    }
+
+    /// GCode.cpp:8993-9003 `inline std::string polygon_to_string(const Polygon& polygon, Print* print)`
+    pub fn polygon_to_string(polygon: &crate::geometry::Polygon, print: &crate::print::faithful::Print) -> String {
+        use crate::g_code_writer::ostream_double;
+        let mut gcode = String::new();
+        gcode.push('[');
+        for p in &polygon.points {
+            let v = print.translate_point_to_print_space(p);
+            gcode += &format!("[{},{}],", ostream_double(v.x), ostream_double(v.y));
+        }
+        let first_v = print.translate_point_to_print_space(&polygon.points[0]);
+        gcode += &format!("[{},{}]", ostream_double(first_v.x), ostream_double(first_v.y));
+        gcode.push(']');
+        gcode
+    }
+
+    impl<'a> GCode<'a> {
+        /// GCode.cpp:1964-1984 `BoundingBoxf GCode::first_layer_projection(const Print& print) const`:
+        /// the plate model's projection on first layer, plate offset included, unscaled.
+        pub fn first_layer_projection(&self, print: &crate::print::faithful::Print) -> crate::geometry::BoundingBoxF {
+            use crate::geometry::{BoundingBoxF, PointF};
+            // `BoundingBoxf bbox;` (min = max = 0, undefined)
+            let mut bbox = BoundingBoxF::new();
+            bbox.min = PointF::new(0.0, 0.0);
+            bbox.max = PointF::new(0.0, 0.0);
+            // BoundingBoxBase::merge(const BoundingBoxBase&): only a defined box
+            let merge_box = |bbox: &mut BoundingBoxF, min: PointF, max: PointF, defined: bool| {
+                if defined {
+                    if bbox.is_defined() {
+                        bbox.merge_point(min);
+                        bbox.merge_point(max);
+                    } else {
+                        *bbox = BoundingBoxF::new();
+                        bbox.merge_point(min);
+                        bbox.merge_point(max);
+                    }
+                }
+            };
+            for obj in print.objects() {
+                for instance in obj.instances() {
+                    let instance_bbox = instance.get_bounding_box(print);
+                    // BoundingBoxf{ min, max }: defined when min < max on both axes
+                    let (min, max) = (
+                        PointF::new(instance_bbox.min.x, instance_bbox.min.y),
+                        PointF::new(instance_bbox.max.x, instance_bbox.max.y),
+                    );
+                    merge_box(&mut bbox, min, max, min.x < max.x && min.y < max.y);
+                }
+            }
+
+            let first_layer_point = &print.m_first_layer_convex_hull.points;
+            let mut points: Vec<PointF> = Vec::with_capacity(first_layer_point.len());
+            for pt in first_layer_point {
+                points.push(PointF::new(unscale(pt.x), unscale(pt.y)));
+            }
+            // BoundingBoxf initial_layer_bbox(points); (BoundingBox.hpp:89-102 construct())
+            // FIDELITY-NOTE: of no points the C++ leaves the box uninitialized; it is not merged here.
+            if points.is_empty() {
+                return bbox;
+            }
+            let mut min = points[0];
+            let mut max = points[0];
+            for p in &points[1..] {
+                min = PointF::new(if p.x < min.x { p.x } else { min.x }, if p.y < min.y { p.y } else { min.y });
+                max = PointF::new(if max.x < p.x { p.x } else { max.x }, if max.y < p.y { p.y } else { max.y });
+            }
+            merge_box(&mut bbox, min, max, min.x < max.x && min.y < max.y);
+            bbox
+        }
+
+        /// GCode.cpp:6403-6408 `void GCode::apply_print_config(const PrintConfig &print_config)`
+        pub fn apply_print_config(&mut self, print_config: &DynamicPrintConfig) {
+            self.m_writer.apply_print_config(print_config);
+            // m_config.apply(print_config): the members of the static PrintConfig, which the
+            // configuration holds (the C++ argument is the print's PrintConfig)
+            let keys = crate::print_config::config_def::static_print_config_defaults("PrintConfig").keys();
+            self.m_config
+                .apply_only(print_config, &keys, false)
+                .expect("GCode::apply_print_config(): m_config.apply(print_config)");
+            // scaled<double>(print_config.resolution.value)
+            self.m_scaled_resolution = scale_(pp_float(print_config, "resolution").expect("PrintConfig::resolution"));
+        }
+
+        /// GCode.cpp:8531-8549 `void GCode::update_layer_related_config(int layer_id)`
+        pub fn update_layer_related_config(&mut self, layer_id: i32) {
+            use crate::config::{ConfigBaseTyped, ConfigOptionInts};
+            let group_result = match self.m_print.and_then(|p| p.get_layered_nozzle_group_result()) {
+                None => return,
+                Some(g) => g,
+            };
+
+            let extruder_map = group_result.get_extruder_map(false, layer_id);
+            let volume_map = group_result.get_volume_map(layer_id);
+            let nozzle_map = group_result.get_nozzle_map(layer_id);
+
+            for (key, values) in [("filament_map", &extruder_map), ("filament_volume_map", &volume_map), ("filament_nozzle_map", &nozzle_map)] {
+                self.m_config
+                    .option_typed_mut::<ConfigOptionInts>(key, true)
+                    .expect("FullPrintConfig member")
+                    .expect("FullPrintConfig member")
+                    .values = values.clone();
+            }
+
+            self.m_writer.config.filament_map.values = extruder_map;
+            self.m_writer.config.filament_volume_map.values = volume_map;
+            self.m_writer.config.filament_nozzle_map.values = nozzle_map;
+            self.m_writer.update_exclusive_nozzles();
+        }
+
+        /// GCode.cpp:9004-9025 `std::string GCode::set_object_info(Print* print)`: assigns a
+        /// sequential id to each PrintObject (used to generate a unique object id for each object)
+        /// and to each of its instances; for Klipper with `exclude_object`, the EXCLUDE_OBJECT_DEFINE
+        /// lines.
+        pub fn set_object_info(&mut self, print: &mut crate::print::faithful::Print) -> String {
+            use crate::g_code_writer::ostream_double;
+            let mut gcode = String::new();
+            let mut object_id: usize = 0;
+            let exclude_object = pp_bool(&self.m_config, "exclude_object").unwrap_or(false);
+            // print->config().gcode_flavor.value == gcfKlipper
+            let is_klipper = pp_int(print.config(), "gcode_flavor").map(crate::extruder::gcode_flavor_from_int)
+                == Some(crate::print_config::GCodeFlavor::Klipper);
+            for po in 0..print.m_objects.len() {
+                print.m_objects[po].set_klipper_object_id(object_id);
+                object_id += 1;
+                let mut inst_id: usize = 0;
+                for pi in 0..print.m_objects[po].m_instances.len() {
+                    print.m_objects[po].m_instances[pi].id = inst_id;
+                    inst_id += 1;
+                    if exclude_object && is_klipper {
+                        let inst = &print.m_objects[po].m_instances[pi];
+                        let bbox = inst.get_bounding_box(print);
+                        // BoundingBoxf3::center(): (min + max) / 2
+                        let center = print.translate_to_print_space(crate::geometry::Vec2d::new(
+                            (bbox.min.x + bbox.max.x) / 2.0,
+                            (bbox.min.y + bbox.max.y) / 2.0,
+                        ));
+                        // PrintInstance::get_convex_hull_2d() (Print.cpp:5840-5845)
+                        let object = &print.m_objects[po];
+                        let model_object = object.model_object(print);
+                        let mut hull = model_object
+                            .convex_hull_2d(&model_object.instances[inst.model_instance].get_matrix(false, false, false, false));
+                        hull.douglas_peucker(0.1);
+                        // get_instance_name(object, inst) = get_instance_name(object, inst.id)
+                        let name = get_instance_name(&model_object.name, object.get_klipper_object_id(), inst.id);
+                        gcode += &format!(
+                            "EXCLUDE_OBJECT_DEFINE NAME={} CENTER={},{} POLYGON={}\n",
+                            name,
+                            ostream_double(center.x),
+                            ostream_double(center.y),
+                            polygon_to_string(&hull, print)
+                        );
+                    }
+                }
+            }
+            gcode
+        }
     }
 }

@@ -1365,6 +1365,9 @@ pub struct ToolOrdering {
     pub initial_nozzle_status: crate::multi_nozzle_utils::NozzleStatusRecorder,
     /// ToolOrdering.hpp:489
     pub nozzle_status: crate::multi_nozzle_utils::NozzleStatusRecorder,
+    /// ToolOrdering.hpp:481 `const PrintObject* m_print_object_ptr = nullptr;`: whether it is set (by the
+    /// PrintObject constructor, `from_object`). The object itself is passed to the functions reading it.
+    pub print_object_ptr: bool,
 }
 
 /// `m_print_config_ptr` of the C++ (ToolOrdering.hpp:444): the configuration of the `Print` the
@@ -1405,6 +1408,7 @@ impl ToolOrdering {
             nozzle_group_result: crate::multi_nozzle_utils::LayeredNozzleGroupResult::default(),
             initial_nozzle_status: crate::multi_nozzle_utils::NozzleStatusRecorder::new(),
             nozzle_status: crate::multi_nozzle_utils::NozzleStatusRecorder::new(),
+            print_object_ptr: false,
         }
     }
 
@@ -3022,8 +3026,9 @@ pub trait ToolOrderingPrint {
     fn object_extruders(&self) -> Vec<u32>;
     /// `print.model().get_curr_plate_custom_gcodes()`
     fn curr_plate_custom_gcodes(&self) -> &crate::custom_g_code::Info;
-    /// `print.get_layered_nozzle_group_result()`: the shared pointer, `None` when null.
-    fn get_layered_nozzle_group_result(&self) -> Option<&crate::multi_nozzle_utils::LayeredNozzleGroupResult>;
+    /// `print.get_layered_nozzle_group_result()` (Print.hpp:1085-1088): the shared pointer, `None`
+    /// when null.
+    fn get_layered_nozzle_group_result(&self) -> Option<std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>;
     /// `print.get_geometric_unprintable_filaments()`
     fn get_geometric_unprintable_filaments(&self) -> Vec<BTreeSet<i32>>;
     /// `print.get_physical_unprintable_filaments(used_filaments)`
@@ -3033,6 +3038,55 @@ pub trait ToolOrderingPrint {
         &self,
         used_filaments: &[u32],
     ) -> BTreeMap<i32, BTreeSet<crate::extruder::NozzleVolumeType>>;
+    // ---- what the filament grouping of ToolOrdering.cpp:1710-3634 reads and writes of `Print` ----
+    // FIDELITY-NOTE: `m_print` is a non-const `Print*` in C++; the members that change the print take
+    // `&self` here and an implementor keeps that state behind interior mutability.
+    /// `print->calib_params()` (Print.hpp:1169, calib.hpp:37-45)
+    fn calib_params(&self) -> ToolOrderingCalibParams;
+    /// `print->get_extruder_filament_info()` (Print.hpp:1071)
+    fn get_extruder_filament_info(&self) -> &[Vec<ToolOrderingPrintConfig>];
+    /// `print->get_filament_usage_type()` (Print.cpp:3474-3503)
+    fn get_filament_usage_type(&self) -> Vec<crate::filament_group_utils::FilamentUsageType>;
+    /// `print->get_filament_print_time()` (Print.hpp:1081): a copy of the map.
+    fn get_filament_print_time(
+        &self,
+    ) -> crate::multi_nozzle_utils::UnorderedMapInt<crate::multi_nozzle_utils::UnorderedMapInt<f64>>;
+    /// `print->get_nozzle_loaded_filament_info()` (Print.hpp:1074)
+    fn get_nozzle_loaded_filament_info(&self) -> &[crate::filament_group_utils::NozzleLoadedFilamentInfo];
+    /// `print->is_dynamic_group_reorder()` (Print.cpp:1306-1318)
+    fn is_dynamic_group_reorder(&self) -> bool;
+    /// `print->is_sequential_print()` (Print.hpp:1038-1040)
+    fn is_sequential_print(&self) -> bool;
+    /// `print->resolve_manual_nozzle_map(used_filaments)` (Print.cpp:3322-3345); throws.
+    fn resolve_manual_nozzle_map(&self, used_filaments: &[u32]) -> Result<(), crate::exception::RuntimeError>;
+    /// `print->set_nozzle_group_result(std::make_shared<LayeredNozzleGroupResult>(result))` (Print.hpp:1083)
+    fn set_nozzle_group_result(&self, result: std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>);
+    /// `print->update_filament_maps_to_config(f_maps, f_volume_maps, f_nozzle_maps)` (Print.cpp:3241-3320)
+    fn update_filament_maps_to_config(&self, f_maps: Vec<i32>, f_volume_maps: Vec<i32>, f_nozzle_maps: Vec<i32>);
+    /// `print->update_to_config_by_nozzle_group_result(result)` (Print.cpp:3347-3400)
+    fn update_to_config_by_nozzle_group_result(&self, result: &crate::multi_nozzle_utils::LayeredNozzleGroupResult);
+}
+
+/// calib.hpp:37-45 `struct Calib_Params`: the members ToolOrdering.cpp reads (`build_filament_group_context`,
+/// `get_recommended_filament_maps`).
+///
+/// FIDELITY-NOTE: `crate::calib::CalibParams` has no `has_bowden_extruder` (calib.rs); this holds the
+/// three members read here.
+#[derive(Debug, Clone, Copy)]
+pub struct ToolOrderingCalibParams {
+    /// calib.hpp:40 `int extruder_id = 0;`
+    pub extruder_id: i32,
+    /// calib.hpp:41 `bool has_bowden_extruder = false;`
+    pub has_bowden_extruder: bool,
+    /// calib.hpp:44 `CalibMode mode;` (Calib_None by the constructor)
+    pub mode: crate::calib::CalibMode,
+}
+
+impl Default for ToolOrderingCalibParams {
+    /// calib.hpp:39 `Calib_Params() : mode(CalibMode::Calib_None){}`
+    fn default() -> Self {
+        ToolOrderingCalibParams { extruder_id: 0, has_bowden_extruder: false, mode: crate::calib::CalibMode::None }
+    }
 }
 
 /// The members of `ToolOrdering` whose name the earlier Rust API of this file uses with another
@@ -3441,10 +3495,10 @@ impl ToolOrdering {
         &self.nozzle_status
     }
 
-    /// ToolOrdering.hpp:420
+    /// ToolOrdering.hpp:420 (copy assignments)
     pub fn set_nozzle_status(&mut self, status: &crate::multi_nozzle_utils::NozzleStatusRecorder) {
-        self.initial_nozzle_status = status.clone();
-        self.nozzle_status = status.clone();
+        self.initial_nozzle_status.assign_from(status);
+        self.nozzle_status.assign_from(status);
     }
 
     /// ToolOrdering.cpp:1394-1400 `ToolOrdering::seed_first_tower_layer`: give the first tower layer
@@ -3615,7 +3669,8 @@ impl ToolOrdering {
 
 /// `namespace GroupReorder` (ToolOrdering.hpp:141-162, ToolOrdering.cpp:1559-2202).
 pub mod group_reorder {
-    use super::{cfg_floats, cfg_int, cfg_ints, cfg_strings, ToolOrderingPrintConfig};
+    use super::{cfg_bool, cfg_bools, cfg_float, cfg_floats, cfg_int, cfg_ints, cfg_strings, get_at, ToolOrderingPrint, ToolOrderingPrintConfig};
+    use std::collections::{BTreeMap, BTreeSet};
     use crate::multi_nozzle_utils::{NozzleGroupInfo, NozzleInfo};
 
     /// ToolOrdering.hpp:143 `using FlushMatrix = std::vector<std::vector<float>>;`
@@ -3701,6 +3756,109 @@ pub mod group_reorder {
         nozzle_groups
     }
 
+    /// ToolOrdering.cpp:1615-1692 `build_manual_nozzle_map`: N1X manual modes: AMS-group filaments use
+    /// AMS; fixed-group filaments use compatible fixed nozzles or appended virtual nozzles.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_manual_nozzle_map(
+        print_config: &ToolOrderingPrintConfig,
+        nozzle_list: &mut Vec<NozzleInfo>,
+        used_filaments: &[u32],
+        mode: crate::print_config::enums::FilamentMapMode,
+        ams_nozzle_idx: i32,
+        ams_capacity: i32,
+        filament_nums: usize,
+    ) -> Vec<i32> {
+        use crate::print_config::enums::FilamentMapMode;
+        let mut fnmap: Vec<i32> = vec![if ams_nozzle_idx >= 0 { ams_nozzle_idx } else { 0 }; filament_nums];
+        let ufnm = cfg_ints(print_config, "filament_nozzle_map");
+        let fvmap = cfg_ints(print_config, "filament_volume_map");
+        let selected_diameters = cfg_strings(print_config, "filament_diameter_map");
+
+        // nvtHybrid == 2 (PrintConfig.hpp:385)
+        let compatible = |nozzle_vt: i32, filament_vt: i32| -> bool { nozzle_vt == 2 || filament_vt == 2 || nozzle_vt == filament_vt };
+
+        let in_ams_group = |f: u32| -> bool {
+            if ams_nozzle_idx < 0 {
+                return false;
+            }
+            if mode == FilamentMapMode::FmmManual {
+                return (f as usize) < ufnm.len() && ufnm[f as usize] == ams_nozzle_idx;
+            }
+            (f as usize) < ufnm.len() && ufnm[f as usize] == ams_nozzle_idx
+        };
+
+        let mut used_fixed: BTreeSet<i32> = BTreeSet::new(); // fixed nozzle group_ids already taken
+        let mut ams_group_count = 0;
+        let nozzle_diameter = cfg_floats(print_config, "nozzle_diameter");
+        let virtual_diameter: String = if nozzle_diameter.is_empty() {
+            String::new()
+        } else {
+            crate::utils::format_diameter_to_str_default(nozzle_diameter[0])
+        };
+
+        for &f in used_filaments {
+            let fu = f as usize;
+            if in_ams_group(f) {
+                if fu < selected_diameters.len()
+                    && !selected_diameters[fu].is_empty()
+                    && (ams_nozzle_idx < 0
+                        || ams_nozzle_idx >= nozzle_list.len() as i32
+                        || nozzle_list[ams_nozzle_idx as usize].diameter != selected_diameters[fu])
+                {
+                    return Vec::new();
+                }
+                fnmap[fu] = ams_nozzle_idx;
+                ams_group_count += 1;
+                continue;
+            }
+
+            // nvtStandard == 0, nvtCount == 6 (PrintConfig.hpp:383-389)
+            let mut req_vol = if fu < fvmap.len() { fvmap[fu] } else { 0 };
+            if req_vol < 0 || req_vol >= 6 {
+                req_vol = 0;
+            }
+            let mut chosen = -1;
+            for n in nozzle_list.iter() {
+                if !n.installed || n.group_id == ams_nozzle_idx || used_fixed.contains(&n.group_id) {
+                    continue;
+                }
+                if fu < selected_diameters.len() && !selected_diameters[fu].is_empty() && n.diameter != selected_diameters[fu] {
+                    continue;
+                }
+                if compatible(n.volume_type as i32, req_vol) {
+                    chosen = n.group_id;
+                    break;
+                }
+            }
+            if chosen >= 0 {
+                used_fixed.insert(chosen);
+                fnmap[fu] = chosen;
+            } else {
+                let mut virtual_nozzle = NozzleInfo::default();
+                virtual_nozzle.diameter = if fu < selected_diameters.len() && !selected_diameters[fu].is_empty() {
+                    selected_diameters[fu].clone()
+                } else {
+                    virtual_diameter.clone()
+                };
+                // NozzleVolumeType(req_vol): FIDELITY-NOTE (crate::extruder's enum of an earlier pin)
+                virtual_nozzle.volume_type = crate::extruder::NozzleVolumeType::from_i32(req_vol);
+                virtual_nozzle.extruder_id = 0;
+                virtual_nozzle.group_id = nozzle_list.len() as i32;
+                virtual_nozzle.installed = true;
+                chosen = virtual_nozzle.group_id;
+                nozzle_list.push(virtual_nozzle);
+                used_fixed.insert(chosen);
+                fnmap[fu] = chosen;
+            }
+        }
+
+        if ams_nozzle_idx >= 0 && ams_capacity > 0 && ams_group_count > ams_capacity {
+            return Vec::new(); // AMS group exceeds AMS slot count
+        }
+
+        fnmap
+    }
+
     /// ToolOrdering.cpp:1694-1708 `build_default_nozzle_list`
     pub fn build_default_nozzle_list(print_config: &ToolOrderingPrintConfig, extruder_nums: usize) -> Vec<NozzleInfo> {
         let nozzle_diameter = cfg_floats(print_config, "nozzle_diameter");
@@ -3716,6 +3874,482 @@ pub mod group_reorder {
             nozzle_list.push(tmp);
         }
         nozzle_list
+    }
+
+    /// ToolOrdering.cpp:1710-2173 `build_filament_group_context`
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_filament_group_context(
+        print: &dyn ToolOrderingPrint,
+        layer_filaments: &[Vec<u32>],
+        physical_unprintables: &[BTreeSet<i32>],
+        geometric_unprintables: &[BTreeSet<i32>],
+        unprintable_volumes: &BTreeMap<i32, BTreeSet<crate::extruder::NozzleVolumeType>>,
+        mode: crate::print_config::enums::FilamentMapMode,
+        nozzle_status: &crate::multi_nozzle_utils::UnorderedMapInt<i32>,
+    ) -> Result<crate::filament_group::FilamentGroupContext, crate::filament_group::FilamentGroupError> {
+        use crate::filament_group::{collect_sorted_used_filaments, FGMode, FGStrategy, FilamentGroupContext, FilamentGroupError};
+        use crate::filament_group_utils::{build_extruder_nozzle_list, build_machine_filaments, calc_max_group_size, collect_unprintable_limits, Color, FilamentInfo, FilamentUsageType};
+        use crate::print_config::config_def;
+        use crate::print_config::enums::FilamentMapMode;
+        use crate::utils::format_diameter_to_str_default as format_diameter_to_str;
+
+        let runtime = |msg: &str| FilamentGroupError::Runtime(crate::exception::RuntimeError::new(msg.to_string()));
+
+        let mut context = FilamentGroupContext::default();
+
+        let print_config = print.config();
+        let filament_nums = cfg_strings(print_config, "filament_colour").len();
+        let extruder_nums = cfg_floats(print_config, "nozzle_diameter").len();
+        let has_multiple_nozzle = cfg_ints(print_config, "extruder_max_nozzle_count").iter().any(|&v| v > 1);
+
+        let nozzle_flush_mtx = prepare_flush_matrices(print_config);
+
+        let ams_nozzle_idx_ctx = config_def::get_effective_ams_nozzle_idx(print_config);
+        // Single-extruder multi-nozzle (N1X): one physical extruder driving several nozzles. AMS presence
+        // is a separate runtime fact: ams_nozzle_idx_ctx >= 0 means the AMS-fed nozzle exists at that slot.
+        let single_ext_multi_nozzle = config_def::is_single_ext_multi_nozzle(print_config);
+
+        // 收集不可打印限制
+        let mut ext_unprintable_filaments: Vec<BTreeSet<i32>> = vec![BTreeSet::new(); 2];
+        collect_unprintable_limits(physical_unprintables, geometric_unprintables, &mut ext_unprintable_filaments);
+
+        // PA calibration on machines with a Bowden extruder: force the calibration filament onto the
+        // user-selected extruder by marking it as unprintable on every other extruder.
+        {
+            let calib = print.calib_params();
+            if calib.has_bowden_extruder && calib.extruder_id >= 0 && calib.extruder_id < ext_unprintable_filaments.len() as i32 {
+                let is_manual = cfg_int(print_config, "filament_map_mode") == FilamentMapMode::FmmManual as i32;
+                if !is_manual {
+                    let used_filaments_tmp = collect_sorted_used_filaments(layer_filaments);
+                    for ext in 0..ext_unprintable_filaments.len() as i32 {
+                        if ext == calib.extruder_id {
+                            continue;
+                        }
+                        for &f in &used_filaments_tmp {
+                            ext_unprintable_filaments[ext as usize].insert(f as i32);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 生成机器信息
+        let ignore_ext_filament = false;
+        let extruder_ams_count_str = cfg_strings(print_config, "extruder_ams_count");
+        let extruder_ams_counts = config_def::get_extruder_ams_count(&extruder_ams_count_str);
+        let mut group_size = calc_max_group_size(&extruder_ams_counts, ignore_ext_filament);
+
+        // Single real extruder model: AMS-head capacity = external AMS slots + the native Ext slot
+        // (1 when no AMS). Captured here before group_size is collapsed to a single group.
+        let mut ams_nozzle_capacity = 1;
+        if single_ext_multi_nozzle {
+            if ams_nozzle_idx_ctx >= 0 {
+                let ams_slots = if group_size.is_empty() { 0 } else { group_size[0] };
+                ams_nozzle_capacity = std::cmp::max(1, ams_slots + 1);
+            }
+            // One real extruder holding all filaments; the per-nozzle capacity limits each physical nozzle.
+            group_size = vec![filament_nums as i32];
+        }
+
+        // When filament switcher is connected, disable AMS capacity limit for grouping
+        if cfg_bool(print_config, "has_filament_switcher") {
+            let total_filaments = filament_nums as i32;
+            for s in group_size.iter_mut() {
+                *s = std::cmp::max(*s, total_filaments);
+            }
+        }
+
+        // Single real extruder for N1X: size by the real extruder count and skip the per-extruder Bowden preference.
+        let mut prefer_non_model_filament: Vec<bool> = vec![false; extruder_nums];
+        if !single_ext_multi_nozzle {
+            let extruder_type = cfg_ints(print_config, "extruder_type");
+            for idx in 0..extruder_nums {
+                // ExtruderType::etBowden == 1 (PrintConfig.hpp:376-380)
+                prefer_non_model_filament[idx] = extruder_type[idx] == 1;
+            }
+        }
+
+        let machine_filament_info = build_machine_filaments(print.get_extruder_filament_info(), &extruder_ams_counts, ignore_ext_filament);
+
+        let filament_types = cfg_strings(print_config, "filament_type");
+        let filament_colours = cfg_strings(print_config, "filament_colour");
+        let filament_is_support = cfg_bools(print_config, "filament_is_support");
+        let filament_ids = cfg_strings(print_config, "filament_ids");
+        let filament_usage_types: Vec<FilamentUsageType> = print.get_filament_usage_type();
+
+        let fg_mode = if mode == FilamentMapMode::FmmAutoForMatch { FGMode::MatchMode } else { FGMode::FlushMode };
+        // N1X uses a single real extruder with one real flush matrix.
+        context.model_info.flush_matrix = nozzle_flush_mtx;
+        context.model_info.unprintable_filaments = ext_unprintable_filaments.clone();
+        context.model_info.layer_filaments = layer_filaments.to_vec();
+        context.model_info.filament_ids = filament_ids;
+        context.model_info.selected_nozzle_diameters = cfg_strings(print_config, "filament_diameter_map");
+        context.model_info.selected_nozzle_diameters.resize(filament_nums, String::new());
+        context.model_info.unprintable_volumes = unprintable_volumes.clone();
+
+        let filament_diameter = cfg_floats(print_config, "filament_diameter");
+        for idx in 0..filament_types.len() {
+            let mut info = FilamentInfo::default();
+            info.color = Color::from_hex_str(&filament_colours[idx]);
+            info.type_ = filament_types[idx].clone();
+            info.is_support = filament_is_support[idx] != 0;
+            info.usage_type = filament_usage_types[idx];
+            if idx < filament_diameter.len() {
+                info.diameter = get_at(&filament_diameter, idx) as f32;
+            }
+            context.model_info.filament_info.push(info);
+        }
+
+        // = print->get_filament_print_time(): the move assignment of the returned copy.
+        context.speed_info.filament_print_time = print.get_filament_print_time();
+        context.speed_info.group_with_time = cfg_bool(print_config, "group_algo_with_time");
+        context.speed_info.filament_change_time =
+            cfg_float(print_config, "machine_load_filament_time") + cfg_float(print_config, "machine_unload_filament_time");
+        context.speed_info.extruder_change_time = cfg_float(print_config, "machine_switch_extruder_time");
+        {
+            let load_time = cfg_float(print_config, "machine_load_filament_time");
+            let unload_time = cfg_float(print_config, "machine_unload_filament_time");
+            context.speed_info.change_time_params.standard_load_time = load_time as f32;
+            context.speed_info.change_time_params.standard_unload_time = unload_time as f32;
+            context.speed_info.change_time_params.selector_load_time = (load_time / 2.0) as f32;
+            context.speed_info.change_time_params.selector_unload_time = (unload_time / 2.0) as f32;
+        }
+
+        context.machine_info.machine_filament_info = machine_filament_info;
+        context.machine_info.nozzle_loaded_filaments = print.get_nozzle_loaded_filament_info().to_vec();
+        // = std::move(group_size): the moved-from vector is left empty (libc++), and it is read below.
+        context.machine_info.max_group_size = std::mem::take(&mut group_size);
+        context.machine_info.master_extruder_id = cfg_int(print_config, "master_extruder_id") - 1;
+        context.machine_info.prefer_non_model_filament = prefer_non_model_filament.clone();
+
+        context.group_info.total_filament_num = filament_nums as i32;
+        context.group_info.max_gap_threshold = 0.01;
+        context.group_info.strategy = FGStrategy::BestCost;
+        context.group_info.mode = fg_mode;
+        context.group_info.ignore_ext_filament = ignore_ext_filament;
+        context.group_info.has_filament_switcher = cfg_bool(print_config, "has_filament_switcher");
+        let used_filaments = collect_sorted_used_filaments(layer_filaments);
+
+        // On single-extruder multi-nozzle machines with multi-diameter mode enabled, filament_volume_map is
+        // the flow the user picked (as in fmmManual) and acts as a hard constraint. Otherwise auto modes
+        // stay on Hybrid.
+        let user_selected_nozzle_flow = mode == FilamentMapMode::FmmManual
+            || (single_ext_multi_nozzle && config_def::multi_nozzle_diameter_mode_enabled(print.full_print_config()));
+        if user_selected_nozzle_flow {
+            context.group_info.filament_volume_map = cfg_ints(print_config, "filament_volume_map");
+            // Hybrid (2) is the right padding: it means "no request".
+            context.group_info.filament_volume_map.resize(filament_nums, 2);
+        } else {
+            // Hybrid means no requested nozzle volume type in auto modes.
+            context.group_info.filament_volume_map = vec![2; filament_nums];
+        }
+
+        // Build the global nozzle list. For ALL machine types, prefer the per-slot nozzle params.
+        {
+            let ordered = crate::multi_nozzle_utils::build_nozzle_list_from_extruder_nozzles(print_config);
+            // For N1X, the AMS slot must actually carry a nozzle; otherwise the per-slot data is invalid.
+            let ams_slot_ok = !single_ext_multi_nozzle
+                || ams_nozzle_idx_ctx < 0
+                || (ams_nozzle_idx_ctx < ordered.len() as i32 && ordered[ams_nozzle_idx_ctx as usize].installed);
+
+            if !ordered.is_empty() && ams_slot_ok {
+                context.nozzle_info.nozzle_list = ordered;
+            } else if single_ext_multi_nozzle {
+                // N1X must always have valid per-slot params; the raw inputs are logged in C++
+                // (BOOST_LOG_TRIVIAL(error) << "no valid nozzle." ...).
+                return Err(runtime("No valid nozzle found. Please check nozzle count."));
+            } else {
+                // Multi-extruder fallback: real per-extruder nozzle groups, no remap.
+                context.nozzle_info.nozzle_list = crate::multi_nozzle_utils::build_nozzle_list(build_nozzle_groups(print_config, extruder_nums));
+            }
+        }
+
+        // Keep every authoritative per-slot nozzle available in multi-diameter mode; with the project gate
+        // off, only slots matching the active printer preset diameter remain available.
+        {
+            let extruder_diameters = cfg_floats(print_config, "nozzle_diameter");
+            let use_per_slot_diameters = config_def::has_authoritative_per_slot_nozzle_diameters(
+                cfg_bool(print_config, "handle_hotend_as_extruder"),
+                &cfg_ints(print_config, "extruder_nozzle_count"),
+                &cfg_floats(print_config, "extruder_nozzle_diameter"),
+            );
+            let nozzle_list = &mut context.nozzle_info.nozzle_list;
+            if !config_def::multi_nozzle_diameter_mode_enabled(print.full_print_config()) {
+                let mut active_diameter = config_def::primary_nozzle_diameter(print.full_print_config());
+                if active_diameter <= crate::libslic3r::EPSILON && !extruder_diameters.is_empty() {
+                    active_diameter = extruder_diameters[0];
+                }
+                let active_diameter_str = format_diameter_to_str(active_diameter);
+                for nozzle in nozzle_list.iter_mut() {
+                    if nozzle.diameter != active_diameter_str {
+                        nozzle.installed = false;
+                    }
+                }
+            } else if !use_per_slot_diameters {
+                for nozzle in nozzle_list.iter_mut() {
+                    if nozzle.extruder_id < 0
+                        || nozzle.extruder_id >= extruder_diameters.len() as i32
+                        || nozzle.diameter != format_diameter_to_str(extruder_diameters[nozzle.extruder_id as usize])
+                    {
+                        nozzle.installed = false; //wrong-diameter nozzle: not usable for this print
+                    }
+                }
+            }
+
+            let mut ams_logical_group_id = -1;
+            if single_ext_multi_nozzle
+                && ams_nozzle_idx_ctx >= 0
+                && ams_nozzle_idx_ctx < nozzle_list.len() as i32
+                && nozzle_list[ams_nozzle_idx_ctx as usize].installed
+            {
+                ams_logical_group_id = ams_nozzle_idx_ctx;
+            }
+
+            // N1X 非 match 自动模式需要在 ctx 阶段补足基础容量；fmmNozzleManual under multi-diameter mode
+            // joins the auto modes here.
+            let needs_virtual_nozzle_padding = single_ext_multi_nozzle
+                && ((config_def::is_auto_filament_map_mode(mode) && mode != FilamentMapMode::FmmAutoForMatch)
+                    || (mode == FilamentMapMode::FmmNozzleManual && config_def::multi_nozzle_diameter_mode_enabled(print.full_print_config())));
+            if needs_virtual_nozzle_padding {
+                let virtual_diameter: String =
+                    if extruder_diameters.is_empty() { String::new() } else { format_diameter_to_str(extruder_diameters[0]) };
+
+                let ams_capacity = std::cmp::max(1, ams_nozzle_capacity);
+
+                let nozzle_capacity = |nozzle: &crate::multi_nozzle_utils::NozzleInfo| -> i32 {
+                    if !nozzle.installed {
+                        return 0;
+                    }
+                    let is_ams_nozzle = ams_logical_group_id >= 0 && nozzle.group_id == ams_logical_group_id;
+                    if is_ams_nozzle {
+                        ams_capacity
+                    } else {
+                        1
+                    }
+                };
+
+                // 统计当前真实/有效入口数。
+                let usable_slot_count = |nozzle_list: &Vec<crate::multi_nozzle_utils::NozzleInfo>| -> i32 {
+                    let mut count = 0;
+                    for nozzle in nozzle_list {
+                        count += nozzle_capacity(nozzle);
+                    }
+                    count
+                };
+
+                // Clone a real nozzle so the virtual slot inherits its diameter / flow / extruder_id and only
+                // takes a new group_id.
+                let append_virtual_nozzle = |nozzle_list: &mut Vec<crate::multi_nozzle_utils::NozzleInfo>,
+                                             mut virtual_nozzle: crate::multi_nozzle_utils::NozzleInfo| {
+                    virtual_nozzle.group_id = nozzle_list.len() as i32;
+                    virtual_nozzle.installed = true;
+                    nozzle_list.push(virtual_nozzle);
+                };
+
+                // Per-spec padding: a filament that requested a concrete (diameter, flow) needs a capacity
+                // unit of exactly that spec.
+                {
+                    let mut spec_demand: BTreeMap<(String, i32), i32> = BTreeMap::new();
+                    for &fil in &used_filaments {
+                        if fil as usize >= filament_nums {
+                            continue;
+                        }
+                        let diameter = &context.model_info.selected_nozzle_diameters[fil as usize];
+                        let volume = context.group_info.filament_volume_map[fil as usize];
+                        if diameter.is_empty() || volume == 2 {
+                            continue;
+                        }
+                        *spec_demand.entry((diameter.clone(), volume)).or_insert(0) += 1;
+                    }
+
+                    let mut spec_supply: BTreeMap<(String, i32), i32> = BTreeMap::new();
+                    let mut spec_source: BTreeMap<(String, i32), crate::multi_nozzle_utils::NozzleInfo> = BTreeMap::new();
+                    for nozzle in nozzle_list.iter() {
+                        let capacity = nozzle_capacity(nozzle);
+                        if capacity <= 0 {
+                            continue;
+                        }
+                        let spec = (nozzle.diameter.clone(), nozzle.volume_type as i32);
+                        *spec_supply.entry(spec.clone()).or_insert(0) += capacity;
+                        spec_source.entry(spec).or_insert_with(|| nozzle.clone());
+                    }
+
+                    for (spec, &demand) in spec_demand.iter() {
+                        // No installed nozzle of that spec: leave it to the nozzle assignment to report.
+                        let Some(source) = spec_source.get(spec) else {
+                            continue;
+                        };
+                        let mut supplied = *spec_supply.entry(spec.clone()).or_insert(0);
+                        while supplied < demand {
+                            append_virtual_nozzle(nozzle_list, source.clone());
+                            supplied += 1;
+                        }
+                    }
+                }
+
+                // 简化兜底：非 match 自动模式沿用 Standard 虚拟喷嘴补齐。
+                while usable_slot_count(nozzle_list) < used_filaments.len() as i32 {
+                    let mut virtual_nozzle = crate::multi_nozzle_utils::NozzleInfo::default();
+                    virtual_nozzle.diameter = virtual_diameter.clone();
+                    virtual_nozzle.volume_type = crate::extruder::NozzleVolumeType::NvtStandard;
+                    virtual_nozzle.extruder_id = 0;
+                    virtual_nozzle.group_id = nozzle_list.len() as i32;
+                    virtual_nozzle.installed = true;
+                    nozzle_list.push(virtual_nozzle);
+                }
+            }
+
+            // Per-nozzle filament capacity (indexed by nozzle group_id) for every machine.
+            let mut caps: Vec<i32> = vec![1; nozzle_list.len()];
+            for i in 0..nozzle_list.len() {
+                let nz = &nozzle_list[i];
+                if !nz.installed {
+                    caps[i] = 0;
+                } else if single_ext_multi_nozzle {
+                    caps[i] = if ams_logical_group_id >= 0 && nz.group_id == ams_logical_group_id { std::cmp::max(1, ams_nozzle_capacity) } else { 1 };
+                } else {
+                    // group_size was moved into machine_info above: empty here.
+                    caps[i] = if nz.extruder_id >= 0 && nz.extruder_id < group_size.len() as i32 {
+                        std::cmp::max(1, group_size[nz.extruder_id as usize])
+                    } else {
+                        1
+                    };
+                }
+            }
+            context.nozzle_info.per_nozzle_capacity = caps;
+        }
+
+        context.nozzle_info.extruder_nozzle_list = build_extruder_nozzle_list(&context.nozzle_info.nozzle_list);
+
+        if context.nozzle_info.nozzle_list.is_empty() {
+            return Err(runtime("No valid nozzle found. Please check nozzle count."));
+        }
+
+        if !nozzle_status.is_empty() {
+            context.nozzle_info.nozzle_status.assign_from(nozzle_status);
+        }
+
+        // add_volume_type_limits, only for o1d
+        if !has_multiple_nozzle {
+            let mut ext_unprintable_filaments_with_volume = ext_unprintable_filaments.clone();
+
+            for nozzle in &context.nozzle_info.nozzle_list {
+                for &fil_id in &used_filaments {
+                    // context.model_info.unprintable_volumes[fil_id] (std::map operator[]: inserts)
+                    let unprintable_volumes = context.model_info.unprintable_volumes.entry(fil_id as i32).or_default().clone();
+                    if unprintable_volumes.contains(&nozzle.volume_type) {
+                        ext_unprintable_filaments_with_volume[nozzle.extruder_id as usize].insert(fil_id as i32);
+                    }
+                }
+            }
+
+            for &fil_id in &used_filaments {
+                let f = fil_id as i32;
+                if ext_unprintable_filaments_with_volume[0].contains(&f) && ext_unprintable_filaments_with_volume[1].contains(&f) {
+                    ext_unprintable_filaments_with_volume[0].remove(&f);
+                    ext_unprintable_filaments_with_volume[1].remove(&f);
+                }
+            }
+            context.model_info.unprintable_filaments = ext_unprintable_filaments_with_volume;
+        }
+
+        if cfg_int(print_config, "filament_map_mode") == FilamentMapMode::FmmAutoForQuality as i32 {
+            let mut prefer_support_extruders: Vec<i32> = Vec::new();
+            let mut non_prefer_support_extruders: Vec<i32> = Vec::new();
+            for idx in 0..prefer_non_model_filament.len() {
+                if prefer_non_model_filament[idx] {
+                    prefer_support_extruders.push(idx as i32);
+                } else {
+                    non_prefer_support_extruders.push(idx as i32);
+                }
+            }
+
+            if !prefer_support_extruders.is_empty() {
+                let filament_info = &context.model_info.filament_info;
+                let unprintable_filaments = &mut context.model_info.unprintable_filaments;
+                for &fil_id in &used_filaments {
+                    let f = fil_id as i32;
+                    let is_support_filament = filament_info[fil_id as usize].usage_type == FilamentUsageType::SupportOnly;
+                    if is_support_filament {
+                        // 若存在可打印的偏好支撑喷嘴，则限制该支撑料只在偏好喷嘴上打印
+                        let mut printable_preferred_extruders: Vec<i32> = Vec::new();
+                        for &extruder_id in &prefer_support_extruders {
+                            if !unprintable_filaments[extruder_id as usize].contains(&f) {
+                                printable_preferred_extruders.push(extruder_id);
+                            }
+                        }
+                        if !printable_preferred_extruders.is_empty() {
+                            for &extruder_id in &non_prefer_support_extruders {
+                                unprintable_filaments[extruder_id as usize].insert(f);
+                            }
+                        }
+                    } else {
+                        // 若存在可打印的非偏好喷嘴，则限制模型料尽量避开偏好支撑喷嘴
+                        let mut printable_non_preferred_extruders: Vec<i32> = Vec::new();
+                        for &extruder_id in &non_prefer_support_extruders {
+                            if !unprintable_filaments[extruder_id as usize].contains(&f) {
+                                printable_non_preferred_extruders.push(extruder_id);
+                            }
+                        }
+                        if !printable_non_preferred_extruders.is_empty() {
+                            for &extruder_id in &prefer_support_extruders {
+                                unprintable_filaments[extruder_id as usize].insert(f);
+                            }
+                        }
+                    }
+                }
+
+                if !has_multiple_nozzle && unprintable_filaments.len() >= 2 {
+                    for &fil_id in &used_filaments {
+                        let f = fil_id as i32;
+                        if unprintable_filaments[0].contains(&f) && unprintable_filaments[1].contains(&f) {
+                            unprintable_filaments[0].remove(&f);
+                            unprintable_filaments[1].remove(&f);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Multi-diameter restriction: keep each filament on the diameter explicitly selected before slicing.
+        {
+            let extruder_diameters = cfg_floats(print_config, "nozzle_diameter");
+            let mut distinct_diameters: BTreeSet<String> = BTreeSet::new();
+            for &d in &extruder_diameters {
+                distinct_diameters.insert(format_diameter_to_str(d));
+            }
+
+            let selected = cfg_strings(print_config, "filament_diameter_map");
+            let unprintable_filaments = &mut context.model_info.unprintable_filaments;
+            let has_selected = selected.iter().any(|value| !value.is_empty());
+            let use_per_slot_diameters = config_def::has_authoritative_per_slot_nozzle_diameters(
+                cfg_bool(print_config, "handle_hotend_as_extruder"),
+                &cfg_ints(print_config, "extruder_nozzle_count"),
+                &cfg_floats(print_config, "extruder_nozzle_diameter"),
+            );
+            if !use_per_slot_diameters && (distinct_diameters.len() > 1 || has_selected) && extruder_nums >= 2 {
+                for &fil_id in &used_filaments {
+                    if fil_id as usize >= selected.len() || selected[fil_id as usize].is_empty() {
+                        continue;
+                    }
+                    let allowed = format_diameter_to_str(crate::locales_utils::string_to_double_decimal_point(&selected[fil_id as usize]).0);
+
+                    let mut incompatible_extruders: Vec<i32> = Vec::new();
+                    let mut e = 0usize;
+                    while e < extruder_nums && e < unprintable_filaments.len() {
+                        if allowed != format_diameter_to_str(extruder_diameters[e]) {
+                            incompatible_extruders.push(e as i32);
+                        }
+                        e += 1;
+                    }
+                    for &e in &incompatible_extruders {
+                        unprintable_filaments[e as usize].insert(fil_id as i32);
+                    }
+                }
+            }
+        }
+
+        Ok(context)
     }
 
     /// ToolOrdering.cpp:2176-2200 `prepare_flush_matrices`
@@ -3768,6 +4402,318 @@ pub mod group_reorder {
         }
         fv_matrix.to_vec()
     }
+}
+
+/// ToolOrdering.cpp:2204-2334 `MultiNozzleUtils::LayeredNozzleGroupResult refine_groups_by_Nozzle_State(const FilamentGroupContext& ctx,
+/// const MultiNozzleUtils::LayeredNozzleGroupResult& group, const std::unordered_map<int, int> &nozzles_state)`
+pub fn refine_groups_by_nozzle_state(
+    ctx: &crate::filament_group::FilamentGroupContext,
+    group: &crate::multi_nozzle_utils::LayeredNozzleGroupResult,
+    nozzles_state: &crate::multi_nozzle_utils::UnorderedMapInt<i32>,
+) -> crate::multi_nozzle_utils::LayeredNozzleGroupResult {
+    use crate::gcode::tool_order_utils::{MinFlushFlowSolver, INVALID_ID};
+    use crate::multi_nozzle_utils::{CreateFromNozzleMap, LayeredNozzleGroupResult};
+
+    let mut nozzle_fils: Vec<Vec<u32>> = vec![Vec::new(); ctx.nozzle_info.nozzle_list.len()];
+    let fils = group.get_used_filaments_layer(0);
+    let fil_noz_map = group.get_layer_filament_nozzle_map(0).clone();
+
+    for &fil in &fils {
+        nozzle_fils[fil_noz_map[fil as usize] as usize].push(fil);
+    }
+
+    // 1、收集每个材料不可使用的喷嘴
+    let mut fil_unplaceable_nozs: BTreeMap<u32, BTreeSet<i32>> = BTreeMap::new();
+    for &fil in &fils {
+        let mut unprintable_volumes: BTreeSet<crate::extruder::NozzleVolumeType> = BTreeSet::new();
+        if let Some(v) = ctx.model_info.unprintable_volumes.get(&(fil as i32)) {
+            unprintable_volumes = v.clone();
+        }
+        let expected_volume = ctx.group_info.filament_volume_map[fil as usize];
+
+        for noz in 0..ctx.nozzle_info.nozzle_list.len() {
+            let noz_info = &ctx.nozzle_info.nozzle_list[noz];
+            let ext_id = noz_info.extruder_id;
+            let ext_unprintable_fils = &ctx.model_info.unprintable_filaments[ext_id as usize];
+            let diameter_mismatch = (fil as usize) < ctx.model_info.selected_nozzle_diameters.len()
+                && !ctx.model_info.selected_nozzle_diameters[fil as usize].is_empty()
+                && ctx.model_info.selected_nozzle_diameters[fil as usize] != noz_info.diameter;
+            // expected_volume != nvtHybrid (2) && expected_volume != noz_info.volume_type
+            if ext_unprintable_fils.contains(&(fil as i32))
+                || diameter_mismatch
+                || (expected_volume != 2 && expected_volume != noz_info.volume_type as i32)
+                || unprintable_volumes.contains(&noz_info.volume_type)
+            {
+                fil_unplaceable_nozs.entry(fil).or_default().insert(noz as i32);
+            }
+        }
+    }
+
+    // 2、存储全局喷嘴匹配结果 (std::unordered_map<int, int>, only searched)
+    let mut global_uv_match: HashMap<i32, i32> = HashMap::new();
+
+    // 3、按挤出机分组处理，每个挤出机单独跑费用流
+    for (&ext_id, ext_nozzles) in ctx.nozzle_info.extruder_nozzle_list.iter() {
+        if ext_nozzles.is_empty() {
+            continue;
+        }
+
+        // 3.1、构建该挤出机的 u_nodes 和 v_nodes
+        let u_nodes: Vec<i32> = ext_nozzles.clone();
+        let v_nodes: Vec<i32> = ext_nozzles.clone();
+
+        // 3.2、构建局部索引映射 (全局喷嘴id -> 局部索引)
+        let mut global_to_local: HashMap<i32, i32> = HashMap::new();
+        for i in 0..ext_nozzles.len() {
+            global_to_local.insert(ext_nozzles[i], i as i32);
+        }
+
+        // 3.3、构建该挤出机的费用矩阵
+        let mut cost_matrix: Vec<Vec<f32>> = vec![vec![f32::MAX; v_nodes.len()]; u_nodes.len()];
+        let mut uv_unlink_limits: HashMap<i32, Vec<i32>> = HashMap::new();
+
+        for local_u in 0..u_nodes.len() {
+            let u_node = u_nodes[local_u];
+            let mut unlink_v_local: BTreeSet<i32> = BTreeSet::new();
+            let u_fils = nozzle_fils[u_node as usize].clone();
+
+            // 收集不可连接的 v_node (转换为局部索引); fil_unplaceable_nozs[fil] (operator[])
+            for &fil in &u_fils {
+                if let Some(nozs) = fil_unplaceable_nozs.get(&fil) {
+                    for unplaceable_noz in nozs {
+                        if let Some(&l) = global_to_local.get(unplaceable_noz) {
+                            unlink_v_local.insert(l);
+                        }
+                    }
+                }
+            }
+            *uv_unlink_limits.entry(local_u as i32).or_default() = unlink_v_local.iter().copied().collect();
+
+            // 3.4、计算费用
+            for local_v in 0..v_nodes.len() {
+                let v_node = v_nodes[local_v];
+                let mut cost: f32 = 0.0;
+                if unlink_v_local.contains(&(local_v as i32)) {
+                    continue;
+                }
+
+                // std::optional<unsigned int> v_fil_opt = nozzles_state.at(v_node)
+                let v_fil_opt: Option<u32> = nozzles_state.get(v_node).map(|&v| v as u32);
+
+                if v_fil_opt.is_none() || v_fil_opt.unwrap() as usize >= ctx.model_info.filament_info.len() {
+                    cost = 0.0;
+                } else {
+                    let v_fil = v_fil_opt.unwrap() as i32;
+                    if u_fils.contains(&(v_fil as u32)) {
+                        cost = -1.0;
+                    } else {
+                        for &u_fil in &u_fils {
+                            cost += ctx.model_info.flush_matrix[ext_id as usize][u_fil as usize][v_fil as usize];
+                        }
+                        if !u_fils.is_empty() {
+                            // float /= size_t: the count converted to float
+                            cost /= u_fils.len() as f32;
+                        }
+                    }
+                }
+
+                cost_matrix[local_u][local_v] = cost;
+            }
+        }
+
+        // 3.5、使用费用流求解该挤出机的喷嘴匹配
+        let local_u_nodes: Vec<i32> = (0..u_nodes.len() as i32).collect();
+        let local_v_nodes: Vec<i32> = (0..v_nodes.len() as i32).collect();
+
+        let mut solver = MinFlushFlowSolver::new(&cost_matrix, &local_u_nodes, &local_v_nodes, &HashMap::new(), &uv_unlink_limits, &[], &[], &[]);
+        let local_match = solver.solve();
+
+        // 3.6、将局部匹配结果转换为全局匹配
+        for local_u in 0..u_nodes.len() {
+            let global_u = u_nodes[local_u];
+            let local_v = local_match[local_u];
+            if local_v == INVALID_ID || local_v < 0 || local_v >= v_nodes.len() as i32 {
+                continue;
+            }
+            let global_v = v_nodes[local_v as usize];
+            global_uv_match.insert(global_u, global_v);
+        }
+    }
+
+    // 4、构建新的group_result
+    let mut new_default_filament_nozzle_maps: Vec<i32> = group.get_layer_filament_nozzle_map(-1).clone();
+
+    for &fil in &fils {
+        let ori_noz = new_default_filament_nozzle_maps[fil as usize];
+        if let Some(&m) = global_uv_match.get(&ori_noz) {
+            new_default_filament_nozzle_maps[fil as usize] = m;
+        }
+    }
+
+    let new_group = <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(
+        &new_default_filament_nozzle_maps,
+        &ctx.nozzle_info.nozzle_list,
+        &fils,
+        group.is_handle_nozzle_as_extruder(),
+    );
+    match new_group {
+        Some(g) => g,
+        None => group.clone(),
+    }
+}
+
+// ToolOrdering.cpp:2336-2345 `struct VectorHash` (the hash of std::vector<unsigned int> keys of the
+// combo ranges below): only membership of the map it hashes is read, so a HashMap serves.
+
+/// ToolOrdering.cpp:2347-2463 `std::vector<FilamentPlanRes> plan_filament_mapping_and_order_by_combo_ranges(Print* print,
+/// const FilamentGroupContext& ctx, const ToolOrdering::OrderingContext& order_ctx, const FilamentMapMode mode,
+/// const std::vector<std::set<int>>& physical_unprintables, const std::vector<std::set<int>>& geometric_unprintables,
+/// const std::map<int, std::set<NozzleVolumeType>>& unprintable_volumes, MultiNozzleUtils::NozzleStatusRecorder* io_nozzle_status = nullptr)`
+#[allow(clippy::too_many_arguments)]
+pub fn plan_filament_mapping_and_order_by_combo_ranges(
+    print: &dyn ToolOrderingPrint,
+    ctx: &crate::filament_group::FilamentGroupContext,
+    order_ctx: &OrderingContext,
+    mode: crate::print_config::enums::FilamentMapMode,
+    physical_unprintables: &[BTreeSet<i32>],
+    geometric_unprintables: &[BTreeSet<i32>],
+    unprintable_volumes: &BTreeMap<i32, BTreeSet<crate::extruder::NozzleVolumeType>>,
+    io_nozzle_status: Option<&mut crate::multi_nozzle_utils::NozzleStatusRecorder>,
+) -> Result<Vec<crate::filament_group::FilamentPlanRes>, crate::filament_group::FilamentGroupError> {
+    use crate::filament_group::FilamentPlanRes;
+    let mut results: Vec<FilamentPlanRes> = Vec::new();
+
+    let layer_fils = &ctx.model_info.layer_filaments;
+    if layer_fils.is_empty() {
+        return Ok(results);
+    }
+
+    results.resize(layer_fils.len(), FilamentPlanRes::default());
+
+    // key: 某一层使用的所有材料id组合 (排序后的vector); value: 具有相同材料组合的连续层区间列表
+    let mut filament_combo_ranges: HashMap<Vec<u32>, Vec<(i32, i32)>> = HashMap::new();
+    for layer_idx in 0..layer_fils.len() as i32 {
+        let mut cur_combo: Vec<u32> = layer_fils[layer_idx as usize].clone();
+        cur_combo.sort_unstable();
+        cur_combo.dedup();
+        if cur_combo.is_empty() {
+            continue;
+        }
+
+        let ranges = filament_combo_ranges.entry(cur_combo).or_default();
+        if ranges.is_empty() || ranges.last().unwrap().1 != layer_idx - 1 {
+            ranges.push((layer_idx, layer_idx));
+        } else {
+            ranges.last_mut().unwrap().1 = layer_idx;
+        }
+    }
+
+    let mut range_filas_map: BTreeMap<(i32, i32), Vec<u32>> = BTreeMap::new();
+    for (combo, ranges) in filament_combo_ranges.iter() {
+        for range in ranges {
+            range_filas_map.insert(*range, combo.clone());
+        }
+    }
+
+    let mut used_filaments: BTreeSet<i32> = BTreeSet::new(); // 收集所有使用的材料set
+
+    // 对每个材料组合的每个连续区间，构建新的 layer_filaments 并调用 get_recommended_filament_maps
+    let mut tool_status = crate::multi_nozzle_utils::NozzleStatusRecorder::new();
+    let io_nozzle_status = io_nozzle_status;
+    if let Some(io) = io_nozzle_status.as_deref() {
+        tool_status.assign_from(io);
+    }
+
+    let mut fil_noz_map: Vec<i32> = vec![-1; ctx.group_info.total_filament_num as usize]; //全局的材料到喷嘴的映射
+    // 记录每个材料首次使用的喷嘴id (std::unordered_map<int, int>, only searched)
+    let mut fil_first_nozzle_map: HashMap<i32, i32> = HashMap::new();
+    for (&(start_layer, end_layer), combo) in range_filas_map.iter() {
+        // 1、构建区间的 layer_filaments
+        let mut range_layer_fils: Vec<Vec<u32>> = Vec::with_capacity((end_layer - start_layer + 1) as usize);
+        for layer_idx in start_layer..=end_layer {
+            range_layer_fils.push(layer_fils[layer_idx as usize].clone());
+        }
+        for &c in combo {
+            used_filaments.insert(c as i32);
+        }
+
+        // 2、生成区间分组结果
+        let nozzle_filament_map = tool_status.get_nozzle_filament_map().clone();
+        let group_result = ToolOrdering::get_recommended_filament_maps(
+            print,
+            &range_layer_fils,
+            mode,
+            physical_unprintables,
+            geometric_unprintables,
+            unprintable_volumes,
+            &nozzle_filament_map,
+        )?;
+
+        // 3、动态调整分组id
+        let new_group_result = refine_groups_by_nozzle_state(ctx, &group_result, &nozzle_filament_map);
+        let get_custom_seq = &order_ctx.get_custom_seq;
+        let range_seq_function = |layer_idx: i32, out_seq: &mut Vec<i32>| -> bool {
+            if layer_idx <= end_layer - start_layer {
+                let global_idx = start_layer + layer_idx;
+                return get_custom_seq(global_idx, out_seq);
+            }
+            false
+        };
+
+        // 4、区间分组排序
+        let mut fils_sequences: Vec<Vec<u32>> = Vec::new();
+        crate::gcode::tool_order_utils::reorder_filaments_for_multi_nozzle_extruder(
+            &range_layer_fils[0],
+            &new_group_result,
+            &range_layer_fils,
+            &ctx.model_info.flush_matrix,
+            Some(&range_seq_function),
+            Some(&mut fils_sequences),
+            &tool_status,
+        );
+
+        // 5、存储区间结果
+        for &fil_id in fils_sequences.last().expect("fils_sequences.back()") {
+            if let Some(noz) = new_group_result.get_nozzle_for_filament(fil_id as i32, -1) {
+                let noz_id = noz.group_id;
+                let ext_id = noz.extruder_id;
+
+                fil_noz_map[fil_id as usize] = noz_id;
+
+                // 记录材料首次使用的喷嘴id（仅首次插入）
+                fil_first_nozzle_map.entry(fil_id as i32).or_insert(noz_id);
+
+                tool_status.set_current_extruder_id(ext_id);
+                tool_status.set_nozzle_status(noz_id, fil_id as i32, ext_id);
+            }
+        }
+
+        // assert(fils_sequences.size() == range_layer_fils.size());
+        for layer_id in 0..fils_sequences.len() {
+            let g_layer_id = start_layer as usize + layer_id;
+            results[g_layer_id].fil_nozzle_match = fil_noz_map.clone();
+            results[g_layer_id].fil_order = fils_sequences[layer_id].iter().map(|&f| f as i32).collect();
+        }
+    }
+
+    for res in results.iter_mut() {
+        for fil_id in 0..res.fil_nozzle_match.len() {
+            let noz_id = &mut res.fil_nozzle_match[fil_id];
+            if *noz_id == -1 {
+                *noz_id = if used_filaments.contains(&(fil_id as i32)) && fil_first_nozzle_map.contains_key(&(fil_id as i32)) {
+                    fil_first_nozzle_map[&(fil_id as i32)]
+                } else {
+                    0
+                };
+            }
+        }
+    }
+
+    if let Some(io) = io_nozzle_status {
+        io.assign_from(&tool_status);
+    }
+
+    Ok(results)
 }
 
 /// ToolOrdering.cpp:2467-2509 `validate_manual_diameter_or_throw`: multi-diameter manual safety net,
@@ -3827,6 +4773,374 @@ pub fn validate_manual_diameter_or_throw(
         }
     }
     Ok(())
+}
+
+impl ToolOrdering {
+    /// ToolOrdering.cpp:2511-2690 `static MultiNozzleUtils::LayeredNozzleGroupResult ToolOrdering::get_recommended_filament_maps(Print *print,
+    /// const std::vector<std::vector<unsigned int>> &layer_filaments, const FilamentMapMode mode,
+    /// const std::vector<std::set<int>> &physical_unprintables, const std::vector<std::set<int>> &geometric_unprintables,
+    /// const std::map<int, std::set<NozzleVolumeType>> &unprintable_volumes, const std::unordered_map<int, int>& nozzle_status = {})`.
+    ///
+    /// Called in single extruder mode, the value in map are all 0; in dual extruder mode 0 or 1 (0 based
+    /// group id). The `!print` check of the C++ has no counterpart: `print` is a reference.
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_recommended_filament_maps(
+        print: &dyn ToolOrderingPrint,
+        layer_filaments: &[Vec<u32>],
+        mode: crate::print_config::enums::FilamentMapMode,
+        physical_unprintables: &[BTreeSet<i32>],
+        geometric_unprintables: &[BTreeSet<i32>],
+        unprintable_volumes: &BTreeMap<i32, BTreeSet<crate::extruder::NozzleVolumeType>>,
+        nozzle_status: &crate::multi_nozzle_utils::UnorderedMapInt<i32>,
+    ) -> Result<crate::multi_nozzle_utils::LayeredNozzleGroupResult, crate::filament_group::FilamentGroupError> {
+        use crate::filament_group::{
+            calc_filament_group_for_manual_multi_nozzle, calc_filament_group_for_match_multi_nozzle, calc_filament_group_for_nozzle_match,
+            collect_sorted_used_filaments, FilamentGroup, FilamentGroupContext, FilamentGroupError,
+        };
+        use crate::multi_nozzle_utils::{CreateFromNozzleMap, LayeredNozzleGroupResult};
+        use crate::print_config::config_def;
+        use crate::print_config::enums::FilamentMapMode;
+
+        let runtime = |msg: &str| FilamentGroupError::Runtime(crate::exception::RuntimeError::new(msg.to_string()));
+
+        if layer_filaments.is_empty() {
+            return Ok(LayeredNozzleGroupResult::default());
+        }
+
+        let print_config = print.config();
+        let multi_diameter_mode = config_def::multi_nozzle_diameter_mode_enabled(print.full_print_config());
+        let filament_nums = cfg_strings(print_config, "filament_colour").len();
+        let extruder_nums = cfg_floats(print_config, "nozzle_diameter").len();
+        let used_filaments = collect_sorted_used_filaments(layer_filaments);
+        let has_multiple_nozzle = cfg_ints(print_config, "extruder_max_nozzle_count").iter().any(|&v| v > 1);
+        let has_multiple_extruder = extruder_nums > 1;
+        let single_ext_multi_nozzle = config_def::is_single_ext_multi_nozzle(print_config);
+        let handle_hotend_as_extruder = cfg_bool(print_config, "handle_hotend_as_extruder");
+
+        // N1X fmmManual stores only AMS/fixed grouping; the backend assigns concrete compatible nozzles.
+        // fmmNozzleManual remains an explicit filament -> logical nozzle map.
+        let build_manual_map_or_throw = |context: &mut FilamentGroupContext| -> Result<Vec<i32>, FilamentGroupError> {
+            let mut ams_idx = config_def::get_effective_ams_nozzle_idx(print_config);
+            if ams_idx < 0
+                || ams_idx >= context.nozzle_info.nozzle_list.len() as i32
+                || !context.nozzle_info.nozzle_list[ams_idx as usize].installed
+            {
+                ams_idx = -1;
+            }
+            let ams_cap = if ams_idx >= 0 { used_filaments.len() as i32 } else { 0 };
+            let map = group_reorder::build_manual_nozzle_map(
+                print_config,
+                &mut context.nozzle_info.nozzle_list,
+                &used_filaments,
+                mode,
+                ams_idx,
+                ams_cap,
+                filament_nums,
+            );
+            if map.is_empty() {
+                return Err(runtime(
+                    "Nozzle assignment error: no compatible fixed nozzle is available for the fixed filament group. Please check the nozzle setup or regroup.",
+                ));
+            }
+            Ok(map)
+        };
+
+        let nozzle_list = group_reorder::build_default_nozzle_list(print_config, extruder_nums);
+
+        // 处理非H2C的手动模式，此时可以直接退出
+        if mode == FilamentMapMode::FmmManual && !has_multiple_nozzle {
+            let manual_filament_map: Vec<i32> = cfg_ints(print_config, "filament_map").iter().map(|v| v - 1).collect();
+            validate_manual_diameter_or_throw(print_config, &used_filaments, &manual_filament_map, multi_diameter_mode).map_err(FilamentGroupError::Runtime)?;
+            let result =
+                <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(&manual_filament_map, &nozzle_list, &used_filaments, handle_hotend_as_extruder);
+            return Ok(result.unwrap_or_default());
+        }
+
+        if mode == FilamentMapMode::FmmNozzleManual && has_multiple_nozzle {
+            let context = group_reorder::build_filament_group_context(
+                print,
+                layer_filaments,
+                physical_unprintables,
+                geometric_unprintables,
+                unprintable_volumes,
+                mode,
+                nozzle_status,
+            )?;
+
+            let mut ret: Vec<i32>;
+            // Auto flow calibration pins each filament to the nozzle it calibrates through filament_nozzle_map.
+            if single_ext_multi_nozzle && multi_diameter_mode && print.calib_params().mode != crate::calib::CalibMode::AutoPALine {
+                // Assign from the user's per-filament (diameter, flow): a plain queue assignment over the
+                // padded capacity-1 slots, leaving one filament per slot.
+                let nozzles = &context.nozzle_info.nozzle_list;
+                let mut remaining: Vec<i32> = context.nozzle_info.per_nozzle_capacity.clone();
+                remaining.resize(nozzles.len(), 0);
+                let ams_idx = config_def::get_effective_ams_nozzle_idx(print_config);
+
+                ret = vec![0; filament_nums];
+                for &fil in &used_filaments {
+                    let diameter: String = if (fil as usize) < context.model_info.selected_nozzle_diameters.len() {
+                        context.model_info.selected_nozzle_diameters[fil as usize].clone()
+                    } else {
+                        String::new()
+                    };
+                    // nvtHybrid == 2
+                    let volume: i32 = if (fil as usize) < context.group_info.filament_volume_map.len() {
+                        context.group_info.filament_volume_map[fil as usize]
+                    } else {
+                        2
+                    };
+
+                    let fits = |noz: i32, remaining: &Vec<i32>| -> bool {
+                        let nozzle = &nozzles[noz as usize];
+                        if !nozzle.installed || remaining[noz as usize] <= 0 {
+                            return false;
+                        }
+                        if multi_diameter_mode && !diameter.is_empty() && nozzle.diameter != diameter {
+                            return false;
+                        }
+                        volume == 2 || nozzle.volume_type as i32 == volume
+                    };
+
+                    // Two passes so the AMS nozzle is only taken once the single-filament slots of that spec
+                    // are used up.
+                    let mut chosen = -1;
+                    let mut noz = 0;
+                    while noz < nozzles.len() as i32 && chosen < 0 {
+                        if noz != ams_idx && fits(noz, &remaining) {
+                            chosen = noz;
+                        }
+                        noz += 1;
+                    }
+                    if chosen < 0 && ams_idx >= 0 && ams_idx < nozzles.len() as i32 && fits(ams_idx, &remaining) {
+                        chosen = ams_idx;
+                    }
+                    if chosen < 0 {
+                        return Err(runtime(
+                            "Nozzle assignment error: no nozzle matches the diameter and flow selected for one of the filaments. Please check the nozzle setup.",
+                        ));
+                    }
+
+                    ret[fil as usize] = chosen;
+                    remaining[chosen as usize] -= 1;
+                }
+            } else {
+                let user_nozzle_map = cfg_ints(print_config, "filament_nozzle_map");
+                let nozzle_cnt = context.nozzle_info.nozzle_list.len() as i32;
+                ret = vec![0; filament_nums];
+                for &fil in &used_filaments {
+                    if fil as usize >= user_nozzle_map.len() || user_nozzle_map[fil as usize] < 0 || user_nozzle_map[fil as usize] >= nozzle_cnt {
+                        return Err(runtime("Nozzle assignment error: invalid per-filament nozzle map. Please check the nozzle setup or regroup."));
+                    }
+                    let nozzle_id = user_nozzle_map[fil as usize];
+                    if !context.nozzle_info.nozzle_list[nozzle_id as usize].installed {
+                        return Err(runtime("Nozzle assignment error: per-filament nozzle map points to an empty or unavailable nozzle."));
+                    }
+                    ret[fil as usize] = nozzle_id;
+                }
+            }
+            let result_opt =
+                <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(&ret, &context.nozzle_info.nozzle_list, &used_filaments, handle_hotend_as_extruder);
+            return Ok(result_opt.unwrap_or_default());
+        }
+
+        let master_extruder_id = cfg_int(print_config, "master_extruder_id") - 1;
+        let mut ret: Vec<i32> = vec![master_extruder_id; filament_nums];
+
+        if has_multiple_extruder || has_multiple_nozzle {
+            let mut context = group_reorder::build_filament_group_context(
+                print,
+                layer_filaments,
+                physical_unprintables,
+                geometric_unprintables,
+                unprintable_volumes,
+                mode,
+                nozzle_status,
+            )?;
+
+            if has_multiple_nozzle {
+                if single_ext_multi_nozzle {
+                    if mode == FilamentMapMode::FmmManual {
+                        ret = build_manual_map_or_throw(&mut context)?;
+                    } else if mode == FilamentMapMode::FmmAutoForMatch {
+                        ret = calc_filament_group_for_nozzle_match(&mut context)?;
+                    } else {
+                        // Single-extruder multi-nozzle auto: unified FilamentGroup with per-nozzle capacity.
+                        let mut fg = FilamentGroup::new(&context);
+                        ret = fg.calc_filament_group(None)?;
+                    }
+                } else if mode == FilamentMapMode::FmmManual {
+                    let manual_filament_map: Vec<i32> = cfg_ints(print_config, "filament_map").iter().map(|v| v - 1).collect();
+                    ret = calc_filament_group_for_manual_multi_nozzle(&manual_filament_map, &context)?;
+                } else if mode == FilamentMapMode::FmmAutoForMatch {
+                    ret = calc_filament_group_for_match_multi_nozzle(&context)?;
+                } else {
+                    let mut fg = FilamentGroup::new(&context);
+                    ret = fg.calc_filament_group(None)?;
+                }
+                let result_opt =
+                    <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(&ret, &context.nozzle_info.nozzle_list, &used_filaments, handle_hotend_as_extruder);
+                let Some(result) = result_opt else {
+                    return Ok(LayeredNozzleGroupResult::default());
+                };
+                // Manual-mode extruder validation only applies to the virtual-extruder model.
+                if mode == FilamentMapMode::FmmManual && !single_ext_multi_nozzle {
+                    let result_map = result.get_extruder_map(true, -1);
+                    let filament_map = cfg_ints(print_config, "filament_map");
+                    for &fid in &used_filaments {
+                        if result_map[fid as usize] != filament_map[fid as usize] - 1 {
+                            return Err(runtime("Group error in manual mode. Please check nozzle count or regroup."));
+                        }
+                    }
+                    validate_manual_diameter_or_throw(print_config, &used_filaments, &result_map, multi_diameter_mode).map_err(FilamentGroupError::Runtime)?;
+                }
+                return Ok(result);
+            } else {
+                let mut fg = FilamentGroup::new(&context);
+                fg.get_custom_seq = Some(std::rc::Rc::from(group_reorder::create_custom_seq_function(print_config, false, &[])));
+                ret = fg.calc_filament_group(None)?;
+            }
+        }
+
+        let result_opt = <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(&ret, &nozzle_list, &used_filaments, handle_hotend_as_extruder);
+        Ok(result_opt.unwrap_or_default())
+    }
+
+    /// ToolOrdering.cpp:2709-2787 `void ToolOrdering::calculate_and_store_statistics(const PrintConfig &print_config,
+    /// const MultiNozzleUtils::LayeredNozzleGroupResult &grouping_result, const LayerData &layer_data,
+    /// const OrderingContext &ordering_context, const std::vector<FlushMatrix> &nozzle_flush_mtx,
+    /// const std::vector<std::vector<unsigned int>> &filament_sequences)`. `print` is `m_print`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn calculate_and_store_statistics(
+        &mut self,
+        print: &dyn ToolOrderingPrint,
+        print_config: &ToolOrderingPrintConfig,
+        grouping_result: &crate::multi_nozzle_utils::LayeredNozzleGroupResult,
+        layer_data: &LayerData,
+        ordering_context: &OrderingContext,
+        nozzle_flush_mtx: &[group_reorder::FlushMatrix],
+        filament_sequences: &[Vec<u32>],
+    ) -> Result<(), crate::filament_group::FilamentGroupError> {
+        use crate::multi_nozzle_utils::{CreateFromLayerMaps, CreateFromNozzleMap, LayeredNozzleGroupResult, NozzleInfo, NozzleStatusRecorder};
+        use crate::print_config::enums::FilamentMapMode;
+
+        let extruder_num = cfg_floats(print_config, "nozzle_diameter").len();
+
+        let curr_flush_info = calc_filament_change_info_by_toolorder(print_config, grouping_result, nozzle_flush_mtx, filament_sequences);
+
+        let fmm_auto_for_flush = cfg_int(print_config, "filament_map_mode") == FilamentMapMode::FmmAutoForFlush as i32;
+        if extruder_num <= 1 {
+            self.stats_single_ext = curr_flush_info;
+        } else {
+            self.stats_multi_ext_curr = curr_flush_info.clone();
+            if fmm_auto_for_flush {
+                self.stats_multi_ext_best = curr_flush_info;
+            }
+        }
+
+        // 多喷嘴时，计算单挤出机与最优分组下（如果需要）的信息
+        if extruder_num > 1 {
+            {
+                let mut single_extruder_sequences: Vec<Vec<u32>> = Vec::new();
+                let maps_without_group: Vec<i32> = vec![0; cfg_strings(print_config, "filament_colour").len()];
+
+                let mut tmp = NozzleInfo::default();
+                // tmp.diameter = print_config.nozzle_diameter.get_at(0): a double assigned to std::string is
+                // operator=(char), the one character (char)value.
+                tmp.diameter = String::from((get_at(&cfg_floats(print_config, "nozzle_diameter"), 0) as i8 as u8) as char);
+                tmp.group_id = 0;
+                tmp.extruder_id = 0;
+                tmp.volume_type = crate::extruder::NozzleVolumeType::NvtStandard;
+
+                let result_opt =
+                    <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(&maps_without_group, &[tmp], &layer_data.used_filaments, false);
+                let Some(result) = result_opt else {
+                    return Ok(());
+                };
+
+                crate::gcode::tool_order_utils::reorder_filaments_for_multi_nozzle_extruder(
+                    &ordering_context.filament_lists,
+                    &result,
+                    &layer_data.layer_filaments,
+                    nozzle_flush_mtx,
+                    Some(&*ordering_context.get_custom_seq),
+                    Some(&mut single_extruder_sequences),
+                    &NozzleStatusRecorder::new(),
+                );
+                self.stats_single_ext = calc_filament_change_info_by_toolorder(print_config, &result, nozzle_flush_mtx, &single_extruder_sequences);
+            }
+
+            if !fmm_auto_for_flush {
+                let mut best_seq: Vec<Vec<u32>> = Vec::new();
+
+                // 如果支持选料器
+                if print.is_dynamic_group_reorder() {
+                    let grouping_context = group_reorder::build_filament_group_context(
+                        print,
+                        &layer_data.layer_filaments,
+                        &layer_data.physical_unprintables,
+                        &layer_data.geometric_unprintables,
+                        &layer_data.filament_unprintable_volumes,
+                        FilamentMapMode::FmmAutoForFlush,
+                        self.initial_nozzle_status.get_nozzle_filament_map(),
+                    )?;
+
+                    let mut best_nozzle_status = self.initial_nozzle_status.clone();
+                    let dynamic_plan_res = plan_filament_mapping_and_order_by_combo_ranges(
+                        print,
+                        &grouping_context,
+                        ordering_context,
+                        FilamentMapMode::FmmAutoForFlush,
+                        &layer_data.physical_unprintables,
+                        &layer_data.geometric_unprintables,
+                        &layer_data.filament_unprintable_volumes,
+                        Some(&mut best_nozzle_status),
+                    )?;
+
+                    let mut nozzle_map_per_layer: Vec<Vec<i32>> = Vec::new();
+                    for res in &dynamic_plan_res {
+                        best_seq.push(res.fil_order.iter().map(|&f| f as u32).collect());
+                        nozzle_map_per_layer.push(res.fil_nozzle_match.clone());
+                    }
+
+                    let result = <LayeredNozzleGroupResult as CreateFromLayerMaps>::create(
+                        &nozzle_map_per_layer,
+                        &grouping_context.nozzle_info.nozzle_list,
+                        &layer_data.used_filaments,
+                        filament_sequences,
+                        cfg_bool(print_config, "handle_hotend_as_extruder"),
+                    );
+
+                    if let Some(result) = result {
+                        self.stats_multi_ext_best = calc_filament_change_info_by_toolorder(print_config, &result, nozzle_flush_mtx, &best_seq);
+                    }
+                } else {
+                    let group_result_auto = ToolOrdering::get_recommended_filament_maps(
+                        print,
+                        &layer_data.layer_filaments,
+                        FilamentMapMode::FmmAutoForFlush,
+                        &layer_data.physical_unprintables,
+                        &layer_data.geometric_unprintables,
+                        &layer_data.filament_unprintable_volumes,
+                        &crate::multi_nozzle_utils::UnorderedMapInt::new(),
+                    )?;
+
+                    crate::gcode::tool_order_utils::reorder_filaments_for_multi_nozzle_extruder(
+                        &ordering_context.filament_lists,
+                        &group_result_auto,
+                        &layer_data.layer_filaments,
+                        nozzle_flush_mtx,
+                        Some(&*ordering_context.get_custom_seq),
+                        Some(&mut best_seq),
+                        &NozzleStatusRecorder::new(),
+                    );
+
+                    self.stats_multi_ext_best = calc_filament_change_info_by_toolorder(print_config, &group_result_auto, nozzle_flush_mtx, &best_seq);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// ToolOrdering.hpp:374-380 `ToolOrdering::LayerData`
@@ -4643,6 +5957,158 @@ impl ToolOrdering {
         }
     }
 
+    /// ToolOrdering.cpp:3510-3634 `void ToolOrdering::reorder_extruders_for_minimum_flush_volume(bool reorder_first_layer)`.
+    /// `print` is `m_print`; `m_print_config_ptr` is `print_config_ptr`, and the configuration of
+    /// `m_print_object_ptr->print()` is `print.config()` when `print_object_ptr` is set.
+    pub fn reorder_extruders_for_minimum_flush_volume(
+        &mut self,
+        print: &dyn ToolOrderingPrint,
+        reorder_first_layer: bool,
+    ) -> Result<(), crate::filament_group::FilamentGroupError> {
+        use crate::multi_nozzle_utils::{CreateFromLayerMaps, LayeredNozzleGroupResult};
+        use crate::print_config::enums::FilamentMapMode;
+
+        let print_config_arc: Option<std::sync::Arc<ToolOrderingPrintConfig>> = match &self.print_config_ptr {
+            Some(p) => Some(p.0.clone()),
+            None => None,
+        };
+        let print_config: &ToolOrderingPrintConfig = match &print_config_arc {
+            Some(p) => p,
+            None if self.print_object_ptr => print.config(),
+            None => return Ok(()),
+        };
+
+        if self.layer_tools.is_empty() {
+            return Ok(());
+        }
+
+        let mut filament_sequences: Vec<Vec<u32>> = Vec::new();
+
+        let mut grouping_result = LayeredNozzleGroupResult::default();
+
+        // Stage 1: 准备冲刷矩阵
+        let nozzle_flush_mtx = group_reorder::prepare_flush_matrices(print_config);
+        // Stage 2: 准备层信息与不可打印限制
+        let layer_data = self.collect_layer_and_unprintable_data(print);
+        // Stage 3: 生成排序所需的context
+        let ordering_context = self.prepare_ordering_context(print_config, reorder_first_layer);
+
+        // 不支持选料器或手动模式
+        if !print.is_dynamic_group_reorder() {
+            // 逐层打印时，在生成toolodering时分组，统计相关信息并写回
+            if !print.is_sequential_print() {
+                // fmmNozzleManual(H2C)：在整盘全集上把旧分组 key 的 filament_nozzle_map 解析成下标
+                print.resolve_manual_nozzle_map(&layer_data.used_filaments).map_err(crate::filament_group::FilamentGroupError::Runtime)?;
+                // Stage 4: 计算分组
+                grouping_result = ToolOrdering::get_recommended_filament_maps(
+                    print,
+                    &layer_data.layer_filaments,
+                    FilamentMapMode::from_i32(cfg_int(print_config, "filament_map_mode")),
+                    &layer_data.physical_unprintables,
+                    &layer_data.geometric_unprintables,
+                    &layer_data.filament_unprintable_volumes,
+                    &crate::multi_nozzle_utils::UnorderedMapInt::new(),
+                )?;
+            } else {
+                // 逐件打印时，分组已经被调用过了，直接从print获取结果
+                grouping_result = (*print.get_layered_nozzle_group_result().expect("*(m_print->get_layered_nozzle_group_result()) of a null pointer")).clone();
+            }
+            // 计算排序
+            filament_sequences = self.execute_filament_ordering(print_config, &grouping_result, &layer_data, &ordering_context, &nozzle_flush_mtx);
+        }
+
+        // 支持选料器且为自动模式
+        if print.is_dynamic_group_reorder() {
+            let mut grouping_context = group_reorder::build_filament_group_context(
+                print,
+                &layer_data.layer_filaments,
+                &layer_data.physical_unprintables,
+                &layer_data.geometric_unprintables,
+                &layer_data.filament_unprintable_volumes,
+                FilamentMapMode::from_i32(cfg_int(print.config(), "filament_map_mode")),
+                self.initial_nozzle_status.get_nozzle_filament_map(),
+            )?;
+
+            // 时间预估器中存储的材料在不同挤出机的打印时间是全局的，不适用于当前分区间的分组方法
+            grouping_context.speed_info.group_with_time = false;
+
+            self.nozzle_status.assign_from(&self.initial_nozzle_status);
+            let mut nozzle_status = std::mem::take(&mut self.nozzle_status);
+            let dynamic_plan_res = plan_filament_mapping_and_order_by_combo_ranges(
+                print,
+                &grouping_context,
+                &ordering_context,
+                FilamentMapMode::FmmAutoForFlush,
+                &layer_data.physical_unprintables,
+                &layer_data.geometric_unprintables,
+                &layer_data.filament_unprintable_volumes,
+                Some(&mut nozzle_status),
+            );
+            self.nozzle_status = nozzle_status;
+            let dynamic_plan_res = dynamic_plan_res?;
+            //auto dynamic_plan_res = plan_filament_nozzle_mapping_and_order(grouping_context);
+
+            let mut nozzle_map_per_layer: Vec<Vec<i32>> = Vec::new();
+            for res in &dynamic_plan_res {
+                filament_sequences.push(res.fil_order.iter().map(|&f| f as u32).collect());
+                nozzle_map_per_layer.push(res.fil_nozzle_match.clone());
+            }
+
+            let result = <LayeredNozzleGroupResult as CreateFromLayerMaps>::create(
+                &nozzle_map_per_layer,
+                &grouping_context.nozzle_info.nozzle_list,
+                &layer_data.used_filaments,
+                &filament_sequences,
+                cfg_bool(print_config, "handle_hotend_as_extruder"),
+            );
+            grouping_result = result.unwrap_or_default();
+        }
+
+        if !print.is_sequential_print() {
+            print.set_nozzle_group_result(std::sync::Arc::new(grouping_result.clone()));
+            if !grouping_result.is_support_dynamic_nozzle_map() {
+                // fmmNozzleManual keeps explicit user nozzle-map semantics. fmmManual may write back the
+                // computed concrete nozzle map because its custom grouping can be resolved by backend.
+                let keep_user_nozzle_map = cfg_bool(print_config, "handle_hotend_as_extruder")
+                    && cfg_int(print_config, "filament_map_mode") == FilamentMapMode::FmmNozzleManual as i32;
+                print.update_filament_maps_to_config(
+                    crate::filament_group_utils::update_used_filament_values(
+                        &cfg_ints(print_config, "filament_map"),
+                        &grouping_result.get_extruder_map(false, -1),
+                        &layer_data.used_filaments,
+                    ),
+                    crate::filament_group_utils::update_used_filament_values(
+                        &cfg_ints(print_config, "filament_volume_map"),
+                        &grouping_result.get_volume_map(-1),
+                        &layer_data.used_filaments,
+                    ),
+                    if keep_user_nozzle_map { cfg_ints(print_config, "filament_nozzle_map") } else { grouping_result.get_nozzle_map(-1) },
+                );
+            } else {
+                print.update_to_config_by_nozzle_group_result(&grouping_result);
+            }
+        }
+
+        self.nozzle_group_result = grouping_result.clone();
+
+        // Stage 6: 统计其它模式的信息
+        self.calculate_and_store_statistics(
+            print,
+            print_config,
+            &grouping_result,
+            &layer_data,
+            &ordering_context,
+            &nozzle_flush_mtx,
+            &filament_sequences,
+        )?;
+
+        // Stage 7: 应用排序结果
+        for (i, seq) in filament_sequences.into_iter().enumerate() {
+            self.layer_tools[i].extruders = seq;
+        }
+        Ok(())
+    }
+
     /// ToolOrdering.cpp:3776-3790 `ToolOrdering::tools_for_layer`: the LayerTools with the closest
     /// print_z, as an index into the layers.
     pub fn tools_for_layer_index(&self, print_z: f64) -> usize {
@@ -5126,6 +6592,84 @@ impl<'a> GenerateFirstLayerToolOrder<(&'a dyn ToolOrderingPrintObjects, &'a Tool
     }
 }
 
+/// The two overloads of `ToolOrdering::sort_and_build_data` (ToolOrdering.hpp:302-303): over a `Print`
+/// (`&dyn ToolOrderingPrintObjects`) and over a `PrintObject` (`(object, object.print())`). Called as
+/// `SortAndBuildData::<&dyn ToolOrderingPrintObjects>::sort_and_build_data(&mut ordering, print, ...)`.
+pub trait SortAndBuildData<T> {
+    fn sort_and_build_data(&mut self, arg: T, first_extruder: u32, prime_multi_material: bool) -> Result<(), crate::filament_group::FilamentGroupError>;
+}
+
+impl<'a> SortAndBuildData<&'a dyn ToolOrderingPrintObjects> for ToolOrdering {
+    /// ToolOrdering.cpp:447-476 `void ToolOrdering::sort_and_build_data(const Print& print, unsigned int first_extruder,
+    /// bool prime_multi_material)`. `print` is also `m_print`.
+    fn sort_and_build_data(
+        &mut self,
+        print: &'a dyn ToolOrderingPrintObjects,
+        first_extruder: u32,
+        prime_multi_material: bool,
+    ) -> Result<(), crate::filament_group::FilamentGroupError> {
+        // if first extruder is -1, we can decide the first layer tool order before doing reorder function
+        // so we shouldn't reorder first layer in reorder function
+        let reorder_first_layer = first_extruder != u32::MAX;
+        self.resolve_mixed_filaments(print.config());
+        self.reorder_extruders_for_minimum_flush_volume(print.as_tool_ordering_print(), reorder_first_layer)?;
+        self.enforce_mixed_component_order();
+        self.sorted = true;
+
+        let mut max_layer_height: f64 = 0.0;
+        let mut object_bottom_z: f64 = 0.0;
+        for object in print.objects() {
+            for layer in &object.layers {
+                if layer.has_extrusions {
+                    object_bottom_z = layer.print_z - layer.height;
+                    break;
+                }
+            }
+            max_layer_height = max_layer_height.max(object_max_layer_height(&object.max_layer_height_inputs));
+        }
+
+        max_layer_height = calc_max_layer_height(print.config(), max_layer_height);
+
+        self.collect_extruder_statistics(prime_multi_material);
+
+        ToolOrderingCpp::fill_wipe_tower_partitions(self, print.config(), object_bottom_z, max_layer_height);
+
+        self.calc_most_used_extruder(print.config(), print.as_tool_ordering_print());
+        Ok(())
+    }
+}
+
+impl<'a> SortAndBuildData<(&'a ToolOrderingObject, &'a dyn ToolOrderingPrintObjects)> for ToolOrdering {
+    /// ToolOrdering.cpp:478-496 `void ToolOrdering::sort_and_build_data(const PrintObject& object, unsigned int first_extruder,
+    /// bool prime_multi_material)`. `print` is `object.print()` (and `m_print`).
+    fn sort_and_build_data(
+        &mut self,
+        arg: (&'a ToolOrderingObject, &'a dyn ToolOrderingPrintObjects),
+        _first_extruder: u32,
+        prime_multi_material: bool,
+    ) -> Result<(), crate::filament_group::FilamentGroupError> {
+        let (object, print) = arg;
+        // if first extruder is -1, we can decide the first layer tool order before doing reorder function
+        // so we shouldn't reorder first layer in reorder function
+        //bool reorder_first_layer = (first_extruder != (unsigned int)(-1));
+        let reorder_first_layer = false; // when by object , the first layer of each object should use the best order, regard less of the filament change for better bed contect
+        self.resolve_mixed_filaments(print.config());
+        self.reorder_extruders_for_minimum_flush_volume(print.as_tool_ordering_print(), reorder_first_layer)?;
+        self.enforce_mixed_component_order();
+        self.sorted = true;
+
+        let max_layer_height = calc_max_layer_height(print.config(), object_max_layer_height(&object.max_layer_height_inputs));
+
+        self.collect_extruder_statistics(prime_multi_material);
+
+        let front = &object.layers[0];
+        ToolOrderingCpp::fill_wipe_tower_partitions(self, print.config(), front.print_z - front.height, max_layer_height);
+
+        self.calc_most_used_extruder(print.config(), print.as_tool_ordering_print());
+        Ok(())
+    }
+}
+
 impl ToolOrdering {
     /// ToolOrdering.cpp:829-1205 `ToolOrdering::collect_extruders`: the extruders required to print
     /// the layers of an object. Returns what the C++ writes into the object.
@@ -5598,6 +7142,7 @@ impl ToolOrdering {
         prime_multi_material: bool,
     ) -> (ToolOrdering, ToolOrderingObjectOutputs) {
         let mut to = ToolOrdering::cpp_default();
+        to.print_object_ptr = true;
         if object.layers.is_empty() {
             return (to, ToolOrderingObjectOutputs::default());
         }

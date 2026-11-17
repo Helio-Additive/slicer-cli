@@ -292,8 +292,8 @@ impl ToolOrderingPrint for TestPrint {
     fn curr_plate_custom_gcodes(&self) -> &custom_g_code::Info {
         &self.custom_gcodes
     }
-    fn get_layered_nozzle_group_result(&self) -> Option<&LayeredNozzleGroupResult> {
-        self.group.as_ref()
+    fn get_layered_nozzle_group_result(&self) -> Option<std::sync::Arc<LayeredNozzleGroupResult>> {
+        self.group.clone().map(std::sync::Arc::new)
     }
     fn get_geometric_unprintable_filaments(&self) -> Vec<BTreeSet<i32>> {
         Vec::new()
@@ -304,6 +304,38 @@ impl ToolOrderingPrint for TestPrint {
     fn get_filament_unprintable_flow(&self, _used_filaments: &[u32]) -> BTreeMap<i32, BTreeSet<slicer::extruder::NozzleVolumeType>> {
         BTreeMap::new()
     }
+    // What the filament grouping (ToolOrdering.cpp:1710-3634) reads of `Print`: these prints carry
+    // no grouping data (no calibration, no extruder filament info, no dynamic reorder), as the
+    // generator's prints do; the setters keep nothing, the grouping is not reached with them.
+    fn calib_params(&self) -> ToolOrderingCalibParams {
+        ToolOrderingCalibParams::default()
+    }
+    fn get_extruder_filament_info(&self) -> &[Vec<ToolOrderingPrintConfig>] {
+        &[]
+    }
+    fn get_filament_usage_type(&self) -> Vec<slicer::filament_group_utils::FilamentUsageType> {
+        Vec::new()
+    }
+    fn get_filament_print_time(
+        &self,
+    ) -> slicer::multi_nozzle_utils::UnorderedMapInt<slicer::multi_nozzle_utils::UnorderedMapInt<f64>> {
+        Default::default()
+    }
+    fn get_nozzle_loaded_filament_info(&self) -> &[slicer::filament_group_utils::NozzleLoadedFilamentInfo] {
+        &[]
+    }
+    fn is_dynamic_group_reorder(&self) -> bool {
+        false
+    }
+    fn is_sequential_print(&self) -> bool {
+        false
+    }
+    fn resolve_manual_nozzle_map(&self, _used_filaments: &[u32]) -> Result<(), slicer::exception::RuntimeError> {
+        Ok(())
+    }
+    fn set_nozzle_group_result(&self, _result: std::sync::Arc<LayeredNozzleGroupResult>) {}
+    fn update_filament_maps_to_config(&self, _f_maps: Vec<i32>, _f_volume_maps: Vec<i32>, _f_nozzle_maps: Vec<i32>) {}
+    fn update_to_config_by_nozzle_group_result(&self, _result: &LayeredNozzleGroupResult) {}
 }
 
 fn ordering(lts: Vec<LayerTools>) -> ToolOrdering {
@@ -337,7 +369,7 @@ impl ToolOrderingPrint for BuildPrint {
     fn curr_plate_custom_gcodes(&self) -> &custom_g_code::Info {
         &self.custom_gcodes
     }
-    fn get_layered_nozzle_group_result(&self) -> Option<&LayeredNozzleGroupResult> {
+    fn get_layered_nozzle_group_result(&self) -> Option<std::sync::Arc<LayeredNozzleGroupResult>> {
         None
     }
     fn get_geometric_unprintable_filaments(&self) -> Vec<BTreeSet<i32>> {
@@ -349,6 +381,38 @@ impl ToolOrderingPrint for BuildPrint {
     fn get_filament_unprintable_flow(&self, _used_filaments: &[u32]) -> BTreeMap<i32, BTreeSet<slicer::extruder::NozzleVolumeType>> {
         BTreeMap::new()
     }
+    // What the filament grouping (ToolOrdering.cpp:1710-3634) reads of `Print`: these prints carry
+    // no grouping data (no calibration, no extruder filament info, no dynamic reorder), as the
+    // generator's prints do; the setters keep nothing, the grouping is not reached with them.
+    fn calib_params(&self) -> ToolOrderingCalibParams {
+        ToolOrderingCalibParams::default()
+    }
+    fn get_extruder_filament_info(&self) -> &[Vec<ToolOrderingPrintConfig>] {
+        &[]
+    }
+    fn get_filament_usage_type(&self) -> Vec<slicer::filament_group_utils::FilamentUsageType> {
+        Vec::new()
+    }
+    fn get_filament_print_time(
+        &self,
+    ) -> slicer::multi_nozzle_utils::UnorderedMapInt<slicer::multi_nozzle_utils::UnorderedMapInt<f64>> {
+        Default::default()
+    }
+    fn get_nozzle_loaded_filament_info(&self) -> &[slicer::filament_group_utils::NozzleLoadedFilamentInfo] {
+        &[]
+    }
+    fn is_dynamic_group_reorder(&self) -> bool {
+        false
+    }
+    fn is_sequential_print(&self) -> bool {
+        false
+    }
+    fn resolve_manual_nozzle_map(&self, _used_filaments: &[u32]) -> Result<(), slicer::exception::RuntimeError> {
+        Ok(())
+    }
+    fn set_nozzle_group_result(&self, _result: std::sync::Arc<LayeredNozzleGroupResult>) {}
+    fn update_filament_maps_to_config(&self, _f_maps: Vec<i32>, _f_volume_maps: Vec<i32>, _f_nozzle_maps: Vec<i32>) {}
+    fn update_to_config_by_nozzle_group_result(&self, _result: &LayeredNozzleGroupResult) {}
 }
 
 impl ToolOrderingPrintObjects for BuildPrint {

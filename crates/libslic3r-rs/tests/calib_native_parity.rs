@@ -221,3 +221,126 @@ fn calib_matches_the_pin() {
     println!("compared {} lines", lines.len());
     assert!(bad.is_empty(), "{} lines differ:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// The G-code the calibration classes write through their GCodeWriter, against
+/// `tests/data/calib/calib_gcode.txt.gz` (`gen gcode`): the pattern's custom G-code items, the
+/// drawing members on the pattern's writer, and the line test on a GCode generator.
+#[test]
+fn calib_gcode_matches_the_pin() {
+    use slicer::calib::{CalibPressureAdvanceLine, DrawBoxOptArgs, DrawDigitMode};
+    use slicer::g_code::gcode_class::GCode;
+    use std::io::Read;
+
+    struct BoxArgs(f64, f64, f64, f64, i32, f64, f64, f64, bool);
+    let beds = [
+        "0x0,256x0,256x256,0x256",
+        "0x0,180x0,180x180,0x180",
+        "0x0,250x0,250x220,0x220",
+        "0x0,350x0,350x320,0x320",
+        "-90x0,-64x-64,0x-90,64x-64,90x0,64x64,0x90,-64x64",
+        "10x10,110x10,110x80,10x80",
+    ];
+    let boxes = [
+        BoxArgs(30.0, 40.0, 12.0, 5.0, 2, 0.2, 0.45, 3000.0, true),
+        BoxArgs(5.0, 6.0, 5.0, 14.0, 3, 0.25, 0.5, 1800.0, true),
+        BoxArgs(8.5, 9.25, 8.0, 8.0, 3, 0.2, 0.42, 1200.0, false),
+        BoxArgs(0.0, 0.0, 40.0, 3.0, 5, 0.3, 0.62, 2400.0, true),
+        BoxArgs(-3.0, 2.0, 2.0, 2.0, 4, 0.2, 0.4, 600.0, true),
+        BoxArgs(50.0, 60.0, 23.7, 9.3, 1, 0.16, 0.44, 4800.0, true),
+    ];
+    let mode_of = |m: i32| if m == 0 { DrawDigitMode::LeftToRight } else { DrawDigitMode::BottomToTop };
+
+    let mut lines: Vec<String> = Vec::new();
+    for (n, c) in cases().iter().enumerate() {
+        let mut config = FullDynamicPrintConfig::full_print_config();
+        for (k, v) in &c.opts {
+            config.set_deserialize_strict(k, v, false).unwrap();
+        }
+        let mut model = Model::new();
+        {
+            let obj = model.add_object_new();
+            obj.add_volume_mesh(ModelMesh::from_its(its_make_cube(c.bx[0], c.bx[1], c.bx[2])), ModelVolumeType::ModelPart, true);
+            for (k, v) in &c.object_opts {
+                let mut ctxt = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::Disable);
+                obj.config.set_deserialize(k, v, &mut ctxt, false).unwrap();
+            }
+            obj.add_instance().set_offset(&Vec3d::new(c.offset[0], c.offset[1], c.offset[2]));
+        }
+        let params = CalibParams { start: c.start, end: c.end, step: c.step, mode: CalibMode::PAPattern, ..CalibParams::default() };
+        let origin = Vec3d::new(5.0, 7.0, 0.0);
+        let mut p = CalibPressureAdvancePattern::new(params, &config, false, &model, &origin).unwrap();
+        if n == 4 {
+            p.base.set_bbl_bowden_mode();
+        }
+        p.generate_custom_gcodes(&config, false, &mut model, &origin).unwrap();
+        let info = &model.plates_custom_gcodes[&model.curr_plate_index];
+        lines.push(format!("pattern {} {} {}", n, info.mode as i32, info.gcodes.len()));
+        for item in &info.gcodes {
+            lines.push(format!("item {} {} {}", hd(item.print_z), item.gcode_type as i32, ht(&item.extra)));
+        }
+
+        for mode in 0..2 {
+            for ch in "0123456789.x".bytes() {
+                let s = p.base.draw_digit(10.5, 20.25, ch, mode_of(mode), 0.45, 0.0331, &mut p.writer);
+                lines.push(format!("digit {} {} {}", mode, ch as char, ht(&s)));
+            }
+        }
+        for mode in 0..2 {
+            for v in [0.0325, 1.5, 12345.678, 0.0001, 0.1] {
+                let s = p.base.draw_number(12.5, 30.25, v, mode_of(mode), 0.42, 0.034, 1800.0, &mut p.writer);
+                lines.push(format!("number {} {} {}", mode, hd(v), ht(&s)));
+            }
+        }
+        for b in &boxes {
+            let mut args = DrawBoxOptArgs::new(b.4, b.5, b.6, b.7);
+            args.is_filled = b.8;
+            let s = p.base.draw_box(&mut p.writer, b.0, b.1, b.2, b.3, args).unwrap();
+            lines.push(format!("box {}", ht(&s)));
+        }
+        let s = p.base.draw_line(&mut p.writer, PointF::new(77.125, 13.5), 0.45, 0.2, 2400.0, "comment").unwrap();
+        lines.push(format!("line_to {}", ht(&s)));
+        let s = p.base.move_to(PointF::new(1.0625, 2.5), &mut p.writer, "Glyph");
+        lines.push(format!("move_to {}", ht(&s)));
+
+        let mut line_config = config.clone();
+        line_config.set_deserialize_strict("printable_area", beds[n % 6], false).unwrap();
+        let mut g = GCode::new();
+        g.m_config = line_config.clone();
+        g.m_writer.apply_print_config(&line_config);
+        g.m_writer.set_extruders(vec![0]);
+        g.m_writer.set_extruder(0, 0);
+        let mut pa = CalibPressureAdvanceLine::new(&mut g).unwrap();
+        pa.set_speed(if n == 1 { 180.7 } else { 100.0 }, if n == 1 { 25.3 } else { 20.0 });
+        *pa.draw_numbers() = n % 2 == 0 || n == 5;
+        if n == 3 {
+            pa.base.set_bbl_bowden_mode();
+        }
+        let count = (((c.end - c.start) / c.step).ceil().round() as i64 + 1) as i32;
+        let s = pa.generate_test(c.start, c.step, count).unwrap();
+        lines.push(format!(
+            "line {} {} {} {} {} {}",
+            n,
+            count,
+            pa.is_delta() as i32,
+            hd(pa.line_width()),
+            hd(pa.height_layer()),
+            ht(&s)
+        ));
+    }
+
+    let path = format!("{}/tests/data/calib/calib_gcode.txt.gz", env!("CARGO_MANIFEST_DIR"));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut want = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut want).expect("gzip");
+    let want: Vec<&str> = want.lines().collect();
+    assert_eq!(lines.len(), want.len(), "number of lines");
+    let bad: Vec<String> = lines
+        .iter()
+        .zip(want.iter())
+        .enumerate()
+        .filter(|(_, (g, w))| g != w)
+        .map(|(k, (g, w))| format!("line {}:\n  rust {}\n  c++  {}", k + 1, &g[..g.len().min(600)], &w[..w.len().min(600)]))
+        .collect();
+    println!("compared {} lines", lines.len());
+    assert!(bad.is_empty(), "{} lines differ:\n{}", bad.len(), bad.join("\n"));
+}

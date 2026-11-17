@@ -694,6 +694,13 @@ impl Extruder {
         self.m_exclusive_nozzle = exclusive;
     }
 
+    /// `m_exclusive_nozzle`, as tests/g_code_writer_native_parity.rs compares it with the C++
+    /// member; not a member function of the C++ class.
+    #[doc(hidden)]
+    pub fn exclusive_nozzle(&self) -> bool {
+        self.m_exclusive_nozzle
+    }
+
     // Extruder.cpp:31
     // unsigned int Extruder::nozzle_id() const
     pub fn nozzle_id(&self) -> u32 {

@@ -468,6 +468,7 @@ fn group_result(fmap: &[i32], diameters: &[String]) -> slicer::multi_nozzle_util
         .map(|(e, d)| NozzleInfo {
             diameter: d.clone(),
             volume_type: slicer::extruder::NozzleVolumeType::NvtStandard,
+            installed: true,
             extruder_id: e as i32,
             group_id: e as i32,
         })
