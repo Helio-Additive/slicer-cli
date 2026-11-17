@@ -8,18 +8,17 @@
 namespace slicer_cli {
 
 #ifdef ENGINE_BAMBU
-void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, int plate_index,
+void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, int plate_index, int plate_count,
                                      const Slic3r::BoundingBoxf& reach, int plate_filaments,
                                      const std::function<Slic3r::Vec3d(int)>& tower_size) {
     using namespace Slic3r;
     if (plate_index < 0)
         return;
+    if (plate_index >= plate_count)
+        return;
+    project_load_tower_positions_per_plate(config, plate_count);
     auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x");
     auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y");
-    // Only a position the plate has. The desktop saves one per plate; a file
-    // with fewer is not the desktop's, and its other plates keep standing on
-    // the option's default corner, as this command line already slices them
-    // (the desktop would give them the first plate's, PartPlate.cpp 5147-5148).
     if (wipe_x == nullptr || wipe_y == nullptr || (int)wipe_x->values.size() <= plate_index ||
         (int)wipe_y->values.size() <= plate_index)
         return;
@@ -41,6 +40,14 @@ void project_load_tower_inside_plate(Slic3r::DynamicPrintConfig& config, int pla
     wipe_y->set_at(&wt_y_opt, plate_index, 0);
 }
 #endif
+
+void project_load_tower_positions_per_plate(Slic3r::DynamicPrintConfig& config, int plate_count) {
+    using namespace Slic3r;
+    for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
+        if (auto* opt = config.option<ConfigOptionFloats>(key); opt != nullptr && !opt->values.empty() &&
+                                                                 (int)opt->values.size() < plate_count)
+            opt->values.resize(plate_count, opt->values.front());
+}
 
 std::vector<std::string> settings_replaced_by_presets(const Slic3r::DynamicPrintConfig& file,
                                                       const Slic3r::DynamicPrintConfig& loaded) {

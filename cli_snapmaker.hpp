@@ -29,6 +29,15 @@ Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrin
 /// The desktop's paint state map for a filament-id remap.
 Slic3r::EnforcerBlockerStateMap paint_state_map(const std::vector<unsigned int>& id_remap, size_t total);
 
+/// A nozzle or filament flow type written the way Bambu Studio and OrcaSlicer
+/// spell it ("Standard", "High Flow") is read as the same flow type in this
+/// engine's spelling ("standard", "high_flow"), and that substitution is taken
+/// out of `ctx`, with a FlowTypeSpellingConverted event. A list holding any
+/// other value is left as the loader substituted it. `announce` false: a
+/// second read of a file whose conversion was already reported.
+void convert_flow_type_spelling(Slic3r::DynamicPrintConfig& config, Slic3r::ConfigSubstitutionContext& ctx,
+                                const std::string& source, bool announce = true);
+
 /// The desktop warns when a project's schema is newer than this build, and
 /// still loads it: a NewerProjectSchema warning event, never a refusal.
 void warn_newer_project_schema(const Slic3r::DynamicPrintConfig& config);

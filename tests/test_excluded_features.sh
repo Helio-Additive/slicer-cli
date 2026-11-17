@@ -448,6 +448,86 @@ else
     skip "own-project-loads-like-the-app" "fixture missing: $BASE_3MF"
 fi
 
+# ── Bambu Studio's spelling of the flow type ────────────────────────────────
+# Bambu Studio and OrcaSlicer write "Standard" / "High Flow"; Snapmaker Orca has
+# "standard" / "high_flow" and its desktop substitutes its default for the other
+# words. slicer_cli-snapmaker reads them as the same flow type and says so; any
+# other word is still refused with --slice.
+if [ "$ENGINE" = snapmaker ] && [ -f "$BASE_3MF" ]; then
+    FLOW_DIR=$(mktemp -d "${TMPDIR:-/tmp}/flow_type.XXXXXX")
+    flow_file() {
+        python3 - "$BASE_3MF" "$1" "$2" <<'PY'
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["nozzle_volume_type"] = sys.argv[3].split(",")
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PY
+    }
+    flow_file "$FLOW_DIR/bambu_words.3mf" "Standard,High Flow,Standard,Standard"
+    flow_file "$FLOW_DIR/unknown_word.3mf" "Standard,Turbo,Standard,Standard"
+    GC=$(mktmp_gcode)
+    set +e
+    "$BINARY" "$FLOW_DIR/bambu_words.3mf" --slice 1 --outputdir "$FLOW_DIR/a" > "$FLOW_DIR/a.out" 2>&1; FLOW_EXIT=$?
+    "$BINARY" "$FLOW_DIR/unknown_word.3mf" --slice 1 --outputdir "$FLOW_DIR/b" > "$FLOW_DIR/b.out" 2>&1; UNKNOWN_EXIT=$?
+    set -e
+    FLOW_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/a/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
+    if [ "$FLOW_EXIT" -eq 0 ] && [ "$FLOW_HEADER" = "standard,high_flow,standard,standard" ] \
+       && grep -q 'FlowTypeSpellingConverted' "$FLOW_DIR/a.out"; then
+        record "flow-type-bambu-spelling-read-as-snapmaker" 1
+    else
+        record "flow-type-bambu-spelling-read-as-snapmaker" 0 "exit=$FLOW_EXIT nozzle_volume_type='$FLOW_HEADER' (want standard,high_flow,standard,standard and a FlowTypeSpellingConverted event)"
+    fi
+    if [ "$UNKNOWN_EXIT" -ne 0 ] && grep -q "'nozzle_volume_type' is 'Standard,Turbo,Standard,Standard'" "$FLOW_DIR/b.out"; then
+        record "flow-type-unknown-word-refused" 1
+    else
+        record "flow-type-unknown-word-refused" 0 "exit=$UNKNOWN_EXIT: want a refusal naming the value"
+    fi
+    # A settings file that inherits a shipped preset is read twice (its own
+    # values, then over the preset it inherits); both reads keep the flow type.
+    printf '%s\n' '{"type":"machine","name":"Flow test U1","from":"User","inherits":"Snapmaker U1 (0.4 nozzle)","nozzle_volume_type":["High Flow","Standard","Standard","Standard"]}' > "$FLOW_DIR/machine.json"
+    python3 - "$FLOW_DIR/cube.stl" <<'PY'
+import sys
+v = [(0,0,0),(10,0,0),(10,10,0),(0,10,0),(0,0,10),(10,0,10),(10,10,10),(0,10,10)]
+f = [(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)]
+with open(sys.argv[1], "w") as o:
+    o.write("solid c\n")
+    for t in f:
+        o.write("facet normal 0 0 0\nouter loop\n" + "".join("vertex %g %g %g\n" % v[i] for i in t) + "endloop\nendfacet\n")
+    o.write("endsolid c\n")
+PY
+    set +e
+    "$BINARY" "$FLOW_DIR/cube.stl" --machine "$FLOW_DIR/machine.json" --slice 1 --outputdir "$FLOW_DIR/c" > "$FLOW_DIR/c.out" 2>&1; MACHINE_EXIT=$?
+    set -e
+    MACHINE_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/c/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
+    if [ "$MACHINE_EXIT" -eq 0 ] && [ "$MACHINE_HEADER" = "high_flow,standard,standard,standard" ]; then
+        record "flow-type-bambu-spelling-in-inheriting-settings-file" 1
+    else
+        record "flow-type-bambu-spelling-in-inheriting-settings-file" 0 "exit=$MACHINE_EXIT nozzle_volume_type='$MACHINE_HEADER' (want high_flow,standard,standard,standard)"
+    fi
+    # --load-settings takes a process with the printer: the engine's own U1
+    # 0.20mm Standard process file.
+    FLOW_PROCESS="$SCRIPT_DIR/../references/SnapmakerOrca/resources/profiles/Snapmaker/process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json"
+    if [ -f "$FLOW_PROCESS" ]; then
+        set +e
+        "$BINARY" "$FLOW_DIR/cube.stl" --load-settings "$FLOW_DIR/machine.json;$FLOW_PROCESS" --slice 1 --outputdir "$FLOW_DIR/d" > "$FLOW_DIR/d.out" 2>&1; LOAD_EXIT=$?
+        set -e
+        LOAD_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/d/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
+        if [ "$LOAD_EXIT" -eq 0 ] && [ "$LOAD_HEADER" = "high_flow,standard,standard,standard" ]; then
+            record "flow-type-bambu-spelling-in-load-settings" 1
+        else
+            record "flow-type-bambu-spelling-in-load-settings" 0 "exit=$LOAD_EXIT nozzle_volume_type='$LOAD_HEADER' (want high_flow,standard,standard,standard)"
+        fi
+    else
+        skip "flow-type-bambu-spelling-in-load-settings" "engine profiles missing: $FLOW_PROCESS"
+    fi
+    rm -rf "$GC" "$FLOW_DIR"
+fi
+
 # ── Supports set on a part stay on the part ─────────────────────────────────
 # The project load replaces project-wide settings the file does not list as
 # changed; what is stored with an object (Metadata/model_settings.config) is

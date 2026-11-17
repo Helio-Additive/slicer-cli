@@ -900,6 +900,10 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
         // Keep non-fatal forward-compatibility substitutions and unknown keys
         // visible before success when the caller opts into slicing events.
         // Legacy --layout callers leave diagnostic_source empty.
+#ifdef ENGINE_SNAPMAKER
+        slicer_cli::convert_flow_type_spelling(config, substitution_context,
+                                               diagnostic_source.empty() ? filepath : diagnostic_source);
+#endif
         if (!diagnostic_source.empty()) {
             emit_config_substitutions(substitution_context, diagnostic_source);
         }
@@ -5480,8 +5484,18 @@ static void apply_file_inherits(const std::string& argv0, const std::string& fil
     std::map<std::string, std::string> key_values;
     std::string reason;
     try {
+#ifdef ENGINE_SNAPMAKER
+        // This file's own values are laid over `config` again below, so the
+        // flow-type words its first read converted are converted here too:
+        // the substitutions are recorded (EnableSilent records none,
+        // Config.cpp 683-684 at bac6fd5) and nothing reports them.
+        Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+        own.load_from_json(file, substitutions, /*load_inherits_in_config=*/false, key_values, reason);
+        slicer_cli::convert_flow_type_spelling(own, substitutions, file, /*announce=*/false);
+#else
         Slic3r::ConfigSubstitutionContext substitutions(Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
         own.load_from_json(file, substitutions, /*load_inherits_in_config=*/false, key_values, reason);
+#endif
     } catch (...) {
         return;
     }
@@ -8477,6 +8491,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // channel the GUI renders as "incompatible settings were
             // substituted", and it is also where an unknown key (a setting the
             // host wrote that this engine has no definition for) is recorded.
+#ifdef ENGINE_SNAPMAKER
+            slicer_cli::convert_flow_type_spelling(config, config_subst, "3mf:project_settings.config");
+#endif
             emit_config_substitutions(config_subst, "3mf:project_settings.config");
             outcome.unknown_settings = config_subst.unrecogized_keys;   // sic — upstream spelling
 #ifdef ENGINE_SNAPMAKER
@@ -9462,7 +9479,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         continue;
                     PlateScope scope(model, rs.plates[index]);
                     slicer_cli::project_load_tower_inside_plate(
-                        config, index, reach, (int)arrange_plate_extruders(model, config, index).size(),
+                        config, index, (int)rs.plates.size(), reach,
+                        (int)arrange_plate_extruders(model, config, index).size(),
                         [&](int filaments) {
                             return arrange_estimate_wipe_tower_size(model, config, wipe.width, wipe.volume,
                                                                     wipe.extruder_count, filaments, wipe.wrapping,
@@ -9471,6 +9489,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         });
                 }
             }
+#else
+        // OrcaSlicer and Snapmaker Orca keep a project's saved tower position
+        // when they open it (cli_project_load.hpp), and their slice reads a
+        // plate the list holds no position for as the first plate's
+        // (get_at, Config.hpp 627 at 8500fcd; 438 at bac6fd5).
+        if (rs.project_loaded_like_desktop && !o.arrange_forced())
+            slicer_cli::project_load_tower_positions_per_plate(config, (int)rs.plates.size());
 #endif
         const bool has_unplaced_objects = std::any_of(model.objects.begin(), model.objects.end(),
             [](const Slic3r::ModelObject* obj) { return obj->instances.empty(); });

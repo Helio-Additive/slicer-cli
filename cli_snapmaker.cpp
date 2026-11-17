@@ -1204,6 +1204,60 @@ bool snapmaker_tower_settings_present(const Slic3r::DynamicPrintConfig& config) 
            config.option("prime_tower_brim_chamfer") != nullptr;
 }
 
+void convert_flow_type_spelling(Slic3r::DynamicPrintConfig& config, Slic3r::ConfigSubstitutionContext& ctx,
+                                const std::string& source, bool announce) {
+    // Bambu Studio and OrcaSlicer spell the flow type "Standard" / "High Flow"
+    // (BambuStudio PrintConfig.cpp 897-903 at v02.09.01.70; OrcaSlicer
+    // PrintConfig.cpp 573-576 at 8500fcd), and a public Snapmaker U1 project
+    // carries them. This engine has "standard" /
+    // "high_flow" (PrintConfig.cpp 482-485, 4094-4122 at bac6fd5) and no
+    // conversion: the desktop substitutes its default, standard, for any other
+    // word (Plater.cpp 11690, ForwardCompatibilitySubstitutionRule::Enable), so
+    // a High Flow nozzle would load as a standard one. slicer-cli's own step:
+    // the same flow type, in this engine's word.
+    static const std::map<std::string, std::string> word = {
+        {"Standard", "standard"}, {"High Flow", "high_flow"}, {"standard", "standard"}, {"high_flow", "high_flow"}};
+    auto& subs = ctx.substitutions;
+    for (auto it = subs.begin(); it != subs.end();) {
+        const std::string key = it->opt_def != nullptr ? it->opt_def->opt_key : std::string();
+        if (key != "nozzle_volume_type" && key != "filament_volume_type") {
+            ++it;
+            continue;
+        }
+        std::string converted;
+        bool all_known = !it->old_value.empty();
+        std::stringstream values(it->old_value);
+        for (std::string value; all_known && std::getline(values, value, ',');) {
+            const auto found = word.find(boost::algorithm::trim_copy(value));
+            all_known = found != word.end();
+            if (all_known)
+                converted += (converted.empty() ? "" : ",") + found->second;
+        }
+        if (!all_known) {
+            ++it;
+            continue;
+        }
+        try {
+            Slic3r::ConfigSubstitutionContext strict(Slic3r::ForwardCompatibilitySubstitutionRule::Disable);
+            config.set_deserialize(key, converted, strict);
+        } catch (const std::exception&) {
+            ++it;
+            continue;
+        }
+        if (announce)
+            emit({{"event", "config_normalized"},
+              {"tag", "FlowTypeSpellingConverted"},
+              {"source", source},
+              {"opt_key", key},
+              {"old_value", it->old_value},
+              {"new_value", converted},
+              {"message", "'" + key + "' is '" + it->old_value +
+                              "', the way Bambu Studio and OrcaSlicer spell it; read as '" + converted +
+                              "', the same flow type in Snapmaker Orca's spelling"}});
+        it = subs.erase(it);
+    }
+}
+
 void warn_newer_project_schema(const Slic3r::DynamicPrintConfig& config) {
     // references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:224-238 and
     // libslic3r/ProjectSchemaVersion.cpp:21-30 at bac6fd5: the desktop warns
